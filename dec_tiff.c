@@ -37,6 +37,7 @@ enum wu_error_type tiff_dec(struct image_file *infile) {
 		img[i].h = tifimg.height;
 		img[i].channels = 4;
 		img[i].bitdepth = 8;
+		img[i].mirror = 1;
 		const size_t dims = img[i].w * img[i].h;
 		img[i].data = malloc(dims * img[i].channels);
 		uint32 *raster = _TIFFmalloc((tmsize_t)(dims * sizeof(uint32)));

@@ -10,7 +10,7 @@
 enum wu_error_type flif_dec(struct image_file *infile) {
 	FLIF_DECODER *flif_dec = flif_create_decoder();
 	const int32_t success = flif_decoder_decode_file(flif_dec, infile->name);
-	if (!success) { // 0 means failure
+	if (!success) {
 		infile->err_msg = strdup(
 			"flif_decoder_decode_file() returned 0 on flif_dec()"
 		);
@@ -19,13 +19,10 @@ enum wu_error_type flif_dec(struct image_file *infile) {
 
 	struct raw_img *img = alloc_sub_images(infile,
 		flif_decoder_num_images(flif_dec));
+	infile->is_animation = (infile->nr > 1);
 
 	for (size_t i = 0; i < infile->nr; ++i) {
 		FLIF_IMAGE *frame = flif_decoder_get_image(flif_dec, i);
-
-		if (infile->nr > 1) {
-			img[i].id = id_template("frame", i);
-		}
 
 		img[i].w = flif_image_get_width(frame);
 		img[i].h = flif_image_get_height(frame);

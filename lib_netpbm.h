@@ -15,22 +15,19 @@ enum pnm_format {
 };
 
 struct pnm_desc {
-	FILE *ifp;
-	size_t w, h;
+	size_t w, h, nr;
 	unsigned int ch, depth, maxval;
 	enum pnm_format type;
 
 	// Internal use
-	size_t stride;
-	unsigned char *buf;
+	unsigned char *map;
+	long file_size;
 	uint_least32_t scale;
 };
 
 void close_pnm_file(const struct pnm_desc *desc);
 
 unsigned char * decode_pnm_next(struct pnm_desc *desc);
-
-unsigned char ** decode_pnm_file(struct pnm_desc *desc, size_t *nr);
 
 bool parse_pnm_header(struct pnm_desc *desc);
 

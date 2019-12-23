@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <inttypes.h>
 #include <stdbool.h>
+#include <sys/mman.h>
 
 #include "lib_netpbm.h"
 
@@ -134,8 +135,7 @@ static unsigned char * plain_pbm_decode(struct pnm_desc *desc) {
 }
 
 void close_pnm_file(const struct pnm_desc *desc) {
-	free(desc->buf);
-	fclose(desc->ifp);
+	munmap(desc->map);
 }
 
 unsigned char * decode_pnm_next(struct pnm_desc *desc) {
@@ -155,38 +155,43 @@ unsigned char * decode_pnm_next(struct pnm_desc *desc) {
 	}
 }
 
-unsigned char ** decode_pnm_file(struct pnm_desc *desc, size_t *nr) {
-	const size_t size = sizeof(unsigned char *);
-	unsigned char **hold;
-
-	if (desc->type >= 4) {
-		size_t alloc = 4;
-		hold = malloc(alloc * size);
-		*nr = 0;
-		while ((hold[*nr] = decode_pnm_next(desc)) != NULL) {
-			++*nr;
-			if (*nr == alloc) {
-				alloc += alloc / 2;
-				unsigned char **tmp = realloc(hold,
-					alloc * size);
-				if (tmp) {
-					hold = tmp;
-				} else {
-					free(hold);
-					return NULL;
-				}
+static bool setup_pnm_desc(struct pnm_desc *desc) {
+	switch (desc->type) {
+	case raw_pbm:
+	case raw_pgm:
+	case raw_ppm:
+		{
+			const long start = ftell(desc->ifp);
+			fseek(desc->ifp, 0, SEEK_END);
+			const long end = ftell(desc->ifp);
+			desc->nr = (size_t)(end - start)
+				/ desc->w * desc->h * desc->ch;
+			if (!desc->nr) {
+				return false;
 			}
+			fseek(desc->ifp, start, SEEK_SET);
+		}
+		break;
+	default:
+		desc->nr = 1;
+		break;
+	}
+
+	desc->buf = NULL;
+	if (desc->type == plain_pbm || desc->type == raw_pbm) {
+		desc->depth = 1;
+		if (desc->type == plain_pbm) {
+			desc->stride = BUFSIZ;
+			desc->buf = malloc(BUFSIZ);
+		} else {
+			const size_t remainer = desc->w % 8;
+			desc->stride = desc->w / 8 + (remainer != 0);
+			desc->buf = malloc(desc->stride);
+		}
+		if (!desc->buf) {
+			return false;
 		}
 	} else {
-		hold = malloc(size);
-		hold[0] = decode_pnm_next(desc);
-		*nr = 1;
-	}
-	return hold;
-}
-
-static bool setup_pnm_desc(struct pnm_desc *desc) {
-	if (desc->type != plain_pbm && desc->type != raw_pbm) {
 		if (desc->maxval < 1 || desc->maxval > 65535) {
 			return false;
 		}
@@ -203,21 +208,10 @@ static bool setup_pnm_desc(struct pnm_desc *desc) {
 		if (desc->type == raw_pgm || desc->type == raw_ppm) {
 			desc->stride = desc->w * desc->ch * desc->depth;
 			desc->buf = malloc(desc->stride);
+			if (!desc->buf) {
+				return false;
+			}
 		}
-	} else {
-		desc->depth = 1;
-		if (desc->type == plain_pbm) {
-			desc->stride = BUFSIZ;
-			desc->buf = malloc(BUFSIZ);
-		} else {
-			const size_t remainer = desc->w % 8;
-			desc->stride = desc->w / 8 + (remainer != 0);
-			desc->buf = malloc(desc->stride);
-		}
-	}
-
-	if (!desc->buf) {
-		return false;
 	}
 	return true;
 }
@@ -275,15 +269,31 @@ bool parse_pnm_header(struct pnm_desc *desc) {
 	return false;
 }
 
+static unsigned char * map_pnm(const char *filename, struct pnm_desc *desc) {
+	FILE *ifp = fopen(filename, "rb");
+	if (!ifp) {
+		return NULL;
+	}
+
+	fseek(ifp, 0, SEEK_END);
+	desc->file_size = ftell(ifp);
+	unsigned char *map = mmap(NULL, desc->file_size, PROT_READ,
+		MAP_PRIVATE, fileno(ifp), 0);
+	fclose(ifp);
+	if (!map) {
+		return NULL;
+	}
+	posix_madvise(map, desc->file_size, POSIX_MADV_SEQUENTIAL);
+}
+
 enum pnm_format open_pnm_file(const char *filename, struct pnm_desc *desc) {
-	desc->ifp = fopen(filename, "rb");
+	desc->map = map_pnm(filename, desc);
 	if (!desc->ifp) {
 		return 0;
 	}
 
-	char magic[3] = {0, 0, 0};
-	if (fscanf(desc->ifp, "%2s", magic) > 0 && magic[0] == 'P') {
-		desc->type = magic[1] - 48;
+	if (desc->map[0] == 'P' && desc->map[1] >= '1' && desc->map[1] <= '7') {
+		desc->type = desc->map[1] - 48;
 		switch (desc->type) {
 		case plain_pbm:
 		case plain_pgm:
@@ -299,6 +309,6 @@ enum pnm_format open_pnm_file(const char *filename, struct pnm_desc *desc) {
 			return 0;
 		}
 	}
-	fclose(desc->ifp);
+	munmap(desc->map);
 	return 0;
 }

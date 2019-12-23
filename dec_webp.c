@@ -201,12 +201,6 @@ static int is_covered(const WebPIterator *iter, const struct anim_frame *prev) {
 
 static unsigned char compute_properties(const WebPDemuxer *dmux,
 WebPIterator *iter, unsigned char *restrict bg) {
-	/* According to the webp spec, viewer applications are not really
-	 * required to use the background color defined for animations. In the
-	 * interests of speed and memory usage, we will either use fully opaque
-	 * backgrounds to save memory if defined, or a fully transparent black
-	 * to be able to use plain memset(0). */
-
 	// Color is in BGRA order
 	const uint32_t color = WebPDemuxGetI(dmux, WEBP_FF_BACKGROUND_COLOR);
 	bg[3] = (unsigned char)(color & 0x000000ff);
@@ -260,8 +254,6 @@ static void setup_common_decoding_options(WebPDecoderConfig *config) {
 
 __attribute__((unused))static VP8StatusCode demuxer_decode(
 struct image_file *infile, const WebPData *data, WebPDecoderConfig *config) {
-	infile->is_animation = true;
-
 	WebPDemuxer *dmux = WebPDemux(data);
 
 	WebPIterator iter;
@@ -366,12 +358,8 @@ struct image_file *infile, const WebPData *data, WebPDecoderConfig *config) {
 	return status;
 }
 
-/* Uses libwebp fully for decoding, but can only output RGBA. The day we can
- * beat this, we'll party ourselves to death. */
 __attribute__((unused))static VP8StatusCode animation_library_decode(
 struct image_file *infile, const WebPData *data) {
-	infile->is_animation = true;
-
 	WebPAnimDecoderOptions options;
 	WebPAnimDecoderOptionsInit(&options);
 	options.color_mode = MODE_RGBA;
@@ -448,9 +436,11 @@ enum wu_error_type webp_dec(struct image_file *infile) {
 	setup_common_decoding_options(&config);
 
 	if (config.input.has_animation) {
+		infile->is_animation = true;
 //		status = animation_library_decode(infile, &data);
 		status = demuxer_decode(infile, &data, &config);
 	} else {
+		infile->is_animation = false;
 		status = single_image_decode(infile, &data, &config);
 	}
 	WebPFreeDecBuffer(&config.output);

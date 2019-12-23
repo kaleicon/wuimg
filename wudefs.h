@@ -16,6 +16,8 @@ struct raw_img {
 	unsigned char true_channels;
 	unsigned char true_bitdepth;
 
+	unsigned char rotate;
+	unsigned char mirror;
 	int msec;
 };
 
@@ -25,7 +27,6 @@ struct image_file {
 	struct raw_img *sub_img;
 	size_t nr;
 	bool is_animation;
-//	int __padding__;
 };
 
 enum wu_error_type {

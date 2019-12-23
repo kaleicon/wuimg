@@ -306,9 +306,7 @@ enum wu_error_type gif_dec(struct image_file *infile) {
 	const unsigned int channels = compute_properties(gif_file, &gcb);
 
 	alloc_sub_images(infile, (size_t)gif_file->ImageCount);
-	if (infile->nr > 1) {
-		infile->is_animation = true;
-	}
+	infile->is_animation = (infile->nr > 1);
 
 	if (gif_file->AspectByte) {
 		printf("-Pixel aspect ratio: %f ((n + 15.0)/64.0, n = %d)\n",

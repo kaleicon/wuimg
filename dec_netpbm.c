@@ -18,21 +18,26 @@ enum wu_error_type netpbm_dec(struct image_file *infile) {
 		return wu_invalid_header;
 	}
 
-	size_t decoded;
-	unsigned char **hold = decode_pnm_file(&desc, &decoded);
-	close_pnm_file(&desc);
-	if (decoded) {
-		struct raw_img *img = alloc_sub_images(infile, decoded);
-		for (size_t i = 0; i < decoded; ++i) {
-			img[i].data = hold[i];
-			img[i].w = (unsigned int)desc.w;
-			img[i].h = (unsigned int)desc.h;
-			img[i].channels = (unsigned char)desc.ch;
-			img[i].bitdepth = (unsigned char)(desc.depth * 8);
+	struct raw_img *img = alloc_sub_images(infile, desc.nr);
+	size_t i = 0;
+	while (i < infile->nr) {
+		img[i].data = decode_pnm_next(&desc);
+		if (!img[i].data) {
+			break;
 		}
-		free(hold);
-		return wu_ok;
+		img[i].w = (unsigned int)desc.w;
+		img[i].h = (unsigned int)desc.h;
+		img[i].channels = (unsigned char)desc.ch;
+		img[i].bitdepth = (unsigned char)(desc.depth * 8);
+		++i;
 	}
-	return wu_decoding_error;
+
+	close_pnm_file(&desc);
+	if (!i) {
+		return wu_decoding_error;
+	} else if (i < infile->nr) {
+		fit_sub_images(infile, i);
+	}
+	return wu_ok;
 }
 

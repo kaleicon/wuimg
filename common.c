@@ -16,15 +16,6 @@ int iwrapadd(int val, const int add, const int max) {
 	return val % max;
 }
 
-float fclampf(const float n, const float min, const float max) {
-	if (n < min) {
-		return min;
-	} else if (n > max) {
-		return max;
-	}
-	return n;
-}
-
 int iclamp(const int n, const int min, const int max) {
 	if (n < min) {
 		return min;
@@ -34,20 +25,21 @@ int iclamp(const int n, const int min, const int max) {
 	return n;
 }
 
-float fmaxf(const float x, const float y) {
-	return x > y ? x : y;
-}
-
-float fminf(const float x, const float y) {
-	return x < y ? x : y;
-}
-
 int imax(const int x, const int y) {
 	return x > y ? x : y;
 }
 
 int imin(const int x, const int y) {
 	return x < y ? x : y;
+}
+
+float fclampf(const float n, const float min, const float max) {
+	if (n < min) {
+		return min;
+	} else if (n > max) {
+		return max;
+	}
+	return n;
 }
 
 u_int16_t endian_uint16(const void *data, const enum endianness e) {
@@ -81,8 +73,11 @@ const struct timespec *after) {
 	return (int)(timespec_nanodiff(before, after) / 100000);
 }
 
-#define HIGHLIGHT "\033[7m"
-#define RESET "\033[m"
+void print_temp_line(const char *text) {
+	printf(CURSOR_u_BACK, printf(CLEAR_LINE "%s", text));
+	fflush(stdout);
+}
+
 void print_unsafe_data(const void *data, const size_t len) {
 	if (!len) {
 		return;
@@ -93,7 +88,7 @@ void print_unsafe_data(const void *data, const size_t len) {
 			if (isprint(d[i]) || isspace(d[i])) {
 				putchar(d[i]);
 			} else {
-				printf(HIGHLIGHT "<%.2hhX>" RESET, d[i]);
+				printf(HIGHLIGHT "<%.2hhx>" RESET, d[i]);
 			}
 		}
 	} else {
@@ -119,7 +114,7 @@ unsigned char * read_file_to_mem(const char *filename, size_t *size) {
 }
 
 char * id_template(const char *prefix, const size_t n) {
-	// One '+1' for NULL. I forgot what the other 1 was for but it works
+	// One '+1' for NULL. I forgot what's the other 1 for but don't touch
 	size_t len = 1 + strlen(prefix) + 1;
 	for (size_t bound = 10; bound < n; bound *= 10) {
 		++len;

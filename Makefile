@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Ofast -march=native -flto -Wall -Wextra -Werror -Wconversion -Wwrite-strings -g #-s
-LDLIBS = -lepoxy -lglfw -lpng -ljpeg -lgif -ltiff -lopenjp2 -lwebp -lwebpdemux -lheif -lflif
+LDLIBS = -lm -lepoxy -lglfw -lpng -ljpeg -lgif -ltiff -lopenjp2 -lwebp -lwebpdemux -lheif -lflif
 
 OBJS = main.o dec.o anim_common.o common.o opengl.o window.o wudefs.o
 INTERNAL_DECODERS = dec_pi.o dec_netpbm.o

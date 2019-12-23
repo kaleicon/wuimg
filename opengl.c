@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <string.h>
+#include <math.h>
 
 #include <epoxy/gl.h>
 
@@ -6,7 +8,7 @@
 #include "common.h"
 #include "opengl.h"
 
-#define LOG_SIZE 160
+#define LOG_SIZE 192
 
 const char * gl_error_str(GLenum error) {
 	switch (error) {
@@ -41,38 +43,75 @@ void delete_gl_context(const struct gl_context *context) {
 	glDeleteVertexArrays(1, &context->vertex_array);
 }
 
-void update_gl_scaling(const struct gl_context *context) {
-	glUniform2f(context->scale_uni,
-		context->normal_x * context->zoom,
-		context->normal_y * context->zoom);
+void update_gl_matrix(const struct gl_context *context) {
+	glUniformMatrix4fv(context->trans_uni, 1, GL_FALSE, context->mat);
 }
 
-void normalize_gl_viewport(struct gl_context *context, int fb_w, int fb_h) {
+void calc_gl_mirrot(struct gl_context *context) {
+	const GLfloat hard_math[] = {0, 1, 0, -1, 0};
+
+	const GLfloat cosy = hard_math[context->rotate + 1];
+	const GLfloat sinner = hard_math[context->rotate];
+	const GLfloat mirror_mult = (GLfloat)context->mirror * 2 - 1;
+
+	context->mat[0] = cosy;
+	context->mat[1] = sinner;
+	context->mat[4] = sinner * mirror_mult;
+	context->mat[5] = cosy * -mirror_mult;
+}
+
+void change_gl_rotation(struct gl_context *context, const int turns) {
+	context->rotate = (unsigned char)iwrapadd(context->rotate, turns, 4);
+	calc_gl_mirrot(context);
+}
+
+void reset_gl_offset(struct gl_context *context) {
+	context->trans.offset_x = 0;
+	context->trans.offset_y = 0;
+}
+
+void change_gl_offset(struct gl_context *context, const float x, const float y) {
+	context->trans.offset_x += x * context->trans.scale;
+	context->trans.offset_y += y * context->trans.scale;
+	update_gl_matrix(context);
+}
+
+void set_gl_scaling(struct gl_context *context, const float zoom) {
+	context->trans.scale = fclampf(zoom, MIN_ZOOM, MAX_ZOOM);
+	update_gl_matrix(context);
+}
+
+void correct_gl_view(struct gl_context *context, const int fb_w,
+const int fb_h) {
 	const int evener = 0x7ffffffe;
-	fb_w = (fb_w & evener) | (int)(context->tex_w & 1);
-	fb_h = (fb_h & evener) | (int)(context->tex_h & 1);
+	const int fb[2] = {
+		(fb_w & evener) | (int)(context->tex_w & 1),
+		(fb_h & evener) | (int)(context->tex_h & 1),
+	};
+	glViewport(0, 0, fb[0], fb[1]);
 
-	context->normal_x = (float)context->tex_w / (float)fb_w;
-	context->normal_y = (float)context->tex_h / (float)fb_h;
-	context->fit_zoom = 1 / fmaxf(context->normal_x, context->normal_y);
-	glViewport(0, 0, fb_w, fb_h);
+	const int r1 = context->rotate & 1;
+	const int r2 = 5 - r1;
+	const float ratio_w = (float)context->tex_w / (float)fb[r1];
+	const float ratio_h = (float)context->tex_h / (float)fb[r1 ^ 1];
+
+	context->fit_zoom = fmaxf(ratio_w, ratio_h);
+	context->mat[r1] = copysignf(ratio_w, context->mat[r1]);
+	context->mat[r2] = copysignf(ratio_h, context->mat[r2]);
 }
 
-#define DEFAULT_SCALE 1
-#define DEFAULT_OFFSET 0
-void reset_gl_draw_state(struct gl_context *context) {
-	context->zoom = DEFAULT_SCALE;
-	context->fit_zoom = DEFAULT_SCALE;
-	context->normal_x = DEFAULT_SCALE;
-	context->normal_y = DEFAULT_SCALE;
-	context->offset_x = DEFAULT_OFFSET;
-	context->offset_y = DEFAULT_OFFSET;
-	glUniform2f(context->scale_uni, DEFAULT_SCALE, DEFAULT_SCALE);
-	glUniform2f(context->offset_uni, DEFAULT_OFFSET, DEFAULT_OFFSET);
+void reset_gl_matrix(struct gl_context *context) {
+	const float identity[16] = {
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	};
+	memcpy(context->mat, identity, sizeof(identity));
 }
 
-static GLint calc_texture_parameters(const struct raw_img *img, GLenum *type,
-GLenum *fmt) {
+static GLint calc_texture_parameters(const struct raw_img *img,
+GLenum *restrict type, GLenum *restrict fmt) {
 	GLenum type_lut[] = {GL_UNSIGNED_BYTE, GL_UNSIGNED_SHORT};
 	GLenum fmt_lut[] = {GL_RED, GL_RG, GL_RGB, GL_RGBA};
 	GLint in_fmt_lut[][8] = {
@@ -85,20 +124,16 @@ GLenum *fmt) {
 
 	*type = type_lut[img->bitdepth / 8 - 1];
 	*fmt = fmt_lut[img->channels - 1];
-	return in_fmt_lut[img->true_channels-1][img->true_bitdepth/2-1];
+	return in_fmt_lut[img->true_channels - 1][img->true_bitdepth/2 - 1];
 }
 
-bool update_gl_texture(const struct raw_img *img, struct gl_context *context) {
-	if (context->tex_w == img->w && context->tex_h == img->h
-	&& context->tex_ch == img->channels && context->tex_bpp == img->bitdepth) {
-		GLenum type, fmt;
-		calc_texture_parameters(img, &type, &fmt);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)img->w,
-			(GLsizei)img->h, fmt, type, img->data);
-		glGenerateMipmap(GL_TEXTURE_2D);
-		return true;
-	}
-	return false;
+void update_gl_texture(const struct raw_img *img) {
+	GLenum type, fmt;
+	calc_texture_parameters(img, &type, &fmt);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)img->w,
+		(GLsizei)img->h, fmt, type, img->data);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	return;
 }
 
 bool load_gl_texture(const struct raw_img *img, struct gl_context *context) {
@@ -108,12 +143,9 @@ bool load_gl_texture(const struct raw_img *img, struct gl_context *context) {
 
 	GLenum type, fmt;
 	GLint in_fmt = calc_texture_parameters(img, &type, &fmt);
-
-	if (in_fmt == 0) {
-		printf("CHECKME: in_fmt == 0 in load_gl_texture()\n"
-			"channels: %u, bit depth: %u\n",
-			img->true_channels, img->true_bitdepth);
-		in_fmt = GL_R8;
+	if (!in_fmt) {
+		puts(HIGHLIGHT "The unthinkable has happened, in_fmt == 0" RESET);
+		return false;
 	}
 
 	glTexImage2D(GL_TEXTURE_2D, 0, in_fmt, (GLsizei)img->w,
@@ -121,11 +153,11 @@ bool load_gl_texture(const struct raw_img *img, struct gl_context *context) {
 	glGenerateMipmap(GL_TEXTURE_2D);
 	context->tex_w = img->w;
 	context->tex_h = img->h;
-	context->tex_ch = img->channels;
-	context->tex_bpp = img->bitdepth;
+	context->tex_ch = img->true_channels;
+	context->tex_bpp = img->true_bitdepth;
 
 	GLint rgba[] = {GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA};
-	if (img->true_channels <= 2) {
+	if (img->true_channels < 3) {
 		rgba[1] = GL_RED;
 		rgba[2] = GL_RED;
 	}
@@ -133,7 +165,15 @@ bool load_gl_texture(const struct raw_img *img, struct gl_context *context) {
 	return true;
 }
 
-static GLuint setup_texture(GLint wrap, GLint min_filter, GLint mag_filter) {
+bool is_texture_reusable(const struct raw_img *img,
+const struct gl_context *context) {
+	return (img->w == context->tex_w && img->h == context->tex_h
+	&& img->true_channels == context->tex_ch
+	&& img->true_bitdepth == context->tex_bpp);
+}
+
+static GLuint setup_texture(const GLint wrap, const GLint min_filter,
+const GLint mag_filter) {
 	GLuint texture;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
@@ -145,7 +185,7 @@ static GLuint setup_texture(GLint wrap, GLint min_filter, GLint mag_filter) {
 	return texture;
 }
 
-static bool setup_attributes(GLuint program, const char *restrict name) {
+static bool setup_attributes(const GLuint program, const char *restrict name) {
 	GLint _a = glGetAttribLocation(program, name);
 	if (_a >= 0) {
 		GLuint attrib = (GLuint)_a;
@@ -157,8 +197,8 @@ static bool setup_attributes(GLuint program, const char *restrict name) {
 }
 
 static void check_issues(void (*log)(GLuint, GLsizei, GLsizei *, GLchar *),
-void (*iv)(GLuint, GLenum, GLint *), GLuint shader, GLenum parameter,
-GLchar *logbuf, GLint *status) {
+void (*iv)(GLuint, GLenum, GLint *), const GLuint shader,
+const GLenum parameter, GLchar *logbuf, GLint *status) {
 	GLsizei written = 0;
 	log(shader, LOG_SIZE, &written, logbuf);
 	if (written) {
@@ -167,8 +207,8 @@ GLchar *logbuf, GLint *status) {
 	iv(shader, parameter, status);
 }
 
-static GLuint setup_shader(const char *shader_code, GLenum type, GLchar *logbuf,
-GLint *status) {
+static GLuint setup_shader(const char *shader_code, const GLenum type,
+GLchar *logbuf, GLint *status) {
 	GLuint shader = glCreateShader(type);
 	glShaderSource(shader, 1, &shader_code, NULL);
 	glCompileShader(shader);
@@ -177,7 +217,7 @@ GLint *status) {
 	return shader;
 }
 
-static GLuint setup_buffer_object(GLenum type, GLsizeiptr size,
+static GLuint setup_buffer_object(const GLenum type, const GLsizeiptr size,
 const GLvoid *data) {
 	GLuint bo;
 	glGenBuffers(1, &bo);
@@ -195,12 +235,7 @@ bool setup_opengl(struct gl_context *context) {
 	glHint(GL_POLYGON_SMOOTH_HINT, GL_FASTEST);
 
 	GLint mts;
-	GLint dims[2];
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &mts);
-	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
-	printf("GL_MAX_TEXTURE_SIZE: %d\n"
-		"GL_MAX_VIEWPORT_DIMS: %dx%d\n",
-		mts, dims[0], dims[1]);
 	context->max_tex_size = (unsigned int)mts;
 	context->tex_w = 0;
 	context->tex_h = 0;
@@ -228,11 +263,10 @@ bool setup_opengl(struct gl_context *context) {
 		"#version 150\n"
 		"in vec2 pos;"
 		"out vec2 texcoord;"
-		"uniform vec2 scale;"
-		"uniform vec2 offset;"
+		"uniform mat4 trans;"
 		"void main() {"
 			"texcoord = pos * vec2(0.5, -0.5) + 0.5;"
-			"gl_Position = vec4((pos + offset) * scale, 0, 1);"
+			"gl_Position = trans * vec4(pos, 0, 1);"
 		"}";
 	const char *fs =
 		"#version 150\n"
@@ -271,12 +305,8 @@ bool setup_opengl(struct gl_context *context) {
 		return false;
 	}
 
-	context->scale_uni = glGetUniformLocation(context->program, "scale");
-	if (context->scale_uni == -1) {
-		return false;
-	}
-	context->offset_uni = glGetUniformLocation(context->program, "offset");
-	if (context->offset_uni == -1) {
+	context->trans_uni = glGetUniformLocation(context->program, "trans");
+	if (context->trans_uni == -1) {
 		return false;
 	}
 
