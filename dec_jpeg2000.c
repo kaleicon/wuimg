@@ -1,62 +1,96 @@
 #include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <inttypes.h>
 
 #include <openjpeg-2.3/openjpeg.h>
 
 #include "wudefs.h"
+#include "common.h"
 
-enum wu_error_type join_components(struct raw_img *img, const opj_image_t *jp2) {
+// Forward declaration.
+static enum wu_error jpeg2000_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event ev);
+
+static void monkey_trouble_handler(const char *msg, void *__unused_stuff) {
+	(void)__unused_stuff;
+	printf(msg);
+}
+
+// FILE* to opj_stream
+static OPJ_SIZE_T file_read(void *buf, const OPJ_SIZE_T len, void *thing) {
+	FILE *ifp = thing;
+	unsigned char *out = (unsigned char *)buf;
+	const size_t count = fread(out, 1, len, ifp);
+	if (!count) {
+		return (OPJ_SIZE_T)-1;
+	}
+	return (OPJ_SIZE_T)count;
+}
+
+static OPJ_OFF_T file_skip(const OPJ_OFF_T offset, void *thing) {
+	FILE *ifp = thing;
+	return fseek(ifp, offset, SEEK_CUR) == -1 ? -1 : offset;
+}
+
+static OPJ_BOOL file_seek(const OPJ_OFF_T offset, void *thing) {
+	FILE *ifp = thing;
+	return fseek(ifp, offset, SEEK_SET) == -1 ? OPJ_FALSE : OPJ_TRUE;
+}
+
+static opj_stream_t setup_jp2_stream(FILE *ifp) {
+	fseek(ifp, 0, SEEK_END);
+	const long size = ftell(ifp);
+	fseek(ifp, 0, SEEK_SET);
+
+	opj_stream_t *stream = opj_stream_default_create(OPJ_TRUE);
+	opj_stream_set_user_data(stream, ifp, NULL);
+	opj_stream_set_user_data_length(stream, (OPJ_UINT64)size);
+	opj_stream_set_read_function(stream, file_read);
+	opj_stream_set_skip_function(stream, file_skip);
+	opj_stream_set_seek_function(stream, file_seek);
+	return stream;
+}
+
+static OPJ_UINT32 log_fit_factor(unsigned int contain_w, unsigned int contain_h,
+OPJ_UINT32 fit_w, OPJ_UINT32 fit_h) {
+	const size_t fit = integer_fit(contain_w, contain_h, fit_w, fit_h);
+	return (OPJ_UINT32)log2f((float)fit);
+}
+
+static enum wu_error join_components(struct raw_img *img,
+const opj_image_t *jp2) {
 	img->w = jp2->comps[0].w;
 	img->h = jp2->comps[0].h;
 	img->channels = (unsigned char)jp2->numcomps;
 	img->bitdepth = (unsigned char)jp2->comps[0].prec;
-	img->true_bitdepth = (unsigned char)jp2->comps[0].prec;
-
-	switch (jp2->color_space) {
-	case OPJ_CLRSPC_UNKNOWN:
-		puts("Unknown and unsupported color space.");
-		return wu_unsupported_feature;
-	case OPJ_CLRSPC_UNSPECIFIED:
-		puts("Colorspace not specified in codestream. Will guess.");
-		break;
-	case OPJ_CLRSPC_SRGB:
-		if (img->channels < 3) {
-			printf("Colorspace is sRGB but there are %hhu channels\n",
-				img->channels);
-			return wu_unsupported_feature;
-		}
-		break;
-	case OPJ_CLRSPC_GRAY:
-		if (img->channels > 2) {
-			printf("Colorspace is GRAY but there are %hhu channels\n",
-				img->channels);
-			return wu_unsupported_feature;
-		}
-		break;
-	default:
-		printf("Unsupported colorspace %d\n", jp2->color_space);
-		return wu_unsupported_feature;
-	}
 
 	const size_t dimensions = img->w * img->h;
-	const size_t ch = img->channels;
-	img->data = malloc(dimensions * ch * img->bitdepth/8);
+	img->data = malloc(dimensions * img->channels * img->bitdepth/8);
 	if (!img->data) {
 		return wu_alloc_error;
 	}
 
-	for (size_t i = 0; i < dimensions; ++i) {
-		for (size_t j = 0; j < ch; ++j) {
-			img->data[i*ch + j] = (unsigned char)jp2->comps[j].data[i];
+	const size_t ch = img->channels;
+	for (size_t j = 0; j < ch; ++j) {
+		for (size_t i = 0; i < dimensions; ++i) {
+			img->data[i*ch + j] = (unsigned char)
+				jp2->comps[j].data[i];
 		}
 	}
 	return wu_ok;
 }
 
-enum wu_error_type jpeg2000_dec(struct image_file *infile) {
-	opj_codec_t *dec = opj_create_decompress(OPJ_CODEC_J2K);
+static enum wu_error jpeg2000_dec(struct image_file *infile,
+const struct wu_conf *wuconf, const bool is_callback) {
+	const OPJ_CODEC_FORMAT format = infile->__private[0];
+	opj_codec_t *dec = opj_create_decompress(format);
 	if (!dec) {
 		return wu_alloc_error;
 	}
+	opj_set_warning_handler(dec, monkey_trouble_handler, NULL);
+	opj_set_error_handler(dec, monkey_trouble_handler, NULL);
 
 	opj_dparameters_t params;
 	opj_set_default_decoder_parameters(&params);
@@ -66,28 +100,96 @@ enum wu_error_type jpeg2000_dec(struct image_file *infile) {
 		return wu_invalid_params;
 	}
 
+	if (opj_has_thread_support() == OPJ_TRUE) {
+		opj_codec_set_threads(dec, opj_get_num_cpus());
+	}
+
+	opj_stream_t *stream = setup_jp2_stream(infile->ifp);
 	opj_image_t *jp2;
-	opj_stream_t *stream = opj_stream_create_default_file_stream(
-		infile->name, OPJ_TRUE);
 	if (!opj_read_header(stream, dec, &jp2)) {
 		opj_stream_destroy(stream);
 		opj_destroy_codec(dec);
 		return wu_invalid_header;
 	}
 
+	const OPJ_UINT32 tex_fit = log_fit_factor(wuconf->max_img_size,
+		wuconf->max_img_size, jp2->comps[0].w, jp2->comps[0].h);
+	OPJ_UINT32 screen_fit;
+	if (is_callback) {
+		screen_fit = tex_fit;
+		if (tex_fit) {
+			puts("Warning: JP2 exceeds the max image size. Output "
+				"will be downscaled.");
+		}
+	} else {
+		screen_fit = log_fit_factor(wuconf->fb_w, wuconf->fb_h,
+			jp2->comps[0].w, jp2->comps[0].h);
+	}
+
+	if (screen_fit) {
+		opj_set_decoded_resolution_factor(dec, screen_fit);
+	}
+
+	const OPJ_UINT32 comps[3] = {0, 1, 2};
+	if (jp2->numcomps > 4) {
+		puts("Warning: JP2 colorspace uses more than 4 channels. The "
+			"result will be a dumb attempt at showing something.");
+		opj_set_decoded_components(dec, 3, comps, OPJ_FALSE);
+	}
+
+	printf("Decoding @ 1/%" PRIu32 " resolution\n", 1 << screen_fit);
 	if (!opj_decode(dec, stream, jp2)) {
 		opj_image_destroy(jp2);
 		opj_stream_destroy(stream);
 		opj_destroy_codec(dec);
 		return wu_decoding_error;
 	}
+
 	opj_end_decompress(dec, stream);
 	opj_stream_destroy(stream);
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
-	enum wu_error_type status = join_components(img, jp2);
+	struct raw_img *img;
+	if (is_callback) {
+		img = infile->sub_img;
+	} else {
+		img = alloc_sub_images(infile, 1);
+	}
 
+	enum wu_error status;
+	if (img) {
+		status = join_components(img, jp2);
+		if (status == wu_ok && tex_fit < screen_fit) {
+			infile->callback = jpeg2000_callback;
+			infile->events = scale;
+		}
+	} else {
+		status = wu_alloc_error;
+	}
 	opj_image_destroy(jp2);
 	opj_destroy_codec(dec);
 	return status;
+}
+
+static enum wu_error jpeg2000_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event ev) {
+	if (ev == scale && state->zoom > 1) {
+		infile->callback = NULL;
+		free(infile->sub_img->data);
+//		state->zoom /= 2;
+		return jpeg2000_dec(infile, wuconf, true);
+	} else if (ev == finish) {
+		infile->callback = NULL;
+	}
+	return wu_ok;
+}
+
+enum wu_error jp2_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	infile->__private[0] = OPJ_CODEC_JP2;
+	return jpeg2000_dec(infile, wuconf, false);
+}
+
+enum wu_error j2k_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	infile->__private[0] = OPJ_CODEC_J2K;
+	return jpeg2000_dec(infile, wuconf, false);
 }

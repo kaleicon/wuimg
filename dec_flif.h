@@ -1,8 +1,9 @@
-#ifndef FLIF_DEC
-#define FLIF_DEC
+#ifndef DEC_FLIF
+#define DEC_FLIF
 
 #include "wudefs.h"
 
-enum wu_error_type flif_dec(struct image_file *infile);
+enum wu_error flif_dec(struct image_file *infile,
+const struct wu_conf *wuconf);
 
-#endif /* FLIF_DEC */
+#endif /* DEC_FLIF */

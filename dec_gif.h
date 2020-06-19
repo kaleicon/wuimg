@@ -1,8 +1,9 @@
-#ifndef GIF_DEC
-#define GIF_DEC
+#ifndef DEC_GIF
+#define DEC_GIF
 
 #include "wudefs.h"
 
-enum wu_error_type gif_dec(struct image_file *infile);
+enum wu_error gif_dec(struct image_file *infile,
+const struct wu_conf *wuconf);
 
-#endif /* GIF_DEC */
+#endif /* DEC_GIF */

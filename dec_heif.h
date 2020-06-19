@@ -1,8 +1,9 @@
-#ifndef HEIF_DEC
-#define HEIF_DEC
+#ifndef DEC_HEIF
+#define DEC_HEIF
 
 #include "wudefs.h"
 
-enum wu_error_type heif_dec(struct image_file *infile);
+enum wu_error heif_dec(struct image_file *infile,
+const struct wu_conf *wuconf);
 
-#endif /* HEIF_DEC */
+#endif /* DEC_HEIF */

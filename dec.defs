@@ -1,0 +1,68 @@
+#include "dec_bmp.h"
+#include "dec_pi.h"
+#include "dec_pnm.h"
+#include "dec_sgi.h"
+#include "dec_sun.h"
+#include "dec_tga.h"
+#include "dec_wbmp.h"
+
+#include "dec_flif.h"
+#include "dec_gif.h"
+#include "dec_heif.h"
+#include "dec_jpeg.h"
+#include "dec_jpeg2000.h"
+#include "dec_png.h"
+#include "dec_svg.h"
+#include "dec_tiff.h"
+#include "dec_webp.h"
+
+/* Format: id, callback_fn, magic_verify_fn */
+#ifdef DEC_BMP
+FMT(bmp, NULL, NULL)
+#endif
+#ifdef DEC_PI
+FMT(pi, NULL, NULL)
+#endif
+#ifdef DEC_PNM
+FMT(pnm, NULL, NULL)
+#endif
+#ifdef DEC_SGI
+FMT(sgi, NULL, NULL)
+#endif
+#ifdef DEC_SUN
+FMT(sun, NULL, NULL)
+#endif
+#ifdef DEC_TGA
+FMT(tga, NULL, NULL)
+#endif
+#ifdef DEC_WBMP
+FMT(wbmp, NULL, NULL)
+#endif
+
+#ifdef DEC_FLIF
+FMT(flif, NULL, NULL)
+#endif
+#ifdef DEC_GIF
+FMT(gif, NULL, NULL)
+#endif
+#ifdef DEC_HEIF
+FMT(heif, NULL, NULL)
+#endif
+#ifdef DEC_JPEG
+FMT(jpeg, NULL, NULL)
+#endif
+#ifdef DEC_JPEG2000
+FMT(jpeg2000, NULL, NULL)
+#endif
+#ifdef DEC_PNG
+FMT(png, NULL, NULL)
+#endif
+#ifdef DEC_SVG
+FMT(svg, NULL, NULL)
+#endif
+#ifdef DEC_TIFF
+FMT(tiff, NULL, NULL)
+#endif
+#ifdef DEC_WEBP
+FMT(webp, NULL, NULL)
+#endif

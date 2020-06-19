@@ -6,8 +6,8 @@
 #include "wudefs.h"
 
 #define MAX_ZOOM 64
-#define MIN_ZOOM (float)(1.0 / MAX_ZOOM)
-#define MV_FACTOR (float)(1.0 / 8)
+#define MIN_ZOOM (float)(1.0 / MAX_ZOOM / 2)
+#define MV_FACTOR (float)(1.0 / 4)
 
 struct gl_matrix { // Column-major order
 	GLfloat mat11;
@@ -33,21 +33,26 @@ struct gl_matrix { // Column-major order
 
 struct gl_context {
 	GLuint vertex_array;
-	GLuint vertex_buf;
-	GLuint element_buf;
+	GLuint vertex;
 	GLuint vertex_shader;
 	GLuint fragment_shader;
 	GLuint program;
-	GLuint texture;
 	GLint trans_uni;
+	GLint use_pal_uni;
+	union {
+		struct {GLuint img, pal;} texture;
+		GLuint textures[2];
+	};
 
-	unsigned int max_tex_size;
-	unsigned int tex_w, tex_h;
+
+	union {
+		struct {int fb_w, fb_h;};
+		int fb_wh[2];
+	};
+	unsigned short tex_w, tex_h;
 	unsigned char tex_ch, tex_bpp;
 
-	unsigned char mirror;
-	unsigned char rotate;
-	GLfloat fit_zoom;
+	bool use_palette;
 	union {
 		struct gl_matrix trans;
 		GLfloat mat[16];
@@ -60,28 +65,29 @@ void delete_gl_context(const struct gl_context *context);
 
 void update_gl_matrix(const struct gl_context *context);
 
-void calc_gl_mirrot(struct gl_context *context);
+float correct_gl_aspect_ratio(struct gl_context *context,
+const unsigned char rotation);
 
-void change_gl_rotation(struct gl_context *context, const int turns);
+void even_gl_view(struct gl_context *context);
 
-void reset_gl_offset(struct gl_context *context);
+void calc_gl_mirrot(struct gl_context *context, const struct wu_state *state);
 
-void change_gl_offset(struct gl_context *context, const float x, const float y);
+void change_gl_rotation(struct gl_context *context, struct wu_state *state,
+const int turns);
 
-void set_gl_scaling(struct gl_context *context, const float scale);
+void change_gl_offset(struct gl_context *context, const bool relative,
+const float x, const float y);
 
-void correct_gl_view(struct gl_context *context, const int fb_w,
-const int fb_h);
-
-void reset_gl_matrix(struct gl_context *context);
-
-void update_gl_texture(const struct raw_img *img);
+void set_gl_scaling(struct gl_context *context, struct wu_state *state,
+const float new_zoom);
 
 bool load_gl_texture(const struct raw_img *img, struct gl_context *context);
 
-bool is_texture_reusable(const struct raw_img *img,
-const struct gl_context *context);
+bool reuse_gl_texture(const struct raw_img *img, struct gl_context *context);
 
-bool setup_opengl(struct gl_context *context);
+void clear_gl_color(const unsigned char fallback_bg[4],
+const unsigned char img_bg[4], const enum background_source source);
+
+bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf);
 
 #endif /* OPENGL */

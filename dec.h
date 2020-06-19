@@ -3,15 +3,15 @@
 
 #include "wudefs.h"
 
-struct file_class {
-	char *name;
-	enum wu_error_type (*func)(struct image_file *);
-};
+typedef enum wu_error (*dec_func_t)(struct image_file *,
+	const struct wu_conf *wuconf);
 
-enum wu_error_type decode_image(struct image_file *infile,
-struct file_class *entry);
+enum wu_error decode_image(struct image_file *infile,
+const struct wu_conf *wuconf, const char *filename);
 
-struct file_class * find_images(const char *dirname,
+char ** filter_images(const char *dirname, const char *init_name,
 size_t *nr_of_entries);
+
+void sort_dec_tables(void);
 
 #endif /* DEC */

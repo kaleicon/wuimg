@@ -1,42 +1,34 @@
 #ifndef WINDOW
 #define WINDOW
 
-#include <epoxy/gl.h>
 #include <GLFW/glfw3.h>
 
+#include "wudefs.h"
 #include "opengl.h"
 
-enum anim_state {
-	none = 0,
-	playing = 1,
-	paused = 3, // Toggle with ^ 2
-};
-
 struct window_geometry {
-	int xpos, ypos;
-	int width, height;
+	int window_x, window_y;
+	int window_w, window_h;
+	int monitor_w, monitor_h;
+	int refresh_rate;
+	bool fullscreen;
+	bool has_focus;
 };
 
 struct window_control {
-	struct gl_context *context;
-	struct window_geometry windowed_state;
-//	int max_w;
-//	int max_h;
-	int cycle;
-	int cycle_sub_img;
-	int refresh_rate;
-	enum anim_state anim;
-	bool cycle_wait;
-	bool fullscreen;
-	bool rm;
-	bool reload;
+	GLFWwindow *window;
+	struct gl_context context;
+	struct window_geometry display;
+	struct wu_state state;
+	struct wu_conf conf;
+	struct wu_event event;
 };
 
-bool update_window(GLFWwindow *window, struct window_control *control,
-const struct image_file *file, const int idx, const bool first_load);
+void end_display(const struct window_control *control);
 
-void setup_window(GLFWwindow *window, struct window_control *control);
+bool window_loop(struct window_control *control, struct image_file *file,
+const char *filename, const bool one_file_in_list);
 
-GLFWwindow * create_window();
+bool setup_display(struct window_control *control);
 
 #endif /* WINDOW */

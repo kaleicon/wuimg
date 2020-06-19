@@ -4,9 +4,13 @@
 #include <dirent.h>
 #include <time.h>
 #include <unistd.h>
+#include <locale.h>
+#include <errno.h>
+#include <limits.h>
+
+#include <sys/stat.h>
 
 #include <epoxy/gl.h>
-#include <GLFW/glfw3.h>
 
 #include "wudefs.h"
 #include "common.h"
@@ -14,255 +18,416 @@
 #include "window.h"
 #include "dec.h"
 
-struct dir_imgs {
-	struct file_class *files;
+#include "conf.c" // Program configuration defined here
+
+struct dir_images {
+	char **names;
 	size_t nr;
+	size_t remaining;
 };
 
-__attribute__((unused))static int write_pam(const struct image_file *infile) {
-	const char *tuples[] = {"GRAYSCALE", "GRAYSCALE_ALPHA",
-					"RGB", "RGB_ALPHA"};
+union mode_args {
+	unsigned int iters;
+	enum write_format {
+		raw,
+		pam,
+	} format;
+};
 
-	const char *ext = ".pam";
-	size_t namelen = (size_t)(strrchr(infile->name, '.') - infile->name);
-	char *outname = malloc(namelen + strlen(ext));
+static void write_raw(const struct image_file *infile, const char *filename,
+enum write_format format) {
+	(void)format;
 
-	for (size_t i = 0; i < infile->nr; ++i) {
-		struct raw_img *img = &(infile->sub_img[i]);
+	const char ext[] = ".pam";
+	const size_t extlen = sizeof(ext);
+	const size_t namelen = (size_t)(strrchr(filename, '.') - filename);
+	char *outname = malloc(namelen + extlen);
 
-		if (img->id == NULL) {
-			sprintf(outname, "%.*s%s", (int)namelen, infile->name,
-				ext);
-		} else {
-			size_t size = namelen + strlen(img->id) + 1;
-			outname = realloc(outname, size);
-			sprintf(outname, "%.*s_%s%s", (int)namelen,
-				infile->name, img->id, ext);
-		}
+	memcpy(outname, filename, namelen);
+	memcpy(outname + namelen, ext, extlen);
 
-		FILE *ofp = fopen(outname, "wb");
-		if (ofp) {
-			fprintf(ofp,
-				"P7\n"
-				"WIDTH %u\n"
-				"HEIGHT %u\n"
-				"DEPTH %hhu\n"
-				"MAXVAL 255\n"
-				"TUPLTYPE %s\n"
-				"ENDHDR\n",
-				img->w, img->h, img->channels,
-				tuples[img->channels - 1]);
-			fwrite(img->data, img->channels, img->w * img->h, ofp);
-			fclose(ofp);
-		}
+	const struct raw_img *img = infile->sub_img;
+	FILE *ofp = fopen(outname, "wb");
+	if (ofp) {
+		const char *tuples[] = {"GRAYSCALE", "GRAYSCALE_ALPHA",
+			"RGB", "RGB_ALPHA"};
+
+		size_t i = 0;
+		const unsigned char depth = img[i].palette ? 1 : img[i].channels;
+		fprintf(ofp,
+			"P7\n"
+			"WIDTH %zu\n"
+			"HEIGHT %zu\n"
+			"DEPTH %hhu\n"
+			"MAXVAL %u\n"
+			"TUPLTYPE %s\n"
+			"ENDHDR\n",
+			img[i].w, img[i].h, depth,
+			(1U << img[i].bitdepth) - 1,
+			tuples[depth - 1]);
+		fwrite(img[i].data, depth, img[i].w * img[i].h, ofp);
+		fclose(ofp);
 	}
-	return 0;
+	free(outname);
 }
 
-static void free_dir_images(struct dir_imgs *entries) {
+static void free_dir_images(const struct dir_images *entries) {
 	for (size_t i = 0; i < entries->nr; ++i) {
-		free(entries->files[i].name);
+		free(entries->names[i]);
 	}
-	free(entries->files);
+	free(entries->names);
 }
 
-static int str_struct_coll(const void *restrict s1, const void *restrict s2) {
-	const char *name = (const char *)s1;
-	const struct file_class *entry = (const struct file_class *)s2;
-	return strcoll(name, entry->name);
+static void free_entry(struct dir_images *entries, const int pos) {
+	free(entries->names[pos]);
+	entries->names[pos] = NULL;
+	--entries->remaining;
 }
 
-static int struct_coll(const void *restrict s1, const void *restrict s2) {
-	const struct file_class *f1 = (const struct file_class *)s1;
-	const struct file_class *f2 = (const struct file_class *)s2;
-	return strcoll(f1->name, f2->name);
-}
-
-static size_t read_directory(const char *name, struct dir_imgs *entries) {
-	char *dirname = NULL;
-	const char *slash = strrchr(name, '/');
-	if (slash) {
-		size_t len = (size_t)(slash - name + 1);
-		dirname = strndup(name, len);
-	}
-
-	entries->files = find_images(dirname, &entries->nr);
-	if (dirname) {
-		free(dirname);
-	}
-	if (entries->files) {
-		qsort(entries->files, entries->nr, sizeof(struct file_class),
-			struct_coll);
-		const struct file_class *cur = bsearch(name, entries->files,
-			entries->nr, sizeof(struct file_class), str_struct_coll);
-		if (cur) {
-			return (size_t)(cur - entries->files);
-		}
-	}
-	return 0;
-}
-
-#define BG (float)(1.0/8.0)
-static void window_loop(GLFWwindow *window, struct window_control *control,
-const struct image_file *file, const bool eternal) {
-	int idx = 0;
-	int shown = 0;
-	const struct raw_img *img = file->sub_img;
-	int remaining = img[0].msec;
-
-	for (;;) {
-		idx = iwrapadd(idx, control->cycle_sub_img, (int)file->nr);
-		control->cycle_sub_img = iclamp(control->cycle_sub_img, -1, 1);
-
-		if (idx != shown) {
-			if (control->anim == playing) {
-				remaining += imax(img[idx].msec,
-					control->refresh_rate);
-			}
-
-			if (!update_window(window, control, file, idx, false)) {
-				printf("Failed to load %s to texture.",
-					file->name);
-				++control->cycle;
-				return;
-			}
-			shown = idx;
-		}
-
-		do {
-			if (control->cycle) {
-				if (!control->cycle_wait && !eternal) {
-					return;
-				}
-			} else if (glfwWindowShouldClose(window) == GLFW_TRUE) {
-				return;
-			} else if (control->reload) {
-				return;
-			}
-			glClearColor(BG, BG, BG, 0.5);
-			glClear(GL_COLOR_BUFFER_BIT);
-			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_BYTE, 0);
-			glfwSwapBuffers(window);
-			if (control->anim == playing) {
-				remaining -= control->refresh_rate;
-				if (remaining < control->refresh_rate) {
-					++control->cycle_sub_img;
-					break;
-				}
-				glfwPollEvents();
-			} else {
-				glfwWaitEvents();
-			}
-		} while (!control->cycle_sub_img);
-	}
-}
-
-static bool setup_display(GLFWwindow **window, struct window_control *control,
-struct gl_context *context) {
-	*window = create_window();
-	if (!*window) {
-		puts("Failed to create window.");
-		return false;
-	}
-
-	if (!setup_opengl(context)) {
-		puts("Failed to setup OpenGL context.");
-		glfwTerminate();
-		return false;
-	}
-
-	setup_window(*window, control);
-	control->context = context;
-	return true;
-}
-
-static void help(const char *prog) {
-	printf("Usage: %s [FILE|DIR]\n", prog);
-}
-
-int main(int argc, const char *argv[]) {
-	if (argc > 1 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
-		help(argv[0]);
-		return 0;
-	}
-
-	const char *arg = argc > 1 ? argv[1] : ".";
-
-	struct dir_imgs entries = {NULL, 0};
-	int pos = (int)read_directory(arg, &entries);
-	if (!entries.files && entries.nr > 0) {
-		printf("%s is neither a file nor a directory with images. "
-			"Nothing to do.", arg);
-		return 1;
-	}
-	const bool only_one = (entries.nr == 1);
-	size_t images_left = entries.nr;
-
-	GLFWwindow *window;
-	struct window_control control;
-	struct gl_context context;
-	if (!setup_display(&window, &control, &context)) {
-		free_dir_images(&entries);
-		return 1;
-	}
-
+static enum wu_error decode_with_stats(struct image_file *infile,
+const struct wu_conf *conf, const char *filename, const bool print_meta) {
 	struct timespec before, after;
+	clock_gettime(CLOCK_REALTIME, &before);
+	const enum wu_error result = decode_image(infile, conf, filename);
+	clock_gettime(CLOCK_REALTIME, &after);
+
+	if (result == wu_ok) {
+		printf("Decoded in %ld nanoseconds.\n",
+			timespec_nanodiff(&before, &after));
+		if (print_meta) {
+			print_image_information(infile);
+		}
+	} else {
+		printf("Failed in %ld nanoseconds.\nError %d: %s.\n",
+			timespec_nanodiff(&before, &after), result,
+			wu_error_message(result));
+		if (infile->err_msg) {
+			printf("Library message: \"%s\"\n", infile->err_msg);
+		}
+	}
+	return result;
+}
+
+static enum wu_error test_with(const struct dir_images *entries,
+const char mode, const union mode_args arg) {
+	struct wu_conf conf;
+	set_user_conf(&conf);
+	conf.max_img_size = USHRT_MAX / 4;
 
 	struct image_file file;
-	memset(&file, 0, sizeof(struct image_file));
-	while (glfwWindowShouldClose(window) == GLFW_FALSE) {
-		if (!entries.files[pos].name) {
-			--images_left;
-			if (!images_left) {
-				break;
+	memset(&file, 0, sizeof(file));
+
+	enum wu_error result = wu_ok;
+	for (size_t i = 0; i < entries->nr; ++i) {
+		const char *name = entries->names[i];
+		printf("%zu/%zu, %s\n", i + 1, entries->nr, name);
+		if (mode == 'w') {
+			result = decode_with_stats(&file, &conf, name, false);
+			if (result == wu_ok) {
+				write_raw(&file, name, arg.format);
 			}
-			pos = iwrapadd(pos, control.cycle, (int)entries.nr);
+			free_image_file(&file);
+		} else if (mode == 'b') {
+			for (unsigned int j = 0; j < arg.iters; ++j) {
+				result = decode_with_stats(&file, &conf, name, false);
+				free_image_file(&file);
+				if (result != wu_ok) {
+					break;
+				}
+			}
+			putchar('\n');
+		}
+	}
+	return result;
+}
+
+static int run_with(struct dir_images *entries, int pos) {
+	struct window_control control;
+	set_user_conf(&control.conf);
+	if (!setup_display(&control)) {
+		return 1;
+	}
+
+	entries->remaining = entries->nr;
+	enum wu_error result = wu_ok;
+	struct image_file file;
+	memset(&file, 0, sizeof(file));
+	while (control.event.program != close_window && entries->remaining) {
+		const char *name = entries->names[pos];
+		if (!name) {
+			pos = iwrapadd(pos, control.state.cycle,
+				(int)entries->nr);
 			continue;
 		}
 
-		clock_gettime(CLOCK_REALTIME, &before);
-		const enum wu_error_type result = decode_image(&file,
-			&entries.files[pos]);
+		printf("%d/%zu, %s\n", pos + 1, entries->nr, name);
+		result = decode_with_stats(&file, &control.conf, name, true);
 		if (result == wu_ok) {
-			clock_gettime(CLOCK_REALTIME, &after);
-			update_window(window, &control, &file, 0, true);
+			memset(&control.event, 0, sizeof(control.event));
+			control.state.cycle = 0;
+			const bool ok = window_loop(&control, &file, name,
+				entries->nr == 1);
 
-			printf("\n%d/%zu, %s\n", pos + 1, entries.nr,
-				file.name);
-			printf("Decoded in %lu nanoseconds.\n",
-				timespec_nanodiff(&before, &after));
-			print_image_information(&file);
-
-			window_loop(window, &control, &file, only_one);
-
-			if (control.rm) {
-				unlink(entries.files[pos].name);
-				free(entries.files[pos].name);
-				entries.files[pos].name = NULL;
-				control.rm = false;
-				puts(CLEAR_LINE "File deleted.");
-			} else {
-				putchar('\n');
+			printf(CLEAR_LINE);
+			if (!ok) {
+				free_entry(entries, pos);
+				control.state.cycle = 1;
+			} else if (control.event.rm == yes_rm) {
+				unlink(name);
+				puts("File deleted.");
+				free_entry(entries, pos);
+				control.state.cycle = 1;
 			}
 		} else {
-			printf("\nError %d when decoding %s: %s. "
-				"Library message: \"%s\"\n\n",
-				result, file.name, wu_error_message(result),
-				file.err_msg);
-			free(entries.files[pos].name);
-			entries.files[pos].name = NULL;
-			if (!control.cycle) { // Preserve direction, if any
-				control.cycle = 1;
+			free_entry(entries, pos);
+			if (!control.state.cycle) {
+				control.state.cycle = 1;
+			}
+		}
+		putchar('\n');
+
+		free_image_file(&file);
+		pos = iwrapadd(pos, control.state.cycle, (int)entries->nr);
+		control.state.cycle = iclamp(control.state.cycle, -1, 1);
+	}
+
+	end_display(&control);
+	return result;
+}
+
+static int from_list(const int argc, const char *argv[], const char mode,
+const union mode_args arg) {
+	struct dir_images entries = {
+		.names = calloc((size_t)argc, sizeof(char *)),
+		.nr = (size_t)argc,
+	};
+
+	for (int i = 0; i < argc; ++i) {
+		entries.names[i] = strdup(argv[i]);
+		if (!entries.names[i]) {
+			fprintf(stderr, "ERROR: Out of memory.\n");
+			free_dir_images(&entries);
+			return 1;
+		}
+	}
+
+	sort_dec_tables();
+	int result;
+	if (mode == 'w' || mode == 'b') {
+		result = test_with(&entries, mode, arg);
+	} else {
+		result = run_with(&entries, 0);
+	}
+	free_dir_images(&entries);
+	return result;
+}
+
+static char * get_path_components(const char *path, const char **filename) {
+	if (path[0] == '\0') {
+		return strdup("");
+	} else if (!strcmp(".", path) || !strcmp("./", path)) {
+		return strdup("./");
+	} else {
+		struct stat statbuf;
+		if (stat(path, &statbuf) == -1) {
+			fprintf(stderr, "ERROR: Couldn't stat %s\n", path);
+			return NULL;
+		}
+
+		if (S_ISREG(statbuf.st_mode)) {
+			const char *slash = strrchr(path, '/');
+			if (slash) {
+				const size_t file_start =
+					(size_t)(slash - path + 1);
+				*filename = slash + 1; //path + file_start;
+				return strndup(path, file_start);
+			} else {
+				*filename = path;
+				return strdup("");
+			}
+		} else if (S_ISDIR(statbuf.st_mode)) {
+			const size_t pathlen = strlen(path);
+			if (path[pathlen - 1] == '/') {
+				return strdup(path);
+			} else {
+				char *dirname = malloc(pathlen + 1);
+				if (dirname) {
+					memcpy(dirname, path, pathlen);
+					memcpy(dirname + pathlen, "/", 2);
+				}
+				return dirname;
+			}
+		} else {
+			fprintf(stderr, "ERROR: %s is not a regular file nor a "
+				"directory.\n", path);
+			return NULL;
+		}
+	}
+}
+
+static int sort_strcoll(const void *s1, const void *s2) {
+	const char * const *n1 = s1;
+	const char * const *n2 = s2;
+	return strcoll(*n1, *n2);
+}
+
+static int from_path(const char *path) {
+	const char *first_name = NULL;
+	errno = 0;
+	char *dirname = get_path_components(path, &first_name);
+	if (!dirname) {
+		if (errno == ENOMEM) {
+			fprintf(stderr, "ERROR: Out of memory.\n");
+		} else {
+			fprintf(stderr, "ERROR: %s is not a valid path.\n", path);
+		}
+		return 1;
+	}
+
+	int result;
+	struct dir_images entries;
+	sort_dec_tables();
+	errno = 0;
+	entries.names = filter_images(dirname, first_name, &entries.nr);
+	if (entries.names) {
+		setlocale(LC_COLLATE, "");
+		qsort(entries.names, entries.nr, sizeof(*entries.names),
+			sort_strcoll);
+
+		int starting_pos = 0;
+		if (first_name) {
+			char **loc = bsearch(&path, entries.names, entries.nr,
+				sizeof(*entries.names), sort_strcoll);
+			if (loc) {
+				starting_pos = (int)(loc - entries.names);
 			}
 		}
 
-		free_image_file(&file);
-		pos = iwrapadd(pos, control.cycle, (int)entries.nr);
-		control.cycle = iclamp(control.cycle, -1, 1);
+		result = run_with(&entries, starting_pos);
+		free_dir_images(&entries);
+	} else {
+		if (errno) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+		} else {
+			fprintf(stderr, "ERROR: No images were found at %s\n",
+				dirname[0] == '\0' ? "." : dirname);
+		}
+		result = 1;
+	}
+	free(dirname);
+	return result;
+}
+
+static int print_help(const char *prog) {
+	fprintf(stderr, "Usage:\n"
+		"\t%1$s\n"
+		"\t%1$s [--] DIR\n"
+		"\t%1$s [--] FILE\n"
+		"\t%1$s [--] FILE FILE [...]\n"
+		"\t%1$s -s [--] FILE [...]\n"
+		"\t%1$s -b [n] [--] FILE [...]\n"
+		"\t%1$s -w [--] FILE\n"
+		"\n"
+
+		"Work mode (all exclusive):\n"
+		"\t-h | --help\n"
+		"\t\tYou are here.\n"
+
+		"\t-s\n"
+		"\t\tLoad only the file(s) given. This is the same as passing\n"
+		"\t\tmultiple files without this switch.\n"
+
+		"\t-b [n]\n"
+		"\t\tBenchmark decoding time for each FILE n times, or 1 if\n"
+		"\t\tunspecified.\n"
+
+		"\t-w [raw|pam]\n"
+		"\t\tDecode FILE and write the data that would have been sent\n"
+		"\t\tto the card to FILE(_id).pam\n",
+
+		prog);
+	return 0;
+}
+
+int main(const int argc, const char *argv[]) {
+/*
+	printf("context: %zu, display: %zu, state: %zu, conf: %zu, event: %zu\n"
+		"control: %zu\n",
+		sizeof(struct gl_context), sizeof(struct window_geometry),
+		sizeof(struct wu_state), sizeof(struct wu_conf),
+		sizeof(struct wu_event), sizeof(struct window_control));
+
+	printf("image_file: %zu, raw_img: %zu\n",
+		sizeof(struct image_file), sizeof(struct raw_img));
+*/
+
+	if (argc <= 1) {
+		return from_path("");
 	}
 
-	free_dir_images(&entries);
-	delete_gl_context(&context);
-	glfwTerminate();
-	return 0;
+	char mode = 0;
+	union mode_args arg = {0};
+	int idx = 1;
+	if (argv[idx][0] == '-') {
+		const char *opt = argv[idx];
+		if (opt[1] == 'h' || !strcmp("--help", opt)) {
+			return print_help(argv[0]);
+		} else {
+			mode = opt[1];
+		}
+		++idx;
+
+		switch (mode) {
+		case 'b':
+			if (argc > idx && sscanf(argv[idx], "%u", &arg.iters) == 1) {
+				++idx;
+			} else {
+				arg.iters = 1;
+			}
+			break;
+		case 's':
+		case 'w':
+			arg.format = raw;
+			if (argc > idx) {
+				if (!strcmp("pam", argv[idx])) {
+					arg.format = pam;
+					++idx;
+				} else if (!strcmp("raw", argv[idx])) {
+					++idx;
+				}
+			}
+			break;
+		case '-':
+			if (!opt[2]) { // "--"
+				break;
+			}
+			// Fallthrough
+		default:
+			fprintf(stderr, "ERROR: Unknown switch '%2$s'\n"
+				"(Use '%1$s -- %2$s' or '%1$s ./%2$s' to "
+				"open a file or dir named '%2$s')\n",
+				argv[0], argv[idx]);
+			return 1;
+		}
+	}
+
+	if (argc > idx && !strcmp("--", argv[idx])) {
+		++idx;
+	}
+
+	if (argc <= idx) {
+		fprintf(stderr, "ERROR: Expected more arguments.\n");
+		return 1;
+	}
+
+	const int remaining = argc - idx;
+	if (mode == 's' || mode == 'b' || mode == 'w' || remaining > 1) {
+		return from_list(remaining, argv + idx, mode, arg);
+	} else {
+		if (argv[idx][0] != '\0') {
+			return from_path(argv[idx]);
+		}
+		fprintf(stderr, "ERROR: null argument.\n");
+		return 1;
+	}
 }

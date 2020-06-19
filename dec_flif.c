@@ -7,32 +7,50 @@
 #include "wudefs.h"
 #include "common.h"
 
-enum wu_error_type flif_dec(struct image_file *infile) {
-	FLIF_DECODER *flif_dec = flif_create_decoder();
-	const int32_t success = flif_decoder_decode_file(flif_dec, infile->name);
+enum wu_error flif_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	size_t size;
+	unsigned char *data = read_file_to_mem(infile->ifp, &size);
+	if (!data) {
+		return wu_alloc_error;
+	}
+
+	FLIF_DECODER *dec = flif_create_decoder();
+	const int32_t success = flif_decoder_decode_memory(dec, data, size);
 	if (!success) {
 		infile->err_msg = strdup(
-			"flif_decoder_decode_file() returned 0 on flif_dec()"
-		);
+			"flif_decoder_decode_file() returned 0");
+		flif_destroy_decoder(dec);
+		free(data);
 		return wu_decoding_error;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile,
-		flif_decoder_num_images(flif_dec));
+		flif_decoder_num_images(dec));
+	if (!img) {
+		flif_destroy_decoder(dec);
+		free(data);
+		return wu_alloc_error;
+	}
 	infile->is_animation = (infile->nr > 1);
 
 	for (size_t i = 0; i < infile->nr; ++i) {
-		FLIF_IMAGE *frame = flif_decoder_get_image(flif_dec, i);
+		FLIF_IMAGE *frame = flif_decoder_get_image(dec, i);
 
 		img[i].w = flif_image_get_width(frame);
 		img[i].h = flif_image_get_height(frame);
+		if (zumax(img[i].w, img[i].h) > wuconf->max_img_size) {
+			flif_destroy_decoder(dec);
+			free(data);
+			return wu_exceeded_size_limit;
+		}
 		img[i].channels = flif_image_get_nb_channels(frame);
 		img[i].bitdepth = flif_image_get_depth(frame);
 		void (*read_func)(FLIF_IMAGE*, uint32_t, void*, size_t);
 		if (img[i].channels == 1) {
 			read_func = flif_image_read_row_GRAY8;
 		} else {
-			// For some reason there are no RGB functions.
+			// There are no RGB functions.
 			if (img[i].channels == 3) {
 				img[i].true_channels = 3;
 				img[i].channels = 4;
@@ -52,6 +70,7 @@ enum wu_error_type flif_dec(struct image_file *infile) {
 		}
 	}
 
-	flif_destroy_decoder(flif_dec);
+	flif_destroy_decoder(dec);
+	free(data);
 	return 0;
 }

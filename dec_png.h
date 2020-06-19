@@ -1,8 +1,9 @@
-#ifndef PNG_DEC
-#define PNG_DEC
+#ifndef DEC_PNG
+#define DEC_PNG
 
 #include "wudefs.h"
 
-enum wu_error_type png_dec(struct image_file *infile);
+enum wu_error png_dec(struct image_file *infile,
+const struct wu_conf *wuconf);
 
-#endif /* PNG_DEC */
+#endif /* DEC_PNG */

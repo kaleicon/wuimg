@@ -1,8 +1,9 @@
-#ifndef JPEG_DEC
-#define JPEG_DEC
+#ifndef DEC_JPEG
+#define DEC_JPEG
 
 #include "wudefs.h"
 
-enum wu_error_type jpeg_dec(struct image_file *infile);
+enum wu_error jpeg_dec(struct image_file *infile,
+const struct wu_conf *wuconf);
 
-#endif /* JPEG_DEC */
+#endif /* DEC_JPEG */

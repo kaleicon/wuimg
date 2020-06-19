@@ -1,8 +1,13 @@
-#ifndef WEBP_DEC
-#define WEBP_DEC
+#ifndef DEC_WEBP
+#define DEC_WEBP
+
+#include <stdio.h>
 
 #include "wudefs.h"
 
-enum wu_error_type webp_dec(struct image_file *infile);
+enum wu_error webp_dec(struct image_file *infile,
+const struct wu_conf *wuconf);
 
-#endif /* WEBP_DEC */
+bool webp_verify(FILE *ifp);
+
+#endif /* DEC_WEBP */

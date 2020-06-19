@@ -8,289 +8,191 @@
 #include "wudefs.h"
 #include "common.h"
 
-struct mp_img_attr {
-	u_int32_t parent:1;
-	u_int32_t child:1;
-	u_int32_t representative:1;
-	u_int32_t __reserved:2;
-	u_int32_t format:3;
-	u_int32_t __type_reservedA:4;
-	u_int32_t type_info:4;
-	u_int32_t __type_reservedB:12;
-	u_int32_t type_sub:4;
+struct jpeg_state {
+	size_t soi_alloc;
+	long *soi_offsets;
+	struct jpeg_decompress_struct dinfo;
+	struct jpeg_error_mgr jerr;
 };
 
-struct mp_file_info {
-	enum endianness order;
-	u_int32_t nr;
-	struct mp_img_attr attr;
-};
-
-static u_int16_t read_MP_entry(const JOCTET *entry, struct mp_file_info *mpf) {
-	int len = (int) endian_uint16(entry, mpf->order);
-	for (int i = 0; i < len; i += 16) {
-		struct mp_img_attr *restrict attr = &(mpf->attr);
-		u_int32_t attr_src = endian_uint32(entry, mpf->order);
-		memcpy(attr, &attr_src, sizeof(mpf->attr));
-		printf("\nIs parent: %u\n"
-			"Is child: %u\n"
-			"Is representative: %u\n"
-			"Reserved bits: %#x\n"
-			"Data format: %#x\n"
-			"Type code:\n"
-			"|-Reserved bytes A:%#x\n"
-			"|-Type info: %#x\n"
-			"|-Reserved bytes B:%#x\n"
-			"|-Sub type: %#x\n",
-			attr->parent, attr->child, attr->representative,
-			attr->__reserved, attr->format, attr->__type_reservedA,
-			attr->type_info, attr->__type_reservedB,
-			attr->type_sub);
-	}
-	return (u_int16_t) len;
-}
-
-static u_int32_t read_MP_index(const JOCTET *restrict data, unsigned int len,
-struct mp_file_info *mpf) {
-	u_int16_t count = endian_uint16(data, mpf->order);
-	data += 2; len -= 2;
-
-	const unsigned char format_version[] = {0x30, 0x31, 0x30, 0x30};
-	u_int16_t entry_len = 0;
-	mpf->nr = 0;
-	for (u_int16_t i = 0; i < count; ++i) {
-		if (data[0] == 0xB0) {
-			switch (data[1]) {
-			case 0x00:
-				if (memcmp(data+8, format_version, 4)) {
-					puts("Unknown MPO version.");
-					return 0;
-				}
-				entry_len = 4 + 8;
-				break;
-			case 0x01:
-				mpf->nr = endian_uint16(data+8, mpf->order);
-				entry_len = 4 + 8;
-				break;
-			case 0x02:
-				entry_len = read_MP_entry(data+6, mpf);
-			}
-		} else {
-			break;
-		}
-		data += entry_len;
-	}
-	return 1;
-}
-
-static u_int32_t read_MP_header(const JOCTET *restrict data,
-struct mp_file_info *mpf) {
-	const unsigned char l_endian_id[] = {0x49, 0x49, 0x2A, 0x00};
-	const unsigned char b_endian_id[] = {0x4D, 0x4D, 0x00, 0x2A};
-	if (!memcmp(data, l_endian_id, sizeof(l_endian_id))) {
-		mpf->order = little_endian;
-	} else if (!memcmp(data, b_endian_id, sizeof(b_endian_id))) {
-		mpf->order = big_endian;
-	} else {
-		return 0;
-	}
-	return endian_uint32(data + 4, mpf->order);
-}
-
-static void read_MP(const JOCTET *data, unsigned int len) {
-	struct mp_file_info mpf;
-	u_int32_t offset = read_MP_header(data, &mpf);
-	if (offset < 8 || offset > len) {
-		return;
-	}
-	data += offset; len -= offset;
-
-	read_MP_index(data, len, &mpf);
+static void clean_jpeg_state(struct jpeg_state *js) {
+	jpeg_destroy_decompress(&js->dinfo);
+	free(js->soi_offsets);
+	free(js);
 }
 
 static long marker_len(FILE *f, int first_byte) {
-	long i = (long)(first_byte<<8);
-	int c = getc(f);
+	long i = first_byte << 8;
+	long c = getc(f);
 	if (c != EOF) {
-		return i + (long)c - 2; // Length specifier includes itself.
+		return i + c - 2; // Length specifier includes itself.
 	}
 	return EOF;
 }
 
-static size_t parse_jpeg(FILE *fp, long *s_offsets, size_t alloc) {
+static size_t search_soi_offsets(FILE *ifp, struct jpeg_state *js) {
+	fseek(ifp, 3, SEEK_SET);
 	enum jpeg_parse_state {
 		normal = 0,
 		marker = 1,
-		payload = 2,
-		app2 = 3,
-	} state = marker; // Signature check left us on the second 0xFF marker.
-	int found_mpo_marker = 0;
-	s_offsets[0] = 0;
-	size_t nr = 1;
-	long i = ftell(fp) + 1;
-	for (int c; (c = getc(fp)) != EOF; ++i) {
+		length = 2,
+	} state = marker;
+
+	size_t alloc = js->soi_alloc;
+	size_t idx = 1;
+	for (int c; (c = getc(ifp)) != EOF;) {
 		if (state == marker) {
 			switch (c) {
 			case 0xD8:
-				if (nr == alloc) {
-					alloc += alloc / 2;
-					size_t newsize = alloc * sizeof(long);
-					s_offsets = realloc(s_offsets, newsize);
+				if (idx == alloc) {
+					alloc += alloc / 4;
+					long *hold = realloc(js->soi_offsets,
+						alloc * sizeof(long));
+					if (!hold) {
+						break;
+					}
+					js->soi_offsets = hold;
 				}
-				s_offsets[nr] = i - 1;
-				++nr;
+				const long i = ftell(ifp);
+				js->soi_offsets[idx] = i - 2;
+				++idx;
 				state = normal;
 				break;
-			case 0xD9:
-				if (!found_mpo_marker) {
-					puts(".mpo file doesn't have an APP2 "
-						"marker. Will treat as JPEG.");
-					return 1;
-				}
-				found_mpo_marker = 0; //Fallthrough
 			case 0x00: case 0x01:
 			case 0xD0: case 0xD1: case 0xD2: case 0xD3:
 			case 0xD4: case 0xD5: case 0xD6: case 0xD7:
+			case 0xD9:
 			case 0xDA:
 			case 0xFF:
 				state = normal;
 				break;
-			case 0xE2:
-				state = app2;
-				break;
 			default:
-				state = payload;
+				state = length;
 			}
-		} else if (state == payload) {
-			long len = marker_len(fp, c);
-			if (len != EOF) {
-				i += len;
-				fseek(fp, i, SEEK_SET);
-				state = normal;
-				--i;
-			} else {
+		} else if (state == length) {
+			long len = marker_len(ifp, c);
+			if (len == EOF) {
 				break;
 			}
-		} else if (state == app2) {
-			long len = marker_len(fp, c);
-			if (len != EOF) {
-				size_t buf_len = 4;
-				unsigned char id_buf[buf_len];
-				if (fread(id_buf, 1, buf_len, fp) != buf_len) {
-					break;
-				} else if (!memcmp(id_buf, "MPF", buf_len)) {
-					found_mpo_marker = 1;
-				}
-				i += len;
-				fseek(fp, i, SEEK_SET);
-				state = normal;
-				--i;
-			} else {
-				break;
-			}
+			fseek(ifp, len, SEEK_CUR);
+			state = normal;
 		} else if (c == 0xFF) {
 			state = marker;
 		}
 	}
-	return nr;
+	js->soi_alloc = alloc;
+	return idx;
 }
 
-static bool has_mpo_ext(const char *name) {
-	const char *ext = strrchr(name, '.') + 1;
-	return !strcmp(ext, "mpo");
-}
-
-static bool is_valid_jpeg(FILE *f) {
-	return getc(f) == 0xFF && getc(f) == 0xD8 && getc(f) == 0xFF;
-}
-
-enum wu_error_type jpeg_dec(struct image_file *infile) {
-	FILE *ifp = fopen(infile->name, "rb");
-	if (!ifp) {
-		infile->err_msg = strerror(errno);
-		return wu_open_error;
-	} else if (!is_valid_jpeg(ifp)) {
-		infile->err_msg = strdup("Not a JPEG or Exif file.");
-		fclose(ifp);
-		return wu_invalid_sig;
+static bool is_mpo(const JOCTET *data, unsigned int len) {
+	if (len < 4) {
+		return false;
 	}
+	return !memcmp(data, "MPF", 4);
+}
 
-	const enum file_type {
-		jpeg = 0,
-		mpo = 1,
-	} type = has_mpo_ext(infile->name);
+static enum wu_error decode_loop(struct image_file *infile,
+const struct wu_conf *wuconf, struct jpeg_state *js) {
+	struct raw_img *img = infile->sub_img;
+	struct jpeg_decompress_struct *dinfo = &js->dinfo;
 
-	long *soi_offsets = NULL;
-	if (type == mpo) {
-		const size_t alloc_size = 2;
-		soi_offsets = malloc(sizeof(long) * alloc_size);
-		infile->nr = parse_jpeg(ifp, soi_offsets, alloc_size);
-	} else {
-		soi_offsets = calloc(1, sizeof(long));
-		infile->nr = 1;
-	}
+	enum wu_error status = wu_ok;
+	for (size_t i = 0; i < infile->nr && status == wu_ok; ++i) {
+		fseek(infile->ifp, js->soi_offsets[i], SEEK_SET);
+		jpeg_stdio_src(dinfo, infile->ifp);
 
-	alloc_sub_images(infile, infile->nr);
-
-	struct jpeg_decompress_struct dinfo;
-	struct jpeg_error_mgr jerr;
-	dinfo.err = jpeg_std_error(&jerr);
-	jpeg_create_decompress(&dinfo);
-
-	for (size_t i = 0; i < infile->nr; ++i) {
-		fseek(ifp, soi_offsets[i], SEEK_SET);
-		jpeg_stdio_src(&dinfo, ifp);
-
-		jpeg_save_markers(&dinfo, JPEG_COM, 0xFFFF);
-		if (type == mpo) {
-			jpeg_save_markers(&dinfo, 0xE2, 0xFFFF);
+		jpeg_save_markers(dinfo, JPEG_COM, 0xFFFF);
+		if (i == 0) {
+			jpeg_save_markers(dinfo, 0xE2, 0xFFFF);
 		}
-		jpeg_read_header(&dinfo, TRUE);
+		jpeg_read_header(dinfo, TRUE);
 
-		// libjpeg resets these after reading the header
-		dinfo.dct_method = JDCT_FASTEST;
-		dinfo.do_block_smoothing = FALSE;
-		if (dinfo.max_v_samp_factor == 1) { // segfault otherwise
-			dinfo.do_fancy_upsampling = FALSE;
+		dinfo->do_block_smoothing = FALSE;
+		if (wuconf->jpeg_fast_dct) {
+			dinfo->dct_method = JDCT_FASTEST;
 		}
-		printf("-Subsampling: %dx%d\n", dinfo.max_h_samp_factor,
-			dinfo.max_v_samp_factor);
-		jpeg_start_decompress(&dinfo);
-
-		struct raw_img *restrict img = &infile->sub_img[i];
-		img->w = dinfo.output_width;
-		img->h = dinfo.output_height;
-		img->channels = (unsigned char)dinfo.output_components;
-		img->bitdepth = 8;
-		const size_t row_stride = img->w * img->channels;
-		img->data = malloc(row_stride * img->h);
-		if (type == mpo && infile->nr > 1) {
-			img->id = id_template("mpo", i);
+		// segfault if not 1
+		if (wuconf->jpeg_fast_upsamp && dinfo->max_v_samp_factor == 1) {
+			dinfo->do_fancy_upsampling = FALSE;
 		}
 
-		for (size_t j = 0; dinfo.output_scanline < dinfo.output_height;) {
-			JSAMPROW row_ptr = img->data + j;
-			j += row_stride * jpeg_read_scanlines(&dinfo, &row_ptr,
-				(unsigned int)dinfo.rec_outbuf_height);
+		jpeg_start_decompress(dinfo);
+
+		img[i].w = dinfo->output_width;
+		img[i].h = dinfo->output_height;
+		if (zumax(img[i].w, img[i].h) > wuconf->max_img_size) {
+			status = wu_exceeded_size_limit;
+			jpeg_finish_decompress(dinfo);
+			break;
+		}
+		img[i].channels = (unsigned char)dinfo->output_components;
+		img[i].bitdepth = 8;
+
+		const size_t stride = img[i].w * img[i].channels;
+		img[i].data = malloc(stride * img[i].h);
+		if (!img[i].data) {
+			status = wu_alloc_error;
+			jpeg_finish_decompress(dinfo);
+			break;
+		}
+		if (i > 0) {
+			img[i].id = id_template("mpo", i);
 		}
 
-		jpeg_saved_marker_ptr mk = dinfo.marker_list;
+		JSAMPROW row_ptr = img[i].data;
+		while (dinfo->output_scanline < dinfo->output_height) {
+			row_ptr += stride * jpeg_read_scanlines(dinfo, &row_ptr,
+				(unsigned int)dinfo->rec_outbuf_height);
+		}
+
+		jpeg_saved_marker_ptr mk = dinfo->marker_list;
 		while (mk) {
 			if (mk->marker == JPEG_COM) {
-				puts("-Found JPEG comment:");
-				print_unsafe_data(mk->data, mk->data_length);
-			} else if (mk->marker == 0xE2 && mk->data_length > 20
-			&& !memcmp(mk->data, "MPF", 4)) {
-				read_MP(mk->data + 4, mk->data_length - 4);
+				print_unsafe_data(mk->data, mk->data_length,
+					NULL, true);
+			} else if (i == 0 && mk->marker == 0xE2
+			&& is_mpo(mk->data, mk->data_length)) {
+				/* MPO offsets are relative to the MPO marker,
+				 * so we need to search for it again */
+				const size_t nr = search_soi_offsets(
+					infile->ifp, js);
+				img = realloc_sub_images(infile, nr);
+				if (!img) {
+					status = wu_alloc_error;
+					break;
+				}
 			}
 			mk = mk->next;
 		}
 
-		jpeg_finish_decompress(&dinfo);
+		jpeg_finish_decompress(dinfo);
 	}
-	jpeg_destroy_decompress(&dinfo);
-	free(soi_offsets);
+	return status;
+}
 
-	fclose(ifp);
-	return 0;
+enum wu_error jpeg_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	struct jpeg_state *js = malloc(sizeof(struct jpeg_state));
+	if (!js) {
+		return wu_alloc_error;
+	}
+
+	js->soi_alloc = 4;
+	js->soi_offsets = calloc(js->soi_alloc, sizeof(*js->soi_offsets));
+	if (!js->soi_offsets) {
+		free(js);
+		return wu_alloc_error;
+	}
+
+	if (!alloc_sub_images(infile, 1)) {
+		clean_jpeg_state(js);
+		return wu_alloc_error;
+	}
+
+	js->dinfo.err = jpeg_std_error(&js->jerr);
+	jpeg_create_decompress(&js->dinfo);
+
+	const enum wu_error status = decode_loop(infile, wuconf, js);
+	clean_jpeg_state(js);
+	return status;
 }

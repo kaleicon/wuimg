@@ -1,29 +1,54 @@
 #ifndef LIB_PI
 #define LIB_PI
 
-struct pi_decompress_info {
-	const unsigned char *restrict pix;
-	size_t pix_len;
-	const unsigned char *restrict comment;
-	size_t comment_len;
-	const unsigned char *restrict dummy_bytes;
-	size_t dummy_len;
-	const unsigned char *restrict reserved_area;
-	unsigned int reserved_area_len;
-	const unsigned char saver_model[4];
+#include <stdio.h>
 
-	unsigned short width;
-	unsigned short height;
-	unsigned char palette_mode; // Only 0x80 supported
-	unsigned char nr_of_planes; // Only 4 is supported
-	unsigned char screen_ratio_num; // Read but not used
-	unsigned char screen_ratio_den; // Read but not used
-	const unsigned char *restrict palette;
+#include "common_unpack.h"
+
+enum pi_fail {
+	pi_ok = 0,
+	pi_unexpected_eof,
+	pi_invalid_signature,
+	pi_alloc_error,
+	pi_invalid_header,
+	pi_comment_too_long,
 };
 
-int pi_parse_full_header(const unsigned char *data, size_t size,
-struct pi_decompress_info *pinfo);
+enum pi_repeat_src {
+	pi_last4 = 0,
+	pi_1row = 1,
+	pi_2row = 2,
+	pi_1row_next = 6,
+	pi_1row_prev = 7,
+};
 
-int pi_check_sig(const unsigned char *file);
+struct pi_desc {
+	FILE *ifp;
+	struct colormap *palette;
+
+	unsigned char *restrict comment;
+	unsigned char *restrict saver;
+	unsigned short comment_len;
+	unsigned short comment_area_len;
+	unsigned short saver_len;
+	unsigned char saver_sig[4];
+
+	unsigned char pixel_x, pixel_y;
+
+	unsigned int w, h;
+	unsigned char bitdepth;
+};
+
+const char * pi_fail_string(const enum pi_fail fail);
+
+void pi_cleanup(struct pi_desc *desc);
+
+unsigned char * pi_decode(const struct pi_desc *desc);
+
+unsigned char * pi_take_palette(struct pi_desc *desc);
+
+enum pi_fail pi_read_header(struct pi_desc *desc);
+
+enum pi_fail pi_open_file(FILE *ifp, struct pi_desc *desc);
 
 #endif /* LIB_PI */
