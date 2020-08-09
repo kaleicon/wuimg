@@ -2,22 +2,11 @@
 #define LIB_SUN
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 
+#include "common_lib.h"
 #include "common_unpack.h"
-
-enum sun_fail {
-	sun_ok = 0,
-	sun_open_error,
-	sun_unexpected_eof,
-	sun_invalid_signature,
-	sun_invalid_header,
-	sun_type_is_unsupported,
-	sun_type_is_experimental,
-	sun_invalid_colormap,
-	sun_uses_raw_colormap,
-	sun_alloc_error,
-};
 
 enum sun_colormap_type {
 	sun_no_colormap = 0,
@@ -52,8 +41,6 @@ struct sun_desc {
 	} colormap;
 };
 
-const char * sun_fail_string(const enum sun_fail fail);
-
 void sun_cleanup(struct sun_desc *desc);
 
 unsigned int sun_get_row_alignment(struct sun_desc *desc);
@@ -62,8 +49,8 @@ struct colormap * sun_take_colormap(struct sun_desc *desc);
 
 unsigned char * sun_decode(const struct sun_desc *desc);
 
-enum sun_fail sun_parse_header(struct sun_desc *desc);
+enum lib_fail sun_parse_header(struct sun_desc *desc);
 
-enum sun_fail sun_open_file(FILE *ifp, struct sun_desc *desc);
+enum lib_fail sun_open_file(FILE *ifp, struct sun_desc *desc);
 
 #endif /* LIB_SUN */

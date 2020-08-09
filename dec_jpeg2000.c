@@ -7,15 +7,11 @@
 
 #include "wudefs.h"
 #include "common.h"
-
-// Forward declaration.
-static enum wu_error jpeg2000_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev);
+#include "dec.h"
 
 static void monkey_trouble_handler(const char *msg, void *__unused_stuff) {
 	(void)__unused_stuff;
-	printf(msg);
+	puts(msg);
 }
 
 // FILE* to opj_stream
@@ -55,8 +51,7 @@ static opj_stream_t setup_jp2_stream(FILE *ifp) {
 
 static OPJ_UINT32 log_fit_factor(unsigned int contain_w, unsigned int contain_h,
 OPJ_UINT32 fit_w, OPJ_UINT32 fit_h) {
-	const size_t fit = integer_fit(contain_w, contain_h, fit_w, fit_h);
-	return (OPJ_UINT32)log2f((float)fit);
+	return (OPJ_UINT32)ulog2(integer_fit(contain_w, contain_h, fit_w, fit_h));
 }
 
 static enum wu_error join_components(struct raw_img *img,
@@ -83,8 +78,7 @@ const opj_image_t *jp2) {
 }
 
 static enum wu_error jpeg2000_dec(struct image_file *infile,
-const struct wu_conf *wuconf, const bool is_callback) {
-	const OPJ_CODEC_FORMAT format = infile->__private[0];
+const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 	opj_codec_t *dec = opj_create_decompress(format);
 	if (!dec) {
 		return wu_alloc_error;
@@ -115,14 +109,14 @@ const struct wu_conf *wuconf, const bool is_callback) {
 	const OPJ_UINT32 tex_fit = log_fit_factor(wuconf->max_img_size,
 		wuconf->max_img_size, jp2->comps[0].w, jp2->comps[0].h);
 	OPJ_UINT32 screen_fit;
-	if (is_callback) {
+	if (infile->sub_img) { // This is a callback
 		screen_fit = tex_fit;
 		if (tex_fit) {
 			puts("Warning: JP2 exceeds the max image size. Output "
 				"will be downscaled.");
 		}
 	} else {
-		screen_fit = log_fit_factor(wuconf->fb_w, wuconf->fb_h,
+		screen_fit = log_fit_factor(wuconf->fb.w, wuconf->fb.h,
 			jp2->comps[0].w, jp2->comps[0].h);
 	}
 
@@ -137,7 +131,7 @@ const struct wu_conf *wuconf, const bool is_callback) {
 		opj_set_decoded_components(dec, 3, comps, OPJ_FALSE);
 	}
 
-	printf("Decoding @ 1/%" PRIu32 " resolution\n", 1 << screen_fit);
+	printf("Decoding @ 1/%d resolution\n", 1 << screen_fit);
 	if (!opj_decode(dec, stream, jp2)) {
 		opj_image_destroy(jp2);
 		opj_stream_destroy(stream);
@@ -149,7 +143,7 @@ const struct wu_conf *wuconf, const bool is_callback) {
 	opj_stream_destroy(stream);
 
 	struct raw_img *img;
-	if (is_callback) {
+	if (infile->sub_img) {
 		img = infile->sub_img;
 	} else {
 		img = alloc_sub_images(infile, 1);
@@ -158,9 +152,12 @@ const struct wu_conf *wuconf, const bool is_callback) {
 	enum wu_error status;
 	if (img) {
 		status = join_components(img, jp2);
-		if (status == wu_ok && tex_fit < screen_fit) {
-			infile->callback = jpeg2000_callback;
-			infile->events = scale;
+		if (status == wu_ok) {
+			if (screen_fit > tex_fit) {
+				infile->events = scale;
+			} else {
+				infile->events = 0;
+			}
 		}
 	} else {
 		status = wu_alloc_error;
@@ -172,24 +169,32 @@ const struct wu_conf *wuconf, const bool is_callback) {
 
 static enum wu_error jpeg2000_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev) {
+const enum image_event ev, const OPJ_CODEC_FORMAT format) {
 	if (ev == scale && state->zoom > 1) {
-		infile->callback = NULL;
-		free(infile->sub_img->data);
-//		state->zoom /= 2;
-		return jpeg2000_dec(infile, wuconf, true);
-	} else if (ev == finish) {
-		infile->callback = NULL;
+		free(infile->sub_img[0].data);
+		return jpeg2000_dec(infile, wuconf, format);
+	} else if (ev == 0) {
+		infile->events = 0;
 	}
 	return wu_ok;
 }
 
+enum wu_error jp2_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event ev) {
+	return jpeg2000_callback(infile, wuconf, state, ev, OPJ_CODEC_JP2);
+}
+
+enum wu_error j2k_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event ev) {
+	return jpeg2000_callback(infile, wuconf, state, ev, OPJ_CODEC_J2K);
+}
+
 enum wu_error jp2_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	infile->__private[0] = OPJ_CODEC_JP2;
-	return jpeg2000_dec(infile, wuconf, false);
+	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_JP2);
 }
 
 enum wu_error j2k_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	infile->__private[0] = OPJ_CODEC_J2K;
-	return jpeg2000_dec(infile, wuconf, false);
+	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_J2K);
 }

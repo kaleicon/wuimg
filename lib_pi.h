@@ -3,16 +3,8 @@
 
 #include <stdio.h>
 
+#include "common_lib.h"
 #include "common_unpack.h"
-
-enum pi_fail {
-	pi_ok = 0,
-	pi_unexpected_eof,
-	pi_invalid_signature,
-	pi_alloc_error,
-	pi_invalid_header,
-	pi_comment_too_long,
-};
 
 enum pi_repeat_src {
 	pi_last4 = 0,
@@ -39,16 +31,14 @@ struct pi_desc {
 	unsigned char bitdepth;
 };
 
-const char * pi_fail_string(const enum pi_fail fail);
-
 void pi_cleanup(struct pi_desc *desc);
 
 unsigned char * pi_decode(const struct pi_desc *desc);
 
 unsigned char * pi_take_palette(struct pi_desc *desc);
 
-enum pi_fail pi_read_header(struct pi_desc *desc);
+enum lib_fail pi_read_header(struct pi_desc *desc);
 
-enum pi_fail pi_open_file(FILE *ifp, struct pi_desc *desc);
+enum lib_fail pi_open_file(FILE *ifp, struct pi_desc *desc);
 
 #endif /* LIB_PI */

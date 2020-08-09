@@ -33,8 +33,7 @@ unsigned int bmp_get_row_alignment(const struct bmp_desc *desc) {
 static void check_decode(const unsigned char *end,
 const unsigned char *expected_end) {
 	if (end < expected_end - 3) { // -3 for alignment.
-		puts("BMP warning: Run-length decoding didn't fill the whole "
-			"buffer. Output may contain garbage.");
+		puts(RASTER_EOF);
 	}
 }
 
@@ -54,10 +53,10 @@ unsigned char *raster) {
 
 	if (desc->pal) {
 		strip_colormap(output, raster, desc->pal, desc->w, desc->h, 4,
-			desc->bitdepth, ch);
+			ch, desc->bitdepth);
 	} else {
 		strip_unpack(output, raster, desc->w, desc->h, 4,
-			desc->bitdepth, unpack);
+			unpack, desc->bitdepth);
 	}
 
 	free(raster);
@@ -76,7 +75,9 @@ unsigned char *raster) {
 	case 2:
 	case 1:
 		return uncompressed_expand(desc, raster);
+	case 16:
 	case 24:
+	case 32:
 		return raster;
 	}
 	free(raster);
@@ -105,13 +106,13 @@ const unsigned char *restrict rle_limit, const size_t scan_len) {
 		} else {
 			const enum bmp_rle_marker marker = *(rle + 1);
 			switch (marker) {
-			case end_of_scan_line:
+			case bmp_end_of_scan_line:
 				raster += (size_t)(raster_limit - raster) % scan_len;
 				rle += 2;
 				break;
-			case end_of_rle:
+			case bmp_end_of_rle:
 				return raster;
-			case delta:
+			case bmp_delta:
 				if (rle + 3 > rle_limit) {
 					return raster;
 				}
@@ -156,7 +157,7 @@ unsigned char *rle) {
 		return NULL;
 	}
 
-	const size_t rle_len = desc->data_len - desc->data_len % 1;
+	const size_t rle_len = desc->data_len - desc->data_len % 2;
 	unsigned char *raster_end = rle_loop4(raster,
 		raster + raster_len, rle, rle + rle_len, row);
 	free(rle);
@@ -167,8 +168,8 @@ unsigned char *rle) {
 		const size_t out_len = desc->w * desc->h * 3;
 		unsigned char *output = malloc(out_len);
 		if (output) {
-			strip_colormap_rgb8(output, raster, desc->pal, desc->w,
-				desc->h, 8);
+			strip_colormap(output, raster, desc->pal, desc->w,
+				desc->h, 8, 3, 8);
 		}
 		free(raster);
 		return output;
@@ -193,14 +194,14 @@ const unsigned char *restrict rle_limit, const size_t scan_len) {
 		} else {
 			const enum bmp_rle_marker marker = *(rle + 1);
 			switch (marker) {
-			case end_of_scan_line:
+			case bmp_end_of_scan_line:
 				raster += (size_t)(raster_limit - raster)
 					% scan_len;
 				rle += 2;
 				break;
-			case end_of_rle:
+			case bmp_end_of_rle:
 				return raster;
-			case delta:
+			case bmp_delta:
 				if (rle + 3 > rle_limit) {
 					return raster;
 				}
@@ -249,8 +250,7 @@ unsigned char * bmp_decode(const struct bmp_desc *desc) {
 
 	const size_t read = fread(data, 1, desc->data_len, desc->ifp);
 	if (read != desc->data_len) {
-		puts("BMP warning: Got unexpected End of File while reading "
-			"bitmap data. Output may contain garbage.");
+		puts(RASTER_EOF);
 	}
 
 	switch (desc->compression) {
@@ -303,60 +303,57 @@ static bool validate_file_size(struct bmp_desc *desc) {
 }
 
 
-static enum bmp_fail load_mask(struct bmp_desc *desc) {
+static enum lib_fail load_mask(struct bmp_desc *desc) {
 	const size_t len = desc->type == bmp_type3 ? 3 : 4;
 	u_int32_t buf[4];
 	const size_t read = fread(buf, sizeof(*buf), len, desc->ifp);
 	if (read != len) {
-		return bmp_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	// Image data is big-endian, but masks are stored as little-endian,
-	if (desc->type == bmp_type3) {
-		desc->mask.r = endian_u32(buf, big_endian);
-		desc->mask.g = endian_u32(buf + 1, big_endian);
-		desc->mask.b = endian_u32(buf + 2, big_endian);
-	} else {
-		desc->mask.r = endian_u32(buf, big_endian);
-		desc->mask.g = endian_u32(buf + 1, big_endian);
-		desc->mask.b = endian_u32(buf + 2, big_endian);
-		desc->mask.a = endian_u32(buf + 3, big_endian);
+	desc->mask.r = endian32(buf[0], big_endian);
+	desc->mask.g = endian32(buf[1], big_endian);
+	desc->mask.b = endian32(buf[2], big_endian);
+	if (desc->type != bmp_type3) {
+		desc->mask.a = endian32(buf[3], big_endian);
 	}
 
-	return bmp_ok;
+	return lib_ok;
 }
 
-static enum bmp_fail load_palette(struct bmp_desc *desc) {
-	// BMP type 2 entries are BGR, while type >= 3 are BGR0
-	const size_t entry_len = desc->type == bmp_type2 ? 3 : 4;
-	const size_t entries = 1U << desc->bitdepth;
-	desc->pal = malloc(sizeof(*desc->pal) * entries);
-	if (!desc->pal) {
-		return bmp_alloc_error;
+static enum lib_fail load_palette(struct bmp_desc *desc) {
+	struct colormap *pal = malloc(sizeof(*pal) * 256);
+	if (!pal) {
+		return lib_alloc_error;
 	}
 
 	/* Palettes may be smaller than 1U << bitdepth, but the calculation is
 	 * quite tedious so we'll just pretend that doesn't happen and fill the
 	 * palette with whatever garbage we get. */
-	fread(desc->pal, entry_len, entries, desc->ifp);
-
+	const size_t entries = 1U << desc->bitdepth;
+	// BMP type 2 entries are BGR, while type >= 3 are BGR0
+	const size_t entry_len = desc->type == bmp_type2 ? 3 : 4;
+	fread(pal, entry_len, entries, desc->ifp);
 	if (entry_len == 3) {
 		unsigned char *palette = (unsigned char *)desc->pal;
 		for (size_t i = entries; i > 0; --i) {
-			memmove(palette + i*4, palette + i*3, 3);
+			memcpy(palette + i*4, palette + i*3, 3);
+			palette[i*4 + 3] = 0xff;
 		}
 	}
 
-	return bmp_ok;
+	desc->pal = pal;
+	return lib_ok;
 }
 
-static enum bmp_fail validate_bitmap_header(struct bmp_desc *desc,
+static enum lib_fail validate_bitmap_header(struct bmp_desc *desc,
 const int32_t width, const int32_t height, const u_int16_t planes,
 const u_int16_t depth, const u_int32_t compression) {
 	if (width > 0) {
 		desc->w = (u_int32_t)width;
 	} else {
-		return bmp_invalid_header;
+		return lib_invalid_header;
 	}
 
 	if (height > 0) {
@@ -366,50 +363,48 @@ const u_int16_t depth, const u_int32_t compression) {
 		desc->h = (u_int32_t)(-height);
 		desc->order = bmp_top_down;
 	} else {
-		return bmp_invalid_header;
+		return lib_invalid_header;
 	}
 
 	if (planes != 1) {
-		return bmp_unsupported_format;
+		return lib_unsupported_format;
 	}
 
 	switch (depth) {
-	case 1: case 2: case 4: case 8: case 24:
+	case 1: case 2: case 4: case 8: case 16: case 24: case 32:
 		break;
-	case 16: case 32:
-		return bmp_unsupported_format;
 	default:
-		return bmp_invalid_header;
+		return lib_invalid_header;
 	}
 
 	switch (compression) {
 	case bmp_8bit_rle:
 		if (depth != 8 || desc->order == bmp_top_down) {
-			return bmp_invalid_header;
+			return lib_invalid_header;
 		}
 		break;
 	case bmp_4bit_rle:
 		if (depth != 4 || desc->order == bmp_top_down) {
-			return bmp_invalid_header;
+			return lib_invalid_header;
 		}
 		break;
 	case bmp_mask:
 		if (depth != 16 || depth != 32) {
-			return bmp_invalid_header;
+			return lib_invalid_header;
 		}
-		break;
+		return lib_unsupported_format;
 	case bmp_no_compression:
 		break;
 	default:
-		return bmp_invalid_header;
+		return lib_invalid_header;
 	}
 
 	desc->bitdepth = (unsigned char)depth;
 	desc->compression = (unsigned char)compression;
-	return bmp_ok;
+	return lib_ok;
 }
 
-static enum bmp_fail bmp_type3_parse_header(struct bmp_desc *desc) {
+static enum lib_fail bmp_type3_parse_header(struct bmp_desc *desc) {
 	/* Type 3 and NT BMP header (after header size)
 	 * Bitmap header:
 		Offset  Size    Name
@@ -449,17 +444,17 @@ static enum bmp_fail bmp_type3_parse_header(struct bmp_desc *desc) {
 
 	u_int8_t buf[16];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
-		return bmp_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
-	const enum bmp_fail status = validate_bitmap_header(desc,
-		(int32_t)endian_u32(buf, little_endian),
-		(int32_t)endian_u32(buf + 4, little_endian),
-		endian_u16(buf + 8, little_endian),
-		endian_u16(buf + 10, little_endian),
-		endian_u32(buf + 12, little_endian));
-	if (status != bmp_ok) {
-		return status;
+	const enum lib_fail fail = validate_bitmap_header(desc,
+		(int32_t)buf_endian32(buf, little_endian),
+		(int32_t)buf_endian32(buf + 4, little_endian),
+		buf_endian16(buf + 8, little_endian),
+		buf_endian16(buf + 10, little_endian),
+		buf_endian32(buf + 12, little_endian));
+	if (fail) {
+		return fail;
 	}
 
 	desc->scan_len = scanline_length(desc->w, desc->bitdepth, 4);
@@ -478,12 +473,11 @@ static enum bmp_fail bmp_type3_parse_header(struct bmp_desc *desc) {
 			fseek(desc->ifp, ignored, SEEK_CUR);
 			return load_mask(desc);
 		}
-		return bmp_invalid_header;
 	}
-	return bmp_ok;
+	return lib_ok;
 }
 
-static enum bmp_fail bmp_type2_parse_header(struct bmp_desc *desc) {
+static enum lib_fail bmp_type2_parse_header(struct bmp_desc *desc) {
 	/* Type 2 BMP header (after header size)
 	 * Bitmap header:
 		Offset  Size    Name
@@ -494,31 +488,31 @@ static enum bmp_fail bmp_type2_parse_header(struct bmp_desc *desc) {
 		8
 	 */
 
-	u_int8_t buf[8];
+	u_int16_t buf[4];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
-		return bmp_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
-	const enum bmp_fail status = validate_bitmap_header(desc,
-		(int16_t)endian_u16(buf, little_endian),
-		(int16_t)endian_u16(buf + 2, little_endian),
-		endian_u16(buf + 4, little_endian),
-		endian_u16(buf + 6, little_endian),
+	const enum lib_fail fail = validate_bitmap_header(desc,
+		(int16_t)endian16(buf[0], little_endian),
+		(int16_t)endian16(buf[1], little_endian),
+		endian16(buf[2], little_endian),
+		endian16(buf[3], little_endian),
 		bmp_no_compression);
-	if (status != bmp_ok) {
-		return status;
+	if (fail) {
+		return fail;
 	}
 
 	desc->scan_len = scanline_length(desc->w, desc->bitdepth, 4);
 	if (desc->bitdepth <= 8) {
 		return load_palette(desc);
 	} else if (desc->bitdepth != 24) {
-		return bmp_invalid_header;
+		return lib_invalid_header;
 	}
-	return bmp_ok;
+	return lib_ok;
 }
 
-enum bmp_fail bmp_parse_header(struct bmp_desc *desc) {
+enum lib_fail bmp_parse_header(struct bmp_desc *desc) {
 	/* Minimum non-type-1 BMP header (after magic bytes)
 	 * File header:
 		Offset	Size    Name
@@ -536,53 +530,53 @@ enum bmp_fail bmp_parse_header(struct bmp_desc *desc) {
 
 	u_int32_t buf[4];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
-		return bmp_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
-//	const u_int32_t file_size = endian_u32(buf, little_endian);
-	const u_int32_t bitmap_offset = endian_u32(buf + 2, little_endian);
-	const u_int32_t header_size = endian_u32(buf + 3, little_endian);
+//	const u_int32_t file_size = endian32(buf[0], little_endian);
+	const u_int32_t bitmap_offset = endian32(buf[2], little_endian);
+	const u_int32_t header_size = endian32(buf[3], little_endian);
 
-	enum bmp_fail status;
+	enum lib_fail fail;
 	switch (header_size) {
 	case bmp_type2:
-		desc->type = (enum bmp_fail)header_size;
-		status = bmp_type2_parse_header(desc);
+		desc->type = (enum bmp_type)header_size;
+		fail = bmp_type2_parse_header(desc);
 		break;
 	case bmp_type3:
 	case bmp_type4:
 	case bmp_type5:
-		desc->type = (enum bmp_fail)header_size;
-		status = bmp_type3_parse_header(desc);
+		desc->type = (enum bmp_type)header_size;
+		fail = bmp_type3_parse_header(desc);
 		break;
 	default:
-		return bmp_unsupported_format;
+		return lib_unsupported_format;
 	}
 
-	if (status == bmp_ok) {
+	if (fail == lib_ok) {
 		fseek(desc->ifp, bitmap_offset, SEEK_SET);
 		if (!validate_file_size(desc)) {
-			return bmp_unexpected_eof;
+			return lib_unexpected_eof;
 		}
 	}
-	return status;
+	return fail;
 }
 
-enum bmp_fail bmp_open_file(FILE *ifp, struct bmp_desc *desc) {
-	enum bmp_fail status;
+enum lib_fail bmp_open_file(FILE *ifp, struct bmp_desc *desc) {
+	enum lib_fail fail;
 	unsigned char sig[2];
 	if (fscanf(ifp, "%2c", sig) == 1) {
 		if (!memcmp("BM", sig, sizeof(sig))) {
 			desc->ifp = ifp;
 			desc->pal = NULL;
-			return bmp_ok;
+			return lib_ok;
 		} else if (sig[0] == 0 && sig[1] == 0) {
-			status = bmp_unsupported_format;
+			fail = lib_unsupported_format;
 		} else {
-			status = bmp_invalid_signature;
+			fail = lib_invalid_signature;
 		}
 	} else {
-		status = bmp_unexpected_eof;
+		fail = lib_unexpected_eof;
 	}
-	return status;
+	return fail;
 }

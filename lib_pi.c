@@ -10,24 +10,6 @@
 // Define to use an algorithm that's a bit slower but clearly correct for decoding.
 //#define EXACT_BITS
 
-const char * pi_fail_string(const enum pi_fail fail) {
-	switch (fail) {
-	case pi_ok:
-		return "PI: All OK";
-	case pi_unexpected_eof:
-		return "PI: Unexpected End Of File";
-	case pi_invalid_signature:
-		return "PI: Invalid signature";
-	case pi_alloc_error:
-		return "PI: Allocation error";
-	case pi_invalid_header:
-		return "PI: Invalid header";
-	case pi_comment_too_long:
-		return "PI: Comment exceeds maximum length";
-	}
-	return "PI: ???";
-}
-
 void pi_cleanup(struct pi_desc *desc) {
 	free(desc->palette);
 	free(desc->comment);
@@ -128,7 +110,7 @@ static u_int32_t read_dword(const unsigned char *restrict bs,
 const size_t bitpos, const bool full_bits) {
 	size_t i = bitpos / 8;
 	size_t o = bitpos % 8;
-	const u_int32_t f = endian_u32(bs + i, big_endian);
+	const u_int32_t f = buf_endian32(bs + i, big_endian);
 	if (full_bits) {
 		return (f << o) | (u_int32_t)bs[i+4] >> (8 - o);
 	}
@@ -139,7 +121,7 @@ static u_int16_t read_word(const unsigned char *restrict bs,
 const size_t bitpos, const bool full_bits) {
 	size_t i = bitpos / 8;
 	size_t o = bitpos % 8;
-	const u_int16_t f = (u_int16_t)(endian_u16(bs + i, big_endian) << o);
+	const u_int16_t f = (u_int16_t)(buf_endian16(bs + i, big_endian) << o);
 	if (full_bits) {
 		return f | (u_int16_t)(bs[i+2] >> (8 - o));
 	}
@@ -347,8 +329,7 @@ const size_t width, const int bitdepth) {
 	}
 
 	if (i < dims) {
-		puts("PI Warning: Unexpected End of File. Output may contain "
-			"garbage.");
+		puts(RASTER_EOF);
 	}
 	free(table);
 	return output;
@@ -366,7 +347,7 @@ const size_t bitlen, const size_t width) {
 	return bt_decode_loop(output, dims, bitstream, bitlen, width, 8);
 }
 
-static enum pi_fail max_bitstream_size(FILE *ifp, const size_t dims) {
+static size_t max_bitstream_size(FILE *ifp, const size_t dims) {
 	const long start = ftell(ifp);
 	fseek(ifp, 0, SEEK_END);
 	const long end = ftell(ifp);
@@ -381,7 +362,7 @@ unsigned char * pi_decode(const struct pi_desc *desc) {
 		return NULL;
 	}
 
-	/* The spec recommends that the last 32 bits be zero, and we'll
+	/* The spec recommends that the last 32 bits be zero, so we'll
 	 * enforce this to do away with most bounds checks. */
 	const size_t bslen = max_bitstream_size(desc->ifp, dims);
 	unsigned char *bitstream = malloc(bslen + 4);
@@ -391,8 +372,7 @@ unsigned char * pi_decode(const struct pi_desc *desc) {
 	}
 	const size_t read = fread(bitstream, 1, bslen, desc->ifp);
 	if (read != bslen) {
-		puts("PI Warning: Unexpected End Of File. Output may contain "
-			"garbage.");
+		puts(RASTER_EOF);
 	}
 	memset(bitstream + read, 0, 4);
 
@@ -418,17 +398,17 @@ unsigned char * pi_take_palette(struct pi_desc *desc) {
 	return pal;
 }
 
-static enum pi_fail load_palette(struct pi_desc *desc) {
-	const size_t pal_len = (1U << desc->bitdepth);
-	struct colormap *pal = malloc(pal_len * 4);
+static enum lib_fail load_palette(struct pi_desc *desc) {
+	struct colormap *pal = malloc(256 * 4);
 	if (!pal) {
-		return pi_alloc_error;
+		return lib_alloc_error;
 	}
 
+	const size_t pal_len = (1U << desc->bitdepth);
 	unsigned char *restrict buf = ((unsigned char *)pal) + pal_len;
 	if (fread(buf, 1, pal_len * 3, desc->ifp) != pal_len * 3) {
 		free(pal);
-		return pi_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	for (size_t i = 0; i < pal_len; ++i) {
@@ -439,21 +419,21 @@ static enum pi_fail load_palette(struct pi_desc *desc) {
 	}
 
 	desc->palette = pal;
-	return pi_ok;
+	return lib_ok;
 }
 
-static enum pi_fail validate_header(struct pi_desc *desc, u_int8_t pixel_x,
+static enum lib_fail validate_header(struct pi_desc *desc, u_int8_t pixel_x,
 u_int8_t pixel_y, const u_int8_t bitdepth, const u_int16_t width,
 const u_int16_t height) {
 	switch (bitdepth) {
 	case 4: case 8:
 		break;
 	default:
-		return pi_invalid_header;
+		return lib_invalid_header;
 	}
 
 	if (!width || !height) {
-		return pi_invalid_header;
+		return lib_invalid_header;
 	}
 
 	if (!pixel_x || !pixel_y) {
@@ -466,23 +446,23 @@ const u_int16_t height) {
 	desc->bitdepth = bitdepth;
 	desc->pixel_x = pixel_x;
 	desc->pixel_y = pixel_y;
-	return pi_ok;
+	return lib_ok;
 }
 
-static enum pi_fail read_comment(struct pi_desc *desc) {
+static enum lib_fail read_comment(struct pi_desc *desc) {
 	const unsigned char eoc = 0x1a;
 	int c = getc(desc->ifp);
 	const int sec_c = getc(desc->ifp);
 	if (c == EOF || sec_c == EOF) {
-		return pi_unexpected_eof;
+		return lib_unexpected_eof;
 	} else if ((c == 0 || c == eoc) && sec_c == 0) {
-		return pi_ok;
+		return lib_ok;
 	}
 
 	size_t size = 80;
 	desc->comment = malloc(size);
 	if (!desc->comment) {
-		return pi_alloc_error;
+		return lib_alloc_error;
 	}
 	desc->comment[0] = (unsigned char)c;
 	desc->comment[1] = (unsigned char)sec_c;
@@ -495,12 +475,12 @@ static enum pi_fail read_comment(struct pi_desc *desc) {
 			if (found_eoc) {
 				break;
 			}
-			return pi_comment_too_long;
+			return lib_pi_comment_too_long;
 		} else if (len == size) {
 			size += size / 4;
 			unsigned char *hold = realloc(desc->comment, size);
 			if (!hold) {
-				return pi_alloc_error;
+				return lib_alloc_error;
 			}
 			desc->comment = hold;
 		}
@@ -517,15 +497,15 @@ static enum pi_fail read_comment(struct pi_desc *desc) {
 		++len;
 	}
 	if (c == EOF) {
-		return pi_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 	desc->comment_area_len = (unsigned short)len;
-	return pi_ok;
+	return lib_ok;
 }
 
-enum pi_fail pi_read_header(struct pi_desc *desc) {
-	enum pi_fail status = read_comment(desc);
-	if (status != pi_ok) {
+enum lib_fail pi_read_header(struct pi_desc *desc) {
+	enum lib_fail status = read_comment(desc);
+	if (status != lib_ok) {
 		return status;
 	}
 
@@ -546,45 +526,46 @@ enum pi_fail pi_read_header(struct pi_desc *desc) {
 
 	u_int8_t buf[10];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
-		return pi_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	memcpy(desc->saver_sig, buf + 4, sizeof(desc->saver_sig));
-	unsigned short saver_len = endian_u16(buf + 8, big_endian);
+	unsigned short saver_len = buf_endian16(buf + 8, big_endian);
 	if (saver_len) {
 		desc->saver_len = saver_len;
 		desc->saver = malloc(saver_len);
 		if (!desc->saver) {
-			return pi_alloc_error;
+			return lib_alloc_error;
 		}
 		if (fread(desc->saver, 1, saver_len, desc->ifp) != saver_len) {
-			return pi_unexpected_eof;
+			return lib_unexpected_eof;
 		}
 	}
 
 	if (fread(buf + 4, 1, 4, desc->ifp) != 4) {
-		return pi_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	status = validate_header(desc, buf[1], buf[2], buf[3],
-		endian_u16(buf + 4, big_endian),
-		endian_u16(buf + 6, big_endian));
-	if (status != pi_ok) {
+		buf_endian16(buf + 4, big_endian),
+		buf_endian16(buf + 6, big_endian));
+	if (status != lib_ok) {
 		return status;
 	}
 
 	return load_palette(desc);
 }
 
-enum pi_fail pi_open_file(FILE *ifp, struct pi_desc *desc) {
+enum lib_fail pi_open_file(FILE *ifp, struct pi_desc *desc) {
 	memset(desc, 0, sizeof(*desc));
 
 	char buf[2];
 	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
 		if (!memcmp(buf, "Pi", sizeof(buf))) {
-			return pi_ok;
+			desc->ifp = ifp;
+			return lib_ok;
 		}
-		return pi_invalid_signature;
+		return lib_invalid_signature;
 	}
-	return pi_unexpected_eof;
+	return lib_unexpected_eof;
 }

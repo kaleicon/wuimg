@@ -7,10 +7,10 @@
 
 #include "wudefs.h"
 
-const char * wu_error_message(enum wu_error err) {
+const char * wu_error_message(const enum wu_error err) {
 	switch (err) {
 	case wu_ok:
-		return "All OK :: Failed to test for error";
+		return "All OK";
 	case wu_alloc_error:
 		return "Memory allocation error";
 	case wu_unknown_file_type:
@@ -30,24 +30,73 @@ const char * wu_error_message(enum wu_error err) {
 	case wu_decoding_error:
 		return "Failed to decode image";
 	case wu_exceeded_size_limit:
-		return "The image exceeds either the max texture size or the "
-			"configured size limit";
+		return "The image exceeds the max dimension limit";
 	case wu_unknown_error:
-		return "An unknown and unexpected thing happened. Things are "
+		return "An unknown and unforeseen problem happened. Things are "
 			"bad. Pray for my soul.";
 	default:
 		return "???";
 	}
 }
 
+size_t print_dimensions(const struct raw_img *img) {
+	printf("  dimensions: %zu x %zu x ", img->w, img->h);
+
+	size_t channels;
+	if (img->palette) {
+		channels = 1;
+		fputs("1 (paletted) ", stdout);
+	} else {
+		channels = img->channels;
+		printf("%hhu ", img->channels);
+		if (img->channels != img->true_channels) {
+			printf("(%hhu) ", img->true_channels);
+		}
+	}
+	printf("x %hhu ", img->bitdepth);
+
+	const char *packing = NULL;
+	size_t pix_size;
+	switch (img->bitdepth) {
+	case rgb332:
+		packing = "(rgb332) ";
+		pix_size = 1;
+		break;
+	case bgra4444:
+		packing = "(bgra4444) ";
+		pix_size = 2;
+		break;
+	case bgra5551:
+		packing = "(bgra5551) ";
+		pix_size = 2;
+		break;
+	case 16: case 32:
+		if (img->float_data) {
+			packing = "(float) ";
+		}
+		// Fallthrough
+	default:
+		pix_size = channels * img->bitdepth / 8;
+	}
+
+	if (packing) {
+		fputs(packing, stdout);
+	}
+
+	const size_t mem_size = img->w * img->h * pix_size;
+	printf("= %zu bytes\n", mem_size);
+	return mem_size;
+}
+
 void print_image_information(const struct image_file *file) {
 	const struct raw_img *img = file->sub_img;
 
+	fputs(file->meta.str, stdout);
 	if (file->err_msg) {
 		printf("Found warning: %s\n", file->err_msg);
 	}
 
-	printf("Contained images: %zu\n", file->nr);
+	printf("Contained sub-images: %zu\n", file->nr);
 	size_t overall_size = 0;
 	for (size_t i = 0; i < file->nr; ++i) {
 		if (file->is_animation) {
@@ -60,21 +109,7 @@ void print_image_information(const struct image_file *file) {
 			putchar('\n');
 		}
 
-		size_t mem_size = img[i].w * img[i].h;
-		printf("  dimensions: %zu x %zu x ", img[i].w, img[i].h);
-
-		if (img[i].palette) {
-			printf("1 (paletted) ");
-		} else {
-			mem_size *= img[i].channels;
-			printf("%hhu ", img[i].channels);
-			if (img[i].channels != img[i].true_channels) {
-				printf("(%hhu) ", img[i].true_channels);
-			}
-		}
-
-		mem_size = mem_size * img[i].bitdepth / 8;
-		printf("x %hhu = %zu bytes\n", img[i].bitdepth, mem_size);
+		const size_t mem_size = print_dimensions(img + i);
 
 		if (file->is_animation) {
 			overall_size = mem_size * file->nr;
@@ -92,68 +127,79 @@ void print_image_information(const struct image_file *file) {
 void normalize_sub_images(struct image_file *file) {
 	struct raw_img *img = file->sub_img;
 	for (size_t i = 0; i < file->nr; ++i) {
+		if (img[i].palette) {
+			img[i].channels = 1;
+			img[i].bitdepth = 8;
+		}
+
 		if (!img[i].true_channels) {
 			img[i].true_channels = img[i].channels;
 		}
 
 		if (!img[i].layout) {
-			switch (img[i].true_channels) {
-			case 1:
-				img[i].layout = gray;
-				break;
-			case 2:
-				img[i].layout = gray_alpha;
-				break;
-			default:
+			if (img[i].palette) {
 				img[i].layout = rgba;
+			} else {
+				switch (img[i].true_channels) {
+				case 1:
+					img[i].layout = gray;
+					break;
+				case 2:
+					img[i].layout = gray_alpha;
+					break;
+				default:
+					img[i].layout = rgba;
+				}
 			}
 		}
 
 		if (!img[i].alignment) {
 			img[i].alignment = 1;
 		}
+	}
+}
 
-		if (!img[i].dec_scale) {
-			img[i].dec_scale = 1.0f;
-		}
+static void free_sub_range(struct raw_img *img, const size_t start,
+const size_t end) {
+	for (size_t i = start; i < end; ++i) {
+		free(img[i].data);
+		free(img[i].palette);
+		free(img[i].id);
 	}
 }
 
 struct raw_img * realloc_sub_images(struct image_file *file, const size_t nr) {
+	if (nr < file->nr) {
+		free_sub_range(file->sub_img, nr, file->nr);
+	}
+
 	const size_t img_size = sizeof(*file->sub_img);
 	struct raw_img *hold = realloc(file->sub_img, nr * img_size);
 	if (hold) {
-		const size_t old_size = file->nr;
+		if (nr > file->nr) {
+			const size_t len = img_size * (nr - file->nr);
+			memset(hold + file->nr, 0, len);
+		}
 		file->nr = nr;
 		file->sub_img = hold;
-		if (nr > old_size) {
-			const size_t len = img_size * (nr - old_size);
-			memset(file->sub_img + old_size, 0, len);
-		}
 	}
 	return hold;
 }
 
 struct raw_img * alloc_sub_images(struct image_file *file, const size_t nr) {
-	file->nr = nr;
 	file->sub_img = calloc(nr, sizeof(*file->sub_img));
+	if (file->sub_img) {
+		file->nr = nr;
+	}
 	return file->sub_img;
 }
 
 void free_image_file(struct image_file *file) {
-	if (file->callback) {
-		file->callback(file, NULL, NULL, 0);
-	}
-
-	for (size_t i = 0; i < file->nr; ++i) {
-		free(file->sub_img[i].data);
-		free(file->sub_img[i].palette);
-		free(file->sub_img[i].id);
-	}
-
+	free_sub_range(file->sub_img, 0, file->nr);
 	free(file->sub_img);
 	free(file->err_msg);
-	fclose(file->ifp);
-
-	memset(file, 0, sizeof(struct image_file));
+	free(file->meta.str);
+	if (file->ifp) {
+		fclose(file->ifp);
+	}
 }

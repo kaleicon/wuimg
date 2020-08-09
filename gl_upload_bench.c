@@ -103,7 +103,9 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 		{GL_RGBA, "GL_RGBA"},
 		{GL_RGBA2, "GL_RGBA2"},
 		{GL_RGBA4, "GL_RGBA4"},
+		{GL_RGB5_A1, "GL_RGB5_A1"},
 		{GL_RGBA8, "GL_RGBA8"},
+		{GL_RGB10_A2, "GL_RGB10_A2"},
 		{GL_RGBA12, "GL_RGBA12"},
 		{GL_RGBA16, "GL_RGBA16"},
 		{GL_RGBA16F, "GL_RGBA16F"},
@@ -120,7 +122,7 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 
 	size_t combinations = 0;
 	clock_gettime(CLOCK_REALTIME, &start);
-	for (size_t i = 3; i < size_of_types; ++i) {
+	for (size_t i = 0; i < size_of_types; ++i) {
 		size_t size_of_fmts = ARRAY_LEN(fmts);
 		struct gl_params *valid_fmts = fmts;
 //		struct gl_params *valid_in = in_fmts;
@@ -151,7 +153,7 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 					glFinish();
 					clock_gettime(CLOCK_REALTIME, &after);
 					printf("\t%ld", timespec_nanodiff(
-						&before, &after));
+						before, after));
 					fflush(stdout);
 
 					texture_upload(img, GL_UNSIGNED_BYTE,
@@ -170,12 +172,12 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 	}
 
 	printf("%zu combinations total in %ld nanoseconds.\n", combinations,
-		timespec_nanodiff(&start, &after));
+		timespec_nanodiff(start, after));
 	return GL_NO_ERROR;
 }
 
 static void help(const char *prog) {
-	printf("Usage: %s [A-BIG-FILE.tga]\n", prog);
+	printf("Usage: %s FILE.pnm\n", prog);
 }
 
 int main(const int argc, const char *argv[]) {
@@ -183,17 +185,15 @@ int main(const int argc, const char *argv[]) {
 		help(argv[0]);
 	}
 
-	struct window_control control;
-	memset(&control.conf, 0, sizeof(control.conf));
+	struct window_control control = {0};
 	control.conf.initial_w = 640;
 	control.conf.initial_h = 480;
 
-	if (!setup_display(&control)) {
+	if (!setup_display(&control, NULL)) {
 		return 1;
 	}
 
-	struct image_file file;
-	memset(&file, 0, sizeof(file));
+	struct image_file file = {0};
 	file.ifp = fopen(argv[1], "rb");
 	if (!file.ifp) {
 		puts("Failed to open file.");
@@ -210,7 +210,7 @@ int main(const int argc, const char *argv[]) {
 
 	free_image_file(&file);
 	delete_gl_context(&control.context);
-	glfwTerminate();
+	terminate_window();
 
 	if (result != wu_ok) {
 		printf("Failed at decoding. %s.\n", wu_error_message(result));

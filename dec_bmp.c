@@ -5,13 +5,13 @@
 
 enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct bmp_desc desc;
-	enum bmp_fail result = bmp_open_file(infile->ifp, &desc);
-	if (result != bmp_ok) {
+	enum lib_fail fail = bmp_open_file(infile->ifp, &desc);
+	if (fail) {
 		return wu_open_error;
 	}
 
-	result = bmp_parse_header(&desc);
-	if (result != bmp_ok) {
+	fail = bmp_parse_header(&desc);
+	if (fail) {
 		bmp_cleanup(&desc);
 		return wu_invalid_header;
 	}
@@ -31,7 +31,7 @@ enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	img->palette = (unsigned char *)bmp_take_colormap(&desc);
 	img->w = desc.w;
 	img->h = desc.h;
-	img->channels = 3;
+	img->channels = desc.bitdepth == 32 ? 4 : 3;
 	img->alignment = (unsigned char)bmp_get_row_alignment(&desc);
 	img->layout = bgra;
 	img->mirror = (desc.order == bmp_bottom_up);

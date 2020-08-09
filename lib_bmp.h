@@ -2,23 +2,15 @@
 #define LIB_BMP
 
 #include <stdio.h>
+#include <stdlib.h>
 
+#include "common_lib.h"
 #include "common_unpack.h"
 
-enum bmp_fail {
-	bmp_ok = 0,
-	bmp_open_error,
-	bmp_unexpected_eof,
-	bmp_invalid_signature,
-	bmp_invalid_header,
-	bmp_unsupported_format,
-	bmp_alloc_error,
-};
-
 enum bmp_rle_marker {
-	end_of_scan_line = 0,
-	end_of_rle,
-	delta,
+	bmp_end_of_scan_line = 0,
+	bmp_end_of_rle,
+	bmp_delta,
 };
 
 enum bmp_compression {
@@ -70,8 +62,8 @@ unsigned char * bmp_decode(const struct bmp_desc *desc);
 
 struct colormap * bmp_take_colormap(struct bmp_desc *desc);
 
-enum bmp_fail bmp_parse_header(struct bmp_desc *desc);
+enum lib_fail bmp_parse_header(struct bmp_desc *desc);
 
-enum bmp_fail bmp_open_file(FILE *ifp, struct bmp_desc *desc);
+enum lib_fail bmp_open_file(FILE *ifp, struct bmp_desc *desc);
 
 #endif /* LIB_BMP */

@@ -8,24 +8,6 @@
 
 #include "lib_tga.h"
 
-const char * tga_fail_string(const enum tga_fail fail) {
-	switch (fail) {
-	case tga_ok:
-		return "TGA: All OK";
-	case tga_unexpected_eof:
-		return "TGA: Unexpected End Of File";
-	case tga_invalid_header:
-		return "TGA: Invalid header";
-	case tga_unsupported_format:
-		return "TGA: Unsupported variant";
-	case tga_no_image_data:
-		return "TGA: File is header only";
-	case tga_alloc_error:
-		return "TGA: Alloc error";
-	}
-	return "TGA: ???";
-}
-
 void tga_cleanup(struct tga_desc *desc) {
 	free(desc->meta);
 	free(desc->map.entry);
@@ -77,7 +59,7 @@ unsigned char *restrict data) {
 		return NULL;
 	}
 
-	strip_colormap_rgb8(output, data, desc->map.entry, desc->w, desc->h, 1);
+	strip_colormap(output, data, desc->map.entry, desc->w, desc->h, 1, 3, 8);
 	free(data);
 	return output;
 }
@@ -157,9 +139,9 @@ const unsigned char *restrict rle_limit, const unsigned char bytes) {
 
 	/* Apparently, the last value is to be repeated if the RLE stream
 	 * finishes early. */
-	const uintptr_t diff = (uintptr_t)((output_limit - output) / bytes);
-	if (diff) {
-		color_set(output, rle - bytes, diff, bytes);
+	const ptrdiff_t diff = (output_limit - output) / bytes;
+	if (diff > 0) {
+		color_set(output, rle - bytes, (size_t)diff, bytes);
 	}
 }
 
@@ -222,8 +204,7 @@ unsigned char * tga_decode(const struct tga_desc *desc) {
 	fseek(desc->ifp, desc->data_start, SEEK_SET);
 	const size_t read = fread(data, 1, desc->data_len, desc->ifp);
 	if (read != desc->data_len) {
-		puts("TGA warning: Unexpected End of File, output may contain "
-			"garbage.");
+		puts(RASTER_EOF);
 	}
 
 	switch (desc->type) {
@@ -254,19 +235,19 @@ static bool read_extension_area(struct tga_desc *desc) {
 	const size_t area_len = 495;
 	size_t len = 1;
 	size_t read = fread(buf, 2, len, desc->ifp);
-	if (read != len || endian_u16(buf, little_endian) != area_len) {
+	if (read != len || buf_endian16(buf, little_endian) != area_len) {
 		return false;
 	}
 
 	len = sizeof(meta->author.name);
 	read = fread(meta->author.name, 1, len, desc->ifp);
-	if (read != len || meta->author.name[len - 1] != '\0') {
+	if (read != len || meta->author.name[len - 1] != 0) {
 		return false;
 	}
 
 	len = sizeof(meta->author.comment);
 	read = fread(meta->author.comment, 1, len, desc->ifp);
-	if (read != len || meta->author.comment[len - 1] != '\0') {
+	if (read != len || meta->author.comment[len - 1] != 0) {
 		return false;
 	}
 
@@ -275,16 +256,16 @@ static bool read_extension_area(struct tga_desc *desc) {
 	if (read != len) {
 		return false;
 	}
-	meta->stamp.month = endian_u16(buf, little_endian);
-	meta->stamp.day = endian_u16(buf + 2, little_endian);
-	meta->stamp.year = endian_u16(buf + 4, little_endian);
-	meta->stamp.hour = endian_u16(buf + 6, little_endian);
-	meta->stamp.minute = endian_u16(buf + 8, little_endian);
-	meta->stamp.second = endian_u16(buf + 10, little_endian);
+	meta->stamp.month = buf_endian16(buf, little_endian);
+	meta->stamp.day = buf_endian16(buf + 2, little_endian);
+	meta->stamp.year = buf_endian16(buf + 4, little_endian);
+	meta->stamp.hour = buf_endian16(buf + 6, little_endian);
+	meta->stamp.minute = buf_endian16(buf + 8, little_endian);
+	meta->stamp.second = buf_endian16(buf + 10, little_endian);
 
 	len = sizeof(meta->job.name);
 	read = fread(meta->job.name, 1, len, desc->ifp);
-	if (read != len || meta->job.name[len - 1] != '\0') {
+	if (read != len || meta->job.name[len - 1] != 0) {
 		return false;
 	}
 
@@ -293,13 +274,13 @@ static bool read_extension_area(struct tga_desc *desc) {
 	if (read != len) {
 		return false;
 	}
-	meta->job.hour = endian_u16(buf, little_endian);
-	meta->job.minute = endian_u16(buf + 2, little_endian);
-	meta->job.second = endian_u16(buf + 4, little_endian);
+	meta->job.hour = buf_endian16(buf, little_endian);
+	meta->job.minute = buf_endian16(buf + 2, little_endian);
+	meta->job.second = buf_endian16(buf + 4, little_endian);
 
 	len = sizeof(meta->software.id);
 	read = fread(meta->software.id, 1, len, desc->ifp);
-	if (read != len || meta->software.id[len - 1] != '\0') {
+	if (read != len || meta->software.id[len - 1] != 0) {
 		return false;
 	}
 
@@ -309,14 +290,14 @@ static bool read_extension_area(struct tga_desc *desc) {
 		return false;
 	}
 	meta->software.version_letter = (char)buf[1];
-	meta->software.version_number = endian_u16(buf + 2, little_endian);
+	meta->software.version_number = buf_endian16(buf + 2, little_endian);
 	memcpy(&meta->key_color, buf + 4, 4);
-	meta->pixel_numerator = endian_u16(buf + 8, little_endian);
-	meta->pixel_denominator = endian_u16(buf + 10, little_endian);
-	meta->gamma_numerator = endian_u16(buf + 12, little_endian);
-	meta->gamma_denominator = endian_u16(buf + 14, little_endian);
-	//meta->color_offset = endian_u16(buf + 16, little_endian);
-	meta->stamp_offset = endian_u16(buf + 20, little_endian);
+	meta->pixel_numerator = buf_endian16(buf + 8, little_endian);
+	meta->pixel_denominator = buf_endian16(buf + 10, little_endian);
+	meta->gamma_numerator = buf_endian16(buf + 12, little_endian);
+	meta->gamma_denominator = buf_endian16(buf + 14, little_endian);
+	//meta->color_offset = buf_endian16(buf + 16, little_endian);
+	meta->stamp_offset = buf_endian16(buf + 20, little_endian);
 	return true;
 }
 
@@ -340,7 +321,7 @@ bool tga_parse_footer(struct tga_desc *desc) {
 			}
 		}
 
-		const unsigned int extension_off = endian_u32(footer,
+		const unsigned int extension_off = buf_endian32(footer,
 			little_endian);
 		if (extension_off) {
 			fseek(desc->ifp, (long)extension_off, SEEK_SET);
@@ -350,7 +331,7 @@ bool tga_parse_footer(struct tga_desc *desc) {
 	return false;
 }
 
-static enum tga_fail validate_filesize(struct tga_desc *desc) {
+static enum lib_fail validate_filesize(struct tga_desc *desc) {
 	fseek(desc->ifp, 0, SEEK_END);
 	const long end = ftell(desc->ifp);
 
@@ -364,16 +345,16 @@ static enum tga_fail validate_filesize(struct tga_desc *desc) {
 	} else {
 		desc->data_len = dims * desc->bytedepth;
 		if (file_len < desc->data_len) {
-			return tga_unexpected_eof;
+			return lib_unexpected_eof;
 		}
 	}
-	return tga_ok;
+	return lib_ok;
 }
 
-static enum tga_fail load_colormap(FILE *ifp, struct tga_colormap *map) {
+static enum lib_fail load_colormap(FILE *ifp, struct tga_colormap *map) {
 	map->entry = malloc(sizeof(*map->entry) * 256);
 	if (!map->entry) {
-		return tga_alloc_error;
+		return lib_alloc_error;
 	}
 
 	map->bytedepth = (unsigned char)((map->bitdepth + 7) / 8);
@@ -394,7 +375,7 @@ static enum tga_fail load_colormap(FILE *ifp, struct tga_colormap *map) {
 	}
 
 	if (map->bitdepth == 32) {
-		return tga_ok;
+		return lib_ok;
 	}
 
 	unsigned char *pixel = (unsigned char *)map->entry;
@@ -416,16 +397,16 @@ static enum tga_fail load_colormap(FILE *ifp, struct tga_colormap *map) {
 			}
 		}
 	} while (i != 0);
-	return tga_ok;
+	return lib_ok;
 }
 
-static enum tga_fail validate_header(struct tga_desc *desc,
+static enum lib_fail validate_header(struct tga_desc *desc,
 const u_int8_t cm_type, const u_int8_t type, const u_int16_t cm_start,
 const u_int16_t cm_len, const u_int8_t cm_depth, const u_int16_t width,
 const u_int16_t height, const u_int8_t bitdepth, const u_int8_t img_desc) {
 	switch (type) {
 	case no_image_data:
-		return tga_no_image_data;
+		return lib_tga_no_image_data;
 	case truecolor_data:
 	case monochrome_data:
 	case truecolor_rle:
@@ -433,7 +414,7 @@ const u_int16_t height, const u_int8_t bitdepth, const u_int8_t img_desc) {
 		if (cm_type == 0) {
 			break;
 		}
-		return tga_invalid_header;
+		return lib_invalid_header;
 	case colormap_data:
 	case colormap_rle:
 		if (cm_type == 1 && cm_start < cm_len && bitdepth == 8) {
@@ -441,7 +422,7 @@ const u_int16_t height, const u_int8_t bitdepth, const u_int8_t img_desc) {
 			case 15: case 16: case 24: case 32:
 				break;
 			default:
-				return tga_invalid_header;
+				return lib_invalid_header;
 			}
 
 			desc->map.offset = cm_start;
@@ -449,13 +430,13 @@ const u_int16_t height, const u_int8_t bitdepth, const u_int8_t img_desc) {
 			desc->map.bitdepth = cm_depth;
 			break;
 		}
-		return tga_invalid_header;
+		return lib_invalid_header;
 	default:
-		return tga_unsupported_format;
+		return lib_unsupported_format;
 	}
 
 	if (!width || !height) {
-		return tga_invalid_header;
+		return lib_invalid_header;
 	}
 
 	desc->w = width;
@@ -480,13 +461,13 @@ const u_int16_t height, const u_int8_t bitdepth, const u_int8_t img_desc) {
 		desc->ch = 4;
 		break;
 	default:
-		return tga_invalid_header;
+		return lib_invalid_header;
 	}
 
-	return tga_ok;
+	return lib_ok;
 }
 
-enum tga_fail tga_parse_header(struct tga_desc *desc) {
+enum lib_fail tga_parse_header(struct tga_desc *desc) {
 	/* TGA header
 		Offset  Size    Name
 		0       BYTE    IDLength;       // Size of Image ID field
@@ -506,19 +487,19 @@ enum tga_fail tga_parse_header(struct tga_desc *desc) {
 
 	u_int8_t header[18];
 	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
-		return tga_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
-	const enum tga_fail result = validate_header(desc,
+	const enum lib_fail fail = validate_header(desc,
 		header[1], header[2],
-		endian_u16(header + 3, little_endian),
-		endian_u16(header + 5, little_endian),
+		buf_endian16(header + 3, little_endian),
+		buf_endian16(header + 5, little_endian),
 		header[7],
-		endian_u16(header + 12, little_endian),
-		endian_u16(header + 14, little_endian),
+		buf_endian16(header + 12, little_endian),
+		buf_endian16(header + 14, little_endian),
 		header[16], header[17]);
-	if (result != tga_ok) {
-		return result;
+	if (fail) {
+		return fail;
 	}
 
 	if (desc->meta) {
@@ -526,7 +507,7 @@ enum tga_fail tga_parse_header(struct tga_desc *desc) {
 		const size_t read = fread(desc->meta->id, 1,
 			desc->meta->id_len, desc->ifp);
 		if (read != desc->meta->id_len) {
-			return tga_unexpected_eof;
+			return lib_unexpected_eof;
 		}
 	} else {
 		fseek(desc->ifp, header[0], SEEK_CUR);
@@ -540,7 +521,7 @@ enum tga_fail tga_parse_header(struct tga_desc *desc) {
 	return validate_filesize(desc);
 }
 
-enum tga_fail tga_open_file(FILE *ifp, struct tga_desc *desc,
+enum lib_fail tga_open_file(FILE *ifp, struct tga_desc *desc,
 const bool read_metadata) {
 	desc->ifp = ifp;
 	desc->expand_16bit = true;
@@ -549,10 +530,10 @@ const bool read_metadata) {
 	if (read_metadata) {
 		desc->meta = calloc(1, sizeof(*desc->meta));
 		if (!desc->meta) {
-			return tga_alloc_error;
+			return lib_alloc_error;
 		}
 	} else {
 		desc->meta = NULL;
 	}
-	return tga_ok;
+	return lib_ok;
 }

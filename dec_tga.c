@@ -6,53 +6,53 @@
 
 #include "lib_tga.h"
 
-static void print_extension_area(const struct tga_metadata *meta) {
+static void print_extension_area(const struct tga_metadata *meta, FILE *out) {
 	print_unsafe_data(meta->author.name, sizeof(meta->author.name),
-		"Author name", true);
+		"Author name", true, out);
 
 	print_unsafe_data(meta->author.comment, sizeof(meta->author.comment),
-		"Author comment", true);
+		"Author comment", true, out);
 
 	if (meta->stamp.month || meta->stamp.day || meta->stamp.year
 	|| meta->stamp.hour || meta->stamp.minute || meta->stamp.second) {
-		printf("Timestamp: %.4hu-%.2hu-%.2hu %.2hu:%.2hu:%.2hu\n",
+		fprintf(out, "Timestamp: %.4hu-%.2hu-%.2hu %.2hu:%.2hu:%.2hu\n",
 			meta->stamp.year, meta->stamp.month, meta->stamp.day,
 			meta->stamp.hour, meta->stamp.minute, meta->stamp.second);
 	}
 
 	print_unsafe_data(meta->job.name, sizeof(meta->job.name), "Job ID",
-		true);
+		true, out);
 
 	if (meta->job.hour || meta->job.minute || meta->job.second) {
-		printf("Job time: %.2hu:%.2hu:%.2hu\n",
+		fprintf(out, "Job time: %.2hu:%.2hu:%.2hu\n",
 			meta->job.hour, meta->job.minute, meta->job.second);
 	}
 
 	print_unsafe_data(meta->software.id, sizeof(meta->software.id),
-		"Software ID", true);
+		"Software ID", true, out);
 
 	if (isgraph(meta->software.version_letter)) {
-		printf("Software version letter: %c\n",
+		fprintf(out, "Software version letter: %c\n",
 			meta->software.version_letter);
 	}
 	if (meta->software.version_number) {
-		printf("Software version number: %hu\n",
+		fprintf(out, "Software version number: %hu\n",
 			meta->software.version_number);
 	}
 }
 
 enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct tga_desc desc;
-	enum tga_fail result = tga_open_file(infile->ifp, &desc, true);
-	if (result != tga_ok) {
-		infile->err_msg = strdup(tga_fail_string(result));
+	enum lib_fail fail = tga_open_file(infile->ifp, &desc, true);
+	if (fail) {
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_alloc_error;
 	}
 
-	result = tga_parse_header(&desc);
-	if (result != tga_ok) {
+	fail = tga_parse_header(&desc);
+	if (fail) {
 		tga_cleanup(&desc);
-		infile->err_msg = strdup(tga_fail_string(result));
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_invalid_header;
 	}
 
@@ -61,9 +61,10 @@ enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_exceeded_size_limit;
 	}
 
-	print_unsafe_data(desc.meta->id, desc.meta->id_len, NULL, true);
+	print_unsafe_data(desc.meta->id, desc.meta->id_len, NULL, true,
+		infile->meta.fp);
 	if (tga_parse_footer(&desc)) {
-		print_extension_area(desc.meta);
+		print_extension_area(desc.meta, infile->meta.fp);
 		infile->bg[0] = desc.meta->key_color.r;
 		infile->bg[1] = desc.meta->key_color.g;
 		infile->bg[2] = desc.meta->key_color.b;

@@ -18,50 +18,75 @@ enum endianness {
 	little_endian = 1,
 };
 
-long timespec_nanodiff(const struct timespec *restrict before,
-const struct timespec *restrict after);
+struct text_block {
+	size_t tail;
+	char buf[];
+};
 
-int iwrapadd(int val, const int add, const int max);
+void * flex_realloc(void *flex, size_t head, size_t nmemb, size_t size);
 
-int iclamp(const int n, const int min, const int max);
+void * flex_calloc(size_t head, size_t nmemb, size_t size);
 
-int imax(const int x, const int y);
+void * flex_malloc(size_t head, size_t nmemb, size_t size);
 
-int imin(const int x, const int y);
+size_t read_spaced_text(struct text_block *text, FILE *ifp);
 
-size_t zumax(const size_t x, const size_t y);
+struct text_block * new_text_block(void);
 
-size_t zumin(const size_t x, const size_t y);
+long timespec_nanodiff(struct timespec before, struct timespec after);
 
-unsigned int umax(const unsigned int x, const unsigned int y);
+size_t scanline_length(size_t width, size_t bitdepth, size_t alignment);
 
-unsigned int umin(const unsigned int x, const unsigned int y);
+int fixed_point_scale(int outmax, int inmax, int prec);
 
-float fclampf(const float n, const float min, const float max);
+int iwrap(int val, int max);
 
-size_t integer_fit(const size_t contain_w, const size_t contain_h,
-const size_t fit_w, const size_t fit_h);
+int iclamp(int n, int min, int max);
 
-u_int16_t swap_u16(const u_int16_t val);
+unsigned int ulog2(unsigned int x);
 
-void swap_u16_inplace(void *data, const size_t cnt);
+size_t zumax(size_t x, size_t y);
 
-u_int16_t endian_u16(const void *data, const enum endianness e);
+size_t zumin(size_t x, size_t y);
 
-u_int32_t endian_u32(const void *data, const enum endianness e);
+unsigned int umax(unsigned int x, unsigned int y);
 
-void loop_endian_u32(void *data, const enum endianness e, const size_t cnt);
+unsigned int umin(unsigned int x, unsigned int y);
+
+long lmax(long x, long y);
+
+long lmin(long x, long y);
+
+int imax(int x, int y);
+
+int imin(int x, int y);
+
+float fclampf(float n, float min, float max);
+
+unsigned int integer_fit(unsigned int contain_w, unsigned int contain_h,
+unsigned int fit_w, unsigned int fit_h);
+
+enum endianness which_end(void);
+
+u_int32_t endian32(u_int32_t val, enum endianness e);
+
+u_int16_t endian16(u_int16_t val, enum endianness e);
+
+u_int16_t buf_endian16(const void *data, enum endianness e);
+
+u_int32_t buf_endian32(const void *data, enum endianness e);
+
+void loop_endian16(u_int16_t *data, enum endianness e, size_t cnt);
+
+void loop_endian32(u_int32_t *data, enum endianness e, size_t cnt);
 
 void print_temp_line(const char *text);
 
 void print_unsafe_data(const void *data, size_t len, const char *name,
-const bool newline);
-
-int print_error(const char *restrict action, const char *restrict file,
-const char *restrict msg);
+const bool newline, FILE *stream);
 
 unsigned char * read_file_to_mem(FILE *ifp, size_t *size);
 
-char * id_template(const char *prefix, const size_t n);
+char * id_template(const char *prefix, size_t n);
 
 #endif /* COMMON_FUNCS */

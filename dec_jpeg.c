@@ -9,15 +9,14 @@
 #include "common.h"
 
 struct jpeg_state {
-	size_t soi_alloc;
-	long *soi_offsets;
 	struct jpeg_decompress_struct dinfo;
 	struct jpeg_error_mgr jerr;
+	size_t soi_alloc;
+	long soi_offsets[];
 };
 
 static void clean_jpeg_state(struct jpeg_state *js) {
 	jpeg_destroy_decompress(&js->dinfo);
-	free(js->soi_offsets);
 	free(js);
 }
 
@@ -38,20 +37,20 @@ static size_t search_soi_offsets(FILE *ifp, struct jpeg_state *js) {
 		length = 2,
 	} state = marker;
 
-	size_t alloc = js->soi_alloc;
 	size_t idx = 1;
 	for (int c; (c = getc(ifp)) != EOF;) {
 		if (state == marker) {
 			switch (c) {
 			case 0xD8:
-				if (idx == alloc) {
-					alloc += alloc / 4;
-					long *hold = realloc(js->soi_offsets,
-						alloc * sizeof(long));
+				if (idx == js->soi_alloc) {
+					js->soi_alloc += js->soi_alloc / 4;
+					struct jpeg_state *hold = flex_realloc(
+						js, sizeof(*js), js->soi_alloc,
+						sizeof(*js->soi_offsets));
 					if (!hold) {
 						break;
 					}
-					js->soi_offsets = hold;
+					js = hold;
 				}
 				const long i = ftell(ifp);
 				js->soi_offsets[idx] = i - 2;
@@ -80,7 +79,6 @@ static size_t search_soi_offsets(FILE *ifp, struct jpeg_state *js) {
 			state = marker;
 		}
 	}
-	js->soi_alloc = alloc;
 	return idx;
 }
 
@@ -92,7 +90,7 @@ static bool is_mpo(const JOCTET *data, unsigned int len) {
 }
 
 static enum wu_error decode_loop(struct image_file *infile,
-const struct wu_conf *wuconf, struct jpeg_state *js) {
+const struct wu_conf *wuconf, struct jpeg_state *js, FILE *metadata) {
 	struct raw_img *img = infile->sub_img;
 	struct jpeg_decompress_struct *dinfo = &js->dinfo;
 
@@ -149,7 +147,7 @@ const struct wu_conf *wuconf, struct jpeg_state *js) {
 		while (mk) {
 			if (mk->marker == JPEG_COM) {
 				print_unsafe_data(mk->data, mk->data_length,
-					NULL, true);
+					"Comment", true, metadata);
 			} else if (i == 0 && mk->marker == 0xE2
 			&& is_mpo(mk->data, mk->data_length)) {
 				/* MPO offsets are relative to the MPO marker,
@@ -172,17 +170,13 @@ const struct wu_conf *wuconf, struct jpeg_state *js) {
 
 enum wu_error jpeg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct jpeg_state *js = malloc(sizeof(struct jpeg_state));
+	const size_t soi_alloc = 4;
+	struct jpeg_state *js = flex_calloc(sizeof(*js), soi_alloc,
+		sizeof(*js->soi_offsets));
 	if (!js) {
 		return wu_alloc_error;
 	}
-
-	js->soi_alloc = 4;
-	js->soi_offsets = calloc(js->soi_alloc, sizeof(*js->soi_offsets));
-	if (!js->soi_offsets) {
-		free(js);
-		return wu_alloc_error;
-	}
+	js->soi_alloc = soi_alloc;
 
 	if (!alloc_sub_images(infile, 1)) {
 		clean_jpeg_state(js);
@@ -192,7 +186,8 @@ const struct wu_conf *wuconf) {
 	js->dinfo.err = jpeg_std_error(&js->jerr);
 	jpeg_create_decompress(&js->dinfo);
 
-	const enum wu_error status = decode_loop(infile, wuconf, js);
+	const enum wu_error status = decode_loop(infile, wuconf, js,
+		infile->meta.fp);
 	clean_jpeg_state(js);
 	return status;
 }

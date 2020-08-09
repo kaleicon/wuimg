@@ -10,14 +10,15 @@
 struct svg_state {
 	RsvgDimensionData dims;
 	cairo_surface_t *record;
+	float dec_scale;
 };
 
-static void clean_svg_state(struct image_file *infile, struct svg_state *ds) {
+static void clean_svg_state(struct image_file *infile) {
+	struct svg_state *ds = infile->dec_state;
 	cairo_surface_destroy(ds->record);
 	free(ds);
-	if (infile) {
-		infile->callback = NULL;
-	}
+	infile->dec_state = NULL;
+	infile->events = 0;
 }
 
 static enum wu_error svg_render(struct image_file *infile,
@@ -25,8 +26,8 @@ const struct wu_conf *wuconf, struct svg_state *ds) {
 	struct raw_img *img = infile->sub_img;
 
 	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
-	const int width = (int)((float)ds->dims.width * img->dec_scale);
-	const int height = (int)((float)ds->dims.height * img->dec_scale);
+	const int width = (int)((float)ds->dims.width * ds->dec_scale);
+	const int height = (int)((float)ds->dims.height * ds->dec_scale);
 	const int stride = cairo_format_stride_for_width(format, width);
 	if ((unsigned int)imax(width, height) > wuconf->max_img_size) {
 		return wu_ok;
@@ -34,14 +35,14 @@ const struct wu_conf *wuconf, struct svg_state *ds) {
 
 	unsigned char *new_data = calloc((size_t)(stride * height), 1);
 	if (!new_data) {
-		clean_svg_state(infile, ds);
+		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 	cairo_surface_t *surf = cairo_image_surface_create_for_data(new_data,
 		format, width, height, stride);
 	if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
 		cairo_surface_destroy(surf);
-		clean_svg_state(infile, ds);
+		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 
@@ -52,7 +53,7 @@ const struct wu_conf *wuconf, struct svg_state *ds) {
 	if (cairo_status(canvas) != CAIRO_STATUS_SUCCESS) {
 		cairo_destroy(canvas);
 		cairo_surface_destroy(surf);
-		clean_svg_state(infile, ds);
+		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 
@@ -74,7 +75,7 @@ const struct wu_conf *wuconf, struct svg_state *ds) {
 		}
 		cairo_set_antialias(canvas, alias);
 	}
-	cairo_scale(canvas, img->dec_scale, img->dec_scale);
+	cairo_scale(canvas, ds->dec_scale, ds->dec_scale);
 	cairo_set_source_surface(canvas, ds->record, 0, 0);
 	cairo_paint(canvas);
 	cairo_destroy(canvas);
@@ -83,53 +84,62 @@ const struct wu_conf *wuconf, struct svg_state *ds) {
 	free(img->data);
 	img->data = new_data;
 	printf("Re-render @ %zu x %zu (%zu bytes), %.2fx original\n", img->w,
-		img->h, img->w * img->h * img->channels, img->dec_scale);
+		img->h, img->w * img->h * img->channels, ds->dec_scale);
 	return wu_ok;
 }
 
-static float limit_zoom(const unsigned int limit, const int orig_width,
-const int orig_height, float abs_zoom) {
-	const float max = fmaxf((float)orig_width * abs_zoom,
-		(float)orig_height * abs_zoom);
+static float limit_zoom(float zoom, const int width, const int height,
+const unsigned int limit, bool *reached_limit) {
+	const float max = (float)imax(width, height) * zoom;
 	if (max > (float)limit) {
-		abs_zoom *= (float)limit / max;
+		zoom *= (float)limit / max;
+		if (reached_limit) {
+			*reached_limit = true;
+		}
 	}
-	return abs_zoom;
+	return zoom;
 }
 
 static enum wu_error svg_rescale(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state) {
-	// state->zoom is set to 1 after every redraw.
-	if (state->zoom == 1) {
+	if (state->zoom == 1.0f) {
 		return wu_ok;
-	} else if (wuconf->svg_redraw == upscale && state->zoom < 1) {
+	} else if (wuconf->svg_redraw == upscale && state->zoom < 1.0f) {
 		return wu_ok;
 	}
 
 	struct svg_state *ds = infile->dec_state;
-	struct raw_img *img = infile->sub_img;
 
-	const float new_zoom = limit_zoom(wuconf->max_img_size,
-		ds->dims.width, ds->dims.height, img->dec_scale * state->zoom);
-	if (wuconf->svg_redraw == upscale && new_zoom <= img->dec_scale) {
-		clean_svg_state(infile, ds);
-		return wu_ok;
-	} else {
-		img->dec_scale = new_zoom;
+	bool reached_limit = false;
+	const float new_zoom = limit_zoom(ds->dec_scale * state->zoom,
+		ds->dims.width, ds->dims.height, wuconf->max_img_size,
+		&reached_limit);
+	if (wuconf->svg_redraw == upscale && reached_limit) {
+		infile->events = 0;
+	}
+
+	if (new_zoom > ds->dec_scale
+	|| (wuconf->svg_redraw == always && new_zoom != ds->dec_scale)) {
+		state->x_offset *= new_zoom / ds->dec_scale;
+		state->y_offset *= new_zoom / ds->dec_scale;
+		ds->dec_scale = new_zoom;
 		state->zoom = 1;
 		return svg_render(infile, wuconf, ds);
 	}
+	return wu_ok;
 }
 
-static enum wu_error svg_callback(struct image_file *infile,
+enum wu_error svg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
+	enum wu_error status = wu_ok;
 	if (event == scale) {
-		return svg_rescale(infile, wuconf, state);
-	} else if (event == finish) {
-		clean_svg_state(infile, infile->dec_state);
+		status = svg_rescale(infile, wuconf, state);
 	}
-	return wu_ok;
+	if (event == 0 || infile->events == 0) {
+		clean_svg_state(infile);
+	}
+	return status;
 }
 
 enum wu_error svg_dec(struct image_file *infile,
@@ -146,14 +156,13 @@ const struct wu_conf *wuconf) {
 		return wu_open_error;
 	}
 
-//	rsvg_handle_set_dpi(handle, 100);
-
-	struct svg_state *ds = malloc(sizeof(struct svg_state));
+	struct svg_state *ds = malloc(sizeof(*ds));
 	if (!ds) {
 		g_object_unref(handle);
 		free(data);
 		return wu_alloc_error;
 	}
+	infile->dec_state = ds;
 	rsvg_handle_get_dimensions(handle, &ds->dims);
 	ds->record = cairo_recording_surface_create(CAIRO_CONTENT_COLOR_ALPHA,
 		NULL);
@@ -163,7 +172,7 @@ const struct wu_conf *wuconf) {
 		cairo_destroy(canvas);
 		g_object_unref(handle);
 		free(data);
-		clean_svg_state(NULL, ds);
+		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 
@@ -172,30 +181,28 @@ const struct wu_conf *wuconf) {
 	g_object_unref(handle);
 	free(data);
 	if (!success) {
-		clean_svg_state(NULL, ds);
+		clean_svg_state(infile);
 		return wu_decoding_error;
 	}
 
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
-		clean_svg_state(NULL, ds);
+		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 	img->channels = 4;
 	img->bitdepth = 8;
-	img->layout = bgra; // Cairo renders in ARGB, which on little-endian
-		// means BGRA.
-	img->dec_scale = limit_zoom(wuconf->max_img_size, ds->dims.width,
-		ds->dims.height, 1);
+	img->layout = bgra; /* Cairo renders in ARGB, which on little-endian
+		means BGRA. */
+	ds->dec_scale = limit_zoom(1, ds->dims.width, ds->dims.height,
+		wuconf->max_img_size, NULL);
 
 	enum wu_error err = svg_render(infile, wuconf, ds);
 	if (err == wu_ok && wuconf->svg_redraw != never) {
-		infile->callback = svg_callback;
-		infile->dec_state = ds;
 		infile->events = scale;
 	} else {
-		clean_svg_state(NULL, ds);
+		clean_svg_state(infile);
 	}
 	return err;
 }

@@ -60,11 +60,13 @@ const unsigned char *restrict src, const size_t len, const size_t ch) {
 	 */
 
 	const size_t src_ch = 4;
-	if (ch == 3) {
+	switch (ch) {
+	case 3:
 		for (size_t j = 0; j < len; ++j) {
 			blend_rgba_on_rgb_pixel(dst + j*ch, src + j*src_ch);
 		}
-	} else if (ch == 4) {
+		break;
+	case 4:
 		for (size_t j = 0; j < len; ++j) {
 			blend_rgba_on_rgba_pixel(dst + j*ch, src + j*src_ch);
 		}
@@ -75,10 +77,10 @@ void composite_frame_alpha_blend(struct raw_img *img,
 const unsigned char *restrict src, const struct anim_frame *frame) {
 	size_t dst_pos = (frame->y * img->w + frame->x) * img->channels;
 
-	if (frame->w == img->w) {
-		blend_row(img->data + dst_pos, src, frame->w * frame->h,
-			img->channels);
-	} else {
+//	if (frame->w == img->w) {
+//		blend_row(img->data + dst_pos, src, frame->w * frame->h,
+//			img->channels);
+//	} else {
 		size_t src_pos = 0;
 		for (size_t i = 0; i < frame->h; ++i) {
 			blend_row(img->data + dst_pos, src + src_pos,
@@ -86,7 +88,7 @@ const unsigned char *restrict src, const struct anim_frame *frame) {
 			dst_pos += img->w * img->channels;
 			src_pos += frame->w * 4;
 		}
-	}
+//	}
 }
 
 void composite_frame_overwrite(struct raw_img *img,
@@ -94,21 +96,22 @@ const unsigned char *restrict src, const struct anim_frame *frame) {
 	const size_t src_width = frame->w * img->channels;
 	size_t dst_pos = (frame->y * img->w + frame->x) * img->channels;
 
-	if (frame->w == img->w) {
-		memcpy(img->data + dst_pos, src, src_width * frame->h);
-	} else {
+//	if (frame->w == img->w) {
+//		memcpy(img->data + dst_pos, src, src_width * frame->h);
+//	} else {
 		size_t src_pos = 0;
 		for (size_t i = 0; i < frame->h; ++i) {
 			memcpy(img->data + dst_pos, src + src_pos, src_width);
 			dst_pos += img->w * img->channels;
 			src_pos += src_width;
 		}
-	}
+//	}
 }
 
 /* I wrote this on a whim and turns out it performs better on some cases,
  * but worse on others, so we'll leave it disabled. */
 //#define ALIGNED_LOOP
+/*
 __attribute__((unused))
 static unsigned char * color_set4(unsigned char *restrict data,
 const void *restrict src, size_t items) {
@@ -208,12 +211,12 @@ const void *restrict src, size_t items) {
 	}
 	return data;
 }
-
+*/
 
 void * color_set(void *restrict data, const void *restrict color,
 const size_t items, const size_t ch) {
-	const unsigned char *restrict src = color;
 	unsigned char *restrict dst = data;
+	const unsigned char *restrict src = color;
 
 	bool same_bytes = true;
 	for (size_t i = 1; same_bytes && i < ch; ++i) {
@@ -237,9 +240,10 @@ const size_t items, const size_t ch) {
 			}
 		}
 	}
-	return data + (items * ch);
+	return dst + (items * ch);
 }
 
+/*
 void composite_color(struct raw_img *img, const unsigned char *restrict color,
 const struct anim_frame *frame) {
 	unsigned char *pos = img->data
@@ -253,20 +257,20 @@ const struct anim_frame *frame) {
 			pos += img->w * img->channels;
 		}
 	}
-}
+}*/
 
 void composite_clear(struct raw_img *img, const struct anim_frame *frame) {
 	unsigned char *pos = img->data
 		+ ((frame->y * img->w + frame->x) * img->channels);
 
-	if (frame->w == img->w) {
-		memset(pos, 0, frame->w * frame->h * img->channels);
-	} else {
+//	if (frame->w == img->w) {
+//		memset(pos, 0, frame->w * frame->h * img->channels);
+//	} else {
 		for (size_t i = 0; i < frame->h; ++i) {
 			memset(pos, 0, frame->w * img->channels);
 			pos += img->w * img->channels;
 		}
-	}
+//	}
 }
 
 void copy_unaffected(struct raw_img *img, const unsigned char *restrict prev,
@@ -277,14 +281,14 @@ const struct anim_frame *frame) {
 		- frame->w) * img->channels - offset;
 
 	memcpy(img->data, prev, offset);
-	if (copy_stride == 0) {
-		offset += frame->w * frame->h * img->channels;
-	} else {
+//	if (copy_stride == 0) {
+//		offset += frame->w * frame->h * img->channels;
+//	} else {
 		offset += frame->w * img->channels;
 		for (size_t i = 0; i < frame->h - 1; ++i) {
 			memcpy(img->data + offset, prev + offset, copy_stride);
 			offset += img->w * img->channels;
 		}
-	}
+//	}
 	memcpy(img->data + offset, prev + offset, tail);
 }

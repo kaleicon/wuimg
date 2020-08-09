@@ -8,19 +8,20 @@
 
 enum wu_error sgi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct sgi_desc desc;
-	enum sgi_fail result = sgi_open_file(infile->ifp, &desc);
-	if (result != sgi_ok) {
-		infile->err_msg = strdup(sgi_fail_string(result));
+	enum lib_fail fail = sgi_open_file(infile->ifp, &desc);
+	if (fail) {
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_invalid_signature;
 	}
 
-	result = sgi_parse_header(&desc);
-	if (result != sgi_ok) {
-		infile->err_msg = strdup(sgi_fail_string(result));
+	fail = sgi_parse_header(&desc);
+	if (fail) {
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_invalid_header;
 	}
 
-	print_unsafe_data(desc.name, sizeof(desc.name), NULL, true);
+	print_unsafe_data(desc.name, sizeof(desc.name), NULL, true,
+		infile->meta.fp);
 
 	if (umax(desc.w, desc.h) > wuconf->max_img_size) {
 		return wu_exceeded_size_limit;
@@ -31,7 +32,6 @@ enum wu_error sgi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
-	desc.swap = true;
 	img->data = sgi_decode(&desc);
 	if (!img->data) {
 		return wu_decoding_error;
@@ -40,7 +40,7 @@ enum wu_error sgi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	img->h = desc.h;
 	if (desc.type == sgi_332) {
 		img->channels = 3;
-		img->bitdepth = 3;
+		img->bitdepth = rgb332;
 	} else {
 		img->channels = desc.ch;
 		img->bitdepth = (unsigned char)(desc.bytedepth * 8);

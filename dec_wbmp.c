@@ -7,9 +7,9 @@
 enum wu_error wbmp_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct wbmp_desc desc;
-	const enum wbmp_fail status = wbmp_open_file(infile->ifp, &desc);
-	if (status != wbmp_ok) {
-		infile->err_msg = strdup(wbmp_fail_string(status));
+	const enum lib_fail status = wbmp_open_file(infile->ifp, &desc);
+	if (status != lib_ok) {
+		infile->err_msg = strdup(lib_fail_string(status));
 		return wu_invalid_header;
 	}
 

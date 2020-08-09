@@ -4,14 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-enum tga_fail {
-	tga_ok = 0,
-	tga_unexpected_eof,
-	tga_invalid_header,
-	tga_unsupported_format,
-	tga_no_image_data,
-	tga_alloc_error,
-};
+#include "common_lib.h"
 
 struct tga_color_entry {
 	unsigned char b, g, r, a;
@@ -81,8 +74,6 @@ struct tga_desc {
 	struct tga_metadata *meta;
 };
 
-const char * tga_fail_string(const enum tga_fail fail);
-
 void tga_cleanup(struct tga_desc *desc);
 
 unsigned char * tga_decode_stamp(const struct tga_desc *desc,
@@ -94,9 +85,8 @@ struct tga_color_entry * tga_take_palette(struct tga_desc *desc);
 
 bool tga_parse_footer(struct tga_desc *desc);
 
-enum tga_fail tga_parse_header(struct tga_desc *desc);
+enum lib_fail tga_parse_header(struct tga_desc *desc);
 
-enum tga_fail tga_open_file(FILE *ifp, struct tga_desc *desc,
-const bool read_id);
+enum lib_fail tga_open_file(FILE *ifp, struct tga_desc *desc, bool read_metadata);
 
 #endif /* LIB_TGA */

@@ -7,7 +7,8 @@
 
 #include "wudefs.h"
 #include "common.h"
-
+#include "common_unpack.h"
+/*
 static void check_chunks(const png_unknown_chunkp unknowns,
 const int num_chunks) {
 	for (int i = 0; i < num_chunks; ++i) {
@@ -17,60 +18,49 @@ const int num_chunks) {
 		case 'a':
 			printf(" frames: %u\n"
 				" loops: %u\n",
-				endian_u32(unknowns[i].data, big_endian),
-				endian_u32(unknowns[i].data+4, big_endian));
+				endian32(unknowns[i].data, big_endian),
+				endian32(unknowns[i].data+4, big_endian));
 			break;
 		case 'f':
 			printf(" seq_num: %u\n",
-				endian_u32(unknowns[i].data, big_endian));
+				endian32(unknowns[i].data, big_endian));
 			break;
 		}
 	}
+}*/
+
+static void print_png_comment(const png_textp text_ptr, FILE *out) {
+	print_unsafe_data(text_ptr->key, strlen(text_ptr->key), NULL, false, out);
+	fputs(": ", out);
+	print_unsafe_data(text_ptr->text, strlen(text_ptr->text), NULL, true, out);
 }
 
-static void print_png_comment(const png_textp text_ptr) {
-	print_unsafe_data(text_ptr->key, strlen(text_ptr->key), NULL, false);
-	printf(": ");
-	print_unsafe_data(text_ptr->text, strlen(text_ptr->text), NULL, true);
-}
+static unsigned char * read_palette(png_structp png_ptr, png_infop info_ptr) {
+	struct colormap *palette = malloc(sizeof(*palette) * 256);
+	if (palette) {
+		png_colorp plte;
+		int plte_num;
+		png_get_PLTE(png_ptr, info_ptr, &plte, &plte_num);
 
-static unsigned char read_palette(png_structp png_ptr, png_infop info_ptr,
-struct raw_img *img, const png_byte bit_depth) {
-	const size_t pal_len = 1U << bit_depth;
-	img->palette = malloc(pal_len * 4);
-	if (!img->palette) {
-		return 0;
-	}
+		png_bytep trns = NULL;
+		int trns_num;
+		png_get_tRNS(png_ptr, info_ptr, &trns, &trns_num, NULL);
 
-	png_colorp plte;
-	int plte_num;
-	png_get_PLTE(png_ptr, info_ptr, &plte, &plte_num);
-
-	png_bytep trns = NULL;
-	int trns_num;
-	png_get_tRNS(png_ptr, info_ptr, &trns, &trns_num, NULL);
-
-	for (int i = 0; i < plte_num; ++i) {
-		img->palette[i*4] = plte[i].red;
-		img->palette[i*4 + 1] = plte[i].green;
-		img->palette[i*4 + 2] = plte[i].blue;
-	}
-
-	unsigned char channels;
-	if (trns && trns_num) {
-		channels = 4;
-		int i = 0;
-		for (; i < trns_num; ++i) {
-			img->palette[i*4 + 3] = trns[i];
+		for (int i = 0; i < plte_num; ++i) {
+			palette[i].r = plte[i].red;
+			palette[i].g = plte[i].green;
+			palette[i].b = plte[i].blue;
+			palette[i].a = 0xff;
 		}
-		for (; i < plte_num; ++i) {
-			img->palette[i*4 + 3] = 0xff;
+
+		if (trns && trns_num) {
+			for (int i = 0; i < trns_num; ++i) {
+				palette[i].a = trns[i];
+			}
 		}
-	} else {
-		channels = 3;
 	}
 
-	return channels;
+	return (unsigned char *)palette;
 }
 
 static unsigned char ** setup_png_output(struct image_file *infile,
@@ -87,11 +77,10 @@ png_structp png_ptr, png_infop info_ptr) {
 
 	const png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
 	const png_byte color_type = png_get_color_type(png_ptr, info_ptr);
-	unsigned char pal_channels = 0;
 	if (color_type == PNG_COLOR_TYPE_PALETTE) {
 		png_set_packing(png_ptr);
-		pal_channels = read_palette(png_ptr, info_ptr, img, bit_depth);
-		if (!pal_channels) {
+		img->palette = read_palette(png_ptr, info_ptr);
+		if (!img->palette) {
 			png_set_expand(png_ptr);
 		}
 	} else if (bit_depth <= 8) {
@@ -121,10 +110,6 @@ png_structp png_ptr, png_infop info_ptr) {
 
 	for (size_t i = 0; i < img->h; ++i) {
 		row_ptr[i] = &img->data[i*row_size];
-	}
-
-	if (img->palette) {
-		img->channels = pal_channels;
 	}
 	return row_ptr;
 }
@@ -172,12 +157,12 @@ const struct wu_conf *wuconf) {
 	png_textp text_ptr;
 	const int num_comm = png_get_text(png_ptr, info_ptr, &text_ptr, NULL);
 	for (int i = 0; i < num_comm; ++i) {
-		print_png_comment(&text_ptr[i]);
+		print_png_comment(&text_ptr[i], infile->meta.fp);
 	}
 
-	png_unknown_chunkp unknowns;
-	int num_chunks = png_get_unknown_chunks(png_ptr, info_ptr, &unknowns);
-	check_chunks(unknowns, num_chunks);
+//	png_unknown_chunkp unknowns;
+//	int num_chunks = png_get_unknown_chunks(png_ptr, info_ptr, &unknowns);
+//	check_chunks(unknowns, num_chunks);
 
 	unsigned char **rows = setup_png_output(infile, png_ptr, info_ptr);
 	if (!rows) {
@@ -191,8 +176,8 @@ const struct wu_conf *wuconf) {
 	png_infop end_ptr = png_create_info_struct(png_ptr);
 	if (end_ptr) {
 		png_read_end(png_ptr, end_ptr);
-		num_chunks = png_get_unknown_chunks(png_ptr, end_ptr, &unknowns);
-		check_chunks(unknowns, num_chunks);
+//		num_chunks = png_get_unknown_chunks(png_ptr, end_ptr, &unknowns);
+//		check_chunks(unknowns, num_chunks);
 	}
 
 	png_color_16p background;

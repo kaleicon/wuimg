@@ -1,36 +1,40 @@
-// This file is directly included from main.c, it was just splitted apart for
-// convenience.
-// See the wu_conf struct in wudefs.h for explanations. The definitions are
-// such that the default values for everything happen to be 0 (ergo, false).
-static void set_user_conf(struct wu_conf *conf) {
-	memset(conf, 0, sizeof(struct wu_conf));
+/* This file is #included into main.c, it was just put here for
+ * convenience. See wudefs.h for commented settings. */
+static struct wu_conf default_config() {
+	return (struct wu_conf) {
+		// Window
+		.initial_size = {1280, 960},
 
-	// Window
-	conf->initial_w = 1280;
-	conf->initial_h = 960;
-	conf->no_window_decorations = true;
-	conf->bg[0] = 0x11;
-	conf->bg[1] = 0x11;
-	conf->bg[2] = 0x11;
-	conf->bg[3] = 0x33;
-	conf->use_img_bg = image_rgb;
+		.bg[0] = 0x00,
+		.bg[1] = 0x33,
+		.bg[2] = 0x66,
+		.bg[3] = 0x66,
 
-	// Animations
-//	conf->keep_frames = true;
+//		.bg_src = average,//metadata_rgb,
+		.bg_src = vibrant,
 
-	// JPEG
-	conf->jpeg_fast_dct = true;
-	conf->jpeg_fast_upsamp = true;
+		// Animations
+//		.cache_frames = true,
+//		.anim_space_over_speed = true,
 
-	// TIFF
-	conf->tiff_use_homegrown_unpackers = true;
+		// JPEG
+		.jpeg_fast_dct = true,
+		.jpeg_fast_upsamp = true,
 
-	// WEBP
-	conf->webp_bypass_filtering = true;
-	conf->webp_fast_upsamp = true;
-	conf->webp_use_homegrown_renderer = true;
+		// TIFF
+		.tiff_use_homegrown_unpacker = true,
 
-	// SVG
-	conf->svg_antialiasing = best;
-	conf->svg_redraw = always;
+		// RAW
+//		.raw_prefer_thumbnail = true,
+		.raw_half_size = true,
+
+		// SVG
+		.svg_antialiasing = best,
+		.svg_redraw = upscale,
+
+		// WEBP
+		.webp_bypass_filtering = true,
+		.webp_fast_upsamp = true,
+		.webp_use_homegrown_renderer = true,
+	};
 }

@@ -7,16 +7,16 @@
 
 enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct pi_desc desc;
-	enum pi_fail status = pi_open_file(infile->ifp, &desc);
-	if (status != pi_ok) {
-		infile->err_msg = strdup(pi_fail_string(status));
+	enum lib_fail fail = pi_open_file(infile->ifp, &desc);
+	if (fail) {
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_invalid_signature;
 	}
 
-	status = pi_read_header(&desc);
-	if (status != pi_ok) {
+	fail = pi_read_header(&desc);
+	if (fail) {
 		pi_cleanup(&desc);
-		infile->err_msg = strdup(pi_fail_string(status));
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_invalid_header;
 	}
 
@@ -27,11 +27,14 @@ enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		} else {
 			len = desc.comment_len;
 		}
-		print_unsafe_data(desc.comment, len, "Comment", true);
+		print_unsafe_data(desc.comment, len, "Comment", true,
+			infile->meta.fp);
 	}
-	print_unsafe_data(desc.saver_sig, sizeof(desc.saver_sig), "Saver model", true);
+	print_unsafe_data(desc.saver_sig, sizeof(desc.saver_sig), "Saver model",
+		true, infile->meta.fp);
 	if (desc.saver) {
-		print_unsafe_data(desc.saver, desc.saver_len, "Saver data", true);
+		print_unsafe_data(desc.saver, desc.saver_len, "Saver data",
+			true, infile->meta.fp);
 	}
 
 	if (zumax(desc.w, desc.h) > wuconf->max_img_size) {

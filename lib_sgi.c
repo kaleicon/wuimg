@@ -5,55 +5,23 @@
 #include "common_composite.h"
 #include "lib_sgi.h"
 
-const char SGI_EOF[] = "SGI Warning: Unexpected End Of File. Output may "
-	"contain garbage.";
-
-const char * sgi_fail_string(const enum sgi_fail fail) {
-	switch (fail) {
-	case sgi_ok:
-		return "SGI: All OK";
-	case sgi_invalid_signature:
-		return "SGI: Invalid file signature";
-	case sgi_unexpected_eof:
-		return "SGI: Unexpected End Of File";
-	case sgi_invalid_header:
-		return "SGI: Invalid header parameters";
-	case sgi_colormap_file:
-		return "SGI: File either requires or is a colormap definition";
-	}
-	return "SGI: ???";
-}
-
 static void interleave_planes16(const unsigned ch, const size_t plane_len,
-u_int16_t *restrict output, const u_int16_t *restrict red, const bool swap) {
+u_int16_t *restrict output, const u_int16_t *restrict red) {
 	const u_int16_t *restrict green = red + plane_len;
 	const u_int16_t *restrict blue = red + plane_len * 2;
 	const u_int16_t *restrict alpha = red + plane_len * 3;
 	if (ch == 3) {
 		for (size_t i = 0; i < plane_len; ++i) {
-			if (swap) {
-				output[i*ch] = swap_u16(red[i]);
-				output[i*ch + 1] = swap_u16(green[i]);
-				output[i*ch + 2] = swap_u16(blue[i]);
-			} else {
-				output[i*ch] = red[i];
-				output[i*ch + 1] = green[i];
-				output[i*ch + 2] = blue[i];
-			}
+			output[i*ch] = endian16(red[i], big_endian);
+			output[i*ch + 1] = endian16(green[i], big_endian);
+			output[i*ch + 2] = endian16(blue[i], big_endian);
 		}
 	} else if (ch == 4) {
 		for (size_t i = 0; i < plane_len; ++i) {
-			if (swap) {
-				output[i*ch] = swap_u16(red[i]);
-				output[i*ch + 1] = swap_u16(green[i]);
-				output[i*ch + 2] = swap_u16(blue[i]);
-				output[i*ch + 3] = swap_u16(alpha[i]);
-			} else {
-				output[i*ch] = red[i];
-				output[i*ch + 1] = green[i];
-				output[i*ch + 2] = blue[i];
-				output[i*ch + 3] = alpha[i];
-			}
+			output[i*ch] = endian16(red[i], big_endian);
+			output[i*ch + 1] = endian16(green[i], big_endian);
+			output[i*ch + 2] = endian16(blue[i], big_endian);
+			output[i*ch + 3] = endian16(alpha[i], big_endian);
 		}
 	}
 }
@@ -90,8 +58,7 @@ const size_t plane_len, void *restrict planes) {
 		if (desc->bytedepth == 1) {
 			interleave_planes8(desc->ch, plane_len, output, planes);
 		} else {
-			interleave_planes16(desc->ch, plane_len, output, planes,
-				desc->swap);
+			interleave_planes16(desc->ch, plane_len, output, planes);
 		}
 	}
 	free(planes);
@@ -108,7 +75,7 @@ static unsigned char * uncompressed_decode(const struct sgi_desc *desc) {
 
 	const size_t read = fread(planes, 1, dims, desc->ifp);
 	if (read != dims) {
-		puts(SGI_EOF);
+		puts(RASTER_EOF);
 	}
 
 	return interleave_planes(desc, plane_len, planes);
@@ -118,7 +85,7 @@ static void rle_loop16(u_int16_t *restrict output,
 const u_int16_t *restrict out_limit, const u_int16_t *restrict rle,
 const u_int16_t *restrict rle_limit) {
 	do {
-		const unsigned packet = endian_u16(rle, big_endian);
+		const unsigned packet = endian16(*rle, big_endian);
 		const unsigned len = packet & 0x7f;
 		if (len && output + len <= out_limit) {
 			++rle;
@@ -218,10 +185,10 @@ static unsigned char * rle_decode(const struct sgi_desc *desc) {
 		free(rle);
 		return NULL;
 	} else if (read < rle_total) {
-		puts(SGI_EOF);
+		puts(RASTER_EOF);
 	}
 
-	loop_endian_u32(rle, big_endian, tab_len * 2);
+	loop_endian32(rle, big_endian, tab_len * 2);
 
 	u_int32_t *restrict rle_offset = rle;
 	u_int32_t *restrict rle_rowlen = rle + tab_len;
@@ -260,7 +227,7 @@ unsigned char * sgi_decode(const struct sgi_desc *desc) {
 }
 
 
-static enum sgi_fail validate_filesize(struct sgi_desc *desc) {
+static enum lib_fail validate_filesize(struct sgi_desc *desc) {
 	const long start = ftell(desc->ifp);
 	fseek(desc->ifp, 0, SEEK_END);
 	const long end = ftell(desc->ifp);
@@ -271,7 +238,7 @@ static enum sgi_fail validate_filesize(struct sgi_desc *desc) {
 		const size_t table_size = desc->h * desc->ch
 			* sizeof(u_int32_t) * 2;
 		if (size <= table_size) {
-			return sgi_unexpected_eof;
+			return lib_unexpected_eof;
 		}
 		// E.g. (bytedepth == 1) 01 ff  01 fe ...
 		// E.g. (bytedepth == 2) 00 01 ff fe  00 01 fd fc ...
@@ -279,14 +246,14 @@ static enum sgi_fail validate_filesize(struct sgi_desc *desc) {
 		desc->rle_size = zumin(pathological_rle, size - table_size);
 	} else {
 		if (size < dims) {
-			return sgi_unexpected_eof;
+			return lib_unexpected_eof;
 		}
 	}
 	fseek(desc->ifp, start, SEEK_SET);
-	return sgi_ok;
+	return lib_ok;
 }
 
-static enum sgi_fail validate_header(struct sgi_desc *desc,
+static enum lib_fail validate_header(struct sgi_desc *desc,
 const u_int8_t compression, const u_int8_t bytedepth,
 const u_int16_t dimension, const u_int16_t width, const u_int16_t height,
 const u_int16_t channels, const u_int32_t bitmap_type) {
@@ -294,25 +261,25 @@ const u_int16_t channels, const u_int32_t bitmap_type) {
 	case sgi_uncompressed: case sgi_rle:
 		break;
 	default:
-		return sgi_invalid_header;
+		return lib_invalid_header;
 	}
 
 	switch (bytedepth) {
 	case 1: case 2:
 		break;
 	default:
-		return sgi_invalid_header;
+		return lib_invalid_header;
 	}
 
 	switch (dimension) {
 	case 1:
 		if (height != 1) {
-			return sgi_invalid_header;
+			return lib_invalid_header;
 		}
 		// Fallthrough
 	case 2:
 		if (channels != 1) {
-			return sgi_invalid_header;
+			return lib_invalid_header;
 		}
 		break;
 	case 3:
@@ -320,15 +287,15 @@ const u_int16_t channels, const u_int32_t bitmap_type) {
 		case 1: case 3: case 4:
 			break;
 		default:
-			return sgi_invalid_header;
+			return lib_invalid_header;
 		}
 		break;
 	default:
-		return sgi_invalid_header;
+		return lib_invalid_header;
 	}
 
 	if (!width || !height) {
-		return sgi_invalid_header;
+		return lib_invalid_header;
 	}
 
 	switch (bitmap_type) {
@@ -336,14 +303,14 @@ const u_int16_t channels, const u_int32_t bitmap_type) {
 		break;
 	case sgi_332:
 		if (channels != 1) {
-			return sgi_invalid_header;
+			return lib_invalid_header;
 		}
 		break;
 	case sgi_colormap:
 	case sgi_colormap_define:
-		return sgi_colormap_file;
+		return lib_sgi_is_colormap_file;
 	default:
-		return sgi_invalid_header;
+		return lib_invalid_header;
 	}
 
 	desc->w = width;
@@ -352,10 +319,10 @@ const u_int16_t channels, const u_int32_t bitmap_type) {
 	desc->bytedepth = bytedepth;
 	desc->compression = (enum sgi_compression)compression;
 	desc->type = (enum sgi_bitmap_type)bitmap_type;
-	return sgi_ok;
+	return lib_ok;
 }
 
-enum sgi_fail sgi_parse_header(struct sgi_desc *desc) {
+enum lib_fail sgi_parse_header(struct sgi_desc *desc) {
 	/* SGI header (after magic bytes)
 		Offset  Size    Name
 		0       CHAR    Compression;
@@ -374,44 +341,42 @@ enum sgi_fail sgi_parse_header(struct sgi_desc *desc) {
 	*/
 	u_int8_t buf[14];
 	if (fread(buf, 1, 10, desc->ifp) != 10) {
-		return sgi_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	fseek(desc->ifp, 12, SEEK_CUR);
 	const size_t name_len = sizeof(desc->name);
 	if (fread(desc->name, 1, name_len, desc->ifp) != name_len) {
-		return sgi_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	if (fread(buf + 10, 1, 4, desc->ifp) != 4) {
-		return sgi_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
-	const enum sgi_fail status = validate_header(desc,
+	const enum lib_fail fail = validate_header(desc,
 		buf[0], buf[1],
-		endian_u16(buf + 2, big_endian),
-		endian_u16(buf + 4, big_endian),
-		endian_u16(buf + 6, big_endian),
-		endian_u16(buf + 8, big_endian),
-		endian_u32(buf + 10, big_endian));
-	if (status != sgi_ok) {
-		return status;
+		buf_endian16(buf + 2, big_endian),
+		buf_endian16(buf + 4, big_endian),
+		buf_endian16(buf + 6, big_endian),
+		buf_endian16(buf + 8, big_endian),
+		buf_endian32(buf + 10, big_endian));
+	if (fail) {
+		return fail;
 	}
 
 	fseek(desc->ifp, 512, SEEK_SET);
 	return validate_filesize(desc);
 }
 
-enum sgi_fail sgi_open_file(FILE *ifp, struct sgi_desc *desc) {
-	desc->swap = false;
-
+enum lib_fail sgi_open_file(FILE *ifp, struct sgi_desc *desc) {
 	unsigned char magic[2];
 	if (fread(magic, 1, sizeof(magic), ifp) == sizeof(magic)) {
 		if (!memcmp(magic, "\x01\xda", sizeof(magic))) {
 			desc->ifp = ifp;
-			return sgi_ok;
+			return lib_ok;
 		}
-		return sgi_invalid_signature;
+		return lib_invalid_signature;
 	}
-	return sgi_unexpected_eof;
+	return lib_unexpected_eof;
 }

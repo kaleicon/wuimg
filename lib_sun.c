@@ -8,32 +8,6 @@
 #include "common_unpack.h"
 #include "lib_sun.h"
 
-const char * sun_fail_string(const enum sun_fail fail) {
-	switch (fail) {
-	case sun_ok:
-		return "SUN: All OK";
-	case sun_open_error:
-		return "SUN: Failed to open file";
-	case sun_unexpected_eof:
-		return "SUN: Unexpected End Of File";
-	case sun_invalid_signature:
-		return "SUN: Invalid signature :: Not a SUN file";
-	case sun_invalid_header:
-		return "SUN: Invalid header";
-	case sun_type_is_unsupported:
-		return "SUN: Unsupported IFF or TIFF file type";
-	case sun_type_is_experimental:
-		return "SUN: Unsupported 'experimental' file type";
-	case sun_invalid_colormap:
-		return "SUN: Invalid or unexpected colormap";
-	case sun_uses_raw_colormap:
-		return "SUN: Unsupported 'raw' colormap type";
-	case sun_alloc_error:
-		return "SUN: Alloc error";
-	}
-	return "SUN: ???";
-}
-
 void sun_cleanup(struct sun_desc *desc) {
 	free(desc->colormap.map);
 }
@@ -66,15 +40,15 @@ unsigned char *raster) {
 
 	if (desc->colormap.map) {
 		strip_colormap(output, raster, desc->colormap.map, desc->w,
-			desc->h, 2, desc->bitdepth, 3);
+			desc->h, 2, 3, desc->bitdepth);
 	} else if (desc->colormap.len) { /* File has a colormap but the caller
 		has taken it. */
 		strip_unpack(output, raster, desc->w, desc->h, 2,
-			desc->bitdepth, unpack);
+			unpack, desc->bitdepth);
 	} else {
 		// Do 4bit files with no colormap exist?
 		strip_unpack(output, raster, desc->w, desc->h, 2,
-			desc->bitdepth, expand_invert);
+			expand_invert, desc->bitdepth);
 	}
 
 	free(raster);
@@ -204,8 +178,7 @@ unsigned char * sun_decode(const struct sun_desc *desc) {
 	}
 	const size_t read = fread(data, 1, len, desc->ifp);
 	if (read != len) {
-		puts("SUN warning: Got unexpected End of File while reading "
-			"bitmap data. Output may contain garbage.");
+		puts(RASTER_EOF);
 	}
 
 	switch (desc->type) {
@@ -226,18 +199,24 @@ struct colormap * sun_take_colormap(struct sun_desc *desc) {
 	return map;
 }
 
-static enum sun_fail interleave_colormap(struct sun_desc *desc) {
-	const size_t entries = 1U << desc->bitdepth;
-	struct colormap *map = malloc(sizeof(*desc->colormap.map) * entries);
+static enum lib_fail interleave_colormap(struct sun_desc *desc) {
+	struct colormap *map = malloc(sizeof(*desc->colormap.map) * 256);
 	if (!map) {
-		return sun_alloc_error;
+		return lib_alloc_error;
 	}
 
-	unsigned char *buf = (unsigned char *)(map) + entries;
+	const size_t entries = 1U << desc->bitdepth;
+	unsigned char *buf = malloc(entries * 3);
+	if (!buf) {
+		free(map);
+		return lib_alloc_error;
+	}
+
 	const size_t read = fread(buf, 3, entries, desc->ifp);
 	if (read != entries) {
+		free(buf);
 		free(map);
-		return sun_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	for (size_t i = 0; i < entries; ++i) {
@@ -246,8 +225,9 @@ static enum sun_fail interleave_colormap(struct sun_desc *desc) {
 		map[i].b = buf[i + entries * 2];
 		map[i].a = 0xff;
 	}
+	free(buf);
 	desc->colormap.map = map;
-	return sun_ok;
+	return lib_ok;
 }
 
 static bool validate_file_size(struct sun_desc *desc) {
@@ -279,18 +259,18 @@ static bool validate_file_size(struct sun_desc *desc) {
 	return true;
 }
 
-static enum sun_fail validate_header(struct sun_desc *desc,
+static enum lib_fail validate_header(struct sun_desc *desc,
 const u_int32_t width, const u_int32_t height, const u_int32_t bitdepth,
 const u_int32_t type, const u_int32_t cm_type, const u_int32_t cm_len) {
 	if (!width || !height) {
-		return sun_invalid_header;
+		return lib_invalid_header;
 	}
 
 	switch (bitdepth) {
 	case 1: case 4: case 8: case 24: case 32:
 		break;
 	default:
-		return sun_invalid_header;
+		return lib_invalid_header;
 	}
 
 	switch (type) {
@@ -301,28 +281,28 @@ const u_int32_t type, const u_int32_t cm_type, const u_int32_t cm_len) {
 		break;
 	case sun_tiff:
 	case sun_iff:
-		return sun_type_is_unsupported;
+		return lib_sun_unsupported_type;
 	case sun_experimental:
-		return sun_type_is_experimental;
+		return lib_sun_experimental_type;
 	default:
-		return sun_invalid_header;
+		return lib_invalid_header;
 	}
 
 	switch (cm_type) {
 	case sun_no_colormap:
 		if (cm_len) {
-			return sun_invalid_header;
+			return lib_invalid_header;
 		}
 		break;
 	case sun_rgb_colormap:
 		if (bitdepth > 8 || cm_len != (1U << bitdepth) * 3) {
-			return sun_invalid_header;
+			return lib_invalid_header;
 		}
 		break;
 	case sun_raw_colormap:
-		return sun_uses_raw_colormap;
+		return lib_sun_uses_raw_colormap;
 	default:
-		return sun_invalid_header;
+		return lib_invalid_header;
 	}
 
 	desc->w = width;
@@ -330,10 +310,10 @@ const u_int32_t type, const u_int32_t cm_type, const u_int32_t cm_len) {
 	desc->bitdepth = (unsigned char)bitdepth;
 	desc->type = (enum sun_type)type;
 	desc->colormap.len = cm_len;
-	return sun_ok;
+	return lib_ok;
 }
 
-enum sun_fail sun_parse_header(struct sun_desc *desc) {
+enum lib_fail sun_parse_header(struct sun_desc *desc) {
 	/* SUN header (after magic bytes)
 		Offset  Size    Name
 		0       DWORD   Width;
@@ -347,24 +327,24 @@ enum sun_fail sun_parse_header(struct sun_desc *desc) {
 
 	u_int32_t header[7];
 	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
-		return sun_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
-	const enum sun_fail result = validate_header(desc,
-		endian_u32(header, big_endian),
-		endian_u32(header + 1, big_endian),
-		endian_u32(header + 2, big_endian),
-		endian_u32(header + 4, big_endian),
-		endian_u32(header + 5, big_endian),
-		endian_u32(header + 6, big_endian));
-	if (result != sun_ok) {
-		return result;
+	const enum lib_fail fail = validate_header(desc,
+		endian32(header[0], big_endian),
+		endian32(header[1], big_endian),
+		endian32(header[2], big_endian),
+		endian32(header[4], big_endian),
+		endian32(header[5], big_endian),
+		endian32(header[6], big_endian));
+	if (fail) {
+		return fail;
 	}
 
 
 	desc->scan_len = (u_int32_t)scanline_length(desc->w, desc->bitdepth, 2);
 	if (!validate_file_size(desc)) {
-		return sun_unexpected_eof;
+		return lib_unexpected_eof;
 	}
 
 	if (desc->colormap.len) {
@@ -377,22 +357,22 @@ enum sun_fail sun_parse_header(struct sun_desc *desc) {
 		} else {
 			desc->ch = 3;
 		}
-		return sun_ok;
+		return lib_ok;
 	}
 }
 
-enum sun_fail sun_open_file(FILE *ifp, struct sun_desc *desc) {
+enum lib_fail sun_open_file(FILE *ifp, struct sun_desc *desc) {
 	unsigned char sig[4];
-	enum sun_fail status;
+	enum lib_fail status;
 	if (fscanf(ifp, "%4c", sig) == 1) {
 		if (!memcmp(sig, "\x59\xa6\x6a\x95", sizeof(sig))) {
 			desc->ifp = ifp;
-			return sun_ok;
+			return lib_ok;
 		} else {
-			status = sun_invalid_signature;
+			status = lib_invalid_signature;
 		}
 	} else {
-		status = sun_unexpected_eof;
+		status = lib_unexpected_eof;
 	}
 	return status;
 }

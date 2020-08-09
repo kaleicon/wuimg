@@ -12,8 +12,8 @@
 #include "common_composite.h"
 
 struct library_anim {
-	WebPAnimDecoder *anim_dec;
-	WebPAnimDecoderOptions anim_opts;
+	WebPAnimDecoder *dec;
+	int prev_msec;
 };
 
 struct homegrown_anim {
@@ -43,19 +43,20 @@ struct webp_state {
 	};
 };
 
-static void clean_webp_state(struct image_file *infile, struct webp_state *ds) {
+static void clean_webp_state(struct image_file *infile) {
+	struct webp_state *ds = infile->dec_state;
 	if (ds->anim_render == homegrown) {
 		WebPDemuxReleaseIterator(&ds->hanim.iter);
 		WebPDemuxDelete(ds->hanim.dmux);
 		free(ds->hanim.dec_buf);
 	} else if (ds->anim_render == library) {
-		WebPAnimDecoderDelete(ds->lanim.anim_dec);
+		WebPAnimDecoderDelete(ds->lanim.dec);
 	}
 
 	WebPFreeDecBuffer(&ds->config.output);
 	free((unsigned char *)ds->data.bytes);
 	free(ds);
-	infile->callback = NULL;
+	infile->dec_state = NULL;
 	infile->events = 0;
 }
 
@@ -113,27 +114,35 @@ const WebPIterator *iter) {
 
 static enum wu_error libwebp_dec_frame(struct raw_img *img,
 const struct wu_conf *wuconf, struct webp_state *ds) {
-	struct library_anim *lib = &ds->lanim;
-
 	uint32_t i;
-	if (wuconf->keep_frames) {
+	if (wuconf->cache_frames) {
 		i = ds->idx;
 	} else {
 		i = 0;
 	}
 
-	if (!WebPAnimDecoderHasMoreFrames(lib->anim_dec)) {
-		WebPAnimDecoderReset(lib->anim_dec);
+	if (!WebPAnimDecoderHasMoreFrames(ds->lanim.dec)) {
+		WebPAnimDecoderReset(ds->lanim.dec);
 	}
 
 	unsigned char *buf;
-	if (!WebPAnimDecoderGetNext(lib->anim_dec, &buf, &img[i].msec)) {
+	int msec;
+	if (!WebPAnimDecoderGetNext(ds->lanim.dec, &buf, &msec)) {
 		return wu_decoding_error;
 	}
 
-	if (wuconf->keep_frames) {
+	if (ds->idx == 0) {
+		img[i].msec = msec;
+	} else {
+		img[i].msec = msec - ds->lanim.prev_msec;
+	}
+	ds->lanim.prev_msec = msec;
+
+	if (wuconf->cache_frames) {
 		const size_t s = img[i].w * img[i].h * img[i].channels;
-		img[i].data = malloc(s);
+		if (!img[i].data) {
+			img[i].data = malloc(s);
+		}
 		if (img[i].data) {
 			memcpy(img[i].data, buf, s);
 		} else {
@@ -147,12 +156,12 @@ const struct wu_conf *wuconf, struct webp_state *ds) {
 	return wu_ok;
 }
 
-static enum wu_error wu_webp_dec_frame(struct raw_img *img,
+static enum wu_error homegrown_dec_frame(struct raw_img *img,
 const struct wu_conf *wuconf, struct webp_state *ds) {
 	struct homegrown_anim *hanim = &ds->hanim;
 
 	uint32_t i;
-	if (wuconf->keep_frames) {
+	if (wuconf->cache_frames) {
 		i = ds->idx;
 	} else {
 		i = 0;
@@ -194,7 +203,7 @@ const struct wu_conf *wuconf, struct webp_state *ds) {
 	} else {
 		switch (hanim->dispose) {
 		case WEBP_MUX_DISPOSE_BACKGROUND:
-			if (wuconf->keep_frames) {
+			if (wuconf->cache_frames) {
 				copy_unaffected(&img[i], img[i-1].data,
 					&hanim->prev_desc);
 			}
@@ -202,7 +211,7 @@ const struct wu_conf *wuconf, struct webp_state *ds) {
 			composite_frame(&img[i], hanim->dec_buf, &hanim->iter);
 			break;
 		case WEBP_MUX_DISPOSE_NONE:
-			if (wuconf->keep_frames) {
+			if (wuconf->cache_frames) {
 				memcpy(img[i].data, img[i-1].data, data_size);
 			}
 			composite_frame(&img[i], hanim->dec_buf, &hanim->iter);
@@ -217,67 +226,65 @@ const struct wu_conf *wuconf, struct webp_state *ds) {
 
 	if (!WebPDemuxNextFrame(&hanim->iter)) {
 		WebPDemuxGetFrame(hanim->dmux, 1, &hanim->iter);
-	} else {
-		++ds->idx;
 	}
+	++ds->idx;
 	return wu_ok;
 }
 
 static enum wu_error webp_dec_frame(struct raw_img *img,
 const struct wu_conf *wuconf, struct webp_state *ds) {
 	if (wuconf->webp_use_homegrown_renderer) {
-		return wu_webp_dec_frame(img, wuconf, ds);
+		return homegrown_dec_frame(img, wuconf, ds);
 	} else {
 		return libwebp_dec_frame(img, wuconf, ds);
 	}
 }
 
-static bool webp_next_frame(struct raw_img *img, const struct wu_conf *wuconf,
-struct wu_state *state, struct webp_state *ds) {
-	const int cycle = state->cycle_sub_img;
-	if (cycle > 0) {
-		state->cycle_sub_img = 1;
-		const enum wu_error err = webp_dec_frame(img, wuconf, ds);
+static enum wu_error webp_frame_iter(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, bool *clean) {
+	struct webp_state *ds = infile->dec_state;
+
+	const int iters = iwrap(state->sub.cycle, (int)ds->frame_count);
+	for (int i = 0; i < iters; ++i) {
+		const enum wu_error err = webp_dec_frame(infile->sub_img,
+			wuconf, ds);
 		if (err != wu_ok) {
-			return true;
+			*clean = true;
+			return err;
 		} else if (ds->idx >= ds->frame_count) {
-			if (wuconf->keep_frames) {
-				return true;
+			if (wuconf->cache_frames) {
+				*clean = true;
+				break;
 			} else {
 				ds->idx = 0;
 			}
-		}
-	} else if (cycle < 0 && !wuconf->keep_frames) {
-		print_temp_line("Cycling back not allowed on "
-			"animations.");
-		state->cycle_sub_img = 0;
-	}
-	return false;
-}
-
-static enum wu_error webp_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event event) {
-	bool clean = false;
-	struct webp_state *ds = infile->dec_state;
-	if (event == sub_cycle) {
-		clean = webp_next_frame(infile->sub_img, wuconf, state, ds);
-	} else if (event == finish) {
-		clean = true;
-	}
-
-	if (clean) {
-		clean_webp_state(infile, ds);
-		if (!wuconf->webp_use_homegrown_renderer
-		&& !wuconf->keep_frames) {
-			infile->sub_img[0].data = NULL;
-			++state->cycle;
 		}
 	}
 	return wu_ok;
 }
 
-static int is_covered(const WebPIterator *iter, const struct anim_frame *prev) {
+enum wu_error webp_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event event) {
+	bool clean = false;
+	enum wu_error status = wu_ok;
+	if (event == sub_cycle) {
+		status = webp_frame_iter(infile, wuconf, state, &clean);
+	} else if (event == 0) {
+		clean = true;
+	}
+
+	if (clean) {
+		clean_webp_state(infile);
+		if (!wuconf->webp_use_homegrown_renderer
+		&& !wuconf->cache_frames) { // Memory is not ours
+			infile->sub_img[0].data = NULL;
+		}
+	}
+	return status;
+}
+
+static bool is_covered(const WebPIterator *iter, const struct anim_frame *prev) {
 	const int w_diff = iter->width - (int)prev->w;
 	const int h_diff = iter->height - (int)prev->h;
 	const int x_diff = iter->x_offset - (int)prev->x;
@@ -285,11 +292,10 @@ static int is_covered(const WebPIterator *iter, const struct anim_frame *prev) {
 	return (w_diff - x_diff >= 0) && (h_diff - y_diff >= 0);
 }
 
-static unsigned char compute_properties(const WebPDemuxer *dmux,
-WebPIterator *iter) {
-	unsigned char channels = 3;
+static size_t required_channels(const WebPDemuxer *dmux, WebPIterator *iter) {
 	struct anim_frame prev_frame;
 	WebPMuxAnimDispose prev_disp = WEBP_MUX_DISPOSE_NONE;
+	size_t channels = 3;
 	do {
 		/* Reasonably exhaustive tests for alpha. */
 		if (iter->has_alpha) {
@@ -300,8 +306,8 @@ WebPIterator *iter) {
 		}
 
 		if (prev_disp == WEBP_MUX_DISPOSE_BACKGROUND) {
-			const int it_is = is_covered(iter, &prev_frame);
-			if (iter->has_alpha || !it_is) {
+			const bool covered = is_covered(iter, &prev_frame);
+			if (iter->has_alpha || !covered) {
 				channels = 4;
 				break;
 			}
@@ -311,21 +317,21 @@ WebPIterator *iter) {
 			prev_frame = iter_to_anim_frame(iter);
 		}
 		prev_disp = iter->dispose_method;
-	} while (WebPDemuxNextFrame(iter));
-
+	} while (channels == 3 && WebPDemuxNextFrame(iter));
 	WebPDemuxGetFrame(dmux, 1, iter);
 	return channels;
 }
 
 static void get_bg_color(const uint32_t color, unsigned char bg[4]) {
-	bg[0] = (unsigned char)(color >> 16) & 0xff;
-	bg[1] = (unsigned char)(color >> 8) & 0xff;
-	bg[2] = (unsigned char)color & 0xff;
-	bg[3] = (unsigned char)(color >> 24) & 0xff;
+	// BGRA order
+	bg[0] = (unsigned char)(color >> 16);
+	bg[1] = (unsigned char)(color >> 8);
+	bg[2] = (unsigned char)color;
+	bg[3] = (unsigned char)(color >> 24);
 }
 
-static enum wu_error homegrown_anim_setup(struct webp_state *ds,
-unsigned char *channels, unsigned char bg_color[4]) {
+static enum wu_error homegrown_anim_setup(struct webp_state *ds, size_t *out_ch,
+unsigned char bg_color[4]) {
 	struct homegrown_anim *hanim = &ds->hanim;
 
 	hanim->dmux = WebPDemux(&ds->data);
@@ -337,13 +343,14 @@ unsigned char *channels, unsigned char bg_color[4]) {
 	const size_t canvas_height = (size_t)ds->config.input.height;
 	// input.has_alpha is true if any frame contains any alpha
 	hanim->dec_buf = malloc(canvas_width * canvas_height
-		* (size_t)(3 + (ds->config.input.has_alpha == true)) );
+		* (ds->config.input.has_alpha ? 4 : 3) );
 	if (!hanim->dec_buf) {
 		return wu_alloc_error;
 	}
 
-	// However, the composited animation may not need transparency.
-	*channels = compute_properties(hanim->dmux, &hanim->iter);
+	if (*out_ch != 4) {
+		*out_ch = required_channels(hanim->dmux, &hanim->iter);
+	}
 
 	uint32_t color = WebPDemuxGetI(hanim->dmux, WEBP_FF_BACKGROUND_COLOR);
 	get_bg_color(color, bg_color);
@@ -357,15 +364,14 @@ unsigned char *channels, unsigned char bg_color[4]) {
 
 static enum wu_error library_anim_setup(struct webp_state *ds,
 unsigned char bg_color[4]) {
-	struct library_anim *lanim = &ds->lanim;
+	WebPAnimDecoderOptions anim_opts;
+	WebPAnimDecoderOptionsInit(&anim_opts);
+	anim_opts.color_mode = MODE_RGBA;
+	anim_opts.use_threads = 1;
 
-	WebPAnimDecoderOptionsInit(&lanim->anim_opts);
-	lanim->anim_opts.color_mode = MODE_RGBA;
-	lanim->anim_opts.use_threads = 1;
-
-	lanim->anim_dec = WebPAnimDecoderNew(&ds->data, &lanim->anim_opts);
+	ds->lanim.dec = WebPAnimDecoderNew(&ds->data, &anim_opts);
 	WebPAnimInfo info;
-	WebPAnimDecoderGetInfo(lanim->anim_dec, &info);
+	WebPAnimDecoderGetInfo(ds->lanim.dec, &info);
 	ds->frame_count = info.frame_count;
 
 	get_bg_color(info.bgcolor, bg_color);
@@ -373,7 +379,7 @@ unsigned char bg_color[4]) {
 }
 
 static enum wu_error anim_setup(const bool homegrown, struct webp_state *ds,
-unsigned char *channels, unsigned char bg[4]) {
+size_t *channels, unsigned char bg[4]) {
 	if (homegrown) {
 		ds->anim_render = homegrown;
 		return homegrown_anim_setup(ds, channels, bg);
@@ -435,19 +441,20 @@ const struct wu_conf *wuconf) {
 		free(ds);
 		return wu_open_error;
 	}
+	infile->dec_state = ds;
 
 	WebPInitDecoderConfig(&ds->config);
 	VP8StatusCode status = WebPGetFeatures(ds->data.bytes, ds->data.size,
 		&ds->config.input);
 	if (status != VP8_STATUS_OK) {
-		clean_webp_state(infile, ds);
+		clean_webp_state(infile);
 		return wu_invalid_header;
 	}
 
 	const unsigned int width = (unsigned int)ds->config.input.width;
 	const unsigned int height = (unsigned int)ds->config.input.height;
 	if (umax(width, height) > wuconf->max_img_size) {
-		clean_webp_state(infile, ds);
+		clean_webp_state(infile);
 		return wu_exceeded_size_limit;
 	}
 
@@ -455,29 +462,29 @@ const struct wu_conf *wuconf) {
 
 	enum wu_error err = wu_ok;
 	if (ds->config.input.has_animation) {
-		unsigned char channels;
+		size_t channels = wuconf->anim_space_over_speed ? 3 : 4;
 		err = anim_setup(wuconf->webp_use_homegrown_renderer, ds,
 			&channels, infile->bg);
 		if (err != wu_ok) {
-			clean_webp_state(infile, ds);
+			clean_webp_state(infile);
 			return err;
 		}
 
 		struct raw_img *img;
-		if (wuconf->keep_frames) {
+		if (wuconf->cache_frames) {
 			img = alloc_sub_images(infile, ds->frame_count);
 		} else {
 			img = alloc_sub_images(infile, 1);
 		}
 		if (!img) {
-			clean_webp_state(infile, ds);
+			clean_webp_state(infile);
 			return wu_alloc_error;
 		}
 
 		for (uint32_t i = 0; i < infile->nr; ++i) {
 			img[i].w = width;
 			img[i].h = height;
-			img[i].channels = channels;
+			img[i].channels = (unsigned char)channels;
 			img[i].bitdepth = 8;
 		}
 
@@ -485,7 +492,6 @@ const struct wu_conf *wuconf) {
 
 		if (ds->frame_count > 1) {
 			infile->is_animation = true;
-			infile->callback = webp_callback;
 			infile->dec_state = ds;
 			infile->events = sub_cycle;
 		} else {
@@ -497,15 +503,14 @@ const struct wu_conf *wuconf) {
 					img[0].data = cpy;
 				} else {
 					img[0].data = NULL;
-					clean_webp_state(infile, ds);
-					return wu_alloc_error;
+					err = wu_alloc_error;
 				}
 			}
-			clean_webp_state(infile, ds);
+			clean_webp_state(infile);
 		}
 	} else {
 		status = single_image_decode(infile, ds);
-		clean_webp_state(infile, ds);
+		clean_webp_state(infile);
 	}
 
 	if (status != VP8_STATUS_OK) {
@@ -521,23 +526,13 @@ bool webp_verify(FILE *ifp) {
 	 * starting from "WEBP" */
 	const unsigned char more_magic[] = {'W', 'E', 'B', 'P'};
 
-	const size_t sig_len = 8;
-	fseek(ifp, 4, SEEK_SET);
-	unsigned char signature[sig_len];
-	const size_t read = fread(signature, 1, sig_len, ifp);
+	fseek(ifp, 8, SEEK_SET);
+	unsigned char signature[4];
+	const size_t read = fread(signature, 1, sizeof(signature), ifp);
 
-	if (read == sig_len
-	&& !memcmp(signature + 4, more_magic, sizeof(more_magic))) {
-		fseek(ifp, 0, SEEK_END);
-		const size_t size = (size_t)ftell(ifp) - 8;
-		const size_t expected_size = endian_u32(signature,
-			little_endian);
-		if (expected_size == size) {
-			return true;
-		} else {
-			printf("Expected size %zu, got %zu\n", expected_size,
-				size);
-		}
+	if (read == sizeof(signature)
+	&& !memcmp(signature, more_magic, sizeof(more_magic))) {
+		return true;
 	}
 	return false;
 }

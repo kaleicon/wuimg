@@ -11,15 +11,15 @@
 enum wu_error pnm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct pnm_desc desc;
-	enum pnm_fail fail = pnm_open_file(infile->ifp, &desc, true);
+	enum lib_fail fail = pnm_open_file(infile->ifp, &desc, true);
 	if (fail) {
-		infile->err_msg = strdup(pnm_fail_string(fail));
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_open_error;
 	}
 
 	fail = pnm_parse_header(&desc);
 	if (fail) {
-		infile->err_msg = strdup(pnm_fail_string(fail));
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_invalid_header;
 	}
 
@@ -34,7 +34,6 @@ const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
-	desc.swap = true;
 	desc.xv_no_expand = true;
 	size_t i = 0;
 	do {
@@ -43,9 +42,14 @@ const struct wu_conf *wuconf) {
 		img[i].channels = desc.ch;
 
 		if (desc.type == xv_thumb && desc.xv_no_expand) {
-			img[i].bitdepth = 3;
+			img[i].bitdepth = rgb332;
 		} else {
 			img[i].bitdepth = (unsigned char)(desc.bytedepth * 8);
+		}
+
+		if (desc.type == color_pfm || desc.type == gray_pfm) {
+			img[i].mirror = true;
+			img[i].float_data = true;
 		}
 
 		img[i].data = pnm_decode_next(&desc);

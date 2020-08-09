@@ -7,16 +7,16 @@
 
 enum wu_error sun_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct sun_desc desc;
-	enum sun_fail result = sun_open_file(infile->ifp, &desc);
-	if (result != sun_ok) {
-		infile->err_msg = strdup(sun_fail_string(result));
+	enum lib_fail fail = sun_open_file(infile->ifp, &desc);
+	if (fail) {
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_open_error;
 	}
 
-	result = sun_parse_header(&desc);
-	if (result != sun_ok) {
+	fail = sun_parse_header(&desc);
+	if (fail) {
 		sun_cleanup(&desc);
-		infile->err_msg = strdup(sun_fail_string(result));
+		infile->err_msg = strdup(lib_fail_string(fail));
 		return wu_invalid_header;
 	}
 

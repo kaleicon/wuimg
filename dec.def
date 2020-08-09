@@ -1,0 +1,88 @@
+/* Enumerate known formats */
+/* WUDEC: base_name, callback_fn, magic_verify_fn */
+
+#ifdef DEC_AVS
+WUDEC(avs, NULL, NULL)
+#endif
+
+#ifdef DEC_BMP
+WUDEC(bmp, NULL, NULL)
+#endif
+
+#ifdef DEC_PCX
+WUDEC(pcx, NULL, NULL)
+WUDEC(dcx, NULL, NULL)
+#endif
+
+#ifdef DEC_PI
+WUDEC(pi, NULL, NULL)
+#endif
+
+#ifdef DEC_PNM
+WUDEC(pnm, NULL, NULL)
+#endif
+
+#ifdef DEC_SGI
+WUDEC(sgi, NULL, NULL)
+#endif
+
+#ifdef DEC_SUN
+WUDEC(sun, NULL, NULL)
+#endif
+
+#ifdef DEC_TGA
+WUDEC(tga, NULL, NULL)
+#endif
+
+#ifdef DEC_WBMP
+WUDEC(wbmp, NULL, NULL)
+#endif
+
+#ifdef DEC_XBM
+WUDEC(xbm, NULL, NULL)
+#endif
+
+#ifdef DEC_FLIF
+WUDEC(flif, NULL, NULL)
+#endif
+
+#ifdef DEC_GIF
+WUDEC(gif, gif_callback, NULL)
+#endif
+
+#ifdef DEC_HEIF
+WUDEC(heif, NULL, NULL)
+#endif
+
+#ifdef DEC_JBIG
+WUDEC(jbig, NULL, NULL)
+#endif
+
+#ifdef DEC_JPEG
+WUDEC(jpeg, NULL, NULL)
+#endif
+
+#ifdef DEC_JPEG2000
+WUDEC(jp2, jp2_callback, NULL)
+WUDEC(j2k, j2k_callback, NULL)
+#endif
+
+#ifdef DEC_PNG
+WUDEC(png, NULL, NULL)
+#endif
+
+#ifdef DEC_RAW
+WUDEC(raw, NULL, NULL)
+#endif
+
+#ifdef DEC_SVG
+WUDEC(svg, svg_callback, NULL)
+#endif
+
+#ifdef DEC_TIFF
+WUDEC(tiff, NULL, NULL)
+#endif
+
+#ifdef DEC_WEBP
+WUDEC(webp, webp_callback, webp_verify)
+#endif

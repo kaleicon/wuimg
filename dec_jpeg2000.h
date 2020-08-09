@@ -7,4 +7,10 @@ enum wu_error jp2_dec(struct image_file *infile, const struct wu_conf *wuconf);
 
 enum wu_error j2k_dec(struct image_file *infile, const struct wu_conf *wuconf);
 
+enum wu_error jp2_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev);
+
+enum wu_error j2k_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev);
+
 #endif /* DEC_JPEG2000 */
