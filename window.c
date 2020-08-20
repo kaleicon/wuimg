@@ -110,6 +110,9 @@ int mode) {
 	case GLFW_KEY_F: case GLFW_KEY_F11:
 		event = 'f';
 		break;
+	case GLFW_KEY_A:
+		event = 'a';
+		break;
 
 	case GLFW_KEY_N:
 		event = (mode & GLFW_MOD_SHIFT) ? 'N' : 'n';
@@ -138,16 +141,16 @@ int mode) {
 		break;
 
 	case GLFW_KEY_H: case GLFW_KEY_LEFT:
-		event = 'h';
+		event = (mode & GLFW_MOD_SHIFT) ? 'H' : 'h';
 		break;
 	case GLFW_KEY_J: case GLFW_KEY_DOWN:
-		event = 'j';
+		event = (mode & GLFW_MOD_SHIFT) ? 'J' : 'j';
 		break;
 	case GLFW_KEY_K: case GLFW_KEY_UP:
-		event = 'k';
+		event = (mode & GLFW_MOD_SHIFT) ? 'K' : 'k';
 		break;
 	case GLFW_KEY_L: case GLFW_KEY_RIGHT:
-		event = 'l';
+		event = (mode & GLFW_MOD_SHIFT) ? 'L' : 'l';
 		break;
 
 	case GLFW_KEY_Z: event = 'z'; break;
@@ -181,7 +184,6 @@ int mode) {
 
 static void * glfw_setup_window(struct window_control *control, const int window_w,
 const int window_h, int *refresh_rate) {
-	struct gl_context *context = &control->context;
 	const struct wu_conf *conf = &control->conf;
 	if (!glfwInit()) {
 		return NULL;
@@ -213,8 +215,6 @@ const int window_h, int *refresh_rate) {
 	glfwSetCharCallback(window, char_callback);
 	glfwSetScrollCallback(window, scroll_callback);
 	glfwSwapInterval(1);
-
-	glfwGetFramebufferSize(window, &context->fb.w, &context->fb.h);
 
 	const GLFWvidmode *mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
 	*refresh_rate = mode->refreshRate;
@@ -354,7 +354,6 @@ const int window_h, int *refresh_rate, struct gl_context *context) {
 		return false;
 	}
 	SDL_GL_SetSwapInterval(1);
-	SDL_GL_GetDrawableSize(window, &context->fb.w, &context->fb.h);
 
 	SDL_DisplayMode mode;
 	SDL_GetCurrentDisplayMode(0, &mode);
@@ -459,6 +458,7 @@ bool setup_window(struct window_control *control) {
 	if (control->window) {
 		control->screen.has_focus = true;
 		control->screen.fullscreen = false;
+//		poll_window(control);
 		return true;
 	}
 	return false;

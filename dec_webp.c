@@ -520,19 +520,3 @@ const struct wu_conf *wuconf) {
 	}
 	return err;
 }
-
-bool webp_verify(FILE *ifp) {
-	/* WebP header is "RIFF<le-u32>WEBP" where <le-u32> is the file size
-	 * starting from "WEBP" */
-	const unsigned char more_magic[] = {'W', 'E', 'B', 'P'};
-
-	fseek(ifp, 8, SEEK_SET);
-	unsigned char signature[4];
-	const size_t read = fread(signature, 1, sizeof(signature), ifp);
-
-	if (read == sizeof(signature)
-	&& !memcmp(signature, more_magic, sizeof(more_magic))) {
-		return true;
-	}
-	return false;
-}

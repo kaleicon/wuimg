@@ -13,8 +13,7 @@
 #include "dec.h"
 #include "extract.h"
 #include "write_pam.h"
-
-#include "conf.c" // Default program configuration defined here
+#include "conf.h"
 
 enum work_mode {
 	guess = -1,
@@ -53,7 +52,7 @@ long *timeinfo) {
 		}
 		printf("Decoded in %ld nanoseconds.\n", diff);
 	} else {
-		printf("Error %u: %s.\n", result, wu_error_message(result));
+		printf("Error %d: %s.\n", result, wu_error_message(result));
 		if (infile->err_msg) {
 			printf("Library message: \"%s\"\n", infile->err_msg);
 		}
@@ -65,7 +64,7 @@ long *timeinfo) {
 static enum wu_error test_with(const struct file_list *entries,
 const struct program_mode mode) {
 	struct wu_conf conf = default_config();
-	conf.max_img_size = USHRT_MAX / 4;
+	conf.max_img_size = USHRT_MAX;
 	conf.fb = (struct display_dims) {conf.max_img_size, conf.max_img_size};
 
 	int iters;
@@ -372,13 +371,13 @@ static enum wu_error from_path(const char *path) {
 #define WRITEOUT_MODE "writeout"
 #define BENCHMARK_MODE "benchmark"
 
-static int print_help(const char *prog) {
+static int print_help() {
 	fprintf(stderr, "Usage:\n"
-		"\t%1$s\t(read from \".\")\n"
-		"\t%1$s DIR\t(read from DIR)\n"
-		"\t%1$s FILE\t(read the directory of FILE, starting with FILE)\n"
-		"\t%1$s FILE FILE [FILE ...]\t(read only FILEs)\n"
-		"\t%1$s MODE [MODE_ARG] [OPTS] [--] PATH [...]\t(explicit mode)\n"
+		"\t" WU_CANON_NAME "\t(read from \".\")\n"
+		"\t" WU_CANON_NAME " DIR\t(read from DIR)\n"
+		"\t" WU_CANON_NAME " FILE\t(read the directory of FILE, starting with FILE)\n"
+		"\t" WU_CANON_NAME " FILE FILE [FILE ...]\t(read only FILEs)\n"
+		"\t" WU_CANON_NAME " MODE [MODE_ARG] [OPTS] [--] PATH [...]\t(explicit mode)\n"
 		"\n"
 
 		"Work mode (all exclusive, may be abbreviated):\n"
@@ -419,9 +418,7 @@ static int print_help(const char *prog) {
 
 		"\t-p\n"
 		"\t\tWriteout mode only. For paletted images, also write the\n"
-		"\t\tpalette to FILE_palette.pam.\n"
-
-		, prog);
+		"\t\tpalette to FILE_palette.pam.\n");
 	return 0;
 }
 
@@ -501,7 +498,7 @@ int main(const int argc, const char *argv[]) {
 
 	switch (mode.type) {
 	case help:
-		return print_help(argv[0]);
+		return print_help();
 	case sole:
 	case benchmark:
 	case writeout:

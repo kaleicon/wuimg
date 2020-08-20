@@ -7,6 +7,7 @@
 
 enum window_event {
 	toggle_fullscreen = 1,
+	toggle_alpha,
 };
 
 enum program_event {

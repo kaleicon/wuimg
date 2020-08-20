@@ -30,15 +30,15 @@ void * flex_malloc(const size_t head, const size_t nmemb, const size_t size) {
 }
 
 size_t read_spaced_text(struct text_block *text, FILE *ifp) {
-	const size_t left = BUFSIZ - text->tail;
+	const size_t left = sizeof(text->buf) - text->tail;
 	memcpy(text->buf, text->buf + left, text->tail);
 	const size_t read = fread(text->buf + text->tail, 1, left, ifp);
 	if (read == left) {
-		size_t end = BUFSIZ;
+		size_t end = sizeof(text->buf);
 		while (end && isgraph(text->buf[end - 1])) {
 			--end;
 		}
-		text->tail = BUFSIZ - end;
+		text->tail = sizeof(text->buf) - end;
 		while (end && isspace(text->buf[end - 1])) {
 			--end;
 		}
@@ -52,10 +52,11 @@ size_t read_spaced_text(struct text_block *text, FILE *ifp) {
 }
 
 struct text_block * new_text_block(void) {
-	struct text_block *b = flex_malloc(sizeof(*b), BUFSIZ + 1,
-		sizeof(*b->buf));
-	b->tail = 0;
-	b->buf[BUFSIZ] = 0;
+	struct text_block *b = malloc(sizeof(*b));
+	if (b) {
+		b->tail = 0;
+		b->buf[sizeof(b->buf) - 1] = 0;
+	}
 	return b;
 }
 
@@ -146,8 +147,8 @@ const unsigned fit_w, const unsigned fit_h) {
 
 enum endianness which_end(void) {
 	union {
-		u_int16_t sh;
-		u_int8_t ch[2];
+		uint16_t sh;
+		uint8_t ch[2];
 	} test = {.sh = 0x0001};
 	if (test.ch[0]) {
 		return little_endian;
@@ -156,10 +157,10 @@ enum endianness which_end(void) {
 	}
 }
 
-u_int32_t endian32(const u_int32_t val, const enum endianness e) {
+uint32_t endian32(const uint32_t val, const enum endianness e) {
 	const enum endianness native = which_end();
 	if (native != e) {
-		return (u_int32_t)(val << 24
+		return (uint32_t)(val << 24
 			| (val & 0x00ff00) << 8
 			| (val & 0xff0000) >> 8
 			| val >> 24);
@@ -167,41 +168,41 @@ u_int32_t endian32(const u_int32_t val, const enum endianness e) {
 	return val;
 }
 
-u_int16_t endian16(const u_int16_t val, const enum endianness e) {
+uint16_t endian16(const uint16_t val, const enum endianness e) {
 	const enum endianness native = which_end();
 	if (native != e) {
-		return (u_int16_t)(val << 8 | val >> 8);
+		return (uint16_t)(val << 8 | val >> 8);
 	}
 	return val;
 }
 
-u_int16_t buf_endian16(const void *restrict data, const enum endianness e) {
-	const u_int8_t *restrict d = data;
+uint16_t buf_endian16(const void *restrict data, const enum endianness e) {
+	const uint8_t *restrict d = data;
 	switch (e) {
 	case big_endian:
-		return (u_int16_t)(d[0] << 8 | d[1]);
+		return (uint16_t)(d[0] << 8 | d[1]);
 	default:
-		return (u_int16_t)(d[1] << 8 | d[0]);
+		return (uint16_t)(d[1] << 8 | d[0]);
 	}
 }
 
-u_int32_t buf_endian32(const void *restrict data, const enum endianness e) {
-	const u_int8_t *restrict d = data;
+uint32_t buf_endian32(const void *restrict data, const enum endianness e) {
+	const uint8_t *restrict d = data;
 	switch (e) {
 	case big_endian:
-		return (u_int32_t)(d[0]<<24 | d[1]<<16 | d[2]<<8 | d[3]);
+		return (uint32_t)(d[0]<<24 | d[1]<<16 | d[2]<<8 | d[3]);
 	default:
-		return (u_int32_t)(d[3]<<24 | d[2]<<16 | d[1]<<8 | d[0]);
+		return (uint32_t)(d[3]<<24 | d[2]<<16 | d[1]<<8 | d[0]);
 	}
 }
 
-void loop_endian16(u_int16_t *data, const enum endianness e, const size_t cnt) {
+void loop_endian16(uint16_t *data, const enum endianness e, const size_t cnt) {
 	for (size_t i = 0; i < cnt; ++i) {
 		data[i] = endian16(data[i], e);
 	}
 }
 
-void loop_endian32(u_int32_t *data, const enum endianness e, const size_t cnt) {
+void loop_endian32(uint32_t *data, const enum endianness e, const size_t cnt) {
 	for (size_t i = 0; i < cnt; ++i) {
 		data[i] = endian32(data[i], e);
 	}

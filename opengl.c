@@ -46,16 +46,20 @@ void delete_gl_context(const struct gl_context *context) {
 	glDeleteVertexArrays(1, &obj);
 }
 
+void set_gl_alpha(struct gl_context *context, const bool checkers) {
+	glUniform1i(context->uni.checkers, checkers);
+}
+
 static float fix_aspect_ratio(GLfloat *mat, const struct gl_context *context,
 const unsigned char rotation) {
-	// Scale the texture to its natural size, taking rotation into account.
+	// Scale the image to its natural size, taking rotation into account.
 	const size_t r1 = rotation & 1;
 	const float ratio_w = (float)context->tex.w / (float)context->fb.wh[r1];
 	const float ratio_h = (float)context->tex.h / (float)context->fb.wh[r1 ^ 1];
 
 	const size_t r2 = 5 - r1;
-	mat[r1] = copysignf(ratio_w, mat[r1]);
-	mat[r2] = copysignf(ratio_h, mat[r2]);
+	mat[r1] *= ratio_w;
+	mat[r2] *= ratio_h;
 	return 1 / fmaxf(ratio_w, ratio_h);
 }
 
@@ -69,8 +73,8 @@ static void set_mirrot(GLfloat *mat, const int rotate, const bool mirror) {
 
 	mat[0] = cosy;
 	mat[1] = sinner;
-	mat[4] = sinner * mirror_mult;
-	mat[5] = cosy * -mirror_mult;
+	mat[4] = sinner * -mirror_mult;
+	mat[5] = cosy * mirror_mult;
 }
 
 void update_gl_matrix(const struct gl_context *context, struct wu_state *state) {
@@ -84,9 +88,9 @@ void update_gl_matrix(const struct gl_context *context, struct wu_state *state) 
 	set_mirrot(mat, state->rotate, state->mirror);
 	state->fit_zoom = fix_aspect_ratio(mat, context, state->rotate);
 
-	const float offset_scale = 2.0f;
-	mat[12] = state->x_offset / (float)context->fb.w * offset_scale;
-	mat[13] = state->y_offset / (float)context->fb.h * offset_scale;
+	const float mv_scale = 1.5f;
+	mat[12] += state->x_offset / (float)context->fb.w * mv_scale;
+	mat[13] += state->y_offset / (float)context->fb.h * mv_scale;
 	mat[15] = 1 / state->zoom;
 
 	glUniformMatrix4fv(context->uni.trans, 1, GL_FALSE, mat);
@@ -361,6 +365,9 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 		-1,-1,  1,-1,
 
 		-1, 1,  1, 1,
+//		0, 0,  1, 0,
+
+//		0, 1,  1, 1,
 	};
 	GLuint array_buf;
 	glGenBuffers(1, &array_buf);
@@ -373,7 +380,7 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 		"out vec2 texcoord;"
 		"uniform mat4 trans;"
 		"void main() {"
-			"texcoord = pos * vec2(0.5, -0.5) + vec2(0.5, 0.5);"
+			"texcoord = pos * vec2(0.5, 0.5) + vec2(0.5, 0.5);"
 			"gl_Position = trans * vec4(pos, 0, 1);"
 		"}";
 	const char *fs =
@@ -383,6 +390,13 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform sampler2D img;"
 		"uniform sampler2D pal;"
 		"uniform bool use_palette;"
+		"uniform bool checker_alpha;"
+		"vec3 gen_check_pattern() {"
+			"vec2 abspos = floor(textureSize(img, 5) * texcoord);"
+			"float checker = clamp(mod(abspos.x + abspos.y, 2), 0.6, 0.8);"
+			"return vec3(color.a) * color.rgb"
+				"+ vec3(1 - color.a) * vec3(checker);"
+		"}"
 		"void main() {"
 			"if (use_palette) {"
 				"vec4 idx = texture2D(img, texcoord);"
@@ -390,10 +404,9 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 			"} else {"
 				"color = texture2D(img, texcoord);"
 			"}"
-//			"vec2 abspos = floor(textureSize(img, 4) * texcoord);"
-//			"float checker = clamp(mod(abspos.x + abspos.y, 2), 0.4, 0.8);"
-//			"color = vec4(vec3(color.a) * color.rgb"
-//				"+ vec3(1 - color.a) * vec3(checker), 1);"
+			"if (checker_alpha) {"
+				"color = vec4(gen_check_pattern(), 1);"
+			"}"
 		"}";
 
 	GLint status;
@@ -422,6 +435,7 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 
 	context->uni.trans = glGetUniformLocation(program, "trans");
 	context->uni.use_pal = glGetUniformLocation(program, "use_palette");
+	context->uni.checkers = glGetUniformLocation(program, "checker_alpha");
 	const GLint pal_samp = glGetUniformLocation(program, "pal");
 	const GLint img_samp = glGetUniformLocation(program, "img");
 	if (context->uni.trans == -1 || context->uni.use_pal == -1
@@ -449,14 +463,5 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 	context->tex.ch = 0;
 	context->tex.bpp = 0;
 	context->tex.paletted = false;
-	glUniform1i(context->uni.use_pal, context->tex.paletted);
-
-	const GLfloat identity[16] = {
-		1, 0, 0, 0,
-		0, 1, 0, 0,
-		0, 0, 1, 0,
-		0, 0, 0, 1,
-	};
-	glUniformMatrix4fv(context->uni.trans, 1, GL_FALSE, identity);
 	return true;
 }

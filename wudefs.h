@@ -106,6 +106,7 @@ struct wu_conf {
 };
 
 enum wu_error {
+	wu_no_change = -1, // For callbacks
 	wu_ok,
 	wu_alloc_error,
 	wu_unknown_file_type,
@@ -137,6 +138,7 @@ struct wu_state {
 		playing = 2,
 		paused = 3, // For toggling with '^ 1'
 	} anim:8;
+	bool alpha_checkers;
 
 	unsigned char rotate;
 	bool mirror;
@@ -149,9 +151,11 @@ struct wu_state {
 
 enum image_event {
 	sub_cycle = 1,
-	scale = 1 << 1,
-	move = 1 << 2,
-	mirrot = 1 << 3,
+	up_scale = 2,
+	down_scale = 4,
+	scale = 6,
+	move = 8,
+	mirrot = 16,
 };
 
 enum pix_layout { // For OpenGL swizzling

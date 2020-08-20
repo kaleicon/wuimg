@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <time.h>
 
 #define HIGHLIGHT "\033[7m"
 #define RESET "\033[m"
@@ -20,7 +22,7 @@ enum endianness {
 
 struct text_block {
 	size_t tail;
-	char buf[];
+	char buf[BUFSIZ];
 };
 
 void * flex_realloc(void *flex, size_t head, size_t nmemb, size_t size);
@@ -68,17 +70,17 @@ unsigned int fit_w, unsigned int fit_h);
 
 enum endianness which_end(void);
 
-u_int32_t endian32(u_int32_t val, enum endianness e);
+uint32_t endian32(uint32_t val, enum endianness e);
 
-u_int16_t endian16(u_int16_t val, enum endianness e);
+uint16_t endian16(uint16_t val, enum endianness e);
 
-u_int16_t buf_endian16(const void *data, enum endianness e);
+uint16_t buf_endian16(const void *data, enum endianness e);
 
-u_int32_t buf_endian32(const void *data, enum endianness e);
+uint32_t buf_endian32(const void *data, enum endianness e);
 
-void loop_endian16(u_int16_t *data, enum endianness e, size_t cnt);
+void loop_endian16(uint16_t *data, enum endianness e, size_t cnt);
 
-void loop_endian32(u_int32_t *data, enum endianness e, size_t cnt);
+void loop_endian32(uint32_t *data, enum endianness e, size_t cnt);
 
 void print_temp_line(const char *text);
 

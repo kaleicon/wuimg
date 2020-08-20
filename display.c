@@ -102,11 +102,8 @@ const struct raw_img *img, const bool reset_state) {
 			state->y_offset = 0;
 			state->rotate = img->rotate;
 			state->mirror = img->mirror;
-		}
-
-		state->fit_zoom = calc_gl_fit_zoom(context, state->rotate);
-		if (reset_state) {
-			state->zoom = fminf(1, state->fit_zoom);
+			state->zoom = fminf(1,
+				calc_gl_fit_zoom(context, state->rotate));
 		}
 		update_gl_matrix(context, state);
 		return true;
@@ -136,18 +133,26 @@ const enum image_event img_ev) {
 		}
 
 		if (event->image) {
+			update_gl_matrix(&control->context, state);
 			if (event->image & img_ev) {
 				break;
 			}
-			update_gl_matrix(&control->context, state);
 			event->image = 0;
 		}
 
 		if (state->sub.cycle || control->file.cycle
 		|| event->program || event->rm == yes_rm) {
 			break;
-		} else if (event->window == toggle_fullscreen) {
-			set_fullscreen_window(control);
+		} else if (event->window) {
+			switch (event->window) {
+			case toggle_fullscreen:
+				set_fullscreen_window(control);
+				break;
+			case toggle_alpha:
+				set_gl_alpha(&control->context,
+					state->alpha_checkers);
+				break;
+			}
 			event->window = 0;
 		}
 	}
@@ -227,13 +232,13 @@ const char *filename, const bool no_cycle) {
 		if (evs) {
 			const enum wu_error err = callback_image(infile,
 				&control->conf, state, evs);
-			if (err != wu_ok) {
-				printf("Callback failed with code %u: %s\n",
+			if (err != wu_ok && err != wu_no_change) {
+				printf("Callback failed with code %d: %s\n",
 					err, wu_error_message(err));
 				all_ok = false;
 				break;
 			}
-			upload = callback;
+			upload = (err == wu_no_change) ? 0 : callback;
 		}
 		control->event.image = 0;
 		idx = iwrap(idx + state->sub.cycle, (int)infile->nr);
@@ -277,5 +282,7 @@ bool setup_display(struct window_control *control, struct term_restore *tr) {
 		puts("Failed to setup OpenGL context.");
 		return false;
 	}
+
+	poll_window(control);
 	return true;
 }

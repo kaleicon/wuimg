@@ -52,8 +52,8 @@ const struct wu_conf *wuconf) {
 		} else {
 			// There are no RGB functions.
 			if (img[i].channels == 3) {
-				img[i].true_channels = 3;
 				img[i].channels = 4;
+				img[i].true_channels = 3;
 			}
 			if (img[i].bitdepth == 8) {
 				read_func = flif_image_read_row_RGBA8;

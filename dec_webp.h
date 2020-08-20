@@ -11,6 +11,4 @@ const struct wu_conf *wuconf, struct wu_state *state, enum image_event event);
 enum wu_error webp_dec(struct image_file *infile,
 const struct wu_conf *wuconf);
 
-bool webp_verify(FILE *ifp);
-
 #endif /* DEC_WEBP */

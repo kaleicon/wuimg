@@ -103,9 +103,9 @@ const unsigned int limit, bool *reached_limit) {
 static enum wu_error svg_rescale(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state) {
 	if (state->zoom == 1.0f) {
-		return wu_ok;
+		return wu_no_change;
 	} else if (wuconf->svg_redraw == upscale && state->zoom < 1.0f) {
-		return wu_ok;
+		return wu_no_change;
 	}
 
 	struct svg_state *ds = infile->dec_state;
@@ -126,14 +126,14 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 		state->zoom = 1;
 		return svg_render(infile, wuconf, ds);
 	}
-	return wu_ok;
+	return wu_no_change;
 }
 
 enum wu_error svg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
 	enum wu_error status = wu_ok;
-	if (event == scale) {
+	if (event & scale) {
 		status = svg_rescale(infile, wuconf, state);
 	}
 	if (event == 0 || infile->events == 0) {
@@ -199,8 +199,12 @@ const struct wu_conf *wuconf) {
 		wuconf->max_img_size, NULL);
 
 	enum wu_error err = svg_render(infile, wuconf, ds);
-	if (err == wu_ok && wuconf->svg_redraw != never) {
-		infile->events = scale;
+	if (err == wu_ok) {
+		switch (wuconf->svg_redraw) {
+		case upscale: infile->events = up_scale; break;
+		case always: infile->events = scale; break;
+		default: clean_svg_state(infile); break;
+		}
 	} else {
 		clean_svg_state(infile);
 	}

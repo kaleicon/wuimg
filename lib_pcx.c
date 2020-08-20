@@ -393,7 +393,7 @@ struct dcx_desc * dcx_read_offsets(FILE *ifp) {
 	struct dcx_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		fseek(ifp, 0, SEEK_END);
-		const u_int32_t endsize = (u_int32_t)zumin(0xffffffff,
+		const uint32_t endsize = (uint32_t)zumin(0xffffffff,
 			(size_t)ftell(ifp));
 
 		fseek(ifp, 4, SEEK_SET);

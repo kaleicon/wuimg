@@ -5,7 +5,7 @@
 
 #include "common_lib.h"
 
-u_int8_t *avs_load(FILE *ifp, size_t width, size_t height);
+uint8_t *avs_load(FILE *ifp, size_t width, size_t height);
 
 enum lib_fail avs_open_file(FILE *ifp, size_t *width, size_t *height);
 

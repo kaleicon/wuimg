@@ -215,7 +215,7 @@ const uint32 samples, const unsigned char bps, const enum unpack_op op) {
 }
 
 static unsigned char * load_palette(TIFF *tif, unsigned char bps) {
-	u_int16_t *red, *green, *blue;
+	uint16_t *red, *green, *blue;
 	if (TIFFGetField(tif, TIFFTAG_COLORMAP, &red, &green, &blue)) {
 		struct colormap *pal = malloc(sizeof(struct colormap) * 256);
 		if (pal) {

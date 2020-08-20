@@ -28,16 +28,16 @@ struct sun_desc {
 	FILE *ifp;
 
 	size_t data_len;
-	u_int32_t w, h;
+	uint32_t w, h;
 
 	unsigned char bitdepth;
 	unsigned char ch;
 	enum sun_type type:16;
-	u_int32_t scan_len;
+	uint32_t scan_len;
 
 	struct sun_colormap {
 		struct colormap *map;
-		u_int32_t len;
+		uint32_t len;
 	} colormap;
 };
 

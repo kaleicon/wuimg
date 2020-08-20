@@ -31,7 +31,7 @@ const unsigned short maxval) {
 
 static unsigned char * pfm_decode(const struct pnm_desc *desc) {
 	union int_real {
-		u_int32_t integer;
+		uint32_t integer;
 		float real;
 	};
 
@@ -130,7 +130,7 @@ static size_t read_num(const char *restrict buf, int_fast32_t *val) {
 		++i;
 	}
 
-	for (int k = 0; k < 6; ++k) { // max decimal length for u_int16
+	for (int k = 0; k < 6; ++k) { // max decimal length for uint16
 		const int_fast32_t d = tonum(buf[i]);
 		if (d == -1) {
 			break;

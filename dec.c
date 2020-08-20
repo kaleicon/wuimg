@@ -6,9 +6,6 @@
 #include <ctype.h>
 #include <errno.h>
 
-#include <archive.h>
-#include <archive_entry.h>
-
 #include "wudefs.h"
 #include "common.h"
 #include "dec.h"
@@ -16,6 +13,7 @@
 #include "dec_avs.h"
 #include "dec_bmp.h"
 #include "dec_pcx.h"
+#include "dec_pgx.h"
 #include "dec_pi.h"
 #include "dec_pnm.h"
 #include "dec_sgi.h"
@@ -43,12 +41,10 @@ typedef enum wu_error (*dec_callback_t)(struct image_file *infile,
 	const struct wu_conf *wuconf, struct wu_state *state,
 	enum image_event);
 
-typedef bool (*magic_verify_t)(FILE *ifp);
-
 
 enum format_id {
 	fmt_unknown = -1,
-#define WUDEC(name, callback, verify) fmt_##name,
+#define WUDEC(name, callback) fmt_##name,
 #include "dec.def"
 #undef WUDEC
 	nb_of_fmts,
@@ -58,7 +54,6 @@ struct format_fn {
 	const char name[8];
 	const dec_func_t dec;
 	const dec_callback_t callback;
-	const magic_verify_t verify;
 };
 
 struct file_ext {
@@ -67,116 +62,124 @@ struct file_ext {
 };
 
 struct file_bytes {
-	unsigned char bytes[16];
-	unsigned int len;
+	const char *restrict mask;
+	unsigned char bytes[12];
 	const enum format_id id;
 };
 
+static const char unimask[] = {
+	"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" // null
+};
 
 static const struct format_fn format_map[nb_of_fmts] = {
-#define WUDEC(name, callback, verify) {#name, name##_dec, callback, verify},
+#define WUDEC(name, callback) {#name, name##_dec, callback},
 #include "dec.def"
 #undef WUDEC
 };
 
 /* The obvious issue here is that a short sequence that matches the start of a
  * longer one will ruin searches. */
-#define WITH_LEN(bytes) (bytes), (unsigned int)(sizeof(bytes) - 1)
+#define DEFAULT_MASK(bytes) \
+	(unimask + (sizeof(unimask)/2) - sizeof(bytes) + 1/*null*/), bytes
+
+static const size_t MIN_MAGIC_LEN = 2; // Anything shorter is meaningless
 static struct file_bytes magic_map[] = {
 #ifdef DEC_BMP
-	{WITH_LEN("BM"), fmt_bmp},
+	{DEFAULT_MASK("BM"), fmt_bmp},
 #endif // DEC_BMP
 
 #ifdef DEC_PCX
-	// All known versions
-	{WITH_LEN("\x0a\x00\x01"), fmt_pcx},
-	{WITH_LEN("\x0a\x02\x01"), fmt_pcx},
-	{WITH_LEN("\x0a\x03\x01"), fmt_pcx},
-	{WITH_LEN("\x0a\x04\x01"), fmt_pcx},
-	{WITH_LEN("\x0a\x05\x01"), fmt_pcx},
+	// Second byte is the version. Valid versions are 0, 2, 3, 4, and 5.
+	{DEFAULT_MASK("\x0a\x00\x01"), fmt_pcx},
+	{"\xff\xfd\xff", "\x0a\x00\x01", fmt_pcx},
+	{"\xff\xfb\xff", "\x0a\x00\x01", fmt_pcx},
 
-	{WITH_LEN("\xb1\x68\xde\x3a"), fmt_dcx},
+	{DEFAULT_MASK("\xb1\x68\xde\x3a"), fmt_dcx},
 #endif // DEC_PCX
 
+#ifdef DEC_PGX
+	{DEFAULT_MASK("PGX\x00"), fmt_pgx},
+#endif // DEC_PGX
+
 #ifdef DEC_PI
-	{WITH_LEN("Pi"), fmt_pi},
+	{DEFAULT_MASK("Pi"), fmt_pi},
 #endif // DEC_PI
 
 #ifdef DEC_PNM
-	{WITH_LEN("P1"), fmt_pnm},
-	{WITH_LEN("P2"), fmt_pnm},
-	{WITH_LEN("P3"), fmt_pnm},
-	{WITH_LEN("P4"), fmt_pnm},
-	{WITH_LEN("P5"), fmt_pnm},
-	{WITH_LEN("P6"), fmt_pnm},
-	{WITH_LEN("P7\n"), fmt_pnm}, // PAM
-	{WITH_LEN("P7 332\n"), fmt_pnm}, // Xv thumbnail
-	{WITH_LEN("PF"), fmt_pnm}, // Color PFM
-	{WITH_LEN("Pf"), fmt_pnm}, // Gray PFM
+	{DEFAULT_MASK("P1"), fmt_pnm},
+	{DEFAULT_MASK("P2"), fmt_pnm},
+	{DEFAULT_MASK("P3"), fmt_pnm},
+	{DEFAULT_MASK("P4"), fmt_pnm},
+	{DEFAULT_MASK("P5"), fmt_pnm},
+	{DEFAULT_MASK("P6"), fmt_pnm},
+	{DEFAULT_MASK("P7\n"), fmt_pnm}, // PAM
+	{DEFAULT_MASK("P7 332\n"), fmt_pnm}, // Xv thumbnail
+	{DEFAULT_MASK("PF"), fmt_pnm}, // Color PFM
+	{DEFAULT_MASK("Pf"), fmt_pnm}, // Gray PFM
 #endif // DEC_PNM
 
 #ifdef DEC_SGI
-	{WITH_LEN("\x01\xda"), fmt_sgi},
+	{DEFAULT_MASK("\x01\xda"), fmt_sgi},
 #endif // DEC_SGI
 
 #ifdef DEC_SUN
-	{WITH_LEN("\x59\xa6\x6a\x95"), fmt_sun},
+	{DEFAULT_MASK("\x59\xa6\x6a\x95"), fmt_sun},
 #endif // DEC_SUN
 
 #ifdef DEC_XBM
-	{WITH_LEN("#define"), fmt_xbm},
+	{DEFAULT_MASK("#define "), fmt_xbm},
 #endif // DEC_XBM
 
 #ifdef DEC_PNG
-	{WITH_LEN("\x89PNG\r\n\x1a\n"), fmt_png},
+	{DEFAULT_MASK("\x89PNG\r\n\x1a\n"), fmt_png},
 #endif // DEC_PNG
 
 #ifdef DEC_JPEG
-	{WITH_LEN("\xff\xd8\xff"), fmt_jpeg},
+	{DEFAULT_MASK("\xff\xd8\xff"), fmt_jpeg},
 #endif // DEC_JPEG
 
 #ifdef DEC_GIF
-	{WITH_LEN("GIF87a"), fmt_gif},
-	{WITH_LEN("GIF89a"), fmt_gif},
+	{DEFAULT_MASK("GIF87a"), fmt_gif},
+	{DEFAULT_MASK("GIF89a"), fmt_gif},
 #endif // DEC_GIF
 
 #ifdef DEC_TIFF
-	{WITH_LEN("II\x2a\x00"), fmt_tiff},
-	{WITH_LEN("MM\x00\x2a"), fmt_tiff},
+	{DEFAULT_MASK("II\x2a\x00"), fmt_tiff},
+	{DEFAULT_MASK("MM\x00\x2a"), fmt_tiff},
 
 	// BigTIFF
-	{WITH_LEN("II\x2b\x00\x08\x00\x00\x00"), fmt_tiff},
-	{WITH_LEN("MM\x00\x2b\x00\x08\x00\x00"), fmt_tiff},
+	{DEFAULT_MASK("II\x2b\x00\x08\x00\x00\x00"), fmt_tiff},
+	{DEFAULT_MASK("MM\x00\x2b\x00\x08\x00\x00"), fmt_tiff},
 #endif // DEC_TIFF
 
 #ifdef DEC_RAW
 	// Olympus ORF
-	{WITH_LEN("IIRS"), fmt_raw},
-	{WITH_LEN("IIRO"), fmt_raw},
-	{WITH_LEN("MMOR"), fmt_raw},
+	{DEFAULT_MASK("IIRS"), fmt_raw},
+	{DEFAULT_MASK("IIRO"), fmt_raw},
+	{DEFAULT_MASK("MMOR"), fmt_raw},
 
 	// Panasonic RAW/RW2
-	{WITH_LEN("IIU\x00\x08\x00\x00\x00"), fmt_raw},
+	{DEFAULT_MASK("IIU\x00\x08\x00\x00\x00"), fmt_raw},
 #endif // DEC_RAW
 
 #ifdef DEC_JPEG2000
-	{WITH_LEN("\x00\x00\x00\x0c\x6a\x50\x20\x20\x0d\x0a\x87\x0a"), fmt_jp2},
-	{WITH_LEN("\x0d\x0a\x87\x0a"), fmt_jp2},
-	{WITH_LEN("\xff\x4f\xff\x51"), fmt_j2k},
+	{DEFAULT_MASK("\x00\x00\x00\x0c\x6a\x50\x20\x20\x0d\x0a\x87\x0a"), fmt_jp2},
+	{DEFAULT_MASK("\x0d\x0a\x87\x0a"), fmt_jp2},
+	{DEFAULT_MASK("\xff\x4f\xff\x51"), fmt_j2k},
 #endif // DEC_JPEG2000
 
 #ifdef DEC_WEBP
-	// Various formats may start with "RIFF", notably WAV.
-	{WITH_LEN("RIFF"), fmt_webp},
+	{"\xff\xff\xff\xff\0\0\0\0\xff\xff\xff\xff", "RIFF\0\0\0\0WEBP", fmt_webp},
 #endif // DEC_WEBP
 
 #ifdef DEC_HEIF
 	// Split string to prevent 'hex escape sequence out of range' error.
-	{WITH_LEN("\x00\x00\x00\x18" "ftypheic"), fmt_heif},
+	{DEFAULT_MASK("\x00\x00\x00\x18" "ftypheic"), fmt_heif},
 #endif // DEC_HEIF
 
 #ifdef DEC_FLIF
-	{WITH_LEN("FLIF"), fmt_flif},
+	{DEFAULT_MASK("FLIF"), fmt_flif},
 #endif // DEC_FLIF
 
 #ifdef DEC_SVG
@@ -185,7 +188,6 @@ static struct file_bytes magic_map[] = {
  * is XML. */
 #endif // DEC_SVG
 };
-static const size_t MIN_MAGIC_LEN = 2; // Anything shorter is meaningless
 
 /* File extensions for filtering and fallbacks.
  * An enum is used for formats that lack a magic bytes sequence. */
@@ -205,6 +207,10 @@ static struct file_ext extension_map[] = {
 	{"pcc", -1},
 	{"pcx", -1},
 #endif // DEC_PCX
+
+#ifdef DEC_PGX
+	{"pgx", -1},
+#endif // DEC_PGX
 
 #ifdef DEC_PI
 	{"g", -1},
@@ -332,8 +338,13 @@ static int fextcmp(const void *restrict e1, const void *restrict e2) {
 static int fbytescmp(const void *restrict m1, const void *restrict m2) {
 	const struct file_bytes *restrict magic1 = m1;
 	const struct file_bytes *restrict magic2 = m2;
-	const size_t min_len = umin(magic1->len, magic2->len);
-	return memcmp(magic1->bytes, magic2->bytes, min_len);
+	const char *mask = magic2->mask;// ? magic2->mask : magic1->mask;
+	int diff = 0;
+	for (size_t i = 0; i < sizeof(magic1->bytes) && !diff; ++i) {
+		const int m = mask[i];
+		diff = (magic1->bytes[i] & m) - (magic2->bytes[i] & m);
+	}
+	return diff;
 }
 
 static const struct file_ext * search_extension(const char *filename,
@@ -341,31 +352,29 @@ const size_t len) {
 	struct file_ext fext = {0};
 	const size_t start = len - zumin(len, sizeof(fext.ext) + 1 /* dot */);
 	const char *ext = memchr(filename + start, '.', sizeof(fext.ext));
-	if (!ext) {
-		return NULL;
-	}
-	++ext;
+	if (ext) {
+		++ext;
 
-	const size_t ext_len = strlen(ext);
-	if (ext_len) {
-		for (size_t i = 0; i < ext_len; ++i) {
-			fext.ext[i] = (char)tolower(ext[i]);
+		const size_t ext_len = strlen(ext);
+		if (ext_len) {
+			for (size_t i = 0; i < ext_len; ++i) {
+				fext.ext[i] = (char)tolower(ext[i]);
+			}
+			return bsearch(&fext, extension_map,
+				ARRAY_LEN(extension_map),
+				sizeof(*extension_map), fextcmp);
 		}
-		return bsearch(&fext, extension_map, ARRAY_LEN(extension_map),
-			sizeof(*extension_map), fextcmp);
 	}
 	return NULL;
 }
 
 static const struct file_bytes * search_magic(FILE *ifp) {
 	struct file_bytes in = {0};
-	in.len = (unsigned int)fread(in.bytes, 1, sizeof(in.bytes), ifp);
-
-	if (in.len < MIN_MAGIC_LEN) {
-		return NULL;
+	if (fread(in.bytes, 1, sizeof(in.bytes), ifp) >= MIN_MAGIC_LEN) {
+		return bsearch(&in, magic_map, ARRAY_LEN(magic_map),
+			sizeof(*magic_map), fbytescmp);
 	}
-	return bsearch(&in, magic_map, ARRAY_LEN(magic_map),
-		sizeof(*magic_map), fbytescmp);
+	return NULL;
 }
 
 bool known_extension(const char *filename) {
@@ -383,12 +392,7 @@ static enum format_id try_extension(const char *filename) {
 static enum format_id try_magic(FILE *ifp) {
 	const struct file_bytes *dec = search_magic(ifp);
 	if (dec) {
-		enum format_id id = dec->id;
-		const magic_verify_t verify = format_map[id].verify;
-		if (verify && (*verify)(ifp) == false) {
-			return fmt_unknown;
-		}
-		return id;
+		return dec->id;
 	}
 	return fmt_unknown;
 }
@@ -406,27 +410,14 @@ static enum format_id find_decoder(FILE *ifp, const char *filename) {
 	return id;
 }
 
-static enum format_id open_image(FILE **outfp, const char *filename) {
-	FILE *ifp;
-	if (*outfp) {
-		ifp = *outfp;
-	} else {
-		errno = 0;
-		ifp = fopen(filename, "rb");
-		if (!ifp) {
-			return wu_open_error;
-		}
-	}
-
+static enum format_id open_image(FILE *ifp, const char *filename) {
 	errno = 0;
 	const enum format_id id = find_decoder(ifp, filename);
 	if (id != fmt_unknown) {
 		rewind(ifp);
-		*outfp = ifp;
 	}
 	return id;
 }
-
 
 enum wu_error callback_image(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
@@ -437,8 +428,16 @@ const enum image_event event) {
 
 enum wu_error decode_image(struct image_file *infile,
 const struct wu_conf *wuconf, const char *filename) {
+	if (!infile->ifp) {
+		errno = 0;
+		infile->ifp = fopen(filename, "rb");
+		if (!infile->ifp) {
+			return wu_open_error;
+		}
+	}
+
 	errno = 0;
-	const enum format_id id = open_image(&infile->ifp, filename);
+	const enum format_id id = open_image(infile->ifp, filename);
 	if (id == fmt_unknown) {
 		if (errno) {
 			infile->err_msg = strdup(strerror(errno));

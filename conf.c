@@ -1,17 +1,17 @@
-/* This file is #included into main.c, it was just put here for
- * convenience. See wudefs.h for commented settings. */
-static struct wu_conf default_config() {
+#include "wudefs.h"
+
+struct wu_conf default_config() {
 	return (struct wu_conf) {
 		// Window
 		.initial_size = {1280, 960},
 
-		.bg[0] = 0x00,
-		.bg[1] = 0x33,
-		.bg[2] = 0x66,
-		.bg[3] = 0x66,
+		.bg[0] = 0x11,
+		.bg[1] = 0x11,
+		.bg[2] = 0x11,
+		.bg[3] = 0x33,
 
-//		.bg_src = average,//metadata_rgb,
-		.bg_src = vibrant,
+//		.bg_src = metadata,
+		.bg_src = popular,
 
 		// Animations
 //		.cache_frames = true,

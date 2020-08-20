@@ -9,6 +9,7 @@ struct gl_context {
 	struct {
 		GLint trans;
 		GLint use_pal;
+		GLint checkers;
 	} uni;
 
 	union {
@@ -31,6 +32,8 @@ struct gl_context {
 const char * gl_error_str(GLenum error);
 
 void delete_gl_context(const struct gl_context *context);
+
+void set_gl_alpha(struct gl_context *context, const bool checkers);
 
 void update_gl_matrix(const struct gl_context *context, struct wu_state *state);
 

@@ -33,13 +33,13 @@ enum bmp_type {
 };
 
 struct bmp_mask {
-	u_int32_t a, r, g, b;
+	uint32_t a, r, g, b;
 };
 
 struct bmp_desc {
 	FILE *ifp;
 
-	u_int32_t w, h;
+	uint32_t w, h;
 	unsigned char bitdepth;
 	enum bmp_type type:8;
 	enum bmp_order order:8;

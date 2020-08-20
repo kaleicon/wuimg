@@ -6,10 +6,10 @@
 #include "lib_sgi.h"
 
 static void interleave_planes16(const unsigned ch, const size_t plane_len,
-u_int16_t *restrict output, const u_int16_t *restrict red) {
-	const u_int16_t *restrict green = red + plane_len;
-	const u_int16_t *restrict blue = red + plane_len * 2;
-	const u_int16_t *restrict alpha = red + plane_len * 3;
+uint16_t *restrict output, const uint16_t *restrict red) {
+	const uint16_t *restrict green = red + plane_len;
+	const uint16_t *restrict blue = red + plane_len * 2;
+	const uint16_t *restrict alpha = red + plane_len * 3;
 	if (ch == 3) {
 		for (size_t i = 0; i < plane_len; ++i) {
 			output[i*ch] = endian16(red[i], big_endian);
@@ -27,10 +27,10 @@ u_int16_t *restrict output, const u_int16_t *restrict red) {
 }
 
 static void interleave_planes8(const unsigned ch, const size_t plane_len,
-u_int8_t *restrict output, u_int8_t *restrict red) {
-	const u_int8_t *restrict green = red + plane_len;
-	const u_int8_t *restrict blue = red + plane_len * 2;
-	const u_int8_t *restrict alpha = red + plane_len * 3;
+uint8_t *restrict output, uint8_t *restrict red) {
+	const uint8_t *restrict green = red + plane_len;
+	const uint8_t *restrict blue = red + plane_len * 2;
+	const uint8_t *restrict alpha = red + plane_len * 3;
 	if (ch == 3) {
 		for (size_t i = 0; i < plane_len; ++i){
 			output[i*ch] = red[i];
@@ -81,9 +81,9 @@ static unsigned char * uncompressed_decode(const struct sgi_desc *desc) {
 	return interleave_planes(desc, plane_len, planes);
 }
 
-static void rle_loop16(u_int16_t *restrict output,
-const u_int16_t *restrict out_limit, const u_int16_t *restrict rle,
-const u_int16_t *restrict rle_limit) {
+static void rle_loop16(uint16_t *restrict output,
+const uint16_t *restrict out_limit, const uint16_t *restrict rle,
+const uint16_t *restrict rle_limit) {
 	do {
 		const unsigned packet = endian16(*rle, big_endian);
 		const unsigned len = packet & 0x7f;
@@ -106,9 +106,9 @@ const u_int16_t *restrict rle_limit) {
 	} while (rle + 1 < rle_limit);
 }
 
-static void rle_loop8(u_int8_t *restrict output,
-const u_int8_t *restrict out_limit, const u_int8_t *restrict rle,
-const u_int8_t *restrict rle_limit) {
+static void rle_loop8(uint8_t *restrict output,
+const uint8_t *restrict out_limit, const uint8_t *restrict rle,
+const uint8_t *restrict rle_limit) {
 	do {
 		const unsigned packet = *rle;
 		const unsigned len = packet & 0x7f;
@@ -131,9 +131,9 @@ const u_int8_t *restrict rle_limit) {
 	} while (rle + 1 < rle_limit);
 }
 
-static void rle_loop(const unsigned bytedepth, u_int8_t *restrict planes,
-const u_int32_t *restrict rle_offset, const u_int32_t *restrict rle_rowlen,
-const u_int8_t *restrict rle_data, size_t width, const size_t tab_len) {
+static void rle_loop(const unsigned bytedepth, uint8_t *restrict planes,
+const uint32_t *restrict rle_offset, const uint32_t *restrict rle_rowlen,
+const uint8_t *restrict rle_data, size_t width, const size_t tab_len) {
 	width *= bytedepth;
 	for (size_t i = 0; i < tab_len; ++i) {
 		void *restrict output = planes + width * i;
@@ -151,15 +151,15 @@ const u_int8_t *restrict rle_data, size_t width, const size_t tab_len) {
 	}
 }
 
-static bool resolve_offsets(u_int32_t *restrict rle_offset,
-const u_int32_t *restrict rle_rowlen, const size_t tab_len,
-const u_int32_t max_len, const unsigned bytedepth) {
-	const size_t file_pos = tab_len * sizeof(u_int32_t) * 2 + 512;
+static bool resolve_offsets(uint32_t *restrict rle_offset,
+const uint32_t *restrict rle_rowlen, const size_t tab_len,
+const uint32_t max_len, const unsigned bytedepth) {
+	const size_t file_pos = tab_len * sizeof(uint32_t) * 2 + 512;
 	const unsigned min_len = bytedepth * 2;
 
 	unsigned align = bytedepth - 1;
 	for (size_t i = 0; i < tab_len; ++i) {
-		rle_offset[i] -= (u_int32_t)file_pos;
+		rle_offset[i] -= (uint32_t)file_pos;
 		if (rle_rowlen[i] < min_len || rle_rowlen[i] > max_len) {
 			return false;
 		} else if (rle_offset[i] > max_len - rle_rowlen[i]) {
@@ -173,9 +173,9 @@ const u_int32_t max_len, const unsigned bytedepth) {
 
 static unsigned char * rle_decode(const struct sgi_desc *desc) {
 	const size_t tab_len = desc->h * desc->ch;
-	const size_t tab_bytes = tab_len * sizeof(u_int32_t) * 2;
+	const size_t tab_bytes = tab_len * sizeof(uint32_t) * 2;
 	const size_t rle_total = tab_bytes + desc->rle_size;
-	u_int32_t *restrict rle = malloc(rle_total);
+	uint32_t *restrict rle = malloc(rle_total);
 	if (!rle) {
 		return NULL;
 	}
@@ -190,21 +190,21 @@ static unsigned char * rle_decode(const struct sgi_desc *desc) {
 
 	loop_endian32(rle, big_endian, tab_len * 2);
 
-	u_int32_t *restrict rle_offset = rle;
-	u_int32_t *restrict rle_rowlen = rle + tab_len;
+	uint32_t *restrict rle_offset = rle;
+	uint32_t *restrict rle_rowlen = rle + tab_len;
 	const bool valid = resolve_offsets(rle_offset, rle_rowlen, tab_len,
-		(u_int32_t)desc->rle_size, desc->bytedepth);
+		(uint32_t)desc->rle_size, desc->bytedepth);
 	if (!valid) {
 		free(rle);
 		puts("SGI Error: RLE data goes out of bounds.");
 		return NULL;
 	}
 
-	u_int8_t *restrict rle_data = (u_int8_t *)(rle + tab_len * 2);
+	uint8_t *restrict rle_data = (uint8_t *)(rle + tab_len * 2);
 
 	const size_t plane_len = desc->w * desc->h;
 	const size_t dims = plane_len * desc->ch * desc->bytedepth;
-	u_int8_t *restrict planes = malloc(dims);
+	uint8_t *restrict planes = malloc(dims);
 	if (!planes) {
 		free(rle);
 		return NULL;
@@ -236,7 +236,7 @@ static enum lib_fail validate_filesize(struct sgi_desc *desc) {
 	const size_t size = (size_t)(end - start);
 	if (desc->compression == sgi_rle) {
 		const size_t table_size = desc->h * desc->ch
-			* sizeof(u_int32_t) * 2;
+			* sizeof(uint32_t) * 2;
 		if (size <= table_size) {
 			return lib_unexpected_eof;
 		}
@@ -254,9 +254,9 @@ static enum lib_fail validate_filesize(struct sgi_desc *desc) {
 }
 
 static enum lib_fail validate_header(struct sgi_desc *desc,
-const u_int8_t compression, const u_int8_t bytedepth,
-const u_int16_t dimension, const u_int16_t width, const u_int16_t height,
-const u_int16_t channels, const u_int32_t bitmap_type) {
+const uint8_t compression, const uint8_t bytedepth,
+const uint16_t dimension, const uint16_t width, const uint16_t height,
+const uint16_t channels, const uint32_t bitmap_type) {
 	switch (compression) {
 	case sgi_uncompressed: case sgi_rle:
 		break;
@@ -339,7 +339,7 @@ enum lib_fail sgi_parse_header(struct sgi_desc *desc) {
 		106     CHAR    Dummy2[404];
 		510
 	*/
-	u_int8_t buf[14];
+	uint8_t buf[14];
 	if (fread(buf, 1, 10, desc->ifp) != 10) {
 		return lib_unexpected_eof;
 	}

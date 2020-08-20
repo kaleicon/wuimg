@@ -9,6 +9,8 @@
 
 const char * wu_error_message(const enum wu_error err) {
 	switch (err) {
+	case wu_no_change:
+		return "Nothing was done so nothing failed";
 	case wu_ok:
 		return "All OK";
 	case wu_alloc_error:

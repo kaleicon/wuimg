@@ -260,9 +260,9 @@ static enum lib_fail get_name(char *width_def, size_t *name_len) {
 }
 
 enum lib_fail xbm_open_file(FILE *ifp, struct xbm_desc *desc) {
-	char *width_def;
+	char width_def[32];
 	char newline;
-	const int res = fscanf(ifp, "#define %ms %u%c", &width_def, &desc->w,
+	const int res = fscanf(ifp, "#define %31s %u%c", width_def, &desc->w,
 		&newline);
 	switch (res) {
 	case EOF:
@@ -272,27 +272,20 @@ enum lib_fail xbm_open_file(FILE *ifp, struct xbm_desc *desc) {
 			break;
 		}
 		// Fallthrough
-	case 2:
-	case 1:
-		free(desc->name);
-		// Fallthrough
 	default:
 		return lib_unknown_format;
 	}
 
 	size_t name_len;
-	enum lib_fail fail = get_name(width_def, &name_len);
-	if (fail) {
-		free(width_def);
-	} else {
+	enum lib_fail status = get_name(width_def, &name_len);
+	if (status == lib_ok) {
 		if (name_len == 0) {
-			fail = lib_unknown_format;
-			free(width_def);
+			status = lib_unknown_format;
 		} else {
-			desc->name = width_def;
+			desc->name = strdup(width_def);
 			desc->name_len = name_len;
 			desc->ifp = ifp;
 		}
 	}
-	return fail;
+	return status;
 }

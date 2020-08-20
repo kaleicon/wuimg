@@ -5,18 +5,24 @@
 #include "common.h"
 #include "common_unpack.h"
 
-struct frame_desc {
-	const size_t w, h;
-	const unsigned int ch;
-	const struct swizzle {
-		unsigned char r, b, g, a;
-	} swz;
-	const size_t stride, padding;
-	const size_t hstep, vstep;
-	const size_t tail;
+typedef int_fast32_t ifast_t;
+
+struct swizzle {
+	uint8_t r, g, b, a;
 };
 
-typedef int_fast32_t ifast_t;
+struct frame_desc {
+	const size_t w, h;
+	const size_t ch;
+	const size_t stride;
+	const size_t hstep, vstep;
+	const struct swizzle swz;
+};
+
+enum count_op {
+	count_average,
+	count_category,
+};
 
 struct color_tally {
 	ifast_t cnt;
@@ -88,16 +94,13 @@ const struct color_tally *ct, size_t len) {
 }
 
 static int palette_mostpop(float out[3], const struct frame_desc *fr,
-const u_int8_t *restrict data, const struct colormap *pal) {
+const uint8_t *restrict data, const struct colormap *pal) {
 	int tally[256] = {0};
-	const u_int8_t *restrict imgend = data + fr->stride * fr->h;
-	while (data < imgend) {
-		const u_int8_t *restrict rowend = data + fr->w;
-		while (data < rowend) {
-			++tally[*data];
-			data += fr->hstep;
+	for (size_t y = 0; y < fr->h; y += fr->vstep) {
+		const size_t row = y * fr->stride;
+		for (size_t x = 0; x < fr->w; x += fr->hstep) {
+			++tally[data[row + x]];
 		}
-		data += fr->tail;
 	}
 
 	int idx = 0;
@@ -112,71 +115,63 @@ const u_int8_t *restrict data, const struct colormap *pal) {
 	return (int)((fr->w / fr->hstep) * (fr->h / fr->vstep));
 }
 
-static void average_common8(const struct frame_desc *fr,
-const u_int8_t *restrict data, struct color_tally *ct) {
-	const u_int8_t *restrict imgend = data + fr->stride * fr->h;
-	while (data < imgend) {
-		const u_int8_t *restrict rowend = data + fr->w * fr->ch;
-		while (data < rowend) {
-			if (fr->ch % 2 || data[fr->swz.a]) {
-				switch (fr->ch) {
-				case 4: case 3:
-					ct->r += data[fr->swz.r];
-					ct->g += data[fr->swz.g];
-					ct->b += data[fr->swz.b];
-					break;
-				case 2: case 1:
-					ct->r += data[fr->swz.r];
-					break;
-				}
-				++ct->cnt;
-			}
-			data += fr->ch * fr->hstep;
+static void add_count(const struct frame_desc *fr, const uint8_t *restrict pix,
+struct color_tally *tally, const enum count_op op) {
+	switch (op) {
+	case count_average:
+		switch (fr->ch) {
+		case 4: case 3:
+			tally->r += pix[fr->swz.r];
+			tally->g += pix[fr->swz.g];
+			tally->b += pix[fr->swz.b];
+			break;
+		case 2: case 1:
+			tally->r += pix[fr->swz.r];
+			break;
 		}
-		data += fr->tail;
+		++tally->cnt;
+		break;
+	case count_category:;
+		const ifast_t sr = pix[fr->swz.r];
+		const ifast_t sg = pix[fr->swz.g];
+		const ifast_t sb = pix[fr->swz.b];
+
+		struct color_tally *t = tally;
+		const ifast_t mask = 0xc0;
+		t += (sb & mask) >> 2 | (sg & mask) >> 4 | sr >> 6;
+
+		++t->cnt;
+		t->r += sr;
+		t->g += sg;
+		t->b += sb;
+		break;
 	}
 }
 
-static void category_common8(const struct frame_desc *fr,
-const u_int8_t *restrict data, struct color_tally *tally) {
-	const u_int8_t *restrict imgend = data + fr->stride * fr->h;
-	while (data < imgend) {
-		const u_int8_t *restrict rowend = data + fr->w * fr->ch;
-		while (data < rowend) {
-			if (fr->ch % 2 || data[fr->swz.a]) {
-				const ifast_t sr = data[fr->swz.r];
-				const ifast_t sg = data[fr->swz.g];
-				const ifast_t sb = data[fr->swz.b];
-
-				struct color_tally *t = tally;
-				const ifast_t mask = 0xc0;
-				t += (sb & mask) >> 2 | (sg & mask) >> 4
-					| sr >> 6;
-
-				++t->cnt;
-				t->r += sr;
-				t->g += sg;
-				t->b += sb;
+static void count_common(const struct frame_desc *fr,
+const uint8_t *restrict data, struct color_tally *tally, const enum count_op op) {
+	for (size_t y = 0; y < fr->h; y += fr->vstep) {
+		// Using pointer arith improves performance on my machine.
+		const uint8_t *restrict row = data + y * fr->stride;
+		const uint8_t *restrict rowend = row + fr->w * fr->ch;
+		while (row < rowend) {
+			if (fr->ch % 2 || row[fr->swz.a]) {
+				add_count(fr, row, tally, op);
 			}
-			data += fr->ch * fr->hstep;
+			row += fr->ch * fr->hstep;
 		}
-		data += fr->tail;
 	}
 }
 
 static int get_average(float out[3], const struct frame_desc *fr,
 const void *restrict data, const unsigned char bitdepth) {
 	struct color_tally tally = {0};
-	switch (bitdepth) {
-	case 8:
-		average_common8(fr, data, &tally);
-		break;
-	}
+	count_common(fr, data, &tally, count_average);
 	return normalize_float(out, bitdepth, &tally, fr->ch);
 }
 
 static int get_category(const enum background_source src, float out[3],
-const struct frame_desc *fr, const u_int8_t *restrict data,
+const struct frame_desc *fr, const uint8_t *restrict data,
 const unsigned char bitdepth) {
 	const size_t bits = 2;
 	const size_t len = 1U << (bits * 3);
@@ -185,14 +180,7 @@ const unsigned char bitdepth) {
 		return 0;
 	}
 
-	switch (bitdepth) {
-	case 8:
-		category_common8(fr, data, tally);
-		break;
-	default:
-		free(tally);
-		return 0;
-	}
+	count_common(fr, data, tally, count_category);
 
 	ifast_t acc = 0;
 	for (size_t i = 0; i < len; ++i) {
@@ -208,25 +196,27 @@ const unsigned char bitdepth) {
 
 int get_image_color(float out[3], const struct raw_img *img,
 const enum background_source src, const size_t maxres) {
+	switch (img->bitdepth) {
+	case 8: break;
+	default: return 0;
+	}
+
 	const enum pix_layout lay = img->layout;
 	const size_t scanline = scanline_length(img->w * img->channels,
 		img->bitdepth, img->alignment);
-	const size_t padding = scanline - img->w * img->channels;
 	const struct frame_desc frame = {
 		.w = img->w,
 		.h = img->h,
 		.ch = img->channels,
+		.stride = scanline,
+		.hstep = img->w/maxres + 1,
+		.vstep = img->h/maxres + 1,
 		.swz = {
 			.r = (lay >> 6) & 0x03,
 			.g = (lay >> 4) & 0x03,
 			.b = (lay >> 2) & 0x03,
 			.a = lay & 0x03,
 		},
-		.stride = scanline,
-		.padding = padding,
-		.hstep = img->w/maxres + 1,
-		.vstep = img->h/maxres + 1,
-		.tail = img->h/maxres * scanline + padding,
 	};
 
 	if (img->palette) {

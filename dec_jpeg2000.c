@@ -124,10 +124,10 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 		opj_set_decoded_resolution_factor(dec, screen_fit);
 	}
 
-	const OPJ_UINT32 comps[3] = {0, 1, 2};
 	if (jp2->numcomps > 4) {
 		puts("Warning: JP2 colorspace uses more than 4 channels. The "
 			"result will be a dumb attempt at showing something.");
+		const OPJ_UINT32 comps[3] = {0, 1, 2};
 		opj_set_decoded_components(dec, 3, comps, OPJ_FALSE);
 	}
 
@@ -154,7 +154,7 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 		status = join_components(img, jp2);
 		if (status == wu_ok) {
 			if (screen_fit > tex_fit) {
-				infile->events = scale;
+				infile->events = up_scale;
 			} else {
 				infile->events = 0;
 			}
@@ -170,7 +170,7 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 static enum wu_error jpeg2000_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev, const OPJ_CODEC_FORMAT format) {
-	if (ev == scale && state->zoom > 1) {
+	if (ev == up_scale && state->zoom > 1) {
 		free(infile->sub_img[0].data);
 		return jpeg2000_dec(infile, wuconf, format);
 	} else if (ev == 0) {

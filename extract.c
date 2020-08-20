@@ -25,25 +25,14 @@ void free_archive_iter(struct archive_iter *iter) {
 	}
 }
 
-static FILE * tmp_extract(struct archive *r) {
-	FILE *tmp = tmpfile();
-	if (tmp) {
-		size_t written = 0;
-
-		const void *buf;
-		size_t size;
-		la_int64_t off;
-		while (archive_read_data_block(r, &buf, &size, &off) == ARCHIVE_OK) {
-			written += size;
-			fwrite(buf, 1, size, tmp);
-		}
-
-		if (!written) {
-			fclose(tmp);
-			return NULL;
-		}
+static la_int64_t tmp_extract(FILE *tmp, struct archive *r) {
+	const void *buf;
+	size_t size;
+	la_int64_t off;
+	while (archive_read_data_block(r, &buf, &size, &off) == ARCHIVE_OK) {
+		fwrite(buf, 1, size, tmp);
 	}
-	return tmp;
+	return off;
 }
 
 void remove_archive_entry(struct tmp_file *entry) {
@@ -63,27 +52,36 @@ static bool next_archive_entry(struct archive_iter *iter) {
 		// Fallthrough
 	case ARCHIVE_OK:
 		;const char *name = archive_entry_pathname(entry);
-		if (known_extension(name)) {
-			if (iter->pos == iter->alloc) {
-				iter->alloc += iter->alloc / 4;
-				void *hold = realloc(iter->entry,
-					sizeof(*iter->entry) * iter->alloc);
-				if (!hold) {
-					return false;
-				}
-				iter->entry = hold;
-			}
+		const bool probably_nonempty = !archive_entry_size_is_set(entry)
+			|| archive_entry_size(entry);
+		if (probably_nonempty && known_extension(name)) {
 			errno = 0;
-			FILE *tmp = tmp_extract(iter->ra);
+			FILE *tmp = tmpfile();
 			if (!tmp) {
-				perror("Failed to create temp file.");
+				perror("Failed to create temp file");
 				return false;
 			}
-			iter->entry[iter->pos] = (struct tmp_file) {
-				.name = strdup(name),
-				.tmp = tmp,
-			};
-			++iter->pos;
+
+			const la_int64_t written = tmp_extract(tmp, iter->ra);
+			if (written) {
+				if (iter->pos == iter->alloc) {
+					iter->alloc += iter->alloc / 4;
+					void *hold = realloc(iter->entry,
+						sizeof(*iter->entry) * iter->alloc);
+					if (!hold) {
+						return false;
+					}
+					iter->entry = hold;
+				}
+
+				iter->entry[iter->pos] = (struct tmp_file) {
+					.name = strdup(name),
+					.tmp = tmp,
+				};
+				++iter->pos;
+			} else {
+				fclose(tmp);
+			}
 		}
 		break;
 	case ARCHIVE_RETRY:

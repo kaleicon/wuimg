@@ -36,8 +36,8 @@ enum lib_fail pcx_open_file(FILE *ifp, struct pcx_desc *desc);
 
 struct dcx_desc {
 	size_t nr;
-	u_int32_t off[1024];
-	u_int32_t len[1024];
+	uint32_t off[1024];
+	uint32_t len[1024];
 };
 
 struct dcx_desc * dcx_read_offsets(FILE *ifp);

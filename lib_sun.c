@@ -260,8 +260,8 @@ static bool validate_file_size(struct sun_desc *desc) {
 }
 
 static enum lib_fail validate_header(struct sun_desc *desc,
-const u_int32_t width, const u_int32_t height, const u_int32_t bitdepth,
-const u_int32_t type, const u_int32_t cm_type, const u_int32_t cm_len) {
+const uint32_t width, const uint32_t height, const uint32_t bitdepth,
+const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 	if (!width || !height) {
 		return lib_invalid_header;
 	}
@@ -325,7 +325,7 @@ enum lib_fail sun_parse_header(struct sun_desc *desc) {
 		24	DWORD	ColorMapLen;
 	*/
 
-	u_int32_t header[7];
+	uint32_t header[7];
 	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
 		return lib_unexpected_eof;
 	}
@@ -342,7 +342,7 @@ enum lib_fail sun_parse_header(struct sun_desc *desc) {
 	}
 
 
-	desc->scan_len = (u_int32_t)scanline_length(desc->w, desc->bitdepth, 2);
+	desc->scan_len = (uint32_t)scanline_length(desc->w, desc->bitdepth, 2);
 	if (!validate_file_size(desc)) {
 		return lib_unexpected_eof;
 	}

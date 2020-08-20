@@ -401,9 +401,9 @@ static enum lib_fail load_colormap(FILE *ifp, struct tga_colormap *map) {
 }
 
 static enum lib_fail validate_header(struct tga_desc *desc,
-const u_int8_t cm_type, const u_int8_t type, const u_int16_t cm_start,
-const u_int16_t cm_len, const u_int8_t cm_depth, const u_int16_t width,
-const u_int16_t height, const u_int8_t bitdepth, const u_int8_t img_desc) {
+const uint8_t cm_type, const uint8_t type, const uint16_t cm_start,
+const uint16_t cm_len, const uint8_t cm_depth, const uint16_t width,
+const uint16_t height, const uint8_t bitdepth, const uint8_t img_desc) {
 	switch (type) {
 	case no_image_data:
 		return lib_tga_no_image_data;
@@ -485,7 +485,7 @@ enum lib_fail tga_parse_header(struct tga_desc *desc) {
 		18              ImageID;
 	*/
 
-	u_int8_t header[18];
+	uint8_t header[18];
 	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
 		return lib_unexpected_eof;
 	}

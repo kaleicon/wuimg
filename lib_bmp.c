@@ -305,7 +305,7 @@ static bool validate_file_size(struct bmp_desc *desc) {
 
 static enum lib_fail load_mask(struct bmp_desc *desc) {
 	const size_t len = desc->type == bmp_type3 ? 3 : 4;
-	u_int32_t buf[4];
+	uint32_t buf[4];
 	const size_t read = fread(buf, sizeof(*buf), len, desc->ifp);
 	if (read != len) {
 		return lib_unexpected_eof;
@@ -348,19 +348,19 @@ static enum lib_fail load_palette(struct bmp_desc *desc) {
 }
 
 static enum lib_fail validate_bitmap_header(struct bmp_desc *desc,
-const int32_t width, const int32_t height, const u_int16_t planes,
-const u_int16_t depth, const u_int32_t compression) {
+const int32_t width, const int32_t height, const uint16_t planes,
+const uint16_t depth, const uint32_t compression) {
 	if (width > 0) {
-		desc->w = (u_int32_t)width;
+		desc->w = (uint32_t)width;
 	} else {
 		return lib_invalid_header;
 	}
 
 	if (height > 0) {
-		desc->h = (u_int32_t)height;
+		desc->h = (uint32_t)height;
 		desc->order = bmp_bottom_up;
 	} else if (height < 0) {
-		desc->h = (u_int32_t)(-height);
+		desc->h = (uint32_t)(-height);
 		desc->order = bmp_top_down;
 	} else {
 		return lib_invalid_header;
@@ -442,7 +442,7 @@ static enum lib_fail bmp_type3_parse_header(struct bmp_desc *desc) {
 		104
 	 */
 
-	u_int8_t buf[16];
+	uint8_t buf[16];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
 		return lib_unexpected_eof;
 	}
@@ -488,7 +488,7 @@ static enum lib_fail bmp_type2_parse_header(struct bmp_desc *desc) {
 		8
 	 */
 
-	u_int16_t buf[4];
+	uint16_t buf[4];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
 		return lib_unexpected_eof;
 	}
@@ -528,14 +528,14 @@ enum lib_fail bmp_parse_header(struct bmp_desc *desc) {
 
 	*/
 
-	u_int32_t buf[4];
+	uint32_t buf[4];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
 		return lib_unexpected_eof;
 	}
 
-//	const u_int32_t file_size = endian32(buf[0], little_endian);
-	const u_int32_t bitmap_offset = endian32(buf[2], little_endian);
-	const u_int32_t header_size = endian32(buf[3], little_endian);
+//	const uint32_t file_size = endian32(buf[0], little_endian);
+	const uint32_t bitmap_offset = endian32(buf[2], little_endian);
+	const uint32_t header_size = endian32(buf[3], little_endian);
 
 	enum lib_fail fail;
 	switch (header_size) {
