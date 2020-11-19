@@ -9,6 +9,10 @@ WUDEC(avs, NULL)
 WUDEC(bmp, NULL)
 #endif
 
+#ifdef DEC_MAC
+WUDEC(mac, NULL)
+#endif
+
 #ifdef DEC_PCX
 WUDEC(pcx, NULL)
 WUDEC(dcx, NULL)
@@ -28,6 +32,10 @@ WUDEC(pnm, NULL)
 
 #ifdef DEC_SGI
 WUDEC(sgi, NULL)
+#endif
+
+#ifdef DEC_SIXEL
+WUDEC(sixel, NULL)
 #endif
 
 #ifdef DEC_SUN

@@ -12,10 +12,9 @@ struct term_restore {
 	cc_t vtime;
 };
 
-void end_display(const struct window_control *control,
-const struct term_restore *tr);
+void end_display(const struct term_restore *tr);
 
-bool display_loop(struct window_control *control, struct image_file *infile,
+bool display_loop(struct image_file *infile, struct window_control *control,
 const char *filename, bool no_cycle);
 
 bool setup_display(struct window_control *control, struct term_restore *tr);

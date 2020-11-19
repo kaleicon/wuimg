@@ -3,12 +3,10 @@
 #include <time.h>
 #include <stdbool.h>
 
-#include <epoxy/gl.h>
-
 #include "common.h"
-#include "window.h"
+#include "display.h"
 #include "opengl.h"
-#include "dec_pnm.h"
+#include "dec/pnm.h"
 
 struct gl_params {
 	GLenum param;
@@ -57,7 +55,7 @@ const GLenum fmt, const long int in_fmt, bool clear) {
 	return GL_NO_ERROR;
 }
 
-static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWwindow *window) {
+static GLenum run_benchs(const struct raw_img *img) {
 	const struct gl_params types[] = {
 		{GL_UNSIGNED_BYTE, "GL_UNSIGNED_BYTE"},
 		{GL_UNSIGNED_SHORT, "GL_UNSIGNED_SHORT"},
@@ -114,14 +112,14 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 
 	glPixelStorei(GL_UNPACK_SWAP_BYTES, GL_FALSE);
 
-	struct timespec start, before, after;
 	const size_t size_of_types = ARRAY_LEN(types);
 //	const size_t size_of_fmts = ARRAY_LEN(fmts);
 	const size_t size_of_infmts = ARRAY_LEN(in_fmts);
 	const int retries = 8;
 
 	size_t combinations = 0;
-	clock_gettime(CLOCK_REALTIME, &start);
+	struct timespec start_total;
+	clock_start(&start_total);
 	for (size_t i = 0; i < size_of_types; ++i) {
 		size_t size_of_fmts = ARRAY_LEN(fmts);
 		struct gl_params *valid_fmts = fmts;
@@ -142,7 +140,8 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 //					glfwSwapBuffers(window);
 					glFinish();
 
-					clock_gettime(CLOCK_REALTIME, &before);
+					struct timespec start;
+					clock_start(&start);
 					GLenum r = texture_upload(img,
 						types[i].param,
 						valid_fmts[j].param,
@@ -151,9 +150,7 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 						return r;
 					}
 					glFinish();
-					clock_gettime(CLOCK_REALTIME, &after);
-					printf("\t%ld", timespec_nanodiff(
-						before, after));
+					printf("\t%ld", clock_nanodiff(&start));
 					fflush(stdout);
 
 					texture_upload(img, GL_UNSIGNED_BYTE,
@@ -172,7 +169,7 @@ static GLenum run_benchs(const struct raw_img *img, __attribute__((unused))GLFWw
 	}
 
 	printf("%zu combinations total in %ld nanoseconds.\n", combinations,
-		timespec_nanodiff(start, after));
+		clock_nanodiff(&start_total));
 	return GL_NO_ERROR;
 }
 
@@ -186,9 +183,6 @@ int main(const int argc, const char *argv[]) {
 	}
 
 	struct window_control control = {0};
-	control.conf.initial_w = 640;
-	control.conf.initial_h = 480;
-
 	if (!setup_display(&control, NULL)) {
 		return 1;
 	}
@@ -202,7 +196,7 @@ int main(const int argc, const char *argv[]) {
 
 	const enum wu_error result = pnm_dec(&file, &control.conf);
 	if (result == wu_ok) {
-		const GLenum err = run_benchs(file.sub_img, control.window);
+		const GLenum err = run_benchs(file.sub_img);
 		if (err) {
 			printf("Failed at uploading. %s.\n", gl_error_str(err));
 		}

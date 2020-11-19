@@ -33,7 +33,7 @@ int main(const int argc, const char *argv[]) {
 	}
 
 	const struct wu_conf conf = {
-		.max_img_size = USHRT_MAX,
+		.max_img_size = USHRT_MAX / 4,
 	};
 
 	sort_dec_tables();
@@ -41,12 +41,13 @@ int main(const int argc, const char *argv[]) {
 	const enum wu_error result = decode_image(&file, &conf, argv[2]);
 	if (result == wu_ok) {
 		float bg[3] = {0};
-		struct timespec before, after;
-		clock_gettime(CLOCK_REALTIME, &before);
-		const int samples = get_image_color(bg, file.sub_img, src, USHRT_MAX);
-		clock_gettime(CLOCK_REALTIME, &after);
+		struct timespec start;
+		clock_start(&start);
+		const int samples = get_image_color(bg, file.sub_img, src,
+			USHRT_MAX);
+		const long diff = clock_nanodiff(&start);
 		printf("Average of %d samples taken in %ld nanoseconds.\n",
-			samples, timespec_nanodiff(before, after));
+			samples, diff);
 		printf("Colors: r=%f g=%f b=%f\n", bg[0], bg[1], bg[2]);
 	}
 	free_image_file(&file);

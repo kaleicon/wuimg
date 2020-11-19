@@ -25,12 +25,29 @@ void free_archive_iter(struct archive_iter *iter) {
 	}
 }
 
-static la_int64_t tmp_extract(FILE *tmp, struct archive *r) {
+static la_int64_t tmp_extract(FILE *tmp, struct archive *r,
+struct archive_entry *entry) {
 	const void *buf;
 	size_t size;
 	la_int64_t off;
 	while (archive_read_data_block(r, &buf, &size, &off) == ARCHIVE_OK) {
 		fwrite(buf, 1, size, tmp);
+	}
+
+	if (off) {
+		struct timespec times[2];
+		if (archive_entry_atime_is_set(entry)) {
+			times[0].tv_sec = archive_entry_atime(entry);
+		} else {
+			times[0].tv_nsec = UTIME_OMIT;
+		}
+
+		if (archive_entry_mtime_is_set(entry)) {
+			times[1].tv_sec = archive_entry_mtime(entry);
+		} else {
+			times[1].tv_nsec = UTIME_OMIT;
+		}
+		futimens(fileno(tmp), times);
 	}
 	return off;
 }
@@ -42,6 +59,42 @@ void remove_archive_entry(struct tmp_file *entry) {
 	entry->tmp = NULL;
 }
 
+static bool ok_case(struct archive_iter *iter, struct archive_entry *entry) {
+	const char *name = archive_entry_pathname(entry);
+	const bool reg_probably_nonempty =
+		((archive_entry_filetype(entry) & AE_IFMT) == AE_IFREG)
+		&& (
+			!archive_entry_size_is_set(entry)
+			|| archive_entry_size(entry)
+		);
+
+	if (reg_probably_nonempty && known_extension(name)) {
+		errno = 0;
+		FILE *tmp = tmpfile();
+		if (!tmp) {
+			perror("Failed to create temp file");
+			return false;
+		}
+
+		const la_int64_t written = tmp_extract(tmp, iter->ra, entry);
+		if (written) {
+			if (!grow_buffer(&iter->entry, &iter->alloc, iter->pos,
+			sizeof(*iter->entry)) ) {
+				return false;
+			}
+
+			iter->entry[iter->pos] = (struct tmp_file) {
+				.name = strdup(name),
+				.tmp = tmp,
+			};
+			++iter->pos;
+		} else {
+			fclose(tmp);
+		}
+	}
+	return true;
+}
+
 static bool next_archive_entry(struct archive_iter *iter) {
 	struct archive_entry *entry;
 	const int r = archive_read_next_header(iter->ra, &entry);
@@ -51,39 +104,7 @@ static bool next_archive_entry(struct archive_iter *iter) {
 			archive_error_string(iter->ra));
 		// Fallthrough
 	case ARCHIVE_OK:
-		;const char *name = archive_entry_pathname(entry);
-		const bool probably_nonempty = !archive_entry_size_is_set(entry)
-			|| archive_entry_size(entry);
-		if (probably_nonempty && known_extension(name)) {
-			errno = 0;
-			FILE *tmp = tmpfile();
-			if (!tmp) {
-				perror("Failed to create temp file");
-				return false;
-			}
-
-			const la_int64_t written = tmp_extract(tmp, iter->ra);
-			if (written) {
-				if (iter->pos == iter->alloc) {
-					iter->alloc += iter->alloc / 4;
-					void *hold = realloc(iter->entry,
-						sizeof(*iter->entry) * iter->alloc);
-					if (!hold) {
-						return false;
-					}
-					iter->entry = hold;
-				}
-
-				iter->entry[iter->pos] = (struct tmp_file) {
-					.name = strdup(name),
-					.tmp = tmp,
-				};
-				++iter->pos;
-			} else {
-				fclose(tmp);
-			}
-		}
-		break;
+		return ok_case(iter, entry);
 	case ARCHIVE_RETRY:
 		break;
 	case ARCHIVE_FATAL:
@@ -98,13 +119,16 @@ static bool next_archive_entry(struct archive_iter *iter) {
 	return true;
 }
 
-struct tmp_file * get_archive_entry(struct archive_iter *iter, const int idx) {
+struct tmp_file * get_archive_file(struct archive_iter *iter, const int idx) {
 	while (iter->ra && (idx < 0 || iter->pos <= (size_t)idx)) {
 		if (!next_archive_entry(iter)) {
 			return NULL;
 		}
 	}
-	const int pos = iwrap(idx, (int)iter->pos);
+	if (!iter->pos) {
+		return NULL;
+	}
+	const int pos = imod(idx, (int)iter->pos);
 	struct tmp_file *file = iter->entry + pos;
 	if (file->tmp) {
 		rewind(file->tmp);
@@ -137,5 +161,5 @@ bool init_archive_iter(struct archive_iter *iter, const char *filename) {
 		archive_read_free(ra);
 		return false;
 	}
-	return (bool)(get_archive_entry(iter, 0));
+	return (bool)get_archive_file(iter, 0);
 }

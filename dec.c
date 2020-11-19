@@ -2,38 +2,45 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <dirent.h>
 #include <ctype.h>
 #include <errno.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
 #include "wudefs.h"
 #include "common.h"
 #include "dec.h"
 
-#include "dec_avs.h"
-#include "dec_bmp.h"
-#include "dec_pcx.h"
-#include "dec_pgx.h"
-#include "dec_pi.h"
-#include "dec_pnm.h"
-#include "dec_sgi.h"
-#include "dec_sun.h"
-#include "dec_tga.h"
-#include "dec_wbmp.h"
-#include "dec_xbm.h"
+#include "dec_includes.h"
+/*
+#include "dec/avs.h"
+#include "dec/bmp.h"
+#include "dec/mac.h"
+#include "dec/pcx.h"
+#include "dec/pgx.h"
+#include "dec/pi.h"
+#include "dec/pnm.h"
+#include "dec/sgi.h"
+#include "dec/sixel.h"
+#include "dec/sun.h"
+#include "dec/tga.h"
+#include "dec/wbmp.h"
+#include "dec/xbm.h"
 
-#include "dec_flif.h"
-#include "dec_gif.h"
-#include "dec_heif.h"
-#include "dec_jbig.h"
-#include "dec_jpeg.h"
-#include "dec_jpeg2000.h"
-#include "dec_png.h"
-#include "dec_raw.h"
-#include "dec_svg.h"
-#include "dec_tiff.h"
-#include "dec_webp.h"
-
+#include "dec/flif.h"
+#include "dec/gif.h"
+#include "dec/heif.h"
+#include "dec/jbig.h"
+#include "dec/jpeg.h"
+#include "dec/jpeg2000.h"
+#include "dec/png.h"
+#include "dec/raw.h"
+#include "dec/svg.h"
+#include "dec/tiff.h"
+#include "dec/webp.h"
+*/
 typedef enum wu_error (*dec_func_t)(struct image_file *infile,
 	const struct wu_conf *wuconf);
 
@@ -62,14 +69,9 @@ struct file_ext {
 };
 
 struct file_bytes {
-	const char *restrict mask;
+	const unsigned char mask[12];
 	unsigned char bytes[12];
 	const enum format_id id;
-};
-
-static const char unimask[] = {
-	"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
-	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" // null
 };
 
 static const struct format_fn format_map[nb_of_fmts] = {
@@ -78,115 +80,114 @@ static const struct format_fn format_map[nb_of_fmts] = {
 #undef WUDEC
 };
 
-/* The obvious issue here is that a short sequence that matches the start of a
- * longer one will ruin searches. */
-#define DEFAULT_MASK(bytes) \
-	(unimask + (sizeof(unimask)/2) - sizeof(bytes) + 1/*null*/), bytes
-
 static const size_t MIN_MAGIC_LEN = 2; // Anything shorter is meaningless
 static struct file_bytes magic_map[] = {
 #ifdef DEC_BMP
-	{DEFAULT_MASK("BM"), fmt_bmp},
+	{"\xff\xff", "BM", fmt_bmp},
 #endif // DEC_BMP
 
 #ifdef DEC_PCX
-	// Second byte is the version. Valid versions are 0, 2, 3, 4, and 5.
-	{DEFAULT_MASK("\x0a\x00\x01"), fmt_pcx},
-	{"\xff\xfd\xff", "\x0a\x00\x01", fmt_pcx},
-	{"\xff\xfb\xff", "\x0a\x00\x01", fmt_pcx},
+	{"\xff\xff\xff", "\x0a\x00\x01", fmt_pcx},
+	{"\xff\xff\xff", "\x0a\x02\x01", fmt_pcx},
+	{"\xff\xff\xff", "\x0a\x03\x01", fmt_pcx},
+	{"\xff\xff\xff", "\x0a\x04\x01", fmt_pcx},
+	{"\xff\xff\xff", "\x0a\x05\x01", fmt_pcx},
 
-	{DEFAULT_MASK("\xb1\x68\xde\x3a"), fmt_dcx},
+	{"\xff\xff\xff\xff", "\xb1\x68\xde\x3a", fmt_dcx},
 #endif // DEC_PCX
 
 #ifdef DEC_PGX
-	{DEFAULT_MASK("PGX\x00"), fmt_pgx},
+	{"\xff\xff\xff\xff", "PGX\0", fmt_pgx},
 #endif // DEC_PGX
 
 #ifdef DEC_PI
-	{DEFAULT_MASK("Pi"), fmt_pi},
+	{"\xff\xff", "Pi", fmt_pi},
 #endif // DEC_PI
 
 #ifdef DEC_PNM
-	{DEFAULT_MASK("P1"), fmt_pnm},
-	{DEFAULT_MASK("P2"), fmt_pnm},
-	{DEFAULT_MASK("P3"), fmt_pnm},
-	{DEFAULT_MASK("P4"), fmt_pnm},
-	{DEFAULT_MASK("P5"), fmt_pnm},
-	{DEFAULT_MASK("P6"), fmt_pnm},
-	{DEFAULT_MASK("P7\n"), fmt_pnm}, // PAM
-	{DEFAULT_MASK("P7 332\n"), fmt_pnm}, // Xv thumbnail
-	{DEFAULT_MASK("PF"), fmt_pnm}, // Color PFM
-	{DEFAULT_MASK("Pf"), fmt_pnm}, // Gray PFM
+	{"\xff\xff", "P1", fmt_pnm},
+	{"\xff\xff", "P2", fmt_pnm},
+	{"\xff\xff", "P3", fmt_pnm},
+	{"\xff\xff", "P4", fmt_pnm},
+	{"\xff\xff", "P5", fmt_pnm},
+	{"\xff\xff", "P6", fmt_pnm},
+	{"\xff\xff\xff", "P7\n", fmt_pnm}, // PAM
+	{"\xff\xff\xff\xff\xff\xff\xff", "P7 332\n", fmt_pnm}, // Xv thumbnail
+	{"\xff\xff", "PF", fmt_pnm}, // Color PFM
+	{"\xff\xff", "Pf", fmt_pnm}, // Gray PFM
 #endif // DEC_PNM
 
 #ifdef DEC_SGI
-	{DEFAULT_MASK("\x01\xda"), fmt_sgi},
+	{"\xff\xff", "\x01\xda", fmt_sgi},
 #endif // DEC_SGI
 
+#ifdef DEC_SIXEL
+	// {"\xff", "\x90", fmt_sixel}, // Valid but too short
+	{"\xff\xff", "\x1bP", fmt_sixel},
+#endif // DEC_SIXEL
+
 #ifdef DEC_SUN
-	{DEFAULT_MASK("\x59\xa6\x6a\x95"), fmt_sun},
+	{"\xff\xff\xff\xff", "\x59\xa6\x6a\x95", fmt_sun},
 #endif // DEC_SUN
 
 #ifdef DEC_XBM
-	{DEFAULT_MASK("#define "), fmt_xbm},
+	{"\xff\xff", "\x2f\2a", fmt_xbm}, /* C comment, only in hex because my
+		editor tells me it will comment away half the map otherwise. */
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "#define ", fmt_xbm},
 #endif // DEC_XBM
 
-#ifdef DEC_PNG
-	{DEFAULT_MASK("\x89PNG\r\n\x1a\n"), fmt_png},
-#endif // DEC_PNG
 
-#ifdef DEC_JPEG
-	{DEFAULT_MASK("\xff\xd8\xff"), fmt_jpeg},
-#endif // DEC_JPEG
+#ifdef DEC_FLIF
+	{"\xff\xff\xff\xff", "FLIF", fmt_flif},
+#endif // DEC_FLIF
 
 #ifdef DEC_GIF
-	{DEFAULT_MASK("GIF87a"), fmt_gif},
-	{DEFAULT_MASK("GIF89a"), fmt_gif},
+	{"\xff\xff\xff\xff\xff\xff", "GIF87a", fmt_gif},
+	{"\xff\xff\xff\xff\xff\xff", "GIF89a", fmt_gif},
 #endif // DEC_GIF
 
-#ifdef DEC_TIFF
-	{DEFAULT_MASK("II\x2a\x00"), fmt_tiff},
-	{DEFAULT_MASK("MM\x00\x2a"), fmt_tiff},
+#ifdef DEC_HEIF
+	// Fourth byte must be less than \x0c to avoid mess ups with JP2.
+	{"\xff\xff\xff\x00\xff\xff\xff\xff", "\0\0\0\x00" "ftyp", fmt_heif},
+#endif // DEC_HEIF
 
-	// BigTIFF
-	{DEFAULT_MASK("II\x2b\x00\x08\x00\x00\x00"), fmt_tiff},
-	{DEFAULT_MASK("MM\x00\x2b\x00\x08\x00\x00"), fmt_tiff},
-#endif // DEC_TIFF
+#ifdef DEC_JPEG
+	{"\xff\xff\xff", "\xff\xd8\xff", fmt_jpeg},
+#endif // DEC_JPEG
+
+#ifdef DEC_JPEG2000
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\0\0\0\x0c" "jP\x20\x20" "\r\n\x87\n", fmt_jp2},
+	{"\xff\xff\xff\xff", "\r\n\x87\n", fmt_jp2},
+	{"\xff\xff\xff\xff", "\xff\x4f\xff\x51", fmt_j2k},
+#endif // DEC_JPEG2000
+
+#ifdef DEC_PNG
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "\x89PNG\r\n\x1a\n", fmt_png},
+#endif // DEC_PNG
 
 #ifdef DEC_RAW
 	// Olympus ORF
-	{DEFAULT_MASK("IIRS"), fmt_raw},
-	{DEFAULT_MASK("IIRO"), fmt_raw},
-	{DEFAULT_MASK("MMOR"), fmt_raw},
+	{"\xff\xff\xff\xff", "IIRS", fmt_raw},
+	{"\xff\xff\xff\xff", "IIRO", fmt_raw},
+	{"\xff\xff\xff\xff", "MMOR", fmt_raw},
 
 	// Panasonic RAW/RW2
-	{DEFAULT_MASK("IIU\x00\x08\x00\x00\x00"), fmt_raw},
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "IIU\x00\x08\x00\0\0", fmt_raw},
 #endif // DEC_RAW
 
-#ifdef DEC_JPEG2000
-	{DEFAULT_MASK("\x00\x00\x00\x0c\x6a\x50\x20\x20\x0d\x0a\x87\x0a"), fmt_jp2},
-	{DEFAULT_MASK("\x0d\x0a\x87\x0a"), fmt_jp2},
-	{DEFAULT_MASK("\xff\x4f\xff\x51"), fmt_j2k},
-#endif // DEC_JPEG2000
+#ifdef DEC_TIFF
+	{"\xff\xff\xff\xff", "II\x2a\x00", fmt_tiff},
+	{"\xff\xff\xff\xff", "MM\x00\x2a", fmt_tiff},
+
+	// BigTIFF
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "II\x2b\x00\x08\x00\0\0", fmt_tiff},
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "MM\x00\x2b\x00\x08\0\0", fmt_tiff},
+#endif // DEC_TIFF
 
 #ifdef DEC_WEBP
 	{"\xff\xff\xff\xff\0\0\0\0\xff\xff\xff\xff", "RIFF\0\0\0\0WEBP", fmt_webp},
 #endif // DEC_WEBP
-
-#ifdef DEC_HEIF
-	// Split string to prevent 'hex escape sequence out of range' error.
-	{DEFAULT_MASK("\x00\x00\x00\x18" "ftypheic"), fmt_heif},
-#endif // DEC_HEIF
-
-#ifdef DEC_FLIF
-	{DEFAULT_MASK("FLIF"), fmt_flif},
-#endif // DEC_FLIF
-
-#ifdef DEC_SVG
-/* No magic bytes for SVG(Z) because it's either XML or XML inside gzip, and
- * XML requires that an XML parser parses the XML successfully to know if it
- * is XML. */
-#endif // DEC_SVG
 };
 
 /* File extensions for filtering and fallbacks.
@@ -201,6 +202,11 @@ static struct file_ext extension_map[] = {
 	{"bmp", -1},
 	{"bmp24", -1},
 #endif // DEC_BMP
+
+#ifdef DEC_MAC
+	{"mac", fmt_mac},
+	{"pntg", fmt_mac},
+#endif // DEC_MAC
 
 #ifdef DEC_PCX
 	{"dcx", -1},
@@ -234,6 +240,11 @@ static struct file_ext extension_map[] = {
 	{"sgi", -1},
 #endif // DEC_SGI
 
+#ifdef DEC_SIXEL
+	{"six", -1},
+	{"sixel", -1},
+#endif // DEC_SIXEL
+
 #ifdef DEC_SUN
 	{"im1", -1},
 	{"im4", -1},
@@ -256,9 +267,26 @@ static struct file_ext extension_map[] = {
 	{"xbm", fmt_xbm},
 #endif // DEC_XBM
 
-#ifdef DEC_PNG
-	{"png", -1},
-#endif // DEC_PNG
+
+#ifdef DEC_FLIF
+	{"flif", -1},
+#endif // DEC_FLIF
+
+#ifdef DEC_GIF
+	{"gif", -1},
+	{"gif87", -1},
+	{"gif89", -1},
+#endif // DEC_GIF
+
+#ifdef DEC_HEIF
+	{"avif", -1},
+	{"avifs", -1},
+	{"heic", -1},
+	{"heics", -1},
+	{"heif", -1},
+	{"heifs", -1},
+	{"hif", -1},
+#endif // DEC_HEIF
 
 #ifdef DEC_JBIG
 	{"bie", fmt_jbig},
@@ -278,21 +306,15 @@ static struct file_ext extension_map[] = {
 	{"thm", -1},
 #endif // DEC_JPEG
 
-#ifdef DEC_GIF
-	{"gif", -1},
-	{"gif87", -1},
-	{"gif89", -1},
-#endif // DEC_GIF
+#ifdef DEC_JPEG2000
+	{"j2k", -1},
+	{"jp2", -1},
+	{"jpc", -1},
+#endif // DEC_JPEG2000
 
-#ifdef DEC_TIFF
-	{"tif", -1},
-	{"tiff", -1},
-#ifndef DEC_RAW
-	{"cr2", -1},
-	{"dng", -1},
-	{"nef", -1},
-#endif // DEC_RAW
-#endif // DEC_TIFF
+#ifdef DEC_PNG
+	{"png", -1},
+#endif // DEC_PNG
 
 #ifdef DEC_RAW
 	{"cr2", fmt_raw},
@@ -303,29 +325,26 @@ static struct file_ext extension_map[] = {
 	{"rw2", -1},
 #endif
 
-#ifdef DEC_JPEG2000
-	{"j2k", -1},
-	{"jp2", -1},
-	{"jpc", -1},
-#endif // DEC_JPEG2000
+#ifdef DEC_SVG
+	{"svg", fmt_svg},
+	{"svgz", fmt_svg},
+#endif // DEC_SVG
+
+#ifdef DEC_TIFF
+	{"tif", -1},
+	{"tiff", -1},
+#ifndef DEC_RAW
+	// Results aren't very good but it's better than nothing
+	{"cr2", -1},
+	{"dng", -1},
+	{"nef", -1},
+#endif // DEC_RAW
+#endif // DEC_TIFF
 
 #ifdef DEC_WEBP
 	{"webp", -1},
 #endif // DEC_WEBP
 
-#ifdef DEC_HEIF
-	{"heic", -1},
-	{"heif", -1},
-#endif // DEC_HEIF
-
-#ifdef DEC_FLIF
-	{"flif", -1},
-#endif // DEC_FLIF
-
-#ifdef DEC_SVG
-	{"svg", fmt_svg},
-	{"svgz", fmt_svg},
-#endif // DEC_SVG
 };
 
 
@@ -335,10 +354,10 @@ static int fextcmp(const void *restrict e1, const void *restrict e2) {
 	return memcmp(ext1->ext, ext2->ext, sizeof(ext1->ext));
 }
 
-static int fbytescmp(const void *restrict m1, const void *restrict m2) {
+static int fmaskbytescmp(const void *restrict m1, const void *restrict m2) {
 	const struct file_bytes *restrict magic1 = m1;
 	const struct file_bytes *restrict magic2 = m2;
-	const char *mask = magic2->mask;// ? magic2->mask : magic1->mask;
+	const unsigned char *mask = magic2->mask;
 	int diff = 0;
 	for (size_t i = 0; i < sizeof(magic1->bytes) && !diff; ++i) {
 		const int m = mask[i];
@@ -351,11 +370,11 @@ static const struct file_ext * search_extension(const char *filename,
 const size_t len) {
 	struct file_ext fext = {0};
 	const size_t start = len - zumin(len, sizeof(fext.ext) + 1 /* dot */);
-	const char *ext = memchr(filename + start, '.', sizeof(fext.ext));
+	const char *ext = strrchr(filename + start, '.');
 	if (ext) {
 		++ext;
 
-		const size_t ext_len = strlen(ext);
+		const size_t ext_len = (size_t)(filename + len - ext);
 		if (ext_len) {
 			for (size_t i = 0; i < ext_len; ++i) {
 				fext.ext[i] = (char)tolower(ext[i]);
@@ -370,9 +389,9 @@ const size_t len) {
 
 static const struct file_bytes * search_magic(FILE *ifp) {
 	struct file_bytes in = {0};
-	if (fread(in.bytes, 1, sizeof(in.bytes), ifp) >= MIN_MAGIC_LEN) {
+	if (fread(in.bytes, 1, sizeof(in.bytes), ifp) > MIN_MAGIC_LEN) {
 		return bsearch(&in, magic_map, ARRAY_LEN(magic_map),
-			sizeof(*magic_map), fbytescmp);
+			sizeof(*magic_map), fmaskbytescmp);
 	}
 	return NULL;
 }
@@ -410,7 +429,7 @@ static enum format_id find_decoder(FILE *ifp, const char *filename) {
 	return id;
 }
 
-static enum format_id open_image(FILE *ifp, const char *filename) {
+static enum format_id identify_image(FILE *ifp, const char *filename) {
 	errno = 0;
 	const enum format_id id = find_decoder(ifp, filename);
 	if (id != fmt_unknown) {
@@ -426,6 +445,27 @@ const enum image_event event) {
 	return format_map[id].callback(infile, wuconf, state, event);
 }
 
+static void stat_metadata(struct wu_tree *tree, const int fd) {
+	struct stat sb;
+	if (fstat(fd, &sb) != 0) {
+		return;
+	}
+
+	struct wu_tree *meta = tree_sprout_branch(tree, "Stats");
+	if (!meta) {
+		return;
+	}
+
+	const struct wu_tree_sap sap[] = {
+		{"Size", wu_leaf_signed, {.d = sb.st_size}},
+		{"Last access", wu_leaf_time, {.time = sb.st_atim.tv_sec}},
+		{"Last modified", wu_leaf_time, {.time = sb.st_mtim.tv_sec}},
+		{"Last status change", wu_leaf_time,
+			{.time = sb.st_ctim.tv_sec}},
+	};
+	tree_bud_leaves(meta, sap, ARRAY_LEN(sap));
+}
+
 enum wu_error decode_image(struct image_file *infile,
 const struct wu_conf *wuconf, const char *filename) {
 	if (!infile->ifp) {
@@ -437,7 +477,7 @@ const struct wu_conf *wuconf, const char *filename) {
 	}
 
 	errno = 0;
-	const enum format_id id = open_image(infile->ifp, filename);
+	const enum format_id id = identify_image(infile->ifp, filename);
 	if (id == fmt_unknown) {
 		if (errno) {
 			infile->err_msg = strdup(strerror(errno));
@@ -446,30 +486,18 @@ const struct wu_conf *wuconf, const char *filename) {
 		return wu_unknown_file_type;
 	}
 
-	char *str;
-	size_t _len;
-	infile->meta.fp = open_memstream(&str, &_len);
+	if (!tree_sow(&infile->metadata, "Metadata")) {
+		return wu_alloc_error;
+	}
+	tree_sprout_leaf(&infile->metadata, "Format", format_map[id].name);
+	stat_metadata(&infile->metadata, fileno(infile->ifp));
 
-	fputs("Format: ", infile->meta.fp);
-	fputs(format_map[id].name, infile->meta.fp);
-	fputc('\n', infile->meta.fp);
-
-	infile->fmt_id = id;
 	const enum wu_error result = format_map[id].dec(infile, wuconf);
-	fclose(infile->meta.fp);
-	infile->meta.str = str;
-
+	infile->fmt_id = id;
 	if (result == wu_ok) {
 		normalize_sub_images(infile);
 	}
 	return result;
-}
-
-void free_file_list(struct file_list *files) {
-	for (size_t i = 0; i < files->nr; ++i) {
-		free(files->name[i]);
-	}
-	free(files);
 }
 
 static char * pathcat(const char *p1, const size_t p1_len, const char *p2,
@@ -483,17 +511,17 @@ const size_t p2_len) {
 	return cat;
 }
 
-struct file_list * filter_directory(const char *dirname, const char *init_name) {
+char ** filter_directory(const char *restrict dirname,
+const char *restrict init_name, size_t *nr) {
 	const size_t dir_len = strlen(dirname);
 	DIR *dir = opendir(dir_len ? dirname : ".");
 	if (!dir) {
 		return NULL;
 	}
 
-	size_t nr = 16;
-	struct file_list *files = flex_malloc(sizeof(*files), nr,
-		sizeof(*files->name));
-	if (!files) {
+	*nr = 64;
+	char **names = malloc(*nr * sizeof(*names));
+	if (!names) {
 		closedir(dir);
 		return NULL;
 	}
@@ -502,7 +530,7 @@ struct file_list * filter_directory(const char *dirname, const char *init_name) 
 	size_t idx = 0;
 	if (init_name) {
 		init_name_len = strlen(init_name);
-		files->name[idx] = pathcat(dirname, dir_len, init_name,
+		names[idx] = pathcat(dirname, dir_len, init_name,
 			init_name_len);
 		++idx;
 	} else {
@@ -535,33 +563,55 @@ struct file_list * filter_directory(const char *dirname, const char *init_name) 
 		}
 
 		if (search_extension(entry->d_name, name_len)) {
-			if (idx == nr) {
-				nr += nr / 4;
-				void *hold = flex_realloc(files, sizeof(*files),
-					nr, sizeof(*files->name));
-				if (!hold) {
-					break;
-				}
-				files = hold;
+			if (!grow_buffer(&names, nr, idx, sizeof(*names)) ) {
+				break;
 			}
 
-			files->name[idx] = pathcat(dirname, dir_len,
+			names[idx] = pathcat(dirname, dir_len,
 				entry->d_name, name_len);
-			if (files->name[idx]) {
+			if (names[idx]) {
 				++idx;
 			}
 		}
 	}
 	closedir(dir);
-	files->nr = idx;
+	*nr = idx;
 	if (idx == 0) {
-		free_file_list(files);
+		free(names);
 		return NULL;
 	}
-	return files;
+	return names;
 }
 
 void sort_dec_tables(void) {
-	qsort(magic_map, ARRAY_LEN(magic_map), sizeof(magic_map[0]), fbytescmp);
-	qsort(extension_map, ARRAY_LEN(extension_map), sizeof(extension_map[0]), fextcmp);
+	qsort(magic_map, ARRAY_LEN(magic_map), sizeof(magic_map[0]),
+		fmaskbytescmp);
+	qsort(extension_map, ARRAY_LEN(extension_map),
+		sizeof(extension_map[0]), fextcmp);
+}
+
+void print_known_formats(void) {
+	sort_dec_tables();
+
+	printf("Known formats: %zu\n", ARRAY_LEN(format_map));
+	for (size_t i = 0; i < ARRAY_LEN(format_map); ++i) {
+		fputs(format_map[i].name, stdout);
+		if (i + 1 < ARRAY_LEN(format_map)) {
+			fputs(", ", stdout);
+		} else {
+			fputs("\n\n", stdout);
+		}
+	}
+
+	printf("Known extensions: %zu\n", ARRAY_LEN(extension_map));
+	for (size_t i = 0; i < ARRAY_LEN(extension_map); ++i) {
+		fputs(extension_map[i].ext, stdout);
+		if (i + 1 < ARRAY_LEN(extension_map)) {
+			fputs(", ", stdout);
+		} else {
+			fputs("\n\n", stdout);
+		}
+	}
+
+	printf("Known magic sequences: %zu\n", ARRAY_LEN(magic_map));
 }

@@ -1,0 +1,15 @@
+#ifndef WU_METADATA
+#define WU_METADATA
+
+#include "wutree.h"
+
+enum metadata_type {
+	exif_metadata = 1,
+	xmp_metadata,
+	iptc_metadata,
+};
+
+void standard_metadata(enum metadata_type type, const void *metadata,
+size_t len, struct wu_tree *tree);
+
+#endif /* WU_METADATA */

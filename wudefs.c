@@ -6,6 +6,8 @@
 #include <errno.h>
 
 #include "wudefs.h"
+#include "wutree.h"
+#include "common.h"
 
 const char * wu_error_message(const enum wu_error err) {
 	switch (err) {
@@ -34,66 +36,66 @@ const char * wu_error_message(const enum wu_error err) {
 	case wu_exceeded_size_limit:
 		return "The image exceeds the max dimension limit";
 	case wu_unknown_error:
+		return "Purposely unspecified error o.O (unfinished code)";
+	default:
 		return "An unknown and unforeseen problem happened. Things are "
 			"bad. Pray for my soul.";
-	default:
-		return "???";
 	}
 }
 
-size_t print_dimensions(const struct raw_img *img) {
+static size_t print_dimensions(const struct raw_img *img) {
 	printf("  dimensions: %zu x %zu x ", img->w, img->h);
 
-	size_t channels;
+	size_t line;
 	if (img->palette) {
-		channels = 1;
-		fputs("1 (paletted) ", stdout);
+		fputs("1 (paletted) x 8 ", stdout);
+		line = img->w;
 	} else {
-		channels = img->channels;
 		printf("%hhu ", img->channels);
 		if (img->channels != img->true_channels) {
 			printf("(%hhu) ", img->true_channels);
 		}
-	}
-	printf("x %hhu ", img->bitdepth);
+		printf("x %hhu ", img->bitdepth);
 
-	const char *packing = NULL;
-	size_t pix_size;
-	switch (img->bitdepth) {
-	case rgb332:
-		packing = "(rgb332) ";
-		pix_size = 1;
-		break;
-	case bgra4444:
-		packing = "(bgra4444) ";
-		pix_size = 2;
-		break;
-	case bgra5551:
-		packing = "(bgra5551) ";
-		pix_size = 2;
-		break;
-	case 16: case 32:
-		if (img->float_data) {
-			packing = "(float) ";
+		switch (img->bitdepth) {
+		case rgb332:
+			fputs("(rgb332) ", stdout);
+			line = img->w;
+			break;
+		case 4:
+			if (img->channels == 4) {
+				fputs("(bgra4444) ", stdout);
+			}
+			line = img->w * img->channels;
+			break;
+		case bgra5551:
+			fputs("(bgra5551) ", stdout);
+			line = img->w * 2;
+			break;
+		case 16: case 32:
+			if (img->float_data) {
+				fputs("(float) ", stdout);
+			}
+			// Fallthrough
+		default:
+			line = img->w * img->channels;
 		}
-		// Fallthrough
-	default:
-		pix_size = channels * img->bitdepth / 8;
 	}
 
-	if (packing) {
-		fputs(packing, stdout);
+	const size_t mem_size = scanline_length(line, img->alignment,
+		img->bitdepth) * img->h;
+	printf("= %zu bytes", mem_size);
+	if (img->dec_scale != 1) {
+		printf(" @ %.2fx original", img->dec_scale);
 	}
-
-	const size_t mem_size = img->w * img->h * pix_size;
-	printf("= %zu bytes\n", mem_size);
+	putchar('\n');
 	return mem_size;
 }
 
 void print_image_information(const struct image_file *file) {
 	const struct raw_img *img = file->sub_img;
 
-	fputs(file->meta.str, stdout);
+//	tree_print(&file->metadata, 80, 24);
 	if (file->err_msg) {
 		printf("Found warning: %s\n", file->err_msg);
 	}
@@ -121,9 +123,22 @@ void print_image_information(const struct image_file *file) {
 		}
 	}
 
-	if (file->nr > 1) {
+	if (file->nr > 1 || file->is_animation) {
 		printf("Total size in memory: %zu\n", overall_size);
 	}
+}
+
+static unsigned char compact_alignment(struct raw_img *img,
+const unsigned char to) {
+	const size_t line = img->w * (img->palette ? 1 : img->channels);
+	const size_t src = scanline_length(line, img->alignment, img->bitdepth);
+	const size_t dst = scanline_length(line, to, img->bitdepth);
+	if (src != dst) {
+		for (size_t i = 0; i < img->h; ++i) {
+			memmove(img->data + dst*i, img->data + src*i, line);
+		}
+	}
+	return to;
 }
 
 void normalize_sub_images(struct image_file *file) {
@@ -157,6 +172,12 @@ void normalize_sub_images(struct image_file *file) {
 
 		if (!img[i].alignment) {
 			img[i].alignment = 1;
+		} else if (img[i].alignment > 8 && img[i].bitdepth >= 8) {
+			img[i].alignment = compact_alignment(img + i, 8);
+		}
+
+		if (!img[i].dec_scale) {
+			img[i].dec_scale = 1;
 		}
 	}
 }
@@ -200,7 +221,7 @@ void free_image_file(struct image_file *file) {
 	free_sub_range(file->sub_img, 0, file->nr);
 	free(file->sub_img);
 	free(file->err_msg);
-	free(file->meta.str);
+	tree_unroot(&file->metadata);
 	if (file->ifp) {
 		fclose(file->ifp);
 	}

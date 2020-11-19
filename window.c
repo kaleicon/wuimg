@@ -21,35 +21,31 @@
 
 static void framebuffer_resize(struct window_control *control, const int w,
 const int h) {
-	control->context.fb.w = w;
-	control->context.fb.h = h;
+	const unsigned width = (unsigned)w;
+	const unsigned height = (unsigned)h;
+	control->context.fb_wh[0] = width;
+	control->context.fb_wh[1] = height;
 	even_gl_view(&control->context);
 	update_gl_matrix(&control->context, &control->state);
 
-	control->conf.fb.w = (unsigned short)w;
-	control->conf.fb.h = (unsigned short)h;
+	control->conf.fb.w = width;
+	control->conf.fb.h = height;
 }
 
 #if BACKEND == GLFW
-static void scroll_to_cycle(struct wu_pos *pos, const double offset) {
+static void scroll_cycle(struct wu_cycle *cycle, const double offset) {
 	if (fpclassify(offset) == FP_NORMAL) {
-		const float mag = fclampf((float)offset, -1.0, +1.0);
-		if (mag == +1.0f || mag == -1.0f) {
-			pos->cycle = (int)mag;
-			pos->acc = 0.0f;
-		} else {
-			pos->acc = fclampf(pos->acc + mag, -1.0, +1.0);
-			if (pos->acc == +1.0f || pos->acc == -1.0f) {
-				pos->cycle = (int)pos->acc;
-				pos->acc = 0.0f;
-			}
+		cycle->acc = fclampf((float)(cycle->acc + offset), -1.0, +1.0);
+		if (cycle->acc == 1.0 || cycle->acc == -1.0) {
+			cycle->cycle = (int)cycle->acc;
+			cycle->acc = 0;
 		}
 	}
 }
 
 static void focus_callback(GLFWwindow *window, int focused) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	control->screen.has_focus = focused;
+	control->geom.has_focus = focused;
 }
 
 static void framebuffer_callback(GLFWwindow *window, const int w, const int h) {
@@ -65,15 +61,14 @@ static void close_callback(GLFWwindow *window) {
 static void scroll_callback(GLFWwindow *window, const double x_off,
 const double y_off) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	scroll_to_cycle(&control->file, y_off);
-	scroll_to_cycle(&control->state.sub, x_off);
+	scroll_cycle(&control->event.file, y_off);
+	scroll_cycle(&control->state.sub, x_off);
 }
 
 static void char_callback(GLFWwindow *window, const unsigned int codepoint) {
 	(void)window;
-	switch (codepoint) {
-	case '+': case '-':
-		add_event(key_external, codepoint);
+	if (codepoint == '+') {
+		add_event(key_external, (unsigned char)codepoint, false);
 	}
 }
 
@@ -91,77 +86,82 @@ int mode) {
 		return;
 	}
 
+	const bool shift = mode & GLFW_MOD_SHIFT;
 	unsigned char event = 0;
 	switch (key) {
 	case GLFW_KEY_Q: case GLFW_KEY_ESCAPE:
-		event = 'q';
+		event = 'Q';
 		break;
 	case GLFW_KEY_F4:
 		if (mode & GLFW_MOD_ALT) {
-			event = 'q';
+			event = 'Q';
 		}
 		break;
 	case GLFW_KEY_W:
 		if (mode & GLFW_MOD_CONTROL) {
-			event = 'q';
+			event = 'Q';
 		}
 		break;
 
 	case GLFW_KEY_F: case GLFW_KEY_F11:
-		event = 'f';
+		event = 'F';
 		break;
 	case GLFW_KEY_A:
-		event = 'a';
+		event = 'A';
+		break;
+	case GLFW_KEY_M:
+		event = 'M';
 		break;
 
 	case GLFW_KEY_N:
-		event = (mode & GLFW_MOD_SHIFT) ? 'N' : 'n';
+		event = 'N';
 		break;
 	case GLFW_KEY_P:
-		event = (mode & GLFW_MOD_SHIFT) ? 'P' : 'p';
+		event = 'P';
 		break;
 
 	case GLFW_KEY_COMMA:
-		event = (mode & GLFW_MOD_SHIFT) ? ';' : ',';
+		event = shift ? ';' : ',';
 		break;
 	case GLFW_KEY_PERIOD:
-		event = (mode & GLFW_MOD_SHIFT) ? ':' : '.';
+		event = shift ? ':' : '.';
 		break;
 	case GLFW_KEY_SPACE: event = ' '; break;
 
 	case GLFW_KEY_R: case GLFW_KEY_F5:
-		event = 'r';
+		event = 'R';
 		break;
 
 	case GLFW_KEY_D:
-		event = (mode & GLFW_MOD_SHIFT) ? 'D' : 'd';
+		event = 'D';
 		break;
 	case GLFW_KEY_U:
-		event = 'u';
+		event = 'U';
 		break;
 
 	case GLFW_KEY_H: case GLFW_KEY_LEFT:
-		event = (mode & GLFW_MOD_SHIFT) ? 'H' : 'h';
+		event = 'H';
 		break;
 	case GLFW_KEY_J: case GLFW_KEY_DOWN:
-		event = (mode & GLFW_MOD_SHIFT) ? 'J' : 'j';
+		event = 'J';
 		break;
 	case GLFW_KEY_K: case GLFW_KEY_UP:
-		event = (mode & GLFW_MOD_SHIFT) ? 'K' : 'k';
+		event = 'K';
 		break;
 	case GLFW_KEY_L: case GLFW_KEY_RIGHT:
-		event = (mode & GLFW_MOD_SHIFT) ? 'L' : 'l';
+		event = 'L';
 		break;
 
-	case GLFW_KEY_Z: event = 'z'; break;
-	case GLFW_KEY_X: event = 'x'; break;
-	case GLFW_KEY_I: event = 'i'; break;
-	case GLFW_KEY_O: event = 'o'; break;
+	case GLFW_KEY_Z: event = 'Z'; break;
+	case GLFW_KEY_X: event = 'X'; break;
+	case GLFW_KEY_I: event = 'I'; break;
+	case GLFW_KEY_O: event = 'O'; break;
 
 	case GLFW_KEY_END: event = '0'; break;
 	case GLFW_KEY_HOME: event = '1'; break;
 	case GLFW_KEY_KP_ADD:
 	case GLFW_KEY_PAGE_UP: event = '+'; break;
+	case GLFW_KEY_MINUS:
 	case GLFW_KEY_PAGE_DOWN:
 	case GLFW_KEY_KP_SUBTRACT: event = '-'; break;
 
@@ -178,12 +178,12 @@ int mode) {
 	}
 
 	if (event) {
-		add_event(keyact, event);
+		add_event(keyact, event, shift);
 	}
 }
 
 static void * glfw_setup_window(struct window_control *control, const int window_w,
-const int window_h, int *refresh_rate) {
+const int window_h) {
 	const struct wu_conf *conf = &control->conf;
 	if (!glfwInit()) {
 		return NULL;
@@ -194,6 +194,9 @@ const int window_h, int *refresh_rate) {
 //	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+//	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+	glfwWindowHint(GLFW_DEPTH_BITS, 0);
+	glfwWindowHint(GLFW_STENCIL_BITS, 0);
 	if (conf->no_window_decorations) {
 		glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 	}
@@ -215,9 +218,6 @@ const int window_h, int *refresh_rate) {
 	glfwSetCharCallback(window, char_callback);
 	glfwSetScrollCallback(window, scroll_callback);
 	glfwSwapInterval(1);
-
-	const GLFWvidmode *mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-	*refresh_rate = mode->refreshRate;
 	return window;
 }
 #elif BACKEND == SDL
@@ -299,7 +299,7 @@ const SDL_Keysym keysym) {
 	}
 
 	if (event) {
-		add_event(keyact, event);
+		add_event(keyact, event, keysym.mod & KMOD_SHIFT);
 	}
 }
 
@@ -320,7 +320,7 @@ const SDL_WindowEvent event) {
 }
 
 static void * sdl_winsetup(const struct wu_conf *conf, const int window_w,
-const int window_h, int *refresh_rate, struct gl_context *context) {
+const int window_h, struct gl_context *context) {
 	SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
 	if (SDL_Init(SDL_INIT_VIDEO)) {
 		puts(SDL_GetError());
@@ -354,10 +354,6 @@ const int window_h, int *refresh_rate, struct gl_context *context) {
 		return false;
 	}
 	SDL_GL_SetSwapInterval(1);
-
-	SDL_DisplayMode mode;
-	SDL_GetCurrentDisplayMode(0, &mode);
-	*refresh_rate = mode.refresh_rate;
 	return window;
 }
 #endif
@@ -417,11 +413,10 @@ void set_window_title(void *window, const char *filename) {
 }
 
 void set_fullscreen_window(struct window_control *control) {
-	struct screen_properties *screen = &control->screen;
+	struct window_properties *geom = &control->geom;
 
 #if BACKEND == GLFW
-	struct window_geometry *geom = &screen->geom;
-	if (screen->fullscreen) {
+	if (geom->fullscreen) {
 		glfwSetWindowMonitor(control->window, NULL,
 			geom->x, geom->y, geom->w, geom->h, GLFW_DONT_CARE);
 	} else {
@@ -435,29 +430,30 @@ void set_fullscreen_window(struct window_control *control) {
 			mode->width, mode->height, mode->refreshRate);
 	}
 #elif BACKEND == SDL
-	const unsigned set = screen->fullscreen ? 0 : SDL_WINDOW_FULLSCREEN;
+	const unsigned set = geom->fullscreen ? 0 : SDL_WINDOW_FULLSCREEN;
 	SDL_SetWindowFullscreen(control->window, set);
 #endif
-	screen->fullscreen = !screen->fullscreen;
+	geom->fullscreen = !geom->fullscreen;
 	control->event.window = 0;
 }
 
 bool setup_window(struct window_control *control) {
 	struct wu_conf *conf = &control->conf;
 
-	const int window_w = conf->initial_size.w ? conf->initial_size.w : 640;
-	const int window_h = conf->initial_size.h ? conf->initial_size.h : 480;
+	const int window_w = conf->initial_size.w
+		? (int)conf->initial_size.w : 640;
+	const int window_h = conf->initial_size.h
+		? (int)conf->initial_size.h : 480;
 
 #if BACKEND == GLFW
-	control->window = glfw_setup_window(control, window_w, window_h,
-		&control->screen.refresh_rate);
+	control->window = glfw_setup_window(control, window_w, window_h);
 #elif BACKEND == SDL
 	control->window = sdl_winsetup(conf, window_w, window_h,
-		&control->screen.refresh_rate, &control->context);
+		&control->context);
 #endif
 	if (control->window) {
-		control->screen.has_focus = true;
-		control->screen.fullscreen = false;
+		control->geom.has_focus = true;
+		control->geom.fullscreen = false;
 //		poll_window(control);
 		return true;
 	}

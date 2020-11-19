@@ -23,6 +23,7 @@ enum remove_event {
 };
 
 struct wu_event {
+	struct wu_cycle file;
 	enum image_event image:8;
 	enum window_event window:8;
 	enum program_event program:8;
@@ -35,33 +36,11 @@ enum key_action {
 	key_press = 2,
 };
 
-/*
-struct wu_pos {
-	int cycle;
-	float acc;
-};
+void print_keys(void);
 
-struct wu_state {
-	struct wu_pos sub;
+void exec_events(const struct image_file *file, struct wu_state *state,
+struct wu_event *event, float msecs);
 
-	enum anim_state {
-		playing = 2,
-		paused = 3,
-	} anim:8;
-
-	unsigned char rotate;
-	bool mirror;
-
-	float x_offset;
-	float y_offset;
-	float fit_zoom;
-	float zoom;
-};
-*/
-
-void exec_events(struct wu_state *state, struct wu_event *event,
-struct wu_pos *filepos, float msecs);
-
-void add_event(enum key_action action, unsigned code);
+void add_event(enum key_action action, unsigned char code, bool shift);
 
 #endif /* WU_EVENTS */

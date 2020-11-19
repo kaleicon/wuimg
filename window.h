@@ -5,25 +5,20 @@
 #include "opengl.h"
 #include "events.h"
 
-struct window_geometry {
+struct window_properties {
 	int x, y, w, h;
-};
-
-struct screen_properties {
-	struct window_geometry geom;
-	int refresh_rate;
 	bool fullscreen;
 	bool has_focus;
 };
 
 struct window_control {
 	void *window;
+	const struct image_file *file;
 	struct gl_context context;
-	struct wu_pos file;
 	struct wu_state state;
 	struct wu_event event;
 	struct wu_conf conf;
-	struct screen_properties screen;
+	struct window_properties geom;
 };
 
 void terminate_window(void);

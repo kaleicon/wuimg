@@ -5,17 +5,19 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "wutree.h"
+
 #define WU_CANON_NAME "wu"
 
-struct display_dims { // Why would anyone want more than 65535x65535 pixels?...
-	unsigned short w, h;
+struct display_dims { // Why would anyone want more than 65535x65535 pixels?
+	unsigned w, h;
 };
 
 struct wu_conf {
-	// Variable variables (may be modified at runtime)
+	// Variable variables. These may be or may not modified at runtime.
 	struct display_dims fb; // Framebuffer dimensions.
-	unsigned short max_img_size; /* Max image size in either dimension.
-		The starting value will be capped to the texture size limit. */
+	unsigned max_img_size; /* Max image size in either dimension. The
+		starting value will be capped to the texture size limit. */
 
 	// Const variables
 	// Window
@@ -25,7 +27,7 @@ struct wu_conf {
 		is requested but not guaranteed. RGB values are passed as-is,
 		they're not premultiplied by Alpha. */
 	enum background_source { // Alternative background sources.
-		default_only,    // Always use the user-defined color.
+		default_only,    // Use only the user-defined color.
 		metadata,        /* If the image format includes a non-black
 			background metadata field, use its RGB components with
 			the user-defined Alpha, otherwise the default. */
@@ -42,12 +44,13 @@ struct wu_conf {
 	// Animations
 	bool cache_frames:1; /* Cache animation frames in memory instead of
 		drawing each on top of the previous one. Frames will still be
-		decoded when required until a loop is completed. Note that
-		memory usage may add up very fast. */
+		decoded when required until a loop is completed. Expect memory
+		usage to add up fast. Not recommended, I forgot why I did this. */
 	bool anim_space_over_speed:1; /* Render animations as RGB if no alpha
-		is needed on any composited frame. This will give somewhat
-		lower performance since virtually all GPUs will pad 3-byte data
-		to 4-bytes, but might be of some help with 'cache_frames'.
+		is needed on any composited frame. This will save 25% of memory
+		but will increase the time to first display and give lower
+		performance, since CPUs and GPUs work better on 4-bytes pieces.
+		Verification is done quickly, though.
 		  Single-frame files are always rendered as RGB if possible. */
 
 	// JPEG
@@ -67,47 +70,41 @@ struct wu_conf {
 	// TIFF
 	bool tiff_use_homegrown_unpacker:1; /* Use our own pixel unpacking
 		routines instead of libtiff's high-level interface if the image
-		fits certain criteria. If applicable, this will result in lower
-		memory usage. This also allows decoding some exotic bitdepths
-		(32-bit color, rgb(a) < 8-bit, etc.) that libtiff doesn't
-		render on its own. */
+		fits certain criteria. Where applicable, this will result in
+		lower memory usage and faster decoding and display. This also
+		allows decoding some exotic bitdepths (32-bit color,
+		rgb(a) < 8-bit, etc.) that libtiff doesn't render on its own. */
 
 	// RAW
 	bool raw_half_size:1; /* Render raw data at half the original size.
 		Gives a nice speedup. */
-	bool raw_prefer_thumbnail:1; /* If true, decode the file's embedded
-		thumbnail if it is at least half as big as the original,
-		otherwise do a full and slow render of the raw data. The
-		thumbnail is always decoded at full resolution. If the
+	bool raw_prefer_thumbnail:1; /* If true, display the file's embedded
+		thumbnail instead if it is at least half as big as the
+		original, otherwise do a full and slow render of the raw data.
+		The thumbnail is always decoded at full resolution. If the
 		thumbnail is a JPEG image, the jpeg decoder function will be
 		used and its settings will also apply to it.
 		  Note that the thumbnail might differ drastically from the
 		interpreted raw data. */
 
 	// SVG
-	enum antialiasing { // Antialiasing quality
-		whatever = 0, // Whatever is cairo's default.
-		fast,
-		good,
-		best,
-	} svg_antialiasing:2;
 	enum redraw_on { // If and when should the vector be redrawn.
 		never = 0,
 		upscale, // Only when zooming in.
-		always, // When zooming in and out.
-	} svg_redraw:2; // Note that this plays funky with the zoom controls.
+		anyscale, // When zooming in and out. Maximum crispness always.
+	} svg_redraw:2;
 
 	// WEBP
 	bool webp_bypass_filtering:1; // Skip the filtering stage for lossy WebP
 	bool webp_fast_upsamp:1; // Use a faster chroma upsampler for lossy WebP
 	bool webp_use_homegrown_renderer:1; /* Composite animations using our
-		own routines instead of libwebp's. They seem to be faster, but
+		own routines instead of libwebp's. It seems to be faster, but
 		may not be correct for all inputs. */
 };
 
 enum wu_error {
 	wu_no_change = -1, // For callbacks
-	wu_ok,
+	wu_ok = 0,
 	wu_alloc_error,
 	wu_unknown_file_type,
 	wu_invalid_params,
@@ -123,22 +120,25 @@ enum wu_error {
 
 enum pix_packing {
 	rgb332 = 3,
-	bgra4444 = 4,
 	bgra5551 = 5,
 };
 
-struct wu_pos {
+struct wu_cycle {
 	int cycle;
 	float acc;
 };
 
 struct wu_state {
-	struct wu_pos sub;
+	struct wu_cycle sub;
 	enum anim_state {
 		playing = 2,
 		paused = 3, // For toggling with '^ 1'
 	} anim:8;
-	bool alpha_checkers;
+	enum alpha_state {
+		alpha_enabled,
+		alpha_checkers,
+		alpha_disabled,
+	} alpha:8;
 
 	unsigned char rotate;
 	bool mirror;
@@ -147,18 +147,19 @@ struct wu_state {
 	float y_offset;
 	float fit_zoom;
 	float zoom;
+	float dec_scale;
 };
 
 enum image_event {
 	sub_cycle = 1,
-	up_scale = 2,
-	down_scale = 4,
-	scale = 6,
-	move = 8,
-	mirrot = 16,
+	up_scale = 1 << 1,
+	down_scale = 1 << 2,
+	scale = up_scale | down_scale,
+	move = 1 << 3,
+	mirrot = 1 << 4,
 };
 
-enum pix_layout { // For OpenGL swizzling
+enum pix_layout { // For programmatic color swizzling
 	// r = 0, g = 1, b = 2, a = 3
 	gray_alpha = 0x01,
 	gray = 0x03,
@@ -186,6 +187,7 @@ struct raw_img {
 	unsigned char rotate;
 
 	int msec;
+	float dec_scale;
 };
 
 struct image_file {
@@ -193,17 +195,14 @@ struct image_file {
 	char *restrict err_msg;
 	struct raw_img *sub_img;
 	size_t nr;
-	union {
-		FILE *fp;
-		char *str;
-	} meta;
+	struct wu_tree metadata;
 
-	void *restrict dec_state;
+	void *restrict dec_state; // Opaque pointer
+	int fmt_id; // Opaque enum
+
 	enum image_event events:8;
-
 	bool is_animation;
 	unsigned char bg[4];
-	int fmt_id;
 };
 
 const char * wu_error_message(enum wu_error err);

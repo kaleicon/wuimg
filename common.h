@@ -7,41 +7,43 @@
 #include <stdint.h>
 #include <time.h>
 
-#define HIGHLIGHT "\033[7m"
-#define RESET "\033[m"
-#define CURSOR_UP "\033[A"
-#define CURSOR_u_BACK "\033[%dD"
-#define CLEAR_LINE "\033[K"
+#define HIGHLIGHT "\x1b[7m"
+#define RESET "\x1b[m"
+#define CURSOR_UP "\x1b[A"
+#define CURSOR_u_BACK "\x1b[%dD"
+#define CLEAR_LINE "\x1b[K"
 #define CLEAR_PREV_LINE CURSOR_UP CLEAR_LINE
 #define ARRAY_LEN(arr) ( sizeof(arr) / sizeof(*arr) )
+
+#ifndef MAP_FAILED
+#define MAP_FAILED ((void *)-1)
+#endif
 
 enum endianness {
 	big_endian = 0,
 	little_endian = 1,
 };
 
-struct text_block {
-	size_t tail;
-	char buf[BUFSIZ];
+struct mmap_file {
+	size_t len;
+	unsigned char *data;
 };
 
-void * flex_realloc(void *flex, size_t head, size_t nmemb, size_t size);
+struct utc_time {
+	int year, mon, day, hour, min, sec;
+};
 
-void * flex_calloc(size_t head, size_t nmemb, size_t size);
+void rfc3339_format(time_t t, FILE *out);
 
-void * flex_malloc(size_t head, size_t nmemb, size_t size);
+time_t utc_to_epoch(const struct utc_time *tm);
 
-size_t read_spaced_text(struct text_block *text, FILE *ifp);
+long clock_nanodiff(const struct timespec *start);
 
-struct text_block * new_text_block(void);
-
-long timespec_nanodiff(struct timespec before, struct timespec after);
+void clock_start(struct timespec *start);
 
 size_t scanline_length(size_t width, size_t bitdepth, size_t alignment);
 
-int fixed_point_scale(int outmax, int inmax, int prec);
-
-int iwrap(int val, int max);
+int imod(int val, int max);
 
 int iclamp(int n, int min, int max);
 
@@ -65,9 +67,6 @@ int imin(int x, int y);
 
 float fclampf(float n, float min, float max);
 
-unsigned int integer_fit(unsigned int contain_w, unsigned int contain_h,
-unsigned int fit_w, unsigned int fit_h);
-
 enum endianness which_end(void);
 
 uint32_t endian32(uint32_t val, enum endianness e);
@@ -82,12 +81,27 @@ void loop_endian16(uint16_t *data, enum endianness e, size_t cnt);
 
 void loop_endian32(uint32_t *data, enum endianness e, size_t cnt);
 
+bool memchk(const void *s, int c, size_t n);
+
+bool grow_buffer(void *restrict ptr, size_t *alloc, size_t pos,
+size_t elem_size);
+
+bool grow_string(char **str, size_t *alloc, size_t pos);
+
+void skip_line(FILE *ifp);
+
 void print_temp_line(const char *text);
 
-void print_unsafe_data(const void *data, size_t len, const char *name,
-const bool newline, FILE *stream);
+size_t printable_len(const char *data, size_t len);
 
-unsigned char * read_file_to_mem(FILE *ifp, size_t *size);
+char * conv_unsafe_data(const void *restrict data, size_t len, size_t *outlen);
+
+void print_unsafe_data(const char *name, const void *restrict data, size_t len,
+FILE *stream);
+
+int munmap_stream(struct mmap_file mm);
+
+struct mmap_file mmap_stream(FILE *ifp);
 
 char * id_template(const char *prefix, size_t n);
 

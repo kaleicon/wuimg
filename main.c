@@ -10,6 +10,7 @@
 #include "wudefs.h"
 #include "common.h"
 #include "display.h"
+#include "events.h"
 #include "dec.h"
 #include "extract.h"
 #include "write_pam.h"
@@ -18,6 +19,8 @@
 enum work_mode {
 	guess = -1,
 	help = 'h',
+	keys = 'k',
+	formats = 'f',
 	directory = 'd',
 	sole = 's',
 	archive = 'a',
@@ -33,61 +36,74 @@ struct program_mode {
 	} arg;
 };
 
+struct file_list {
+	bool dynamic;
+	size_t nr;
+	char **name;
+};
+
+static int idirection(const int i) {
+	return i > 0 ? 1 : -1;
+}
+
 static enum wu_error decode_with_stats(struct image_file *infile,
 const struct wu_conf *conf, const char *filename, const bool print_meta,
 long *timeinfo) {
-	struct timespec before, after;
-	clock_gettime(CLOCK_REALTIME, &before);
+	struct timespec start;
+	clock_start(&start);
 	const enum wu_error result = decode_image(infile, conf, filename);
-	clock_gettime(CLOCK_REALTIME, &after);
-
-	const long diff = timespec_nanodiff(before, after);
+	const long diff = clock_nanodiff(&start);
 	if (timeinfo) {
 		*timeinfo = diff;
 	}
 
 	if (result == wu_ok) {
 		if (print_meta) {
+			clock_start(&start);
+			tree_print(&infile->metadata, 80, 24);
+			printf("printed in %ld nanoseconds\n",
+				clock_nanodiff(&start));
 			print_image_information(infile);
 		}
-		printf("Decoded in %ld nanoseconds.\n", diff);
+		printf("Decoded in %ld nanoseconds\n", diff);
 	} else {
 		printf("Error %d: %s.\n", result, wu_error_message(result));
 		if (infile->err_msg) {
 			printf("Library message: \"%s\"\n", infile->err_msg);
 		}
-		printf("Failed in %ld nanoseconds.\n", diff);
+		printf("Failed in %ld nanoseconds\n", diff);
 	}
 	return result;
 }
 
 static enum wu_error test_with(const struct file_list *entries,
-const struct program_mode mode) {
-	struct wu_conf conf = default_config();
+const struct program_mode *mode) {
+	struct wu_conf conf = load_config();
 	conf.max_img_size = USHRT_MAX;
 	conf.fb = (struct display_dims) {conf.max_img_size, conf.max_img_size};
 
 	int iters;
-	if (mode.type == benchmark && mode.arg.iters > 0) {
-		iters = mode.arg.iters;
+	if (mode->type == benchmark && mode->arg.iters > 0) {
+		iters = mode->arg.iters;
 	} else {
 		iters = 1;
 	}
 
 	enum wu_error result = wu_ok;
+	long grand_total = 0;
 	for (size_t i = 0; i < entries->nr; ++i) {
 		long sum = 0;
-		long spent = 0;
 
 		const char *name = entries->name[i];
 		printf("%zu/%zu, %s\n", i + 1, entries->nr, name);
 
 		for (int j = 0; j < iters; ++j) {
 			struct image_file file = {0};
+			long spent = 0;
 			result = decode_with_stats(&file, &conf, name, false,
 				&spent);
-			if (mode.type == writeout && result == wu_ok) {
-				write_to_file(&file, name, mode.arg.write);
+			if (mode->type == writeout && result == wu_ok) {
+				write_to_file(&file, name, &mode->arg.write);
 			}
 			free_image_file(&file);
 			if (result != wu_ok) {
@@ -97,10 +113,11 @@ const struct program_mode mode) {
 		}
 
 		if (iters > 1 && result == wu_ok) {
-			printf("Average time: %ld nanoseconds\n", sum / iters);
+			printf("Average time: %ld nanoseconds\n\n", sum / iters);
 		}
-		putchar('\n');
+		grand_total += sum;
 	}
+	printf("Grand total: %ld nanoseconds\n", grand_total);
 	return result;
 }
 
@@ -114,7 +131,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	}
 
 	struct window_control control = {
-		.conf = default_config(),
+		.conf = load_config(),
 	};
 	struct term_restore tr;
 	if (!setup_display(&control, &tr)) {
@@ -122,17 +139,18 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	}
 
 	enum wu_error result = wu_ok;
-	int idx = 0;
 	size_t deleted = 0;
+	int idx = 0;
+	int direction = 1;
 	do {
-		struct tmp_file *entry = get_archive_entry(&iter, idx);
+		struct tmp_file *entry = get_archive_file(&iter, idx);
 		if (!entry) {
 			break;
 		} else if (!entry->tmp) {
-			idx += control.file.cycle;
+			idx += direction;
 			continue;
 		}
-		idx = iwrap(idx, (int)iter.pos);
+		idx = imod(idx, (int)iter.pos);
 
 		printf("%d/", idx + 1);
 		if (iter.ra) {
@@ -143,41 +161,58 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		printf(", %s/%s\n", archive_name, entry->name);
 
 		bool free_entry = false;
+
 		struct image_file file = {.ifp = entry->tmp};
 		result = decode_with_stats(&file, &control.conf, entry->name,
 			true, NULL);
 		if (result == wu_ok) {
-			const bool ok = display_loop(&control, &file,
-				entry->name, false);
+			const bool sole_entry = iter.ra ? false
+				: (iter.pos == 1);
+			const bool ok = display_loop(&file, &control,
+				entry->name, sole_entry);
 			if (!ok || control.event.rm == yes_rm) {
 				free_entry = true;
 			}
 		} else {
 			free_entry = true;
 		}
-		putchar('\n');
+
+		file.ifp = NULL;
+		free_image_file(&file);
 		if (free_entry) {
 			remove_archive_entry(entry);
 			++deleted;
+			control.event.file.cycle = direction;
 		}
-		file.ifp = NULL;
-		free_image_file(&file);
+		putchar('\n');
 
-		idx += control.file.cycle;
-		if (control.file.cycle < 0) {
-			control.file.cycle = -1;
-		} else {
-			control.file.cycle = 1;
-		}
-	} while (control.event.program != close_window && deleted < iter.pos);
+		idx += control.event.file.cycle;
+		direction = idirection(control.event.file.cycle);
+	} while (control.event.program != close_window
+		&& (iter.ra || deleted < iter.pos));
+
 	free_archive_iter(&iter);
-	end_display(&control, &tr);
+	end_display(&tr);
 	return result;
 }
 
-static enum wu_error run_with_list(struct file_list *entries, int pos) {
+static void free_file_list_entry(struct file_list *entries, int pos) {
+	if (entries->dynamic) {
+		free(entries->name[pos]);
+	}
+	entries->name[pos] = NULL;
+}
+
+static void free_file_list(struct file_list *entries) {
+	for (size_t i = 0; i < entries->nr; ++i) {
+		free(entries->name[i]);
+	}
+	free(entries->name);
+}
+
+static enum wu_error run_with_list(struct file_list *entries, int idx) {
 	struct window_control control = {
-		.conf = default_config(),
+		.conf = load_config(),
 	};
 	struct term_restore tr;
 	if (!setup_display(&control, &tr)) {
@@ -186,22 +221,23 @@ static enum wu_error run_with_list(struct file_list *entries, int pos) {
 
 	enum wu_error result = wu_ok;
 	size_t remaining = entries->nr;
+	int direction = 1;
 	do {
-		const char *name = entries->name[pos];
+		const char *name = entries->name[idx];
 		if (!name) {
-			pos = iwrap(pos + control.file.cycle, (int)entries->nr);
+			idx = imod(idx + direction, (int)entries->nr);
 			continue;
 		}
 
-		printf("%d/%zu, %s\n", pos + 1, entries->nr, name);
+		printf("%d/%zu, %s\n", idx + 1, entries->nr, name);
 
 		bool free_entry = false;
 		struct image_file file = {0};
 		result = decode_with_stats(&file, &control.conf, name, true,
 			NULL);
 		if (result == wu_ok) {
-			const bool ok = display_loop(&control, &file, name,
-				entries->nr == 1);
+			const bool ok = display_loop(&file, &control, name,
+				remaining == 1);
 			if (!ok) {
 				free_entry = true;
 			} else if (control.event.rm == yes_rm) {
@@ -212,63 +248,36 @@ static enum wu_error run_with_list(struct file_list *entries, int pos) {
 		} else {
 			free_entry = true;
 		}
+
+		free_image_file(&file);
 		if (free_entry) {
-			free(entries->name[pos]);
-			entries->name[pos] = NULL;
+			free_file_list_entry(entries, idx);
 			--remaining;
-			if (!control.file.cycle) {
-				control.file.cycle = 1;
-			}
+			control.event.file.cycle = direction;
 		}
 		putchar('\n');
 
-		free_image_file(&file);
-		pos = iwrap(pos + control.file.cycle, (int)entries->nr);
-		// Preserve direction in case of errors
-		if (control.file.cycle < 0) {
-			control.file.cycle = -1;
-		} else {
-			control.file.cycle = 1;
-		}
+		idx = imod(idx + control.event.file.cycle, (int)entries->nr);
+		direction = idirection(control.event.file.cycle);
 	} while (control.event.program != close_window && remaining);
 
-	end_display(&control, &tr);
+	end_display(&tr);
 	return result;
 }
 
-static enum wu_error from_list(const size_t argc, const char *argv[],
-const struct program_mode mode) {
-	errno = 0;
-	struct file_list *entries = flex_malloc(sizeof(*entries), argc,
-		sizeof(*entries->name));
-	if (!entries) {
-		perror("Error allocating list");
-		return wu_alloc_error;
-	}
+static enum wu_error from_argv(const size_t argc, char **argv,
+const struct program_mode *mode) {
+	struct file_list entries = {
+		.dynamic = false,
+		.nr = argc,
+		.name = argv,
+	};
 
-	enum wu_error result = wu_ok;
-	for (size_t i = 0; i < argc; ++i) {
-		errno = 0;
-		entries->name[i] = strdup(argv[i]);
-		if (!entries->name[i]) {
-			result = wu_alloc_error;
-			break;
-		}
+	sort_dec_tables();
+	if (mode->type == writeout || mode->type == benchmark) {
+		return test_with(&entries, mode);
 	}
-
-	if (result == wu_ok) {
-		entries->nr = argc;
-		sort_dec_tables();
-		if (mode.type == writeout || mode.type == benchmark) {
-			result = test_with(entries, mode);
-		} else {
-			result = run_with_list(entries, 0);
-		}
-	} else {
-		perror("Error while building list");
-	}
-	free_file_list(entries);
-	return result;
+	return run_with_list(&entries, 0);
 }
 
 static char * get_path_components(const char *path, const char **filename) {
@@ -334,23 +343,26 @@ static enum wu_error from_path(const char *path) {
 	sort_dec_tables();
 	errno = 0;
 	enum wu_error result;
-	struct file_list *entries = filter_directory(dirname, first_name);
-	if (entries) {
+	struct file_list entries = {
+		.dynamic = true,
+		.name = filter_directory(dirname, first_name, &entries.nr),
+	};
+	if (entries.name) {
 		setlocale(LC_COLLATE, "");
-		qsort(entries->name, entries->nr, sizeof(*entries->name),
+		qsort(entries.name, entries.nr, sizeof(*entries.name),
 			sort_strcoll);
 
 		int starting_pos = 0;
 		if (first_name) {
-			char **loc = bsearch(&path, entries->name, entries->nr,
-				sizeof(*entries->name), sort_strcoll);
+			char **loc = bsearch(&path, entries.name, entries.nr,
+				sizeof(*entries.name), sort_strcoll);
 			if (loc) {
-				starting_pos = (int)(loc - entries->name);
+				starting_pos = (int)(loc - entries.name);
 			}
 		}
 
-		result = run_with_list(entries, starting_pos);
-		free_file_list(entries);
+		result = run_with_list(&entries, starting_pos);
+		free_file_list(&entries);
 	} else {
 		if (errno) {
 			perror("Error while filtering images");
@@ -364,25 +376,33 @@ static enum wu_error from_path(const char *path) {
 	return result;
 }
 
+#define KEYS_MODE "keys"
 #define HELP_MODE "help"
+#define FMTS_MODE "formats"
 #define DIRECTORY_MODE "directory"
 #define SOLE_MODE "sole"
 #define ARCHIVE_MODE "archive"
-#define WRITEOUT_MODE "writeout"
+#define WRITE_MODE "write"
 #define BENCHMARK_MODE "benchmark"
 
-static int print_help() {
-	fprintf(stderr, "Usage:\n"
+static void print_help() {
+	fputs("Usage:\n"
 		"\t" WU_CANON_NAME "\t(read from \".\")\n"
 		"\t" WU_CANON_NAME " DIR\t(read from DIR)\n"
-		"\t" WU_CANON_NAME " FILE\t(read the directory of FILE, starting with FILE)\n"
+		"\t" WU_CANON_NAME " FILE\t(read the parent of FILE, starting with FILE)\n"
 		"\t" WU_CANON_NAME " FILE FILE [FILE ...]\t(read only FILEs)\n"
-		"\t" WU_CANON_NAME " MODE [MODE_ARG] [OPTS] [--] PATH [...]\t(explicit mode)\n"
+		"\t" WU_CANON_NAME " MODE [OPTS] [--] PATH [...]\t(explicit mode)\n"
 		"\n"
 
 		"Work mode (all exclusive, may be abbreviated):\n"
-		"\t" HELP_MODE " | -h | --help\n"
+		"\t-h | --" HELP_MODE "\n"
 		"\t\tYou are here.\n"
+
+		"\t-k | --" KEYS_MODE "\n"
+		"\t\tPrint keybinds.\n"
+
+		"\t-k | --" FMTS_MODE "\n"
+		"\t\tPrint supported formats.\n"
 
 		"\t" DIRECTORY_MODE "\n"
 		"\t\tRead from every directory and from the parent of every\n"
@@ -391,92 +411,98 @@ static int print_help() {
 
 		"\t" SOLE_MODE "\n"
 		"\t\tRead only the file(s) given, in the order given.\n"
-		"\t\tAssumed when more than one than one path is given.\n"
+		"\t\tAssumed when more than one path is given.\n"
 
-		"\t" WRITEOUT_MODE "\n"
-		"\t\tDecode FILE to FILE(_id).pam. Assumed when the '-o'\n"
-		"\t\tswitch is given.\n"
+		"\t" WRITE_MODE " [switches]\n"
+		"\t\tDecode FILE to FILE(_id).pam. See below for switches.\n"
 
 		"\t" BENCHMARK_MODE " [n]\n"
 		"\t\tBenchmark decoding time for each FILE n times, or 1 if\n"
 		"\t\tunspecified.\n"
 		"\n"
 
-		"Switches:\n"
+		"Write switches:\n"
 		"\t-o BASENAME\n"
-		"\t\tWriteout mode only. Use BASENAME for output files\n"
-		"\t\tinstead of deriving it from the input.\n"
+		"\t\tUse BASENAME for output instead of the input name.\n"
 
 		"\t-f\n"
-		"\t\tWriteout mode only. Forces overwriting.\n"
+		"\t\tForce overwriting.\n"
 
 		"\t-r\n"
-		"\t\tWriteout mode only. Causes the raster data to be written\n"
-		"\t\t\"raw\", and the PAM header to be tweaked just enough to\n"
-		"\t\tmake it inspectable by eye. It is what's sent to the\n"
-		"\t\tcard sans alignment.\n"
-
-		"\t-p\n"
-		"\t\tWriteout mode only. For paletted images, also write the\n"
-		"\t\tpalette to FILE_palette.pam.\n");
-	return 0;
+		"\t\tCauses the raster data to be written \"raw\", and the\n"
+		"\t\tPAM header to be tweaked just enough to make it\n"
+		"\t\tinspectable by eye. It is what's sent to the card sans\n"
+		"\t\talignment.\n",
+		stderr);
 }
 
-struct program_mode get_mode(int *idx, const int argc, const char *argv[]) {
-	struct program_mode mode = {.type = guess};
-	const char *arg = argv[*idx];
-	const size_t arglen = strlen(arg);
+static int get_mode(const int argc, char **argv, struct program_mode *mode) {
+	mode->type = guess;
 
-	if (*idx < argc && arg[0]) {
-		if (!strncmp(arg, DIRECTORY_MODE, arglen)
-		|| !strncmp(arg, SOLE_MODE, arglen)
-		|| !strncmp(arg, ARCHIVE_MODE, arglen)
-		|| !strncmp(arg, WRITEOUT_MODE, arglen)
-		|| !strncmp(arg, BENCHMARK_MODE, arglen)) {
-			mode.type = arg[0];
-		} else if (!strncmp(arg, HELP_MODE, arglen)
-		|| !strcmp(arg, "-h") || !strcmp(arg, "--help")) {
-			mode.type = help;
-			return mode;
+	int idx = 0;
+	const char *arg = argv[idx];
+	const size_t arglen = strlen(arg);
+	if (idx < argc) {
+		const bool match = !strncmp(arg, ARCHIVE_MODE, arglen)
+			|| !strncmp(arg, WRITE_MODE, arglen)
+			|| !strncmp(arg, BENCHMARK_MODE, arglen)
+			|| !strncmp(arg, SOLE_MODE, arglen)
+			|| !strncmp(arg, DIRECTORY_MODE, arglen);
+
+		if (match) {
+			mode->type = arg[0];
 		} else {
-			return mode;
+			if (!strncmp(arg, HELP_MODE, arglen)
+			|| !strcmp(arg, "-h") || !strcmp(arg, "--" HELP_MODE)) {
+				mode->type = help;
+			} else if (!strncmp(arg, KEYS_MODE, arglen)
+			|| !strcmp(arg, "-k") || !strcmp(arg, "--" KEYS_MODE)) {
+				mode->type = keys;
+			} else if (!strncmp(arg, FMTS_MODE, arglen)
+			|| !strcmp(arg, "-f") || !strcmp(arg, "--" FMTS_MODE)) {
+				mode->type = formats;
+			}
+			return idx;
 		}
 
-		++(*idx);
-		if (*idx < argc) {
-			arg = argv[*idx];
-			switch (mode.type) {
+		++idx;
+		if (idx < argc) {
+			arg = argv[idx];
+			switch (mode->type) {
 			case benchmark:
-				if (sscanf(arg, "%d", &mode.arg.iters) == 1) {
-					++(*idx);
+				/* sscanf will match a filename starting with
+				 * a number, so we'll ask for an extra
+				 * character which won't be matched if it is
+				 * null. */
+				;char last;
+				const int matched = sscanf(arg, "%d%c",
+					&mode->arg.iters, &last);
+				if (matched == 1) {
+					++idx;
 				} else {
-					mode.arg.iters = 1;
+					mode->arg.iters = 1;
 				}
 				break;
 			case writeout:
-				if ((arg[0] == '0' || arg[0] == '1')
-				&& !arg[1]) {
-					++(*idx);
-					mode.arg.write.expand = arg[0] == '1';
-				} else {
-					mode.arg.write.expand = true;
-				}
+				idx += read_write_args(argc - idx, argv + idx,
+					&mode->arg.write);
 				break;
 			default:
 				break;
 			}
 		}
 	}
-	return mode;
+	return idx;
 }
 
-int main(const int argc, const char *argv[]) {
+int main(const int argc, char *argv[]) {
 	if (argc <= 1) {
-		return (int)from_path("");
+		return from_path("");
 	}
 
 	int idx = 1;
-	struct program_mode mode = get_mode(&idx, argc, argv);
+	struct program_mode mode = {0};
+	idx += get_mode(argc - idx, argv + idx, &mode);
 	if (idx < argc) {
 		if (!strcmp("--", argv[idx])) {
 			++idx;
@@ -498,28 +524,35 @@ int main(const int argc, const char *argv[]) {
 
 	switch (mode.type) {
 	case help:
-		return print_help();
+		print_help();
+		return 0;
+	case keys:
+		print_keys();
+		return 0;
+	case formats:
+		print_known_formats();
+		return 0;
 	case sole:
 	case benchmark:
 	case writeout:
 		if (remaining) {
-			return (int)from_list(remaining, argv + idx, mode);
+			return from_argv(remaining, argv + idx, &mode);
 		}
 		fputs("ERROR: Expected at least one path.\n", stderr);
 		return 1;
 	case directory:
 		if (!remaining) {
-			return (int)from_path("");
+			return from_path("");
 		} else if (argv[idx][0]) {
-			return (int)from_path(argv[idx]);
+			return from_path(argv[idx]);
 		}
 		fputs("ERROR: Null argument.\n", stderr);
 		return 1;
 	case archive:
-		return (int)run_with_archive(argv[idx]);
+		return run_with_archive(argv[idx]);
 	case guess:
 		break;
 	}
-	fputs("???: Unreachable case reached.\n", stderr);
+	fputs("???: Unreachable case reached. Well done.\n", stderr);
 	return 1;
 }

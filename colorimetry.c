@@ -3,7 +3,7 @@
 
 #include "wudefs.h"
 #include "common.h"
-#include "common_unpack.h"
+#include "dec/lib/common/unpack.h"
 
 typedef int_fast32_t ifast_t;
 
@@ -37,7 +37,7 @@ static ifast_t rgb_min(const ifast_t r, const ifast_t g, const ifast_t b) {
 	return lmin(r, lmin(g, b));
 }
 
-static int normalize_float(float out[3], const int depth,
+static int normalize_float(float out[3], const unsigned int depth,
 const struct color_tally *ct, const size_t ch) {
 	const ifast_t cnt = ct->cnt;
 	if (cnt) {
@@ -59,13 +59,12 @@ const struct color_tally *ct, const size_t ch) {
 static ifast_t vibtest(const struct color_tally *ct, const size_t i) {
 	const ifast_t cnt = ct[i].cnt;
 	if (cnt) {
-		const ifast_t r = ct[i].r / cnt,
-			g = ct[i].g / cnt,
-			b = ct[i].b / cnt;
+		const ifast_t r = ct[i].r,
+			g = ct[i].g,
+			b = ct[i].b;
 		const ifast_t min = rgb_min(r, g, b);
 		const ifast_t max = rgb_max(r, g, b);
-
-		return max * ((255 - min) / 16);
+		return (max - min) / cnt;
 	}
 	return 0;
 }
@@ -132,18 +131,18 @@ struct color_tally *tally, const enum count_op op) {
 		++tally->cnt;
 		break;
 	case count_category:;
-		const ifast_t sr = pix[fr->swz.r];
-		const ifast_t sg = pix[fr->swz.g];
-		const ifast_t sb = pix[fr->swz.b];
+		const ifast_t r = pix[fr->swz.r];
+		const ifast_t g = pix[fr->swz.g];
+		const ifast_t b = pix[fr->swz.b];
 
-		struct color_tally *t = tally;
 		const ifast_t mask = 0xc0;
-		t += (sb & mask) >> 2 | (sg & mask) >> 4 | sr >> 6;
+		struct color_tally *t = tally
+			+ ((b & mask) >> 2 | (g & mask) >> 4 | r >> 6);
 
+		t->r += r;
+		t->g += g;
+		t->b += b;
 		++t->cnt;
-		t->r += sr;
-		t->g += sg;
-		t->b += sb;
 		break;
 	}
 }
@@ -201,7 +200,7 @@ const enum background_source src, const size_t maxres) {
 	default: return 0;
 	}
 
-	const enum pix_layout lay = img->layout;
+	const enum pix_layout layout = img->layout;
 	const size_t scanline = scanline_length(img->w * img->channels,
 		img->bitdepth, img->alignment);
 	const struct frame_desc frame = {
@@ -212,10 +211,10 @@ const enum background_source src, const size_t maxres) {
 		.hstep = img->w/maxres + 1,
 		.vstep = img->h/maxres + 1,
 		.swz = {
-			.r = (lay >> 6) & 0x03,
-			.g = (lay >> 4) & 0x03,
-			.b = (lay >> 2) & 0x03,
-			.a = lay & 0x03,
+			.r = (layout >> 6) & 0x03,
+			.g = (layout >> 4) & 0x03,
+			.b = (layout >> 2) & 0x03,
+			.a = layout & 0x03,
 		},
 	};
 

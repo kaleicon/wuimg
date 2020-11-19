@@ -11,19 +11,11 @@ struct gl_context {
 		GLint use_pal;
 		GLint checkers;
 	} uni;
+	GLuint pixel_unpack_buf;
 
-	union {
-		struct {GLuint img, pal;} texture;
-		GLuint textures[2];
-	};
-
-	union {
-		struct {int w, h;};
-		int wh[2];
-	} fb;
-
+	unsigned fb_wh[2];
 	struct {
-		unsigned short w, h;
+		unsigned w, h;
 		unsigned char ch, bpp;
 		bool paletted;
 	} tex;
@@ -31,9 +23,9 @@ struct gl_context {
 
 const char * gl_error_str(GLenum error);
 
-void delete_gl_context(const struct gl_context *context);
+void delete_gl_context(void);
 
-void set_gl_alpha(struct gl_context *context, const bool checkers);
+void set_gl_alpha(struct gl_context *context, enum alpha_state alpha);
 
 void update_gl_matrix(const struct gl_context *context, struct wu_state *state);
 
