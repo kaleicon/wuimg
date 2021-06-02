@@ -36,10 +36,12 @@ enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		tree_sprout_unsafe_leaf(&infile->metadata, "Saver data",
 			desc.saver, desc.saver_len);
 	}
+	tree_bud_leaf(&infile->metadata, "Bitdepth", wu_leaf_unsigned,
+		(union wu_leaf){.u = desc.bitdepth});
 
 	if (zumax(desc.w, desc.h) > wuconf->max_img_size) {
 		pi_cleanup(&desc);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
@@ -58,6 +60,6 @@ enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	img->w = desc.w;
 	img->h = desc.h;
 	img->channels = 4;
-	img->bitdepth = desc.bitdepth;
+	img->bitdepth = 8;
 	return wu_ok;
 }

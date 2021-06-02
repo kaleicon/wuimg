@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
@@ -62,7 +63,7 @@ enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	if (umax(desc.w, desc.h) > wuconf->max_img_size) {
 		tga_cleanup(&desc);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	tree_sprout_unsafe_leaf(&infile->metadata, "ID", desc.meta->id,

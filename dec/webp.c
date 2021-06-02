@@ -17,12 +17,16 @@ struct library_anim {
 	int prev_msec;
 };
 
+struct frame_dispose {
+	WebPMuxAnimDispose method;
+	struct anim_frame desc;
+};
+
 struct homegrown_anim {
 	unsigned char *dec_buf;
 	WebPDemuxer *dmux;
-	struct anim_frame prev_desc;
 	WebPIterator iter;
-	WebPMuxAnimDispose dispose;
+	struct frame_dispose dispose;
 };
 
 struct webp_state {
@@ -101,23 +105,23 @@ static enum wu_error map_status(VP8StatusCode status, const char **msg) {
 	}
 }
 
-static struct anim_frame iter_to_anim_frame(const WebPIterator *iter) {
-	const struct anim_frame fr = {
+static void iter_to_anim_frame(const WebPIterator *iter,
+struct anim_frame *fr) {
+	*fr = (struct anim_frame) {
 		.x = (size_t)iter->x_offset,
 		.y = (size_t)iter->y_offset,
 		.w = (size_t)iter->width,
 		.h = (size_t)iter->height,
 	};
-	return fr;
 }
 
-static void composite_frame(struct raw_img *img, const unsigned char *dec_buf,
-const WebPIterator *iter) {
-	const struct anim_frame frame = iter_to_anim_frame(iter);
-	if (iter->blend_method == WEBP_MUX_NO_BLEND || !iter->has_alpha) {
-		composite_frame_overwrite(img, dec_buf, &frame);
+static void composite_frame(struct raw_img *img, struct homegrown_anim *hanim,
+struct anim_frame *frame) {
+	iter_to_anim_frame(&hanim->iter, frame);
+	if (hanim->iter.blend_method == WEBP_MUX_NO_BLEND || !hanim->iter.has_alpha) {
+		composite_frame_overwrite(img, hanim->dec_buf, frame);
 	} else {
-		composite_frame_alpha_blend(img, dec_buf, &frame);
+		composite_frame_alpha_blend(img, hanim->dec_buf, frame);
 	}
 }
 
@@ -206,29 +210,28 @@ const struct wu_conf *wuconf, struct webp_state *ds) {
 		if (img[i].channels == 4) {
 			memset(img[i].data, 0, data_size);
 		}
-		composite_frame(&img[i], hanim->dec_buf, &hanim->iter);
 	} else {
-		switch (hanim->dispose) {
+		switch (hanim->dispose.method) {
 		case WEBP_MUX_DISPOSE_BACKGROUND:
 			if (wuconf->cache_frames) {
 				copy_unaffected(&img[i], img[i-1].data,
-					&hanim->prev_desc);
+					&hanim->dispose.desc);
 			}
-			composite_clear(&img[i], &hanim->prev_desc);
-			composite_frame(&img[i], hanim->dec_buf, &hanim->iter);
+			composite_clear(&img[i], &hanim->dispose.desc, 0);
 			break;
 		case WEBP_MUX_DISPOSE_NONE:
 			if (wuconf->cache_frames) {
 				memcpy(img[i].data, img[i-1].data, data_size);
 			}
-			composite_frame(&img[i], hanim->dec_buf, &hanim->iter);
 			break;
 		}
 	}
+	struct anim_frame frame;
+	composite_frame(&img[i], hanim, &frame);
 
-	hanim->dispose = hanim->iter.dispose_method;
-	if (hanim->dispose == WEBP_MUX_DISPOSE_BACKGROUND) {
-		hanim->prev_desc = iter_to_anim_frame(&hanim->iter);
+	hanim->dispose.method = hanim->iter.dispose_method;
+	if (hanim->dispose.method == WEBP_MUX_DISPOSE_BACKGROUND) {
+		hanim->dispose.desc = frame;
 	}
 
 	++ds->idx;
@@ -285,24 +288,23 @@ const enum image_event event) {
 	if (clean) {
 		clean_webp_state(infile);
 		if (!wuconf->webp_use_homegrown_renderer
-		&& !wuconf->cache_frames) { // Memory is not ours
+		&& !wuconf->cache_frames) { // Memory is library managed
 			infile->sub_img[0].data = NULL;
 		}
 	}
 	return status;
 }
 
-static bool is_covered(const WebPIterator *iter, const struct anim_frame *prev) {
-	const int w_diff = iter->width - (int)prev->w;
-	const int h_diff = iter->height - (int)prev->h;
-	const int x_diff = iter->x_offset - (int)prev->x;
-	const int y_diff = iter->y_offset - (int)prev->y;
+static bool is_covered(const WebPIterator *iter, const struct anim_frame *desc) {
+	const int w_diff = iter->width - (int)desc->w;
+	const int h_diff = iter->height - (int)desc->h;
+	const int x_diff = iter->x_offset - (int)desc->x;
+	const int y_diff = iter->y_offset - (int)desc->y;
 	return (w_diff - x_diff >= 0) && (h_diff - y_diff >= 0);
 }
 
 static unsigned char required_channels(WebPIterator *iter) {
-	struct anim_frame prev_frame;
-	WebPMuxAnimDispose prev_disp = WEBP_MUX_DISPOSE_NONE;
+	struct frame_dispose disp = {.method = WEBP_MUX_DISPOSE_NONE};
 	unsigned char channels = 3;
 	do {
 		/* Reasonably exhaustive tests for alpha. */
@@ -313,24 +315,24 @@ static unsigned char required_channels(WebPIterator *iter) {
 			}
 		}
 
-		if (prev_disp == WEBP_MUX_DISPOSE_BACKGROUND) {
-			const bool covered = is_covered(iter, &prev_frame);
+		if (disp.method == WEBP_MUX_DISPOSE_BACKGROUND) {
+			const bool covered = is_covered(iter, &disp.desc);
 			if (iter->has_alpha || !covered) {
 				channels = 4;
 				break;
 			}
 		}
 
+		disp.method = iter->dispose_method;
 		if (iter->dispose_method == WEBP_MUX_DISPOSE_BACKGROUND) {
-			prev_frame = iter_to_anim_frame(iter);
+			iter_to_anim_frame(iter, &disp.desc);
 		}
-		prev_disp = iter->dispose_method;
 	} while (channels == 3 && WebPDemuxNextFrame(iter));
 	return channels;
 }
 
 static void get_bg_color(const uint32_t color, unsigned char bg[4]) {
-	// BGRA order
+	// BGRA byte order
 	bg[0] = (unsigned char)(color >> 16);
 	bg[1] = (unsigned char)(color >> 8);
 	bg[2] = (unsigned char)color;
@@ -361,7 +363,7 @@ unsigned char *restrict out_ch, unsigned char *restrict bg_color) {
 	ds->config.output.u.RGBA.rgba = hanim->dec_buf;
 	ds->frame_count = WebPDemuxGetI(hanim->dmux, WEBP_FF_FRAME_COUNT);
 
-	hanim->dispose = WEBP_MUX_DISPOSE_NONE;
+	hanim->dispose.method = WEBP_MUX_DISPOSE_NONE;
 
 	if (*out_ch != 4) {
 		*out_ch = required_channels(&hanim->iter);
@@ -502,7 +504,7 @@ const struct wu_conf *wuconf) {
 	const unsigned int height = (unsigned int)ds->config.input.height;
 	if (umax(width, height) > wuconf->max_img_size) {
 		clean_webp_state(infile);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	set_decoding_options(&ds->config, wuconf);

@@ -3,12 +3,10 @@
 #include <math.h>
 #include <inttypes.h>
 
-#include <openjpeg-2.3/openjpeg.h>
+#include <openjpeg-2.1/openjpeg.h>
 
 #include "../wudefs.h"
 #include "../common.h"
-
-
 
 static void monkey_trouble_handler(const char *msg, void *__unused_stuff) {
 	(void)__unused_stuff;
@@ -38,12 +36,12 @@ static OPJ_BOOL file_seek(const OPJ_OFF_T offset, void *thing) {
 
 static opj_stream_t setup_jp2_stream(FILE *ifp) {
 	fseek(ifp, 0, SEEK_END);
-	const long size = ftell(ifp);
+	const OPJ_UINT64 size = (OPJ_UINT64)ftell(ifp);
 	fseek(ifp, 0, SEEK_SET);
 
 	opj_stream_t *stream = opj_stream_default_create(OPJ_TRUE);
 	opj_stream_set_user_data(stream, ifp, NULL);
-	opj_stream_set_user_data_length(stream, (OPJ_UINT64)size);
+	opj_stream_set_user_data_length(stream, size);
 	opj_stream_set_read_function(stream, file_read);
 	opj_stream_set_skip_function(stream, file_skip);
 	opj_stream_set_seek_function(stream, file_seek);

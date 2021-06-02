@@ -5,20 +5,25 @@
 #include "wudefs.h"
 #include "common.h"
 #include "events.h"
+#include "term.h"
 
 #define KEYSTART ' '
-#define KEYEND 'Z'
+#define KEYEND ('Z' + 1)
+
 struct keymap {
-	unsigned char map[KEYEND - KEYSTART + 1];
 	bool shift;
+	unsigned char map[KEYEND - KEYSTART];
 };
 
 static struct keymap held_keys = {0};
 
-static void apply_event(const struct image_file *file, struct wu_state *state,
-struct wu_event *event, const unsigned char code, const float msecs) {
+static void apply_event(struct image_context *image,
+struct wu_event *event, const size_t code, const float msecs) {
 	const float MAX_ZOOM = 64.0f;
 	const float MIN_ZOOM = 1.0f / (MAX_ZOOM * 2);
+
+	const struct image_file *file = &image->file;
+	struct wu_state *state = &image->state;
 
 	const bool shift = held_keys.shift;
 	float new_zoom = 0;
@@ -27,30 +32,31 @@ struct wu_event *event, const unsigned char code, const float msecs) {
 	case 'Q':
 		event->program = close_window;
 		break;
+	// Reload file
+	case 'R':
+		event->program = reload_file;
+		break;
+
 	// Fullscreen
 	case 'F':
 		event->window = toggle_fullscreen;
 		break;
 	// Alpha display
 	case 'A':
-		event->window = toggle_alpha;
 		state->alpha = (unsigned char)((state->alpha + 1) % 3);
+		event->window = toggle_alpha;
 		break;
 	// Metadata
 	case 'M':
-		print_image_information(file);
-		break;
-	// Refresh
-	case 'R':
-		event->program = reload_file;
+		print_image_information(file, 1 + shift);
 		break;
 
 	// Delete
 	case 'D':
 		if (!shift && event->rm == no_rm) {
 			event->rm = warn_rm;
-			print_temp_line("Delete file? (D to confirm, "
-				"u to dismiss.)");
+			term_temp_line("Delete file? (D to confirm, "
+				"u to dismiss)");
 		} else if (shift && event->rm == warn_rm) {
 			event->rm = yes_rm;
 		}
@@ -59,7 +65,7 @@ struct wu_event *event, const unsigned char code, const float msecs) {
 	case 'U':
 		if (event->rm == warn_rm) {
 			event->rm = no_rm;
-			print_temp_line("\r" CLEAR_LINE);
+			term_clear_line();
 		}
 		break;
 
@@ -156,43 +162,42 @@ struct wu_event *event, const unsigned char code, const float msecs) {
 	}
 }
 
-void exec_events(const struct image_file *file, struct wu_state *state,
-struct wu_event *event, float msecs) {
+void event_exec(struct image_context *image, struct wu_event *event,
+double secs) {
+	float msecs = (float)(secs * 1000);
 	const int inc = (int)msecs;
 	if (held_keys.shift) {
 		msecs *= 2;
 	}
-	const size_t map_size = sizeof(held_keys.map);
-	unsigned char *map = held_keys.map - KEYSTART;
-	for (unsigned char key = KEYSTART; key < map_size + KEYSTART; ++key) {
-		switch (map[key]) {
-		case 0x00: continue;
-		case 0xff:
-			apply_event(file, state, event, key, msecs);
-			break;
 
+	unsigned char *map = held_keys.map - KEYSTART;
+	for (size_t key = KEYSTART; key < KEYEND; ++key) {
+		const unsigned char time = map[key];
+		switch (time) {
+		case 0:
+			continue;
 		case key_external:
-			apply_event(file, state, event, key, msecs);
 			map[key] = 0;
 			break;
-		case key_press:
-			apply_event(file, state, event, key, msecs);
-			// Fallthrough
+		case 0xff:
+			break;
 		default:
-			map[key] = (unsigned char)imin(0xff, map[key] + inc);
+			map[key] = (unsigned char)imin(0xff, time + inc);
+			if (time != key_press) {
+				continue;
+			}
 		}
+		apply_event(image, event, key, msecs);
 	}
 }
 
-void add_event(const enum key_action action, const unsigned char code,
-const bool shift) {
+void event_add(const enum key_action action, int code, const bool shift) {
 	held_keys.shift = shift;
-	if (code >= KEYSTART && code < KEYSTART + sizeof(held_keys.map)) {
+	code = toupper(code);
+	if (code >= KEYSTART && code < KEYEND) {
 		unsigned char *map = held_keys.map - KEYSTART;
-		if (!map[code]) {
+		if (!map[code] || action == key_release) {
 			map[code] = action;
-		} else if (action == key_release) {
-			map[code] = 0;
 		}
 	}
 }

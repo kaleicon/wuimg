@@ -61,11 +61,9 @@ static unsigned char * pfm_decode(const struct pnm_desc *desc) {
 
 static unsigned char * xv_thumbnail_decode(const struct pnm_desc *desc) {
 	const size_t data_size = desc->w * desc->h;
-	size_t dims;
-	if (desc->xv_no_expand) {
-		dims = data_size;
-	} else {
-		dims = data_size * 3;
+	size_t dims = data_size;
+	if (desc->expand) {
+		dims *= 3;
 	}
 
 	unsigned char *restrict output = malloc(dims);
@@ -79,7 +77,7 @@ static unsigned char * xv_thumbnail_decode(const struct pnm_desc *desc) {
 		puts(RASTER_EOF);
 	}
 
-	if (!desc->xv_no_expand) {
+	if (desc->expand) {
 		strip_expand332(output, output + xv_off, read, 1, 1);
 	}
 	return output;
@@ -177,7 +175,16 @@ static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc) {
 }
 
 static unsigned char * raw_pbm_decode(const struct pnm_desc *desc) {
-	return strip_map_unpack(desc->ifp, desc->w, desc->h, 1, expand_invert, 1);
+	if (!desc->expand) {
+		const size_t size = scanline_length(desc->w, 1, 1) * desc->h;
+		unsigned char *data = malloc(size);
+		if (data) {
+			fread(data, 1, size, desc->ifp);
+		}
+		return data;
+	}
+	return strip_map_unpack(desc->ifp, desc->w, desc->h, 1,
+		op_expand_invert, 1);
 }
 
 static unsigned char * plain_pbm_decode(const struct pnm_desc *desc) {
@@ -251,12 +258,7 @@ unsigned char * pnm_decode_next(const struct pnm_desc *desc) {
 /* Header parsing */
 
 static size_t count_images(struct pnm_desc *desc) {
-	const long start = ftell(desc->ifp);
-	fseek(desc->ifp, 0, SEEK_END);
-	const long end = ftell(desc->ifp);
-	fseek(desc->ifp, start, SEEK_SET);
-
-	const size_t len = (size_t)(end - start);
+	const size_t len = (size_t)file_get_remaining(desc->ifp);
 	if (desc->type == raw_pbm) {
 		return len / (scanline_length(desc->w, 1, 1) * desc->h);
 	} else if (desc->type == xv_thumb) {

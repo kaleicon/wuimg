@@ -8,8 +8,13 @@
 #include "common/composite.h"
 #include "bmp.h"
 
+typedef uint32_t ubits_t;
+const ubits_t BITFIELD_SHIFT = 16;
+
 void bmp_cleanup(const struct bmp_desc *desc) {
-	free(desc->bmp.pal);
+	if (desc->compression != bmp_bitfield) {
+		free(desc->bmp.pal);
+	}
 }
 
 unsigned int bmp_get_row_alignment(const struct bmp_desc *desc) {
@@ -20,7 +25,7 @@ unsigned int bmp_get_row_alignment(const struct bmp_desc *desc) {
 		if (desc->compression != bmp_4bit_rle) {
 			return 1;
 		}
-		// Fallthrough
+		// fallthrough
 	case 2:
 	case 8:
 		if (desc->bmp.pal) {
@@ -30,15 +35,22 @@ unsigned int bmp_get_row_alignment(const struct bmp_desc *desc) {
 	return 4;
 }
 
-static void check_decode(const unsigned char *end,
-const unsigned char *expected_end) {
-	if (end < expected_end - 3) { // -3 for alignment.
+bool bmp_has_alpha(const struct bmp_desc *desc) {
+	if (desc->compression == bmp_bitfield) {
+		return desc->bmp.bf.p[3].mask;
+	}
+	return desc->bitdepth == 32;
+}
+
+static void check_decode(const unsigned char *restrict end,
+const unsigned char *restrict expected_end) {
+	if ( ((uintptr_t)(end + 3) & ~0x3U) < (uintptr_t)expected_end) {
 		puts(RASTER_EOF);
 	}
 }
 
 static unsigned char * uncompressed_expand(const struct bmp_desc *desc,
-unsigned char *raster) {
+unsigned char *restrict raster) {
 	const unsigned char ch = 3;
 	size_t dims = desc->w * desc->h;
 	if (desc->bmp.pal) {
@@ -56,7 +68,7 @@ unsigned char *raster) {
 			4, ch, desc->bitdepth);
 	} else {
 		strip_unpack(output, raster, desc->w, desc->h, 4,
-			unpack, desc->bitdepth);
+			op_unpack, desc->bitdepth);
 	}
 
 	free(raster);
@@ -64,17 +76,20 @@ unsigned char *raster) {
 }
 
 static unsigned char * uncompressed_decode(const struct bmp_desc *desc,
-unsigned char *raster) {
+unsigned char *restrict raster) {
 	switch (desc->bitdepth) {
 	case 8:
 		if (!desc->bmp.pal) {
 			return raster;
 		}
-		// Fallthrough
+		// fallthrough
 	case 4:
 	case 2:
 	case 1:
-		return uncompressed_expand(desc, raster);
+		if (desc->expand) {
+			return uncompressed_expand(desc, raster);
+		}
+		// fallthrough
 	case 16:
 	case 24:
 	case 32:
@@ -147,7 +162,7 @@ const unsigned char *restrict rle_limit, const size_t scan_len) {
 }
 
 static unsigned char * rle4_decode(const struct bmp_desc *desc,
-unsigned char *rle) {
+unsigned char *restrict rle) {
 	// Note: We output in 8-bits.
 	const size_t row = scanline_length(desc->w, 8, 4);
 	const size_t raster_len = row * desc->h;
@@ -226,7 +241,7 @@ const unsigned char *restrict rle_limit, const size_t scan_len) {
 }
 
 static unsigned char * rle8_decode(const struct bmp_desc *desc,
-unsigned char *rle) {
+unsigned char *restrict rle) {
 	const size_t raster_len = desc->scan_len * desc->h;
 	unsigned char *raster = malloc(raster_len);
 	if (!raster) {
@@ -242,8 +257,48 @@ unsigned char *rle) {
 	return uncompressed_decode(desc, raster);
 }
 
+static ubits_t expand_bits(const ubits_t word, const ubits_t mask,
+const ubits_t shift, const ubits_t scale) {
+	return (((word >> shift) & mask) * scale) >> BITFIELD_SHIFT;
+}
+
+static unsigned char * bitfield_decode(const struct bmp_desc *desc, void *data) {
+	const struct bmp_bitfield *bf = &desc->bmp.bf;
+
+	const size_t bytes = bf->high_depth + 1;
+	const size_t ch = bf->p[3].mask ? 4 : 3;
+	const size_t pixels = desc->w * desc->h;
+	void *out = malloc(pixels * ch * bytes);
+	if (!out) {
+		free(data);
+		return NULL;
+	}
+
+	for (size_t i = 0; i < pixels; ++i) {
+		ubits_t word;
+		if (desc->bitdepth == 32) {
+			word = endian32(((uint32_t *)data)[i], little_endian);
+		} else {
+			word = endian16(((uint16_t *)data)[i], little_endian);
+		}
+
+		const struct bmp_bitparams *p = bf->p;
+		for (size_t k = 0; k < ch; ++k) {
+			const ubits_t val = expand_bits(word, p[k].mask,
+				p[k].shift, p[k].scale);
+			if (bytes == 2) {
+				((uint16_t *)out)[i*ch + k] = (uint16_t)val;
+			} else {
+				((uint8_t *)out)[i*ch + k] = (uint8_t)val;
+			}
+		}
+	}
+	free(data);
+	return out;
+}
+
 unsigned char * bmp_decode(const struct bmp_desc *desc) {
-	unsigned char *data = malloc(desc->data_len);
+	void *data = malloc(desc->data_len);
 	if (!data) {
 		return NULL;
 	}
@@ -260,25 +315,24 @@ unsigned char * bmp_decode(const struct bmp_desc *desc) {
 		return rle8_decode(desc, data);
 	case bmp_4bit_rle:
 		return rle4_decode(desc, data);
-	case bmp_mask:
-		puts("Mask compression unsupported (for now)");
-		break;
+	case bmp_bitfield:
+		return bitfield_decode(desc, data);
 	}
 	free(data);
 	return NULL;
 }
 
 struct colormap * bmp_take_colormap(struct bmp_desc *desc) {
-	struct colormap *m = desc->bmp.pal;
-	desc->bmp.pal = NULL;
-	return m;
+	if (desc->compression != bmp_bitfield) {
+		struct colormap *m = desc->bmp.pal;
+		desc->bmp.pal = NULL;
+		return m;
+	}
+	return NULL;
 }
 
 static bool validate_file_size(struct bmp_desc *desc) {
-	const long start = ftell(desc->ifp);
-	fseek(desc->ifp, 0, SEEK_END);
-	const long end = ftell(desc->ifp);
-	const size_t file_size = (size_t)(end - start);
+	const size_t file_size = (size_t)file_get_remaining(desc->ifp);
 
 	const size_t raster_len = desc->scan_len * desc->h;
 	if (desc->compression == bmp_8bit_rle
@@ -297,28 +351,58 @@ static bool validate_file_size(struct bmp_desc *desc) {
 		}
 		desc->data_len = raster_len;
 	}
-
-	fseek(desc->ifp, start, SEEK_SET);
 	return true;
 }
 
-
 static enum lib_fail load_mask(struct bmp_desc *desc) {
-	const size_t len = desc->type == bmp_type3 ? 3 : 4;
+	const size_t len = desc->type < bmp_v3_info_header ? 3 : 4;
 	uint32_t buf[4];
-	const size_t read = fread(buf, sizeof(*buf), len, desc->ifp);
-	if (read != len) {
+	if (fread(buf, sizeof(*buf), len, desc->ifp) != len) {
 		return lib_unexpected_eof;
 	}
 
-	// Image data is big-endian, but masks are stored as little-endian,
-	desc->bmp.mask.r = endian32(buf[0], big_endian);
-	desc->bmp.mask.g = endian32(buf[1], big_endian);
-	desc->bmp.mask.b = endian32(buf[2], big_endian);
-	if (desc->type != bmp_type3) {
-		desc->bmp.mask.a = endian32(buf[3], big_endian);
+	loop_endian32(buf, little_endian, len);
+	// Switch to BGRA order, for consistency
+	const uint32_t t = buf[0];
+	buf[0] = buf[2];
+	buf[2] = t;
+
+	struct bmp_bitfield *bitfield = &desc->bmp.bf;
+	unsigned maxdepth = 0;
+	for (size_t i = 0; i < len; ++i) {
+		const size_t bits = sizeof(buf[i]) * 8;
+
+		unsigned zeros = 0;
+		while (zeros < bits && !(buf[i] & (1 << zeros)) ) {
+			++zeros;
+		}
+		bitfield->p[i].shift = zeros;
+
+		unsigned ones = zeros;
+		while (ones < bits && (buf[i] & (1 << ones)) ) {
+			++ones;
+		}
+		maxdepth = umax(ones - zeros, maxdepth);
+
+		bitfield->p[i].mask = buf[i] >> zeros;
+		if (ones < bits && buf[i] >> ones) {
+			return lib_invalid_header;
+		}
+	}
+	if (maxdepth > desc->bitdepth / 2) {
+		return lib_invalid_header;
 	}
 
+	bitfield->high_depth = maxdepth > 8;
+	const unsigned target = maxdepth > 8 ? 0xffff : 0xff;
+	for (size_t i = 0; i < len; ++i) {
+		bitfield->p[i].scale = (target << BITFIELD_SHIFT)
+			/ bitfield->p[i].mask + 1;
+	}
+
+	if (len == 3) {
+		memset(bitfield->p + 3, 0, sizeof(*bitfield->p));
+	}
 	return lib_ok;
 }
 
@@ -329,17 +413,25 @@ static enum lib_fail load_palette(struct bmp_desc *desc) {
 	}
 
 	/* Palettes may be smaller than 1U << bitdepth, but the calculation is
-	 * quite tedious so we'll just pretend that doesn't happen and fill the
-	 * palette with whatever garbage we get. */
+	 * a bother plus we know where the bitmap is, so we'll just pretend
+	 * that doesn't happen and fill the palette with whatever garbage we get. */
 	const size_t entries = 1U << desc->bitdepth;
 	// BMP type 2 entries are BGR, while type >= 3 are BGR0
 	const size_t entry_len = desc->type == bmp_type2 ? 3 : 4;
-	fread(pal, entry_len, entries, desc->ifp);
+
+	const size_t offset = (desc->type == bmp_type2) * entries;
+	unsigned char *bytes = (unsigned char *)pal + offset;
+	fread(bytes, entry_len, entries, desc->ifp);
 	if (entry_len == 3) {
-		unsigned char *palette = (unsigned char *)desc->bmp.pal;
-		for (size_t i = entries; i > 0; --i) {
-			memcpy(palette + i*4, palette + i*3, 3);
-			palette[i*4 + 3] = 0xff;
+		for (size_t i = 0; i < entries; ++i) {
+			pal[i].r = bytes[i*3];
+			pal[i].g = bytes[i*3+1];
+			pal[i].b = bytes[i*3+2];
+			pal[i].a = 0xff;
+		}
+	} else {
+		for (size_t i = 0; i < entries; ++i) {
+			pal[i].a = 0xff;
 		}
 	}
 
@@ -378,6 +470,8 @@ const uint16_t depth, const uint32_t compression) {
 	}
 
 	switch (compression) {
+	case bmp_no_compression:
+		break;
 	case bmp_8bit_rle:
 		if (depth != 8 || desc->order == bmp_top_down) {
 			return lib_invalid_header;
@@ -388,12 +482,10 @@ const uint16_t depth, const uint32_t compression) {
 			return lib_invalid_header;
 		}
 		break;
-	case bmp_mask:
-		if (depth != 16 || depth != 32) {
+	case bmp_bitfield:
+		if (depth != 16 && depth != 32) {
 			return lib_invalid_header;
 		}
-		return lib_unsupported_format;
-	case bmp_no_compression:
 		break;
 	default:
 		return lib_invalid_header;
@@ -405,41 +497,62 @@ const uint16_t depth, const uint32_t compression) {
 }
 
 static enum lib_fail bmp_type3_parse_header(struct bmp_desc *desc) {
-	/* Type 3 and NT BMP header (after header size)
-	 * Bitmap header:
-		Offset  Size    Name
-		0       LONG    Width;          // Width in pixels
-		4       LONG    Height;         // Height in pixels
-		8       WORD    Planes;         // Nr of color planes (always 1)
-		10      WORD    BitsPerPixel;
-		12      DWORD   Compression;    // Compression method
-		16      DWORD   SizeOfBitmap;   // Size of bitmap in bytes
-		20      LONG    HorzResolution; // In pixels per meter
-		24      LONG    VertResolution; // In pixels per meter
-		28      DWORD   ColorsUsed;     // Number of colors in the image
-		32      DWORD   ColorsImportant;// Number of important colors
-		36                              // RGB0 Palette or RGB mask
+	/* Type 3 and up DIB header (after header size field).
 
-	 * Type 4 additional fields:
+	 * BITMAPINFOHEADER:
 		Offset  Size    Name
-		36      DWORD   RedMask;
-		40      DWORD   GreenMask;
-		44      DWORD   BlueMask;
-		48      DWORD   AlphaMask;
-		52      DWORD   CSType;         // Color space
-		56      LONG    RedX;           // X coord of red endpoint
-		60      LONG    RedY;
-		64      LONG    RedZ;
-		68      LONG    GreenX;
-		72      LONG    GreenY;
-		76      LONG    GreenZ;
-		80      LONG    BlueX;
-		84      LONG    BlueY;
-		88      LONG    BlueZ;
-		92      DWORD   GammaRed;       // Gamma red coord scale value
-		96      DWORD   GammaGreen;
-		100     DWORD   GammaBlue;
+		0       LONG    Width           // Width in pixels
+		4       LONG    Height          // Height in pixels
+		8       WORD    Planes          // Nr of color planes (always 1)
+		10      WORD    BitsPerPixel
+		12      DWORD   Compression     // Compression method
+		16      DWORD   SizeOfBitmap    // Size of bitmap in bytes
+		20      LONG    HorzResolution  // In pixels per meter
+		24      LONG    VertResolution  // In pixels per meter
+		28      DWORD   ColorsUsed      // Number of colors in the image
+		32      DWORD   ColorsImportant // Number of important colors
+		36
+
+	 * The following fields are part of BITMAPV2INFOHEADER, but they may
+	 * still follow the previous one instead of a palette if the
+	 * Compression field is 3.
+		Offset  Size    Name
+		36      DWORD   RedMask
+		40      DWORD   GreenMask
+		44      DWORD   BlueMask
+		48
+
+	 * BITMAPV3INFOHEADER additional field:
+		Offset  Size    Name
+		48      DWORD   AlphaMask
+		52
+
+	 * BITMAPV4HEADER additional fields:
+		Offset  Size    Name
+		52      DWORD   ColorSpaceType
+		56      LONG    RedX            // X coord of red endpoint
+		60      LONG    RedY
+		64      LONG    RedZ
+		68      LONG    GreenX
+		72      LONG    GreenY
+		76      LONG    GreenZ
+		80      LONG    BlueX
+		84      LONG    BlueY
+		88      LONG    BlueZ
+		92      DWORD   GammaRed        // Gamma red coord scale value
+		96      DWORD   GammaGreen
+		100     DWORD   GammaBlue
 		104
+
+	 * BITMAPV5HEADER additional fields:
+		Offset  Size    Name
+		104     DWORD   RenderingIntent
+		108     DWORD   ProfileData
+		112     DWORD   ProfileSize
+		116     DWORD   Reserved
+		120
+
+	 * Afterwards comes the palette.
 	 */
 
 	uint8_t buf[16];
@@ -458,33 +571,25 @@ static enum lib_fail bmp_type3_parse_header(struct bmp_desc *desc) {
 	}
 
 	desc->scan_len = scanline_length(desc->w, desc->bitdepth, 4);
-	long ignored;
-	if (desc->compression == bmp_mask) {
-		ignored = 20;
-	} else {
-		ignored = desc->type - (long)sizeof(buf) - 4;
-	}
-
-	if (desc->bitdepth <= 8) {
-		fseek(desc->ifp, ignored, SEEK_CUR);
+	if (desc->compression == bmp_bitfield) {
+		fseek(desc->ifp, 20, SEEK_CUR);
+		return load_mask(desc);
+	} else if (desc->bitdepth <= 8) {
+		const long header_skip = desc->type - (long)sizeof(buf) - 4;
+		fseek(desc->ifp, header_skip, SEEK_CUR);
 		return load_palette(desc);
-	} else if (desc->bitdepth != 24) {
-		if (desc->compression == bmp_mask) {
-			fseek(desc->ifp, ignored, SEEK_CUR);
-			return load_mask(desc);
-		}
 	}
 	return lib_ok;
 }
 
 static enum lib_fail bmp_type2_parse_header(struct bmp_desc *desc) {
-	/* Type 2 BMP header (after header size)
+	/* Type 2 DIB header (after header size)
 	 * Bitmap header:
 		Offset  Size    Name
-		0       SHORT   Width;          // Image width in pixels
-		2       SHORT   Height;         // Image height in pixels
-		4       WORD    Planes;         // Nr of color planes // Always 1
-		6       WORD    BitsPerPixel;   // Nr of bits per pixel
+		0       SHORT   Width           // Image width in pixels
+		2       SHORT   Height          // Image height in pixels
+		4       WORD    Planes          // Nr of color planes. Always 1
+		6       WORD    BitsPerPixel    // Nr of bits per pixel
 		8
 	 */
 
@@ -516,14 +621,14 @@ enum lib_fail bmp_parse_header(struct bmp_desc *desc) {
 	/* Minimum non-type-1 BMP header (after magic bytes)
 	 * File header:
 		Offset	Size    Name
-		0       DWORD   FileSize;	// Size of the file in bytes
-		4       WORD    Reserved1;	// Always 0
-		6       WORD    Reserved2;	// Always 0
-		8       DWORD   BitmapOffset;	// Start pos of bitmap in bytes
+		0       DWORD   FileSize     // Size of the file in bytes
+		4       WORD    Reserved1
+		6       WORD    Reserved2
+		8       DWORD   BitmapOffset // Start pos of bitmap in bytes
 
-	 * Bitmap header:
+	 * Common DIB header:
 		Offset  Size    Name
-		12      DWORD   Size;           // Size of this header in bytes
+		12      DWORD   Size         // Size of the DIB header in bytes
 		16
 
 	*/
@@ -537,40 +642,43 @@ enum lib_fail bmp_parse_header(struct bmp_desc *desc) {
 	const uint32_t bitmap_offset = endian32(buf[2], little_endian);
 	const uint32_t header_size = endian32(buf[3], little_endian);
 
-	enum lib_fail fail;
+	enum lib_fail status;
 	switch (header_size) {
 	case bmp_type2:
 		desc->type = (enum bmp_type)header_size;
-		fail = bmp_type2_parse_header(desc);
+		status = bmp_type2_parse_header(desc);
 		break;
-	case bmp_type3:
-	case bmp_type4:
-	case bmp_type5:
+	case bmp_info_header:
+	case bmp_v2_info_header:
+	case bmp_v3_info_header:
+	case bmp_v4_header:
+	case bmp_v5_header:
 		desc->type = (enum bmp_type)header_size;
-		fail = bmp_type3_parse_header(desc);
+		status = bmp_type3_parse_header(desc);
 		break;
 	default:
 		return lib_unsupported_format;
 	}
 
-	if (fail == lib_ok) {
+	if (status == lib_ok) {
 		fseek(desc->ifp, bitmap_offset, SEEK_SET);
 		if (!validate_file_size(desc)) {
 			return lib_unexpected_eof;
 		}
 	}
-	return fail;
+	return status;
 }
 
 enum lib_fail bmp_open_file(FILE *ifp, struct bmp_desc *desc) {
 	enum lib_fail fail;
 	unsigned char sig[2];
-	if (fscanf(ifp, "%2c", sig) == 1) {
+	if (fread(sig, 1, sizeof(sig), ifp) == sizeof(sig)) {
 		if (!memcmp("BM", sig, sizeof(sig))) {
 			desc->ifp = ifp;
 			desc->bmp.pal = NULL;
+			desc->expand = false;
 			return lib_ok;
-		} else if (sig[0] == 0 && sig[1] == 0) {
+		} else if (sig[0] == 0 && sig[1] == 0) { // DDB
 			fail = lib_unsupported_format;
 		} else {
 			fail = lib_invalid_signature;

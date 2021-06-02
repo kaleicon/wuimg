@@ -29,10 +29,10 @@ struct pnm_desc {
 	size_t w, h;
 	unsigned short maxval;
 	unsigned char ch, bytedepth;
-	float pfm_scale;
+	enum pnm_type type;
 	enum endianness pfm_endian;
-	enum pnm_type type:8;
-	bool xv_no_expand;
+	float pfm_scale;
+	bool expand;
 };
 
 unsigned char * pnm_decode_next(const struct pnm_desc *desc);

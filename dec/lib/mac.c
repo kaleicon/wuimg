@@ -10,7 +10,8 @@
 unsigned char * mac_pattern_unpack(struct mac_desc *desc) {
 	const size_t patterns = 38;
 	fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
-	return strip_map_unpack(desc->ifp, 8, 8 * patterns, 1, expand_invert, 1);
+	return strip_map_unpack(desc->ifp, 8, 8 * patterns, 1,
+		op_expand_invert, 1);
 }
 
 static size_t rle_decode(uint64_t *restrict out, const size_t dims,
@@ -25,7 +26,7 @@ const signed char *restrict rle, const size_t rle_len) {
 			++i;
 
 			strip_unpack(out + p, rle + i, 8, 1, 1,
-				expand_invert, 1);
+				op_expand_invert, 1);
 			const uint64_t prev = out[p];
 			++p;
 
@@ -39,7 +40,7 @@ const signed char *restrict rle, const size_t rle_len) {
 				zumin(left, 1 + (size_t)rle[i]));
 			++i;
 			strip_unpack(out + p, rle + i, cnt * 8, 1, 1,
-				expand_invert, 1);
+				op_expand_invert, 1);
 			p += cnt;
 			i += cnt;
 		}
@@ -104,14 +105,14 @@ struct mac_desc *desc) {
 	*/
 
 	desc->version = buf_endian32(header, big_endian);
-	if (desc->version <= 3) {
-		const long offset = 512 + 128 * desc->has_macbin_header;
-		fseek(desc->ifp, offset, SEEK_SET);
-		if (ftell(desc->ifp) != offset) {
-			return lib_unexpected_eof;
-		}
-	} else {
+	if (desc->version > 3) {
 		return lib_invalid_header;
+	}
+
+	const long offset = 512 + 128 * desc->has_macbin_header;
+	fseek(desc->ifp, offset, SEEK_SET);
+	if (ftell(desc->ifp) != offset) {
+		return lib_unexpected_eof;
 	}
 	return lib_ok;
 }

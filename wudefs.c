@@ -33,7 +33,7 @@ const char * wu_error_message(const enum wu_error err) {
 		return "Unsupported feature in image";
 	case wu_decoding_error:
 		return "Failed to decode image";
-	case wu_exceeded_size_limit:
+	case wu_exceeds_size_limit:
 		return "The image exceeds the max dimension limit";
 	case wu_unknown_error:
 		return "Purposely unspecified error o.O (unfinished code)";
@@ -44,47 +44,43 @@ const char * wu_error_message(const enum wu_error err) {
 }
 
 static size_t print_dimensions(const struct raw_img *img) {
-	printf("  dimensions: %zu x %zu x ", img->w, img->h);
+	printf("  dimensions: %zu x %zu x %hhu", img->w, img->h, img->channels);
 
 	size_t line;
 	if (img->palette) {
-		fputs("1 (paletted) x 8 ", stdout);
+		printf(" (paletted) x %hhu", img->bitdepth);
 		line = img->w;
 	} else {
-		printf("%hhu ", img->channels);
 		if (img->channels != img->true_channels) {
-			printf("(%hhu) ", img->true_channels);
+			printf(" (%hhu)", img->true_channels);
 		}
-		printf("x %hhu ", img->bitdepth);
+		printf(" x %hhu", img->bitdepth);
 
 		switch (img->bitdepth) {
 		case rgb332:
-			fputs("(rgb332) ", stdout);
+			fputs(" (rgb332)", stdout);
 			line = img->w;
 			break;
-		case 4:
-			if (img->channels == 4) {
-				fputs("(bgra4444) ", stdout);
-			}
-			line = img->w * img->channels;
-			break;
-		case bgra5551:
-			fputs("(bgra5551) ", stdout);
+		case argb1555:
+			fputs(" (argb1555)", stdout);
 			line = img->w * 2;
 			break;
-		case 16: case 32:
-			if (img->float_data) {
-				fputs("(float) ", stdout);
-			}
-			// Fallthrough
 		default:
 			line = img->w * img->channels;
 		}
+		if (img->attr) {
+			const char *attr[] = {"float", "inverted", "planar"};
+			for (size_t i = 0; i < ARRAY_LEN(attr); ++i) {
+				if ((img->attr >> i) & 1) {
+					printf(" (%s)", attr[i]);
+				}
+			}
+		}
 	}
 
-	const size_t mem_size = scanline_length(line, img->alignment,
-		img->bitdepth) * img->h;
-	printf("= %zu bytes", mem_size);
+	const size_t mem_size = scanline_length(line, img->bitdepth,
+		img->alignment) * img->h;
+	printf(" = %zu bytes", mem_size);
 	if (img->dec_scale != 1) {
 		printf(" @ %.2fx original", img->dec_scale);
 	}
@@ -92,14 +88,21 @@ static size_t print_dimensions(const struct raw_img *img) {
 	return mem_size;
 }
 
-void print_image_information(const struct image_file *file) {
+void print_image_information(const struct image_file *file, const int verbosity) {
 	const struct raw_img *img = file->sub_img;
 
-//	tree_print(&file->metadata, 80, 24);
+	size_t max_x = 80;
+	size_t max_y = 20;
+	switch (verbosity) {
+	case 1: max_x = 320; max_y = 80; break;
+	case 2: max_x = SIZE_MAX; max_y = SIZE_MAX; break;
+	}
+
+	tree_print(&file->metadata, max_x, max_y);
+
 	if (file->err_msg) {
 		printf("Found warning: %s\n", file->err_msg);
 	}
-
 	printf("Contained sub-images: %zu\n", file->nr);
 	size_t overall_size = 0;
 	for (size_t i = 0; i < file->nr; ++i) {
@@ -131,11 +134,11 @@ void print_image_information(const struct image_file *file) {
 static unsigned char compact_alignment(struct raw_img *img,
 const unsigned char to) {
 	const size_t line = img->w * (img->palette ? 1 : img->channels);
-	const size_t src = scanline_length(line, img->alignment, img->bitdepth);
-	const size_t dst = scanline_length(line, to, img->bitdepth);
+	const size_t src = scanline_length(line, img->bitdepth, img->alignment);
+	const size_t dst = scanline_length(line, img->bitdepth, to);
 	if (src != dst) {
 		for (size_t i = 0; i < img->h; ++i) {
-			memmove(img->data + dst*i, img->data + src*i, line);
+			memmove(img->data + dst*i, img->data + src*i, dst);
 		}
 	}
 	return to;
@@ -146,7 +149,6 @@ void normalize_sub_images(struct image_file *file) {
 	for (size_t i = 0; i < file->nr; ++i) {
 		if (img[i].palette) {
 			img[i].channels = 1;
-			img[i].bitdepth = 8;
 		}
 
 		if (!img[i].true_channels) {
@@ -182,18 +184,40 @@ void normalize_sub_images(struct image_file *file) {
 	}
 }
 
-static void free_sub_range(struct raw_img *img, const size_t start,
+static void raw_img_free(struct raw_img *img) {
+	free(img->data);
+	free(img->palette);
+	free(img->id);
+}
+
+static void raw_img_free_range(struct raw_img *img, const size_t start,
 const size_t end) {
 	for (size_t i = start; i < end; ++i) {
-		free(img[i].data);
-		free(img[i].palette);
-		free(img[i].id);
+		raw_img_free(img + i);
 	}
+}
+
+size_t raw_img_addbuf(struct raw_img *img) {
+	if (!img->alignment) {
+		img->alignment = 1;
+	}
+	const size_t len = scanline_length(img->w * img->channels, img->bitdepth,
+		img->alignment) * img->h;
+	img->data = malloc(len);
+	if (img->data) {
+		return len;
+	}
+	return 0;
+}
+
+void raw_img_clear(struct raw_img *img) {
+	raw_img_free(img);
+	memset(img, 0, sizeof(*img));
 }
 
 struct raw_img * realloc_sub_images(struct image_file *file, const size_t nr) {
 	if (nr < file->nr) {
-		free_sub_range(file->sub_img, nr, file->nr);
+		raw_img_free_range(file->sub_img, nr, file->nr);
 	}
 
 	const size_t img_size = sizeof(*file->sub_img);
@@ -218,7 +242,7 @@ struct raw_img * alloc_sub_images(struct image_file *file, const size_t nr) {
 }
 
 void free_image_file(struct image_file *file) {
-	free_sub_range(file->sub_img, 0, file->nr);
+	raw_img_free_range(file->sub_img, 0, file->nr);
 	free(file->sub_img);
 	free(file->err_msg);
 	tree_unroot(&file->metadata);

@@ -18,7 +18,7 @@ enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	if (zumax(desc.w, desc.h) > wuconf->max_img_size) {
 		bmp_cleanup(&desc);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
@@ -27,26 +27,26 @@ enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
-
+	desc.expand = false;
 	img->palette = (unsigned char *)bmp_take_colormap(&desc);
-	img->w = desc.w;
-	img->h = desc.h;
-	img->channels = desc.bitdepth == 32 ? 4 : 3;
-	img->alignment = (unsigned char)bmp_get_row_alignment(&desc);
-	img->layout = bgra;
-	img->mirror = (desc.order == bmp_bottom_up);
-
 	img->data = bmp_decode(&desc);
 	bmp_cleanup(&desc);
 	if (!img->data) {
 		return wu_decoding_error;
 	}
 
+	img->w = desc.w;
+	img->h = desc.h;
+	img->channels = (unsigned char)(3 + bmp_has_alpha(&desc));
+	img->alignment = (unsigned char)bmp_get_row_alignment(&desc);
+	img->layout = bgra;
+	img->mirror = (desc.order == bmp_bottom_up);
 	if (img->palette) {
 		img->bitdepth = desc.bitdepth;
+	} else if (desc.bitdepth == 16 && desc.compression == bmp_no_compression) {
+		img->bitdepth = argb1555;
 	} else {
 		img->bitdepth = 8;
 	}
-
 	return wu_ok;
 }

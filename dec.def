@@ -1,100 +1,109 @@
 /* Enumerate known formats */
 /* WUDEC: base_name, callback_fn */
 
-#ifdef DEC_AVS
+#ifdef WU_ENABLE_AVS
 WUDEC(avs, NULL)
 #endif
 
-#ifdef DEC_BMP
+#ifdef WU_ENABLE_BMP
 WUDEC(bmp, NULL)
 #endif
 
-#ifdef DEC_MAC
+#ifdef WU_ENABLE_MAC
 WUDEC(mac, NULL)
 #endif
 
-#ifdef DEC_PCX
+#ifdef WU_ENABLE_PCX
 WUDEC(pcx, NULL)
 WUDEC(dcx, NULL)
 #endif
 
-#ifdef DEC_PGX
+#ifdef WU_ENABLE_PGX
 WUDEC(pgx, NULL)
 #endif
 
-#ifdef DEC_PI
+#ifdef WU_ENABLE_PI
 WUDEC(pi, NULL)
 #endif
 
-#ifdef DEC_PNM
+#ifdef WU_ENABLE_PICTOR
+WUDEC(pictor, NULL)
+#endif
+
+#ifdef WU_ENABLE_PNM
 WUDEC(pnm, NULL)
 #endif
 
-#ifdef DEC_SGI
+#ifdef WU_ENABLE_SGI
 WUDEC(sgi, NULL)
 #endif
 
-#ifdef DEC_SIXEL
+#ifdef WU_ENABLE_SIXEL
 WUDEC(sixel, NULL)
 #endif
 
-#ifdef DEC_SUN
+#ifdef WU_ENABLE_SUN
 WUDEC(sun, NULL)
 #endif
 
-#ifdef DEC_TGA
+#ifdef WU_ENABLE_TGA
 WUDEC(tga, NULL)
 #endif
 
-#ifdef DEC_WBMP
+#ifdef WU_ENABLE_TIM
+WUDEC(tim, NULL)
+#endif
+
+#ifdef WU_ENABLE_WBMP
 WUDEC(wbmp, NULL)
 #endif
 
-#ifdef DEC_XBM
+#ifdef WU_ENABLE_XBM
 WUDEC(xbm, NULL)
 #endif
 
-#ifdef DEC_FLIF
+#ifdef WU_ENABLE_FLIF
 WUDEC(flif, NULL)
 #endif
 
-#ifdef DEC_GIF
+#ifdef WU_ENABLE_GIF
 WUDEC(gif, gif_callback)
 #endif
 
-#ifdef DEC_HEIF
+#ifdef WU_ENABLE_HEIF
+WUDEC(avif, NULL)
 WUDEC(heif, NULL)
 #endif
 
-#ifdef DEC_JBIG
+#ifdef WU_ENABLE_JBIG
 WUDEC(jbig, NULL)
 #endif
 
-#ifdef DEC_JPEG
+#ifdef WU_ENABLE_JPEG
 WUDEC(jpeg, NULL)
 #endif
 
-#ifdef DEC_JPEG2000
+#ifdef WU_ENABLE_JPEG2000
 WUDEC(jp2, jp2_callback)
 WUDEC(j2k, j2k_callback)
 #endif
 
-#ifdef DEC_PNG
+#ifdef WU_ENABLE_PNG
 WUDEC(png, NULL)
 #endif
 
-#ifdef DEC_RAW
+#ifdef WU_ENABLE_RAW
 WUDEC(raw, NULL)
 #endif
 
-#ifdef DEC_SVG
+#ifdef WU_ENABLE_SVG
 WUDEC(svg, svg_callback)
 #endif
 
-#ifdef DEC_TIFF
+#ifdef WU_ENABLE_TIFF
 WUDEC(tiff, NULL)
 #endif
 
-#ifdef DEC_WEBP
+#ifdef WU_ENABLE_WEBP
 WUDEC(webp, webp_callback)
 #endif

@@ -21,7 +21,7 @@ enum wu_error sixel_dec(struct image_file *infile, const struct wu_conf *conf) {
 
 	if (zumax(desc.w, desc.h) > conf->max_img_size) {
 		sixel_cleanup(&desc);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);

@@ -77,36 +77,27 @@ const unsigned char *restrict src, const size_t len, const size_t ch) {
 void composite_frame_alpha_blend(struct raw_img *img,
 const unsigned char *restrict src, const struct anim_frame *frame) {
 	size_t dst_pos = (frame->y * img->w + frame->x) * img->channels;
-
-//	if (frame->w == img->w) {
-//		blend_row(img->data + dst_pos, src, frame->w * frame->h,
-//			img->channels);
-//	} else {
-		size_t src_pos = 0;
-		for (size_t i = 0; i < frame->h; ++i) {
-			blend_row(img->data + dst_pos, src + src_pos,
-				frame->w, img->channels);
-			dst_pos += img->w * img->channels;
-			src_pos += frame->w * 4;
-		}
-//	}
+	size_t src_pos = 0;
+	for (size_t i = 0; i < frame->h; ++i) {
+		blend_row(img->data + dst_pos, src + src_pos, frame->w,
+			img->channels);
+		dst_pos += img->w * img->channels;
+		src_pos += frame->w * 4;
+	}
 }
 
 void composite_frame_overwrite(struct raw_img *img,
 const unsigned char *restrict src, const struct anim_frame *frame) {
-	const size_t src_width = frame->w * img->channels;
-	size_t dst_pos = (frame->y * img->w + frame->x) * img->channels;
+	const size_t ch = img->palette ? 1 : img->channels;
 
-//	if (frame->w == img->w) {
-//		memcpy(img->data + dst_pos, src, src_width * frame->h);
-//	} else {
-		size_t src_pos = 0;
-		for (size_t i = 0; i < frame->h; ++i) {
-			memcpy(img->data + dst_pos, src + src_pos, src_width);
-			dst_pos += img->w * img->channels;
-			src_pos += src_width;
-		}
-//	}
+	const size_t src_width = frame->w * ch;
+	size_t dst_pos = (frame->y * img->w + frame->x) * ch;
+	size_t src_pos = 0;
+	for (size_t i = 0; i < frame->h; ++i) {
+		memcpy(img->data + dst_pos, src + src_pos, src_width);
+		dst_pos += img->w * ch;
+		src_pos += src_width;
+	}
 }
 
 /* I wrote this on a whim and turns out it performs better on some cases,
@@ -219,7 +210,7 @@ const size_t items, const size_t ch) {
 	unsigned char *restrict dst = data;
 	const unsigned char *restrict src = color;
 
-	if (memchk(src + 1, src[0], ch - 1)) {
+	if (!memchk(src + 1, src[0], ch - 1)) {
 		memset(dst, src[0], items * ch);
 	} else {
 		for (size_t i = 0; i < items; ++i) {
@@ -239,52 +230,32 @@ const size_t items, const size_t ch) {
 	return dst + (items * ch);
 }
 
-/*
-void composite_color(struct raw_img *img, const unsigned char *restrict color,
-const struct anim_frame *frame) {
+void composite_clear(struct raw_img *img, const struct anim_frame *frame,
+const int c) {
+	const size_t ch = img->palette ? 1 : img->channels;
 	unsigned char *pos = img->data
-		+ ((frame->y * img->w + frame->x) * img->channels);
+		+ ((frame->y * img->w + frame->x) * ch);
 
-	if (frame->w == img->w) {
-		color_set(pos, color, img->w * img->h, img->channels);
-	} else {
-		for (size_t i = 0; i < frame->h; ++i) {
-			color_set(pos, color, img->w, img->channels);
-			pos += img->w * img->channels;
-		}
+	for (size_t i = 0; i < frame->h; ++i) {
+		memset(pos, c, frame->w * ch);
+		pos += img->w * ch;
 	}
-}*/
-
-void composite_clear(struct raw_img *img, const struct anim_frame *frame) {
-	unsigned char *pos = img->data
-		+ ((frame->y * img->w + frame->x) * img->channels);
-
-//	if (frame->w == img->w) {
-//		memset(pos, 0, frame->w * frame->h * img->channels);
-//	} else {
-		for (size_t i = 0; i < frame->h; ++i) {
-			memset(pos, 0, frame->w * img->channels);
-			pos += img->w * img->channels;
-		}
-//	}
 }
 
 void copy_unaffected(struct raw_img *img, const unsigned char *restrict prev,
 const struct anim_frame *frame) {
-	size_t offset = (frame->y * img->w + frame->x) * img->channels;
-	const size_t copy_stride = (img->w - frame->w) * img->channels;
+	const size_t ch = img->palette ? 1 : img->channels;
+
+	size_t offset = (frame->y * img->w + frame->x) * ch;
+	const size_t copy_stride = (img->w - frame->w) * ch;
 	const size_t tail = (img->w * img->h - (frame->h - 1) * img->w
-		- frame->w) * img->channels - offset;
+		- frame->w) * ch - offset;
 
 	memcpy(img->data, prev, offset);
-//	if (copy_stride == 0) {
-//		offset += frame->w * frame->h * img->channels;
-//	} else {
-		offset += frame->w * img->channels;
-		for (size_t i = 0; i < frame->h - 1; ++i) {
-			memcpy(img->data + offset, prev + offset, copy_stride);
-			offset += img->w * img->channels;
-		}
-//	}
+	offset += frame->w * ch;
+	for (size_t i = 0; i < frame->h - 1; ++i) {
+		memcpy(img->data + offset, prev + offset, copy_stride);
+		offset += img->w * ch;
+	}
 	memcpy(img->data + offset, prev + offset, tail);
 }

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 #include <limits.h>
@@ -80,9 +81,8 @@ enum sixel_colorspace pu) {
 		comp[0] *= mult;
 		comp[1] = (comp[1] * scale) / mult;
 		comp[2] = (comp[2] * scale) / mult;
-		for (size_t i = 0; i < 3; ++i) {
-			const int_fast16_t si = (int_fast16_t)i;
-			const int_fast16_t n = ((12 - si*4) % 12) * mult;
+		for (int_fast16_t i = 0; i < 3; ++i) {
+			const int_fast16_t n = ((12 - i*4) % 12) * mult;
 			rgba[i] = hls_to_rgb(n, comp, mult);
 		}
 		break;
@@ -236,11 +236,11 @@ uint32_t * sixel_decode(struct sixel_desc *desc) {
 		unsigned char c = desc->data[i];
 		++i;
 		switch (c) {
-		case string_terminator:
+		case ansi_escape:
 			return out;
 		case graphics_new_line:
 			y += 6;
-			// Fallthrough
+			// fallthrough
 		case graphics_carriage_return:
 			x = 0;
 			break;
@@ -271,29 +271,15 @@ uint32_t * sixel_decode(struct sixel_desc *desc) {
 	return out;
 }
 
-static void * load_text(FILE *ifp, size_t *size) {
-	const long start = ftell(ifp);
-	fseek(ifp, 0, SEEK_END);
-	const long end = ftell(ifp);
-
-	*size = (size_t)(end + 1 - start);
-	void *buf = malloc(*size);
-	if (buf) {
-		fseek(ifp, start, SEEK_SET);
-		fread(buf, 1, *size, ifp);
-	}
-	return buf;
-}
-
 static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 	/* We must do a pass over the whole stream to know the image
 	 * dimensions. No other way around it. */
-	const size_t loc = (size_t)ftell(desc->ifp);
-	size_t len;
-	desc->data = load_text(desc->ifp, &len);
+	const size_t len = (size_t)file_get_remaining(desc->ifp);
+	desc->data = malloc(len + 1);
 	if (!desc->data) {
 		return lib_alloc_error;
 	}
+	fread(desc->data, 1, len, desc->ifp);
 
 	size_t row_width = 0;
 	size_t height = 6;
@@ -307,19 +293,11 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 		size_t read;
 		switch (c) {
 		case ansi_escape:
-			if (i >= len || desc->data[i] != '\\') {
-				printf("SIXEL Error: Unexpected escape "
-					"sequence at %zu\n", i + loc);
-				return lib_invalid_data;
-			}
-			--i;
-			// Fallthrough
-		case string_terminator:
 			found_end = true;
 			break;
 		case graphics_new_line:
 			height += 6;
-			// Fallthrough
+			// fallthrough
 		case graphics_carriage_return:
 			if (row_width > desc->w) {
 				desc->w = row_width;
@@ -330,15 +308,15 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 			;int_fast16_t repeat = 0;
 			read = read_3digits(desc->data + i, len - i, &repeat);
 			if (!read) {
-				printf("SIXEL Error: Repeat introducer at %zu "
-					"lacks digits.\n", i + loc);
+				puts("SIXEL Error: Repeat introducer lacks "
+					"digits.");
 				return lib_invalid_data;
 			}
 
 			i += read;
 			if (i >= len || !issixel(desc->data[i])) {
-				printf("SIXEL Error: Non-sixel repeat at %zu\n",
-					i + loc);
+				puts("SIXEL Error: Found non-sixel graphics "
+					"repeat.");
 				return lib_invalid_data;
 			}
 			++i;
@@ -347,8 +325,8 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 		case color_introducer:
 			read = read_color(desc->data + i, len - i, NULL);
 			if (!read) {
-				printf("SIXEL Error: Failed to parse color "
-					"introducer at pos %zu\n", i + loc);
+				puts("SIXEL Error: Failed to parse color "
+					"introducer.");
 				return lib_invalid_data;
 			}
 			i += read;
@@ -357,9 +335,10 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 			if (issixel(c)) {
 				++row_width;
 				continue;
+			} else if (c >= 0x80) {
+				found_end = true;
 			} else if (!isspace(c)) {
-				printf("SIXEL Error: Unexpected %#x character "
-					"at %zu\n", c, i + loc);
+				printf("SIXEL Error: Found invalid character.");
 				return lib_invalid_data;
 			}
 		}
@@ -377,7 +356,7 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 	if (found_end) {
 		--i;
 	}
-	desc->data[i] = string_terminator;
+	desc->data[i] = ansi_escape;
 	desc->data_len = i;
 	return lib_ok;
 }
@@ -500,24 +479,43 @@ enum lib_fail sixel_calc_parameters(struct sixel_desc *desc) {
 	return calc_dimensions(desc);
 }
 
+static int skip_csi(FILE *ifp) {
+	const int max_chars = 12;
+	bool escape = true;
+	int c;
+	for (int i = 0; i < max_chars; ++i) {
+		c = getc(ifp);
+		if (escape) {
+			if (c == 'P') {
+				return c;
+			}
+			escape = false;
+		} else if (c == ansi_escape) {
+			escape = true;
+		}
+	}
+	return c;
+}
+
 enum lib_fail sixel_open_file(FILE *ifp, struct sixel_desc *desc) {
 	memset(desc, 0, sizeof(*desc));
 
-	unsigned char buf[2];
-	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
-		bool valid = false;
-		if (buf[0] == ansi_escape && buf[1] == 'P') {
+	int c = getc(ifp);
+	bool valid = false;
+	if (c == ansi_escape) {
+		c = skip_csi(ifp);
+		if (c == 'P') {
 			valid = true;
-		} else if (buf[0] == device_control_string) {
-			valid = true;
-			fseek(ifp, 1, SEEK_SET);
 		}
-
-		if (valid) {
-			desc->ifp = ifp;
-			return lib_ok;
-		}
-		return lib_invalid_signature;
+	} else if (c == device_control_string) {
+		valid = true;
 	}
-	return lib_unexpected_eof;
+
+	if (valid) {
+		desc->ifp = ifp;
+		return lib_ok;
+	} else if (c == EOF) {
+		return lib_unexpected_eof;
+	}
+	return lib_invalid_signature;
 }

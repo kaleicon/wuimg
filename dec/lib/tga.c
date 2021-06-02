@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -13,39 +14,27 @@ void tga_cleanup(struct tga_desc *desc) {
 	free(desc->map.entry);
 }
 
-static unsigned char * expand_555(unsigned char *restrict output,
-unsigned char *restrict source, const bool alpha) {
-	/* TGA packs 16bit data as
-		'ARRRRRGG GGGBBBBB'
-	 * but as the format is little-endian, the actual order in the file is
-		'GGGBBBBB ARRRRRGG'
-	 * Also, whether 15bit or 16bit, color is always packed as 555. */
-	const int scale = (0xff << 16) / 31 + 1;
-	const int b = source[0] & 0x1f;
-	const int g = (source[1] << 3 | source[0] >> 5) & 0x1f;
-	const int r = (source[1] >> 2) & 0x1f;
-	output[0] = (unsigned char)((b * scale) >> 16);
-	output[1] = (unsigned char)((g * scale) >> 16);
-	output[2] = (unsigned char)((r * scale) >> 16);
-	if (alpha) {
-		output[3] = (source[1] & 0x80) ? 0x00 : 0xff;
-		return output + 4;
-	}
-	return output + 3;
-}
-
 static unsigned char * expand_16bit(const struct tga_desc *desc,
-unsigned char *restrict data) {
+uint16_t *restrict data) {
+	const size_t ch = desc->ch;
 	const size_t dims = desc->w * desc->h;
-	unsigned char *output = malloc(dims * desc->ch);
+	unsigned char *output = malloc(dims * ch);
 	if (!output) {
 		free(data);
 		return NULL;
 	}
 
-	unsigned char *pos = output;
-	for (size_t i = 0; i < dims; ++i) {
-		pos = expand_555(pos, data + i*2, desc->ch == 4);
+	if (ch == 3) {
+		for (size_t i = 0; i < dims; ++i) {
+			const uint16_t word = endian16(data[i], little_endian);
+			pixel_expand555(output + i*ch, word);
+		}
+	} else if (ch == 4) {
+		for (size_t i = 0; i < dims; ++i) {
+			const uint16_t word = endian16(data[i], little_endian);
+			pixel_expand555(output + i*ch, word);
+			output[i*ch + 3] = word >> 15 ? 0x00 : 0xff;
+		}
 	}
 	free(data);
 	return output;
@@ -74,7 +63,7 @@ unsigned char *restrict data) {
 		break;
 	case truecolor_data:
 		if (desc->bytedepth == 2 && desc->expand_16bit) {
-			return expand_16bit(desc, data);
+			return expand_16bit(desc, (uint16_t *)data);
 		}
 		break;
 	case monochrome_data:
@@ -222,8 +211,8 @@ unsigned char * tga_decode(const struct tga_desc *desc) {
 	}
 }
 
-struct tga_color_entry * tga_take_palette(struct tga_desc *desc) {
-	struct tga_color_entry *e = desc->map.entry;
+struct colormap * tga_take_palette(struct tga_desc *desc) {
+	struct colormap *e = desc->map.entry;
 	desc->map.entry = NULL;
 	return e;
 }
@@ -256,7 +245,7 @@ static bool read_extension_area(struct tga_desc *desc) {
 	if (read != len) {
 		return false;
 	}
-	if (!memchk(buf, 0, read * 2)) { // Check month and day
+	if (memchk(buf, 0, read * 2)) { // Check month and day
 		meta->has_stamp = true;
 		meta->stamp = (struct utc_time) {
 			.mon = buf_endian16(buf, little_endian),
@@ -359,33 +348,63 @@ static enum lib_fail validate_filesize(struct tga_desc *desc) {
 }
 
 static enum lib_fail load_colormap(FILE *ifp, struct tga_colormap *map) {
-	map->entry = malloc(sizeof(*map->entry) * 256);
-	if (!map->entry) {
-		return lib_alloc_error;
-	}
-
 	map->bytedepth = (unsigned char)((map->bitdepth + 7) / 8);
 	if (map->offset) {
 		fseek(ifp, map->offset * map->bytedepth, SEEK_CUR);
 	}
 
-	size_t elems;
 	const size_t colormap_len = map->len - map->offset;
+	const size_t elems = zumin(colormap_len, 256);
+	unsigned char *restrict buf = malloc(elems * map->bytedepth);
+	if (!buf) {
+		return lib_alloc_error;
+	}
+
+	fread(map->entry, map->bytedepth, elems, ifp);
 	if (colormap_len > 256) {
-		elems = 256;
-		fread(map->entry, map->bytedepth, elems, ifp);
 		const long rem = (long)(colormap_len - elems) * map->bytedepth;
 		fseek(ifp, rem, SEEK_CUR);
-	} else {
-		elems = colormap_len;
-		fread(map->entry, map->bytedepth, elems, ifp);
 	}
 
 	if (map->bitdepth == 32) {
+		map->entry = (struct colormap *)buf;
 		return lib_ok;
 	}
 
-	unsigned char *pixel = (unsigned char *)map->entry;
+	map->entry = malloc(sizeof(*map->entry) * 256);
+	if (!map->entry) {
+		free(buf);
+		return lib_alloc_error;
+	}
+
+	switch (map->bitdepth) {
+	case 15:
+		for (size_t i = 0; i < elems; ++i) {
+			const uint16_t word = endian16( ((uint16_t *)buf)[i],
+				little_endian);
+			pixel_expand555((unsigned char *)(map->entry + i), word);
+			map->entry[i].a = 0xff;
+		}
+		break;
+	case 16:
+		for (size_t i = 0; i < elems; ++i) {
+			const uint16_t word = endian16( ((uint16_t *)buf)[i],
+				little_endian);
+			pixel_expand555((unsigned char *)(map->entry + i), word);
+			map->entry[i].a = word >> 15 ? 0x00 : 0xff;
+		}
+		break;
+	case 24:
+		for (size_t i = 0; i < elems; ++i) {
+			map->entry[i].b = buf[i*3];
+			map->entry[i].g = buf[i*3 + 1];
+			map->entry[i].r = buf[i*3 + 2];
+			map->entry[i].a = 0xff;
+		}
+		break;
+	}
+
+/*	unsigned char *pixel = (unsigned char *)map->entry;
 	const bool has_alpha = map->bitdepth == 16;
 	size_t i = elems;
 	do {
@@ -403,7 +422,7 @@ static enum lib_fail load_colormap(FILE *ifp, struct tga_colormap *map) {
 				map->entry[i].a = 0xff;
 			}
 		}
-	} while (i != 0);
+	} while (i != 0);*/
 	return lib_ok;
 }
 

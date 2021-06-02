@@ -9,7 +9,7 @@
 
 #include "pcx.h"
 
-// Disclaimer: I hate this format and I hate this code.
+// Disclaimer: I hate this format.
 
 static const unsigned char default_ega[16*3] = {
 	0x00, 0x00, 0x00,
@@ -56,6 +56,7 @@ unsigned char *restrict data, const unsigned char *restrict palette) {
 
 static unsigned char * unpack_interleave_data(const struct pcx_desc *desc,
 unsigned char *restrict data, const unsigned char *restrict palette) {
+	/* Raster is stored with each scanline divided into planes. */
 	unsigned char *out = malloc(desc->w * desc->planes * desc->h);
 	if (!out) {
 		free(data);
@@ -84,21 +85,20 @@ unsigned char *restrict data, const unsigned char *restrict palette) {
 		break;
 	case 2:
 	case 4:
-		; const size_t diff = scanline
+		/* 2- and 4-bit files with more than one plane are invalid, so
+		 * no worries here, though with this format one never knows. */
+		; const size_t alignment = scanline
 			- scanline_length(desc->w, desc->bitdepth, 1) + 1;
-		strip_unpack(out, data, desc->w, desc->h, (unsigned char)diff,
-			unpack, desc->bitdepth);
+		strip_unpack(out, data, desc->w, desc->h, alignment,
+			op_unpack, desc->bitdepth);
 		break;
 	case 8:
-		; const size_t outrow = desc->w * planes;
+		;const size_t outrow = desc->w * planes;
 		for (size_t y = 0; y < desc->h; ++y) {
 			const unsigned char *restrict src = data + y*inrow;
 			unsigned char *restrict dst = out + y*outrow;
-			for (size_t x = 0; x < desc->w; ++x) {
-				for (size_t ch = 0; ch < planes; ++ch) {
-					dst[x*planes + ch] = src[x + ch*scanline];
-				}
-			}
+			strip_interleave(dst, src, desc->w, planes,
+				desc->bitdepth);
 		}
 		break;
 	default:
@@ -138,8 +138,7 @@ const unsigned char *restrict pal_src) {
 			{.r = 0x00, .g = 0x00, .b = 0x00, .a = 0xff};*/
 		pal[0] = (struct colormap){0x00, 0x00, 0x00, 0xff};
 		pal[1] = (struct colormap){0xff, 0xff, 0xff, 0xff};
-//	} else if (desc->cga_mode && entries == 4) {
-	} else if (desc->bitdepth == 2 && desc->planes == 1) {
+	} else if (desc->bitdepth == 2 && desc->planes == 1) { // CGA
 		int palnum, intensity;
 		bool colorburst;
 		if (desc->palette_type) {
@@ -175,10 +174,6 @@ const unsigned char *restrict pal_src) {
 		}
 	}
 
-	// Just to be safe with BW
-//	if (entries == 2 && !memcmp(pal, pal + 1, 3)) {
-//	}
-
 	return (unsigned char *)pal;
 }
 
@@ -201,7 +196,7 @@ const unsigned char *restrict buflimit) {
 			*out = packet;
 			++out;
 		}
-	} while (out != outlimit && buf != buflimit);
+	} while (out < outlimit && buf < buflimit);
 	return buflimit - buf;
 }
 
@@ -324,7 +319,7 @@ enum lib_fail pcx_read_header(struct pcx_desc *desc) {
 		60      BYTE    Reserved1;
 		61      BYTE    NumBitPlanes;
 		62      WORD    BytesPerLine;
-		64      WORD    PaletteType;
+		64      WORD    PaletteType; // ???, either 1 or 2
 		66      WORD    HorzScreenSize; // [*]
 		68      WORD    VertScreenSize; // [*]
 		70      BYTE    Reserved2[54];
@@ -333,8 +328,8 @@ enum lib_fail pcx_read_header(struct pcx_desc *desc) {
 	[*] Might be part of Reserved2 depending on the version.
 	*/
 
-	unsigned char header1[12];
-	unsigned char header2[6];
+	unsigned char header1[12]; // Header from offset 0
+	unsigned char header2[6]; // Header from offset 60
 	size_t read = fread(header1, 1, sizeof(header1), desc->ifp);
 	read += fread(desc->file_pal, 1, sizeof(desc->file_pal), desc->ifp);
 	read += fread(header2, 1, sizeof(header2), desc->ifp);
@@ -365,7 +360,6 @@ enum lib_fail pcx_open_file(FILE *ifp, struct pcx_desc *desc) {
 		4
 	*/
 
-	desc->cga_mode = false;
 	desc->expand_pal = true;
 	unsigned char sig[4];
 	const size_t read = fread(sig, 1, sizeof(sig), ifp);

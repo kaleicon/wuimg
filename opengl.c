@@ -3,13 +3,14 @@
 #include <limits.h>
 #include <string.h>
 
-#include <epoxy/egl.h>
+#include <epoxy/gl.h>
 
 #include "wudefs.h"
 #include "common.h"
 #include "opengl.h"
+#include "dec/lib/common/unpack.h"
 
-#define LOG_SIZE 512
+static const GLsizei LOG_SIZE = 512;
 
 struct gl_upload_params {
 	GLenum type, fmt;
@@ -17,7 +18,7 @@ struct gl_upload_params {
 	bool convert;
 };
 
-const char * gl_error_str(const GLenum error) {
+static const char * gl_strerror(const GLenum error) {
 	switch (error) {
 	case GL_NO_ERROR:
 		return "No error";
@@ -40,7 +41,7 @@ const char * gl_error_str(const GLenum error) {
 	}
 }
 
-void delete_gl_context(void) {
+void gl_context_delete(struct gl_context *context) {
 	GLint texs[2];
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, texs);
 	glActiveTexture(GL_TEXTURE1);
@@ -52,9 +53,22 @@ void delete_gl_context(void) {
 	glDeleteBuffers(1, (GLuint *)obj);
 	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, obj);
 	glDeleteVertexArrays(1, (GLuint *)obj);
+
+	glDeleteQueries(1, &context->timer);
 }
 
-void set_gl_alpha(struct gl_context *context, const enum alpha_state alpha) {
+GLuint64 gl_clock_end(struct gl_context *context) {
+	glEndQuery(GL_TIME_ELAPSED);
+	GLuint64 ns = 0;
+	glGetQueryObjectui64v(context->timer, GL_QUERY_RESULT, &ns);
+	return ns;
+}
+
+void gl_clock_start(struct gl_context *context) {
+	glBeginQuery(GL_TIME_ELAPSED, context->timer);
+}
+
+void gl_alpha_state(struct gl_context *context, const enum alpha_state alpha) {
 	glUniform1i(context->uni.checkers, alpha & 1);
 	if (alpha & 2) {
 		glDisable(GL_BLEND);
@@ -68,11 +82,13 @@ const unsigned char rotation) {
 	// Scale the image to its natural size, taking rotation into account.
 	const size_t r1 = rotation & 1;
 	const float ratio_w = (float)context->tex.w / (float)context->fb_wh[r1];
-	const float ratio_h = (float)context->tex.h / (float)context->fb_wh[r1 ^ 1];
+	const float ratio_h = (float)context->tex.h / (float)context->fb_wh[r1^1];
 
-	const size_t r2 = 5 - r1;
-	mat[r1] *= ratio_w;
-	mat[r2] *= ratio_h;
+	if (mat) {
+		const size_t r2 = 5 - r1;
+		mat[r1] *= ratio_w;
+		mat[r2] *= ratio_h;
+	}
 	return 1 / fmaxf(ratio_w, ratio_h);
 }
 
@@ -90,7 +106,8 @@ static void set_mirrot(GLfloat *mat, const int rotate, const bool mirror) {
 	mat[5] = cosy * mirror_mult;
 }
 
-void update_gl_matrix(const struct gl_context *context, struct wu_state *state) {
+void gl_matrix_update(const struct gl_context *context,
+struct wu_state *state) {
 	GLfloat mat[16] = {
 		1, 0, 0, 0,
 		0, 1, 0, 0,
@@ -109,15 +126,12 @@ void update_gl_matrix(const struct gl_context *context, struct wu_state *state) 
 	glUniformMatrix4fv(context->uni.trans, 1, GL_FALSE, mat);
 }
 
-float calc_gl_fit_zoom(const struct gl_context *context,
+float gl_fit_zoom(const struct gl_context *context,
 const unsigned char rotation) {
-	const size_t r1 = rotation & 1;
-	const float ratio_w = (float)context->fb_wh[r1] / (float)context->tex.w;
-	const float ratio_h = (float)context->fb_wh[r1 ^ 1] / (float)context->tex.h;
-	return fminf(ratio_w, ratio_h);
+	return fix_aspect_ratio(NULL, context, rotation);
 }
 
-void even_gl_view(struct gl_context *context) {
+void gl_even_view(struct gl_context *context) {
 	/* Slightly resize the viewport so that it always has the same amount
 	 * of pixels on opposite sides. */
 	const unsigned evener = UINT_MAX - 1;
@@ -128,19 +142,17 @@ void even_gl_view(struct gl_context *context) {
 
 static void swizzle_set(const GLenum tex_type, const enum pix_layout layout,
 const unsigned char ch) {
-	const GLint swizzle_lut[] = {GL_RED, GL_GREEN, GL_BLUE,
+	const GLint lut[] = {GL_RED, GL_GREEN, GL_BLUE,
 		ch % 2 == 0 ? GL_ALPHA : GL_ONE};
 	GLint swizzle[4];
-	for (size_t i = 0; i < ARRAY_LEN(swizzle); ++i) {
-		swizzle[i] = swizzle_lut[(layout >> (6 - i*2)) & 3];
+	for (size_t i = 0; i < ARRAY_LEN(lut); ++i) {
+		swizzle[i] = lut[(layout >> (6 - i*2)) & 3];
 	}
 	glTexParameteriv(tex_type, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
 }
 
 static bool set_upload_parameters(const struct raw_img *img,
 struct gl_upload_params *params, struct gl_context *context) {
-	glPixelStorei(GL_UNPACK_ALIGNMENT, img->alignment);
-
 	enum pix_layout layout = img->layout;
 	if (img->palette) {
 		if (img->bitdepth > 8) {
@@ -148,9 +160,8 @@ struct gl_upload_params *params, struct gl_context *context) {
 		}
 
 		glActiveTexture(GL_TEXTURE1);
-		swizzle_set(GL_TEXTURE_2D, rgba, 4);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 1, GL_RGBA,
-			GL_UNSIGNED_BYTE, img->palette);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1 << img->bitdepth, 1,
+			GL_RGBA, GL_UNSIGNED_BYTE, img->palette);
 		glActiveTexture(GL_TEXTURE0);
 
 		if (!context->tex.paletted) {
@@ -165,7 +176,7 @@ struct gl_upload_params *params, struct gl_context *context) {
 			.type = GL_UNSIGNED_BYTE,
 			.fmt = GL_RED,
 			.in_fmt = GL_R8,
-			.convert = false,
+			.convert = img->bitdepth < 8,
 		};
 		return true;
 	} else {
@@ -189,13 +200,13 @@ struct gl_upload_params *params, struct gl_context *context) {
 			.convert = false,
 		};
 		break;
-	case bgra5551:
+	case argb1555:
 		if (img->channels < 3) {
 			return false;
 		}
 		*params = (struct gl_upload_params) {
 			.type = GL_UNSIGNED_SHORT_1_5_5_5_REV,
-			.fmt = GL_BGRA,
+			.fmt = GL_BGRA, // For speed
 			.in_fmt = GL_RGB5_A1,
 			.convert = false,
 		};
@@ -215,29 +226,30 @@ struct gl_upload_params *params, struct gl_context *context) {
 			layout = (layout << 2) | layout >> 6;
 			break;
 		}
-		// Fallthrough
-	case 1: case 2: case 8: case 16: case 32:
-		;
+		// fallthrough
+	case 1: case 2: case 8: case 16: case 24: case 32: case 64:
+		;const bool is_float = img->attr & pix_float;
 		const GLenum type_lut[] = {
 			GL_UNSIGNED_BYTE,
-			img->float_data ? GL_HALF_FLOAT : GL_UNSIGNED_SHORT,
-			0,
-			img->float_data ? GL_FLOAT : GL_UNSIGNED_INT
+			is_float ? GL_HALF_FLOAT : GL_UNSIGNED_SHORT,
+			GL_UNSIGNED_INT,
+			is_float ? GL_FLOAT : GL_UNSIGNED_INT
 		};
 		const GLenum fmt_lut[] = {GL_RED, GL_RG, GL_RGB, GL_RGBA};
-		const GLint in_fmt_lut[][4] = {
-			{GL_R8,    GL_R16,    0, GL_R32F},
-			{GL_RG8,   GL_RG16,   0, GL_RG32F},
-			{GL_RGB8,  GL_RGB16,  0, GL_RGB32F},
-			{GL_RGBA8, GL_RGBA16, 0, GL_RGBA32F}
-		};
+		/*const GLint in_fmt_lut[][4] = {
+			{GL_R8,    GL_R16,    GL_R32F,    GL_R32F},
+			{GL_RG8,   GL_RG16,   GL_RG32F,   GL_RG32F},
+			{GL_RGB8,  GL_RGB16,  GL_RGB32F,  GL_RGB32F},
+			{GL_RGBA8, GL_RGBA16, GL_RGBA32F, GL_RGBA32F}
+		};*/
 
-		const int bd = (img->bitdepth + 7) / 8 - 1;
+		const int bd = imin((img->bitdepth + 7) / 8 - 1, 3);
 		*params = (struct gl_upload_params) {
 			.type = type_lut[bd],
 			.fmt = fmt_lut[img->channels - 1],
-			.in_fmt = in_fmt_lut[img->true_channels - 1][bd],
-			.convert = img->bitdepth < 8,
+			.in_fmt = (GLint)fmt_lut[img->true_channels - 1],
+			.convert = img->bitdepth < 8 || img->bitdepth == 24
+				|| img->bitdepth == 64 || img->attr & pix_inverted,
 		};
 		break;
 	default:
@@ -247,23 +259,35 @@ struct gl_upload_params *params, struct gl_context *context) {
 	return true;
 }
 
-#include "dec/lib/common/unpack.h"
-
-bool tex_upload(const struct raw_img *img, struct gl_context *context,
+static bool tex_upload(const struct raw_img *img, struct gl_context *context,
 const struct gl_upload_params *params, const bool reuse) {
 	const void *data;
 	if (params->convert) {
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+		const GLsizeiptr bytedepth = img->bitdepth == 24
+			? 4 : ((img->bitdepth + 7) / 8);
 		const GLsizeiptr size = (GLsizeiptr)(img->w * img->h
-			* img->channels);
+			* img->channels) * bytedepth;
+
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, context->pixel_unpack_buf);
 		glBufferData(GL_PIXEL_UNPACK_BUFFER, size, NULL, GL_STATIC_DRAW);
+
+		enum unpack_op op = op_expand;
+		if (img->palette) {
+			op = op_unpack;
+		} else if (img->bitdepth > 32) {
+			op = img->attr & pix_float ? op_pack_float : op_pack;
+		} else if (img->attr == pix_inverted) {
+			op = op_expand_invert;
+		}
 		void *map = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
 		strip_unpack(map, img->data, img->w * img->channels, img->h,
-			img->alignment, expand, img->bitdepth);
+			img->alignment, op, img->bitdepth);
 		glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 		data = 0;
 	} else {
-//		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, img->alignment);
 		data = img->data;
 	}
 
@@ -280,20 +304,18 @@ const struct gl_upload_params *params, const bool reuse) {
 	if (params->convert) {
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
-//	if (!params->convert) {
-//	}
 
 	const GLenum err = glGetError();
 	if (err) {
 		printf("Encountered error %x when uploading to texture: %s\n",
-			err, gl_error_str(err));
+			err, gl_strerror(err));
 		return false;
 	}
 	glGenerateMipmap(GL_TEXTURE_2D);
 	return true;
 }
 
-bool load_gl_texture(const struct raw_img *img, struct gl_context *context) {
+bool gl_texture_upload(const struct raw_img *img, struct gl_context *context) {
 	struct gl_upload_params params;
 	if (!set_upload_parameters(img, &params, context)) {
 		printf("Invalid channel/bitdepth combination (%d/%d). Skipping.\n",
@@ -311,7 +333,7 @@ bool load_gl_texture(const struct raw_img *img, struct gl_context *context) {
 	return success;
 }
 
-bool reuse_gl_texture(const struct raw_img *img, struct gl_context *context) {
+bool gl_texture_reuse(const struct raw_img *img, struct gl_context *context) {
 	const bool reusable = img->w == context->tex.w
 		&& img->h == context->tex.h
 		&& img->true_channels == context->tex.ch
@@ -326,7 +348,12 @@ bool reuse_gl_texture(const struct raw_img *img, struct gl_context *context) {
 	return false;
 }
 
-void clear_gl_color(const float bg[4]) {
+void gl_draw(void) {
+	glClear(GL_COLOR_BUFFER_BIT);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+void gl_clear_color(const float bg[4]) {
 	glClearColor(bg[0], bg[1], bg[2], bg[3]);
 }
 
@@ -400,14 +427,14 @@ GLsizei length, const GLchar *message, const void *user_data) {
 	fwrite(message, 1, (size_t)length, stdout);
 }*/
 
-bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
-/*	printf("vendor: %s\n"
+bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
+	printf("vendor: %s\n"
 		"renderer: %s\n"
 		"version: %s\n"
 		"shading: %s\n",
 		glGetString(GL_VENDOR), glGetString(GL_RENDERER),
 		glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
-*/
+
 
 //	glDebugMessageCallback(debug_print, NULL);
 	glEnable(GL_BLEND);
@@ -435,42 +462,37 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 
 	GLbyte vertices[] = {
 		-1,-1,  1,-1,
-
 		-1, 1,  1, 1,
-//		0, 0,  1, 0,
-
-//		0, 1,  1, 1,
 	};
 	GLuint array_buf[2];
-	glGenBuffers(2, array_buf);
+	glGenBuffers(ARRAY_LEN(array_buf), array_buf);
 	glBindBuffer(GL_ARRAY_BUFFER, array_buf[0]);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,
 		GL_STATIC_DRAW);
 	context->pixel_unpack_buf = array_buf[1];
 
 	const char *vs =
-		"#version 150\n"
+		"#version 330 core\n"
 		"in vec2 pos;"
 		"out vec2 texcoord;"
 		"uniform mat4 trans;"
 		"void main() {"
-			"texcoord = pos * vec2(0.5, 0.5) + vec2(0.5, 0.5);"
+			"texcoord = pos * vec2(0.5) + vec2(0.5);"
 			"gl_Position = trans * vec4(pos, 0, 1);"
 		"}";
 	const char *fs =
-		"#version 150\n"
+		"#version 330 core\n"
 		"in vec2 texcoord;"
 		"out vec4 color;"
 		"uniform sampler2D img;"
 		"uniform sampler2D pal;"
 		"uniform bool use_palette;"
 		"uniform bool checker_alpha;"
-		"vec3 gen_check_pattern() {"
-			"vec2 abspos = floor(textureSize(img, 5) * texcoord);"
-			"float checker = clamp(mod(abspos.x + abspos.y, 2),"
-				"0.6, 0.8);"
-			"return vec3(color.a) * color.rgb"
-				"+ vec3(1 - color.a) * vec3(checker);"
+		"lowp vec3 gen_check_pattern() {"
+			"vec2 d = floor(texcoord / (fwidth(texcoord) * 16.0));"
+			"const float shade = 1.0 / 3.0;"
+			"float checker = mod(d.x + d.y, 2.0) * shade + shade;"
+			"return mix(vec3(checker), color.rgb, color.a);"
 		"}"
 		"void main() {"
 			"if (use_palette) {"
@@ -532,11 +554,13 @@ bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf) {
 		GL_NEAREST, GL_NEAREST, 0);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 1, 0, GL_RGBA,
 		GL_UNSIGNED_BYTE, NULL);
+	swizzle_set(GL_TEXTURE_2D, rgba, 4);
 
 	setup_texture(img, GL_TEXTURE_2D, img_samp, 0, GL_CLAMP_TO_BORDER,
 		GL_LINEAR_MIPMAP_LINEAR, GL_NEAREST, 6);
 
-//	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, context->pixel_unpack_buf);
+	glGenQueries(1, &context->timer);
+
 	context->tex.w = 0;
 	context->tex.h = 0;
 	context->tex.ch = 0;

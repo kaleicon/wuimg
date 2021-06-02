@@ -30,7 +30,7 @@ enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	if (umax(desc.w, desc.h) > wuconf->max_img_size) {
 		xbm_cleanup(&desc);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);

@@ -19,7 +19,7 @@ enum wu_error pgx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	}
 
 	if (umax(desc.width, desc.height) > wuconf->max_img_size) {
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);

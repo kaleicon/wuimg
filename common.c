@@ -2,27 +2,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <ctype.h>
 #include <errno.h>
-#include <math.h>
 
 #include <sys/mman.h>
 
-#include <iconv.h>
-#include <uchardet/uchardet.h>
-
 #include "common.h"
 
-static const long DAYS_BETWEEN_1970_2000 = 10957;
+// A straw broke my camel's back so I wrote my own time functions.
+static const long DAYS_BETWEEN_1970_2000 = 365*30 + 30/4; // 10957 btw
 
 void rfc3339_format(time_t t, FILE *out) {
-	// Set our epoch to the first of March, 2000.
-	// https://howardhinnant.github.io/date_algorithms.html
-	const time_t to_era = (DAYS_BETWEEN_1970_2000 + 31 + 29) * 86400;
+	// Format UNIX time as "y-m-d h:m:sZ"
 
-	t -= to_era;
-	long days = t / 86400;
-	long secs = t % 86400;
+	// Set our epoch to the first of March, 2000.
+	const time_t unix_to_era = (DAYS_BETWEEN_1970_2000 + 31 + 29) * 86400;
+	t -= unix_to_era;
+
+	long days = (long)(t / 86400);
+	long secs = (long)(t % 86400);
 	if (secs < 0) {
 		secs += 86400;
 		--days;
@@ -56,22 +53,22 @@ void rfc3339_format(time_t t, FILE *out) {
 		--years;
 	}
 	days -= years * 365;
-
-	years = years + 4*leaps + 100*centuries + 400*greg_cycles;
+	years += 4*leaps + 100*centuries + 400*greg_cycles;
 
 	const unsigned char month_days[] = {
-		31 /* March */, 30, 31, 30, 31, 31,
-		30,             31, 30, 31, 31, 29};
+	//	mar,apr,may,jun,jul,aug,sep,oct,nov,dec,jan,feb
+		31, 30, 31, 30, 31, 31, 30, 31, 30, 31, 31, 29
+	};
 	long months = 0;
 	while (month_days[months] <= days) {
 		days -= month_days[months];
 		++months;
 	}
 
-
+	// Back to the real world
 	years += 2000;
 	months += 3;
-	if (months >= 12) {
+	if (months > 12) {
 		months -= 12;
 		++years;
 	}
@@ -85,6 +82,7 @@ void rfc3339_format(time_t t, FILE *out) {
 		years, months, days, hours, minutes, secs);
 }
 
+// Plug numbers intuitively in a struct and get a time_t back. Wow. So Hard.
 time_t utc_to_epoch(const struct utc_time *tm) {
 	int year = tm->year;
 	int mon = tm->mon - 1;
@@ -97,30 +95,25 @@ time_t utc_to_epoch(const struct utc_time *tm) {
 		}
 	}
 
-	time_t days_since_epoch;
-	bool is_leap;
-	{
-		const int millenial_year = year - 2000;
-
-		int greg_cycles = millenial_year / 400;
-		int rem = millenial_year % 400;
-		if (rem < 0) {
-			--greg_cycles;
-			rem += 400;
-		}
-
-		int centuries = rem / 100;
-		rem -= centuries * 100;
-
-		is_leap = (rem % 4 == 0);
-		int leap_days = rem / 4;
-		leap_days += 97 * greg_cycles + 24 * centuries - is_leap;
-
-		days_since_epoch = millenial_year * 365 + leap_days;
-		days_since_epoch += DAYS_BETWEEN_1970_2000;
+	const int millenial_year = year - 2000;
+	int greg_cycles = millenial_year / 400;
+	int rem = millenial_year % 400;
+	if (rem < 0) {
+		--greg_cycles;
+		rem += 400;
 	}
 
-	const int days_in_this_year[] = {
+	int centuries = rem / 100;
+	rem -= centuries * 100;
+
+	int leap_days = rem / 4;
+	bool is_leap = (rem % 4 == 0);
+	leap_days += 97 * greg_cycles + 24 * centuries - is_leap;
+
+	time_t days_since_epoch = millenial_year * 365 + leap_days
+		+ DAYS_BETWEEN_1970_2000;
+
+	const unsigned char days_in_this_year[] = {
 		31, 28 + is_leap, 31, 30, 31, 30,
 		31, 31,           30, 31, 30, 31
 	};
@@ -135,15 +128,8 @@ time_t utc_to_epoch(const struct utc_time *tm) {
 		+ tm->sec;
 }
 
-long clock_nanodiff(const struct timespec *start) {
-	struct timespec end;
-	clock_gettime(CLOCK_REALTIME, &end);
-	return (end.tv_sec - start->tv_sec) * 1000000000
-		+ end.tv_nsec - start->tv_nsec;
-}
-
-void clock_start(struct timespec *start) {
-	clock_gettime(CLOCK_REALTIME, start);
+double clock_ellapsed(const clock_t start) {
+	return (double)(clock() - start) / CLOCKS_PER_SEC;
 }
 
 size_t scanline_length(const size_t width, const size_t bitdepth,
@@ -153,17 +139,12 @@ size_t alignment) {
 	return (bytes + alignment) & (~alignment);
 }
 
-int imod(int val, const int max) {
+long lmod(const long val, const long max) {
 	return (val % max + max) % max;
 }
 
-int iclamp(const int n, const int min, const int max) {
-	if (n < min) {
-		return min;
-	} else if (n > max) {
-		return max;
-	}
-	return n;
+int imod(const int val, const int max) {
+	return (val % max + max) % max;
 }
 
 unsigned int ulog2(unsigned int x) {
@@ -216,15 +197,13 @@ float fclampf(const float n, const float min, const float max) {
 }
 
 enum endianness which_end(void) {
+	/* This is not UB after C99, except for traps representations, so it
+	 * may be troublesome still, but there don't seem to be alternatives. */
 	union {
-		uint16_t sh;
-		uint8_t ch[2];
-	} test = {.sh = 0x0001};
-	if (test.ch[0]) {
-		return little_endian;
-	} else {
-		return big_endian;
-	}
+		unsigned int ui;
+		unsigned char uc[sizeof(unsigned int)];
+	} test = {.ui = 1};
+	return (enum endianness)test.uc[0];
 }
 
 uint32_t endian32(const uint32_t val, const enum endianness e) {
@@ -278,14 +257,22 @@ void loop_endian32(uint32_t *data, const enum endianness e, const size_t cnt) {
 	}
 }
 
-bool memchk(const void *s, const int c, const size_t n) {
-	const unsigned char *ptr = s;
-	for (size_t i = 0; i < n; ++i) {
-		if (ptr[i] != c) {
-			return false;
+void * memdup(const void *s, size_t n) {
+	void *d = malloc(n);
+	if (d) {
+		memcpy(d, s, n);
+	}
+	return d;
+}
+
+const void * memchk(const void *s, const unsigned char c, const size_t n) {
+	const unsigned char *b = s;
+	for (size_t m = 0; m < n; ++m) {
+		if (b[m] != c) {
+			return b + m;
 		}
 	}
-	return true;
+	return NULL;
 }
 
 bool grow_buffer(void *restrict ptr, size_t *alloc, const size_t pos,
@@ -303,10 +290,6 @@ const size_t elem_size) {
 	return true;
 }
 
-bool grow_string(char **str, size_t *alloc, const size_t pos) {
-	return grow_buffer(str, alloc, pos + 1, sizeof(*str));
-}
-
 void skip_line(FILE *ifp) {
 	int c;
 	do {
@@ -314,181 +297,12 @@ void skip_line(FILE *ifp) {
 	} while (c != '\n' && c != EOF);
 }
 
-void print_temp_line(const char *text) {
-	printf(CURSOR_u_BACK, printf(CLEAR_LINE "%s", text));
-	fflush(stdout);
-}
-
-size_t printable_len(const char *data, size_t len) {
-	while (len) {
-		const int c = data[len - 1];
-		if (c && !isspace(c)) {
-			break;
-		}
-		--len;
-	}
-	return len;
-}
-
-static char * escape_data(const unsigned char *restrict data, const size_t len,
-size_t *outlen) {
-	size_t alloc = len;
-	char *outbuf = malloc(alloc);
-	if (!outbuf) {
-		return NULL;
-	}
-
-	bool escaping = false;
-	size_t pos = 0;
-	const char hex[16] = "0123456789ABCDEF";
-	for (size_t i = 0; i < len; ++i) {
-		size_t fut_pos = pos + 1;
-		const unsigned char c = data[i];
-		if (isgraph(c) || isspace(c)) {
-			if (escaping) {
-				fut_pos += sizeof(RESET);
-			}
-			if (!grow_string(&outbuf, &alloc, fut_pos)) {
-				free(outbuf);
-				return NULL;
-			}
-			if (escaping) {
-				memcpy(outbuf + pos, RESET, sizeof(RESET));
-				pos += sizeof(RESET);
-				escaping = false;
-			}
-			outbuf[pos] = (char)c;
-			++pos;
-		} else {
-			char byte[] = {'x', hex[c >> 4], hex[c & 0x0f]};
-			fut_pos += sizeof(byte);
-			if (!escaping) {
-				fut_pos += sizeof(HIGHLIGHT);
-			}
-			if (!grow_string(&outbuf, &alloc, fut_pos)) {
-				free(outbuf);
-				return NULL;
-			}
-			if (!escaping) {
-				memcpy(outbuf + pos, HIGHLIGHT, sizeof(HIGHLIGHT));
-				pos += sizeof(HIGHLIGHT);
-				escaping = true;
-			}
-			memcpy(outbuf + pos, byte, sizeof(byte));
-			pos += sizeof(byte);
-		}
-	}
-	if (escaping) {
-		if (!grow_string(&outbuf, &alloc, pos + sizeof(RESET)) ) {
-			free(outbuf);
-			return NULL;
-		}
-		memcpy(outbuf + pos, RESET, sizeof(RESET));
-		pos += sizeof(RESET);
-	}
-	outbuf[pos] = 0;
-	*outlen = pos;
-	return outbuf;
-}
-
-static char * conv_iconv(const iconv_t cd, const void *restrict data,
-size_t len, size_t *outlen) {
-	char *outbuf = malloc(len);
-	if (!outbuf) {
-		return NULL;
-	}
-
-	size_t inleft = len;
-	size_t outleft = len;
-	char *inpos = (char *)data; // iconv insists on the input not being const
-	char *outpos = outbuf;
-	errno = 0;
-	for (;;) {
-		size_t n = iconv(cd, &inpos, &inleft, &outpos, &outleft);
-		if (n == (size_t)-1) {
-			if (errno == E2BIG) {
-				const size_t add = 1 + len / 4;
-				outleft += add;
-				len += add;
-
-				char *hold = realloc(outbuf, len);
-				if (hold) {
-					outpos = hold + len - outleft;
-					outbuf = hold;
-					errno = 0;
-					continue;
-				}
-			}
-			free(outbuf);
-			return NULL;
-		} else if (inleft == 0) { // Additional iter to flush output
-			if (inpos) {
-				inpos = NULL;
-			} else {
-				break;
-			}
-		}
-	}
-	*outlen = len - outleft;
-	return outbuf;
-}
-
-char * conv_unsafe_data(const void *restrict data, const size_t len,
-size_t *outlen) {
-	if (len == 0) {
-		*outlen = 0;
-		return NULL;
-	}
-
-	const char *enc = "";
-	uchardet_t ud = uchardet_new();
-	const int error = uchardet_handle_data(ud, data, len);
-	if (!error) {
-		uchardet_data_end(ud);
-		enc = uchardet_get_charset(ud);
-	}
-
-	/* What no one mentions is that deleting the context also deletes the
-	 * charset string. */
-	if (!enc[0]) {
-		uchardet_delete(ud);
-		return escape_data(data, len, outlen);
-	} else if (!strcmp(enc, "ASCII") || !strcmp(enc, "UTF-8")) {
-		uchardet_delete(ud);
-		*outlen = len;
-		char *str = malloc(*outlen);
-		if (str) {
-			memcpy(str, data, len);
-		}
-		return str;
-	}
-
-	const iconv_t cd = iconv_open("UTF-8", enc);
-	uchardet_delete(ud);
-	if (cd != (iconv_t)-1) {
-		char *result = conv_iconv(cd, data, len, outlen);
-		iconv_close(cd);
-		if (result) {
-			return result;
-		}
-	}
-	return escape_data(data, len, outlen);
-}
-
-void print_unsafe_data(const char *name, const void *restrict data, size_t len,
-FILE *stream) {
-	char *d = escape_data(data, len, &len);
-	if (d) {
-		len = printable_len(d, len);
-
-		if (name) {
-			fputs(name, stream);
-			fputs(": ", stream);
-		}
-		fwrite(d, 1, len, stream);
-		putchar('\n');
-		free(d);
-	}
+long file_get_remaining(FILE *ifp) {
+	const long cur = ftell(ifp);
+	fseek(ifp, 0, SEEK_END);
+	const long end = ftell(ifp);
+	fseek(ifp, cur, SEEK_SET);
+	return end - cur;
 }
 
 int munmap_stream(struct mmap_file mm) {
@@ -504,15 +318,20 @@ struct mmap_file mmap_stream(FILE *ifp) {
 	};
 }
 
-char * id_template(const char *prefix, const size_t n) {
-	size_t len = strlen(prefix) + 1 /* first digit */ + 1 /* NULL */;
-	for (size_t bound = 10; bound < n; bound *= 10) {
-		++len;
+char * strerror_dup(const int error) {
+	return strdup(strerror(error));
+}
+
+char * id_template(const char *prefix, const size_t num) {
+	const size_t len = strlen(prefix);
+	size_t numlen = 1;
+	for (size_t bound = 10; bound < num; bound *= 10) {
+		++numlen;
 	}
-	char *id = malloc(len);
-	if (!id) {
-		return NULL;
+
+	char *id = malloc(len + numlen + 1);
+	if (id) {
+		sprintf(id, "%s%zu", prefix, num);
 	}
-	sprintf(id, "%s%zu", prefix, n);
 	return id;
 }

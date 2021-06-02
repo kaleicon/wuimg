@@ -44,24 +44,6 @@ static void print_any(Datum meta, struct wu_tree *tree) {
 	}
 }
 
-static void print_iptc(const unsigned char *metadata, const size_t len,
-struct wu_tree *tree) {
-	Exiv2::IptcData data;
-	Exiv2::IptcParser::decode(data, metadata, len);
-	if (!data.count()) {
-		return;
-	}
-
-	Exiv2::IptcData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_sprout_branch(tree, "IPTC");
-	for (Exiv2::IptcData::const_iterator i = data.begin(); i != end; ++i) {
-		if (i->count()) {
-			print_any(i, outtree);
-		}
-	}
-	data.clear();
-}
-
 static void print_xmp(const char *metadata, const size_t len,
 struct wu_tree *tree) {
 	const std::string str_xmp(metadata, len);
@@ -75,6 +57,24 @@ struct wu_tree *tree) {
 	Exiv2::XmpData::const_iterator end = data.end();
 	struct wu_tree *outtree = tree_sprout_branch(tree, "XMP");
 	for (Exiv2::XmpData::const_iterator i = data.begin(); i != end; ++i) {
+		if (i->count()) {
+			print_any(i, outtree);
+		}
+	}
+	data.clear();
+}
+
+static void print_iptc(const unsigned char *metadata, const size_t len,
+struct wu_tree *tree) {
+	Exiv2::IptcData data;
+	Exiv2::IptcParser::decode(data, metadata, len);
+	if (!data.count()) {
+		return;
+	}
+
+	Exiv2::IptcData::const_iterator end = data.end();
+	struct wu_tree *outtree = tree_sprout_branch(tree, "IPTC");
+	for (Exiv2::IptcData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			print_any(i, outtree);
 		}
@@ -116,5 +116,12 @@ const void *metadata, const size_t len, struct wu_tree *tree) {
 		default:
 			break;
 		}
-	} catch (...) {}
+	} catch (...) {
+		switch (type) {
+		case exif_metadata: fputs("Exif", stdout); break;
+		case xmp_metadata: fputs("XMP", stdout); break;
+		case iptc_metadata: fputs("IPTC", stdout); break;
+		}
+		fputs(" parsing failed.\n", stdout);
+	}
 }

@@ -10,11 +10,13 @@
 #include "dec.h"
 
 static void print_help(const char *prog) {
-	printf("Usage: %s average|popular|vibrant FILE.pnm\n", prog);
+	printf("Usage: %s average|popular|vibrant RES FILE\n"
+		"\"RES\" is the resolution at which to gather samples.\n",
+		prog);
 }
 
 int main(const int argc, const char *argv[]) {
-	if (argc < 3) {
+	if (argc < 4) {
 		print_help(argv[0]);
 		return 0;
 	}
@@ -28,28 +30,31 @@ int main(const int argc, const char *argv[]) {
 		src = vibrant;
 	} else {
 		printf("Unrecognized enum %s\n", argv[1]);
-		print_help(argv[0]);
 		return 1;
 	}
 
-	const struct wu_conf conf = {
-		.max_img_size = USHRT_MAX / 4,
+	size_t resolution = 0;
+	if (!sscanf(argv[2], "%zu", &resolution) || !resolution) {
+		puts("Invalid resolution.");
+		return 1;
+	}
+
+	struct image_context image = {
+		.name = argv[3],
+		.conf.max_img_size = USHRT_MAX / 4,
 	};
 
-	sort_dec_tables();
-	struct image_file file = {0};
-	const enum wu_error result = decode_image(&file, &conf, argv[2]);
+	const enum wu_error result = decode_image(&image);
 	if (result == wu_ok) {
 		float bg[3] = {0};
 		struct timespec start;
 		clock_start(&start);
-		const int samples = get_image_color(bg, file.sub_img, src,
-			USHRT_MAX);
-		const long diff = clock_nanodiff(&start);
-		printf("Average of %d samples taken in %ld nanoseconds.\n",
-			samples, diff);
+		const int samples = get_image_color(bg, image.file.sub_img, src,
+			resolution);
+		printf("%d samples taken in %ld nanoseconds.\n",
+			samples, clock_nanodiff(&start));
 		printf("Colors: r=%f g=%f b=%f\n", bg[0], bg[1], bg[2]);
 	}
-	free_image_file(&file);
+	free_image_file(&image.file);
 	return 0;
 }

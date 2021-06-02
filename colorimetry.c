@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
 
@@ -230,7 +231,7 @@ const enum background_source src, const size_t maxres) {
 			return get_category(src, out, &frame, img->data,
 				img->bitdepth);
 		}
-		// Fallthrough
+		// fallthrough
 	case average:
 		return get_average(out, &frame, img->data, img->bitdepth);
 	default:

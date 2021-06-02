@@ -24,7 +24,7 @@ enum wu_error sgi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		sizeof(desc.name));
 
 	if (umax(desc.w, desc.h) > wuconf->max_img_size) {
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);

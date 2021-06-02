@@ -21,7 +21,6 @@ struct pcx_desc {
 	unsigned char planes, bitdepth;
 	enum pcx_version version:8;
 	bool palette_type;
-	bool cga_mode;
 	bool expand_pal;
 	unsigned char file_pal[48];
 };

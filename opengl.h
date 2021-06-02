@@ -1,9 +1,13 @@
 #ifndef OPENGL
 #define OPENGL
 
-#include <epoxy/egl.h>
+#include <epoxy/gl.h>
 
 #include "wudefs.h"
+
+// Texture swizzling is the newest feature we require, so 3.3 is the minimum
+#define WU_GL_MAJOR 3
+#define WU_GL_MINOR 3
 
 struct gl_context {
 	struct {
@@ -12,6 +16,7 @@ struct gl_context {
 		GLint checkers;
 	} uni;
 	GLuint pixel_unpack_buf;
+	GLuint timer;
 
 	unsigned fb_wh[2];
 	struct {
@@ -21,25 +26,29 @@ struct gl_context {
 	} tex;
 };
 
-const char * gl_error_str(GLenum error);
+void gl_context_delete(struct gl_context *context);
 
-void delete_gl_context(void);
+GLuint64 gl_clock_end(struct gl_context *context);
 
-void set_gl_alpha(struct gl_context *context, enum alpha_state alpha);
+void gl_clock_start(struct gl_context *context);
 
-void update_gl_matrix(const struct gl_context *context, struct wu_state *state);
+void gl_alpha_state(struct gl_context *context, enum alpha_state alpha);
 
-float calc_gl_fit_zoom(const struct gl_context *context,
+void gl_matrix_update(const struct gl_context *context, struct wu_state *state);
+
+float gl_fit_zoom(const struct gl_context *context,
 unsigned char rotation);
 
-void even_gl_view(struct gl_context *context);
+void gl_even_view(struct gl_context *context);
 
-bool load_gl_texture(const struct raw_img *img, struct gl_context *context);
+bool gl_texture_upload(const struct raw_img *img, struct gl_context *context);
 
-bool reuse_gl_texture(const struct raw_img *img, struct gl_context *context);
+bool gl_texture_reuse(const struct raw_img *img, struct gl_context *context);
 
-void clear_gl_color(const float bg[4]);
+void gl_draw(void);
 
-bool setup_opengl(struct gl_context *context, struct wu_conf *wuconf);
+void gl_clear_color(const float bg[4]);
+
+bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
 
 #endif /* OPENGL */

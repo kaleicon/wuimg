@@ -1,17 +1,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <ctype.h>
-#include <errno.h>
-
-#include <iconv.h>
-#include <uchardet/uchardet.h>
 
 #include "common.h"
+#include "term.h"
 #include "wutree.h"
 
 static const char * get_name(const struct wu_tree *node) {
-	if (node->name_len > sizeof(node->name.string)) {
+	if (node->name_len > sizeof(node->name.array)) {
 		return node->name.string;
 	}
 	return node->name.array;
@@ -19,7 +15,7 @@ static const char * get_name(const struct wu_tree *node) {
 
 static bool copy_name(struct wu_tree *node, const char *name) {
 	node->name_len = strlen(name);
-	if (node->name_len > sizeof(node->name.string)) {
+	if (node->name_len > sizeof(node->name.array)) {
 		node->name.string = malloc(node->name_len);
 		if (node->name.string) {
 			memcpy(node->name.string, name, node->name_len);
@@ -36,7 +32,7 @@ static struct wu_tree * irrigate(struct wu_tree *branch, const size_t reserve) {
 		return NULL;
 	}
 
-	if (branch->len >= branch->alloc) {
+	if (branch->len + reserve >= branch->alloc) {
 		const size_t new_alloc = branch->alloc + branch->alloc / 4
 			+ reserve;
 		void *hold = realloc(branch->pick.branch,
@@ -52,7 +48,7 @@ static struct wu_tree * irrigate(struct wu_tree *branch, const size_t reserve) {
 
 
 void tree_unroot(struct wu_tree *root) {
-	if (root->name_len > sizeof(root->name.string)) {
+	if (root->name_len > sizeof(root->name.array)) {
 		free(root->name.string);
 	}
 
@@ -71,38 +67,6 @@ void tree_unroot(struct wu_tree *root) {
 		break;
 	}
 }
-
-/*
-__attribute__((unused))
-static void reverse_str(char *buf, const size_t len) {
-	for (size_t j = 0; j < len/2; ++j) {
-		const char tmp = buf[j];
-		buf[j] = buf[len-j];
-		buf[len-j] = tmp;
-	}
-}
-
-__attribute__((unused))
-static size_t umaxtostr(uintmax_t u, char *buf) {
-	size_t i = 0;
-	do {
-		buf[i] = (char)((u % 10) + '0');
-		u /= 10;
-		++i;
-	} while (u);
-	reverse_str(buf, i);
-	return i;
-}
-
-__attribute__((unused))
-static size_t imaxtostr(intmax_t d, char *buf) {
-	uintmax_t u = (uintmax_t)d;
-	if (d < 0) {
-		buf[0] = '-';
-		return umaxtostr(~u + 1, buf + 1);
-	}
-	return umaxtostr(u, buf);
-}*/
 
 static void ident_print(const struct wu_tree *node, const size_t max_x,
 const size_t max_y, const size_t ident, FILE *out) {
@@ -123,7 +87,7 @@ const size_t max_y, const size_t ident, FILE *out) {
 		} else {
 			fputs(":\n", out);
 			for (size_t i = 0; i < node->len; ++i) {
-				ident_print(node->pick.branch + i, max_x,
+				ident_print(node->pick.branch + i, max_x - 1,
 					max_y - max_y/4, ident + 1, out);
 			}
 			return;
@@ -176,14 +140,10 @@ char *restrict value, const size_t len) {
 		return false;
 	}
 
-	const size_t end = printable_len(value, len);
+	const size_t end = term_printable_len(value, len);
 	leaf->len = end;
 
-	if (end < sizeof(leaf->pick.array)) {
-		leaf->is_leaf = wu_leaf_array;
-		memcpy(leaf->pick.array, value, end);
-		free(value);
-	} else {
+	if (end > sizeof(leaf->pick.array)) {
 		leaf->is_leaf = wu_leaf_string;
 		if (end < len) {
 			char *hold = realloc(value, end);
@@ -192,6 +152,10 @@ char *restrict value, const size_t len) {
 			}
 		}
 		leaf->pick.string = value;
+	} else {
+		leaf->is_leaf = wu_leaf_array;
+		memcpy(leaf->pick.array, value, end);
+		free(value);
 	}
 
 	++par->len;
@@ -204,19 +168,24 @@ char *restrict value) {
 }
 
 bool tree_sprout_unsafe_leaf(struct wu_tree *par, const char *name,
-const void *restrict data, const size_t len) {
-	size_t val_len;
-	char *value = conv_unsafe_data(data, len, &val_len);
-	if (value) {
-		return tree_graft_measured_leaf(par, name, value, val_len);
+const void *restrict data, size_t len) {
+	char *val = term_format_unsafe_data(data, len, &len);
+	if (val) {
+		return tree_graft_measured_leaf(par, name, val, len);
 	}
 	return false;
 }
 
 bool tree_sprout_measured_leaf(struct wu_tree *par, const char *restrict name,
 const char *restrict value, size_t len) {
-	len = printable_len(value, len);
-	if (len < sizeof(par->pick.array)) {
+	len = term_printable_len(value, len);
+	if (len > sizeof(par->pick.array)) {
+		char *copy = malloc(len);
+		if (copy) {
+			memcpy(copy, value, len);
+			return tree_graft_measured_leaf(par, name, copy, len);
+		}
+	} else {
 		struct wu_tree *leaf = irrigate(par, 1);
 		if (!leaf) {
 			return false;
@@ -231,12 +200,6 @@ const char *restrict value, size_t len) {
 
 		++par->len;
 		return true;
-	} else {
-		char *copy = malloc(len);
-		if (copy) {
-			memcpy(copy, value, len);
-			return tree_graft_measured_leaf(par, name, copy, len);
-		}
 	}
 	return false;
 }

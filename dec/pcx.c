@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "../common.h"
 #include "../wudefs.h"
 
@@ -41,11 +44,11 @@ struct wu_tree *metadata, const unsigned int max_img_size) {
 	}
 
 	if (umax(desc.w, desc.h) > max_img_size) {
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	desc.expand_pal = false;
-	desc.cga_mode = false;
+//	desc.cga_mode = false;
 	img->w = desc.w;
 	img->h = desc.h;
 	img->channels = desc.planes;

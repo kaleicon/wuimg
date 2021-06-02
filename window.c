@@ -1,38 +1,25 @@
+#include <stdlib.h>
 #include <limits.h>
 #include <math.h>
 
-#include <epoxy/egl.h>
-
 #include "wudefs.h"
 #include "common.h"
-#include "window.h"
 #include "opengl.h"
+#include "window.h"
 #include "events.h"
+#include "drm.h"
 
-#define GLFW 1
-#define SDL 2
-#define BACKEND GLFW
-
-#if BACKEND == GLFW
 #include <GLFW/glfw3.h>
-#elif BACKEND == SDL
-#include <SDL2/SDL.h>
-#endif
 
-static void framebuffer_resize(struct window_control *control, const int w,
-const int h) {
-	const unsigned width = (unsigned)w;
-	const unsigned height = (unsigned)h;
-	control->context.fb_wh[0] = width;
-	control->context.fb_wh[1] = height;
-	even_gl_view(&control->context);
-	update_gl_matrix(&control->context, &control->state);
-
-	control->conf.fb.w = width;
-	control->conf.fb.h = height;
+static void framebuffer_resize(struct window_control *control,
+const struct display_dims *dims) {
+	struct gl_context *gl = &control->window.gl;
+	gl->fb_wh[0] = dims->w;
+	gl->fb_wh[1] = dims->h;
+	gl_even_view(gl);
+	gl_matrix_update(gl, &control->image.state);
 }
 
-#if BACKEND == GLFW
 static void scroll_cycle(struct wu_cycle *cycle, const double offset) {
 	if (fpclassify(offset) == FP_NORMAL) {
 		cycle->acc = fclampf((float)(cycle->acc + offset), -1.0, +1.0);
@@ -45,30 +32,34 @@ static void scroll_cycle(struct wu_cycle *cycle, const double offset) {
 
 static void focus_callback(GLFWwindow *window, int focused) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	control->geom.has_focus = focused;
+	control->window.ctx.glfw.has_focus = focused;
 }
 
 static void framebuffer_callback(GLFWwindow *window, const int w, const int h) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	framebuffer_resize(control, w, h);
+	control->image.conf.fb = (struct display_dims) {
+		.w = (unsigned)w,
+		.h = (unsigned)h,
+	};
+	framebuffer_resize(control, &control->image.conf.fb);
 }
 
 static void close_callback(GLFWwindow *window) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	control->event.program = close_window;
+	control->window.event.program = close_window;
 }
 
 static void scroll_callback(GLFWwindow *window, const double x_off,
 const double y_off) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	scroll_cycle(&control->event.file, y_off);
-	scroll_cycle(&control->state.sub, x_off);
+	scroll_cycle(&control->window.event.file, y_off);
+	scroll_cycle(&control->image.state.sub, x_off);
 }
 
 static void char_callback(GLFWwindow *window, const unsigned int codepoint) {
 	(void)window;
 	if (codepoint == '+') {
-		add_event(key_external, (unsigned char)codepoint, false);
+		event_add(key_external, (unsigned char)codepoint, false);
 	}
 }
 
@@ -178,23 +169,43 @@ int mode) {
 	}
 
 	if (event) {
-		add_event(keyact, event, shift);
+		event_add(keyact, event, shift);
 	}
 }
 
-static void * glfw_setup_window(struct window_control *control, const int window_w,
-const int window_h) {
-	const struct wu_conf *conf = &control->conf;
+static GLFWwindow * glfw_setup_window(struct window_control *control,
+const struct wu_conf *conf) {
 	if (!glfwInit()) {
 		return NULL;
 	}
 
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-//	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+	int width = (int)conf->initial_size.w;
+	int height = (int)conf->initial_size.h;
+	if (!width || !height) {
+		int default_w = 640;
+		int default_h = 480;
+		GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+		if (monitor) {
+			const GLFWvidmode *video = glfwGetVideoMode(monitor);
+			if (video) {
+				default_w = video->width;
+				default_h = video->height;
+			}
+		}
+		if (!width) {
+			width = default_w;
+		}
+		if (!height) {
+			height = default_h;
+		}
+	}
+
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, WU_GL_MAJOR);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, WU_GL_MINOR);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-//	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 	glfwWindowHint(GLFW_DEPTH_BITS, 0);
 	glfwWindowHint(GLFW_STENCIL_BITS, 0);
 	if (conf->no_window_decorations) {
@@ -206,256 +217,108 @@ const int window_h) {
 #if GLFW_VERSION_MINOR >= 3
 	glfwWindowHintString(GLFW_X11_CLASS_NAME, WU_CANON_NAME);
 #endif
-	GLFWwindow *window = glfwCreateWindow(window_w, window_h,
-		WU_CANON_NAME, NULL, NULL);
-	glfwMakeContextCurrent(window);
 
-	glfwSetWindowUserPointer(window, control);
-	glfwSetWindowCloseCallback(window, close_callback);
-	glfwSetWindowFocusCallback(window, focus_callback);
-	glfwSetFramebufferSizeCallback(window, framebuffer_callback);
-	glfwSetKeyCallback(window, key_callback);
-	glfwSetCharCallback(window, char_callback);
-	glfwSetScrollCallback(window, scroll_callback);
-	glfwSwapInterval(1);
+	GLFWwindow *window = glfwCreateWindow(width, height, WU_CANON_NAME,
+		NULL, NULL);
+	if (window) {
+		glfwMakeContextCurrent(window);
+
+		glfwSetWindowUserPointer(window, control);
+		glfwSetWindowCloseCallback(window, close_callback);
+		glfwSetWindowFocusCallback(window, focus_callback);
+		glfwSetFramebufferSizeCallback(window, framebuffer_callback);
+		glfwSetKeyCallback(window, key_callback);
+		glfwSetCharCallback(window, char_callback);
+		glfwSetScrollCallback(window, scroll_callback);
+		glfwSwapInterval(1);
+	}
 	return window;
 }
-#elif BACKEND == SDL
-static void sdl_keyevent(const enum key_action keyact,
-const SDL_Keysym keysym) {
-	unsigned event = 0;
-	switch (keysym.sym) {
-	case SDLK_q: case SDLK_ESCAPE:
-		event = 'q';
-		break;
-	case SDLK_F4:
-		if (keysym.mod & KMOD_ALT) {
-			event = 'q';
-		}
-		break;
-	case SDLK_w:
-		if (keysym.mod & KMOD_CTRL) {
-			event = 'q';
-		}
-		break;
 
-	case SDLK_f: case SDLK_F11:
-		event = 'f';
-		break;
-
-	case SDLK_n: event = (keysym.mod & KMOD_SHIFT) ? 'N' : 'n'; break;
-	case SDLK_p: event = (keysym.mod & KMOD_SHIFT) ? 'P' : 'p'; break;
-
-	case SDLK_SPACE: event = ' '; break;
-	case SDLK_COMMA: event = ','; break;
-	case SDLK_PERIOD: event = '.'; break;
-
-	case SDLK_r: case SDLK_F5:
-		event = 'r';
-		break;
-
-	case SDLK_d:
-		event = (keysym.mod & KMOD_SHIFT) ? 'D' : 'd';
-		break;
-	case SDLK_u: case SDLK_UNDO:
-		event = 'u';
-		break;
-
-	case SDLK_h: case SDLK_LEFT:
-		event = 'h';
-		break;
-	case SDLK_j: case SDLK_DOWN:
-		event = 'j';
-		break;
-	case SDLK_k: case SDLK_UP:
-		event = 'k';
-		break;
-	case SDLK_l: case SDLK_RIGHT:
-		event = 'l';
-		break;
-
-	case SDLK_z: event = 'z'; break;
-	case SDLK_x: event = 'x'; break;
-	case SDLK_i: event = 'i'; break;
-	case SDLK_o: event = 'o'; break;
-
-	case SDLK_END: event = '0'; break;
-	case SDLK_HOME: event = '1'; break;
-	case SDLK_KP_PLUS:
-	case SDLK_PAGEUP: event = '+'; break;
-	case SDLK_PAGEDOWN:
-	case SDLK_KP_MINUS: event = '-'; break;
-
-	case SDLK_0: case SDLK_KP_0: event = '0'; break;
-	case SDLK_1: case SDLK_KP_1: event = '1'; break;
-	case SDLK_2: case SDLK_KP_2: event = '2'; break;
-	case SDLK_3: case SDLK_KP_3: event = '3'; break;
-	case SDLK_4: case SDLK_KP_4: event = '4'; break;
-	case SDLK_5: case SDLK_KP_5: event = '5'; break;
-	case SDLK_6: case SDLK_KP_6: event = '6'; break;
-	case SDLK_7: case SDLK_KP_7: event = '7'; break;
-	case SDLK_8: case SDLK_KP_8: event = '8'; break;
-	case SDLK_9: case SDLK_KP_9: event = '9'; break;
-	}
-
-	if (event) {
-		add_event(keyact, event, keysym.mod & KMOD_SHIFT);
+void window_terminate(struct window_context *window) {
+	if (window->backend == window_glfw) {
+		glfwTerminate();
+	} else {
+		kms_terminate(&window->ctx.kms);
 	}
 }
 
-void sdl_mousewheel(struct window_control *control, const int x, const int y) {
-	control->state.sub.cycle = iclamp(x, -1, 1);
-	control->file.cycle = iclamp(y, -1, 1);
-}
-
-static void sdl_winevent(struct window_control *control,
-const SDL_WindowEvent event) {
-	switch (event.event) {
-	case SDL_WINDOWEVENT_SIZE_CHANGED:
-		;int w, h;
-		SDL_GL_GetDrawableSize(control->window, &w, &h);
-		framebuffer_resize(control, w, h);
-		break;
+void window_poll(const struct window_context *window) {
+	if (window->backend == window_glfw) {
+		glfwPollEvents();
 	}
 }
 
-static void * sdl_winsetup(const struct wu_conf *conf, const int window_w,
-const int window_h, struct gl_context *context) {
-	SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
-	if (SDL_Init(SDL_INIT_VIDEO)) {
-		puts(SDL_GetError());
-		return false;
+void window_draw(struct window_context *window) {
+	gl_draw();
+	if (window->backend == window_glfw) {
+		glfwSwapBuffers(window->ctx.glfw.window);
+	} else {
+		kms_swap_buffers(&window->ctx.kms);
 	}
-
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-		SDL_GL_CONTEXT_PROFILE_CORE);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,
-		SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-	if (conf->bg[3] != UCHAR_MAX) {
-		SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 1);
-	}
-	Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
-	if (conf->no_window_decorations) {
-		flags |= SDL_WINDOW_BORDERLESS;
-	}
-
-	SDL_Window *window = SDL_CreateWindow(WU_CANON_NAME,
-		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-		window_w, window_h, flags);
-	if (!window) {
-		puts(SDL_GetError());
-		return false;
-	}
-
-	if (!SDL_GL_CreateContext(window)) {
-		puts(SDL_GetError());
-		return false;
-	}
-	SDL_GL_SetSwapInterval(1);
-	return window;
-}
-#endif
-
-void terminate_window(void) {
-#if BACKEND == GLFW
-	glfwTerminate();
-#elif BACKEND == SDL
-	SDL_Quit();
-#endif
 }
 
-void poll_window(struct window_control *control) {
-#if BACKEND == GLFW
-	(void)control;
-	glfwPollEvents();
-#elif BACKEND == SDL
-	SDL_Event event;
-	while (SDL_PollEvent(&event)) {
-		switch (event.type) {
-		case SDL_MOUSEWHEEL:
-			sdl_mousewheel(control, event.wheel.x, event.wheel.y);
-			break;
-		case SDL_KEYDOWN:
-			sdl_keyevent(key_press, event.key.keysym);
-			break;
-		case SDL_KEYUP:
-			sdl_keyevent(key_release, event.key.keysym);
-			break;
-		case SDL_WINDOWEVENT:
-			sdl_winevent(control, event.window);
-			break;
-		case SDL_QUIT:
-			control->event.program = close_window;
-			break;
-		}
+bool window_has_focus(const struct window_context *window) {
+	if (window->backend == window_glfw) {
+		return window->ctx.glfw.has_focus;
 	}
-#endif
+	return true;
 }
 
-void redraw_window(void *window) {
-	glClear(GL_COLOR_BUFFER_BIT);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-#if BACKEND == GLFW
-	glfwSwapBuffers(window);
-#elif BACKEND == SDL
-	SDL_GL_SwapWindow(window);
-#endif
-}
+void window_toggle_fullscreen(struct window_context *window) {
+	if (window->backend != window_glfw) {
+		return;
+	}
 
-void set_window_title(void *window, const char *filename) {
-#if BACKEND == GLFW
-	glfwSetWindowTitle(window, filename);
-#elif BACKEND == SDL
-	SDL_SetWindowTitle(window, filename);
-#endif
-}
-
-void set_fullscreen_window(struct window_control *control) {
-	struct window_properties *geom = &control->geom;
-
-#if BACKEND == GLFW
-	if (geom->fullscreen) {
-		glfwSetWindowMonitor(control->window, NULL,
-			geom->x, geom->y, geom->w, geom->h, GLFW_DONT_CARE);
+	struct glfw_window *glfw = &window->ctx.glfw;
+	if (glfw->fullscreen) {
+		glfwSetWindowMonitor(glfw->window, NULL,
+			glfw->x, glfw->y, glfw->w, glfw->h, GLFW_DONT_CARE);
 	} else {
 		// Save window dimensions
-		glfwGetWindowPos(control->window, &geom->x, &geom->y);
-		glfwGetWindowSize(control->window, &geom->w, &geom->h);
+		glfwGetWindowPos(glfw->window, &glfw->x, &glfw->y);
+		glfwGetWindowSize(glfw->window, &glfw->w, &glfw->h);
 
 		GLFWmonitor *monitor = glfwGetPrimaryMonitor();
 		const GLFWvidmode *mode = glfwGetVideoMode(monitor);
-		glfwSetWindowMonitor(control->window, monitor, 0, 0,
+		glfwSetWindowMonitor(glfw->window, monitor, 0, 0,
 			mode->width, mode->height, mode->refreshRate);
 	}
-#elif BACKEND == SDL
-	const unsigned set = geom->fullscreen ? 0 : SDL_WINDOW_FULLSCREEN;
-	SDL_SetWindowFullscreen(control->window, set);
-#endif
-	geom->fullscreen = !geom->fullscreen;
-	control->event.window = 0;
+
+	glfw->fullscreen = !glfw->fullscreen;
 }
 
-bool setup_window(struct window_control *control) {
-	struct wu_conf *conf = &control->conf;
+void window_set_title(const struct window_context *window, const char *title) {
+	if (window->backend == window_glfw) {
+		glfwSetWindowTitle(window->ctx.glfw.window, title);
+	}
+}
 
-	const int window_w = conf->initial_size.w
-		? (int)conf->initial_size.w : 640;
-	const int window_h = conf->initial_size.h
-		? (int)conf->initial_size.h : 480;
+void window_postgl_setup(struct window_control *control) {
+	if (control->window.backend == window_glfw) {
+		glfwPollEvents();
+	} else {
+		framebuffer_resize(control, &control->image.conf.fb);
+	}
+}
 
-#if BACKEND == GLFW
-	control->window = glfw_setup_window(control, window_w, window_h);
-#elif BACKEND == SDL
-	control->window = sdl_winsetup(conf, window_w, window_h,
-		&control->context);
-#endif
-	if (control->window) {
-		control->geom.has_focus = true;
-		control->geom.fullscreen = false;
-//		poll_window(control);
-		return true;
+bool window_setup(struct window_control *control) {
+	struct window_context *window = &control->window;
+	struct wu_conf *conf = &control->image.conf;
+
+	if (getenv("WAYLAND_DISPLAY") || getenv("DISPLAY")) {
+		window->ctx.glfw.window = glfw_setup_window(control, conf);
+		if (window->ctx.glfw.window) {
+			window->backend = window_glfw;
+			window->ctx.glfw.has_focus = true;
+			window->ctx.glfw.fullscreen = false;
+			return true;
+		}
+	} else {
+		if (kms_setup(&window->ctx.kms, &conf->fb)) {
+			window->backend = window_kms;
+			return true;
+		}
 	}
 	return false;
 }

@@ -69,7 +69,7 @@ enum wu_error jbig_dec(struct image_file *infile, const struct wu_conf *wuconf) 
 	const size_t height = jbg_dec_getheight(&state);
 	if (zumax(width, height) > wuconf->max_img_size) {
 		jbg_dec_free(&state);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);

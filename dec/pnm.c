@@ -26,7 +26,7 @@ const struct wu_conf *wuconf) {
 	if (desc.ch > 4) {
 		return wu_unsupported_feature;
 	} else if (zumax(desc.w, desc.h) > wuconf->max_img_size) {
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, zumin(desc.nr, UCHAR_MAX));
@@ -34,22 +34,32 @@ const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
-	desc.xv_no_expand = true;
+	desc.expand = false;
 	size_t i = 0;
 	do {
 		img[i].w = desc.w;
 		img[i].h = desc.h;
 		img[i].channels = desc.ch;
-
-		if (desc.type == xv_thumb && desc.xv_no_expand) {
-			img[i].bitdepth = rgb332;
-		} else {
-			img[i].bitdepth = (unsigned char)(desc.bytedepth * 8);
-		}
-
-		if (desc.type == color_pfm || desc.type == gray_pfm) {
+		img[i].bitdepth = (unsigned char)(desc.bytedepth * 8);
+		switch (desc.type) {
+		case xv_thumb:
+			if (!desc.expand) {
+				img[i].bitdepth = rgb332;
+			}
+			break;
+		case raw_pbm:
+			if (!desc.expand) {
+				img[i].bitdepth = 1;
+				img[i].attr |= pix_inverted;
+			}
+			break;
+		case color_pfm:
+		case gray_pfm:
 			img[i].mirror = true;
-			img[i].float_data = true;
+			img[i].attr |= pix_float;
+			break;
+		default:
+			break;
 		}
 
 		img[i].data = pnm_decode_next(&desc);

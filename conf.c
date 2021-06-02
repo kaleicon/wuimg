@@ -9,7 +9,7 @@
 struct wu_conf default_config(void) {
 	return (struct wu_conf) {
 		// Window
-		.initial_size = {960, 720},
+		.initial_size = {640, 480},
 
 		.bg[0] = 0x11,
 		.bg[1] = 0x11,
@@ -18,20 +18,12 @@ struct wu_conf default_config(void) {
 
 		.bg_src = metadata,
 
-		// Animations
-//		.cache_frames = true,
-//		.anim_space_over_speed = true,
-
 		// JPEG
 		.jpeg_fast_dct = true,
 		.jpeg_fast_upsamp = true,
 
 		// TIFF
 		.tiff_use_homegrown_unpacker = true,
-
-		// RAW
-//		.raw_prefer_thumbnail = true,
-//		.raw_half_size = true,
 
 		// SVG
 		.svg_redraw = upscale,
@@ -68,42 +60,39 @@ static bool parse_config_file(struct wu_conf *conf, FILE *cfp) {
 		if (fscanf(cfp, " = %c", &dummy_match) != 1) {
 			return false;
 		}
-
 		ungetc(dummy_match, cfp);
+
+		// Must always be a bit longer than the longest valid
+		const char val_fmt[] = "%15s";
+		char val[16];
+
 		bool fail = false;
 		if (!strcmp("max_img_size", key)) {
-			if (fscanf(cfp, "%u", &conf->max_img_size) != 1) {
-				return false;
-			}
+			fail = fscanf(cfp, "%u", &conf->max_img_size) != 1;
 		} else if (!strcmp("initial_size", key)) {
 			struct display_dims *i = &conf->initial_size;
-			if (fscanf(cfp, "%u %u", &i->w, &i->h) != 2) {
-				return false;
-			}
+			fail = fscanf(cfp, "%u %u", &i->w, &i->h) != 2;
 		} else if (!strcmp("bg", key)) {
 			unsigned char *bg = conf->bg;
-			const int m = fscanf(cfp, "%hhx %hhx %hhx %hhx",
-				bg, bg + 1, bg + 2, bg + 3);
-			if (m != 4) {
-				return false;
-			}
+			fail = fscanf(cfp, "%hhx %hhx %hhx %hhx",
+				bg, bg + 1, bg + 2, bg + 3) != 4;
 		} else if (!strcmp("bg_src", key)) {
-			char val[16];
-			if (fscanf(cfp, "%15s", val) != 1) {
-				return false;
-			}
-			if (!strcmp("default_only", val)) {
-				conf->bg_src = default_only;
-			} else if (!strcmp("metadata", val)) {
-				conf->bg_src = metadata;
-			} else if (!strcmp("average", val)) {
-				conf->bg_src = average;
-			} else if (!strcmp("popular", val)) {
-				conf->bg_src = popular;
-			} else if (!strcmp("vibrant", val)) {
-				conf->bg_src = vibrant;
+			if (fscanf(cfp, val_fmt, val) == 1) {
+				if (!strcmp("default_only", val)) {
+					conf->bg_src = default_only;
+				} else if (!strcmp("metadata", val)) {
+					conf->bg_src = metadata;
+				} else if (!strcmp("average", val)) {
+					conf->bg_src = average;
+				} else if (!strcmp("popular", val)) {
+					conf->bg_src = popular;
+				} else if (!strcmp("vibrant", val)) {
+					conf->bg_src = vibrant;
+				} else {
+					fail = true;
+				}
 			} else {
-				return false;
+				fail = true;
 			}
 		} else if (!strcmp("no_window_decorations", key)) {
 			conf->no_window_decorations = read_bool(cfp, &fail);
@@ -127,18 +116,18 @@ static bool parse_config_file(struct wu_conf *conf, FILE *cfp) {
 			conf->raw_prefer_thumbnail = read_bool(cfp, &fail);
 
 		} else if (!strcmp("svg_redraw", key)) {
-			char val[9];
-			if (fscanf(cfp, "%8s", val) != 1) {
-				return false;
-			}
-			if (!strcmp("never", val)) {
-				conf->svg_redraw = never;
-			} else if (!strcmp("upscale", val)) {
-				conf->svg_redraw = upscale;
-			} else if (!strcmp("anyscale", val)) {
-				conf->svg_redraw = anyscale;
+			if (fscanf(cfp, val_fmt, val) == 1) {
+				if (!strcmp("never", val)) {
+					conf->svg_redraw = never;
+				} else if (!strcmp("upscale", val)) {
+					conf->svg_redraw = upscale;
+				} else if (!strcmp("anyscale", val)) {
+					conf->svg_redraw = anyscale;
+				} else {
+					fail = true;
+				}
 			} else {
-				return false;
+				fail = true;
 			}
 
 		} else if (!strcmp("webp_bypass_filtering", key)) {
@@ -149,7 +138,7 @@ static bool parse_config_file(struct wu_conf *conf, FILE *cfp) {
 			conf->webp_use_homegrown_renderer = read_bool(cfp,
 				&fail);
 		} else {
-			return false;
+			fail = true;
 		}
 
 		if (fail) {
@@ -158,55 +147,62 @@ static bool parse_config_file(struct wu_conf *conf, FILE *cfp) {
 
 		for (;;) {
 			const int c = getc(cfp);
-			if (c == '#') {
+			switch (c) {
+			case EOF:
+				return true;
+			case '#':
 				skip_line(cfp);
 				break;
-			} else if (c == '\n') {
+			case '\n':
 				break;
-			} else if (c == EOF) {
-				return true;
-			} else if (isspace(c)) {
+			case ' ': case '\f': case '\r': case '\t': case '\v':
 				continue;
-			} else {
+			default:
 				return false;
 			}
+
+			break;
 		}
 	}
 	return true;
 }
 
-struct wu_conf load_config(void) {
-	struct wu_conf conf = default_config();
-
-	char *filename;
+static char * get_config_location(void) {
+	char *path = NULL;
 	const char name[] = "wu.conf";
 	const char *envconf = getenv("XDG_CONFIG_HOME");
 	if (envconf && envconf[0] == '/') {
 		const size_t eclen = strlen(envconf);
-		filename = malloc(eclen + 1 /* '/' */+ sizeof(name));
-		if (!filename) {
-			return conf;
+		path = malloc(eclen + 1 /* '/' */ + sizeof(name));
+		if (path) {
+			memcpy(path, envconf, eclen);
+			path[eclen] = '/';
+			memcpy(path + eclen + 1, name, sizeof(name));
 		}
-
-		memcpy(filename, envconf, eclen);
-		filename[eclen] = '/';
-		memcpy(filename + eclen + 1, name, sizeof(name));
 	} else {
 		const char dir[] = "/.config/";
 		const char *home = getenv("HOME");
 		if (!home || home[0] != '/') {
-			return conf;
+			return NULL;
 		}
 
 		const size_t hlen = strlen(home);
 		const size_t dlen = sizeof(dir) - 1;
-		filename = malloc(hlen + dlen + sizeof(name));
-		if (!filename) {
-			return conf;
+		path = malloc(hlen + dlen + sizeof(name));
+		if (path) {
+			memcpy(path, home, hlen);
+			memcpy(path + hlen, dir, dlen);
+			memcpy(path + hlen + dlen, name, sizeof(name));
 		}
-		memcpy(filename, home, hlen);
-		memcpy(filename + hlen, dir, dlen);
-		memcpy(filename + hlen + dlen, name, sizeof(name));
+	}
+	return path;
+}
+
+struct wu_conf load_config(void) {
+	struct wu_conf conf = default_config();
+	char *filename = get_config_location();
+	if (!filename) {
+		return conf;
 	}
 
 	FILE *cfp = fopen(filename, "rb");

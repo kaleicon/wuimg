@@ -16,10 +16,10 @@ enum program_event {
 };
 
 enum remove_event {
-	disable_rm = -1,
 	no_rm = 0,
 	warn_rm,
 	yes_rm,
+//	disable_rm,
 };
 
 struct wu_event {
@@ -36,11 +36,11 @@ enum key_action {
 	key_press = 2,
 };
 
+void event_exec(struct image_context *image, struct wu_event *event,
+double secs);
+
+void event_add(enum key_action action, int code, bool shift);
+
 void print_keys(void);
-
-void exec_events(const struct image_file *file, struct wu_state *state,
-struct wu_event *event, float msecs);
-
-void add_event(enum key_action action, unsigned char code, bool shift);
 
 #endif /* WU_EVENTS */

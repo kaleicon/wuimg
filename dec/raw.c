@@ -57,26 +57,20 @@ const struct wu_conf *wuconf, libraw_data_t *data) {
 		img[i].bitdepth = (unsigned char)proc->bits;
 		img[i].rotate = rotate;
 
-		const size_t len = img[i].w * img[i].h * img[i].channels
-			* (img[i].bitdepth / 8);
-		if (len > proc->data_size) {
-			libraw_dcraw_clear_mem(proc);
-			return wu_decoding_error;
-		}
-
-		img[i].data = malloc(len);
-		if (!img[i].data) {
+		const size_t len = raw_img_addbuf(img + i);
+		if (!len) {
 			libraw_dcraw_clear_mem(proc);
 			return wu_alloc_error;
 		}
 
-		memcpy(img[i].data, proc->data, len);
+		const size_t min = zumin(len, proc->data_size);
+		memcpy(img[i].data, proc->data, min);
 		libraw_dcraw_clear_mem(proc);
 		++i;
 	}
 
 	if (!i) {
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	} else if (i < infile->nr) {
 		realloc_sub_images(infile, i);
 	}
@@ -88,7 +82,6 @@ const struct wu_conf *wuconf, const libraw_data_t *data) {
 	const libraw_thumbnail_t *thumb = &data->thumbnail;
 	enum wu_error status;
 	if (thumb->tformat == LIBRAW_THUMBNAIL_JPEG) {
-#ifdef DEC_JPEG
 		errno = 0;
 		FILE *imp = fmemopen(thumb->thumb, thumb->tlength, "rb");
 		if (imp) {
@@ -98,14 +91,9 @@ const struct wu_conf *wuconf, const libraw_data_t *data) {
 			infile->ifp = orig;
 			fclose(imp);
 		} else {
-			infile->err_msg = strdup(strerror(errno));
+			infile->err_msg = strerror_dup(errno);
 			return wu_open_error;
 		}
-#else
-		infile->err_msg = strdup("Thumbnail is a JPEG file but we "
-			"were built with no JPEG support.");
-		return wu_unsupported_format;
-#endif /* DEC_JPEG */
 	} else {
 		struct raw_img *img = alloc_sub_images(infile, 1);
 		if (!img) {
@@ -121,17 +109,13 @@ const struct wu_conf *wuconf, const libraw_data_t *data) {
 			img->bitdepth = 8;
 		}
 
-		const size_t len = img->w * img->h * img->channels
-			* (img->bitdepth / 8);
-		if (len <= thumb->tlength) {
-			img->data = malloc(len);
-			if (!img->data) {
-				return wu_alloc_error;
-			}
-			memcpy(img->data, thumb->thumb, len);
-		} else {
-			return wu_decoding_error;
+		const size_t len = raw_img_addbuf(img);
+		if (!len) {
+			return wu_alloc_error;
 		}
+
+		const size_t min = zumin(len, thumb->tlength);
+		memcpy(img->data, thumb->thumb, min);
 		status = wu_ok;
 	}
 	infile->sub_img[0].id = strdup("thumbnail");
@@ -198,7 +182,6 @@ static void read_metadata(struct wu_tree *tree, const libraw_data_t *data) {
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
-
 	const libraw_iparams_t *idata = &data->idata;
 	measure_and_add(tree, "Make", idata->make, sizeof(idata->make));
 	measure_and_add(tree, "Model", idata->model, sizeof(idata->model));
@@ -231,9 +214,8 @@ enum wu_error raw_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	read_metadata(&infile->metadata, data);
 
-	const bool use_thumb = prefer_thumbnail(wuconf, data);
 	enum wu_error status;
-	if (use_thumb) {
+	if (prefer_thumbnail(wuconf, data)) {
 		status = decode_thumbnail(infile, wuconf, data);
 	} else {
 		status = decode_full(infile, wuconf, data);

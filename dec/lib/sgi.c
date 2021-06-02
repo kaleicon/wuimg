@@ -1,48 +1,35 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../../common.h"
 #include "common/composite.h"
+#include "common/unpack.h"
 #include "sgi.h"
 
-static void interleave_planes16(const unsigned ch, const size_t plane_len,
-uint16_t *restrict output, const uint16_t *restrict red) {
-	const uint16_t *restrict green = red + plane_len;
-	const uint16_t *restrict blue = red + plane_len * 2;
-	const uint16_t *restrict alpha = red + plane_len * 3;
-	if (ch == 3) {
-		for (size_t i = 0; i < plane_len; ++i) {
-			output[i*ch] = endian16(red[i], big_endian);
-			output[i*ch + 1] = endian16(green[i], big_endian);
-			output[i*ch + 2] = endian16(blue[i], big_endian);
-		}
-	} else if (ch == 4) {
-		for (size_t i = 0; i < plane_len; ++i) {
-			output[i*ch] = endian16(red[i], big_endian);
-			output[i*ch + 1] = endian16(green[i], big_endian);
-			output[i*ch + 2] = endian16(blue[i], big_endian);
-			output[i*ch + 3] = endian16(alpha[i], big_endian);
-		}
-	}
-}
+struct rle_info {
+	size_t tab_len;
+	uint32_t *buf;
+	uint32_t *row_offset;
+	uint32_t *row_len;
+	void *rle;
+};
 
-static void interleave_planes8(const unsigned ch, const size_t plane_len,
-uint8_t *restrict output, uint8_t *restrict red) {
-	const uint8_t *restrict green = red + plane_len;
-	const uint8_t *restrict blue = red + plane_len * 2;
-	const uint8_t *restrict alpha = red + plane_len * 3;
-	if (ch == 3) {
-		for (size_t i = 0; i < plane_len; ++i){
-			output[i*ch] = red[i];
-			output[i*ch + 1] = green[i];
-			output[i*ch + 2] = blue[i];
-		}
-	} else if (ch == 4) {
+static void interleave_endian16(uint16_t *restrict out,
+const uint16_t *restrict src, const size_t planes, const size_t plane_len) {
+	if (planes == 3) {
 		for (size_t i = 0; i < plane_len; ++i) {
-			output[i*ch] = red[i];
-			output[i*ch + 1] = green[i];
-			output[i*ch + 2] = blue[i];
-			output[i*ch + 3] = alpha[i];
+			for (size_t ch = 0; ch < planes; ++ch) {
+				out[i*planes + ch] = endian16(
+					src[i + ch*plane_len], big_endian);
+			}
+		}
+	} else if (planes == 4) {
+		for (size_t i = 0; i < plane_len; ++i) {
+			for (size_t ch = 0; ch < planes; ++ch) {
+				out[i*planes + ch] = endian16(
+					src[i + ch*plane_len], big_endian);
+			}
 		}
 	}
 }
@@ -56,9 +43,11 @@ const size_t plane_len, void *restrict planes) {
 	void *output = malloc(plane_len * desc->ch * desc->bytedepth);
 	if (output) {
 		if (desc->bytedepth == 1) {
-			interleave_planes8(desc->ch, plane_len, output, planes);
+			strip_interleave(output, planes, desc->w * desc->h,
+				desc->ch, desc->bytedepth * 8);
 		} else {
-			interleave_planes16(desc->ch, plane_len, output, planes);
+			interleave_endian16(output, planes, desc->ch,
+				plane_len);
 		}
 	}
 	free(planes);
@@ -81,138 +70,138 @@ static unsigned char * uncompressed_decode(const struct sgi_desc *desc) {
 	return interleave_planes(desc, plane_len, planes);
 }
 
-static void rle_loop16(uint16_t *restrict output,
-const uint16_t *restrict out_limit, const uint16_t *restrict rle,
-const uint16_t *restrict rle_limit) {
+static void rle_loop16(uint16_t *restrict output, size_t o,
+const size_t out_limit, const uint16_t *restrict rle, size_t r,
+const size_t rle_limit) {
 	do {
-		const unsigned packet = endian16(*rle, big_endian);
-		const unsigned len = packet & 0x7f;
-		if (len && output + len <= out_limit) {
-			++rle;
+		const size_t packet = endian16(rle[r], big_endian);
+		const size_t len = packet & 0x7f;
+		if (o + len < out_limit) {
+			++r;
 			if (packet & 0x80) {
-				if (rle + len > rle_limit) {
+				if (r + len > rle_limit) {
 					break;
 				}
-				memcpy(output, rle, len * 2);
-				rle += len;
+				memcpy(output + o, rle + r, len * 2);
+				r += len;
 			} else {
-				color_set(output, rle, len, 2);
-				++rle;
+				for (size_t i = 0; i < len; ++i) {
+					output[o+i] = rle[r];
+				}
+				++r;
 			}
-			output += len;
+			o += len;
 		} else {
 			break;
 		}
-	} while (rle + 1 < rle_limit);
+	} while (r < rle_limit - 1);
 }
 
-static void rle_loop8(uint8_t *restrict output,
-const uint8_t *restrict out_limit, const uint8_t *restrict rle,
-const uint8_t *restrict rle_limit) {
+static void rle_loop8(uint8_t *restrict output, size_t o,
+const size_t out_limit, const uint8_t *restrict rle, size_t r,
+const size_t rle_limit) {
 	do {
-		const unsigned packet = *rle;
-		const unsigned len = packet & 0x7f;
-		if (len && output + len <= out_limit) {
-			++rle;
+		const size_t packet = rle[r];
+		size_t len = packet & 0x7f;
+		if (o + len < out_limit) {
+			++r;
 			if (packet & 0x80) {
-				if (rle + len > rle_limit) {
+				if (r + len > rle_limit) {
 					break;
 				}
-				memcpy(output, rle, len);
-				rle += len;
+				memcpy(output + o, rle + r, len);
+				r += len;
 			} else {
-				memset(output, *rle, len);
-				++rle;
+				memset(output + o, rle[r], len);
+				++r;
 			}
-			output += len;
+			o += len;
 		} else {
 			break;
 		}
-	} while (rle + 1 < rle_limit);
+	} while (r < rle_limit - 1);
 }
 
-static void rle_loop(const unsigned bytedepth, uint8_t *restrict planes,
-const uint32_t *restrict rle_offset, const uint32_t *restrict rle_rowlen,
-const uint8_t *restrict rle_data, size_t width, const size_t tab_len) {
-	width *= bytedepth;
-	for (size_t i = 0; i < tab_len; ++i) {
-		void *restrict output = planes + width * i;
-		const void *restrict out_limit = planes + width * (i+1);
-
-		const void *restrict rle_row = rle_data + rle_offset[i];
-		const void *restrict rle_limit = rle_data
-			+ rle_offset[i] + rle_rowlen[i];
-
+static void rle_loop(void *restrict output, const struct rle_info *rle,
+size_t width, const size_t bytedepth) {
+	for (size_t i = 0; i < rle->tab_len; ++i) {
+		const size_t rle_limit = rle->row_offset[i] + rle->row_len[i];
 		if (bytedepth == 1) {
-			rle_loop8(output, out_limit, rle_row, rle_limit);
+			rle_loop8(output, width * i, width * (i+1),
+				rle->rle, rle->row_offset[i], rle_limit);
 		} else {
-			rle_loop16(output, out_limit, rle_row, rle_limit);
+			rle_loop16(output, width * i, width * (i+1),
+				rle->rle, rle->row_offset[i], rle_limit);
 		}
 	}
 }
 
-static bool resolve_offsets(uint32_t *restrict rle_offset,
-const uint32_t *restrict rle_rowlen, const size_t tab_len,
-const uint32_t max_len, const unsigned bytedepth) {
-	const size_t file_pos = tab_len * sizeof(uint32_t) * 2 + 512;
-	const unsigned min_len = bytedepth * 2;
+static bool resolve_offsets(struct rle_info *rle, const uint32_t max_len,
+const uint32_t bytedepth) {
+	const uint32_t file_pos = (uint32_t)(
+		rle->tab_len * sizeof(uint32_t) * 2 + 512);
+	const uint32_t min_len = bytedepth * 2;
 
-	unsigned align = bytedepth - 1;
-	for (size_t i = 0; i < tab_len; ++i) {
-		rle_offset[i] -= (uint32_t)file_pos;
-		if (rle_rowlen[i] < min_len || rle_rowlen[i] > max_len) {
+	for (size_t i = 0; i < rle->tab_len; ++i) {
+		const uint32_t offset = rle->row_offset[i] - file_pos;
+		const uint32_t len = rle->row_len[i];
+		if (offset + len > max_len) {
 			return false;
-		} else if (rle_offset[i] > max_len - rle_rowlen[i]) {
+		} else if (len < min_len) {
 			return false;
-		} else if (rle_offset[i] & align || rle_rowlen[i] & align) {
+		} else if (offset % bytedepth || len % bytedepth) {
 			return false;
 		}
+		rle->row_offset[i] = offset/bytedepth;
+		rle->row_len[i] = len/bytedepth;
 	}
 	return true;
 }
 
 static unsigned char * rle_decode(const struct sgi_desc *desc) {
-	const size_t tab_len = desc->h * desc->ch;
-	const size_t tab_bytes = tab_len * sizeof(uint32_t) * 2;
+	struct rle_info rle = {
+		.tab_len = desc->h * desc->ch,
+	};
+
+	const size_t tab_bytes = rle.tab_len * sizeof(uint32_t) * 2;
 	const size_t rle_total = tab_bytes + desc->rle_size;
-	uint32_t *restrict rle = malloc(rle_total);
-	if (!rle) {
+	rle.buf = malloc(rle_total);
+	if (!rle.buf) {
 		return NULL;
 	}
 
-	size_t read = fread(rle, 1, rle_total, desc->ifp);
+	size_t read = fread(rle.buf, 1, rle_total, desc->ifp);
 	if (read <= tab_bytes) {
-		free(rle);
+		free(rle.buf);
 		return NULL;
 	} else if (read < rle_total) {
 		puts(RASTER_EOF);
 	}
 
-	loop_endian32(rle, big_endian, tab_len * 2);
+	loop_endian32(rle.buf, big_endian, rle.tab_len * 2);
 
-	uint32_t *restrict rle_offset = rle;
-	uint32_t *restrict rle_rowlen = rle + tab_len;
-	const bool valid = resolve_offsets(rle_offset, rle_rowlen, tab_len,
-		(uint32_t)desc->rle_size, desc->bytedepth);
+	rle.row_offset = rle.buf;
+	rle.row_len = rle.buf + rle.tab_len;
+	rle.rle = rle.buf + rle.tab_len * 2;
+
+	const bool valid = resolve_offsets(&rle, (uint32_t)desc->rle_size,
+		desc->bytedepth);
 	if (!valid) {
-		free(rle);
+		free(rle.buf);
 		puts("SGI Error: RLE data goes out of bounds.");
 		return NULL;
 	}
-
-	uint8_t *restrict rle_data = (uint8_t *)(rle + tab_len * 2);
 
 	const size_t plane_len = desc->w * desc->h;
 	const size_t dims = plane_len * desc->ch * desc->bytedepth;
 	uint8_t *restrict planes = malloc(dims);
 	if (!planes) {
-		free(rle);
+		free(rle.buf);
 		return NULL;
 	}
 
-	rle_loop(desc->bytedepth, planes, rle_offset, rle_rowlen, rle_data,
-		desc->w, tab_len);
-	free(rle);
+	rle_loop(planes, &rle, desc->w, desc->bytedepth);
+	free(rle.buf);
 	return interleave_planes(desc, plane_len, planes);
 }
 
@@ -228,12 +217,8 @@ unsigned char * sgi_decode(const struct sgi_desc *desc) {
 
 
 static enum lib_fail validate_filesize(struct sgi_desc *desc) {
-	const long start = ftell(desc->ifp);
-	fseek(desc->ifp, 0, SEEK_END);
-	const long end = ftell(desc->ifp);
-
+	const size_t size = (size_t)file_get_remaining(desc->ifp);
 	const size_t dims = desc->w * desc->h * desc->ch * desc->bytedepth;
-	const size_t size = (size_t)(end - start);
 	if (desc->compression == sgi_rle) {
 		const size_t table_size = desc->h * desc->ch
 			* sizeof(uint32_t) * 2;
@@ -249,7 +234,6 @@ static enum lib_fail validate_filesize(struct sgi_desc *desc) {
 			return lib_unexpected_eof;
 		}
 	}
-	fseek(desc->ifp, start, SEEK_SET);
 	return lib_ok;
 }
 
@@ -276,7 +260,7 @@ const uint16_t channels, const uint32_t bitmap_type) {
 		if (height != 1) {
 			return lib_invalid_header;
 		}
-		// Fallthrough
+		// fallthrough
 	case 2:
 		if (channels != 1) {
 			return lib_invalid_header;

@@ -7,6 +7,7 @@
 
 #include "../wudefs.h"
 #include "../common.h"
+#include "../term.h"
 #include "../metadata.h"
 
 enum marker_type {
@@ -93,50 +94,48 @@ static size_t search_soi_offsets(FILE *ifp, struct jpeg_state *js) {
 	return idx + 1;
 }
 
-static struct marker_info identify_marker(jpeg_saved_marker_ptr mk) {
-	// The implied null is relevant for all of these
+static bool markercmp(const struct jpeg_marker_struct *mk,
+const unsigned char *ch, const size_t len) {
+	if (len < mk->data_length) {
+		return !memcmp(mk->data, ch, len);
+	}
+	return false;
+}
+
+static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
+	// Implied nulls are relevant
 	const unsigned char exif[] = "Exif\0";
 	const unsigned char xmp[] = "http://ns.adobe.com/xap/1.0/";
 	const unsigned char mpo[] = "MPF";
 
 	struct marker_info info = {0, 0};
-	if (mk->data_length > sizeof(xmp)) {
-		if ( !memcmp(mk->data, mpo, sizeof(mpo)) ) {
-			info.type = mpo_marker;
-			info.data_start = sizeof(mpo);
-		} else if ( !memcmp(mk->data, exif, sizeof(exif)) ) {
-			info.type = exif_marker;
-			info.data_start = sizeof(exif);
-		} else if ( !memcmp(mk->data, xmp, sizeof(xmp)) ) {
-			info.type = xmp_marker;
-			info.data_start = sizeof(xmp);
-		}
+	if ( markercmp(mk, exif, sizeof(exif)) ) {
+		info.type = exif_marker;
+		info.data_start = sizeof(exif);
+	} else if ( markercmp(mk, xmp, sizeof(xmp)) ) {
+		info.type = xmp_marker;
+		info.data_start = sizeof(xmp);
+	} else if ( markercmp(mk, mpo, sizeof(mpo)) ) {
+		info.type = mpo_marker;
 	}
 	return info;
 }
 
-static enum wu_error parse_markers(jpeg_saved_marker_ptr mk,
+static enum wu_error parse_markers(const struct jpeg_marker_struct *mk,
 struct image_file *infile, struct jpeg_state *js) {
-	printf("Found marker type 0x%.2X. ", mk->marker);
-	if (mk->data_length > 4) {
-		print_unsafe_data("Starts with", mk->data, 4, stdout);
-	} else {
-		putchar('\n');
-	}
-
 	const struct marker_info info = identify_marker(mk);
+	struct wu_tree *metadata = &infile->metadata;
 	switch (info.type) {
 	case xmp_marker:
 	case exif_marker:
 		standard_metadata((enum metadata_type)info.type,
 			mk->data + info.data_start,
-			mk->data_length - info.data_start, &infile->metadata);
+			mk->data_length - info.data_start, metadata);
 		break;
 	case mpo_marker:
-		;
 		/* MPO offsets are relative to the MPO marker, so we need to
-		 * search the whole file. */
-		const size_t nr = search_soi_offsets(infile->ifp, js);
+		 * parse the whole file again. */
+		;const size_t nr = search_soi_offsets(infile->ifp, js);
 		if (nr > 1) {
 			if (!realloc_sub_images(infile, nr)) {
 				return wu_alloc_error;
@@ -144,6 +143,18 @@ struct image_file *infile, struct jpeg_state *js) {
 		}
 		break;
 	default:
+		;struct wu_tree *branch = tree_sprout_branch(metadata,
+			"Marker");
+		if (branch) {
+			char app[] = "APP___";
+			sprintf(app + 3, "%hhu", mk->marker - JPEG_APP0);
+
+			tree_sprout_leaf(branch, "Type", app);
+			tree_bud_leaf(branch, "Size", wu_leaf_unsigned,
+				(union wu_leaf){.u = mk->data_length});
+			tree_sprout_unsafe_leaf(branch, "Data start", mk->data,
+				zumin(12, mk->data_length));
+		}
 		break;
 	}
 	return wu_ok;
@@ -185,12 +196,12 @@ const struct wu_conf *wuconf, struct jpeg_state *js) {
 		jpeg_start_decompress(dinfo);
 
 		/* sub_img array is reallocated if an mpo marker is found, so
-		 * the pointer must be copied inside the loop. */
+		 * the pointer must be copied _inside_ the loop. */
 		struct raw_img *img = infile->sub_img;
 		img[i].w = dinfo->output_width;
 		img[i].h = dinfo->output_height;
 		if (zumax(img[i].w, img[i].h) > wuconf->max_img_size) {
-			status = wu_exceeded_size_limit;
+			status = wu_exceeds_size_limit;
 			break;
 		}
 		img[i].channels = (unsigned char)dinfo->output_components;

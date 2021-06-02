@@ -24,7 +24,10 @@ enum lib_fail avs_open_file(FILE *ifp, size_t *width, size_t *height) {
 	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
 		*width = endian32(buf[0], big_endian);
 		*height = endian32(buf[1], big_endian);
-		return lib_ok;
+		if (*width && *height) {
+			return lib_ok;
+		}
+		return lib_invalid_header;
 	}
 	return lib_unexpected_eof;
 }

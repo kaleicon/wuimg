@@ -22,8 +22,9 @@ void free_archive_iter(struct archive_iter *iter);
 
 void remove_archive_entry(struct tmp_file *entry);
 
-struct tmp_file * get_archive_file(struct archive_iter *iter, int idx);
+struct tmp_file * get_archive_file(struct archive_iter *iter, long idx);
 
-bool init_archive_iter(struct archive_iter *iter, const char *filename);
+struct tmp_file * init_archive_iter(struct archive_iter *iter,
+const char *filename);
 
 #endif /* WU_EXTRACT */

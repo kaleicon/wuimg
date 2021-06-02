@@ -258,7 +258,7 @@ enum lib_fail xbm_open_file(FILE *ifp, struct xbm_desc *desc) {
 		if (newline == '\n' || newline == '\r') {
 			break;
 		}
-		// Fallthrough
+		// fallthrough
 	default:
 		return lib_unknown_format;
 	}

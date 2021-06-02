@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -8,7 +9,7 @@
 #include "common/composite.h"
 #include "pi.h"
 
-// Define to use slightly slower but more clearly correct code.
+// Define to use slightly slower but clearly correct code.
 //#define EXACT_BITS
 
 void pi_cleanup(struct pi_desc *desc) {
@@ -77,15 +78,16 @@ const enum pi_repeat_src loc, size_t cnt, const size_t width) {
 		--cnt;
 	}
 
-	while (cnt > diff / 2) { // Using memcpy or memmove is a grave mistake.
-		output[i] = output[i - diff];
-		output[i+1] = output[i+1 - diff];
+	const size_t src = i - diff;
+	while (cnt > diff/2) {
+		output[i] = output[src];
+		output[i+1] = output[src+1];
 		i += 2;
 		--cnt;
 	}
 
 	if (cnt) {
-		memcpy(output + i, output + i - diff, cnt*2);
+		memcpy(output + i, output + src, cnt*2);
 		i += cnt*2;
 	}
 	return i;
@@ -107,7 +109,7 @@ size_t *restrict bitpos, unsigned long n) {
 }
 
 #ifndef EXACT_BITS
-static uint32_t read_dword(const unsigned char *restrict bs,
+static uint32_t current_dword(const unsigned char *restrict bs,
 const size_t bitpos, const bool full_bits) {
 	size_t i = bitpos / 8;
 	size_t o = bitpos % 8;
@@ -118,7 +120,7 @@ const size_t bitpos, const bool full_bits) {
 	return f;
 }
 
-static uint16_t read_word(const unsigned char *restrict bs,
+static uint16_t current_word(const unsigned char *restrict bs,
 const size_t bitpos, const bool full_bits) {
 	size_t i = bitpos / 8;
 	size_t o = bitpos % 8;
@@ -152,14 +154,14 @@ size_t *restrict bitpos) {
 	return read_bits(bs, bitpos, seq_len) | (1U << seq_len);
 #else
 	const uint32_t mask = 1U << 31;
-	const uint32_t repeat = read_dword(bs, *bitpos, true);
+	const uint32_t repeat = current_dword(bs, *bitpos, true);
 	while ((repeat << seq_len) & mask && seq_len < 31) {
 		++seq_len;
 	}
 
 	*bitpos += seq_len;
 	// The beginning zero is included
-	const uint32_t payload = read_dword(bs, *bitpos, true);
+	const uint32_t payload = current_dword(bs, *bitpos, true);
 	*bitpos += seq_len + 1;
 	return (payload | mask) >> (31 - seq_len);
 #endif
@@ -176,7 +178,7 @@ size_t *restrict bitpos) {
 	}
 	return (bits << 1) | read_bits(bs, bitpos, 1);
 #else
-	const uint_fast32_t word = read_word(bs, *bitpos, false) >> 13;
+	const uint_fast32_t word = current_word(bs, *bitpos, false) >> 13;
 	uint8_t diff;
 	switch (word) {
 	case 0: case 1: case 2: case 3: case 4: case 5:
@@ -206,7 +208,7 @@ size_t *restrict bitpos) {
 	if (read_bits(bs, bitpos, 1)) {
 		return read_bits(bs, bitpos, 1);
 	} else { // 00
-		uint8_t sh = 0;
+		size_t sh = 0;
 		// 010
 		if (read_bits(bs, bitpos, 1)) { // Weee
 			// 0110
@@ -235,28 +237,27 @@ size_t *restrict bitpos) {
 		return read_bits(bs, bitpos, sh) | (1U << sh);
 	}
 #else
-	const size_t word = read_dword(bs, *bitpos, false);
-	const size_t enc = word >> (32 - 7);
-	size_t read, mask;
-	if (enc >= 64) { // 1
-		read = 2; mask = 0x01;
-	} else if (enc == 63) { // 0111111
-		read = 14; mask = 0x7f;
-	} else if (enc == 62) { // 0111110
-		read = 13; mask = 0x3f;
-	} else if (enc >= 60) { // 011110
-		read = 11; mask = 0x1f;
-	} else if (enc >= 56) {
-		read = 9; mask = 0x0f;
-	} else if (enc >= 48) {
-		read = 7; mask = 0x07;
-	} else if (enc >= 32) {
-		read = 5; mask = 0x03;
-	} else {
-		read = 3; mask = 0x01;
+	const uint32_t word = current_dword(bs, *bitpos, false);
+	uint32_t read, mask;
+	if (word >= 0x01U << (32 - 1)) { // 1x
+		read = 2; mask = 0x01 << 1;
+	} else if (word >= 0x3fU << (32 - 7)) { // 0111111xxxxxxx
+		read = 14; mask = 0x1f << 8;
+	} else if (word >= 0x1fU << (32 - 6)) { // 0111110xxxxxx
+		read = 13; mask = 0x3f << 6;
+	} else if (word >= 0x0fU << (32 - 5)) { //  011110xxxxx
+		read = 11; mask = 0x1f << 5;
+	} else if (word >= 0x07U << (32 - 4)) { //   01110xxxx
+		read = 9; mask = 0x0f << 4;
+	} else if (word >= 0x03U << (32 - 3)) { //    0110xxx
+		read = 7; mask = 0x07 << 3;
+	} else if (word >= 0x01U << (32 - 2)) { //     010xx--
+		read = 5; mask = 0x03 << 2;
+	} else {                                //      00x----
+		read = 3; mask = 0x01 << 1;
 	}
 	*bitpos += read;
-	return (word >> (32 - read)) & mask;
+	return (word >> (32 - read)) ^ mask;
 #endif
 }
 
@@ -284,7 +285,7 @@ size_t *restrict bitpos) {
 		return read_bits(bs, bitpos, sh) | (1U << sh);
 	}
 #else
-	const size_t word = read_word(bs, *bitpos, false);
+	const size_t word = current_word(bs, *bitpos, false);
 	size_t diff, mask;
 	switch (word >> 13) {
 	case 0: case 1:
@@ -374,11 +375,7 @@ const size_t bitlen, const size_t width) {
 }
 
 static size_t max_bitstream_size(FILE *ifp, const size_t dims) {
-	const long start = ftell(ifp);
-	fseek(ifp, 0, SEEK_END);
-	const long end = ftell(ifp);
-	fseek(ifp, start, SEEK_SET);
-	return zumin(dims * 2, (size_t)(end - start));
+	return zumin(dims * 2, (size_t)file_get_remaining(ifp));
 }
 
 unsigned char * pi_decode(const struct pi_desc *desc) {
@@ -389,7 +386,8 @@ unsigned char * pi_decode(const struct pi_desc *desc) {
 	}
 
 	/* The spec recommends that the last 32 bits be zero, so we'll
-	 * enforce this to do away with most bounds checks. */
+	 * enforce this to do away with most bounds checks in the middle
+	 * of operations. */
 	const size_t bslen = max_bitstream_size(desc->ifp, dims);
 	unsigned char *bitstream = malloc(bslen + 4);
 	if (!bitstream) {

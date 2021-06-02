@@ -17,7 +17,7 @@ enum bmp_compression {
 	bmp_no_compression = 0,
 	bmp_8bit_rle,
 	bmp_4bit_rle,
-	bmp_mask,
+	bmp_bitfield,
 };
 
 enum bmp_order {
@@ -27,13 +27,22 @@ enum bmp_order {
 
 enum bmp_type {
 	bmp_type2 = 12,
-	bmp_type3 = 40,
-	bmp_type4 = 108,
-	bmp_type5 = 124,
+	bmp_info_header = 40,
+	bmp_v2_info_header = 52,
+	bmp_v3_info_header = 56,
+	bmp_v4_header = 108,
+	bmp_v5_header = 124,
 };
 
-struct bmp_mask {
-	uint32_t a, r, g, b;
+struct bmp_bitparams {
+	uint32_t mask;
+	uint32_t scale;
+	uint32_t shift;
+};
+
+struct bmp_bitfield {
+	struct bmp_bitparams p[4];
+	bool high_depth;
 };
 
 struct bmp_desc {
@@ -50,13 +59,16 @@ struct bmp_desc {
 
 	union {
 		struct colormap *pal;
-		struct bmp_mask mask;
+		struct bmp_bitfield bf;
 	} bmp;
+	bool expand;
 };
 
 void bmp_cleanup(const struct bmp_desc *desc);
 
 unsigned int bmp_get_row_alignment(const struct bmp_desc *desc);
+
+bool bmp_has_alpha(const struct bmp_desc *desc);
 
 unsigned char * bmp_decode(const struct bmp_desc *desc);
 

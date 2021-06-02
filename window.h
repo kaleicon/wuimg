@@ -4,33 +4,51 @@
 #include "wudefs.h"
 #include "opengl.h"
 #include "events.h"
+#include "drm.h"
 
-struct window_properties {
+#include <GLFW/glfw3.h>
+
+enum window_backend {
+	window_glfw,
+	window_kms,
+};
+
+struct glfw_window {
+	GLFWwindow *window;
 	int x, y, w, h;
 	bool fullscreen;
 	bool has_focus;
 };
 
-struct window_control {
-	void *window;
-	const struct image_file *file;
-	struct gl_context context;
-	struct wu_state state;
+struct window_context {
+	struct gl_context gl;
 	struct wu_event event;
-	struct wu_conf conf;
-	struct window_properties geom;
+	enum window_backend backend;
+	union {
+		struct glfw_window glfw;
+		struct kms_context kms;
+	} ctx;
 };
 
-void terminate_window(void);
+struct window_control {
+	struct window_context window;
+	struct image_context image;
+};
 
-void poll_window(struct window_control *control);
+void window_terminate(struct window_context *window);
 
-void redraw_window(void *window);
+void window_poll(const struct window_context *window);
 
-void set_window_title(void *window, const char *filename);
+void window_draw(struct window_context *window);
 
-void set_fullscreen_window(struct window_control *control);
+bool window_has_focus(const struct window_context *window);
 
-bool setup_window(struct window_control *control);
+void window_toggle_fullscreen(struct window_context *window);
+
+void window_set_title(const struct window_context *window, const char *title);
+
+void window_postgl_setup(struct window_control *control);
+
+bool window_setup(struct window_control *control);
 
 #endif /* WINDOW */

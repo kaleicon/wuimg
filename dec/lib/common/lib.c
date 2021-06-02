@@ -23,7 +23,7 @@ const char * lib_fail_string(const enum lib_fail fail) {
 	case lib_invalid_data:
 		return "Invalid data in raster";
 	case lib_pi_comment_too_long:
-		return "Pi error: Comment too long";
+		return "Pi error: Excessively long comment";
 	case lib_sgi_is_colormap_file:
 		return "SGI error: File defines or requires an external colormap";
 	case lib_sun_unsupported_type:
@@ -34,6 +34,8 @@ const char * lib_fail_string(const enum lib_fail fail) {
 		return "SUN error: File uses an unknown 'raw' colormap";
 	case lib_tga_no_image_data:
 		return "TGA error: File is header only, and lacks image data";
+	case lib_tim_mixed_bitdepth:
+		return "TIM error: Unsupported mixed bitdepth variant";
 	}
 	return "???";
 }

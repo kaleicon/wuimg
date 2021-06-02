@@ -7,10 +7,7 @@
 
 #include "common/lib.h"
 #include "../../common.h"
-
-struct tga_color_entry {
-	unsigned char b, g, r, a;
-};
+#include "common/unpack.h"
 
 struct tga_metadata {
 	unsigned char id_len;
@@ -35,7 +32,7 @@ struct tga_metadata {
 		unsigned short version_number;
 	} software;
 
-	struct tga_color_entry key_color;
+	struct colormap key_color;
 	unsigned short pixel_numerator, pixel_denominator;
 	unsigned short gamma_numerator, gamma_denominator;
 
@@ -56,7 +53,7 @@ struct tga_colormap {
 	unsigned int offset, len;
 	unsigned char bitdepth;
 	unsigned char bytedepth;
-	struct tga_color_entry *entry;
+	struct colormap *entry;
 };
 
 struct tga_desc {
@@ -82,7 +79,7 @@ unsigned int *width, unsigned int *height);
 
 unsigned char * tga_decode(const struct tga_desc *desc);
 
-struct tga_color_entry * tga_take_palette(struct tga_desc *desc);
+struct colormap * tga_take_palette(struct tga_desc *desc);
 
 bool tga_parse_footer(struct tga_desc *desc);
 

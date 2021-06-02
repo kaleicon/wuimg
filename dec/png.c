@@ -156,7 +156,7 @@ const struct wu_conf *wuconf) {
 	const unsigned int height = png_get_image_height(png_ptr, info_ptr);
 	if (umax(width, height) > wuconf->max_img_size) {
 		png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 //	png_unknown_chunkp unknowns;

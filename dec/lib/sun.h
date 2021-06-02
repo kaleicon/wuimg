@@ -34,10 +34,11 @@ struct sun_desc {
 	unsigned char ch;
 	enum sun_type type:16;
 	uint32_t scan_len;
+	bool expand;
 
-	struct sun_colormap {
+	struct {
+		size_t len;
 		struct colormap *map;
-		uint32_t len;
 	} colormap;
 };
 

@@ -18,7 +18,7 @@ unsigned int sun_get_row_alignment(struct sun_desc *desc) {
 		if (desc->colormap.map) {
 			break;
 		}
-		// Fallthrough
+		// fallthrough
 	case 24:
 	case 32:
 		return 2;
@@ -41,14 +41,17 @@ unsigned char *raster) {
 	if (desc->colormap.map) {
 		strip_colormap(output, raster, desc->colormap.map, desc->w,
 			desc->h, 2, 3, desc->bitdepth);
-	} else if (desc->colormap.len) { /* File has a colormap but the caller
-		has taken it. */
-		strip_unpack(output, raster, desc->w, desc->h, 2,
-			unpack, desc->bitdepth);
 	} else {
-		// Do 4bit files with no colormap exist?
-		strip_unpack(output, raster, desc->w, desc->h, 2,
-			expand_invert, desc->bitdepth);
+		enum unpack_op op;
+		if (desc->colormap.len) {
+			// File has a colormap but the caller has taken it.
+			op = op_unpack;
+		} else {
+			// 1bit files with no colormap exist. What about 4bit?
+			op = op_expand_invert;
+		}
+		strip_unpack(output, raster, desc->w, desc->h, 2, op,
+			desc->bitdepth);
 	}
 
 	free(raster);
@@ -62,10 +65,12 @@ unsigned char *raster) {
 		if (!desc->colormap.map) {
 			break;
 		}
-		// Fallthrough
+		// fallthrough
 	case 4:
 	case 1:
-		return standard_decode_expand(desc, raster);
+		if (desc->expand) {
+			return standard_decode_expand(desc, raster);
+		}
 	}
 	return raster;
 }
@@ -164,6 +169,11 @@ unsigned char *rle_data) {
 }
 
 unsigned char * sun_decode(const struct sun_desc *desc) {
+	/*if (desc->expand && !desc->colormap.len && desc.bitdepth < 8) {
+		strip_map_unpack(desc->ifp, desc->w, desc->h, 2, unpack,
+			desc->bitdepth);
+	}*/
+
 	unsigned char *data = malloc(desc->data_len);
 	if (!data) {
 		return NULL;
@@ -193,6 +203,14 @@ unsigned char * sun_decode(const struct sun_desc *desc) {
 		return data;
 	}
 }
+/*
+struct lib_raster sun_get_format(struct sun_desc *desc) {
+	return (struct lib_raster) {
+		.components = desc->ch,
+		.bpc = (unsigned char)imin(desc->bitdepth, 8),
+		.alignment = 2,
+	};
+}*/
 
 struct colormap * sun_take_colormap(struct sun_desc *desc) {
 	struct colormap *map = desc->colormap.map;
@@ -201,25 +219,24 @@ struct colormap * sun_take_colormap(struct sun_desc *desc) {
 }
 
 static enum lib_fail interleave_colormap(struct sun_desc *desc) {
-	struct colormap *map = malloc(sizeof(*desc->colormap.map) * 256);
-	if (!map) {
-		return lib_alloc_error;
-	}
-
-	const size_t entries = 1U << desc->bitdepth;
-	unsigned char *buf = malloc(entries * 3);
+	unsigned char *buf = malloc(desc->colormap.len);
 	if (!buf) {
-		free(map);
 		return lib_alloc_error;
 	}
 
-	const size_t read = fread(buf, 3, entries, desc->ifp);
-	if (read != entries) {
+	const size_t read = fread(buf, 1, desc->colormap.len, desc->ifp);
+	if (read != desc->colormap.len) {
 		free(buf);
-		free(map);
 		return lib_unexpected_eof;
 	}
 
+	struct colormap *map = malloc(sizeof(*desc->colormap.map) * 256);
+	if (!map) {
+		free(buf);
+		return lib_alloc_error;
+	}
+
+	const size_t entries = desc->colormap.len / 3;
 	for (size_t i = 0; i < entries; ++i) {
 		map[i].r = buf[i];
 		map[i].g = buf[i + entries];
@@ -232,10 +249,7 @@ static enum lib_fail interleave_colormap(struct sun_desc *desc) {
 }
 
 static bool validate_file_size(struct sun_desc *desc) {
-	const long start = ftell(desc->ifp);
-	fseek(desc->ifp, 0, SEEK_END);
-	const long end = ftell(desc->ifp);
-	size_t file_size = (size_t)(end - start);
+	size_t file_size = (size_t)file_get_remaining(desc->ifp);
 	if (file_size <= desc->colormap.len) {
 		return false;
 	} else {
@@ -255,8 +269,6 @@ static bool validate_file_size(struct sun_desc *desc) {
 		}
 		desc->data_len = raster_len;
 	}
-
-	fseek(desc->ifp, start, SEEK_SET);
 	return true;
 }
 
@@ -324,12 +336,14 @@ enum lib_fail sun_parse_header(struct sun_desc *desc) {
 		16	DWORD	Type;           // Type of raster file
 		20	DWORD	ColorMapType;
 		24	DWORD	ColorMapLen;
+		28
 	*/
 
 	uint32_t header[7];
 	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
 		return lib_unexpected_eof;
 	}
+
 
 	const enum lib_fail fail = validate_header(desc,
 		endian32(header[0], big_endian),

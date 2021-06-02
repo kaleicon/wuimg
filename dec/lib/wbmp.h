@@ -6,11 +6,11 @@
 #include "common/lib.h"
 
 struct wbmp_desc {
-	size_t w, h;
 	FILE *ifp;
+	size_t w, h;
 };
 
-unsigned char * wbmp_decode(struct wbmp_desc *desc, const bool expand_bitmap);
+unsigned char * wbmp_decode(const struct wbmp_desc *desc, bool expand_bitmap);
 
 enum lib_fail wbmp_open_file(FILE *ifp, struct wbmp_desc *desc);
 

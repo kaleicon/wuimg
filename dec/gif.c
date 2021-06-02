@@ -24,13 +24,21 @@ struct gif_frame {
 	int alpha_idx;
 };
 
+struct gif_disposal_prev {
+	unsigned char *buf;
+	int n;
+	int idx;
+	bool written;
+	bool rolling;
+};
+
 struct gif_state {
 	GifFileType *gif_file;
 	GraphicsControlBlock *gcb;
-	struct anim_frame dispose_bg_geom;
-	enum disposal_mode frame_dispose;
+	struct gif_disposal_prev previous;
 	int idx;
-	int dispose_prev_idx;
+	unsigned char comps;
+	bool opaque_first_frame;
 	struct colormap global_pal[256];
 	struct colormap local_pal[256];
 };
@@ -66,6 +74,7 @@ static enum wu_error map_error_to_wu(const int e) {
 static void clean_gif_state(struct image_file *infile) {
 	struct gif_state *ds = infile->dec_state;
 	DGifCloseFile(ds->gif_file, NULL);
+	free(ds->previous.buf);
 	free(ds->gcb);
 	free(ds);
 
@@ -73,72 +82,71 @@ static void clean_gif_state(struct image_file *infile) {
 	infile->events = 0;
 }
 
-static void rewind_gif_state(struct gif_state *ds) {
-	ds->frame_dispose = first_frame;
-	ds->idx = 0;
-	ds->dispose_prev_idx = 0;
+static void copy_stride(unsigned char *restrict out,
+const GifByteType *restrict raster, const struct colormap *pal,
+const size_t stride, const unsigned char ch) {
+	if (ch == 1) {
+		memcpy(out, raster, stride);
+	} else {
+		strip_colormap(out, raster, pal, stride, 1, 1, ch, 8);
+	}
 }
 
 static void alpha_pal(unsigned char *restrict out,
 const GifByteType *restrict raster, const struct colormap *pal,
-size_t len, const unsigned char ch, const int alpha_idx) {
+size_t len, const unsigned char ch, const unsigned char alpha_idx) {
 	const GifByteType *restrict alpha;
 	while ((alpha = memchr(raster, alpha_idx, len)) != NULL) {
 		const size_t stride = (size_t)(alpha - raster);
-		strip_colormap(out, raster, pal, stride, 1, 1, ch, 8);
-		// +1 because we already know the next byte is transparent
-		out += (stride + 1) * ch;
+		copy_stride(out, raster, pal, stride, ch);
+		out += (stride+1) * ch;
 		raster += stride + 1;
 		len -= stride + 1;
+
 		while (len && *raster == alpha_idx) {
 			out += ch;
 			++raster;
 			--len;
 		}
 	}
-	strip_colormap(out, raster, pal, len, 1, 1, ch, 8);
+	copy_stride(out, raster, pal, len, ch);
 }
 
 static void palette_to_color(void *restrict out,
 const GifByteType *restrict raster, const void *pal, const size_t len,
 const unsigned char ch, const int alpha_idx) {
 	if (alpha_idx == -1) {
-		strip_colormap(out, raster, pal, len, 1, 1, ch, 8);
+		copy_stride(out, raster, pal, len, ch);
 	} else {
-		if (ch == 4) {
-			alpha_pal(out, raster, pal, len, 4, alpha_idx);
-		} else {
-			alpha_pal(out, raster, pal, len, 3, alpha_idx);
-		}
+		const unsigned char alpha = (unsigned char)alpha_idx;
+		alpha_pal(out, raster, pal, len, ch, alpha);
 	}
 }
 
-static void composite_frame(struct raw_img *img,
-const struct gif_frame *frame) {
+static void composite_color_frame(struct raw_img *img,
+const struct gif_frame *frame, const unsigned char ch) {
 	const struct anim_frame *geom = &frame->geom;
-	unsigned char *offset = img->data
-		+ ((geom->y * img->w + geom->x) * img->channels);
 
-//	if (geom->w == img->w) {
-//		palette_to_color(offset, frame->raster, frame->palette,
-//			geom->w * geom->h, img->channels, frame->alpha_idx);
-//	} else {
-		unsigned char *raster_offset = frame->raster;
-		for (size_t i = 0; i < geom->h; ++i) {
-			palette_to_color(offset, raster_offset, frame->palette,
-				geom->w, img->channels, frame->alpha_idx);
-			raster_offset += geom->w;
-			offset += img->w * img->channels;
-		}
-//	}
+	size_t offset = (geom->y * img->w + geom->x) * ch;
+	size_t raster_offset = 0;
+	const GifByteType *raster = frame->raster;
+	for (size_t i = 0; i < geom->h; ++i) {
+		palette_to_color(img->data + offset, raster + raster_offset,
+			frame->palette, geom->w, ch, frame->alpha_idx);
+		raster_offset += geom->w;
+		offset += img->w * ch;
+	}
 }
 
 static void expand_palette(const ColorMapObject *gif_map,
-struct colormap *out_pal) {
+struct colormap *out_pal, int alpha_idx) {
 	const GifColorType *pal = gif_map->Colors;
 	for (int i = 0; i < gif_map->ColorCount; ++i) {
 		memcpy(out_pal + i, pal + i, 3);
 		out_pal[i].a = 0xff;
+	}
+	if (alpha_idx > -1) {
+		out_pal[alpha_idx].a = 0x00;
 	}
 }
 
@@ -159,29 +167,38 @@ static void init_gif_frame(struct gif_frame *fr, struct gif_state *ds) {
 	fr->raster = gif_image[i].RasterBits;
 	fr->alpha_idx = ds->gcb[i].TransparentColor;
 	if (gif_image[i].ImageDesc.ColorMap) {
-		expand_palette(gif_image[i].ImageDesc.ColorMap, ds->local_pal);
+		expand_palette(gif_image[i].ImageDesc.ColorMap, ds->local_pal,
+			fr->alpha_idx);
 		fr->palette = ds->local_pal;
 	} else {
 		fr->palette = ds->global_pal;
 	}
 }
 
+static bool cache_prevbuf(struct gif_state *ds) {
+	return ds->previous.n > 1 || !ds->previous.written;
+}
+
 static enum wu_error gif_dec_frame(struct raw_img *img,
 const struct wu_conf *wuconf, struct gif_state *ds) {
-	int i;
+	const GraphicsControlBlock *gcb = ds->gcb + ds->idx;
+	int i = 0;
 	if (wuconf->cache_frames) {
 		i = ds->idx;
 		if (img[i].data) {
 			return wu_ok;
+		} else if (i > 0 && img[0].palette) {
+			const size_t size = sizeof(ds->global_pal);
+			img[i].palette = memdup(img[0].palette, size);
+			if (!img[i].palette) {
+				return wu_alloc_error;
+			}
 		}
 	} else {
-		i = 0;
-		img[i].msec = ds->gcb[ds->idx].DelayTime * 10;
+		img[i].msec = gcb->DelayTime * 10;
 	}
 
-	struct gif_frame frame;
-	init_gif_frame(&frame, ds);
-
+	const unsigned char comps = ds->comps;
 	const size_t image_size = img[i].w * img[i].h * img[i].channels;
 	if (!img[i].data) {
 		img[i].data = malloc(image_size);
@@ -190,47 +207,52 @@ const struct wu_conf *wuconf, struct gif_state *ds) {
 		}
 	}
 
-	const int prev = ds->dispose_prev_idx;
-	switch (ds->frame_dispose) {
-	case first_frame:
-		if (img[i].channels == 4) {
-			memset(img[i].data, 0, image_size);
+	const int fill = img[i].palette ? ds->gif_file->SBackGroundColor : 0;
+	if (ds->idx == 0) {
+		if (!ds->opaque_first_frame) {
+			memset(img[i].data, fill, image_size);
 		}
-		composite_frame(&img[i], &frame);
-		break;
-	case dispose_background:
-		if (wuconf->cache_frames) {
-			copy_unaffected(&img[i], img[prev].data,
-				&ds->dispose_bg_geom);
+		if (gcb->DisposalMode == dispose_previous && cache_prevbuf(ds)) {
+			memset(ds->previous.buf, fill, image_size);
+			ds->previous.written = true;
+			ds->previous.rolling = true;
 		}
-		composite_clear(&img[i], &ds->dispose_bg_geom);
-		composite_frame(&img[i], &frame);
-		break;
-	case dispose_do_not:
-	case dispose_previous:
-	case unspecified:
-		if (wuconf->cache_frames) {
-			memcpy(img[i].data, img[prev].data, image_size);
+	} else {
+		if (gcb->DisposalMode == dispose_previous) {
+			if (cache_prevbuf(ds) && !ds->previous.rolling) {
+				memcpy(ds->previous.buf, img[i].data, image_size);
+				ds->previous.written = true;
+				ds->previous.rolling = true;
+			}
+		} else {
+			ds->previous.rolling = false;
 		}
-		composite_frame(&img[i], &frame);
-	}
 
-	switch (ds->gcb[ds->idx].DisposalMode) {
-	case dispose_background:
-		ds->dispose_bg_geom = frame.geom;
-		// Fallthrough
-	case dispose_do_not:
-	case unspecified:
-		ds->dispose_prev_idx = ds->idx;
-		break;
-	case dispose_previous:
-	case first_frame:
-		break;
+		int p = ds->idx - 1;
+		switch (gcb[-1].DisposalMode) {
+		case dispose_background:;
+			const struct anim_frame geom = gif_desc_to_frame(
+				&ds->gif_file->SavedImages[p].ImageDesc);
+			if (wuconf->cache_frames) {
+				copy_unaffected(img + i, img[p].data, &geom);
+			}
+			composite_clear(img + i, &geom, fill);
+			break;
+		case dispose_previous:
+			memcpy(img[i].data, ds->previous.buf, image_size);
+			break;
+		case dispose_do_not:
+		case unspecified:
+			if (wuconf->cache_frames) {
+				memcpy(img[i].data, img[p].data, image_size);
+			}
+		}
 	}
+	struct gif_frame frame;
+	init_gif_frame(&frame, ds);
+	composite_color_frame(img + i, &frame, comps);
 
-	ds->frame_dispose = ds->gcb[ds->idx].DisposalMode;
 	++ds->idx;
-
 	return wu_ok;
 }
 
@@ -242,7 +264,7 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 	int iters = imod(state->sub.cycle, image_count);
 	if (iters > image_count - ds->idx) {
 		iters -= image_count - ds->idx;
-		rewind_gif_state(ds);
+		ds->idx = 0;
 	}
 	for (int i = 0; i < iters; ++i) {
 		const enum wu_error err = gif_dec_frame(infile->sub_img,
@@ -255,7 +277,7 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 				clean_gif_state(infile);
 				break;
 			} else {
-				rewind_gif_state(ds);
+				ds->idx = 0;
 			}
 		}
 	}
@@ -312,8 +334,8 @@ const GifImageDesc *restrict prev) {
 	return (w_diff - x_diff >= 0) && (h_diff - y_diff >= 0);
 }
 
-static GraphicsControlBlock * read_properties(GifFileType *gif_file,
-int *channels, struct wu_tree *tree) {
+static GraphicsControlBlock * gather_info(GifFileType *gif_file,
+struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
 	const int count = gif_file->ImageCount;
 	GraphicsControlBlock *gcb = malloc(sizeof(GraphicsControlBlock)
 		* (size_t)count);
@@ -326,13 +348,14 @@ int *channels, struct wu_tree *tree) {
 		global_colors = gif_file->SColorMap->ColorCount;
 	}
 
+	int prev_disposals = 0;
 	const int DEFAULT_DELAY = 10;
 	enum disposal_mode dispose = first_frame;
 	SavedImage *image = gif_file->SavedImages;
 	for (int i = 0; i < count; ++i) {
 		const int block_count = image[i].ExtensionBlockCount;
 		const int gcb_status = read_extensions(block_count,
-			image[i].ExtensionBlocks, &gcb[i], tree);
+			image[i].ExtensionBlocks, gcb + i, tree);
 		if (gcb_status != GIF_OK) {
 			gcb[i].DisposalMode = unspecified;
 			gcb[i].UserInputFlag = 0;
@@ -342,10 +365,18 @@ int *channels, struct wu_tree *tree) {
 			gcb[i].DelayTime = DEFAULT_DELAY;
 		}
 
-		// Exhaustive tests for alpha.
 		const GifImageDesc *desc = &image[i].ImageDesc;
-		if (*channels == 3) {
-			int alpha_idx = gcb[i].TransparentColor;
+		if (desc->ColorMap) {
+			*uses_local_palette = true;
+		}
+
+		if (gcb[i].DisposalMode == dispose_previous) {
+			++prev_disposals;
+		}
+
+		int alpha_idx = gcb[i].TransparentColor;
+		// Some quick tests for alpha.
+		if (ds->comps == 3 && alpha_idx != -1) {
 
 			// Check if alpha_idx points to an unused index
 			if (desc->ColorMap) {
@@ -366,6 +397,7 @@ int *channels, struct wu_tree *tree) {
 				const size_t len = (size_t)(desc->Width
 					* desc->Height);
 				if (!memchr(image[i].RasterBits, alpha_idx, len)) {
+					puts("alpha index not in raster");
 					alpha_idx = -1;
 				}
 			}
@@ -374,25 +406,35 @@ int *channels, struct wu_tree *tree) {
 			 * area is fully covered. */
 			if (dispose == dispose_background && alpha_idx == -1) {
 				if (!is_covered(desc, &image[i-1].ImageDesc)) {
-					*channels = 4;
+					ds->comps = 4;
 				}
 			}
+
 			dispose = gcb[i].DisposalMode;
 			gcb[i].TransparentColor = alpha_idx;
+		}
 
-			if (i == 0) {
-				const int canvas = gif_file->SWidth
-					* gif_file->SHeight;
-				const int frame = desc->Width * desc->Height;
-				if (frame < canvas) {
-					*channels = 4;
-				} else if (alpha_idx != -1) {
-					*channels = 4;
-				}
+		if (i == 0) {
+			const int canvas = gif_file->SWidth * gif_file->SHeight;
+			const int frame = desc->Width * desc->Height;
+			if (frame < canvas || alpha_idx != -1) {
+				ds->opaque_first_frame = false;
+				ds->comps = 4;
 			}
 		}
 	}
 
+	if (prev_disposals) {
+		puts("HAS PREV DISPOSALS AAAAAAAAAAAA");
+		const size_t dims = (size_t)gif_file->SWidth
+			* (size_t)gif_file->SHeight * ds->comps;
+		ds->previous.buf = malloc(dims);
+		if (!ds->previous.buf) {
+			free(gcb);
+			return NULL;
+		}
+		ds->previous.n = prev_disposals;
+	}
 	return gcb;
 }
 
@@ -432,52 +474,63 @@ const struct wu_conf *wuconf) {
 			infile->err_msg = NULL;
 		}
 		clean_gif_state(infile);
-		return wu_exceeded_size_limit;
+		return wu_exceeds_size_limit;
 	}
 
 	if (gif_file->AspectByte) {
 		const char fmt[] = "%g (byte = %hhu)";
 		char buf[sizeof(fmt)*2];
 
-		const double ratio = (double)gif_file->AspectByte + 15.0f/64.0f;
+		const double ratio = (gif_file->AspectByte + 15.0f)/64.0f;
 		const size_t w = (size_t)sprintf(buf, fmt, ratio,
 			gif_file->AspectByte);
 		tree_sprout_measured_leaf(&infile->metadata,
-			"Pixel aspect ratio", buf, (size_t)w);
+			"Pixel aspect ratio", buf, w);
 	}
 
 	infile->is_animation = (gif_file->ImageCount > 1);
 	infile->nr = wuconf->cache_frames ? (size_t)gif_file->ImageCount : 1;
 
-	int channels = (!infile->is_animation || wuconf->anim_space_over_speed)
-		? 3 : 4;
-	ds->gcb = read_properties(gif_file, &channels, &infile->metadata);
+	bool uses_local_palette = false;
+	ds->opaque_first_frame = true;
+	ds->comps = 3 + !wuconf->anim_space_over_speed;
+	ds->gcb = gather_info(gif_file, ds, &uses_local_palette,
+		&infile->metadata);
 	if (!ds->gcb) {
 		free(infile->err_msg);
 		clean_gif_state(infile);
 		return wu_alloc_error;
 	}
 
-	if (gif_file->SColorMap) {
-		expand_palette(gif_file->SColorMap, ds->global_pal);
-		const int bg = gif_file->SBackGroundColor;
-		if (bg >= 0 && bg < gif_file->SColorMap->ColorCount) {
-			memcpy(infile->bg, ds->global_pal + bg,
-				sizeof(infile->bg));
-		}
-	}
-
-	rewind_gif_state(ds);
 	struct raw_img *img = alloc_sub_images(infile, infile->nr);
 	if (!img) {
 		clean_gif_state(infile);
 		return wu_alloc_error;
 	}
 
+	if (gif_file->SColorMap) {
+		struct colormap *loc = ds->global_pal;
+		if (!uses_local_palette) {
+			void *hold = malloc(sizeof(ds->global_pal));
+			if (hold) {
+				loc = hold;
+				img[0].palette = hold;
+				ds->comps = 1;
+			}
+		}
+		const int alpha_idx = ds->gcb[0].TransparentColor;
+		expand_palette(gif_file->SColorMap, loc, alpha_idx);
+
+		const int bg = gif_file->SBackGroundColor;
+		if (bg > -1 && bg < gif_file->SColorMap->ColorCount) {
+			memcpy(infile->bg, loc + bg, sizeof(infile->bg));
+		}
+	}
+
 	for (size_t i = 0; i < infile->nr; ++i) {
 		img[i].w = (size_t)gif_file->SWidth;
 		img[i].h = (size_t)gif_file->SHeight;
-		img[i].channels = (unsigned char)channels;
+		img[i].channels = ds->comps;
 		img[i].bitdepth = 8;
 		img[i].msec = ds->gcb[i].DelayTime * 10;
 	}

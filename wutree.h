@@ -2,7 +2,6 @@
 #define WU_TREE
 
 #include <stdbool.h>
-#include <inttypes.h>
 #include <time.h>
 
 enum wu_leaf_type {
@@ -18,9 +17,9 @@ enum wu_leaf_type {
 union wu_leaf {
 	struct wu_tree *branch;
 	char *string;
-	char array[sizeof(double)];
-	uintmax_t u;
-	intmax_t d;
+	char array[sizeof(long)];
+	unsigned long u;
+	long d;
 	double g;
 	time_t time;
 };

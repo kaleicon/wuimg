@@ -24,6 +24,10 @@
 #include "dec/pi.h"
 #endif
 
+#ifdef WU_ENABLE_PICTOR
+#include "dec/pictor.h"
+#endif
+
 #ifdef WU_ENABLE_PNM
 #include "dec/pnm.h"
 #endif
@@ -42,6 +46,10 @@
 
 #ifdef WU_ENABLE_TGA
 #include "dec/tga.h"
+#endif
+
+#ifdef WU_ENABLE_TIM
+#include "dec/tim.h"
 #endif
 
 #ifdef WU_ENABLE_WBMP

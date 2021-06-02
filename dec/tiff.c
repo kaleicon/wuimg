@@ -9,6 +9,23 @@
 #include "../metadata.h"
 #include "lib/common/unpack.h"
 
+struct tiff_info {
+	uint16 photometric, spp, bps, sfmt;
+	uint16 planar;
+	bool is_tiled;
+	uint32 planes;
+};
+
+struct tile_info {
+	uint32 per_row, per_col;
+	uint32 width, height;
+	uint32 end_width;
+	size_t stride;
+	size_t end_stride;
+	unsigned char *buf;
+	tsize_t len;
+};
+
 static void print_metadata_tags(TIFF *tif, struct wu_tree *tree) {
 	struct tifftag {
 		ttag_t tag;
@@ -57,6 +74,8 @@ struct raw_img *img) {
 
 	puts("Using libtiff high-level interface.");
 	tifimg.req_orientation = tifimg.orientation;
+	img->w = tifimg.width;
+	img->h = tifimg.height;
 	img->channels = 4;
 	img->bitdepth = 8;
 	switch (tifimg.photometric) {
@@ -75,7 +94,7 @@ struct raw_img *img) {
 	}
 
 	const size_t dims = img->w * img->h * img->channels;
-	void *raster = malloc(dims * sizeof(uint32));
+	void *raster = malloc(dims);
 	if (!raster) {
 		TIFFRGBAImageEnd(&tifimg);
 		return wu_alloc_error;
@@ -99,127 +118,139 @@ static enum wu_error interleave_planes(struct raw_img *img, const size_t len) {
 		return wu_alloc_error;
 	}
 
-	const size_t ch = img->channels;
-	const size_t bytedepth = img->bitdepth / 8;
-	const size_t dist = len / ch;
-	const unsigned char *restrict data = img->data;
-	for (size_t i = 0; i < img->w * img->h * bytedepth; i += bytedepth) {
-		for (size_t k = 0; k < ch; ++k) {
-			memcpy(out + i*ch + k, data + dist*k + i, bytedepth);
-		}
-	}
+	strip_interleave(out, img->data, img->w*img->h, img->channels, img->bitdepth);
 	free(img->data);
 	img->data = out;
 	return wu_ok;
 }
 
-static void copy_tile(unsigned char *restrict data,
-const unsigned char *restrict buf, const size_t img_width,
-const size_t pad_width, const size_t tile_width, const size_t height,
-const unsigned char bps, const enum unpack_op op) {
-	for (size_t i = 0; i < height; ++i) {
+static void single_tile(unsigned char *restrict data,
+const struct tile_info *tiles, const size_t width, const size_t height,
+const size_t img_stride, const size_t cur_stride, const enum unpack_op op,
+const uint16 bps) {
+	for (size_t h = 0; h < height; ++h) {
+		unsigned char *dst = data + img_stride * h;
+		const unsigned char *src = tiles->buf + tiles->stride * h;
 		if (op) {
-			strip_unpack(data, buf, tile_width, 1, 1, op, bps);
+			strip_unpack(dst, src, width, 1, 1, op, bps);
 		} else {
-			memcpy(data, buf, tile_width);
+			memcpy(dst, src, cur_stride);
 		}
-		data += img_width;
-		buf += pad_width;
 	}
 }
 
 static enum wu_error unpack_tiles(TIFF *tif, struct raw_img *img,
-const uint32 tiles, const tsize_t buflen, const uint32 tile_width,
-const uint32 tile_height, const unsigned char bps, const enum unpack_op op) {
-	unsigned char *restrict buf = _TIFFmalloc(buflen);
-	if (!buf) {
+const struct tiff_info *info, const enum unpack_op op) {
+	struct tile_info tiles;
+	const bool ok = TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tiles.width) == 1
+		&& TIFFGetField(tif, TIFFTAG_TILELENGTH, &tiles.height) == 1;
+	if (!ok) {
+		return wu_invalid_header;
+	}
+
+	tiles.len = TIFFTileSize(tif);
+	tiles.buf = _TIFFmalloc(tiles.len);
+	if (!tiles.buf) {
 		return wu_alloc_error;
 	}
 
-	const uint32 tiles_per_row = ((uint32)img->w + tile_width - 1)
-		/ tile_width;
-	const uint32 tiles_per_col = ((uint32)img->h + tile_height - 1)
-		/ tile_height;
-	const uint32 bottom_row_start = tiles - tiles_per_row;
+	const uint32 comps = info->spp / info->planes;
+	tiles.per_row = ((uint32)img->w + tiles.width - 1) / tiles.width;
+	tiles.per_col = ((uint32)img->h + tiles.height - 1) / tiles.height;
+	tiles.end_width = (uint32)img->w - tiles.width * (tiles.per_row - 1);
+	tiles.stride = scanline_length(tiles.width * comps, info->bps, 1);
+	tiles.end_stride = scanline_length(tiles.end_width * comps,
+		info->bps, 1);
+
+	const size_t img_stride = scanline_length(img->w * comps,
+		img->bitdepth, 1);
+	const size_t normal_stride = scanline_length(tiles.width * comps,
+		img->bitdepth, 1);
+	const size_t end_stride = scanline_length(tiles.end_width * comps,
+		img->bitdepth, 1);
 
 	unsigned char *restrict data = img->data;
-	const uint32 mult = (uint32)(img->channels * img->bitdepth / 8);
+	uint32 ts = 0;
+	for (uint32 p = 0; p < info->planes; ++p) {
+		for (uint32 y = 0; y < tiles.per_col; ++y) {
+			const size_t height = (y == tiles.per_col - 1)
+				? img->h - tiles.height*y
+				: tiles.height;
+			for (uint32 x = 0; x < tiles.per_row; ++x) {
+				TIFFReadEncodedTile(tif, ts, tiles.buf, tiles.len);
 
-	for (uint32 y = 0; y < tiles_per_col; ++y) {
-		for (uint32 x = 0; x < tiles_per_row; ++x) {
-			const uint32 ts = y*tiles_per_row + x;
-
-			TIFFReadEncodedTile(tif, ts, buf, buflen);
-
-			const size_t padded_width = tile_width * mult;
-			size_t width;
-			size_t height;
-			if (ts % tiles_per_row == 0) {
-				width = (img->w % tile_width) * mult;
-			} else {
-				width = padded_width;
+				size_t width;
+				size_t stride;
+				size_t out_stride;
+				if (x == tiles.per_row - 1) {
+					width = tiles.end_width;
+					stride = tiles.end_stride;
+					out_stride = end_stride;
+				} else {
+					width = tiles.width;
+					stride = tiles.stride;
+					out_stride = normal_stride;
+				}
+				single_tile(data, &tiles, width * comps, height,
+					img_stride, stride, op, info->bps);
+				data += out_stride;
+				++ts;
 			}
-			if (ts >= bottom_row_start) {
-				height = img->h % tile_height;
-			} else {
-				height = tile_height;
-			}
-
-			copy_tile(data, buf, img->w * mult, padded_width,
-				width, height, bps, op);
-			data += width;
+			data += img_stride * (height - 1);
 		}
-		data += img->w * (tile_height - 1) * mult;
 	}
-	_TIFFfree(buf);
+	_TIFFfree(tiles.buf);
 	return wu_ok;
-}
-
-static void direct_strips_to_img(TIFF *tif, struct raw_img *img,
-const uint32 strips, const tsize_t buflen) {
-	tsize_t offset = 0;
-	for (uint32 st = 0; st < strips; ++st) {
-		TIFFReadEncodedStrip(tif, st, img->data + offset, buflen);
-		offset += buflen;
-	}
 }
 
 static enum wu_error unpack_strips(TIFF *tif, struct raw_img *img,
-const uint32 planes, const uint32 strips, const tsize_t buflen,
-const uint32 samples, const unsigned char bps, const enum unpack_op op) {
-	unsigned char *restrict buf = _TIFFmalloc(buflen);
-	if (!buf) {
-		return wu_alloc_error;
-	}
-	uint32 rows_per_strip;
-	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip);
-
-	void *restrict data = img->data;
-	for (uint32 p = 0; p < planes; ++p) {
-		for (uint32 st = 0; st < strips; ++st) {
-			uint32 pos = st + strips * p;
-
-			/* This function returns -1 in case of errors, but even
-			 * libtiff seems to ignore it */
-			TIFFReadEncodedStrip(tif, pos, buf, buflen);
-
-			size_t height;
-			if (st == strips - 1) {
-				height = img->h % rows_per_strip;
-			} else {
-				height = rows_per_strip;
-			}
-			data = strip_unpack(data, buf, img->w * samples / planes,
-				height, 1, op, bps);
+const struct tiff_info *info, const enum unpack_op op) {
+	const tsize_t buflen = TIFFStripSize(tif);
+	unsigned char *restrict buf; // Only used when op != op_noop
+	if (op) {
+		buf = _TIFFmalloc(buflen);
+		if (!buf) {
+			return wu_alloc_error;
 		}
 	}
-	_TIFFfree(buf);
+
+	const uint32 strips = TIFFNumberOfStrips(tif) / info->planes;
+	uint32 rows_per_strip;
+	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip);
+	const size_t end_row = img->h - rows_per_strip * (strips - 1);
+
+	const size_t width = img->w * img->channels / info->planes;
+	const size_t stride = scanline_length(width, img->bitdepth, 1);
+	size_t offset = 0;
+	for (uint32 p = 0; p < info->planes; ++p) {
+		for (uint32 st = 0; st < strips; ++st) {
+			const size_t rows = (st == strips - 1)
+				? end_row
+				: rows_per_strip;
+			const uint32 n = strips * p + st;
+			if (op) {
+				/* This function returns -1 in case of errors,
+				 * but even libtiff seems to ignore it */
+				TIFFReadEncodedStrip(tif, n, buf, buflen);
+				strip_unpack(img->data + offset, buf, width,
+					rows, 1, op, info->bps);
+			} else {
+				TIFFReadEncodedStrip(tif, n, img->data + offset,
+					buflen);
+			}
+			offset += stride * rows;
+		}
+	}
+
+	if (op) {
+		_TIFFfree(buf);
+	}
 	return wu_ok;
 }
 
-static unsigned char * load_palette(TIFF *tif, unsigned char bps) {
+static unsigned char * load_palette(TIFF *tif, uint16 bps) {
 	uint16_t *red, *green, *blue;
-	if (TIFFGetField(tif, TIFFTAG_COLORMAP, &red, &green, &blue)) {
+	if (TIFFGetField(tif, TIFFTAG_COLORMAP, &red, &green, &blue) == 1) {
 		struct colormap *pal = malloc(sizeof(struct colormap) * 256);
 		if (pal) {
 			const size_t len = 1U << bps;
@@ -234,138 +265,88 @@ static unsigned char * load_palette(TIFF *tif, unsigned char bps) {
 	}
 	return NULL;
 }
-static enum unpack_op select_filter(const uint16 photometric,
-const unsigned char channels, const unsigned char bits_per_sample,
-const uint16 planar, const bool is_floating) {
-	enum unpack_op op = noop;
-	switch (bits_per_sample) {
-	case 1: case 2: case 4: case 24:
-		switch (photometric) {
+
+static enum unpack_op select_filter(const struct tiff_info *info) {
+	enum unpack_op op = op_noop;
+	if (info->bps < 8) {
+		switch (info->photometric) {
 		case PHOTOMETRIC_MINISWHITE:
-			op = expand_invert;
+			if (info->is_tiled || info->planar != PLANARCONFIG_CONTIG) {
+				op = op_expand_invert;
+			}
 			break;
 		case PHOTOMETRIC_MINISBLACK:
 		case PHOTOMETRIC_RGB:
-			(void)channels;
-			if (planar == PLANARCONFIG_CONTIG) {
-				op = noop;
-			} else {
-				op = expand;
+			if (info->is_tiled || info->planar != PLANARCONFIG_CONTIG) {
+				op = op_expand;
 			}
-/*
-			if (bits_per_sample == 4 && channels == 4
-			&& planar == PLANARCONFIG_CONTIG) {
-				// GL_RGBA4 with GL_UNSIGNED_SHORT_4_4_4_4
-				op = noop;
-			} else {
-				op = expand;
-			}
-*/			break;
-		case PHOTOMETRIC_PALETTE:
-			op = unpack;
+			break;
 		}
-		break;
-	case 64:
-		op = is_floating ? pack_float : pack;
-		break;
 	}
 	return op;
 }
 
 static enum wu_error nih_decode(TIFF *tif, struct raw_img *img,
-const uint16 photometric, const unsigned char spp, const unsigned char bps,
-const uint16 sampleformat) {
-	uint16 planar;
-	TIFFGetFieldDefaulted(tif, TIFFTAG_PLANARCONFIG, &planar);
-
-	const bool is_floating = (sampleformat == SAMPLEFORMAT_IEEEFP);
-
-	// NULL means we can use the data as is.
-	const enum unpack_op op = select_filter(photometric, spp, bps, planar,
-		is_floating);
-	if (op) {
-		if (bps == 24) {
-			img->bitdepth = 32;
-		} else {
-			img->bitdepth = (unsigned char)iclamp(bps, 8, 32);
-		}
-	} else {
-		img->bitdepth = bps;
-	}
-
-	if (photometric == PHOTOMETRIC_PALETTE) {
-		img->channels = 3;
-		img->palette = load_palette(tif, bps);
+struct tiff_info *info) {
+	if (info->photometric == PHOTOMETRIC_PALETTE) {
+		img->palette = load_palette(tif, info->bps);
 		if (!img->palette) {
 			return wu_alloc_error;
 		}
-	} else {
-		img->channels = (unsigned char)spp;
 	}
-	img->float_data = is_floating;
+	img->channels = (unsigned char)info->spp;
+	img->bitdepth = (unsigned char)info->bps;
+	if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
+		img->attr |= pix_float;
+	}
 
-	const size_t datasize = img->w * img->h * img->channels
-		* img->bitdepth / 8;
-	img->data = malloc(datasize*4);
+	TIFFGetFieldDefaulted(tif, TIFFTAG_PLANARCONFIG, &info->planar);
+	info->is_tiled = TIFFIsTiled(tif);
+	info->planes = info->planar == PLANARCONFIG_CONTIG ? 1 : info->spp;
+
+	const enum unpack_op op = select_filter(info);
+	if (op) {
+		img->bitdepth = (unsigned char)imax(info->bps, 8);
+	} else {
+		if (info->photometric == PHOTOMETRIC_MINISWHITE) {
+			img->attr |= pix_inverted;
+		}
+	}
+
+	const size_t datasize = scanline_length(img->w * img->channels,
+		img->bitdepth, 1) * img->h;
+	img->data = malloc(datasize);
 	if (!img->data) {
-		free(img->palette);
-		img->palette = NULL;
 		return wu_alloc_error;
 	}
 
-	enum wu_error status;
-	if (TIFFIsTiled(tif)) {
-		const uint32 tiles = TIFFNumberOfTiles(tif);
-		const tsize_t tile_size = TIFFTileSize(tif);
-		uint32 tile_width, tile_height;
-		TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tile_width);
-		TIFFGetField(tif, TIFFTAG_TILELENGTH, &tile_height);
-		status = unpack_tiles(tif, img, tiles, tile_size, tile_width,
-			tile_height, bps, op);
+	enum wu_error status = wu_ok;
+	if (info->is_tiled) {
+		status = unpack_tiles(tif, img, info, op);
 	} else {
-		const uint32 strips = TIFFNumberOfStrips(tif);
-		const tsize_t strip_size = TIFFStripSize(tif);
-		uint32 planes;
-		if (planar != PLANARCONFIG_CONTIG) {
-			planes = spp;
-		} else {
-			planes = 1;
-		}
-		if (op) {
-			status = unpack_strips(tif, img, planes, strips/planes,
-				strip_size, spp, bps, op);
-		} else {
-			direct_strips_to_img(tif, img, strips, strip_size);
-			if (photometric == PHOTOMETRIC_MINISWHITE) {
-				strip_invert8(img->data, datasize);
-			}
-			status = wu_ok;
-		}
+		status = unpack_strips(tif, img, info, op);
 	}
-
-	if (status == wu_ok && planar != PLANARCONFIG_CONTIG) {
+	if (status == wu_ok && info->planar != PLANARCONFIG_CONTIG) {
 		status = interleave_planes(img, datasize);
 	}
 	return status;
 }
 
-static bool check_support(const uint16 photometric,
-const uint16 samples_per_pixel, const uint16 bits_per_pixel,
-const uint16 sampleformat) {
-	switch (photometric) {
+static bool check_support(const struct tiff_info *info) {
+	switch (info->photometric) {
 	case PHOTOMETRIC_MINISWHITE:
 	case PHOTOMETRIC_MINISBLACK:
-		if (samples_per_pixel != 1 && samples_per_pixel != 2) {
+		if (info->spp != 1 && info->spp != 2) {
 			return false;
 		}
 		break;
 	case PHOTOMETRIC_RGB:
-		if (samples_per_pixel != 3 && samples_per_pixel != 4) {
+		if (info->spp != 3 && info->spp != 4) {
 			return false;
 		}
 		break;
 	case PHOTOMETRIC_PALETTE:
-		if (samples_per_pixel != 1 || bits_per_pixel > 8) {
+		if (info->spp != 1 || info->bps > 8) {
 			return false;
 		}
 		break;
@@ -373,9 +354,10 @@ const uint16 sampleformat) {
 		return false;
 	}
 
-	switch (bits_per_pixel) {
+	switch (info->bps) {
 	case 1: case 2: case 4: case 8: case 24:
-		if (sampleformat == SAMPLEFORMAT_IEEEFP) {
+		// With TIFF, literally anything can happen
+		if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
 			return false;
 		}
 		break;
@@ -385,15 +367,15 @@ const uint16 sampleformat) {
 		return false;
 	}
 
-	switch (sampleformat) {
+	switch (info->sfmt) {
 	case SAMPLEFORMAT_UINT:
 	case SAMPLEFORMAT_INT:
 	case SAMPLEFORMAT_IEEEFP:
+	case SAMPLEFORMAT_VOID:
 		break;
 	default:
 		return false;
 	}
-
 	return true;
 }
 
@@ -413,48 +395,48 @@ const struct wu_conf *wuconf) {
 	enum wu_error status;
 	size_t i = 0;
 	do {
-		TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &img[i].w);
-		TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &img[i].h);
-		if (zumax(img[i].w, img[i].h) > wuconf->max_img_size) {
-			status = wu_exceeded_size_limit;
+		const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &img[i].w) == 1
+			&& TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &img[i].h) == 1;
+		if (!ok) {
+			puts("Failed to get image dimensions");
+			status = wu_invalid_header;
+			continue;
+		} else if (zumax(img[i].w, img[i].h) > wuconf->max_img_size) {
+			status = wu_exceeds_size_limit;
 			continue;
 		}
 
-		uint16 photometric, spp, bps, sfmt;
-		TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric);
-		TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &spp);
-		TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &bps);
-		TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &sfmt);
+		struct tiff_info info;
+		if (TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &info.photometric) != 1) {
+			puts("Image lacks photometric info.");
+			status = wu_invalid_header;
+			continue;
+		}
+		TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &info.spp);
+		TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &info.bps);
+		TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &info.sfmt);
 
 		bool do_it_ourselves;
 		if (wuconf->tiff_use_homegrown_unpacker) {
-			do_it_ourselves = check_support(photometric, spp, bps,
-				sfmt);
+			do_it_ourselves = check_support(&info);
 		} else {
 			do_it_ourselves = false;
 		}
 
 		switch ((int)do_it_ourselves) {
 		case true:
-			status = nih_decode(tif, img + i, photometric,
-				(unsigned char)spp, (unsigned char)bps, sfmt);
+			status = nih_decode(tif, img + i, &info);
 			if (status == wu_ok) {
 				break;
 			}
-			free(img->palette);
-			free(img->data);
-			img->palette = NULL;
-			img->data = NULL;
+			raw_img_clear(img + i);
 			puts("Native unpacking routine failed, falling back "
 				"on libtiff.");
-			// Fallthrough
+			// fallthrough
 		default:
-			status = libtiff_decode(tif, infile, &img[i]);
+			status = libtiff_decode(tif, infile, img + i);
 			if (status != wu_ok) {
-				free(img->palette);
-				free(img->data);
-				img->palette = NULL;
-				img->data = NULL;
+				raw_img_clear(img + i);
 				continue;
 			}
 		}

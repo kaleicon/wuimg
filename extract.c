@@ -10,7 +10,8 @@
 
 #include "extract.h"
 #include "common.h"
-#include "dec.h"
+#include "wustr.h"
+#include "dec_fmtmap.h"
 
 void free_archive_iter(struct archive_iter *iter) {
 	for (size_t i = 0; i < iter->pos; ++i) {
@@ -60,7 +61,7 @@ void remove_archive_entry(struct tmp_file *entry) {
 }
 
 static bool ok_case(struct archive_iter *iter, struct archive_entry *entry) {
-	const char *name = archive_entry_pathname(entry);
+	const struct wustr name = wustr_from_str(archive_entry_pathname(entry));
 	const bool reg_probably_nonempty =
 		((archive_entry_filetype(entry) & AE_IFMT) == AE_IFREG)
 		&& (
@@ -80,11 +81,17 @@ static bool ok_case(struct archive_iter *iter, struct archive_entry *entry) {
 		if (written) {
 			if (!grow_buffer(&iter->entry, &iter->alloc, iter->pos,
 			sizeof(*iter->entry)) ) {
+				fclose(tmp);
 				return false;
 			}
 
+			char *nname = memdup(name.str, name.len);
+			if (!nname) {
+				fclose(tmp);
+				return false;
+			}
 			iter->entry[iter->pos] = (struct tmp_file) {
-				.name = strdup(name),
+				.name = nname,
 				.tmp = tmp,
 			};
 			++iter->pos;
@@ -102,7 +109,7 @@ static bool next_archive_entry(struct archive_iter *iter) {
 	case ARCHIVE_WARN:
 		printf("libarchive warning: %s\n",
 			archive_error_string(iter->ra));
-		// Fallthrough
+		// fallthrough
 	case ARCHIVE_OK:
 		return ok_case(iter, entry);
 	case ARCHIVE_RETRY:
@@ -110,7 +117,7 @@ static bool next_archive_entry(struct archive_iter *iter) {
 	case ARCHIVE_FATAL:
 		printf("libarchive error: %s\n",
 			archive_error_string(iter->ra));
-		// Fallthrough
+		// fallthrough
 	case ARCHIVE_EOF:
 		archive_read_free(iter->ra);
 		iter->ra = NULL;
@@ -119,24 +126,25 @@ static bool next_archive_entry(struct archive_iter *iter) {
 	return true;
 }
 
-struct tmp_file * get_archive_file(struct archive_iter *iter, const int idx) {
-	while (iter->ra && (idx < 0 || iter->pos <= (size_t)idx)) {
+struct tmp_file * get_archive_file(struct archive_iter *iter, long idx) {
+	while (iter->ra && (idx < 0 || (size_t)idx > iter->pos)) {
 		if (!next_archive_entry(iter)) {
 			return NULL;
 		}
 	}
-	if (!iter->pos) {
-		return NULL;
+	if (iter->pos) {
+		idx = lmod(idx, (long)iter->pos);
+		struct tmp_file *file = iter->entry + idx;
+		if (file->tmp) {
+			rewind(file->tmp);
+		}
+		return file;
 	}
-	const int pos = imod(idx, (int)iter->pos);
-	struct tmp_file *file = iter->entry + pos;
-	if (file->tmp) {
-		rewind(file->tmp);
-	}
-	return file;
+	return NULL;
 }
 
-bool init_archive_iter(struct archive_iter *iter, const char *filename) {
+struct tmp_file * init_archive_iter(struct archive_iter *iter,
+const char *filename) {
 	setlocale(LC_CTYPE, "");
 	struct archive *ra = archive_read_new();
 	if (!ra) {
@@ -161,5 +169,5 @@ bool init_archive_iter(struct archive_iter *iter, const char *filename) {
 		archive_read_free(ra);
 		return false;
 	}
-	return (bool)get_archive_file(iter, 0);
+	return get_archive_file(iter, 0);
 }
