@@ -25,6 +25,8 @@ const char * lib_fail_string(const enum lib_fail fail) {
 		return "Memory allocation error";
 	case lib_invalid_data:
 		return "Invalid data in raster";
+	case lib_int_overflow:
+		return "Integer overflow";
 	case lib_pi_comment_too_long:
 		return "Pi error: Excessively long comment";
 	case lib_sgi_is_colormap_file:

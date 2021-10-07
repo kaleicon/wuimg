@@ -3,11 +3,12 @@
 #include "../wudefs.h"
 #include "../wutree.h"
 #include "../common.h"
+#include "../rast_utils.h"
 #include "../lib/tim.h"
 
-void add_metadata(struct wu_tree *tree, const struct tim_desc *desc) {
+static void read_metadata(struct wu_tree *tree, const struct tim_desc *desc) {
 	struct wu_tree_sap sap[] = {
-		{"Bitdepth", wu_leaf_unsigned, {.u = desc->bitdepth}},
+		{"Bitdepth", wu_leaf_unsigned, {.u = desc->r.ch * desc->r.bitdepth}},
 		{"X", wu_leaf_unsigned, {.u = desc->x}},
 		{"Y", wu_leaf_unsigned, {.u = desc->y}},
 	};
@@ -47,12 +48,12 @@ enum wu_error tim_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_invalid_header;
 	}
 
-	if (zumax(desc.w, desc.h) > wuconf->max_img_size) {
+	if (rast_exceeds_size(&desc.r, wuconf)) {
 		tim_cleanup(&desc);
 		return wu_exceeds_size_limit;
 	}
 
-	add_metadata(&infile->metadata, &desc);
+	read_metadata(&infile->metadata, &desc);
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
@@ -60,20 +61,8 @@ enum wu_error tim_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
-	img->palette = tim_take_colormap(&desc);
+	rast_to_raw(img, &desc.r);
 	img->data = tim_decode(&desc);
 	tim_cleanup(&desc);
-	if (!img->data) {
-		return wu_decoding_error;
-	}
-	img->w = desc.w;
-	img->h = desc.h;
-	img->channels = desc.bitdepth > 8 ? 3 : 1;
-	if (desc.bitdepth == 16) { //rgb555
-		img->bitdepth = 8;
-	} else {
-		img->bitdepth = (unsigned char)imin(desc.bitdepth, 8);
-	}
-	img->alignment = 2;
-	return wu_ok;
+	return (img->data) ? wu_ok : wu_decoding_error;
 }

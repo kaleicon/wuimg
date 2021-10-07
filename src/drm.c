@@ -24,7 +24,6 @@ void kms_terminate(struct kms_context *ctx) {
 		drmModeRmFB(ctx->drm.fd, ctx->drm.fb_id[1]);
 	}
 
-
 	if (ctx->gbm.bo) {
 		gbm_bo_destroy(ctx->gbm.bo);
 	}
@@ -86,11 +85,11 @@ struct display_dims *dims) {
 	if (fail) {
 		*fb_id = 0;
 	} else {
+		gbm_bo_set_user_data(bo, fb_id, fb_destroy_fn);
 		if (dims) {
 			dims->w = width;
 			dims->h = height;
 		}
-		gbm_bo_set_user_data(bo, fb_id, fb_destroy_fn);
 	}
 	return *fb_id;
 }
@@ -393,9 +392,8 @@ bool kms_setup(struct kms_context *ctx, struct display_dims *dims) {
 	*ctx = (struct kms_context){0};
 	ctx->drm.fd = -1;
 
-	// mode_info is a pointer to a connector member
 	drmModeConnector *connector = NULL;
-	drmModeModeInfo *mode_info = NULL;
+	drmModeModeInfo *mode_info = NULL; // pointer to a 'connector' member
 
 	bool is_ok = false;
 	if (drm_setup(&ctx->drm, &connector, &mode_info)) {

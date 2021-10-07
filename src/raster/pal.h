@@ -11,4 +11,7 @@ void raster_pal_expand(void *restrict dst, const uint8_t *restrict src,
 const struct raster_pal *cm, size_t width, size_t height, uint8_t alignment,
 uint8_t channels);
 
+void raster_pal_from_rgb8(struct raster_pal *pal, const void *restrict rgb,
+const size_t nmemb);
+
 #endif /* RASTER_PAL */

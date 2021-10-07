@@ -6,8 +6,9 @@
 
 enum wu_error sixel_dec(struct image_file *infile, const struct wu_conf *conf) {
 	struct sixel_desc desc;
-	enum lib_fail status = sixel_open_file(infile->ifp, &desc);
+	enum lib_fail status = sixel_open_file(&desc, infile->ifp);
 	if (status != lib_ok) {
+		sixel_cleanup(&desc);
 		infile->err_msg = strdup(lib_fail_string(status));
 		return wu_open_error;
 	}

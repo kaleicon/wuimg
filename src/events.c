@@ -44,12 +44,11 @@ struct wu_event *event, const size_t code, const float msecs) {
 		break;
 	// Alpha display
 	case 'A':
-		state->alpha = (unsigned char)((state->alpha + 1) % 3);
 		event->window = toggle_alpha;
 		break;
 	// Metadata
 	case 'M':
-		print_image_information(file, 2 + shift);
+		print_image_information(file, 1 + shift);
 		return true;
 
 	// Delete
@@ -71,13 +70,17 @@ struct wu_event *event, const size_t code, const float msecs) {
 		break;
 
 	// Cycling
-	case 'N': event->file.cycle += shift ? 10 : 1; break;
-	case 'P': event->file.cycle -= shift ? 10 : 1; break;
+	case 'N': // Next
+		event->file.cycle += shift ? 10 : 1;
+		break;
+	case 'P': // Prev
+		event->file.cycle -= shift ? 10 : 1;
+		break;
 	// Sub-cycling
-	case '.':
+	case '.': // Next
 		subcycle = 1;
 		break;
-	case ',':
+	case ',': // Prev
 		subcycle = -1;
 		break;
 	case ':':
@@ -91,40 +94,40 @@ struct wu_event *event, const size_t code, const float msecs) {
 		break;
 
 	// Image movement
-	case 'H':
+	case 'H': // Left
 		event->image = ev_move;
 		state->x_offset += msecs / state->zoom;
 		break;
-	case 'J':
-		event->image = ev_move;
-		state->y_offset += msecs / state->zoom;
-		break;
-	case 'K':
+	case 'J': // Down
 		event->image = ev_move;
 		state->y_offset -= msecs / state->zoom;
 		break;
-	case 'L':
+	case 'K': // Up
+		event->image = ev_move;
+		state->y_offset += msecs / state->zoom;
+		break;
+	case 'L': // Right
 		event->image = ev_move;
 		state->x_offset -= msecs / state->zoom;
 		break;
 
 	// Rotation.
-	case 'Z':
+	case 'Z': // Counterclockwise
 		event->image = ev_mirrot;
 		state->rotate = (state->rotate + 1) & 3;
 		break;
-	case 'X':
+	case 'X': // Clockwise
 		event->image = ev_mirrot;
 		state->rotate = (state->rotate - 1) & 3;
 		break;
 
 	// Mirror
-	case 'I':
+	case 'I': // Horizontal
 		event->image = ev_mirrot;
 		state->mirror = !state->mirror;
 		state->rotate = (state->rotate + 2) & 3;
 		break;
-	case 'O':
+	case 'O': // Vertical
 		event->image = ev_mirrot;
 		state->mirror = !state->mirror;
 		break;
@@ -216,13 +219,13 @@ void print_keys(void) {
 		"\t\tToggle fullscreen.\n"
 
 		"\ta\n"
-		"\t\tCycle between alpha as transparency, as checkerboard\n"
-		"\t\tpattern, or disabled (with transparent colors visible).\n"
+		"\t\tCycle between alpha blending enabled, opaque, as\n"
+		"\t\tcheckerboard pattern, or disabled.\n"
 
 		"\tm | M\n"
-		"\t\tPrint unabreviatted metadata. For 'm', omit fields that\n"
-		"\t\twould occupy more than a line or two of text. For 'M',\n"
-		"\t\tomit nothing.\n"
+		"\t\tPrint unabreviatted metadata. For 'm', display the full\n"
+		"\t\thierarchy but omit fields that would occupy more than a\n"
+		"\t\tline or two of text. For 'M', omit nothing.\n"
 
 		"\tr\n"
 		"\t\tReload current file.\n"

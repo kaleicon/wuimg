@@ -6,7 +6,7 @@
 #include "../common.h"
 #include "../raster/unpack.h"
 #include "../raster/graphics_adapters.h"
-#include "../raster/lib.h"
+#include "../raster/raster.h"
 
 #include "pcx.h"
 

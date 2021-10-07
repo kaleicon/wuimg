@@ -14,7 +14,7 @@ const uint8_t bitdepth, const bool careful) {
 	while (i > bound) {
 		i -= bitdepth;
 		const int idx = (byte >> i) & mask;
-		memcpy(dst, cm->color + idx, careful ? 3 : 4);
+		memcpy(dst, cm->color + idx, (careful) ? 3 : 4);
 		dst += ch;
 	}
 	return dst;
@@ -75,4 +75,9 @@ const uint8_t alignment, const uint8_t channels) {
 		strip_palette_rgba8(dst, src, cm, width, height, alignment);
 		break;
 	}
+}
+
+void raster_pal_from_rgb8(struct raster_pal *pal, const void *restrict rgb,
+const size_t nmemb) {
+	pix_rgb8_to_rgba8(pal->color, rgb, nmemb);
 }

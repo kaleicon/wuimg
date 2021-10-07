@@ -8,6 +8,7 @@
 #include "wudefs.h"
 #include "wutree.h"
 #include "common.h"
+#include "raster/raster.h"
 
 const char * wu_error_message(const enum wu_error err) {
 	switch (err) {
@@ -51,24 +52,12 @@ static size_t print_dimensions(const struct raw_img *img) {
 		printf(" (paletted) x %hhu", img->bitdepth);
 		line = img->w;
 	} else {
-		if (img->channels != img->true_channels) {
-			printf(" (%hhu)", img->true_channels);
-		}
 		printf(" x %hhu", img->bitdepth);
-
-		switch (img->bitdepth) {
-		case pix_argb1555:
-			fputs(" (argb1555)", stdout);
-			line = img->w * 2;
-			break;
-		default:
-			line = img->w * img->channels;
-		}
-
 		if (img->attr) {
-			const char *attr[] = {"inverted", "float", "332"};
+			const char *attr[] = {"inverted", "float", "332", "1555"};
 			printf(" (%s)", attr[img->attr - 1]);
 		}
+		line = img->w * img->channels;
 	}
 
 	const size_t mem_size = scanline_length(line, img->bitdepth,
@@ -86,9 +75,9 @@ void print_image_information(const struct image_file *file, const int verbosity)
 	size_t max_x = 0;
 	size_t max_y = 0;
 	switch (verbosity) {
-	case 1: max_x = 80; max_y = 20; break;
-	case 2: max_x = 320; max_y = 80; break;
-	case 3: max_x = SIZE_MAX; max_y = SIZE_MAX; break;
+	case 0: max_x = 80; max_y = 20; break;
+	case 1: max_x = 320; max_y = 80; break;
+	case 2: max_x = SIZE_MAX; max_y = SIZE_MAX; break;
 	}
 
 	tree_print(&file->metadata, max_x, max_y);
@@ -213,25 +202,33 @@ const unsigned char to) {
 void image_file_normalize(struct image_file *file) {
 	struct raw_img *img = file->sub_img;
 	for (size_t i = 0; i < file->nr; ++i) {
-		if (img[i].palette) {
-			img[i].channels = 1;
-		} else if (img[i].attr == pix_packing_332) {
+/*		const char *err_msg = raster_geom_verify(img[i].palette,
+			img[i].channels, img[i].bitdepth, img[i].attr);
+		if (err_msg) {
+			fatal_bug("Bad image", err_msg);
+		}*/
+
+		switch (img->attr) {
+		case pix_packing_332:
 			img[i].channels = 1;
 			img[i].bitdepth = 8;
-		}
-
-		if (!img[i].true_channels) {
-			img[i].true_channels = img[i].channels;
+			break;
+		case pix_packing_1555:
+			img[i].channels = 1;
+			img[i].bitdepth = 16;
+			break;
+		default:
+			break;
 		}
 
 		if (!img[i].layout) {
 			if (img[i].palette || img[i].attr == pix_packing_332) {
 				img[i].layout = pix_rgba;
 			} else {
-				switch (img[i].true_channels) {
-				case 1: img[i].layout = pix_gray; break;
-				case 2: img[i].layout = pix_gray_alpha; break;
-				default: img[i].layout = pix_rgba; break;
+				if (img[i].channels >= 3) {
+					img[i].layout = pix_rgba;
+				} else {
+					img[i].layout = pix_gray;
 				}
 			}
 		}

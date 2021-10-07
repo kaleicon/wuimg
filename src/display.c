@@ -88,10 +88,11 @@ const int idx, const bool reset_state) {
 		gl_clock_start(gl);
 	}
 
-	if (gl_texture_reuse(img, gl)) {
-		// pass
-	} else if (gl_texture_upload(img, gl)) {
-		gl_even_view(gl);
+	switch (gl_texture_upload(gl, img)) {
+	case gl_upload_fail:
+		puts("Failed to load to texture.");
+		return false;
+	case gl_upload_success:
 		state->fit_zoom = gl_fit_zoom(gl, state->rotate);
 		const float fit_screen = fminf(1, state->fit_zoom);
 		if (reset_state) {
@@ -103,11 +104,11 @@ const int idx, const bool reset_state) {
 		} else if (state->zoom < fit_screen) {
 			state->zoom = fit_screen;
 		}
-	} else {
-		puts("Failed to load to texture.");
-		return false;
+		break;
+	case gl_upload_reused:
+		break; // Keep the texture as it was
 	}
-	gl_matrix_update(gl, state);
+	gl->update_matrix = true;
 
 	if (state->anim != anim_playing) {
 		printf("Sub-image %d uploaded in %lu nanoseconds.\n",
@@ -134,11 +135,16 @@ struct window_context *window, double remaining, struct timespec *start) {
 
 	bool timeout = false;
 	for (;;) {
+		if (window->gl.update_matrix) {
+			gl_matrix_update(&window->gl, state);
+			window->gl.update_matrix = false;
+		}
+
 		window_draw(window);
 		const double secs = monoclock_diff(start);
 		monoclock_start(start);
-
 		poll_events(image, window, secs);
+
 		if (state->anim == anim_playing) {
 			remaining -= secs;
 			if (remaining <= 0.0) {
@@ -149,7 +155,7 @@ struct window_context *window, double remaining, struct timespec *start) {
 		}
 
 		if (event->image) {
-			gl_matrix_update(&window->gl, state);
+			window->gl.update_matrix = true;
 			if (event->image & image->file.events) {
 				break;
 			}
@@ -160,14 +166,7 @@ struct window_context *window, double remaining, struct timespec *start) {
 		|| event->rm == yes_rm) {
 			break;
 		} else if (event->window) {
-			switch (event->window) {
-			case toggle_fullscreen:
-				window_toggle_fullscreen(window);
-				break;
-			case toggle_alpha:
-				gl_alpha_state(&window->gl, state->alpha);
-				break;
-			}
+			window_event(window);
 			event->window = 0;
 		}
 	}
@@ -267,18 +266,19 @@ bool display_loop(struct window_control *control, const bool no_cycle) {
 }
 
 bool display_setup(struct window_control *control, struct term_restore *tr) {
+	const clock_t start = clock();
 	if (tr) {
 		term_noncanon_start(tr);
 	}
 
 	if (!window_setup(control)) {
-		puts("Failed to create window.");
+		fputs("Failed to create window.\n", stderr);
 		return false;
 	}
 
 	if (!gl_context_setup(&control->window.gl, &control->image.conf)) {
 		window_terminate(&control->window);
-		puts("Failed to setup OpenGL context.");
+		fputs("Failed to setup OpenGL context.\n", stderr);
 		return false;
 	}
 
@@ -300,5 +300,6 @@ bool display_setup(struct window_control *control, struct term_restore *tr) {
 		.sa_handler = SIG_IGN,
 	};
 	sigaction(SIGHUP, &ign, NULL);
+	printf("Display set in %f seconds\n", clock_ellapsed(start));
 	return true;
 }

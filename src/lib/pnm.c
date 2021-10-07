@@ -11,6 +11,8 @@
 #include "../raster/text.h"
 #include "pnm.h"
 
+//typedef uint_fast32_t fast_t;
+
 static void scale_16(unsigned short *output, const size_t dims,
 const unsigned short maxval) {
 	const uint_fast32_t scale = ((unsigned)USHRT_MAX << 16) / maxval + 1;
@@ -51,7 +53,7 @@ static unsigned char * pfm_decode(const struct pnm_desc *desc) {
 	} else {
 		for (size_t i = 0; i < read; ++i) {
 			const union int_real val =
-				{endian32(out[i].bytes, desc->pfm_endian)};
+				{.bytes = endian32(out[i].bytes, desc->pfm_endian)};
 			out[i].real = val.real * desc->scale.pfm;
 		}
 	}
@@ -59,7 +61,7 @@ static unsigned char * pfm_decode(const struct pnm_desc *desc) {
 }
 
 static unsigned char * raw_ppm_decode(const struct pnm_desc *desc) {
-	const size_t dims = desc->rast.w * desc->rast.h * desc->rast.ch;
+	const size_t dims = desc->rast.w * desc->rast.ch * desc->rast.h;
 	void *output = malloc(dims * desc->bytedepth);
 	if (!output) {
 		return NULL;
@@ -70,28 +72,19 @@ static unsigned char * raw_ppm_decode(const struct pnm_desc *desc) {
 		puts(RASTER_EOF);
 	}
 
-	if (desc->rast.bitdepth == 16) {
-		if (desc->scale.pnm != USHRT_MAX) {
-			scale_16(output, read, desc->scale.pnm);
-		} else {
-			loop_endian16(output, big_endian, read);
-		}
-	} else if (desc->scale.pnm != UCHAR_MAX) {
+	switch (desc->bytedepth) {
+	case 1:
 		scale_8(output, read, desc->scale.pnm);
+		break;
+	case 2:
+		if (desc->scale.pnm == USHRT_MAX) {
+			loop_endian16(output, big_endian, read);
+		} else {
+			scale_16(output, read, desc->scale.pnm);
+		}
+		break;
 	}
 	return output;
-}
-
-static size_t read_num(const char *restrict buf, uint_fast32_t *val) {
-	size_t i = 0;
-	while (isspace(buf[i])) {
-		++i;
-	}
-
-	for (int k = 0; k < 6 && isdigit(buf[i]); ++k, ++i) {
-		*val = *val * 10 + (uint_fast32_t)(buf[i] - '0');
-	}
-	return i;
 }
 
 static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc) {
@@ -101,19 +94,20 @@ static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc) {
 		return NULL;
 	}
 
-	struct text_block *text = new_text_block();
+	struct text_block *text = text_block_new();
 	if (!text) {
 		free(output);
 		return NULL;
 	}
 
-	const uint_fast32_t range = desc->scale.pnm > UCHAR_MAX
+	const text_fast_t range = (desc->scale.pnm > UCHAR_MAX)
 		? USHRT_MAX : UCHAR_MAX;
-	const uint_fast32_t scale = (range << 16) / desc->scale.pnm + 1;
+	const text_fast_t scale = (range << 16) / desc->scale.pnm + 1;
+	const size_t digits = (desc->scale.pnm > UCHAR_MAX) ? 5 : 3;
 
 	size_t cnt = 0;
 	do {
-		const size_t end = read_spaced_text(text, desc->ifp);
+		const size_t end = text_block_read_spaced(text, desc->ifp);
 		if (!end) {
 			puts(RASTER_EOF);
 			break;
@@ -121,8 +115,8 @@ static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc) {
 
 		size_t pos = 0;
 		do {
-			uint_fast32_t val = 0;
-			pos += read_num(text->buf + pos, &val);
+			text_fast_t val;
+			pos += text_read_uint(text->buf + pos, &val, digits);
 			if (val > desc->scale.pnm) {
 				puts(RASTER_INV);
 				free(text);
@@ -174,20 +168,21 @@ static unsigned char * plain_pbm_decode(const struct pnm_desc *desc) {
 			switch (buf[i]) {
 			case '\t': case '\n': case '\v': case '\f': case '\r':
 			case ' ':
-				continue;
+				break;
 			case '0':
 				output[cnt] = 0xff;
 				++cnt;
-				continue;
+				break;
 			case '1':
 				output[cnt] = 0x00;
 				++cnt;
-				continue;
+				break;
+			default:
+				puts(RASTER_INV);
+				free(buf);
+				free(output);
+				return NULL;
 			}
-			puts(RASTER_INV);
-			free(buf);
-			free(output);
-			return NULL;
 		}
 	}
 	free(buf);
@@ -204,13 +199,16 @@ unsigned char * pnm_decode_next(const struct pnm_desc *desc) {
 	case raw_pgm:
 	case raw_ppm:
 	case pam:
-	case mtv:
-		return raw_ppm_decode(desc);
+		if (desc->scale.pnm != UCHAR_MAX) {
+			return raw_ppm_decode(desc);
+		}
+		break;
 	case color_pfm:
 	case gray_pfm:
 		return pfm_decode(desc);
 	case raw_pbm:
 	case xv_thumb:
+	case mtv:
 		break;
 	}
 	return lib_load_rast(desc->ifp, &desc->rast);
@@ -233,7 +231,8 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 		desc->rast.bitdepth = 1;
 		desc->rast.attr = pix_inverted;
 		break;
-	case plain_pbm: case mtv:
+	case plain_pbm:
+	case mtv:
 		desc->rast.bitdepth = 8;
 		break;
 	case xv_thumb:
@@ -483,6 +482,7 @@ const bool maybe_mtv) {
 	desc->ifp = ifp;
 
 	char magic[2];
+	const long pos = ftell(ifp);
 	const int matches = fscanf(ifp, "P%2c", magic);
 	if (matches == 1) {
 		if (magic[0] == '7') {
@@ -515,7 +515,7 @@ const bool maybe_mtv) {
 	} else if (matches == EOF) {
 		return lib_unexpected_eof;
 	} else if (maybe_mtv) {
-		rewind(desc->ifp);
+		fseek(desc->ifp, pos, SEEK_SET);
 		desc->type = mtv;
 		return lib_ok;
 	}

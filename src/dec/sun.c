@@ -44,7 +44,7 @@ enum wu_error sun_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	/* Comment away to interpret the unused byte in 32-bit files as alpha.
 	 * Imagemagick does this. */
 /*	if (img->channels == 4) {
-		img->true_channels = 3;
+		img->no_alpha = true;
 	}*/
 	return img->data ? wu_ok : wu_decoding_error;
 }

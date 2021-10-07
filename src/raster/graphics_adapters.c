@@ -1,8 +1,5 @@
-#include <stdlib.h>
-
 #include "../common.h"
 
-#include "raster.h"
 #include "unpack.h"
 #include "graphics_adapters.h"
 

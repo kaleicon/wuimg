@@ -15,7 +15,6 @@
 #include "extract.h"
 #include "write_pam.h"
 #include "conf.h"
-#include "sort.h"
 #include "filesystem.h"
 
 enum work_mode {
@@ -25,7 +24,6 @@ enum work_mode {
 	formats = 'f',
 	directory = 'd',
 	sole = 's',
-//	recursive = 'r',
 	archive = 'a',
 	benchmark = 'b',
 	writeout = 'w',
@@ -39,11 +37,25 @@ struct program_mode {
 	} arg;
 };
 
-struct file_list {
+struct image_list {
 	bool dynamic;
 	size_t nr;
 	char **name;
 };
+
+static void image_list_remove_entry(struct image_list *entries, long pos) {
+	if (entries->dynamic) {
+		free(entries->name[pos]);
+	}
+	entries->name[pos] = NULL;
+}
+
+static void image_list_free(struct image_list *entries) {
+	for (size_t i = 0; i < entries->nr; ++i) {
+		free(entries->name[i]);
+	}
+	free(entries->name);
+}
 
 static int lsign(const long i) {
 	return i < 0 ? -1 : 1;
@@ -61,7 +73,7 @@ const bool print_meta, const bool print_time, double *timeinfo) {
 	const struct image_file *infile = &image->file;
 	if (result == wu_ok) {
 		if (print_meta) {
-			print_image_information(infile, 1);
+			print_image_information(infile, 0);
 		}
 		if (print_time) {
 			printf("Decoded in %f seconds\n", diff);
@@ -76,27 +88,18 @@ const bool print_meta, const bool print_time, double *timeinfo) {
 	return result;
 }
 
-static enum wu_error test_with(const struct file_list *entries,
+static enum wu_error test_with(const struct image_list *entries,
 const struct program_mode *mode) {
 	struct image_context image;
 	image.conf = load_config();
-	image.conf.fb = (struct display_dims){
-		image.conf.max_img_size, image.conf.max_img_size
-	};
-	if (!image.conf.max_img_size) {
-		image.conf.max_img_size = USHRT_MAX / 4;
-	}
 
-	unsigned int iters;
-	unsigned int warmup;
+	unsigned int iters = 1;
+	unsigned int warmup = 0;
 	if (mode->type == benchmark) {
 		iters = mode->arg.iters;
 		warmup = 3;
 		printf("Benchmarking %u times with %u tries for warmup.\n\n",
 			iters, warmup);
-	} else {
-		iters = 1;
-		warmup = 0;
 	}
 
 	enum wu_error result = wu_ok;
@@ -210,31 +213,15 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	return result;
 }
 
-static void free_file_list_entry(struct file_list *entries, long pos) {
-	if (entries->dynamic) {
-		free(entries->name[pos]);
-	}
-	entries->name[pos] = NULL;
-}
-
-static void free_file_list(struct file_list *entries) {
-	for (size_t i = 0; i < entries->nr; ++i) {
-		free(entries->name[i]);
-	}
-	free(entries->name);
-}
-
-static enum wu_error run_with_list(struct file_list *entries, long idx) {
+static enum wu_error run_with_list(struct image_list *entries, long idx) {
 	struct window_control control = {
 		.image.conf = load_config(),
 	};
 
-	const clock_t start = clock();
 	struct term_restore tr;
 	if (!display_setup(&control, &tr)) {
 		return wu_unknown_error;
 	}
-	printf("Display set in %f seconds\n", clock_ellapsed(start));
 
 	struct image_context *image = &control.image;
 	struct window_context *window = &control.window;
@@ -266,7 +253,7 @@ static enum wu_error run_with_list(struct file_list *entries, long idx) {
 
 		image_file_free(&image->file);
 		if (free_entry) {
-			free_file_list_entry(entries, idx);
+			image_list_remove_entry(entries, idx);
 			--remaining;
 			window->event.file.cycle = 1;
 		}
@@ -282,7 +269,7 @@ static enum wu_error run_with_list(struct file_list *entries, long idx) {
 
 static enum wu_error from_argv(const size_t argc, char **argv,
 const struct program_mode *mode) {
-	struct file_list entries = {
+	struct image_list entries = {
 		.dynamic = false,
 		.nr = argc,
 		.name = argv,
@@ -294,41 +281,22 @@ const struct program_mode *mode) {
 	return run_with_list(&entries, 0);
 }
 
-static int sort_natural(const void *restrict v1, const void *restrict v2) {
-	const struct file_entry *restrict f1 = v1;
-	const struct file_entry *restrict f2 = v2;
-	return natcmp(f1->frm, f2->frm);
-}
-
 static enum wu_error from_path(const char *name) {
 	const clock_t start = clock();
 	setlocale(LC_COLLATE, "");
-	struct file_list entries = {
+
+	size_t start_idx;
+	errno = 0;
+	struct image_list entries = {
 		.dynamic = true,
+		.name = fs_filter_sort(name, &entries.nr, &start_idx),
 	};
 
 	enum wu_error result;
-	errno = 0;
-	struct file_entry key = {0};
-	struct file_entry *files = fs_filter_dir(name, &entries.nr, &key);
-	if (files) {
-		qsort(files, entries.nr, sizeof(*files), sort_natural);
-		long starting_pos = 0;
-		if (key.name) {
-			struct file_entry *loc = bsearch(&key, files,
-				entries.nr, sizeof(*files), sort_natural);
-			starting_pos = (long)(loc - files);
-		}
-		printf("argv processed in %f seconds\n", clock_ellapsed(start));
-
-		entries.name = fs_compact_entries(files, entries.nr);
-		if (entries.name) {
-			result = run_with_list(&entries, starting_pos);
-			free_file_list(&entries);
-		} else {
-			perror("Failed to allocate name list");
-			result = wu_alloc_error;
-		}
+	if (entries.name) {
+		printf("dir processed in %f seconds\n", clock_ellapsed(start));
+		result = run_with_list(&entries, (long)start_idx);
+		image_list_free(&entries);
 	} else {
 		if (errno) {
 			perror("Error while filtering images");
@@ -355,7 +323,7 @@ static enum wu_error from_path(const char *name) {
 #define BENCHMARK_MODE "benchmark"
 
 static void print_help() {
-	fputs("Usage:\n"
+	puts("Usage:\n"
 		"\t" WU_CANON_NAME "\t(read images from \".\")\n"
 		"\t" WU_CANON_NAME " DIR\t(read from DIR)\n"
 		"\t" WU_CANON_NAME " FILE\t(read from the parent of FILE, starting with FILE)\n"
@@ -378,7 +346,8 @@ static void print_help() {
 		"\t" DIRECTORY_MODE "\n"
 		"\t\tDisplay images from PATH if it is a directory, from its\n"
 		"\t\tparent if it is a file, or from the current directory if\n"
-		"\t\tmissing. Assumed when zero or one paths are given.\n"
+		"\t\tmissing. Assumed when zero or one paths are given. Paths\n"
+		"\t\tafter the first are ignored.\n"
 
 		"\t" SOLE_MODE "\n"
 		"\t\tRead only the file(s) given, in the order given.\n"
@@ -412,8 +381,7 @@ static void print_help() {
 		"\t\tSkip the conversion to 8/16 bits; write the data \"raw\"\n"
 		"\t\tinstead and tweak the PAM header to make it eyeable.\n"
 		"\t\tIntended as a curiosity, really. It is what's sent to\n"
-		"\t\tthe card sans alignment.\n",
-		stderr);
+		"\t\tthe card sans alignment.");
 }
 
 static int get_mode(const int argc, char **argv, struct program_mode *mode) {
@@ -462,7 +430,7 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 				}
 				break;
 			case writeout:
-				idx += read_write_args(argc - idx, argv + idx,
+				idx += write_args(argc - idx, argv + idx,
 					&mode->arg.write);
 				break;
 			default:

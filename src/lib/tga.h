@@ -18,8 +18,8 @@ struct tga_metadata {
 		char comment[324];
 	} author;
 
-	bool has_stamp;
-	struct utc_time stamp;
+	bool has_timestamp;
+	struct utc_time timestamp;
 
 	struct tga_job {
 		char name[41];
@@ -51,35 +51,30 @@ enum tga_image_type {
 
 struct tga_colormap {
 	unsigned int offset, len;
-	unsigned char bitdepth;
-	unsigned char bytedepth;
+	unsigned char depth;
 	struct raster_pal *pal;
 };
 
 struct tga_desc {
 	FILE *ifp;
-	unsigned int w, h;
-	enum tga_image_type type:8;
-	unsigned char bitdepth;
-	unsigned char bytedepth;
+	struct raster_desc r;
+	enum tga_image_type type;
+	unsigned char depth;
 	unsigned char attr_bits, orientation;
-	unsigned char ch;
-	bool expand_16bit;
 
 	long data_start;
-	size_t data_len;
 	struct tga_colormap map;
 	struct tga_metadata *meta;
 };
 
 void tga_cleanup(struct tga_desc *desc);
 
-unsigned char * tga_decode_stamp(const struct tga_desc *desc,
-unsigned int *width, unsigned int *height);
+unsigned char * tga_decode_stamp(const struct tga_desc *desc, size_t *width,
+size_t *height);
 
 unsigned char * tga_decode(const struct tga_desc *desc);
 
-struct raster_pal * tga_take_palette(struct tga_desc *desc);
+struct raster_pal * tga_take_extra_palette(struct tga_desc *desc);
 
 bool tga_parse_footer(struct tga_desc *desc);
 

@@ -21,8 +21,8 @@ struct file_magic {
 };
 ) /* EXP_STRING structs end */
 
-/* Be careful with masks. This array is sorted dumbly. Masks should cover
- * continuous ranges of valid inputs. */
+/* Be careful with masks. This array is sorted dumbly. Masks should completely
+ * cover continuous ranges of valid inputs. */
 static struct file_magic magic_map[] = {
 #ifdef WU_ENABLE_BMP
 	{"\xff\xff", "BM", fmt_bmp},
@@ -30,8 +30,8 @@ static struct file_magic magic_map[] = {
 
 #ifdef WU_ENABLE_PCX
 	// Second byte is version. Valid values are 0,2,3,4,5
-	{"\xff\xfd\xff", "\x0a\x00\x01", fmt_pcx}, // 0,2
-	{"\xff\xff\xff", "\x0a\x03\x01", fmt_pcx}, // 3
+	{"\xff\xff\xff", "\x0a\x00\x01", fmt_pcx}, // 0
+	{"\xff\xfe\xff", "\x0a\x02\x01", fmt_pcx}, // 2,3
 	{"\xff\xfe\xff", "\x0a\x04\x01", fmt_pcx}, // 4,5
 
 	{"\xff\xff\xff\xff", "\xb1\x68\xde\x3a", fmt_dcx},
@@ -52,8 +52,8 @@ static struct file_magic magic_map[] = {
 #ifdef WU_ENABLE_PNM
 	// Second byte is ASCII version.
 	{"\xff\xff", "P1", fmt_pnm},
-	{"\xff\xfe", "P2", fmt_pnm}, // "2", "3"
-	{"\xff\xfe", "P4", fmt_pnm}, // "4", "5"
+	{"\xff\xfe", "P2", fmt_pnm}, // '2', '3'
+	{"\xff\xfe", "P4", fmt_pnm}, // '4', '5'
 	{"\xff\xff", "P6", fmt_pnm},
 
 	{"\xff\xff\xff", "P7\n", fmt_pnm}, // PAM
@@ -67,7 +67,7 @@ static struct file_magic magic_map[] = {
 #endif // WU_ENABLE_SGI
 
 #ifdef WU_ENABLE_SIXEL
-	// {"\xff", "\x90", fmt_sixel}, // Valid but too short
+	// {"\xff", "\x90", fmt_sixel}, // Too short
 	{"\xff\xff", "\x1bP", fmt_sixel},
 #endif // WU_ENABLE_SIXEL
 
@@ -82,6 +82,8 @@ static struct file_magic magic_map[] = {
 #ifdef WU_ENABLE_XBM
 	{"\xff\xff", "\x2f\x2a", fmt_xbm}, // C asterisk comment in hex because
 		// my editor says it will comment away half the file otherwise.
+	{"\xff\xff", "\x2f\x2f", fmt_xbm}, // C slash comment in hex because
+		// my editor says it will comment away the whole line otherwise.
 	{"\xff\xff\xff\xff\xff\xff\xff\xff", "#define ", fmt_xbm},
 #endif // WU_ENABLE_XBM
 
@@ -96,11 +98,19 @@ static struct file_magic magic_map[] = {
 #endif // WU_ENABLE_GIF
 
 #ifdef WU_ENABLE_HEIF
-	/* Heif follows ISOBMFF, so we can't stop at 'ftyp' or try to get
-	 * clever with masks, or we could match a few hundred formats.
-	 * https://github.com/file/file/blob/master/magic/Magdir/animation */
+	/* HEIF follows ISOBMFF, so we can't stop at 'ftyp' or try to get
+	 * clever with masks, or we could match a few hundred other formats.
+	 * https://github.com/file/file/blob/master/magic/Magdir/animation
 
-	// Fourth byte must be greater than \x0c to avoid sorting errors with JP2.
+	 * The first 32-bit word (little-endian) is an offset to something.
+	 * I've only seen values is the range 0x18-0x30, so it ought to be safe
+	 * to depend only on the fourth byte. The offset must also be a
+	 * multiple of 4, so the two lower bits should be zero and not be
+	 * masked.
+
+	 * Finally, JPEG2000 can also start with 3 zero bytes, followed
+	 * by 0x0c. Since the compile-time sorter ignores the mask, we ensure
+	 * HEIF sorts after JP2 by making the fourth byte greater than 0x0c. */
 
 	// AVIF
 	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
@@ -113,33 +123,33 @@ static struct file_magic magic_map[] = {
 	 * hevc|hevx|hevm|hevs
 	 * avic|avis
 	 * mif1|msf1 */
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypheic", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypheix", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypheim", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypheis", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypheic", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypheix", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypheim", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypheis", fmt_heif},
 
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftyphevc", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftyphevx", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftyphevm", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftyphevs", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftyphevc", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftyphevx", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftyphevm", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftyphevs", fmt_heif},
 
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypavic", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypavis", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypavic", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypavis", fmt_heif},
 
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypmif1", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\xff" "ftypmsf1", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypmif1", fmt_heif},
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\xfc" "ftypmsf1", fmt_heif},
 #endif // WU_ENABLE_HEIF
 
 #ifdef WU_ENABLE_JPEG
@@ -334,11 +344,11 @@ static struct file_ext extension_map[] = {
 	{"tif", -1},
 	{"tiff", -1},
 #ifndef WU_ENABLE_RAW
-	// Results aren't very good but it's better than nothing
+	// The raw image won't be shown, but a thumbnail is better than nothing
 	{"cr2", -1},
 	{"dng", -1},
 	{"nef", -1},
-#endif // WU_ENABLE_RAW
+#endif
 #endif // WU_ENABLE_TIFF
 
 #ifdef WU_ENABLE_WEBP

@@ -9,8 +9,11 @@ struct raster_desc {
 	size_t w, h;
 	uint8_t ch, bitdepth, alignment;
 	enum pix_layout layout:8;
-	enum pix_attributes attr:8;
+	enum pix_attr attr:8;
 };
+
+const char * raster_geom_verify(const struct raster_pal *palette,
+const uint8_t ch, const uint8_t bitdepth, const enum pix_attr attr);
 
 void raster_free(struct raster_desc *desc);
 

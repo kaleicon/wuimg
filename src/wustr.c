@@ -6,19 +6,35 @@
 #include "wustr.h"
 #include "common.h"
 
-bool wustr_eq(const struct wustr *w1, const struct wustr *w2) {
-	if (w1->len == w2->len) {
-		return !memcmp(w1->str, w2->str, zumin(w1->len, w2->len));
-	}
-	return false;
-}
-
 struct wustr wustr_const(const struct wustr_mut *orig) {
 	return (struct wustr){.len = orig->len, .str = orig->str};
 }
 
-struct wustr wustr_from_str(const char *str) {
-	return (struct wustr){.len = strlen(str), .str = str};
+struct wustr wustr_str(const char *str) {
+	return (struct wustr){.len = strlen(str), .str = (unsigned char *)str};
+}
+
+bool wustr_suffix(const struct wustr w1, const struct wustr w2) {
+	if (w1.len >= w2.len) {
+		const size_t diff = w1.len - w2.len;
+		return !memcmp(w1.str + diff, w2.str, w2.len);
+	}
+	return false;
+}
+
+bool wustr_suffix_str(const struct wustr w1, const char *s2) {
+	return wustr_suffix(w1, wustr_str(s2));
+}
+
+bool wustr_eq(const struct wustr w1, const struct wustr w2) {
+	if (w1.len == w2.len) {
+		return !memcmp(w1.str, w2.str, w1.len);
+	}
+	return false;
+}
+
+bool wustr_eq_str(const struct wustr w1, const char *s2) {
+	return wustr_eq(w1, wustr_str(s2));
 }
 
 

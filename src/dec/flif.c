@@ -9,8 +9,8 @@
 
 enum wu_error flif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	const struct mmap_file map = mmap_stream(infile->ifp);
-	if (map.data == MAP_FAILED) {
+	struct mmap_info map;
+	if (!mmap_file(&map, infile->ifp)) {
 		return wu_alloc_error;
 	}
 
@@ -20,7 +20,7 @@ const struct wu_conf *wuconf) {
 		infile->err_msg = strdup(
 			"flif_decoder_decode_memory() returned 0");
 		flif_destroy_decoder(dec);
-		munmap_stream(map);
+		munmap_file(map);
 		return wu_decoding_error;
 	}
 
@@ -28,7 +28,7 @@ const struct wu_conf *wuconf) {
 		flif_decoder_num_images(dec));
 	if (!img) {
 		flif_destroy_decoder(dec);
-		munmap_stream(map);
+		munmap_file(map);
 		return wu_alloc_error;
 	}
 	infile->is_animation = (infile->nr > 1);
@@ -62,7 +62,7 @@ const struct wu_conf *wuconf) {
 				// There are no RGB functions.
 				if (img[i].channels == 3) {
 					img[i].channels = 4;
-					img[i].true_channels = 3;
+					img[i].no_alpha = true;
 				}
 				if (img[i].bitdepth == 8) {
 					read_func = flif_image_read_row_RGBA8;
@@ -84,6 +84,6 @@ const struct wu_conf *wuconf) {
 	}
 
 	flif_destroy_decoder(dec);
-	munmap_stream(map);
+	munmap_file(map);
 	return status;
 }

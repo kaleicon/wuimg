@@ -23,13 +23,13 @@ struct marker_info {
 };
 
 struct jpeg_state {
-	bool initialized;
 	struct jpeg_decompress_struct dinfo;
 	struct jpeg_error_mgr jerr;
 	long *soi_offsets;
 	jmp_buf jmp;
 };
 
+__attribute__((unused))
 static void joutput_message(struct jpeg_common_struct *dinfo) {
 	struct image_file *infile = dinfo->client_data;
 	if (!infile->err_msg) {
@@ -41,10 +41,11 @@ static void joutput_message(struct jpeg_common_struct *dinfo) {
 	(*dinfo->err->format_message)(dinfo, infile->err_msg);
 }
 
+__attribute__((unused))
 static void jerror_exit(struct jpeg_common_struct *dinfo) {
 	struct image_file *infile = dinfo->client_data;
 	struct jpeg_state *js = infile->dec_state;
-	longjmp(js->jmp, infile->err_msg ? wu_decoding_error : wu_alloc_error);
+	longjmp(js->jmp, wu_decoding_error);
 }
 
 static void clean_jpeg_state(struct image_file *infile) {
@@ -65,7 +66,7 @@ static long marker_len(FILE *f, int first_byte) {
 	return EOF;
 }
 
-static size_t search_soi_offsets(FILE *ifp, struct jpeg_state *js) {
+static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
 	enum jpeg_parse_state {
 		normal = 0,
 		marker = 1,
@@ -88,7 +89,7 @@ static size_t search_soi_offsets(FILE *ifp, struct jpeg_state *js) {
 				idx, sizeof(*js->soi_offsets)) ) {
 					return 0;
 				}
-				js->soi_offsets[idx] = ftell(ifp) - 2;
+				js->soi_offsets[idx] = ftell(ifp) - 1;
 				++idx;
 				state = normal;
 				break;
@@ -145,7 +146,7 @@ static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
 }
 
 static enum wu_error parse_markers(const struct jpeg_marker_struct *mk,
-struct image_file *infile, struct jpeg_state *js) {
+struct image_file *infile, struct jpeg_state *js, bool first_image) {
 	const struct marker_info info = identify_marker(mk);
 	struct wu_tree *metadata = &infile->metadata;
 	switch (info.type) {
@@ -156,12 +157,14 @@ struct image_file *infile, struct jpeg_state *js) {
 			mk->data_length - info.data_start, metadata);
 		break;
 	case mpo_marker:
-		/* MPO offsets are relative to the MPO marker, so we need to
-		 * parse the whole file again. */
-		;const size_t nr = search_soi_offsets(infile->ifp, js);
-		if (nr > 1) {
-			if (!realloc_sub_images(infile, nr)) {
-				return wu_alloc_error;
+		if (first_image) {
+			/* MPO offsets are relative to the MPO marker, so we
+			 * need to parse the whole file again. */
+			;const size_t nr = search_file_offsets(infile->ifp, js);
+			if (nr > 1) {
+				if (!realloc_sub_images(infile, nr)) {
+					return wu_alloc_error;
+				}
 			}
 		}
 		break;
@@ -169,7 +172,7 @@ struct image_file *infile, struct jpeg_state *js) {
 		;struct wu_tree *branch = tree_sprout_branch(metadata,
 			"Marker");
 		if (branch) {
-			char app[] = "APP___";
+			char app[] = "APPXXX";
 			sprintf(app + 3, "%hhu", mk->marker - JPEG_APP0);
 
 			tree_sprout_leaf(branch, "Type", app);
@@ -187,7 +190,7 @@ struct image_file *infile, struct jpeg_state *js) {
 }
 
 static enum wu_error decode_img(struct image_file *infile,
-const struct wu_conf *wuconf, const int i, const bool full_decode) {
+const struct wu_conf *wuconf, const int i, const bool partial_decode) {
 	struct jpeg_state *js = infile->dec_state;
 	const int val = setjmp(js->jmp);
 	if (val) {
@@ -195,10 +198,6 @@ const struct wu_conf *wuconf, const int i, const bool full_decode) {
 	}
 
 	struct jpeg_decompress_struct *dinfo = &js->dinfo;
-	if (!js->initialized) {
-		jpeg_create_decompress(dinfo);
-		js->initialized = true;
-	}
 
 	const long pos = i ? js->soi_offsets[i-1] : 0;
 	fseek(infile->ifp, pos, SEEK_SET);
@@ -229,8 +228,9 @@ const struct wu_conf *wuconf, const int i, const bool full_decode) {
 	if (wuconf->jpeg_fast_upsamp && dinfo->max_v_samp_factor == 1) {
 		dinfo->do_fancy_upsampling = FALSE;
 	}
+//	dinfo->out_color_space = dinfo->jpeg_color_space;
 
-	if (!full_decode) {
+	if (partial_decode) {
 		const unsigned jw = dinfo->image_width;
 		const unsigned jh = dinfo->image_height;
 		size_t f = image_fit_factor(wuconf, jw, jh, 8, true);
@@ -254,7 +254,6 @@ const struct wu_conf *wuconf, const int i, const bool full_decode) {
 	if (img[i].data) { // Previous downscale
 		free(img[i].data);
 	}
-
 	const size_t stride = raw_img_addbuf(img + i);
 	if (!stride) {
 		return wu_alloc_error;
@@ -273,7 +272,7 @@ const struct wu_conf *wuconf, const int i, const bool full_decode) {
 			tree_sprout_unsafe_leaf(&infile->metadata,
 				"Comment", mk->data, mk->data_length);
 		} else {
-			status = parse_markers(mk, infile, js);
+			status = parse_markers(mk, infile, js, i == 0);
 			if (status != wu_ok) {
 				break;
 			}
@@ -301,18 +300,15 @@ const enum image_event ev) {
 	enum wu_error status = wu_no_change;
 	if (ev) {
 		const int idx = state->idx;
-
-		bool full_decode = true;//!wuconf->partial_decode;
+		bool partial_decode = false;
 		if (ev & ev_upscale) {
 			if (state->zoom > 1) {
-				const struct raw_img *img = infile->sub_img + idx;
-				state->zoom *= img->dec_scale; // 1 by default
-//				full_decode = true;
+				state->zoom *= infile->sub_img[idx].dec_scale;
 			} else if (!(ev & ev_subcycle)) {
 				return wu_no_change;
 			}
 		}
-		status = decode_img(infile, wuconf, idx, full_decode);
+		status = decode_img(infile, wuconf, idx, partial_decode);
 	}
 
 	if (status > wu_ok || !ev || (status == wu_ok && file_done(infile))) {
@@ -334,12 +330,13 @@ const struct wu_conf *wuconf) {
 
 	infile->dec_state = js;
 
-	js->initialized = false;
 	js->dinfo.client_data = infile;
 	js->dinfo.err = jpeg_std_error(&js->jerr);
-	js->jerr.error_exit = jerror_exit;
-	js->jerr.output_message = joutput_message;
+//	js->jerr.error_exit = jerror_exit;
+//	js->jerr.output_message = joutput_message;
 	js->soi_offsets = NULL;
+
+	jpeg_create_decompress(&js->dinfo);
 
 	const enum wu_error status = decode_img(infile, wuconf, 0,
 		!wuconf->partial_decode);

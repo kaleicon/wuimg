@@ -15,7 +15,14 @@ enum window_backend {
 
 struct glfw_window {
 	GLFWwindow *window;
-	int x, y, w, h;
+	struct window_geom { // Fullscreen restoration
+		int x, y, w, h;
+	} geom;
+	struct window_cursor {
+		float x, y;
+		int pressed;
+	} cursor;
+
 	bool fullscreen;
 	bool has_focus;
 };
@@ -23,7 +30,7 @@ struct glfw_window {
 struct window_context {
 	struct gl_context gl;
 	struct wu_event event;
-	enum window_backend backend;
+	enum window_backend backend:8;
 	union {
 		struct glfw_window glfw;
 		struct kms_context kms;
@@ -37,13 +44,13 @@ struct window_control {
 
 void window_terminate(struct window_context *window);
 
+void window_event(struct window_context *window);
+
 void window_poll(const struct window_context *window);
 
 void window_draw(struct window_context *window);
 
 bool window_has_focus(const struct window_context *window);
-
-void window_toggle_fullscreen(struct window_context *window);
 
 void window_set_title(const struct window_context *window, const char *title);
 

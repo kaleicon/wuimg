@@ -12,22 +12,22 @@ void pix_swizzle_mask(uint8_t swizzle[static 4], const enum pix_layout layout) {
 
 void pix_expand555(void *restrict out, uint16_t word) {
 	uint8_t *o = out;
-	const uint8_t range = (1 << 5) - 1;
+	const uint8_t mask = (1 << 5) - 1;
 	const uint8_t p = 6;
-	const uint16_t scale = (UCHAR_MAX << p) / range + 1;
+	const uint16_t scale = (UCHAR_MAX << p) / mask + 1;
 
 	for (uint8_t n = 0; n < 3; ++n) {
 		const uint8_t m = n*5;
-		o[n] = (uint8_t)( (scale * (word & (range << m))) >> (p+m) );
+		o[n] = (uint8_t)( (scale * (word & (mask << m))) >> (p+m) );
 	}
 }
 
 void pix_rgb8_to_rgba8(struct pix_rgba8 *dst, const struct pix_rgb8 *src,
-const size_t n) {
-	for (size_t m = 0; m < n; ++m) {
-		dst[m].r = src[m].r;
-		dst[m].g = src[m].g;
-		dst[m].b = src[m].b;
-		dst[m].a = 0xff;
+const size_t nmemb) {
+	for (size_t n = 0; n < nmemb; ++n) {
+		dst[n].r = src[n].r;
+		dst[n].g = src[n].g;
+		dst[n].b = src[n].b;
+		dst[n].a = 0xff;
 	}
 }

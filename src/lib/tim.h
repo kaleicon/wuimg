@@ -14,17 +14,14 @@ struct tim_clut {
 
 struct tim_desc {
 	FILE *ifp;
-	unsigned x, y, w, h;
-	unsigned line_len;
-	unsigned char bitdepth;
+	struct raster_desc r;
+	unsigned x, y;
 	struct tim_clut clut;
 };
 
 void tim_cleanup(struct tim_desc *desc);
 
 unsigned char * tim_decode(const struct tim_desc *desc);
-
-struct raster_pal * tim_take_colormap(struct tim_desc *desc);
 
 enum lib_fail tim_parse_header(struct tim_desc *desc);
 

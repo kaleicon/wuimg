@@ -181,7 +181,7 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 		.bitdepth = (unsigned char)((bitdepth > 8) ? 8 : bitdepth),
 		.alignment = 2,
 		.layout = layout,
-		.attr = (bitdepth < 8) ? pix_inverted : 0,
+		.attr = (bitdepth < 8 && !cm_type) ? pix_inverted : pix_normal,
 	};
 	desc->type = type;
 	desc->colormap_type = cm_type;

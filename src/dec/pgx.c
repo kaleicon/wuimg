@@ -28,7 +28,7 @@ enum wu_error pgx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		img->data = pgx_decode(&desc);
 		if (img->data) {
 			rast_to_raw(img, &desc.rast);
-			img->true_channels = desc.transparent ? 4 : 3;
+			img->no_alpha = !desc.transparent;
 			return wu_ok;
 		}
 		return wu_decoding_error;

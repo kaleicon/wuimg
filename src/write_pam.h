@@ -12,6 +12,6 @@ struct write_args {
 void write_to_file(const struct image_file *infile, const char *filename,
 const struct write_args *args);
 
-int read_write_args(int argc, char **argv, struct write_args *args);
+int write_args(int argc, char **argv, struct write_args *args);
 
 #endif /* WRITE_PAM */

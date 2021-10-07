@@ -7,7 +7,7 @@
 #include "../rast_utils.h"
 #include "../lib/mac.h"
 
-static void print_macbin_metadata(const struct mac_binary_header *macbin,
+static void read_macbin_metadata(const struct mac_binary_header *macbin,
 struct wu_tree *tree) {
 	if (!tree) {
 		return;
@@ -60,7 +60,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 	}
 
 	if (desc.has_macbin_header) {
-		print_macbin_metadata(&desc.macbin,
+		read_macbin_metadata(&desc.macbin,
 			tree_sprout_branch(&infile->metadata, "MacBinary"));
 	}
 	tree_bud_leaf(&infile->metadata, "Version",
@@ -87,7 +87,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 	img[0].data = mac_decode(&desc);
 	if (img[0].data) {
 		rast_to_raw(img, &desc.rast);
-		img[0].attr |= pix_inverted;
+		img[0].attr = pix_inverted;
 		return wu_ok;
 	}
 	return wu_decoding_error;

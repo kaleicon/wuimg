@@ -1,5 +1,5 @@
-#ifndef OPENGL
-#define OPENGL
+#ifndef WU_OPENGL
+#define WU_OPENGL
 
 #include <epoxy/gl.h>
 
@@ -9,21 +9,38 @@
 #define WU_GL_MAJOR 3
 #define WU_GL_MINOR 3
 
+enum gl_upload_status {
+	gl_upload_fail = 0,
+	gl_upload_success,
+	gl_upload_reused,
+};
+
+enum gl_alpha {
+	gl_alpha_enabled = 0,
+	gl_alpha_opaque,
+	gl_alpha_checkers,
+	gl_alpha_disable,
+	gl_alpha_STATES,
+};
+
 struct gl_context {
-	struct {
-		GLint trans;
+	struct gl_uni {
+		GLint matrix;
 		GLint use_pal;
 		GLint checkers;
 	} uni;
 	GLuint pixel_unpack_buf;
 	GLuint timer;
 
-	unsigned fb_wh[2];
-	struct {
+	float fb_wh[2];
+	struct gl_texture {
 		unsigned w, h;
 		unsigned char ch, bpp;
 		bool paletted;
+		GLint alpha_swizzle;
 	} tex;
+	enum gl_alpha alpha:8;
+	bool update_matrix;
 };
 
 void gl_context_delete(struct gl_context *context);
@@ -32,18 +49,17 @@ GLuint64 gl_clock_end(struct gl_context *context);
 
 void gl_clock_start(struct gl_context *context);
 
-void gl_alpha_state(struct gl_context *context, enum alpha_state alpha);
+void gl_alpha_toggle(struct gl_context *context);
 
 void gl_matrix_update(const struct gl_context *context, struct wu_state *state);
 
 float gl_fit_zoom(const struct gl_context *context,
 unsigned char rotation);
 
-void gl_even_view(struct gl_context *context);
+void gl_viewport(struct gl_context *context, int w, int h);
 
-bool gl_texture_upload(const struct raw_img *img, struct gl_context *context);
-
-bool gl_texture_reuse(const struct raw_img *img, struct gl_context *context);
+enum gl_upload_status gl_texture_upload(struct gl_context *context,
+const struct raw_img *img);
 
 void gl_draw(void);
 
@@ -51,4 +67,4 @@ void gl_clear_color(const float bg[static 4]);
 
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
 
-#endif /* OPENGL */
+#endif /* WU_OPENGL */

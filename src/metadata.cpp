@@ -9,7 +9,7 @@ extern "C" {
 // Disclaimer: I don't know any C++
 
 template <typename Datum>
-static void print_any(Datum meta, struct wu_tree *tree) {
+static void read_any(Datum meta, struct wu_tree *tree) {
 	std::string group = meta->groupName();
 
 	struct wu_tree *branch = tree_findadd_branch(tree, group.c_str());
@@ -44,7 +44,7 @@ static void print_any(Datum meta, struct wu_tree *tree) {
 	}
 }
 
-static void print_xmp(const char *metadata, const size_t len,
+static void read_xmp(const char *metadata, const size_t len,
 struct wu_tree *tree) {
 	const std::string str_xmp(metadata, len);
 
@@ -58,13 +58,13 @@ struct wu_tree *tree) {
 	struct wu_tree *outtree = tree_sprout_branch(tree, "XMP");
 	for (Exiv2::XmpData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
-			print_any(i, outtree);
+			read_any(i, outtree);
 		}
 	}
 	data.clear();
 }
 
-static void print_iptc(const unsigned char *metadata, const size_t len,
+static void read_iptc(const unsigned char *metadata, const size_t len,
 struct wu_tree *tree) {
 	Exiv2::IptcData data;
 	Exiv2::IptcParser::decode(data, metadata, len);
@@ -76,13 +76,13 @@ struct wu_tree *tree) {
 	struct wu_tree *outtree = tree_sprout_branch(tree, "IPTC");
 	for (Exiv2::IptcData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
-			print_any(i, outtree);
+			read_any(i, outtree);
 		}
 	}
 	data.clear();
 }
 
-static void print_exif(const unsigned char *metadata, const size_t len,
+static void read_exif(const unsigned char *metadata, const size_t len,
 struct wu_tree *tree) {
 	Exiv2::ExifData data;
 	Exiv2::ExifParser::decode(data, metadata, len);
@@ -94,7 +94,7 @@ struct wu_tree *tree) {
 	struct wu_tree *outtree = tree_sprout_branch(tree, "Exif");
 	for (Exiv2::ExifData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
-			print_any(i, outtree);
+			read_any(i, outtree);
 		}
 	}
 	data.clear();
@@ -105,13 +105,13 @@ const void *metadata, const size_t len, struct wu_tree *tree) {
 	try {
 		switch (type) {
 		case exif_metadata:
-			print_exif((const unsigned char *)metadata, len, tree);
+			read_exif((const unsigned char *)metadata, len, tree);
 			break;
 		case xmp_metadata:
-			print_xmp((const char *)metadata, len, tree);
+			read_xmp((const char *)metadata, len, tree);
 			break;
 		case iptc_metadata:
-			print_iptc((const unsigned char *)metadata, len, tree);
+			read_iptc((const unsigned char *)metadata, len, tree);
 			break;
 		default:
 			break;

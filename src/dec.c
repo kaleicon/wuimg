@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <errno.h>
 
 #include <sys/stat.h>
@@ -109,12 +110,12 @@ enum wu_error decode_image(struct image_context *image) {
 void print_known_formats(void) {
 	printf("Known formats: %zu\n", ARRAY_LEN(format_map));
 	for (size_t i = 0; i < ARRAY_LEN(format_map); ++i) {
-		fputs(format_map[i].name, stdout);
-		if (i + 1 < ARRAY_LEN(format_map)) {
-			fputs(", ", stdout);
-		} else {
-			fputs("\n\n", stdout);
-		}
+		const struct format_fn *f = format_map + i;
+		fwrite(f->name, 1, zumin(sizeof(f->name), strlen(f->name)),
+			stdout);
+		const char *sep = (i + 1 < ARRAY_LEN(format_map))
+			? ", " : "\n\n";
+		fputs(sep, stdout);
 	}
 
 	print_map_data();

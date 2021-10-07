@@ -134,13 +134,13 @@ const struct wu_conf *wuconf) {
 	}
 	infile->dec_state = ds;
 
-	struct mmap_file map = mmap_stream(infile->ifp);
-	if (map.data == MAP_FAILED) {
+	struct mmap_info map;
+	if (!mmap_file(&map, infile->ifp)) {
 		return wu_alloc_error;
 	}
 
 	ds->handle = rsvg_handle_new_from_data(map.data, map.len, NULL);
-	munmap_stream(map);
+	munmap_file(map);
 	if (!ds->handle) {
 		clean_svg_state(infile);
 		return wu_open_error;

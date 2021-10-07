@@ -257,7 +257,7 @@ const struct wu_conf *wuconf, struct gif_state *ds) {
 }
 
 static enum wu_error gif_frame_iter(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state) {
+const struct wu_conf *wuconf, const struct wu_state *state) {
 	struct gif_state *ds = infile->dec_state;
 
 	const int image_count = ds->gif_file->ImageCount;

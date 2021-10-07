@@ -51,15 +51,22 @@ decs = [custom_target('dec_fmtmap',
 	'metadata.cpp'] \
 	+ internal_libs + internal_decs + external_decs
 base = ['common.c', 'conf.c', 'term.c', 'wudefs.c', 'wustr.c', 'wutree.c']
-util = ['colorimetry.c', 'extract.c', 'filesystem.c', 'sort.c', 'write_pam.c']
+util = ['colorimetry.c', 'extract.c', 'filesystem.c', 'write_pam.c']
 gui = ['display.c', 'drm.c', 'events.c', 'opengl.c', 'window.c']
 
-base_deps = fmt_deps + [cc.find_library('m', required : false),
-	dependency('uchardet'), dependency('exiv2')]
-all_deps = base_deps \
-	+ [dependency('epoxy'), dependency('glfw3'),
-		dependency('libdrm'), dependency('gbm'),
-		dependency('libarchive')]
+base_deps = fmt_deps + [
+	cc.find_library('m', required : false),
+	dependency('exiv2'),
+	dependency('icu-i18n'),
+	dependency('uchardet'),
+]
+all_deps = base_deps + [
+	dependency('epoxy'),
+	dependency('gbm'),
+	dependency('glfw3'),
+	dependency('libarchive'),
+	dependency('libdrm')
+]
 
 wuview = ['main.c'] + decs + util + gui + base
 #timetest = ['time.c', 'common.c']

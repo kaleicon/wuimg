@@ -34,42 +34,33 @@ enum bmp_type {
 	bmp_v5_header = 124,
 };
 
-struct bmp_bitparams {
+struct bmp_bitfield {
+	uint32_t shift;
 	uint32_t mask;
 	uint32_t scale;
-	uint32_t shift;
-};
-
-struct bmp_bitfield {
-	struct bmp_bitparams p[4];
-	bool high_depth;
 };
 
 struct bmp_desc {
 	FILE *ifp;
 
-	uint32_t w, h;
-	unsigned char bitdepth;
+	struct raster_desc r;
+	unsigned char depth;
 	enum bmp_type type:8;
 	enum bmp_order order:8;
 	enum bmp_compression compression:8;
 
-	size_t scan_len;
 	size_t data_len;
 
-	union {
-		struct raster_pal *pal;
-		struct bmp_bitfield bf;
-	} bmp;
+	struct bmp_bitfield bf[4];
 };
 
-void bmp_cleanup(const struct bmp_desc *desc);
+const char * bmp_compression_str(const enum bmp_compression comp);
 
-bool bmp_has_alpha(const struct bmp_desc *desc);
+const char * bmp_type_str(const enum bmp_type type);
+
+void bmp_cleanup(struct bmp_desc *desc);
 
 unsigned char * bmp_decode(const struct bmp_desc *desc);
-
-struct raster_pal * bmp_take_colormap(struct bmp_desc *desc);
 
 enum lib_fail bmp_parse_header(struct bmp_desc *desc);
 

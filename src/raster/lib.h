@@ -17,6 +17,7 @@ enum lib_fail {
 	lib_unsupported_format,
 	lib_alloc_error,
 	lib_invalid_data,
+	lib_int_overflow,
 
 	lib_pi_comment_too_long,
 

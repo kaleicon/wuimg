@@ -19,7 +19,7 @@ struct filename_template {
 	size_t ext_len;
 };
 
-static void network_fwrite(void *out, const unsigned char bitdepth,
+static void network_fwrite(void *out, const size_t bitdepth,
 const size_t bytestride, FILE *ofp) {
 	if (bitdepth == 16) {
 		loop_endian16(out, big_endian, bytestride / 2);
@@ -27,8 +27,7 @@ const size_t bytestride, FILE *ofp) {
 	fwrite(out, 1, bytestride, ofp);
 }
 
-static void write_pam_header(const struct raw_img *img, FILE *ofp,
-const unsigned channels) {
+static void write_pam_header(const struct raw_img *img, FILE *ofp) {
 	const unsigned int bytedepth = (img->bitdepth + 7U) / 8;
 	const unsigned int maxval = (1U << (bytedepth * 8)) - 1;
 	const char *tuples[] = {"GRAYSCALE", "GRAYSCALE_ALPHA",
@@ -41,58 +40,43 @@ const unsigned channels) {
 		"MAXVAL %u\n"
 		"TUPLTYPE %s\n"
 		"ENDHDR\n",
-		img->w, img->h, channels, maxval,
-		tuples[channels - 1]);
+		img->w, img->h, img->channels, maxval,
+		tuples[img->channels - 1]);
 }
 
 static void write_expand(const struct raw_img *img, FILE *ofp,
-unsigned char *restrict expand_buf, const size_t buflen) {
-	size_t stride = scanline_length(img->w * img->channels, img->bitdepth,
-		img->alignment);
-
-	write_pam_header(img, ofp, img->channels);
-	const struct raster_desc desc = {
-		.w = img->w,
-		.h = 1,
-		.ch = img->channels,
-		.bitdepth = img->bitdepth,
-		.layout = img->layout,
-	};
-	for (size_t y = 0; y < img->h; ++y) {
-		unsigned char *src = img->data + stride*y;
-/*		if (img->palette) {
-			raster_pal_expand(expand_buf, src, img->palette, img->w,
-				1, 1, img->channels);
-		} else if (img->bitdepth == pix_rgb332) {
-			strip_expand332(expand_buf, src, img->w, 1, 1);
-		} else if (img->bitdepth < 8) {
-			strip_unpack(expand_buf, src, img->w * img->channels,
-				1, 1, op_expand, img->bitdepth);
-		} else {
-			memcpy(expand_buf, src, stride);
-		}*/
-
-		if (img->channels > 2 && img->layout != pix_rgba) {
-			strip_swizzle(expand_buf, src, &desc, pix_rgba);
-		} else {
-			memcpy(expand_buf, src, stride);
-		}
-		network_fwrite(expand_buf, img->bitdepth, buflen, ofp);
+const size_t buflen, const enum unpack_op op) {
+	uint8_t *buf = malloc(buflen);
+	if (!buf) {
+		fputs("ERROR: Out of memory.\n", stderr);
+		return;
 	}
+
+	const size_t instride = scanline_length(img->w * img->channels,
+		img->bitdepth, img->alignment);
+	const size_t outdepth = zumax(img->bitdepth, 8);
+	write_pam_header(img, ofp);
+	for (size_t y = 0; y < img->h; ++y) {
+		unsigned char *src = img->data + instride*y;
+		if (op) {
+			unpack_strip(buf, src, img->w * img->channels, 1, 1,
+				img->attr, op, img->bitdepth);
+			src = buf;
+		}
+		if (img->channels > 2 && img->layout != pix_rgba) {
+			strip_swizzle(buf, src, img->w, 1, img->channels,
+				outdepth, 1, img->layout, pix_rgba);
+			src = buf;
+		}
+		network_fwrite(src, outdepth, buflen, ofp);
+	}
+	free(buf);
 }
 
 static void write_raw(const struct raw_img *img, FILE *ofp) {
-	unsigned int channels;
-	if ((img->bitdepth == 4 && img->channels == 4)
-	|| img->bitdepth == pix_argb1555) {
-		channels = 2;
-	} else {
-		channels = img->channels;
-	}
-
-	write_pam_header(img, ofp, channels);
+	write_pam_header(img, ofp);
 	const size_t bytedepth = (img->bitdepth + 7U) / 8;
-	const size_t stride = img->w * channels * bytedepth;
+	const size_t stride = img->w * img->channels * bytedepth;
 	const size_t scanline = scanline_length(stride, 8, img->alignment);
 	for (size_t y = 0; y < img->h; ++y) {
 		network_fwrite(img->data + scanline*y, img->bitdepth, stride,
@@ -102,33 +86,23 @@ static void write_raw(const struct raw_img *img, FILE *ofp) {
 
 static void write_sub_img(const struct raw_img *img, FILE *ofp,
 const bool raw_output) {
-	if (img->bitdepth > 16 || img->attr & pix_float) {
-		fputs("Error: Unsupported output depth.\n", stderr);
-		return;
-	}
-
-	unsigned char *expand_buf = NULL;
+	enum unpack_op op = op_noop;
 	size_t buflen = 0;
 	if (!raw_output) {
-		if (img->bitdepth == pix_argb1555) {
-			fputs("argb1555 unimplemented for now.\n",
-				stderr);
-			return;
+		if (img->palette) {
+			op = op_unpack;
+		} else if (img->bitdepth < 8) {
+			op = op_expand;
 		}
-		if (img->palette || (img->channels > 2 && img->layout != pix_rgba)
-		|| img->bitdepth < 8) {
-			buflen = img->w * img->channels;
-			expand_buf = malloc(buflen);
-			if (!expand_buf) {
-				fputs("ERROR: Out of memory.\n", stderr);
-				return;
-			}
+
+		if (op || (img->channels > 2 && img->layout != pix_rgba)) {
+			buflen = scanline_length(img->w * img->channels,
+				zumax(img->bitdepth, 8), 1);
 		}
 	}
 
-	if (expand_buf) {
-		write_expand(img, ofp, expand_buf, buflen);
-		free(expand_buf);
+	if (buflen) {
+		write_expand(img, ofp, buflen, op);
 	} else {
 		write_raw(img, ofp);
 	}
@@ -209,6 +183,14 @@ const struct write_args *args) {
 
 	const struct raw_img *img = infile->sub_img;
 	for (size_t i = 0; i < infile->nr; ++i) {
+		if (img[i].bitdepth > 16 || img[i].attr == pix_float) {
+			fputs("Error: Unsupported output depth.\n", stderr);
+			continue;
+		} else if (img[i].palette) {
+			puts("FIXME: Paletted images are currently unsupported.\n"
+				"Only the raw data will be written.");
+		}
+
 		id_replace(&tpl, img[i].id);
 		errno = 0;
 		FILE *ofp = create_file(tpl.name, args->overwrite);
@@ -225,7 +207,7 @@ const struct write_args *args) {
 	free(tpl.name);
 }
 
-int read_write_args(const int argc, char **argv, struct write_args *args) {
+int write_args(const int argc, char **argv, struct write_args *args) {
 	int idx = 0;
 	*args = (struct write_args){0};
 	while (idx < argc) {

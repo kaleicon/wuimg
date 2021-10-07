@@ -30,7 +30,7 @@ struct homegrown_anim {
 };
 
 struct webp_state {
-	struct mmap_file map;
+	struct mmap_info map;
 	WebPData data;
 	WebPDecoderConfig config;
 
@@ -60,7 +60,7 @@ static void clean_webp_state(struct image_file *infile) {
 	}
 
 	WebPFreeDecBuffer(&ds->config.output);
-	munmap_stream(ds->map);
+	munmap_file(ds->map);
 	free(ds);
 	infile->dec_state = NULL;
 	infile->events = 0;
@@ -410,18 +410,39 @@ struct webp_state *ds) {
 		ds->config.output.colorspace = MODE_RGBA;
 	} else {
 		img->channels = 3;
-		ds->config.output.colorspace = MODE_RGB;
+		ds->config.output.colorspace = MODE_YUV;//RGB;
 	}
 
-	const int stride = (int)(img->w * img->channels);
-	const size_t buf_size = (size_t)stride * img->h;
-	img->data = malloc(buf_size);
-	if (!img->data) {
+	const size_t stride = raw_img_addbuf(img);
+	if (!stride) {
 		return VP8_STATUS_OUT_OF_MEMORY;
 	}
-	ds->config.output.u.RGBA.rgba = img->data;
-	ds->config.output.u.RGBA.stride = stride;
-	ds->config.output.u.RGBA.size = buf_size;
+
+	const size_t buf_size = stride * img->h;
+	if (ds->config.output.colorspace != MODE_YUV) {
+		ds->config.output.u.RGBA = (struct WebPRGBABuffer) {
+			.rgba = img->data,
+			.stride = (int)stride,
+			.size = buf_size,
+		};
+	} else {
+		ds->config.output.u.YUVA = (struct WebPYUVABuffer) {
+			.y = img->data,
+			.u = img->data + stride * img->h*4/12,
+			.v = img->data + stride * img->h*5/12,
+//			.a = img->data,
+			.y_stride = (int)stride/3,
+			.u_stride = (int)(stride/6),
+			.v_stride = (int)(stride/6),
+//			.a_stride = (int)stride,
+			.y_size = buf_size/1,
+			.u_size = buf_size/1,
+			.v_size = buf_size/1,
+//			.a_size = buf_size,
+		};
+		img->channels = 1;
+		img->h *= 2;
+	}
 
 	return WebPDecode(ds->data.bytes, ds->data.size, &ds->config);
 }
@@ -466,6 +487,15 @@ bool use_homegrown) {
 	} else {
 		WebPDemuxDelete(dmux);
 	}
+
+	const char *fmt = NULL;
+	switch (ds->config.input.format) {
+	case 0: fmt = "Mixed"; break;
+	case 1: fmt = "Lossy"; break;
+	case 2: fmt = "Lossless"; break;
+	default: return;
+	}
+	tree_sprout_leaf(tree, "Compression", fmt);
 }
 
 enum wu_error webp_dec(struct image_file *infile,
@@ -475,8 +505,7 @@ const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
-	ds->map = mmap_stream(infile->ifp);
-	if (ds->map.data == MAP_FAILED) {
+	if (!mmap_file(&ds->map, infile->ifp)) {
 		free(ds);
 		return wu_alloc_error;
 	}
@@ -540,8 +569,13 @@ const struct wu_conf *wuconf) {
 
 		webp_dec_frame(img, wuconf, ds);
 
-		if (ds->frame_count < 2) {
+		if (ds->frame_count > 1) {
+			infile->is_animation = true;
+			infile->dec_state = ds;
+			infile->events = ev_subcycle;
+		} else { // I don't think this case is possible
 			if (!wuconf->webp_use_homegrown_renderer) {
+				// Memory is not ours
 				const size_t s = img[0].w * img[0].h
 					* min_channels;
 				unsigned char *cpy = malloc(s);
@@ -554,10 +588,6 @@ const struct wu_conf *wuconf) {
 				}
 			}
 			clean_webp_state(infile);
-		} else {
-			infile->is_animation = true;
-			infile->dec_state = ds;
-			infile->events = ev_subcycle;
 		}
 	} else {
 		status = single_image_decode(infile, ds);

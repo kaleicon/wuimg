@@ -4,6 +4,7 @@
 #include <time.h>
 #include <errno.h>
 
+#include <unistd.h>
 #include <sys/mman.h>
 
 #include "common.h"
@@ -15,8 +16,7 @@ void rfc3339_format(time_t t, FILE *out) {
 	// Format UNIX time as "y-m-d h:m:sZ"
 
 	// Set our epoch to the first of March, 2000.
-	const time_t unix_to_era = (DAYS_BETWEEN_1970_2000 + 31 + 29) * 86400;
-	t -= unix_to_era;
+	t -= (DAYS_BETWEEN_1970_2000 + 31 + 29) * 86400;
 
 	long days = (long)(t / 86400);
 	long secs = (long)(t % 86400);
@@ -82,7 +82,7 @@ void rfc3339_format(time_t t, FILE *out) {
 		years, months, days, hours, minutes, secs);
 }
 
-// Plug numbers intuitively in a struct and get a time_t back. Wow. So Hard.
+// Plug sane numbers into a struct and get a time_t back. Wow. So hard.
 time_t utc_to_epoch(const struct utc_time *tm) {
 	int year = tm->year;
 	int mon = tm->mon - 1;
@@ -195,6 +195,15 @@ int imin(const int x, const int y) {
 	return x < y ? x : y;
 }
 
+int iclamp(const int n, const int min, const int max) {
+	if (n < min) {
+		return min;
+	} else if (n > max) {
+		return max;
+	}
+	return n;
+}
+
 float fclampf(const float n, const float min, const float max) {
 	if (n < min) {
 		return min;
@@ -233,16 +242,6 @@ uint16_t endian16(const uint16_t val, const enum endianness e) {
 	return val;
 }
 
-uint16_t buf_endian16(const void *restrict data, const enum endianness e) {
-	const uint8_t *restrict d = data;
-	switch (e) {
-	case big_endian:
-		return (uint16_t)(d[0] << 8 | d[1]);
-	default:
-		return (uint16_t)(d[1] << 8 | d[0]);
-	}
-}
-
 uint32_t buf_endian32(const void *restrict data, const enum endianness e) {
 	const uint8_t *restrict d = data;
 	switch (e) {
@@ -253,15 +252,25 @@ uint32_t buf_endian32(const void *restrict data, const enum endianness e) {
 	}
 }
 
-void loop_endian16(uint16_t *data, const enum endianness e, const size_t cnt) {
-	for (size_t i = 0; i < cnt; ++i) {
-		data[i] = endian16(data[i], e);
+uint16_t buf_endian16(const void *restrict data, const enum endianness e) {
+	const uint8_t *restrict d = data;
+	switch (e) {
+	case big_endian:
+		return (uint16_t)(d[0] << 8 | d[1]);
+	default:
+		return (uint16_t)(d[1] << 8 | d[0]);
 	}
 }
 
 void loop_endian32(uint32_t *data, const enum endianness e, const size_t cnt) {
 	for (size_t i = 0; i < cnt; ++i) {
 		data[i] = endian32(data[i], e);
+	}
+}
+
+void loop_endian16(uint16_t *data, const enum endianness e, const size_t cnt) {
+	for (size_t i = 0; i < cnt; ++i) {
+		data[i] = endian16(data[i], e);
 	}
 }
 
@@ -283,10 +292,23 @@ const void * memchk(const void *s, const unsigned char c, const size_t n) {
 	return NULL;
 }
 
+#ifndef _GNU_SOURCE
+void * memrchr(const void *s, const int c, size_t n) {
+	const unsigned char *data = s;
+	while (n) {
+		--n;
+		if (data[n] == c) {
+			return (void *)(data + n);
+		}
+	}
+	return NULL;
+}
+#endif
+
 bool grow_buffer(void *restrict ptr, size_t *alloc, const size_t pos,
 const size_t elem_size) {
 	if (pos >= *alloc) {
-		const size_t new_len = zumax(pos, *alloc + *alloc / 4 + 1);
+		const size_t new_len = zumax(pos, *alloc + *alloc / 4) + 1;
 		void **var_loc = ptr;
 		void *hold = realloc(*var_loc, elem_size * new_len);
 		if (!hold) {
@@ -324,17 +346,27 @@ long file_get_remaining(FILE *ifp) {
 	return end - cur;
 }
 
-int munmap_stream(struct mmap_file mm) {
-	return munmap(mm.data, mm.len);
+int munmap_file(struct mmap_info mm) {
+	return munmap((void *)mm.data, mm.len);
 }
 
-struct mmap_file mmap_stream(FILE *ifp) {
-	fseek(ifp, 0, SEEK_END);
-	const size_t len = (size_t)ftell(ifp);
-	return (struct mmap_file) {
+static bool mmap_common(struct mmap_info *mm, const int fd, const off_t end) {
+	const size_t len = (size_t)end;
+	struct mmap_info m = {
 		.len = len,
-		.data = mmap(NULL, len, PROT_READ, MAP_SHARED, fileno(ifp), 0),
+		.data = mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0),
 	};
+	memcpy(mm, &m, sizeof(m));
+	return mm->data != MAP_FAILED;
+}
+
+bool mmap_file(struct mmap_info *mm, FILE *ifp) {
+	fseek(ifp, 0, SEEK_END);
+	return mmap_common(mm, fileno(ifp), ftello(ifp));
+}
+
+bool mmap_file_fd(struct mmap_info *mm, const int fd) {
+	return mmap_common(mm, fd, lseek(fd, 0, SEEK_END));
 }
 
 char * strerror_dup(const int error) {
@@ -353,4 +385,10 @@ char * id_template(const char *prefix, const size_t num) {
 		sprintf(id, "%s%zu", prefix, num);
 	}
 	return id;
+}
+
+void fatal_bug(const char *name, const char *msg) {
+	printf("%s: %s\n", name, msg);
+	fflush(stdout);
+	abort();
 }

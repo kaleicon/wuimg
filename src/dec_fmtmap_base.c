@@ -5,10 +5,9 @@
 
 #include "common.h"
 #include "wustr.h"
-#include "dec_enable.def"
 #include "dec_fmtmap.h"
 
-/* This file is #included by the code output of dec_fmtmap_sort_quine.c */
+/* The code output of dec_fmtmap_sort_quine.c goes here. */
 
 static int fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 	const unsigned char *restrict magic1 = m1;
@@ -31,21 +30,23 @@ static int fextcmp(const void *restrict e1, const void *restrict e2) {
 }
 
 static const struct file_magic * search_magic(FILE *ifp) {
-	unsigned char in[sizeof(magic_map->bytes)] = {0};
-	if (fread(in, 1, MAX_MAG_LEN, ifp) >= MIN_MAG_LEN) {
-		return bsearch(in, magic_map, ARRAY_LEN(magic_map),
+	unsigned char magic[sizeof(magic_map->bytes)] = {0};
+	const size_t read = fread(magic, 1, MAX_MAG_LEN, ifp);
+	fseek(ifp, -(long)read, SEEK_CUR);
+	if (read >= MIN_MAG_LEN) {
+		return bsearch(magic, magic_map, ARRAY_LEN(magic_map),
 			sizeof(*magic_map), fmaskmagiccmp);
 	}
 	return NULL;
 }
 
 static const struct file_ext * search_extension(const struct wustr name) {
-	const size_t check = zumin(name.len, MAX_EXT_LEN + 1 /* dot */);
-	const size_t start = name.len - check;
-	const char *ext = strrchr(name.str + start, '.');
+	const size_t max = zumin(name.len, MAX_EXT_LEN + 1 /* dot */);
+	const unsigned char *end = name.str + name.len;
+	const unsigned char *ext = memrchr(end - max, '.', max);
 	if (ext) {
 		++ext;
-		const size_t len = (size_t)(name.str + name.len - ext);
+		const size_t len = (size_t)(end - ext);
 		if (len >= MIN_EXT_LEN) {
 			char l_ext[sizeof(extension_map->ext)] = {0};
 			for (size_t i = 0; i < len; ++i) {
@@ -60,13 +61,16 @@ static const struct file_ext * search_extension(const struct wustr name) {
 }
 
 enum format_id identify_image(FILE *ifp, const char *filename) {
-	const struct file_ext *ext = search_extension(wustr_from_str(filename));
+	/* Some formats must be handled specially (i.e. RAW formats which are
+	 * actually TIFF), so we search by extension first.
+	 * Formats that should be identified by a magic sequence will return
+	 * fmt_unknown. */
+	const struct file_ext *ext = search_extension(wustr_str(filename));
 	if (ext && ext->id != fmt_unknown) {
 		return ext->id;
 	}
 
 	const struct file_magic *magic = search_magic(ifp);
-	rewind(ifp);
 	if (magic && magic->id != fmt_unknown) {
 		return magic->id;
 	}

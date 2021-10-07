@@ -26,7 +26,7 @@ struct tile_info {
 	tsize_t len;
 };
 
-static void print_metadata_tags(TIFF *tif, struct wu_tree *tree) {
+static void get_metadata_tags(TIFF *tif, struct wu_tree *tree) {
 	struct tifftag {
 		ttag_t tag;
 		const char *name;
@@ -78,20 +78,7 @@ struct raw_img *img) {
 	img->h = tifimg.height;
 	img->channels = 4;
 	img->bitdepth = 8;
-	switch (tifimg.photometric) {
-	case PHOTOMETRIC_MINISWHITE:
-	case PHOTOMETRIC_MINISBLACK:
-	case PHOTOMETRIC_RGB:
-		if (tifimg.samplesperpixel != 2) {
-			img->true_channels = (unsigned char)
-				(umin(img->channels, tifimg.samplesperpixel));
-		}
-		break;
-	default:
-		if (!tifimg.alpha) {
-			img->true_channels = 3;
-		}
-	}
+	img->no_alpha = !tifimg.alpha;
 
 	const size_t dims = img->w * img->h * img->channels;
 	void *raster = malloc(dims);
@@ -132,7 +119,7 @@ const uint16_t bps) {
 		unsigned char *dst = data + img_stride * h;
 		const unsigned char *src = tiles->buf + tiles->stride * h;
 		if (op) {
-			strip_unpack(dst, src, width, 1, 1, op, bps);
+			unpack_strip(dst, src, width, 1, 1, pix_normal, op, bps);
 		} else {
 			memcpy(dst, src, cur_stride);
 		}
@@ -232,8 +219,8 @@ const struct tiff_info *info, const enum unpack_op op) {
 				/* This function returns -1 in case of errors,
 				 * but even libtiff seems to ignore it */
 				TIFFReadEncodedStrip(tif, n, buf, buflen);
-				strip_unpack(img->data + offset, buf, width,
-					rows, 1, op, info->bps);
+				unpack_strip(img->data + offset, buf, width,
+					rows, 1, pix_normal, op, info->bps);
 			} else {
 				TIFFReadEncodedStrip(tif, n, img->data + offset,
 					buflen);
@@ -271,10 +258,6 @@ static enum unpack_op select_filter(const struct tiff_info *info) {
 	if (info->bps < 8) {
 		switch (info->photometric) {
 		case PHOTOMETRIC_MINISWHITE:
-			if (info->is_tiled || info->planar != PLANARCONFIG_CONTIG) {
-				op = op_expand_invert;
-			}
-			break;
 		case PHOTOMETRIC_MINISBLACK:
 		case PHOTOMETRIC_RGB:
 			if (info->is_tiled || info->planar != PLANARCONFIG_CONTIG) {
@@ -296,9 +279,6 @@ struct tiff_info *info) {
 	}
 	img->channels = (unsigned char)info->spp;
 	img->bitdepth = (unsigned char)info->bps;
-	if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
-		img->attr |= pix_float;
-	}
 
 	TIFFGetFieldDefaulted(tif, TIFFTAG_PLANARCONFIG, &info->planar);
 	info->is_tiled = TIFFIsTiled(tif);
@@ -307,10 +287,6 @@ struct tiff_info *info) {
 	const enum unpack_op op = select_filter(info);
 	if (op) {
 		img->bitdepth = (unsigned char)imax(info->bps, 8);
-	} else {
-		if (info->photometric == PHOTOMETRIC_MINISWHITE) {
-			img->attr |= pix_inverted;
-		}
 	}
 
 	const size_t stride = raw_img_addbuf(img);
@@ -326,6 +302,14 @@ struct tiff_info *info) {
 	}
 	if (status == wu_ok && info->planar != PLANARCONFIG_CONTIG) {
 		status = interleave_planes(img, stride * img->h);
+	}
+
+	if (info->photometric == PHOTOMETRIC_MINISWHITE) {
+		img->attr = pix_inverted;
+	}
+	if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
+		// What about float + miniswhite?
+		img->attr = pix_float;
 	}
 	return status;
 }
@@ -386,7 +370,7 @@ const struct wu_conf *wuconf) {
 		return wu_open_error;
 	}
 
-	print_metadata_tags(tif, &infile->metadata);
+	get_metadata_tags(tif, &infile->metadata);
 	struct raw_img *img = alloc_sub_images(infile,
 		TIFFNumberOfDirectories(tif));
 

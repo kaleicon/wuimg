@@ -7,7 +7,7 @@
 #include "../rast_utils.h"
 #include "../lib/pictor.h"
 
-static void print_metadata(struct wu_tree *tree,
+static void read_metadata(struct wu_tree *tree,
 const struct pictor_desc *desc) {
 	const struct wu_tree_sap sap[] = {
 		{"Compressed blocks", wu_leaf_unsigned, {.u = desc->blocks}},
@@ -52,7 +52,7 @@ const struct wu_conf *conf) {
 		return wu_invalid_header;
 	}
 
-	print_metadata(&infile->metadata, &desc);
+	read_metadata(&infile->metadata, &desc);
 
 	if (rast_exceeds_size(&desc.r, conf)) {
 		pictor_cleanup(&desc);

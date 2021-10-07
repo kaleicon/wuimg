@@ -142,11 +142,6 @@ struct wu_state {
 		anim_playing = 2,
 		anim_paused = 3, // For toggling with '^ 1'
 	} anim:8;
-	enum alpha_state {
-		alpha_enabled,
-		alpha_checkers,
-		alpha_disabled,
-	} alpha:8;
 
 	unsigned char rotate;
 	bool mirror;
@@ -166,51 +161,38 @@ enum image_event {
 	ev_move = 1 << 3,
 	ev_mirrot = 1 << 4,
 };
-/*
-struct anim_info {
-	size_t w, h;
-	size_t x, y;
-	int msec;
-	size_t offset;
-};
-
-struct anim_img {
-	size_t frames;
-	struct anim_info[];
-};*/
 
 struct raw_img {
 	unsigned char *restrict data;
 	struct raster_pal *palette;
-	char *id;
 
 	size_t w, h;
-
 	unsigned char channels;
 	unsigned char bitdepth;
-	unsigned char true_channels;
 	unsigned char alignment;
 	enum pix_layout layout:8;
-	enum pix_attributes attr:8;
+	enum pix_attr attr:8;
 
 	unsigned char rotate;
 	bool mirror; // Vertical mirror. Horizontal is mirror + 2rotate
+	bool no_alpha;
 
-//	struct anim_img *anim;
 	int msec;
 	float dec_scale;
+
+	char *id;
 };
 
 struct image_file {
 	FILE *ifp;
-	struct raw_img *sub_img;
 	size_t nr;
+	struct raw_img *sub_img;
 	struct wu_tree metadata;
 
 	struct pix_rgba8 bg;
 	bool is_animation;
 
-	enum image_event events;
+	enum image_event events:8;
 	void *restrict dec_state; // Used by decoder for callbacks
 
 	char *err_msg;

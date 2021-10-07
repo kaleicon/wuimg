@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-#include "pix.h"
+#include "raster.h"
 
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
 const struct raster_desc *desc, size_t lines, size_t scanline);

@@ -61,7 +61,7 @@ struct archive_entry *entry) {
 }
 
 static bool ok_case(struct extract_iter *iter, struct archive_entry *entry) {
-	const struct wustr name = wustr_from_str(archive_entry_pathname(entry));
+	const struct wustr name = wustr_str(archive_entry_pathname(entry));
 	const bool reg_probably_nonempty =
 		((archive_entry_filetype(entry) & AE_IFMT) == AE_IFREG)
 		&& (

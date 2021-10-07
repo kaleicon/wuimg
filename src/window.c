@@ -11,62 +11,90 @@
 
 #include <GLFW/glfw3.h>
 
-static void framebuffer_resize(struct window_control *control,
-const struct display_dims *dims) {
+static void framebuffer_resize(struct window_control *control, const int w,
+const int h) {
 	struct gl_context *gl = &control->window.gl;
-	gl->fb_wh[0] = dims->w;
-	gl->fb_wh[1] = dims->h;
-	gl_even_view(gl);
-	gl_matrix_update(gl, &control->image.state);
+	gl_viewport(gl, w, h);
 }
 
 static void scroll_cycle(struct wu_cycle *cycle, const double offset) {
 	if (fpclassify(offset) == FP_NORMAL) {
-		cycle->acc = fclampf((float)(cycle->acc + offset), -1.0, +1.0);
-		if (cycle->acc == 1.0 || cycle->acc == -1.0) {
-			cycle->cycle = (int)cycle->acc;
+		cycle->acc += (float)offset;
+		if (cycle->acc >= 1.0 || cycle->acc <= -1.0) {
+			cycle->cycle = iclamp((int)cycle->acc, -1, 1);
 			cycle->acc = 0;
 		}
 	}
 }
 
-static void focus_callback(GLFWwindow *window, int focused) {
+/* GLFW callbacks */
+static void callback_close(GLFWwindow *window) {
+	struct window_control *control = glfwGetWindowUserPointer(window);
+	control->window.event.program = close_window;
+}
+
+static void callback_focus(GLFWwindow *window, const int focused) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
 	control->window.ctx.glfw.has_focus = focused;
 }
 
-static void framebuffer_callback(GLFWwindow *window, const int w, const int h) {
+static void callback_framebuffer(GLFWwindow *window, const int w, const int h) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
 	control->image.conf.fb = (struct display_dims) {
 		.w = (unsigned)w,
 		.h = (unsigned)h,
 	};
-	framebuffer_resize(control, &control->image.conf.fb);
+	framebuffer_resize(control, w, h);
 }
-
-static void close_callback(GLFWwindow *window) {
+__attribute__((unused))
+static void callback_cursor_pos(GLFWwindow *window, const double x, const double y) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	control->window.event.program = close_window;
+	struct glfw_window *glfw = &control->window.ctx.glfw;
+
+	struct window_cursor *cursor = &glfw->cursor;
+	if (cursor->pressed) {
+		struct wu_state *state = &control->image.state;
+		state->x_offset += (float)(x - cursor->x);
+		state->y_offset += (float)(y - cursor->y);
+		control->window.gl.update_matrix = true;
+//	} else if (cursor->pressed == 1) {
+//		++cursor->pressed;
+	}
+	cursor->x = (float)x;
+	cursor->y = (float)y;
 }
 
-static void scroll_callback(GLFWwindow *window, const double x_off,
+static void callback_cursor_button(GLFWwindow *window, const int button,
+const int action, const int mods) {
+	(void)mods;
+
+	struct window_control *control = glfwGetWindowUserPointer(window);
+	if (button == GLFW_MOUSE_BUTTON_LEFT) {
+		const bool pressed = action == GLFW_PRESS;
+		control->window.ctx.glfw.cursor.pressed = pressed;
+//		glfwSetInputMode(window, GLFW_CURSOR,
+//			pressed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+	}
+}
+
+static void callback_scroll(GLFWwindow *window, const double x_off,
 const double y_off) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
 	scroll_cycle(&control->window.event.file, y_off);
 	scroll_cycle(&control->image.state.sub, x_off);
 }
 
-static void char_callback(GLFWwindow *window, const unsigned int codepoint) {
+static void callback_char(GLFWwindow *window, const unsigned int codepoint) {
 	(void)window;
 	if (codepoint == '+') {
 		event_add(key_external, (unsigned char)codepoint, false);
 	}
 }
 
-static void key_callback(GLFWwindow *_w, int key, int _scan, int action,
-int mode) {
-	(void)_w;
-	(void)_scan;
+static void callback_key(GLFWwindow *w, const int key, const int scan,
+const int action, const int mode) {
+	(void)w;
+	(void)scan;
 
 	enum key_action keyact;
 	if (action == GLFW_PRESS) {
@@ -173,6 +201,30 @@ int mode) {
 	}
 }
 
+void glfw_toggle_fullscreen(struct window_context *window) {
+	if (window->backend != window_glfw) {
+		return;
+	}
+	struct glfw_window *glfw = &window->ctx.glfw;
+	struct window_geom *geom = &glfw->geom;
+	if (glfw->fullscreen) {
+		glfwSetWindowMonitor(glfw->window, NULL,
+			geom->x, geom->y,
+			geom->w, geom->h, GLFW_DONT_CARE);
+	} else {
+		// Save window dimensions
+		glfwGetWindowPos(glfw->window, &geom->x, &geom->y);
+		glfwGetWindowSize(glfw->window, &geom->w, &geom->h);
+
+		GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+		const GLFWvidmode *mode = glfwGetVideoMode(monitor);
+		glfwSetWindowMonitor(glfw->window, monitor, 0, 0,
+			mode->width, mode->height, mode->refreshRate);
+	}
+
+	glfw->fullscreen = !glfw->fullscreen;
+}
+
 static GLFWwindow * glfw_setup_window(struct window_control *control,
 const struct wu_conf *conf) {
 	if (!glfwInit()) {
@@ -222,14 +274,17 @@ const struct wu_conf *conf) {
 		NULL, NULL);
 	if (window) {
 		glfwMakeContextCurrent(window);
-
 		glfwSetWindowUserPointer(window, control);
-		glfwSetWindowCloseCallback(window, close_callback);
-		glfwSetWindowFocusCallback(window, focus_callback);
-		glfwSetFramebufferSizeCallback(window, framebuffer_callback);
-		glfwSetKeyCallback(window, key_callback);
-		glfwSetCharCallback(window, char_callback);
-		glfwSetScrollCallback(window, scroll_callback);
+
+		glfwSetWindowCloseCallback(window, callback_close);
+		glfwSetWindowFocusCallback(window, callback_focus);
+		glfwSetFramebufferSizeCallback(window, callback_framebuffer);
+		glfwSetCursorPosCallback(window, callback_cursor_pos);
+		glfwSetMouseButtonCallback(window, callback_cursor_button);
+		glfwSetScrollCallback(window, callback_scroll);
+		glfwSetCharCallback(window, callback_char);
+		glfwSetKeyCallback(window, callback_key);
+
 		glfwSwapInterval(1);
 	}
 	return window;
@@ -243,9 +298,36 @@ void window_terminate(struct window_context *window) {
 	}
 }
 
+void window_event(struct window_context *window) {
+	switch (window->event.window) {
+	case toggle_fullscreen:
+		glfw_toggle_fullscreen(window);
+		break;
+	case toggle_alpha:
+		gl_alpha_toggle(&window->gl);
+		break;
+	}
+}
+
 void window_poll(const struct window_context *window) {
 	if (window->backend == window_glfw) {
 		glfwPollEvents();
+/*		GLFWwindow *win = window->ctx.glfw.window;
+	struct window_control *control = glfwGetWindowUserPointer(win);
+	struct glfw_window *glfw = &control->window.ctx.glfw;
+
+	struct window_cursor *cursor = &glfw->cursor;
+		double x, y;
+		glfwGetCursorPos(win, &x, &y);
+//		if (cursor->pressed) {
+		if (glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT)) {
+			struct wu_state *state = &control->image.state;
+			state->x_offset += (float)(x - cursor->x);
+			state->y_offset -= (float)(y - cursor->y);
+			control->window.gl.update_matrix = true;
+		}
+		cursor->x = (float)x;
+		cursor->y = (float)y;*/
 	}
 }
 
@@ -265,29 +347,6 @@ bool window_has_focus(const struct window_context *window) {
 	return true;
 }
 
-void window_toggle_fullscreen(struct window_context *window) {
-	if (window->backend != window_glfw) {
-		return;
-	}
-
-	struct glfw_window *glfw = &window->ctx.glfw;
-	if (glfw->fullscreen) {
-		glfwSetWindowMonitor(glfw->window, NULL,
-			glfw->x, glfw->y, glfw->w, glfw->h, GLFW_DONT_CARE);
-	} else {
-		// Save window dimensions
-		glfwGetWindowPos(glfw->window, &glfw->x, &glfw->y);
-		glfwGetWindowSize(glfw->window, &glfw->w, &glfw->h);
-
-		GLFWmonitor *monitor = glfwGetPrimaryMonitor();
-		const GLFWvidmode *mode = glfwGetVideoMode(monitor);
-		glfwSetWindowMonitor(glfw->window, monitor, 0, 0,
-			mode->width, mode->height, mode->refreshRate);
-	}
-
-	glfw->fullscreen = !glfw->fullscreen;
-}
-
 void window_set_title(const struct window_context *window, const char *title) {
 	if (window->backend == window_glfw) {
 		glfwSetWindowTitle(window->ctx.glfw.window, title);
@@ -298,7 +357,8 @@ void window_postgl_setup(struct window_control *control) {
 	if (control->window.backend == window_glfw) {
 		glfwPollEvents();
 	} else {
-		framebuffer_resize(control, &control->image.conf.fb);
+		const struct display_dims *dims = &control->image.conf.fb;
+		framebuffer_resize(control, (int)dims->w, (int)dims->h);
 	}
 }
 

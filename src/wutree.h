@@ -5,7 +5,7 @@
 #include <time.h>
 
 enum wu_leaf_type {
-	not_a_leaf,
+	not_a_leaf = 0,
 	wu_leaf_array,
 	wu_leaf_string,
 	wu_leaf_unsigned,
@@ -16,7 +16,7 @@ enum wu_leaf_type {
 
 union wu_leaf_val {
 	struct wu_tree *branch;
-	char array[sizeof(long)];
+	char array[sizeof(char *)];
 	char *string;
 	unsigned long u;
 	long d;
