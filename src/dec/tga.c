@@ -64,14 +64,14 @@ enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct tga_desc desc;
 	enum lib_fail fail = tga_open_file(infile->ifp, &desc, true);
 	if (fail) {
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_alloc_error;
 	}
 
 	fail = tga_parse_header(&desc);
 	if (fail) {
 		tga_cleanup(&desc);
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_invalid_header;
 	}
 
@@ -105,7 +105,7 @@ enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	}
 
 	rast_to_raw(img, &desc.r);
-	img[0].no_alpha = !desc.attr_bits;
+	img[0].disable_alpha = !desc.attr_bits;
 	img[0].mirror = !(desc.orientation & 0x02);
 	img[0].rotate = (unsigned char)((desc.orientation & 0x01) * 2);
 

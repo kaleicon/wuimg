@@ -51,6 +51,24 @@ struct raster_pal * lib_raster_take_palette(struct raster_desc *desc) {
 	return pal;
 }
 
+void lib_raster_endian(void *data, const struct raster_desc *desc,
+const enum endianness end) {
+	if (which_end() != end) {
+		const uint8_t *d = data;
+		const size_t stride = raster_stride(desc);
+		for (size_t y = 0; y < desc->h; ++y) {
+			const size_t offset = stride * y;
+			if (desc->bitdepth == 16) {
+				loop_endian16((uint16_t *)(d + offset), end,
+					desc->w);
+			} else {
+				loop_endian32((uint32_t *)(d + offset), end,
+					desc->w);
+			}
+		}
+	}
+}
+
 void * lib_load_rast(FILE *ifp, const struct raster_desc *desc) {
 	return fread_alloc(ifp, raster_stride(desc), desc->h);
 }

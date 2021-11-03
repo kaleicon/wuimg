@@ -158,10 +158,11 @@ enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp) {
 	 * zero, but since I don't know anything about the workings of MacOS or
 	 * MacPaint and it's technologically infeasible to test all their
 	 * possible states, I can't verify this advice, making it as useless as
-	 * the rest of the spec.
+	 * the rest of the spec. Is it some coincidence that reading files in
+	 * other platforms is made as difficult as possible?
 
-	 * In conclusion: Even if the first 640 bytes are all zero, it counts
-	 * as a valid MacBinary + MacPaint file, and we should accept it. */
+	 * In conclusion: Even if the first 640 bytes are all zero, it might be
+	 * a valid MacBinary + MacPaint file, and we should accept it. */
 
 	/* MacBinary header:
 		Offset  Size    Name

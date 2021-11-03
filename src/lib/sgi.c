@@ -296,7 +296,7 @@ const uint16_t channels, const uint32_t bitmap_type) {
 	switch (bitmap_type) {
 	case sgi_raw:
 		break;
-	case sgi_332:
+	case sgi_332: // Just guessing here
 		if (channels != 1 || bytedepth != 1) {
 			return lib_invalid_header;
 		}

@@ -49,16 +49,16 @@ static void callback_framebuffer(GLFWwindow *window, const int w, const int h) {
 __attribute__((unused))
 static void callback_cursor_pos(GLFWwindow *window, const double x, const double y) {
 	struct window_control *control = glfwGetWindowUserPointer(window);
-	struct glfw_window *glfw = &control->window.ctx.glfw;
+	struct glfw_context *glfw = &control->window.ctx.glfw;
 
 	struct window_cursor *cursor = &glfw->cursor;
 	if (cursor->pressed) {
 		struct wu_state *state = &control->image.state;
-		state->x_offset += (float)(x - cursor->x);
-		state->y_offset += (float)(y - cursor->y);
+		state->x_offset += (float)(x - cursor->x) / state->zoom;
+		state->y_offset += (float)(y - cursor->y) / state->zoom;
 		control->window.gl.update_matrix = true;
-//	} else if (cursor->pressed == 1) {
-//		++cursor->pressed;
+	} else if (cursor->pressed == 1) {
+		++cursor->pressed;
 	}
 	cursor->x = (float)x;
 	cursor->y = (float)y;
@@ -72,8 +72,8 @@ const int action, const int mods) {
 	if (button == GLFW_MOUSE_BUTTON_LEFT) {
 		const bool pressed = action == GLFW_PRESS;
 		control->window.ctx.glfw.cursor.pressed = pressed;
-//		glfwSetInputMode(window, GLFW_CURSOR,
-//			pressed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+		glfwSetInputMode(window, GLFW_CURSOR,
+			pressed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 	}
 }
 
@@ -201,11 +201,8 @@ const int action, const int mode) {
 	}
 }
 
-void glfw_toggle_fullscreen(struct window_context *window) {
-	if (window->backend != window_glfw) {
-		return;
-	}
-	struct glfw_window *glfw = &window->ctx.glfw;
+static void glfw_toggle_fullscreen(struct window_context *window) {
+	struct glfw_context *glfw = &window->ctx.glfw;
 	struct window_geom *geom = &glfw->geom;
 	if (glfw->fullscreen) {
 		glfwSetWindowMonitor(glfw->window, NULL,
@@ -291,17 +288,22 @@ const struct wu_conf *conf) {
 }
 
 void window_terminate(struct window_context *window) {
-	if (window->backend == window_glfw) {
+	switch (window->backend) {
+	case window_glfw:
 		glfwTerminate();
-	} else {
-		kms_terminate(&window->ctx.kms);
+		break;
+	case window_drm:
+		drm_terminate(&window->ctx.drm);
+		break;
 	}
 }
 
 void window_event(struct window_context *window) {
 	switch (window->event.window) {
 	case toggle_fullscreen:
-		glfw_toggle_fullscreen(window);
+		if (window->backend == window_glfw) {
+			glfw_toggle_fullscreen(window);
+		}
 		break;
 	case toggle_alpha:
 		gl_alpha_toggle(&window->gl);
@@ -310,11 +312,12 @@ void window_event(struct window_context *window) {
 }
 
 void window_poll(const struct window_context *window) {
-	if (window->backend == window_glfw) {
+	switch (window->backend) {
+	case window_glfw:
 		glfwPollEvents();
 /*		GLFWwindow *win = window->ctx.glfw.window;
 	struct window_control *control = glfwGetWindowUserPointer(win);
-	struct glfw_window *glfw = &control->window.ctx.glfw;
+	struct glfw_context *glfw = &control->window.ctx.glfw;
 
 	struct window_cursor *cursor = &glfw->cursor;
 		double x, y;
@@ -328,37 +331,53 @@ void window_poll(const struct window_context *window) {
 		}
 		cursor->x = (float)x;
 		cursor->y = (float)y;*/
+		break;
+	case window_drm:
+		break;
 	}
 }
 
 void window_draw(struct window_context *window) {
 	gl_draw();
-	if (window->backend == window_glfw) {
+	switch (window->backend) {
+	case window_glfw:
 		glfwSwapBuffers(window->ctx.glfw.window);
-	} else {
-		kms_swap_buffers(&window->ctx.kms);
+		break;
+	case window_drm:
+		drm_swap_buffers(&window->ctx.drm);
+		break;
 	}
 }
 
 bool window_has_focus(const struct window_context *window) {
-	if (window->backend == window_glfw) {
+	switch (window->backend) {
+	case window_glfw:
 		return window->ctx.glfw.has_focus;
+	case window_drm:
+		break;
 	}
 	return true;
 }
 
 void window_set_title(const struct window_context *window, const char *title) {
-	if (window->backend == window_glfw) {
+	switch (window->backend) {
+	case window_glfw:
 		glfwSetWindowTitle(window->ctx.glfw.window, title);
+		break;
+	case window_drm:
+		break;
 	}
 }
 
 void window_postgl_setup(struct window_control *control) {
-	if (control->window.backend == window_glfw) {
+	switch (control->window.backend) {
+	case window_glfw:
 		glfwPollEvents();
-	} else {
-		const struct display_dims *dims = &control->image.conf.fb;
+		break;
+	case window_drm:
+		;const struct display_dims *dims = &control->image.conf.fb;
 		framebuffer_resize(control, (int)dims->w, (int)dims->h);
+		break;
 	}
 }
 
@@ -375,8 +394,8 @@ bool window_setup(struct window_control *control) {
 			return true;
 		}
 	} else {
-		if (kms_setup(&window->ctx.kms, &conf->fb)) {
-			window->backend = window_kms;
+		if (drm_init(&window->ctx.drm, &conf->fb)) {
+			window->backend = window_drm;
 			return true;
 		}
 	}

@@ -14,13 +14,13 @@ const struct wu_conf *wuconf) {
 	struct pnm_desc desc;
 	enum lib_fail fail = pnm_open_file(infile->ifp, &desc, true);
 	if (fail) {
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_open_error;
 	}
 
 	fail = pnm_parse_header(&desc);
 	if (fail) {
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_invalid_header;
 	}
 
@@ -54,11 +54,5 @@ const struct wu_conf *wuconf) {
 
 		++i;
 	} while (i < infile->nr);
-
-	if (!i) {
-		return wu_decoding_error;
-	} else if (i < infile->nr) {
-		realloc_sub_images(infile, i);
-	}
-	return wu_ok;
+	return image_file_total_decoded(infile, i);
 }

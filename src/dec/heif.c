@@ -150,7 +150,7 @@ const struct wu_conf *wuconf) {
 	struct heif_error herr = heif_context_read_from_reader(ctx, &reader,
 		&userdata, NULL);
 	if (herr.code != heif_error_Ok) {
-		infile->err_msg = strdup(herr.message);
+		image_file_error_append(infile, herr.message);
 		heif_context_free(ctx);
 		return wu_open_error;
 	}
@@ -227,15 +227,7 @@ const struct wu_conf *wuconf) {
 	heif_decoding_options_free(heif_opts);
 	heif_context_free(ctx);
 	free(hids);
-
-	int return_code = wu_ok;
-	if (decoded == 0) {
-		return_code = wu_decoding_error;
-	} else if (decoded < infile->nr) {
-		realloc_sub_images(infile, decoded);
-	}
-
-	return return_code;
+	return image_file_total_decoded(infile, decoded);
 }
 
 enum wu_error avif_dec(struct image_file *infile,

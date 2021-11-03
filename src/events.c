@@ -48,7 +48,7 @@ struct wu_event *event, const size_t code, const float msecs) {
 		break;
 	// Metadata
 	case 'M':
-		print_image_information(file, 1 + shift);
+		image_file_print(file, 1 + shift);
 		return true;
 
 	// Delete

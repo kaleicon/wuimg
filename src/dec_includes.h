@@ -4,8 +4,8 @@
 #include "dec/avs.h"
 #endif
 
-#ifdef WU_ENABLE_BMP
-#include "dec/bmp.h"
+#ifdef WU_ENABLE_DIB
+#include "dec/dib.h"
 #endif
 
 #ifdef WU_ENABLE_MAC

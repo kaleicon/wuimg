@@ -202,10 +202,30 @@ const uint8_t *restrict src, const size_t len) {
 	}
 }
 
-static void strip_pack64_32(uint32_t *dst, const uint64_t *src,
+static void strip_pack24_16(uint16_t *dst, const uint8_t *src,
 const size_t len) {
 	for (size_t i = 0; i < len; ++i) {
-		dst[i] = (uint32_t)(src[i] >> 32);
+		int word;
+		if (which_end() == little_endian) {
+			word = (src[i*3 + 2] << 16) | (src[i*3 + 1]);
+		} else {
+			word = (src[i*3] << 16) | src[i*3 + 1];
+		}
+		dst[i] = (uint16_t)word;
+	}
+}
+
+static void strip_pack32_16(uint16_t *dst, const uint32_t *src,
+const size_t len) {
+	for (size_t i = 0; i < len; ++i) {
+		dst[i] = (uint16_t)(src[i] >> (32 - 16));
+	}
+}
+
+static void strip_pack64_16(uint16_t *dst, const uint64_t *src,
+const size_t len) {
+	for (size_t i = 0; i < len; ++i) {
+		dst[i] = (uint16_t)(src[i] >> (64 - 16));
 	}
 }
 
@@ -221,11 +241,11 @@ static void expand1555(const uint16_t word, uint8_t *dst) {
 	const uint8_t p = 6;
 	const uint16_t scale = (UCHAR_MAX << p) / mask + 1;
 
-	dst[0] = (word >> 15) ? 0xff : 0x00;
-	for (int n = 1; n < 4; ++n) {
-		const int m = 15 - n*5;
+	for (int n = 0; n < 3; ++n) {
+		const int m = n*5;
 		dst[n] = (uint8_t)( (scale * (word & (mask << m))) >> (p+m) );
 	}
+	dst[3] = (word >> 15) ? 0xff : 0x00;
 }
 
 static void strip_expand1555(uint8_t *restrict dst,
@@ -291,12 +311,12 @@ const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
 			}
 			break;
 		case op_pack:
-			if (bitdepth == 64) {
-				strip_pack64_32(dst, src, width * height);
+			switch (bitdepth) {
+			case 24: strip_pack24_16(dst, src, width * height); break;
+			case 32: strip_pack32_16(dst, src, width * height); break;
+			case 64: strip_pack64_16(dst, src, width * height); break;
 			}
 			break;
-//		case op_expand_invert:
-//			break;
 		}
 		break;
 	case pix_inverted:
@@ -327,9 +347,9 @@ const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
 	}
 }
 
-size_t unpack_stride_len(const size_t width, const enum pix_attr attr,
-const enum unpack_op op, const size_t bitdepth) {
-	size_t outdepth = 0;
+uint8_t unpack_depth(const enum pix_attr attr, const enum unpack_op op,
+const size_t bitdepth) {
+	uint8_t outdepth = 0;
 	switch (attr) {
 	case pix_normal:
 		switch (op) {
@@ -348,12 +368,11 @@ const enum unpack_op op, const size_t bitdepth) {
 			}
 			break;
 		case op_pack:
-			if (bitdepth == 64) {
-				outdepth = 32;
+			switch (bitdepth) {
+			case 24: case 32: case 64:
+				outdepth = 16;
 			}
 			break;
-//		case op_expand_invert:
-//			break;
 		}
 		break;
 	case pix_inverted:
@@ -382,6 +401,12 @@ const enum unpack_op op, const size_t bitdepth) {
 		break;
 	}
 
+	return outdepth;
+}
+
+size_t unpack_stride(const size_t width, enum pix_attr attr,
+const enum unpack_op op, const size_t bitdepth) {
+	uint8_t outdepth = unpack_depth(attr, op, bitdepth);
 	if (outdepth) {
 		return scanline_length(width, outdepth, 1);
 	}

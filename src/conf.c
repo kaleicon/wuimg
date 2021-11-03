@@ -8,11 +8,11 @@
 #include <fcntl.h>
 #include <pwd.h>
 
-#include "wudefs.h"
+#include "conf.h"
 #include "common.h"
 #include "raster/text.h"
 
-struct wu_conf default_config(void) {
+struct wu_conf conf_default(void) {
 	const unsigned default_max = USHRT_MAX / 4;
 	return (struct wu_conf) {
 		.fb = {default_max, default_max},
@@ -204,8 +204,8 @@ static int get_config_fd(void) {
 	return fd;
 }
 
-struct wu_conf load_config(void) {
-	struct wu_conf conf = default_config();
+struct wu_conf conf_load(void) {
+	struct wu_conf conf = conf_default();
 	const int fd = get_config_fd();
 	if (fd == -1) {
 		return conf;
@@ -219,7 +219,7 @@ struct wu_conf load_config(void) {
 	}
 
 	struct text_parser tp;
-	text_parser_mmap(&tp, &mm);
+	text_parser_mem(&tp, mm.len, mm.data);
 
 	ok = parse_config_file(&conf, &tp);
 	munmap_file(mm);
@@ -227,5 +227,5 @@ struct wu_conf load_config(void) {
 		return conf;
 	}
 	puts("Failed to parse config file. Using defaults.");
-	return default_config();
+	return conf_default();
 }

@@ -9,7 +9,7 @@ const struct wu_conf *wuconf) {
 	struct raster_desc desc;
 	const enum lib_fail status = wbmp_open_file(&desc, infile->ifp);
 	if (status != lib_ok) {
-		infile->err_msg = strdup(lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_invalid_header;
 	}
 

@@ -18,7 +18,9 @@ void unpack_strip(void *restrict out, const void *restrict src,
 size_t width, size_t height, size_t alignment, enum pix_attr attr,
 enum unpack_op op, size_t bitdepth);
 
-size_t unpack_stride_len(size_t width, enum pix_attr attr, enum unpack_op op,
+uint8_t unpack_depth(enum pix_attr attr, enum unpack_op op, size_t bitdepth);
+
+size_t unpack_stride(size_t width, enum pix_attr attr, enum unpack_op op,
 size_t bitdepth);
 
 

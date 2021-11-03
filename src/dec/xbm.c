@@ -32,29 +32,35 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 }
 
 enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	struct mmap_info mm;
+	if (!mmap_file(&mm, infile->ifp)) {
+		return wu_alloc_error;
+	}
+
 	struct xbm_desc desc;
-	enum lib_fail fail = xbm_open_file(&desc, infile->ifp);
+	enum lib_fail fail = xbm_open_mem(&desc, &mm);
 	if (fail) {
-		xbm_cleanup(&desc);
+		munmap_file(mm);
+		rast_error(infile, fail);
 		return wu_unknown_file_type;
 	}
 
 	get_metadata(&infile->metadata, &desc);
 
 	if (rast_exceeds_size(&desc.r, wuconf)) {
-		xbm_cleanup(&desc);
+		munmap_file(mm);
 		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
-		xbm_cleanup(&desc);
+		munmap_file(mm);
 		return wu_alloc_error;
 	}
 
 	rast_to_raw(img, &desc.r);
 	img->data = xbm_decode(&desc);
-	xbm_cleanup(&desc);
+	munmap_file(mm);
 	if (!img->data) {
 		return wu_decoding_error;
 	}

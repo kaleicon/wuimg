@@ -8,6 +8,7 @@
 #ifdef WU_ENABLE_JPEG
 #include "jpeg.h"
 #endif
+
 enum raw_thumbnail {
 	raw_thumb_none,
 	raw_thumb_bitmap,
@@ -28,7 +29,7 @@ struct raw_state {
 };
 
 static enum wu_error raw_error_to_wu(struct image_file *infile, const int err) {
-	infile->err_msg = strdup(libraw_strerror(err));
+	image_file_error_append(infile, libraw_strerror(err));
 	switch (err) {
 	case LIBRAW_SUCCESS: return wu_ok;
 	case LIBRAW_UNSPECIFIED_ERROR: return wu_unknown_error;
@@ -57,8 +58,7 @@ static void raw_state_free(struct image_file *infile) {
 		img[i].data = NULL;
 	} else if (rs->jpeg.events) {
 		jpeg_callback(&rs->jpeg, NULL, NULL, ev_end);
-		rs->jpeg.nr = 0;
-		rs->jpeg.sub_img = NULL;
+		infile->nr -= rs->jpeg.nr;
 		image_file_free(&rs->jpeg);
 	}
 
@@ -69,28 +69,22 @@ static void raw_state_free(struct image_file *infile) {
 	infile->events = 0;
 }
 
-static enum wu_error append_jpeg(struct image_file *infile,
-const struct wu_conf *wuconf, struct raw_state *rs) {
-	struct image_file *jpeg = &rs->jpeg;
-	enum wu_error status = jpeg_dec(jpeg, wuconf);
-	if (status == wu_ok) {
-		struct raw_img *img = infile->sub_img;
-		if (jpeg->nr > 1) {
-			img = realloc_sub_images(infile, infile->nr + jpeg->nr - 1);
-			if (!img) {
-				return wu_alloc_error;
-			}
+static enum wu_error copy_jpeg(struct image_file *infile,
+const struct raw_state *rs) {
+	const struct image_file *jpeg = &rs->jpeg;
+	struct raw_img *img = infile->sub_img;
+	const size_t raw_count = rs->raw.count;
+	if (infile->nr - raw_count != jpeg->nr) {
+		img = realloc_sub_images(infile, raw_count + jpeg->nr);
+		if (!img) {
+			return wu_alloc_error;
 		}
-
-		struct raw_img *jimg = img + rs->raw.count;
-		memcpy(jimg, jpeg->sub_img, jpeg->nr * sizeof(*jpeg->sub_img));
-		free(jpeg->sub_img);
-		jpeg->sub_img = jimg;
-		infile->events = jpeg->events;
-	} else {
-		image_file_free(jpeg);
 	}
-	return status;
+
+	struct raw_img *thumbs = img + raw_count;
+	memcpy(thumbs, jpeg->sub_img, jpeg->nr * sizeof(*thumbs));
+	infile->events = jpeg->events;
+	return wu_ok;
 }
 
 static enum wu_error raw_decode(struct image_file *infile,
@@ -104,7 +98,7 @@ const struct wu_conf *wuconf, const size_t i) {
 
 		int err = libraw_dcraw_process(data);
 		if (err != LIBRAW_SUCCESS) {
-			infile->err_msg = strdup(libraw_strerror(err));
+			image_file_error_append(infile, libraw_strerror(err));
 			return wu_decoding_error;
 		}
 
@@ -130,16 +124,21 @@ const struct wu_conf *wuconf, const size_t i) {
 			enum wu_error status = wu_open_error;
 			jpeg->ifp = fmemopen(thumb->thumb, thumb->tlength, "rb");
 			if (jpeg->ifp) {
-				status = append_jpeg(infile, wuconf, rs);
+				status = jpeg_dec(jpeg, wuconf);
+				if (status == wu_ok) {
+					status = copy_jpeg(infile, rs);
+				} else {
+					image_file_free(jpeg);
+				}
 			}
 
 			if (status != wu_ok) {
-				infile->err_msg = strdup("Failed to decode "
-					"JPEG thumbnail");
+				image_file_error_append(infile, "Failed to "
+					"decode JPEG thumbnail");
 				if (infile->nr <= 1) {
 					return status;
 				}
-				realloc_sub_images(infile, infile->nr - 1);
+				realloc_sub_images(infile, rs->raw.count);
 			}
 		}
 	}
@@ -158,6 +157,12 @@ const enum image_event ev) {
 			state->idx -= raws;
 			status = jpeg_callback(&rs->jpeg, wuconf, state, ev);
 			state->idx += raws;
+			if (status <= wu_ok) {
+				enum wu_error copy_status = copy_jpeg(infile, rs);
+				if (copy_status != wu_ok) {
+					status = copy_status;
+				}
+			}
 		} else if (!img[state->idx].data) {
 			status = raw_decode(infile, wuconf, (size_t)state->idx);
 		}
@@ -266,7 +271,7 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 	read_metadata(&infile->metadata, rs->data);
 
 	rs->thumb_type = unpack_thumb(wuconf, rs->data);
-	size_t nr = (rs->thumb_type != raw_thumb_none);
+	size_t nr = (size_t)(rs->thumb_type != raw_thumb_none);
 	if (!wuconf->raw_prefer_thumbnail || !big_enough_thumb(rs->data)) {
 		rs->data->params.half_size = wuconf->raw_half_size;
 		rs->data->params.output_bps = wuconf->raw_16bit ? 16 : 8;

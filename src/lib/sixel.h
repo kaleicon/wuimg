@@ -13,16 +13,16 @@ struct sixel_desc {
 	struct text_parser tp;
 	size_t data_end;
 
-	size_t w, h;
+	struct raster_desc r;
+//	size_t w, h;
 	unsigned int pan, pad;
 	enum sixel_background_color p2;
 	unsigned char horizontal_grid_size;
 };
 
-void sixel_cleanup(struct sixel_desc *desc);
-
 struct pix_rgba8 * sixel_decode(const struct sixel_desc *desc);
 
 enum lib_fail sixel_calc_parameters(struct sixel_desc *desc);
 
-enum lib_fail sixel_open_file(struct sixel_desc *desc, FILE *ifp);
+enum lib_fail sixel_open_mem(struct sixel_desc *desc,
+const struct mmap_info *mem);

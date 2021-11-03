@@ -7,8 +7,8 @@
 #include <time.h>
 
 #define ARRAY_LEN(arr) ( sizeof(arr) / sizeof(*arr) )
-#define XSTRING_MACRO(arg) STRING_MACRO( arg )
-#define STRING_MACRO(arg) #arg
+//#define XSTRING_MACRO(arg) STRING_MACRO( arg )
+//#define STRING_MACRO(arg) #arg
 
 struct display_dims {
 	unsigned w, h;

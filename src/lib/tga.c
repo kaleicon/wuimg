@@ -268,6 +268,7 @@ static enum lib_fail load_colormap(struct tga_desc *desc) {
 	case tga_colormap_data:
 	case tga_colormap_rle:
 		desc->map.pal = pal;
+		desc->r.layout = pix_gray;
 		break;
 	default:
 		desc->r.palette = pal;
@@ -372,27 +373,19 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 		}
 	}
 
+	desc->r.layout = pix_bgra;
+	desc->r.bitdepth = 8;
 	switch (depth) {
-	case 8:
-		desc->r.ch = 1;
-		desc->r.bitdepth = 8;
-		break;
 	case 15:
 	case 16:
 		desc->r.ch = 1;
 		desc->r.bitdepth = 16;
-		desc->r.layout = pix_argb;
 		desc->r.attr = pix_packing_1555;
 		break;
+	case 8:
 	case 24:
-		desc->r.ch = 3;
-		desc->r.bitdepth = 8;
-		desc->r.layout = pix_bgra;
-		break;
 	case 32:
-		desc->r.ch = 4;
-		desc->r.bitdepth = 8;
-		desc->r.layout = pix_bgra;
+		desc->r.ch = depth / 8;
 		break;
 	default:
 		return lib_invalid_header;
@@ -429,10 +422,11 @@ enum lib_fail tga_parse_header(struct tga_desc *desc) {
 	 *     transparent, which is the opposite of how pixel data is treated.
 	 * [2] 15-bit and 16-bit are equivalent for pixel data. Whether the
 	 *     Alpha bit is used depends solely on the attribute bits field.
-	 * [3] Also called attribute bits. Should be 1 for 16-bit images and
-	 *     8 for 32-bit images. Documentation is not clear on whether other
-	 *     values are valid.
-	 * [4] Raster is stored bottom-up, left to right.
+	 * [3] Most docs non-indicatively call them attribute bits and say
+	 *     nothing about them. Should be 0 or 1 for 15/16-bit images and
+	 *     0 or 8 for 32-bit images. It seems plenty of software ignores
+	 *     the value, though.
+	 * [4] Remember that the raster is stored bottom-up, left to right.
 	*/
 
 	uint8_t header[18];

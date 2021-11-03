@@ -118,17 +118,8 @@ enum wu_error dcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 			img + decoded, NULL, wuconf, (long)desc->len[i]);
 		if (status == wu_ok) {
 			++decoded;
-		} else if (!infile->err_msg) {
-			infile->err_msg = strdup(wu_error_message(status));
 		}
 	}
 	free(desc);
-
-	if (decoded < desc->nr) {
-		if (!decoded) {
-			return wu_decoding_error;
-		}
-		realloc_sub_images(infile, decoded);
-	}
-	return wu_ok;
+	return image_file_total_decoded(infile, decoded);
 }

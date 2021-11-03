@@ -32,13 +32,9 @@ struct jpeg_state {
 __attribute__((unused))
 static void joutput_message(struct jpeg_common_struct *dinfo) {
 	struct image_file *infile = dinfo->client_data;
-	if (!infile->err_msg) {
-		infile->err_msg = malloc(JMSG_LENGTH_MAX);
-		if (!infile->err_msg) {
-			return;
-		}
-	}
-	(*dinfo->err->format_message)(dinfo, infile->err_msg);
+	char msg[JMSG_LENGTH_MAX];
+	(*dinfo->err->format_message)(dinfo, msg);
+	image_file_error_append(infile, msg);
 }
 
 __attribute__((unused))
@@ -67,12 +63,6 @@ static long marker_len(FILE *f, int first_byte) {
 }
 
 static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
-	enum jpeg_parse_state {
-		normal = 0,
-		marker = 1,
-		length = 2,
-	} state = marker;
-
 	size_t alloc = 16;
 	js->soi_offsets = malloc(alloc * sizeof(*js->soi_offsets));
 	if (!js->soi_offsets) {
@@ -80,18 +70,23 @@ static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
 	}
 
 	fseek(ifp, 3, SEEK_SET);
+	enum jpeg_parse_state {
+		jpeg_parse_normal = 0,
+		jpeg_parse_marker = 1,
+		jpeg_parse_length = 2,
+	} state = jpeg_parse_marker;
 	size_t idx = 0;
 	for (int c; (c = getc(ifp)) != EOF;) {
-		if (state == marker) {
+		if (state == jpeg_parse_marker) {
 			switch (c) {
 			case 0xD8:
 				if (!grow_buffer(&js->soi_offsets, &alloc,
 				idx, sizeof(*js->soi_offsets)) ) {
 					return 0;
 				}
-				js->soi_offsets[idx] = ftell(ifp) - 1;
+				js->soi_offsets[idx] = ftell(ifp) - 2;
 				++idx;
-				state = normal;
+				state = jpeg_parse_normal;
 				break;
 			case 0x00: case 0x01:
 			case 0xD0: case 0xD1: case 0xD2: case 0xD3:
@@ -99,20 +94,20 @@ static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
 			case 0xD9:
 			case 0xDA:
 			case 0xFF:
-				state = normal;
+				state = jpeg_parse_normal;
 				break;
 			default:
-				state = length;
+				state = jpeg_parse_length;
 			}
-		} else if (state == length) {
+		} else if (state == jpeg_parse_length) {
 			long len = marker_len(ifp, c);
 			if (len == EOF) {
 				break;
 			}
 			fseek(ifp, len, SEEK_CUR);
-			state = normal;
+			state = jpeg_parse_normal;
 		} else if (c == 0xFF) {
-			state = marker;
+			state = jpeg_parse_marker;
 		}
 	}
 	return idx + 1;
@@ -189,6 +184,73 @@ struct image_file *infile, struct jpeg_state *js, bool first_image) {
 	return wu_ok;
 }
 
+__attribute__((unused))
+static void decode_raw(struct raw_img *img,
+struct jpeg_decompress_struct *dinfo) {
+	struct yuva_info info;
+	raw_img_yuva_info(img, &info);
+
+	const unsigned dct_h = (unsigned)dinfo->max_v_samp_factor * DCTSIZE;
+
+	// Pointers to each row of a block.
+	unsigned char *y[DCTSIZE*MAX_SAMP_FACTOR];
+	unsigned char *cb[DCTSIZE*MAX_SAMP_FACTOR];
+	unsigned char *cr[DCTSIZE*MAX_SAMP_FACTOR];
+	unsigned char **comps[3] = {y, cb, cr};
+
+	const size_t div = (img->subsamp & 0x03) + 1;
+	for (size_t lines = 0; lines < img->h;) {
+		for (size_t z = 0; z < img->channels; ++z) {
+			size_t stride, y_offset;
+			if (z == 0) {
+				stride = info.ya.stride;
+				y_offset = lines;
+			} else {
+				stride = info.uv.stride;
+				y_offset = lines / div;
+			}
+			unsigned char *start = info.yuva[z] + stride * y_offset;
+			for (size_t y = 0; y < dct_h; ++y) {
+				comps[z][y] = start + stride * y;
+			}
+		}
+
+		const size_t read = jpeg_read_raw_data(dinfo, comps, dct_h);
+		lines += read;
+	}
+}
+__attribute__((unused))
+static bool use_raw(struct raw_img *img, struct jpeg_decompress_struct *dinfo) {
+	if (dinfo->jpeg_color_space != JCS_YCbCr) {
+		return false;
+	}
+	switch (dinfo->num_components) {
+	case 1: return true;
+	case 3:
+		;jpeg_component_info *nfo = dinfo->comp_info;
+		int h_samp[3];
+		int v_samp[3];
+		for (int i = 0; i < dinfo->num_components; ++i) {
+			h_samp[i] = nfo[i].h_samp_factor;
+			v_samp[i] = nfo[i].v_samp_factor;
+		}
+		const int max_h = dinfo->max_h_samp_factor;
+		const int max_v = dinfo->max_v_samp_factor;
+		if (h_samp[0] != max_h || v_samp[0] != max_v) {
+			return false;
+		}
+		if (h_samp[1] != h_samp[2] || v_samp[1] != v_samp[2]) {
+			return false;
+		}
+		const int h = max_h / h_samp[1];
+		const int v = max_v / v_samp[1];
+		img->subsamp = (enum pix_subsampling)
+			( ((h - 1) << 2) | (v - 1) );
+		return true;
+	}
+	return false;
+}
+
 static enum wu_error decode_img(struct image_file *infile,
 const struct wu_conf *wuconf, const int i, const bool partial_decode) {
 	struct jpeg_state *js = infile->dec_state;
@@ -220,6 +282,14 @@ const struct wu_conf *wuconf, const int i, const bool partial_decode) {
 	}
 	jpeg_read_header(dinfo, TRUE);
 
+	/* Although YUV output sounds like a good idea, we lose the ability to
+	 * decode a downscaled version. No idea how libjpeg does it, but I
+	 * don't want to clutter this file with that. Also, we need to pad each
+	 * plane vertically, but our routines weren't made for that case, so
+	 * commented out this remains. */
+//	img[i].yuva = use_raw(img + i, dinfo);
+//	dinfo->raw_data_out = img[i].yuva;
+
 	dinfo->do_block_smoothing = FALSE;
 	if (wuconf->jpeg_fast_dct) {
 		dinfo->dct_method = JDCT_FASTEST;
@@ -243,13 +313,19 @@ const struct wu_conf *wuconf, const int i, const bool partial_decode) {
 
 	jpeg_start_decompress(dinfo);
 
-	img[i].w = dinfo->output_width;
-	img[i].h = dinfo->output_height;
+//	if (img[i].yuva) {
+//		img[i].w = dinfo->comp_info->width_in_blocks * DCTSIZE;
+//		img[i].h = dinfo->comp_info->height_in_blocks * DCTSIZE;
+//	} else {
+		img[i].w = dinfo->output_width;
+		img[i].h = dinfo->output_height;
+//	}
 	if (zumax(img[i].w, img[i].h) > wuconf->max_img_size) {
 		return wu_exceeds_size_limit;
 	}
 	img[i].channels = (unsigned char)dinfo->output_components;
 	img[i].bitdepth = 8;
+	img[i].alignment = 1; // DCTSIZE for raw data, anything otherwise.
 
 	if (img[i].data) { // Previous downscale
 		free(img[i].data);
@@ -259,11 +335,15 @@ const struct wu_conf *wuconf, const int i, const bool partial_decode) {
 		return wu_alloc_error;
 	}
 
-	JSAMPROW row_ptr = img[i].data;
-	while (dinfo->output_scanline < dinfo->output_height) {
-		row_ptr += stride * jpeg_read_scanlines(dinfo, &row_ptr,
-			(unsigned int)dinfo->rec_outbuf_height);
-	}
+//	if (img[i].yuva) {
+//		decode_raw(img + i, dinfo);
+//	} else {
+		unsigned char *row_ptr = img[i].data;
+		while (dinfo->output_scanline < dinfo->output_height) {
+			row_ptr += stride * jpeg_read_scanlines(dinfo, &row_ptr,
+				(unsigned int)dinfo->rec_outbuf_height);
+		}
+//	}
 
 	enum wu_error status = wu_ok;
 	jpeg_saved_marker_ptr mk = dinfo->marker_list;
@@ -339,7 +419,7 @@ const struct wu_conf *wuconf) {
 	jpeg_create_decompress(&js->dinfo);
 
 	const enum wu_error status = decode_img(infile, wuconf, 0,
-		!wuconf->partial_decode);
+		wuconf->partial_decode);
 	if (status == wu_ok && !file_done(infile)) {
 		infile->events = ev_subcycle | ev_upscale;
 		return status;

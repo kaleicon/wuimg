@@ -135,7 +135,11 @@ struct png_state *png) {
 
 	img->w = png_get_image_width(png->png, png->info);
 	img->h = png_get_image_height(png->png, png->info);
-	img->channels = png_get_channels(png->png, png->info);
+	if (img->palette) {
+		img->channels = 1;
+	} else {
+		img->channels = png_get_channels(png->png, png->info);
+	}
 	img->bitdepth = png_get_bit_depth(png->png, png->info);
 
 	const size_t row_size = raw_img_addbuf(img);

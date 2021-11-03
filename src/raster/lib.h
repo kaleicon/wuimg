@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 
+#include "../common.h"
 #include "raster.h"
 
 extern const char RASTER_EOF[];
@@ -40,6 +41,9 @@ enum lib_pal {
 const char * lib_fail_string(enum lib_fail fail);
 
 struct raster_pal * lib_raster_take_palette(struct raster_desc *desc);
+
+void lib_raster_endian(void *data, const struct raster_desc *desc,
+const enum endianness end);
 
 void * lib_load_rast(FILE *ifp, const struct raster_desc *desc);
 

@@ -6,7 +6,7 @@
 #include "common.h"
 #include "raster/pix.h"
 
-typedef int_fast32_t ifast_t;
+typedef int_fast32_t comp_t;
 
 struct swizzle {
 	uint8_t r, g, b, a;
@@ -26,23 +26,23 @@ enum count_op {
 };
 
 struct color_tally {
-	ifast_t cnt;
-	ifast_t r, g, b;
+	comp_t cnt;
+	comp_t r, g, b;
 };
 
-static ifast_t rgb_max(const ifast_t r, const ifast_t g, const ifast_t b) {
+static comp_t rgb_max(const comp_t r, const comp_t g, const comp_t b) {
 	return lmax(r, lmax(g, b));
 }
 
-static ifast_t rgb_min(const ifast_t r, const ifast_t g, const ifast_t b) {
+static comp_t rgb_min(const comp_t r, const comp_t g, const comp_t b) {
 	return lmin(r, lmin(g, b));
 }
 
 static int normalize_float(float out[3], const unsigned int depth,
 const struct color_tally *ct, const size_t ch) {
-	const ifast_t cnt = ct->cnt;
+	const comp_t cnt = ct->cnt;
 	if (cnt) {
-		const ifast_t range = (1 << depth) - 1;
+		const comp_t range = (1 << depth) - 1;
 		const float norm = (float)(cnt * range);
 
 		out[0] = (float)ct->r / norm;
@@ -57,20 +57,20 @@ const struct color_tally *ct, const size_t ch) {
 	return 0;
 }
 
-static ifast_t vibtest(const struct color_tally *ct, const size_t i) {
-	const ifast_t cnt = ct[i].cnt;
+static comp_t vibtest(const struct color_tally *ct, const size_t i) {
+	const comp_t cnt = ct[i].cnt;
 	if (cnt) {
-		const ifast_t r = ct[i].r,
+		const comp_t r = ct[i].r,
 			g = ct[i].g,
 			b = ct[i].b;
-		const ifast_t min = rgb_min(r, g, b);
-		const ifast_t max = rgb_max(r, g, b);
+		const comp_t min = rgb_min(r, g, b);
+		const comp_t max = rgb_max(r, g, b);
 		return (max - min) / cnt;
 	}
 	return 0;
 }
 
-static ifast_t fittest(const enum background_source src,
+static comp_t fittest(const enum background_source src,
 const struct color_tally *ct, const size_t i) {
 	switch (src) {
 	case bg_popular: return ct[i].cnt;
@@ -82,9 +82,9 @@ const struct color_tally *ct, const size_t i) {
 static const struct color_tally * pick_category(const enum background_source src,
 const struct color_tally *ct, size_t len) {
 	size_t idx = 0;
-	ifast_t best = 0;
+	comp_t best = 0;
 	for (size_t i = 1; i < len; ++i) {
-		const ifast_t quality = fittest(src, ct, i);
+		const comp_t quality = fittest(src, ct, i);
 		if (quality > best) {
 			best = quality;
 			idx = i;
@@ -132,11 +132,11 @@ struct color_tally *tally, const enum count_op op) {
 		++tally->cnt;
 		break;
 	case count_category:;
-		const ifast_t r = pix[fr->swz.r];
-		const ifast_t g = pix[fr->swz.g];
-		const ifast_t b = pix[fr->swz.b];
+		const comp_t r = pix[fr->swz.r];
+		const comp_t g = pix[fr->swz.g];
+		const comp_t b = pix[fr->swz.b];
 
-		const ifast_t mask = 0xc0;
+		const comp_t mask = 0xc0;
 		struct color_tally *t = tally
 			+ ((b & mask) >> 2 | (g & mask) >> 4 | r >> 6);
 
@@ -182,7 +182,7 @@ const unsigned char bitdepth) {
 
 	count_common(fr, data, tally, count_category);
 
-	ifast_t acc = 0;
+	comp_t acc = 0;
 	for (size_t i = 0; i < len; ++i) {
 		acc += tally[i].cnt;
 	}
@@ -196,9 +196,8 @@ const unsigned char bitdepth) {
 
 int get_image_color(float out[static 3], const struct raw_img *img,
 const enum background_source src, const size_t maxres) {
-	switch (img->bitdepth) {
-	case 8: break;
-	default: return 0;
+	if (img->bitdepth != 0 || img->attr != pix_normal) {
+		return 0;
 	}
 
 	const enum pix_layout layout = img->layout;
@@ -212,10 +211,10 @@ const enum background_source src, const size_t maxres) {
 		.hstep = img->w/maxres + 1,
 		.vstep = img->h/maxres + 1,
 		.swz = {
-			.r = (layout >> 6) & 0x03,
-			.g = (layout >> 4) & 0x03,
-			.b = (layout >> 2) & 0x03,
-			.a = layout & 0x03,
+			.r = pix_layout_offset(layout, pix_red),
+			.g = pix_layout_offset(layout, pix_green),
+			.b = pix_layout_offset(layout, pix_blue),
+			.a = pix_layout_offset(layout, pix_alpha),
 		},
 	};
 

@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -15,10 +14,6 @@ struct xbm_define {
 	unsigned int d;
 	bool found;
 };
-
-void xbm_cleanup(struct xbm_desc *desc) {
-	text_parser_munmap(&desc->tp);
-}
 
 static int toxint_rev(const int digit) {
 	switch (digit) {
@@ -271,14 +266,9 @@ static bool skip_comment(struct xbm_desc *desc, struct text_parser *tp) {
 	return false;
 }
 
-enum lib_fail xbm_open_file(struct xbm_desc *desc, FILE *ifp) {
-	struct mmap_info mm;
-	if (!mmap_file(&mm, ifp)) {
-		return lib_alloc_error;
-	}
-
+enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct mmap_info *mem) {
 	struct text_parser *tp = &desc->tp;
-	text_parser_mmap(tp, &mm);
+	text_parser_mem(tp, mem->len, mem->data);
 
 	desc->comment.len = 0;
 	desc->name.len = 0;

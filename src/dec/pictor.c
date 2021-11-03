@@ -41,14 +41,14 @@ const struct wu_conf *conf) {
 	struct pictor_desc desc;
 	enum lib_fail status = pictor_open_file(infile->ifp, &desc);
 	if (status != lib_ok) {
-		infile->err_msg = strdup(lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_open_error;
 	}
 
 	status = pictor_read_header(&desc);
 	if (status != lib_ok) {
 		pictor_cleanup(&desc);
-		infile->err_msg = strdup(lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_invalid_header;
 	}
 

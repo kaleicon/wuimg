@@ -68,7 +68,7 @@ struct raw_img *img) {
 	TIFFRGBAImage tifimg;
 	char emsg[1024];
 	if (!TIFFRGBAImageBegin(&tifimg, tif, 0, emsg)) {
-		infile->err_msg = strdup(emsg);
+		image_file_error_append(infile, emsg);
 		return wu_unsupported_feature;
 	}
 
@@ -78,7 +78,7 @@ struct raw_img *img) {
 	img->h = tifimg.height;
 	img->channels = 4;
 	img->bitdepth = 8;
-	img->no_alpha = !tifimg.alpha;
+	img->disable_alpha = !tifimg.alpha;
 
 	const size_t dims = img->w * img->h * img->channels;
 	void *raster = malloc(dims);

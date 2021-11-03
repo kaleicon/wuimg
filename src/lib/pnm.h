@@ -36,6 +36,8 @@ struct pnm_desc {
 	enum endianness pfm_endian:8;
 };
 
+const char * pnm_type_str(enum pnm_type type);
+
 unsigned char * pnm_decode_next(const struct pnm_desc *desc);
 
 enum lib_fail pnm_parse_header(struct pnm_desc *desc);

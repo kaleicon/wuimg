@@ -5,15 +5,16 @@
 #include "opengl.h"
 #include "events.h"
 #include "drm.h"
+#
 
 #include <GLFW/glfw3.h>
 
 enum window_backend {
 	window_glfw,
-	window_kms,
+	window_drm,
 };
 
-struct glfw_window {
+struct glfw_context {
 	GLFWwindow *window;
 	struct window_geom { // Fullscreen restoration
 		int x, y, w, h;
@@ -32,8 +33,8 @@ struct window_context {
 	struct wu_event event;
 	enum window_backend backend:8;
 	union {
-		struct glfw_window glfw;
-		struct kms_context kms;
+		struct glfw_context glfw;
+		struct drm_context drm;
 	} ctx;
 };
 

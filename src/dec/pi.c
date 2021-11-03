@@ -29,14 +29,14 @@ enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct pi_desc desc;
 	enum lib_fail fail = pi_open_file(infile->ifp, &desc);
 	if (fail) {
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_invalid_signature;
 	}
 
 	fail = pi_read_header(&desc);
 	if (fail) {
 		pi_cleanup(&desc);
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_invalid_header;
 	}
 

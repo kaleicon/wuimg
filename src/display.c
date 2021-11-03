@@ -90,7 +90,7 @@ const int idx, const bool reset_state) {
 
 	switch (gl_texture_upload(gl, img)) {
 	case gl_upload_fail:
-		puts("Failed to load to texture.");
+		puts("Failed to upload to texture.");
 		return false;
 	case gl_upload_success:
 		state->fit_zoom = gl_fit_zoom(gl, state->rotate);
@@ -134,6 +134,7 @@ struct window_context *window, double remaining, struct timespec *start) {
 	struct wu_event *event = &window->event;
 
 	bool timeout = false;
+	window->gl.update_matrix = true;
 	for (;;) {
 		if (window->gl.update_matrix) {
 			gl_matrix_update(&window->gl, state);
@@ -145,7 +146,7 @@ struct window_context *window, double remaining, struct timespec *start) {
 		monoclock_start(start);
 		poll_events(image, window, secs);
 
-		if (state->anim == anim_playing) {
+		if (window_has_focus(window) && state->anim == anim_playing) {
 			remaining -= secs;
 			if (remaining <= 0.0) {
 				state->sub.cycle += 1;

@@ -1,23 +1,15 @@
-#ifndef DEC_FMTMAP
-#define DEC_FMTMAP
+#ifndef WU_FMTMAP
+#define WU_FMTMAP
 
 #include <stdio.h>
 #include <stdbool.h>
 
 #include "wustr.h"
-#include "dec_enable.def"
 
-enum format_id {
-	fmt_unknown = -1,
-#define WUDEC(name, callback) fmt_##name,
-#include "dec.def"
-#undef WUDEC
-};
+int fmtmap_identify_file(FILE *ifp, const char *filename);
 
-bool known_extension(const struct wustr filename);
+bool fmtmap_known_extension(const struct wustr filename);
 
-enum format_id identify_image(FILE *ifp, const char *filename);
+void fmtmap_print_data(void);
 
-void print_map_data(void);
-
-#endif /* DEC_FMTMAP */
+#endif /* WU_FMTMAP */

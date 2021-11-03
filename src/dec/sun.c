@@ -9,14 +9,14 @@ enum wu_error sun_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct sun_desc desc;
 	enum lib_fail fail = sun_open_file(&desc, infile->ifp);
 	if (fail) {
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_open_error;
 	}
 
 	fail = sun_parse_header(&desc);
 	if (fail) {
 		sun_cleanup(&desc);
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_invalid_header;
 	}
 
@@ -44,7 +44,7 @@ enum wu_error sun_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	/* Comment away to interpret the unused byte in 32-bit files as alpha.
 	 * Imagemagick does this. */
 /*	if (img->channels == 4) {
-		img->no_alpha = true;
+		img->disable_alpha = true;
 	}*/
 	return img->data ? wu_ok : wu_decoding_error;
 }

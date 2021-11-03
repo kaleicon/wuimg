@@ -38,10 +38,6 @@ enum sixel_colorspace {
 
 static const size_t LINE_HEIGHT = 6;
 
-void sixel_cleanup(struct sixel_desc *desc) {
-	text_parser_munmap(&desc->tp);
-}
-
 static bool issixel(int c) {
 	return c >= '?' && c <= '~';
 }
@@ -70,7 +66,6 @@ int_fast16_t comp[static 3], const enum sixel_colorspace pu) {
 	int_fast16_t scale;
 	switch (pu) {
 	case sixel_hls:
-		// Gotta go fast, no time for floats
 		scale = (0x100 * point) / 100 + 1;
 		comp[0] *= point;
 		comp[1] = (comp[1] * scale) / point;
@@ -217,7 +212,7 @@ static void xterm_colormap_init(struct sixel_colormap *map) {
 }
 
 struct pix_rgba8 * sixel_decode(const struct sixel_desc *desc) {
-	const size_t dims = desc->w * desc->h;
+	const size_t dims = desc->r.w * desc->r.h;
 	struct pix_rgba8 *out = calloc(dims, sizeof(*out));
 	if (!out) {
 		return NULL;
@@ -249,9 +244,9 @@ struct pix_rgba8 * sixel_decode(const struct sixel_desc *desc) {
 			text_get_uint_unsafe(&tp, 3, &repeat);
 			c = text_next_char_unsafe(&tp);
 
-			pos = y*desc->w;
+			pos = y*desc->r.w;
 			const size_t pixs = (size_t)repeat;
-			write_color(out + pos + x, &map, desc->w, c, pixs);
+			write_color(out + pos + x, &map, desc->r.w, c, pixs);
 			x += pixs;
 			break;
 		case color_introducer:
@@ -260,8 +255,8 @@ struct pix_rgba8 * sixel_decode(const struct sixel_desc *desc) {
 		MACRO_CASE_SPACE
 			break;
 		default:
-			pos = y*desc->w;
-			write_color(out + pos + x, &map, desc->w, c, 1);
+			pos = y*desc->r.w;
+			write_color(out + pos + x, &map, desc->r.w, c, 1);
 			++x;
 		}
 	}
@@ -287,8 +282,8 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 			height += LINE_HEIGHT;
 			// fallthrough
 		case graphics_carriage_return:
-			if (row_width > desc->w) {
-				desc->w = row_width;
+			if (row_width > desc->r.w) {
+				desc->r.w = row_width;
 			}
 			row_width = 0;
 			break;
@@ -329,13 +324,13 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 		}
 	}
 
-	if (height > desc->h) {
-		desc->h = height;
+	if (height > desc->r.h) {
+		desc->r.h = height;
 	}
-	if (row_width > desc->w) {
-		desc->w = row_width;
+	if (row_width > desc->r.w) {
+		desc->r.w = row_width;
 	}
-	if (desc->w) {
+	if (desc->r.w) {
 		desc->data_end = tp.pos - 1;
 		return lib_ok;
 	}
@@ -449,6 +444,10 @@ enum lib_fail sixel_calc_parameters(struct sixel_desc *desc) {
 	}
 	desc->horizontal_grid_size = macro[2];
 
+	desc->r = (struct raster_desc) {
+		.ch = 4,
+		.bitdepth = 8,
+	};
 	const int c = text_next_nonspace(tp);
 	if (c == raster_attributes) {
 		unsigned int raster[4] = {0};
@@ -460,8 +459,8 @@ enum lib_fail sixel_calc_parameters(struct sixel_desc *desc) {
 		}
 		desc->pan = raster[0];
 		desc->pad = raster[1];
-		desc->w = raster[2];
-		desc->h = raster[3];
+		desc->r.w = raster[2];
+		desc->r.h = raster[3];
 	} else if (c == EOF) {
 		return lib_unexpected_eof;
 	} else {
@@ -488,14 +487,10 @@ static int skip_csi(struct text_parser *tp) {
 	return c;
 }
 
-enum lib_fail sixel_open_file(struct sixel_desc *desc, FILE *ifp) {
-	struct mmap_info mm;
-	if (!mmap_file(&mm, ifp)) {
-		return lib_alloc_error;
-	}
-
+enum lib_fail sixel_open_mem(struct sixel_desc *desc,
+const struct mmap_info *mem) {
 	struct text_parser *tp = &desc->tp;
-	text_parser_mmap(tp, &mm);
+	text_parser_mem(tp, mem->len, mem->data);
 
 	/* The sixel format begins with the Device Control String, which might
 	 * come in single-byte and two-byte form. And since it is basically a

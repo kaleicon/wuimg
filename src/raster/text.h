@@ -57,8 +57,6 @@ bool text_scan_xint(struct text_parser *tp, size_t size, void *val);
 
 bool text_scan_uint(struct text_parser *tp, size_t size, void *val);
 
-int text_parser_munmap(struct text_parser *tp);
-
-void text_parser_mmap(struct text_parser *tp, const struct mmap_info *mm);
+void text_parser_mem(struct text_parser *tp, size_t size, const void *data);
 
 #endif /* COMMON_TEXT */

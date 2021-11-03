@@ -247,17 +247,10 @@ bool text_scan_uint(struct text_parser *tp, const size_t size, void *val) {
 	return scan_end(tp, start, size, read, num, val);
 }
 
-int text_parser_munmap(struct text_parser *tp) {
-	struct mmap_info m = (struct mmap_info) {
-		.data = tp->text,
-		.len = tp->len,
-	};
-	return munmap_file(m);
-}
-
-void text_parser_mmap(struct text_parser *tp, const struct mmap_info *mm) {
+void text_parser_mem(struct text_parser *tp, const size_t len,
+const void *text) {
 	*tp = (struct text_parser) {
-		.len = mm->len,
-		.text = mm->data,
+		.len = len,
+		.text = text,
 	};
 }

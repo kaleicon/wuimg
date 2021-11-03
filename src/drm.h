@@ -7,7 +7,7 @@
 
 #include "common.h"
 
-struct kms_context {
+struct drm_context {
 	struct drm {
 		drmModeCrtc *crtc_restore;
 		uint32_t connector_id;
@@ -28,10 +28,10 @@ struct kms_context {
 	} egl;
 };
 
-void kms_terminate(struct kms_context *ctx);
+void drm_terminate(struct drm_context *ctx);
 
-void kms_swap_buffers(struct kms_context *ctx);
+void drm_swap_buffers(struct drm_context *ctx);
 
-bool kms_setup(struct kms_context *ctx, struct display_dims *dims);
+bool drm_init(struct drm_context *ctx, struct display_dims *dims);
 
 #endif /* DRM_BACKEND */

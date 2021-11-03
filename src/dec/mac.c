@@ -55,7 +55,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 	struct mac_desc desc;
 	const enum lib_fail status = mac_open_file(&desc, infile->ifp);
 	if (status != lib_ok) {
-		infile->err_msg = strdup(lib_fail_string(status));
+		image_file_error_append(infile, lib_fail_string(status));
 		return wu_open_error;
 	}
 
@@ -78,8 +78,8 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 			rast_to_raw(img + 1, &desc.patterns);
 			img[1].id = strdup("patterns");
 		} else {
-			infile->err_msg = strdup("Failed to allocate memory "
-				"for pattern data.");
+			image_file_error_append(infile, "Failed to allocate "
+				"pattern data");
 			realloc_sub_images(infile, 1);
 		}
 	}

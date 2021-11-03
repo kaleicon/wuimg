@@ -16,3 +16,7 @@ void rast_to_raw(struct raw_img *img, struct raster_desc *desc) {
 	img->layout = desc->layout;
 	img->attr = desc->attr;
 }
+
+void rast_error(struct image_file *infile, const enum lib_fail error) {
+	image_file_error_append(infile, lib_fail_string(error));
+}

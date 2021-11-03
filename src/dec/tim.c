@@ -37,14 +37,14 @@ enum wu_error tim_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct tim_desc desc;
 	enum lib_fail status = tim_open_file(infile->ifp, &desc);
 	if (status != lib_ok) {
-		infile->err_msg = strdup(lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_open_error;
 	}
 
 	status = tim_parse_header(&desc);
 	if (status) {
 		tim_cleanup(&desc);
-		infile->err_msg = strdup(lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_invalid_header;
 	}
 

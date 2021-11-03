@@ -10,13 +10,13 @@ enum wu_error sgi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct sgi_desc desc;
 	enum lib_fail fail = sgi_open_file(&desc, infile->ifp);
 	if (fail) {
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_invalid_signature;
 	}
 
 	fail = sgi_parse_header(&desc);
 	if (fail) {
-		infile->err_msg = strdup(lib_fail_string(fail));
+		rast_error(infile, fail);
 		return wu_invalid_header;
 	}
 

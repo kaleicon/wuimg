@@ -209,7 +209,7 @@ struct fs_entry *init_key, struct collator *icu) {
 			continue;
 		}
 
-		if (!known_extension(name)) {
+		if (!fmtmap_known_extension(name)) {
 			continue;
 		}
 		bool ok = grow_buffer(&list->entries, &alloc, list->len, sizeof(*list->entries))

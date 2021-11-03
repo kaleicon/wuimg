@@ -38,7 +38,7 @@ const enum image_event event) {
 	const enum image_event ev = infile->events & event;
 	enum wu_error status = wu_no_change;
 	if (ev || !event) {
-		const enum format_id id = image->fmt_id;
+		const int id = image->fmt_id;
 		status = format_map[id].callback(infile, &image->conf,
 			&image->state, ev);
 		if (status == wu_ok) {
@@ -76,17 +76,17 @@ enum wu_error decode_image(struct image_context *image) {
 		infile->ifp = fopen(image->name, "rb");
 		if (!infile->ifp) {
 			if (errno) {
-				infile->err_msg = (strerror_dup(errno));
+				image_file_error_append(infile, strerror(errno));
 			}
 			return wu_open_error;
 		}
 	}
 
 	errno = 0;
-	const enum format_id id = identify_image(infile->ifp, image->name);
-	if (id == fmt_unknown) {
+	const int id = fmtmap_identify_file(infile->ifp, image->name);
+	if (id == -1) {
 		if (errno) {
-			infile->err_msg = strerror_dup(errno);
+			image_file_error_append(infile, strerror(errno));
 			return wu_open_error;
 		}
 		return wu_unknown_file_type;
@@ -117,6 +117,5 @@ void print_known_formats(void) {
 			? ", " : "\n\n";
 		fputs(sep, stdout);
 	}
-
-	print_map_data();
+	fmtmap_print_data();
 }

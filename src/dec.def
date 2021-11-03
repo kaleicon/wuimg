@@ -5,8 +5,10 @@
 WUDEC(avs, NULL)
 #endif
 
-#ifdef WU_ENABLE_BMP
+#ifdef WU_ENABLE_DIB
 WUDEC(bmp, NULL)
+WUDEC(dib, NULL)
+WUDEC(ico, NULL)
 #endif
 
 #ifdef WU_ENABLE_MAC

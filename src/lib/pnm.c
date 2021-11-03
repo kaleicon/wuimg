@@ -11,7 +11,22 @@
 #include "../raster/text.h"
 #include "pnm.h"
 
-//typedef uint_fast32_t fast_t;
+const char * pnm_type_str(const enum pnm_type type) {
+	switch (type) {
+	case plain_pbm: return "Text PBM";
+	case plain_pgm: return "Text PGM";
+	case plain_ppm: return "Text PPM";
+	case raw_pbm: return "Raw PBM";
+	case raw_pgm: return "Raw PGM";
+	case raw_ppm: return "Raw PPM";
+	case pam: return "PAM";
+	case xv_thumb: return "Xv thumb";
+	case mtv: return "MTV";
+	case color_pfm: return "Color PFM";
+	case gray_pfm: return "Gray PFM";
+	}
+	return "???";
+}
 
 static void scale_16(unsigned short *output, const size_t dims,
 const unsigned short maxval) {

@@ -7,15 +7,15 @@
 
 enum wu_error pgx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct pgx_desc desc;
-	enum lib_fail status = pgx_open_file(infile->ifp, &desc);
+	enum lib_fail status = pgx_open_file(&desc, infile->ifp);
 	if (status != lib_ok) {
-		infile->err_msg = strdup(lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_invalid_signature;
 	}
 
 	status = pgx_read_header(&desc);
 	if (status != lib_ok) {
-		infile->err_msg = strdup(lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_invalid_header;
 	}
 
@@ -28,7 +28,7 @@ enum wu_error pgx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		img->data = pgx_decode(&desc);
 		if (img->data) {
 			rast_to_raw(img, &desc.rast);
-			img->no_alpha = !desc.transparent;
+			img->disable_alpha = !desc.transparent;
 			return wu_ok;
 		}
 		return wu_decoding_error;

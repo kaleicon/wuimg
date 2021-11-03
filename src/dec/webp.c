@@ -405,13 +405,19 @@ struct webp_state *ds) {
 	img->w = (size_t)ds->config.input.width;
 	img->h = (size_t)ds->config.input.height;
 	img->bitdepth = 8;
-	if (ds->config.input.has_alpha) {
-		img->channels = 4;
-		ds->config.output.colorspace = MODE_RGBA;
+
+	const bool alpha = ds->config.input.has_alpha;
+	img->channels = alpha ? 4 : 3;
+	img->disable_alpha = !alpha;
+	WEBP_CSP_MODE colorspace;
+	if (ds->config.input.format == 1) {
+		colorspace = alpha ? MODE_YUVA : MODE_YUV;
+		img->yuva = true;
+		img->subsamp = pix_yuv420;
 	} else {
-		img->channels = 3;
-		ds->config.output.colorspace = MODE_YUV;//RGB;
+		colorspace = alpha ? MODE_RGBA : MODE_RGB;
 	}
+	ds->config.output.colorspace = colorspace;
 
 	const size_t stride = raw_img_addbuf(img);
 	if (!stride) {
@@ -419,29 +425,29 @@ struct webp_state *ds) {
 	}
 
 	const size_t buf_size = stride * img->h;
-	if (ds->config.output.colorspace != MODE_YUV) {
+	if (ds->config.input.format == 1) {
+		struct yuva_info info;
+		raw_img_yuva_info(img, &info);
+		ds->config.output.u.YUVA = (struct WebPYUVABuffer) {
+			.y = info.yuva[0],
+			.u = info.yuva[1],
+			.v = info.yuva[2],
+			.a = info.yuva[3],
+			.y_stride = (int)info.ya.stride,
+			.u_stride = (int)info.uv.stride,
+			.v_stride = (int)info.uv.stride,
+			.a_stride = (int)info.ya.stride,
+			.y_size = info.ya.size,
+			.u_size = info.uv.size,
+			.v_size = info.uv.size,
+			.a_size = info.ya.size,
+		};
+	} else {
 		ds->config.output.u.RGBA = (struct WebPRGBABuffer) {
 			.rgba = img->data,
 			.stride = (int)stride,
 			.size = buf_size,
 		};
-	} else {
-		ds->config.output.u.YUVA = (struct WebPYUVABuffer) {
-			.y = img->data,
-			.u = img->data + stride * img->h*4/12,
-			.v = img->data + stride * img->h*5/12,
-//			.a = img->data,
-			.y_stride = (int)stride/3,
-			.u_stride = (int)(stride/6),
-			.v_stride = (int)(stride/6),
-//			.a_stride = (int)stride,
-			.y_size = buf_size/1,
-			.u_size = buf_size/1,
-			.v_size = buf_size/1,
-//			.a_size = buf_size,
-		};
-		img->channels = 1;
-		img->h *= 2;
 	}
 
 	return WebPDecode(ds->data.bytes, ds->data.size, &ds->config);
@@ -597,7 +603,7 @@ const struct wu_conf *wuconf) {
 	if (status != VP8_STATUS_OK) {
 		const char *msg;
 		err = map_status(status, &msg);
-		infile->err_msg = strdup(msg);
+		image_file_error_append(infile, msg);
 	}
 	return err;
 }

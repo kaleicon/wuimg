@@ -35,4 +35,6 @@ bool wustr_memdup(struct wustr_mut *w, const char *str, size_t len);
 
 bool wustr_strdup(struct wustr_mut *w, const char *str);
 
+bool wustr_append(struct wustr_mut *w, const char *str);
+
 #endif /* WU_STR */

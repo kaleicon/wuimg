@@ -73,15 +73,15 @@ const bool print_meta, const bool print_time, double *timeinfo) {
 	const struct image_file *infile = &image->file;
 	if (result == wu_ok) {
 		if (print_meta) {
-			print_image_information(infile, 0);
+			image_file_print(infile, 0);
 		}
 		if (print_time) {
 			printf("Decoded in %f seconds\n", diff);
 		}
 	} else {
 		printf("Decoding error: %s\n", wu_error_message(result));
-		if (infile->err_msg) {
-			printf("Library message: \"%s\"\n", infile->err_msg);
+		if (infile->errors.str) {
+			printf("Library message: %s\n", infile->errors.str);
 		}
 		printf("Failed in %f seconds\n", diff);
 	}
@@ -91,7 +91,7 @@ const bool print_meta, const bool print_time, double *timeinfo) {
 static enum wu_error test_with(const struct image_list *entries,
 const struct program_mode *mode) {
 	struct image_context image;
-	image.conf = load_config();
+	image.conf = conf_load();
 
 	unsigned int iters = 1;
 	unsigned int warmup = 0;
@@ -149,7 +149,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	}
 
 	struct window_control control = {
-		.image.conf = load_config(),
+		.image.conf = conf_load(),
 	};
 	struct term_restore tr;
 	if (!display_setup(&control, &tr)) {
@@ -215,7 +215,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 
 static enum wu_error run_with_list(struct image_list *entries, long idx) {
 	struct window_control control = {
-		.image.conf = load_config(),
+		.image.conf = conf_load(),
 	};
 
 	struct term_restore tr;

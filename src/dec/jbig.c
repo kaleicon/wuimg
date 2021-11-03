@@ -60,7 +60,7 @@ enum wu_error jbig_dec(struct image_file *infile, const struct wu_conf *wuconf) 
 		puts("Warning: Expected more data, will continue anyway.");
 		break;
 	default:
-		infile->err_msg = strdup(jbg_strerror(status));
+		image_file_error_append(infile, jbg_strerror(status));
 		jbg_dec_free(&state);
 		return wu_decoding_error;
 	}

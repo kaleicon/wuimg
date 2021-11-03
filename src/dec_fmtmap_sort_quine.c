@@ -4,29 +4,35 @@
 
 #include "common.h"
 #include "dec_enable.def"
-#include "dec_fmtmap.h"
+
+enum format_id {
+	fmt_unknown = -1,
+#define WUDEC(name, callback) fmt_##name,
+#include "dec.def"
+#undef WUDEC
+};
 
 #define EXP_STRING(exp) #exp; exp
 
 static const char structs[] = EXP_STRING(
 struct file_ext {
 	const char ext[8];
-	const enum format_id id;
+	const int id;
 };
 
 struct file_magic {
 	const unsigned char and_mask[12];
 	const unsigned char bytes[12];
-	const enum format_id id;
+	const int id;
 };
 ) /* EXP_STRING structs end */
 
 /* Be careful with masks. This array is sorted dumbly. Masks should completely
  * cover continuous ranges of valid inputs. */
 static struct file_magic magic_map[] = {
-#ifdef WU_ENABLE_BMP
+#ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
-#endif // WU_ENABLE_BMP
+#endif // WU_ENABLE_DIB
 
 #ifdef WU_ENABLE_PCX
 	// Second byte is version. Valid values are 0,2,3,4,5
@@ -200,10 +206,12 @@ static struct file_ext extension_map[] = {
 	{"mbfavs", fmt_avs},
 #endif // WU_ENABLE_AVS
 
-#ifdef WU_ENABLE_BMP
+#ifdef WU_ENABLE_DIB
 	{"bmp", -1},
 	{"bmp24", -1},
-#endif // WU_ENABLE_BMP
+	{"dib", fmt_dib},
+	{"ico", fmt_ico},
+#endif // WU_ENABLE_DIB
 
 #ifdef WU_ENABLE_MAC
 	{"mac", fmt_mac},
@@ -348,7 +356,7 @@ static struct file_ext extension_map[] = {
 	{"cr2", -1},
 	{"dng", -1},
 	{"nef", -1},
-#endif
+#endif // !WU_ENABLE_RAW
 #endif // WU_ENABLE_TIFF
 
 #ifdef WU_ENABLE_WEBP
@@ -396,8 +404,8 @@ int main(void) {
 		quine_fextcmp);
 
 
-	/* enum format_id definition */
-	fputs("#include \"dec_fmtmap.h\"\n", stdout);
+	/* size_t definition */
+	fputs("#include <stddef.h>\n", stdout);
 
 	/* Struct maps definition */
 	fwrite(structs, 1, sizeof(structs) - 1, stdout);
@@ -453,10 +461,8 @@ int main(void) {
 		"static const size_t MIN_MAG_LEN = %zu;"
 		"static const size_t MAX_EXT_LEN = %zu;"
 		"static const size_t MIN_EXT_LEN = %zu;",
-		max_mag_len,
-		min_mag_len,
-		max_ext_len,
-		min_ext_len);
+		max_mag_len, min_mag_len,
+		max_ext_len, min_ext_len);
 
 	/* Include the rest of the file */
 	fputs("\n#include \"dec_fmtmap_base.c\"\n", stdout);

@@ -1,4 +1,4 @@
-internal_fmts = ['avs', 'bmp', 'mac', 'pcx', 'pgx', 'pi', 'pictor', 'pnm',
+internal_fmts = ['avs', 'dib', 'mac', 'pcx', 'pgx', 'pi', 'pictor', 'pnm',
 	'sgi', 'sixel', 'sun', 'tga', 'tim', 'wbmp', 'xbm']
 external_fmts = ['flif', 'gif', 'heif', 'jbig', 'jpeg', 'jpeg2000', 'png',
 	'raw', 'svg', 'tiff', 'webp']

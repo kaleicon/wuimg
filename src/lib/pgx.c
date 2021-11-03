@@ -99,7 +99,7 @@ unsigned char * pgx_decode(const struct pgx_desc *desc) {
 enum lib_fail pgx_read_header(struct pgx_desc *desc) {
 	/* PGX header (after signature):
 		Offset  Size    Name
-		0       BYTE    StartingBytes[4];
+		0       BYTE    StartingBytes[4]; // of compressed data
 		4       DWORD   Width;
 		8       DWORD   Height;
 		12      WORD    IsTransparent;
@@ -108,7 +108,7 @@ enum lib_fail pgx_read_header(struct pgx_desc *desc) {
 		20
 	*/
 
-	fseek(desc->ifp, 8, SEEK_SET);
+	fseek(desc->ifp, 4, SEEK_CUR);
 
 	uint8_t buf[16];
 	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
@@ -131,7 +131,7 @@ enum lib_fail pgx_read_header(struct pgx_desc *desc) {
 	return lib_ok;
 }
 
-enum lib_fail pgx_open_file(FILE *ifp, struct pgx_desc *desc) {
+enum lib_fail pgx_open_file(struct pgx_desc *desc, FILE *ifp) {
 	const unsigned char sig[] = {'P', 'G', 'X', 0};
 	unsigned char buf[sizeof(sig)];
 	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <errno.h>
 
 #include <fcntl.h>
@@ -19,90 +20,145 @@ struct filename_template {
 	size_t ext_len;
 };
 
-static void network_fwrite(void *out, const size_t bitdepth,
-const size_t bytestride, FILE *ofp) {
-	if (bitdepth == 16) {
-		loop_endian16(out, big_endian, bytestride / 2);
+static void network_fwrite(void *out, const size_t depth, const size_t buflen,
+FILE *ofp) {
+	if (which_end() != big_endian) {
+		if (depth == 16) {
+			loop_endian16(out, big_endian, buflen / 2);
+		}
 	}
-	fwrite(out, 1, bytestride, ofp);
+	fwrite(out, 1, buflen, ofp);
 }
 
-static void write_pam_header(const struct raw_img *img, FILE *ofp) {
-	const unsigned int bytedepth = (img->bitdepth + 7U) / 8;
-	const unsigned int maxval = (1U << (bytedepth * 8)) - 1;
-	const char *tuples[] = {"GRAYSCALE", "GRAYSCALE_ALPHA",
-		"RGB", "RGB_ALPHA"};
+static void write_pam_tuple(const size_t ch, FILE *ofp) {
+	const char *tupl;
+	switch (ch) {
+	case 1: tupl = "GRAYSCALE"; break;
+	case 2: tupl = "GRAYSCALE_ALPHA"; break;
+	case 3: tupl = "RGB"; break;
+	case 4: tupl = "RGB_ALPHA"; break;
+	default: return;
+	}
+	fprintf(ofp, "TUPLTYPE %s\n", tupl);
+}
+
+static void write_pam_header(const size_t w, const size_t h, const size_t ch,
+const size_t bd, FILE *ofp) {
+	const size_t maxval = (bd > 8) ? USHRT_MAX : UCHAR_MAX;
 	fprintf(ofp,
 		"P7\n"
 		"WIDTH %zu\n"
 		"HEIGHT %zu\n"
-		"DEPTH %u\n"
-		"MAXVAL %u\n"
-		"TUPLTYPE %s\n"
-		"ENDHDR\n",
-		img->w, img->h, img->channels, maxval,
-		tuples[img->channels - 1]);
+		"DEPTH %zu\n"
+		"MAXVAL %zu\n",
+		w, h, ch, maxval);
+	write_pam_tuple(ch, ofp);
+	fputs("ENDHDR\n", ofp);
 }
 
 static void write_expand(const struct raw_img *img, FILE *ofp,
-const size_t buflen, const enum unpack_op op) {
-	uint8_t *buf = malloc(buflen);
-	if (!buf) {
-		fputs("ERROR: Out of memory.\n", stderr);
-		return;
+const enum unpack_op op, const bool swizzle) {
+	uint8_t outch = img->channels;
+	uint8_t outdepth = img->bitdepth;
+	size_t buflen = 0;
+	if (img->palette) {
+		outdepth = 8;
+		outch = 4;
+		buflen = img->w * outch;
+	} else if (op) {
+		outdepth = unpack_depth(img->attr, op, img->bitdepth);
+		if (!outdepth) {
+			fputs("Error: Unsupported depth conversion.", stderr);
+			return;
+		}
+		buflen = scanline_length(img->w * img->channels, outdepth, 1);
 	}
 
-	const size_t instride = scanline_length(img->w * img->channels,
-		img->bitdepth, img->alignment);
-	const size_t outdepth = zumax(img->bitdepth, 8);
-	write_pam_header(img, ofp);
+	uint8_t *linebuf = NULL;
+	if (buflen) {
+		linebuf = malloc(buflen);
+		if (!linebuf) {
+			fputs("ERROR: Out of memory.\n", stderr);
+			return;
+		}
+	}
+
+	const size_t instride = raw_img_stride(img);
+	write_pam_header(img->w, img->h, outch, outdepth, ofp);
 	for (size_t y = 0; y < img->h; ++y) {
 		unsigned char *src = img->data + instride*y;
-		if (op) {
-			unpack_strip(buf, src, img->w * img->channels, 1, 1,
+		if (img->palette) {
+			raster_pal_expand(linebuf, src, img->palette, img->w, 1,
+				1, 4, img->bitdepth);
+			src = linebuf;
+		} else if (op) {
+			unpack_strip(linebuf, src, img->w * img->channels, 1, 1,
 				img->attr, op, img->bitdepth);
-			src = buf;
+			src = linebuf;
 		}
-		if (img->channels > 2 && img->layout != pix_rgba) {
-			strip_swizzle(buf, src, img->w, 1, img->channels,
+
+		if (swizzle) {
+			strip_swizzle(src, src, img->w, 1, img->channels,
 				outdepth, 1, img->layout, pix_rgba);
-			src = buf;
 		}
 		network_fwrite(src, outdepth, buflen, ofp);
 	}
-	free(buf);
+	free(linebuf);
 }
 
 static void write_raw(const struct raw_img *img, FILE *ofp) {
-	write_pam_header(img, ofp);
-	const size_t bytedepth = (img->bitdepth + 7U) / 8;
-	const size_t stride = img->w * img->channels * bytedepth;
-	const size_t scanline = scanline_length(stride, 8, img->alignment);
+	size_t w = img->w;
+	size_t bd = img->bitdepth;
+	if (img->bitdepth > 16) {
+		w *= bd / 8;
+		bd = 8;
+	} else if (img->bitdepth < 8) {
+		size_t div = 8 / bd;
+		w = (w + (div - 1)) / div;
+		bd *= div;
+	}
+
+	write_pam_header(w, img->h, img->channels, bd, ofp);
+	const size_t line = w * img->channels * bd / 8;
+	const size_t stride = scanline_length(line, 8, img->alignment);
 	for (size_t y = 0; y < img->h; ++y) {
-		network_fwrite(img->data + scanline*y, img->bitdepth, stride,
-			ofp);
+		network_fwrite(img->data + stride*y, bd, line, ofp);
 	}
 }
 
 static void write_sub_img(const struct raw_img *img, FILE *ofp,
 const bool raw_output) {
 	enum unpack_op op = op_noop;
-	size_t buflen = 0;
+	bool swizzle = false;
 	if (!raw_output) {
 		if (img->palette) {
 			op = op_unpack;
-		} else if (img->bitdepth < 8) {
-			op = op_expand;
+		} else {
+			switch (img->attr) {
+			case pix_normal:
+			case pix_inverted:
+				if (img->bitdepth < 8) {
+					op = op_expand;
+				} else if (img->bitdepth > 16) {
+					op = op_pack;
+				}
+				break;
+			case pix_packing_332:
+			case pix_packing_1555:
+				op = op_expand;
+				break;
+			default:
+				return;
+			}
 		}
 
-		if (op || (img->channels > 2 && img->layout != pix_rgba)) {
-			buflen = scanline_length(img->w * img->channels,
-				zumax(img->bitdepth, 8), 1);
+		if (img->channels > 2 && img->layout != pix_rgba) {
+			swizzle = true;
 		}
 	}
 
-	if (buflen) {
-		write_expand(img, ofp, buflen, op);
+	if (op || swizzle) {
+		write_expand(img, ofp, op, swizzle);
 	} else {
 		write_raw(img, ofp);
 	}
@@ -183,12 +239,9 @@ const struct write_args *args) {
 
 	const struct raw_img *img = infile->sub_img;
 	for (size_t i = 0; i < infile->nr; ++i) {
-		if (img[i].bitdepth > 16 || img[i].attr == pix_float) {
-			fputs("Error: Unsupported output depth.\n", stderr);
+		if (img[i].attr == pix_float) {
+			fputs("Error: Float output unsupported.\n", stderr);
 			continue;
-		} else if (img[i].palette) {
-			puts("FIXME: Paletted images are currently unsupported.\n"
-				"Only the raw data will be written.");
 		}
 
 		id_replace(&tpl, img[i].id);

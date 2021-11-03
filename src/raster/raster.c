@@ -97,7 +97,7 @@ void raster_normalize(struct raster_desc *desc) {
 	}
 
 	if (!desc->layout) {
-		if (desc->palette) {
+		if (desc->palette || desc->attr == pix_packing_332) {
 			desc->layout = pix_rgba;
 		} else {
 			if (desc->ch >= 3) {

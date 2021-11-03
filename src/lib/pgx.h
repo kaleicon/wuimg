@@ -17,6 +17,6 @@ unsigned char * pgx_decode(const struct pgx_desc *desc);
 
 enum lib_fail pgx_read_header(struct pgx_desc *desc);
 
-enum lib_fail pgx_open_file(FILE *ifp, struct pgx_desc *desc);
+enum lib_fail pgx_open_file(struct pgx_desc *desc, FILE *ifp);
 
 #endif /* LIB_PGX */

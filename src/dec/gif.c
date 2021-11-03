@@ -87,7 +87,7 @@ const size_t stride, const unsigned char ch) {
 	if (ch == 1) {
 		memcpy(out, raster, stride);
 	} else {
-		raster_pal_expand(out, raster, pal, stride, 1, 1, ch);
+		raster_pal_expand(out, raster, pal, stride, 1, 1, ch, 8);
 	}
 }
 
@@ -144,7 +144,7 @@ struct raster_pal *out_pal, int alpha_idx) {
 		memcpy(out_pal->color + i, pal + i, 3);
 		out_pal->color[i].a = 0xff;
 	}
-	if (alpha_idx > -1) {
+	if (alpha_idx != -1) {
 		out_pal->color[alpha_idx].a = 0x00;
 	}
 }
@@ -205,7 +205,16 @@ const struct wu_conf *wuconf, struct gif_state *ds) {
 		}
 	}
 
-	const int fill = img[i].palette ? ds->gif_file->SBackGroundColor : 0;
+	int fill = 0;
+	if (img[i].palette) {
+		const int trans = ds->gcb[ds->idx].TransparentColor;
+		if (trans != -1) {
+			fill = trans;
+		} else {
+			fill = ds->gif_file->SBackGroundColor;
+		}
+	}
+
 	if (ds->idx == 0) {
 		if (!ds->opaque_first_frame) {
 			memset(img[i].data, fill, image_size);
@@ -453,7 +462,7 @@ const struct wu_conf *wuconf) {
 	int error = 0;
 	GifFileType *gif_file = DGifOpen(infile->ifp, dgif_input_fn, &error);
 	if (error) {
-		infile->err_msg = strdup(GifErrorString(error));
+		image_file_error_append(infile, GifErrorString(error));
 		free(ds);
 		return map_error_to_wu(error);
 	}
@@ -462,16 +471,12 @@ const struct wu_conf *wuconf) {
 
 	error = DGifSlurp(gif_file);
 	if (error != GIF_OK) {
-		infile->err_msg = strdup(GifErrorString(gif_file->Error));
+		image_file_error_append(infile, GifErrorString(gif_file->Error));
 	}
 
 	const unsigned int max_dim = (unsigned int)imax(gif_file->SWidth,
 		gif_file->SHeight);
 	if (max_dim > wuconf->max_img_size) {
-		if (infile->err_msg) {
-			free(infile->err_msg);
-			infile->err_msg = NULL;
-		}
 		clean_gif_state(infile);
 		return wu_exceeds_size_limit;
 	}
@@ -496,7 +501,6 @@ const struct wu_conf *wuconf) {
 	ds->gcb = gather_info(gif_file, ds, &uses_local_palette,
 		&infile->metadata);
 	if (!ds->gcb) {
-		free(infile->err_msg);
 		clean_gif_state(infile);
 		return wu_alloc_error;
 	}
@@ -523,7 +527,6 @@ const struct wu_conf *wuconf) {
 		const int bg = gif_file->SBackGroundColor;
 		if (bg > -1 && bg < gif_file->SColorMap->ColorCount) {
 			infile->bg = loc->color[bg];
-//			memcpy(&infile->bg, loc->color + bg, sizeof(infile->bg));
 		}
 	}
 

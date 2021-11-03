@@ -80,9 +80,9 @@ static bool check_cga_mode(const struct pcx_desc *desc) {
 	 * tell with a format that is undecidable to render.
 
 	 * Care should be taken, however, NOT to check the rest of the palette
-	 * area for zeroes, as them cowboy programmers will also merrily place
-	 * arbitrary data in there as a sort of not-backwards-incompatible
-	 * header extension. */
+	 * area for zeroes, as them cowboy programmers will also merrily leave
+	 * arbitrary data in there, either because of uncleared memory or as a
+	 * sort of not-backwards-incompatible header extension. */
 	return desc->r.bitdepth == 2 && !memchk(desc->file_pal + 6, 0, 6);
 }
 
@@ -99,12 +99,12 @@ const struct pix_rgb8 *pal_data) {
 	if (entries == 2) {
 		/* PC Paintbrush will display a dialog asking the user whether
 		 * to open 1-bit 1-plane files as B&W or using the header
-		 * palette. And that's just on non-monochrome systems. So one
-		 * shouldn't get too stressed about which way is right.
+		 * palette. So one shouldn't get too stressed about which way
+		 * is correct.
 		 * Here, to use the file palette, we check if
-		 * · the file version allows a palette
-		 * · palette_type is non-zero
-		 * · entries are different
+		 *  · the file version allows a palette
+		 *  · palette_type is non-zero
+		 *  · entries are different
 		 * This seems to work rather well for all samples. */
 		if (pal_data && desc->palette_type
 		&& memcmp(pal_data, pal_data + 1, sizeof(*pal_data))) {
@@ -425,6 +425,9 @@ struct dcx_desc * dcx_read_offsets(FILE *ifp) {
 }
 
 enum lib_fail dcx_open_file(FILE *ifp) {
+	/* Why would anyone use the most device dependent file format ever for
+	 * sending documents is beyond me. */
+
 	/* DCX header:
 		Offset  Size    Name
 		0       DWORD   Identifier;  // 0xb1 0x68 0xde 0x3a

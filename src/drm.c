@@ -16,7 +16,7 @@
 
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 
-void kms_terminate(struct kms_context *ctx) {
+void drm_terminate(struct drm_context *ctx) {
 	eglTerminate(ctx->egl.display);
 
 	if (ctx->drm.fd != -1) {
@@ -67,7 +67,7 @@ struct display_dims *dims) {
 			}
 		}
 		if (fb_id == NULL) {
-			puts("not enough framebuffers :o");
+			fputs("not enough framebuffers :o\n", stderr);
 			return 0;
 		}
 	}
@@ -105,14 +105,14 @@ unsigned int _usec, void *data) {
 	*flipped = true;
 }
 
-void kms_swap_buffers(struct kms_context *ctx) {
+void drm_swap_buffers(struct drm_context *ctx) {
 	eglSwapBuffers(ctx->egl.display, ctx->egl.surface);
 
 	struct gbm_bo *next_bo = gbm_surface_lock_front_buffer(ctx->gbm.surface);
 	struct drm *drm = &ctx->drm;
 	const uint32_t fb_id = get_framebuffer(drm, next_bo, NULL);
 	if (!fb_id) {
-		puts("failed to get framebuffer");
+		fputs("failed to get framebuffer\n", stderr);
 		return;
 	}
 
@@ -120,7 +120,7 @@ void kms_swap_buffers(struct kms_context *ctx) {
 	int status = drmModePageFlip(drm->fd, drm->crtc_id, fb_id,
 		DRM_MODE_PAGE_FLIP_EVENT, &flipped);
 	if (status) {
-		puts("page flip failed");
+		fputs("page flip failed\n", stderr);
 		return;
 	}
 
@@ -140,7 +140,8 @@ void kms_swap_buffers(struct kms_context *ctx) {
 			perror("Failed to poll DRM descriptor");
 			break;
 		} else if (status == 0) {
-			puts("DRM descriptor poll timed out after 1 second");
+			fputs("DRM descriptor poll timed out after 1 second\n",
+				stderr);
 			break;
 		}
 
@@ -151,7 +152,7 @@ void kms_swap_buffers(struct kms_context *ctx) {
 	ctx->gbm.bo = next_bo;
 }
 
-static bool mode_set(struct kms_context *ctx, struct display_dims *dims,
+static bool mode_set(struct drm_context *ctx, struct display_dims *dims,
 drmModeModeInfo *mode_info) {
 	eglSwapBuffers(ctx->egl.display, ctx->egl.surface);
 
@@ -178,18 +179,18 @@ drmModeModeInfo *mode_info) {
 }
 
 static bool egl_setup(struct egl *egl, const struct gbm *gbm) {
-	if (eglBindAPI(EGL_OPENGL_API) == EGL_FALSE) {
-		puts("eglBindAPI fail");
+	if (eglBindAPI(EGL_OPENGL_API) != EGL_TRUE) {
+		fputs("eglBindAPI fail\n", stderr);
 		return false;
 	}
 
 	EGLint major, minor;
 	egl->display = eglGetDisplay((EGLNativeDisplayType)gbm->device);
-	if (eglInitialize(egl->display, &major, &minor) == EGL_FALSE) {
-		puts("eglInitialize fail");
+	if (eglInitialize(egl->display, &major, &minor) != EGL_TRUE) {
+		fputs("eglInitialize fail\n", stderr);
 		return false;
 	} else if (major != 1 || minor < 4) {
-		printf("too old version: %d.%d\n", major, minor);
+		fprintf(stderr, "too old version: %d.%d\n", major, minor);
 		return false;
 	}
 
@@ -205,7 +206,7 @@ static bool egl_setup(struct egl *egl, const struct gbm *gbm) {
 	EGLint cnt = (EGLint)ARRAY_LEN(cfg);
 	eglChooseConfig(egl->display, config_attrib, cfg, cnt, &cnt);
 	if (cnt < 1) {
-		puts("egl: no good config");
+		fputs("egl: no good config", stderr);
 		return false;
 	}
 
@@ -230,7 +231,7 @@ static bool egl_setup(struct egl *egl, const struct gbm *gbm) {
 	while (i < cnt) {
 		EGLint id;
 		if (eglGetConfigAttrib(egl->display, cfg[i],
-		EGL_NATIVE_VISUAL_ID, &id) == EGL_FALSE) {
+		EGL_NATIVE_VISUAL_ID, &id) != EGL_TRUE) {
 			continue;
 		}
 
@@ -245,20 +246,20 @@ static bool egl_setup(struct egl *egl, const struct gbm *gbm) {
 	}
 
 	if (context == EGL_NO_CONTEXT) {
-		puts("egl: failed to create context");
+		fputs("egl: failed to create context\n", stderr);
 		return false;
 	}
 
 	egl->surface = eglCreateWindowSurface(egl->display, cfg[i],
 		(EGLNativeWindowType)gbm->surface, NULL);
 	if (egl->surface == EGL_NO_SURFACE) {
-		puts("eglCreateWindowSurface fail");
+		fputs("eglCreateWindowSurface fail\n", stderr);
 		return false;
 	}
 
 	if (eglMakeCurrent(egl->display, egl->surface, egl->surface, context)
-	== EGL_FALSE) {
-		puts("eglMakeCurrent fail");
+	!= EGL_TRUE) {
+		fputs("eglMakeCurrent fail\n", stderr);
 		return false;
 	}
 	return true;
@@ -307,7 +308,6 @@ const drmModeConnector *connector) {
 			}
 		}
 	}
-
 	return 0;
 }
 
@@ -363,8 +363,7 @@ drmModeModeInfo **mode_info) {
 		return false;
 	}
 
-	int area = 0;
-	for (int i = 0; i < (*connector)->count_modes; ++i) {
+	for (int i = 0, area = 0; i < (*connector)->count_modes; ++i) {
 		drmModeModeInfo *mi = (*connector)->modes + i;
 		if (mi->type & DRM_MODE_TYPE_PREFERRED) {
 			*mode_info = mi;
@@ -388,8 +387,8 @@ drmModeModeInfo **mode_info) {
 	return drm->crtc_id != 0;
 }
 
-bool kms_setup(struct kms_context *ctx, struct display_dims *dims) {
-	*ctx = (struct kms_context){0};
+bool drm_init(struct drm_context *ctx, struct display_dims *dims) {
+	*ctx = (struct drm_context){0};
 	ctx->drm.fd = -1;
 
 	drmModeConnector *connector = NULL;
@@ -403,27 +402,27 @@ bool kms_setup(struct kms_context *ctx, struct display_dims *dims) {
 					// Phew
 					is_ok = true;
 				} else {
-					puts("Mode set failed");
+					fputs("Mode set failed\n", stderr);
 				}
 			} else {
-				fputs("EGL setup fail", stdout);
+				fputs("EGL setup fail", stderr);
 				const EGLint error = eglGetError();
 				if (error != EGL_SUCCESS) {
-					printf(": %#x", (unsigned)error);
+					fprintf(stderr, ": %#x", (unsigned)error);
 				}
-				putchar('\n');
+				fputc('\n', stderr);
 			}
 		} else {
-			puts("GBM setup fail");
+			fputs("GBM setup fail\n", stderr);
 		}
 	} else {
-		puts("DRM setup fail");
+		fputs("DRM setup fail\n", stderr);
 	}
 	drmModeFreeConnector(connector);
 
 	if (!is_ok) {
-		kms_terminate(ctx);
-		*ctx = (struct kms_context){0};
+		drm_terminate(ctx);
+		*ctx = (struct drm_context){0};
 		ctx->drm.fd = -1;
 	}
 	return is_ok;

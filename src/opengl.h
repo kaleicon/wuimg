@@ -15,6 +15,12 @@ enum gl_upload_status {
 	gl_upload_reused,
 };
 
+enum gl_color_mode {
+	gl_color_raw,
+	gl_color_palette,
+	gl_color_yuva,
+};
+
 enum gl_alpha {
 	gl_alpha_enabled = 0,
 	gl_alpha_opaque,
@@ -26,7 +32,7 @@ enum gl_alpha {
 struct gl_context {
 	struct gl_uni {
 		GLint matrix;
-		GLint use_pal;
+		GLint color_mode;
 		GLint checkers;
 	} uni;
 	GLuint pixel_unpack_buf;
@@ -36,7 +42,7 @@ struct gl_context {
 	struct gl_texture {
 		unsigned w, h;
 		unsigned char ch, bpp;
-		bool paletted;
+		enum gl_color_mode mode:8;
 		GLint alpha_swizzle;
 	} tex;
 	enum gl_alpha alpha:8;

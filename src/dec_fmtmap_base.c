@@ -1,10 +1,8 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
 #include "common.h"
-#include "wustr.h"
 #include "dec_fmtmap.h"
 
 /* The code output of dec_fmtmap_sort_quine.c goes here. */
@@ -60,28 +58,28 @@ static const struct file_ext * search_extension(const struct wustr name) {
 	return NULL;
 }
 
-enum format_id identify_image(FILE *ifp, const char *filename) {
+int fmtmap_identify_file(FILE *ifp, const char *filename) {
 	/* Some formats must be handled specially (i.e. RAW formats which are
 	 * actually TIFF), so we search by extension first.
-	 * Formats that should be identified by a magic sequence will return
-	 * fmt_unknown. */
+	 * Formats that are known but should be identified by their magic
+	 * sequence will return -1. */
 	const struct file_ext *ext = search_extension(wustr_str(filename));
-	if (ext && ext->id != fmt_unknown) {
+	if (ext && ext->id != -1) {
 		return ext->id;
 	}
 
 	const struct file_magic *magic = search_magic(ifp);
-	if (magic && magic->id != fmt_unknown) {
+	if (magic) {
 		return magic->id;
 	}
-	return fmt_unknown;
+	return -1;
 }
 
-bool known_extension(const struct wustr filename) {
+bool fmtmap_known_extension(const struct wustr filename) {
 	return (bool)search_extension(filename);
 }
 
-void print_map_data(void) {
+void fmtmap_print_data(void) {
 	printf("Known extensions: %zu\n", ARRAY_LEN(extension_map));
 	for (size_t i = 0; i < ARRAY_LEN(extension_map); ++i) {
 		fputs(extension_map[i].ext, stdout);

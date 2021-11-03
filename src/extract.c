@@ -69,7 +69,7 @@ static bool ok_case(struct extract_iter *iter, struct archive_entry *entry) {
 			|| archive_entry_size(entry)
 		);
 
-	if (reg_probably_nonempty && known_extension(name)) {
+	if (reg_probably_nonempty && fmtmap_known_extension(name)) {
 		errno = 0;
 		FILE *tmp = tmpfile();
 		if (!tmp) {

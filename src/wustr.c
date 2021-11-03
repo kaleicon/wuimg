@@ -59,3 +59,20 @@ bool wustr_memdup(struct wustr_mut *w, const char *str, const size_t len) {
 bool wustr_strdup(struct wustr_mut *w, const char *str) {
 	return wustr_memdup(w, str, strlen(str));
 }
+
+bool wustr_append(struct wustr_mut *w, const char *str) {
+	const size_t len = strlen(str);
+	const size_t total = len + w->len /* includes null */ + 1 /* newline */;
+	void *hold = realloc(w->str, total);
+	if (hold) {
+		w->str = hold;
+		size_t pos = w->len;
+		if (pos) {
+			w->str[pos] = '\n';
+			++pos;
+		}
+		memcpy(w->str + pos, str, len + 1);
+		w->len = total;
+	}
+	return (bool)hold;
+}

@@ -136,7 +136,6 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 		desc->r.ch = 1;
 		desc->r.bitdepth = depth;
 		if (depth == 16) {
-			desc->r.layout = pix_abgr;
 			desc->r.attr = pix_packing_1555;
 		}
 	}
