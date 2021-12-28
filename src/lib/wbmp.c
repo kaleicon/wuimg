@@ -20,27 +20,26 @@ static enum lib_fail read_uintvar_dim(FILE *ifp, size_t *value) {
 }
 
 enum lib_fail wbmp_open_file(struct raster_desc *desc, FILE *ifp) {
-	unsigned char buf[2];
-	if (fread(buf, 1, sizeof(buf), ifp)) {
-		if (!memchk(buf, 0, sizeof(buf))) {
-			*desc = (struct raster_desc) {
-				.ch = 1,
-				.bitdepth = 1,
-			};
-			enum lib_fail status = read_uintvar_dim(ifp, &desc->w);
-			if (status != lib_ok) {
-				return status;
-			}
-			status = read_uintvar_dim(ifp, &desc->h);
-			if (status != lib_ok) {
-				return status;
-			}
-			if (desc->w && desc->h) {
-				raster_normalize(desc);
-				return lib_ok;
-			}
+	unsigned char sig[2] = {0};
+	enum lib_fail status = lib_sigcmp(sig, sizeof(sig), ifp);
+	if (status == lib_ok) {
+		*desc = (struct raster_desc) {
+			.ch = 1,
+			.bitdepth = 1,
+		};
+
+		status = read_uintvar_dim(ifp, &desc->w);
+		if (status != lib_ok) {
+			return status;
 		}
-		return lib_invalid_header;
+		status = read_uintvar_dim(ifp, &desc->h);
+		if (status != lib_ok) {
+			return status;
+		}
+		if (!desc->w || !desc->h) {
+			return lib_invalid_header;
+		}
+		raster_normalize(desc);
 	}
-	return lib_unexpected_eof;
+	return status;
 }

@@ -129,19 +129,17 @@ enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 			realloc_sub_images(infile, infile->nr - 1);
 		} else {
 			img[i] = img[0];
-			img[i].palette = NULL;
+			img[i].u.palette = NULL;
 			img[i].id = strdup("stamp");
 			img[i].w = swidth;
 			img[i].h = sheight;
 
-			if (img[0].palette) {
-				img[i].palette = memdup(img[0].palette,
-					sizeof(*img[0].palette));
-				if (!img[i].palette) {
-					realloc_sub_images(infile,
-						infile->nr - 1);
+			if (img[0].u.palette) {
+				struct raster_pal *p = memdup(img[0].u.palette,
+					sizeof(*img->u.palette));
+				if (!raw_img_set_palette(img + i, p)) {
 					tga_cleanup(&desc);
-					return wu_ok;
+					return wu_alloc_error;
 				}
 			}
 		}

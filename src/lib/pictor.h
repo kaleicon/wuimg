@@ -35,6 +35,6 @@ unsigned char * pictor_decode(struct pictor_desc *desc);
 
 enum lib_fail pictor_read_header(struct pictor_desc *desc);
 
-enum lib_fail pictor_open_file(FILE *ifp, struct pictor_desc *desc);
+enum lib_fail pictor_open_file(struct pictor_desc *desc, FILE *ifp);
 
 #endif /* LIB_PICT */

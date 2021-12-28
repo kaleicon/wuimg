@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "../common.h"
 #include "lib.h"
@@ -19,8 +20,8 @@ const char * lib_fail_string(const enum lib_fail fail) {
 		return "Invalid format header";
 	case lib_unknown_format:
 		return "Unknown format variant";
-	case lib_unsupported_format:
-		return "Unsupported format variant";
+	case lib_unsupported_feature:
+		return "Unsupported format feature";
 	case lib_alloc_error:
 		return "Memory allocation error";
 	case lib_invalid_data:
@@ -69,8 +70,9 @@ const enum endianness end) {
 	}
 }
 
-void * lib_load_rast(FILE *ifp, const struct raster_desc *desc) {
-	return fread_alloc(ifp, raster_stride(desc), desc->h);
+size_t lib_load_rast(struct memory *mem, const struct raster_desc *desc,
+FILE *ifp) {
+	return fread_alloc(mem, raster_size(desc), ifp);
 }
 
 enum lib_fail lib_load_pal(FILE *ifp, struct raster_pal **palette,
@@ -101,4 +103,19 @@ const enum lib_pal pal_type, const size_t entries) {
 		return read == entries ? lib_ok : lib_unexpected_eof;
 	}
 	return lib_alloc_error;
+}
+
+enum lib_fail lib_sigcmp(const unsigned char *restrict sig, const size_t size,
+FILE *ifp) {
+	unsigned char buf[4];
+	for (size_t off = 0; off < size; off += sizeof(buf)) {
+		const size_t len = zumin(size - off, sizeof(buf));
+		if (!fread(buf, len, 1, ifp)) {
+			return lib_unexpected_eof;
+		}
+		if (memcmp(buf, sig + off, len)) {
+			return lib_invalid_signature;
+		}
+	}
+	return lib_ok;
 }

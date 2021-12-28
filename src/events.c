@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <ctype.h>
 #include <math.h>
 
@@ -7,25 +8,22 @@
 #include "events.h"
 #include "term.h"
 
-#define KEYSTART ' '
-#define KEYEND ('Z' + 1)
+void event_lift(struct wu_keymap *held_keys) {
+	memset(held_keys, 0, sizeof(*held_keys));
+}
 
-struct keymap {
-	bool shift;
-	unsigned char map[KEYEND - KEYSTART];
-};
-
-static struct keymap held_keys = {0};
+static unsigned char * get_map(struct wu_keymap *held_keys) {
+	return held_keys->map - WU_KEYSTART;
+}
 
 static bool apply_event(struct image_context *image,
-struct wu_event *event, const size_t code, const float msecs) {
+struct wu_event *event, const int code, const float msecs, const bool shift) {
 	const float MAX_ZOOM = 64.0f;
 	const float MIN_ZOOM = 1.0f / (MAX_ZOOM * 2);
 
 	const struct image_file *file = &image->file;
 	struct wu_state *state = &image->state;
 
-	const bool shift = held_keys.shift;
 	float new_zoom = 0;
 	int subcycle = 0;
 	switch (code) {
@@ -71,10 +69,10 @@ struct wu_event *event, const size_t code, const float msecs) {
 
 	// Cycling
 	case 'N': // Next
-		event->file.cycle += shift ? 10 : 1;
+		event->cycle += shift ? 10 : 1;
 		break;
 	case 'P': // Prev
-		event->file.cycle -= shift ? 10 : 1;
+		event->cycle -= shift ? 10 : 1;
 		break;
 	// Sub-cycling
 	case '.': // Next
@@ -161,22 +159,22 @@ struct wu_event *event, const size_t code, const float msecs) {
 		}
 		state->zoom = new_zoom;
 	} else if (subcycle) {
-		state->sub.cycle += subcycle;
+		state->cycle += subcycle;
 		event->image |= ev_subcycle;
 	}
 	return false;
 }
 
-void event_exec(struct image_context *image, struct wu_event *event,
-double secs) {
+double event_exec(struct wu_keymap *held_keys, struct image_context *image,
+struct wu_event *event, double secs) {
 	float msecs = (float)(secs * 1000);
 	const int inc = (int)msecs;
-	if (held_keys.shift) {
+	if (held_keys->shift) {
 		msecs *= 2;
 	}
 
-	unsigned char *map = held_keys.map - KEYSTART;
-	for (size_t key = KEYSTART; key < KEYEND; ++key) {
+	unsigned char *map = get_map(held_keys);
+	for (int key = WU_KEYSTART; key < WU_KEYEND; ++key) {
 		const unsigned char time = map[key];
 		switch (time) {
 		case 0:
@@ -192,17 +190,19 @@ double secs) {
 				continue;
 			}
 		}
-		if (apply_event(image, event, key, msecs)) {
+		if (apply_event(image, event, key, msecs, held_keys->shift)) {
 			map[key] = 0;
 		}
 	}
+	return secs;
 }
 
-void event_add(const enum key_action action, int code, const bool shift) {
-	held_keys.shift = shift;
+void event_add(struct wu_keymap *held_keys, const enum key_action action,
+int code, const bool shift) {
+	held_keys->shift = shift;
 	code = toupper(code);
-	if (code >= KEYSTART && code < KEYEND) {
-		unsigned char *map = held_keys.map - KEYSTART;
+	if (code >= WU_KEYSTART && code < WU_KEYEND) {
+		unsigned char *map = get_map(held_keys);
 		if (!map[code] || action == key_release) {
 			map[code] = action;
 		}

@@ -25,6 +25,6 @@ unsigned char * tim_decode(const struct tim_desc *desc);
 
 enum lib_fail tim_parse_header(struct tim_desc *desc);
 
-enum lib_fail tim_open_file(FILE *ifp, struct tim_desc *desc);
+enum lib_fail tim_open_file(struct tim_desc *desc, FILE *ifp);
 
 #endif /* LIB_TIM */

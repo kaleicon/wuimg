@@ -9,7 +9,7 @@
 
 enum lib_fail avs_open_file(struct raster_desc *desc, FILE *ifp) {
 	uint32_t buf[2];
-	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
+	if (fread(buf, sizeof(buf), 1, ifp)) {
 		*desc = (struct raster_desc) {
 			.w = endian32(buf[0], big_endian),
 			.h = endian32(buf[1], big_endian),

@@ -31,9 +31,9 @@ void *restrict data) {
 }
 
 static unsigned char * raw_load(FILE *ifp, const struct raster_desc *raster) {
-	void *data = lib_load_rast(ifp, raster);
-	if (data) {
-		return raw_process(raster, data);
+	struct memory mem;
+	if (lib_load_rast(&mem, raster, ifp)) {
+		return raw_process(raster, mem.data);
 	}
 	return NULL;
 }
@@ -42,7 +42,7 @@ unsigned char * tga_decode_stamp(const struct tga_desc *desc,
 size_t *restrict width, size_t *restrict height) {
 	fseek(desc->ifp, desc->meta->stamp_offset, SEEK_SET);
 	unsigned char dims[2];
-	if (fread(dims, 1, sizeof(dims), desc->ifp) != sizeof(dims)
+	if (!fread(dims, sizeof(dims), 1, desc->ifp)
 	|| dims[0] == 0 || dims[1] == 0) {
 		return NULL;
 	}
@@ -86,8 +86,7 @@ const unsigned char *restrict rle_limit, const size_t pixel_size) {
 
 	const ptrdiff_t diff = (output_limit - output);
 	if (diff > 0) {
-		printf("Missing %zd bytes\n", diff);
-//		color_set(output, rle - pixel_size, pixel_size, (size_t)diff);
+		printf("Missing %td bytes\n", diff);
 	}
 }
 
@@ -340,7 +339,7 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 		}
 		return lib_invalid_header;
 	default:
-		return lib_unsupported_format;
+		return lib_invalid_header;
 	}
 
 	if (!width || !height) {
@@ -383,6 +382,8 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 		desc->r.attr = pix_packing_1555;
 		break;
 	case 8:
+		desc->r.layout = pix_gray;
+		// fallthrough
 	case 24:
 	case 32:
 		desc->r.ch = depth / 8;
@@ -430,7 +431,7 @@ enum lib_fail tga_parse_header(struct tga_desc *desc) {
 	*/
 
 	uint8_t header[18];
-	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
+	if (!fread(header, sizeof(header), 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
@@ -448,9 +449,7 @@ enum lib_fail tga_parse_header(struct tga_desc *desc) {
 
 	if (desc->meta) {
 		desc->meta->id_len = header[0];
-		const size_t read = fread(desc->meta->id, 1,
-			desc->meta->id_len, desc->ifp);
-		if (read != desc->meta->id_len) {
+		if (!fread(desc->meta->id, desc->meta->id_len, 1, desc->ifp)) {
 			return lib_unexpected_eof;
 		}
 	} else {

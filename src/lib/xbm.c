@@ -10,7 +10,7 @@
 #include "xbm.h"
 
 struct xbm_define {
-	const struct wustr name;
+	const struct wuptr name;
 	unsigned int d;
 	bool found;
 };
@@ -119,21 +119,21 @@ const struct xbm_define *define) {
 		return false;
 	}
 
-	struct wustr word = text_get_word(tp);
-	if (!wustr_eq_str(word, "static")) {
+	struct wuptr word = text_get_word(tp);
+	if (!wuptr_eq_str(word, "static")) {
 		return false;
 	}
 
 	text_skip_space(tp);
 	word = text_get_word(tp);
-	if (wustr_eq_str(word, "unsigned")) {
+	if (wuptr_eq_str(word, "unsigned")) {
 		text_skip_space(tp);
 		word = text_get_word(tp);
 	}
 
-	if (wustr_eq_str(word, "char")) {
+	if (wuptr_eq_str(word, "char")) {
 		desc->type = xbm_x11;
-	} else if (wustr_eq_str(word, "short")) {
+	} else if (wuptr_eq_str(word, "short")) {
 		desc->type = xbm_x10;
 	} else {
 		return false;
@@ -141,7 +141,7 @@ const struct xbm_define *define) {
 
 	text_skip_space(tp);
 	word = text_get_word(tp);
-	if (wustr_suffix_str(word, "_bits[]")) {
+	if (wuptr_suffix_str(word, "_bits[]")) {
 		int c = text_next_nonspace(tp);
 		if (c == '=') {
 			c = text_next_nonspace(tp);
@@ -172,7 +172,7 @@ const struct xbm_define *define) {
 
 static bool match_num(struct text_parser *tp, struct xbm_define *define) {
 	text_skip_blank(tp);
-	const struct wustr word = text_get_word(tp);
+	const struct wuptr word = text_get_word(tp);
 	for (size_t i = 0; i < word.len; ++i) {
 		const unsigned char c = (unsigned char)word.str[i];
 		if (!isdigit(c)) {
@@ -190,8 +190,8 @@ static bool match_num(struct text_parser *tp, struct xbm_define *define) {
 
 static bool parse_define(struct xbm_desc *desc, struct text_parser *tp,
 struct xbm_define *define) {
-	struct wustr word = text_get_word(tp);
-	if (!isblank(text_next_char(tp)) || !wustr_eq_str(word, "define")) {
+	struct wuptr word = text_get_word(tp);
+	if (!isblank(text_next_char(tp)) || !wuptr_eq_str(word, "define")) {
 		return false;
 	}
 
@@ -203,7 +203,7 @@ struct xbm_define *define) {
 
 	bool ok = true; // Skip unknown definitions
 	for (size_t i = 0; i < 4; ++i) {
-		if (wustr_suffix(word, define[i].name)) {
+		if (wuptr_suffix(word, define[i].name)) {
 			if (define[i].found) {
 				return false;
 			}
@@ -268,16 +268,16 @@ static bool skip_comment(struct xbm_desc *desc, struct text_parser *tp) {
 
 enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct mmap_info *mem) {
 	struct text_parser *tp = &desc->tp;
-	text_parser_mem(tp, mem->len, mem->data);
+	*tp = text_parser_mem(mem->len, mem->data);
 
 	desc->comment.len = 0;
 	desc->name.len = 0;
 
 	struct xbm_define define[] = {
-		{.name = wustr_str("_width")},
-		{.name = wustr_str("_height")},
-		{.name = wustr_str("_x_hot")},
-		{.name = wustr_str("_y_hot")},
+		{.name = wuptr_str("_width")},
+		{.name = wuptr_str("_height")},
+		{.name = wuptr_str("_x_hot")},
+		{.name = wuptr_str("_y_hot")},
 	};
 
 	bool ok = false;

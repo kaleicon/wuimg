@@ -54,6 +54,9 @@ void tree_print(const struct wu_tree *node, size_t max_x, size_t max_y);
 bool tree_graft_measured_leaf(struct wu_tree *par, const char *name,
 char *value, size_t len);
 
+bool tree_graft_unsafe_leaf(struct wu_tree *par, const char *name,
+void *data, size_t len);
+
 bool tree_graft_leaf(struct wu_tree *par, const char *name, char *value);
 
 bool tree_sprout_unsafe_leaf(struct wu_tree *par, const char *name,

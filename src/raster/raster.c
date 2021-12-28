@@ -8,12 +8,19 @@ void raster_free(struct raster_desc *desc) {
 }
 
 size_t raster_stride(const struct raster_desc *desc) {
-	return scanline_length(desc->w * desc->ch, desc->bitdepth,
-		desc->alignment);
+	size_t bd = desc->bitdepth;
+	if (!desc->planar) {
+		bd *= desc->ch;
+	}
+	return scanline_length(desc->w, bd, desc->alignment);
 }
 
 size_t raster_size(const struct raster_desc *desc) {
-	return raster_stride(desc) * desc->h;
+	size_t size = raster_stride(desc) * desc->h;
+	if (desc->planar) {
+		size *= desc->ch;
+	}
+	return size;
 }
 
 const char * raster_geom_verify(const struct raster_pal *palette,
@@ -90,6 +97,10 @@ void raster_normalize(struct raster_desc *desc) {
 		desc->ch = 1;
 		desc->bitdepth = 16;
 		break;
+	}
+
+	if (desc->ch == 1) {
+		desc->planar = false;
 	}
 
 	if (!desc->alignment) {

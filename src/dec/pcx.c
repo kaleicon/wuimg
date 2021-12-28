@@ -114,9 +114,9 @@ enum wu_error dcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	size_t decoded = 0;
 	for (size_t i = 0; i < desc->nr; ++i) {
 		fseek(infile->ifp, (long)desc->off[i], SEEK_SET);
-		const enum wu_error status = common_pcx(infile->ifp,
+		const enum wu_error res = common_pcx(infile->ifp,
 			img + decoded, NULL, wuconf, (long)desc->len[i]);
-		if (status == wu_ok) {
+		if (res == wu_ok) {
 			++decoded;
 		}
 	}

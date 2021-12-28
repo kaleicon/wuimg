@@ -16,10 +16,7 @@ static const char * get_name(const struct wu_tree *node) {
 static bool copy_name(struct wu_tree *node, const char *name) {
 	node->name_len = strlen(name);
 	if (node->name_len > sizeof(node->name.array)) {
-		node->name.string = malloc(node->name_len);
-		if (node->name.string) {
-			memcpy(node->name.string, name, node->name_len);
-		}
+		node->name.string = memdup(name, node->name_len);
 		return (bool)node->name.string;
 	}
 	memcpy(node->name.array, name, node->name_len);
@@ -106,10 +103,10 @@ const size_t max_y, const size_t ident, FILE *out) {
 		fwrite(node->pick.array, 1, node->len, out);
 		break;
 	case wu_leaf_unsigned:
-		fprintf(out, ": %ju", node->pick.u);
+		fprintf(out, ": %lu", node->pick.u);
 		break;
 	case wu_leaf_signed:
-		fprintf(out, ": %jd", node->pick.d);
+		fprintf(out, ": %ld", node->pick.d);
 		break;
 	case wu_leaf_double:
 		fprintf(out, ": %g", node->pick.g);
@@ -162,6 +159,16 @@ char *restrict value, const size_t len) {
 	return true;
 }
 
+bool tree_graft_unsafe_leaf(struct wu_tree *par, const char *name,
+void *restrict data, size_t len) {
+	char *val = term_format_unsafe_or_same(data, len, &len);
+	if (val) {
+		return tree_graft_measured_leaf(par, name, val, len);
+	}
+	free(data);
+	return false;
+}
+
 bool tree_graft_leaf(struct wu_tree *par, const char *restrict name,
 char *restrict value) {
 	return tree_graft_measured_leaf(par, name, value, strlen(value));
@@ -169,7 +176,7 @@ char *restrict value) {
 
 bool tree_sprout_unsafe_leaf(struct wu_tree *par, const char *name,
 const void *restrict data, size_t len) {
-	char *val = term_format_unsafe_data(data, len, &len);
+	char *val = term_format_unsafe(data, len, &len);
 	if (val) {
 		return tree_graft_measured_leaf(par, name, val, len);
 	}
@@ -180,9 +187,8 @@ bool tree_sprout_measured_leaf(struct wu_tree *par, const char *restrict name,
 const char *restrict value, size_t len) {
 	len = term_printable_len(value, len);
 	if (len > sizeof(par->pick.array)) {
-		char *copy = malloc(len);
+		char *copy = memdup(value, len);
 		if (copy) {
-			memcpy(copy, value, len);
 			return tree_graft_measured_leaf(par, name, copy, len);
 		}
 	} else {

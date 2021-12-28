@@ -367,17 +367,13 @@ enum lib_fail pictor_read_header(struct pictor_desc *desc) {
 	return lib_ok;
 }
 
-enum lib_fail pictor_open_file(FILE *ifp, struct pictor_desc *desc) {
+enum lib_fail pictor_open_file(struct pictor_desc *desc, FILE *ifp) {
 	const uint8_t magic[] = {0x34, 0x12};
-	uint8_t id[sizeof(magic)];
-	if (fread(id, 1, sizeof(id), ifp) == sizeof(id)) {
-		if (!memcmp(id, magic, sizeof(id))) {
-			desc->ifp = ifp;
-			desc->r.palette = NULL;
-			desc->pal_enabled = false;
-			return lib_ok;
-		}
-		return lib_unknown_format;
+	const enum lib_fail st = lib_sigcmp(magic, sizeof(magic), ifp);
+	if (st == lib_ok) {
+		desc->ifp = ifp;
+		desc->r.palette = NULL;
+		desc->pal_enabled = false;
 	}
-	return lib_unexpected_eof;
+	return st;
 }

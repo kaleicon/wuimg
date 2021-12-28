@@ -32,8 +32,8 @@ enum wu_error jbig_dec(struct image_file *infile, const struct wu_conf *wuconf) 
 
 	struct jbg_dec_state state;
 	jbg_dec_init(&state);
-	/* As noted in the docs, this function will not limit the output size
-	 * if there isn't a smaller resolution layer. */
+	/* As noted in the docs, this function will not limit the output
+	 * size if there isn't a smaller resolution layer. */
 	jbg_dec_maxsize(&state, wuconf->max_img_size, wuconf->max_img_size);
 
 	int status = JBG_EAGAIN;

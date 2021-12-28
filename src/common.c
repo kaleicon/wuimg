@@ -305,37 +305,33 @@ void * memrchr(const void *s, const int c, size_t n) {
 }
 #endif
 
-bool grow_buffer(void *restrict ptr, size_t *alloc, const size_t pos,
-const size_t elem_size) {
-	if (pos >= *alloc) {
-		const size_t new_len = zumax(pos, *alloc + *alloc / 4) + 1;
-		void **var_loc = ptr;
-		void *hold = realloc(*var_loc, elem_size * new_len);
-		if (!hold) {
-			return false;
-		}
-		*var_loc = hold;
-		*alloc = new_len;
+static size_t fread_alloc_common(struct memory *mem, const size_t len,
+FILE *ifp) {
+	mem->len = len;
+	mem->data = malloc(len);
+	if (mem->data) {
+		return fread(mem->data, 1, len, ifp);
 	}
-	return true;
+	return 0;
 }
 
-void skip_line(FILE *ifp) {
-	int c;
-	do {
-		c = getc(ifp);
-	} while (c != '\n' && c != EOF);
+size_t fread_alloc(struct memory *mem, const size_t len, FILE *ifp) {
+	const size_t read = fread_alloc_common(mem, len, ifp);
+	if (!read) {
+		free(mem->data);
+		mem->data = NULL;
+	}
+	return read;
 }
 
-void * fread_alloc(FILE *ifp, size_t size, size_t nmemb) {
-	void *data = NULL;
-	if (SIZE_MAX / size > nmemb) {
-		data = malloc(size * nmemb);
-		if (data) {
-			fread(data, size, nmemb, ifp);
-		}
+size_t fread_alloc_strict(struct memory *mem, const size_t len, FILE *ifp) {
+	const size_t read = fread_alloc_common(mem, len, ifp);
+	if (read != len) {
+		free(mem->data);
+		mem->data = NULL;
+		return 0;
 	}
-	return data;
+	return read;
 }
 
 long file_get_remaining(FILE *ifp) {
@@ -369,10 +365,6 @@ bool mmap_file_fd(struct mmap_info *mm, const int fd) {
 	return mmap_common(mm, fd, lseek(fd, 0, SEEK_END));
 }
 
-char * strerror_dup(const int error) {
-	return strdup(strerror(error));
-}
-
 char * id_template(const char *prefix, const size_t num) {
 	const size_t len = strlen(prefix);
 	size_t numlen = 1;
@@ -392,3 +384,5 @@ void fatal_bug(const char *name, const char *msg) {
 	fflush(stdout);
 	abort();
 }
+
+void null_function() {}

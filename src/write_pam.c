@@ -61,7 +61,7 @@ const enum unpack_op op, const bool swizzle) {
 	uint8_t outch = img->channels;
 	uint8_t outdepth = img->bitdepth;
 	size_t buflen = 0;
-	if (img->palette) {
+	if (img->u.palette) {
 		outdepth = 8;
 		outch = 4;
 		buflen = img->w * outch;
@@ -87,9 +87,9 @@ const enum unpack_op op, const bool swizzle) {
 	write_pam_header(img->w, img->h, outch, outdepth, ofp);
 	for (size_t y = 0; y < img->h; ++y) {
 		unsigned char *src = img->data + instride*y;
-		if (img->palette) {
-			raster_pal_expand(linebuf, src, img->palette, img->w, 1,
-				1, 4, img->bitdepth);
+		if (img->u.palette) {
+			raster_pal_expand(linebuf, src, img->u.palette, img->w,
+				1, 1, 4, img->bitdepth);
 			src = linebuf;
 		} else if (op) {
 			unpack_strip(linebuf, src, img->w * img->channels, 1, 1,
@@ -131,7 +131,7 @@ const bool raw_output) {
 	enum unpack_op op = op_noop;
 	bool swizzle = false;
 	if (!raw_output) {
-		if (img->palette) {
+		if (img->mode == image_mode_palette) {
 			op = op_unpack;
 		} else {
 			switch (img->attr) {
@@ -241,6 +241,9 @@ const struct write_args *args) {
 	for (size_t i = 0; i < infile->nr; ++i) {
 		if (img[i].attr == pix_float) {
 			fputs("Error: Float output unsupported.\n", stderr);
+			continue;
+		} else if (img[i].mode == image_mode_planar) {
+			fputs("Error: Planar output unsupported.\n", stderr);
 			continue;
 		}
 

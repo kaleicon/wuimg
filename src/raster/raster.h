@@ -10,6 +10,7 @@ struct raster_desc {
 	uint8_t ch, bitdepth, alignment;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
+	bool planar;
 };
 
 const char * raster_geom_verify(const struct raster_pal *palette,

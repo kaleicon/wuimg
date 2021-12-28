@@ -218,8 +218,13 @@ const enum background_source src, const size_t maxres) {
 		},
 	};
 
-	if (img->palette) {
-		return palette_mostpop(out, &frame, img->data, img->palette);
+	switch (img->mode) {
+	case image_mode_palette:
+		return palette_mostpop(out, &frame, img->data, img->u.palette);
+	case image_mode_planar:
+		return 0;
+	case image_mode_raw:
+		break;
 	}
 
 	switch (src) {

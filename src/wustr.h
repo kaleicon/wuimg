@@ -4,37 +4,50 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-struct wustr_mut {
-	size_t len;
-	unsigned char *str;
+struct wugrow {
+	size_t elem_size;
+	size_t alloc;
+	size_t pos;
 };
 
 struct wustr {
 	size_t len;
+	unsigned char *str;
+};
+
+struct wuptr {
+	size_t len;
 	const unsigned char *str;
 };
 
-struct wustr wustr_const(const struct wustr_mut *orig);
+bool wugrow_reserve(void *restrict ptr_ptr, struct wugrow *grow, size_t extra);
 
-struct wustr wustr_str(const char *str);
+bool wugrow_recheck(void *restrict ptr_ptr, struct wugrow *grow);
 
-bool wustr_suffix(const struct wustr w1, const struct wustr w2);
-
-bool wustr_suffix_str(const struct wustr w1, const char *s2);
-
-bool wustr_eq(const struct wustr w1, const struct wustr w2);
-
-bool wustr_eq_str(const struct wustr w1, const char *s2);
+struct wugrow wugrow_init(size_t elem_size);
 
 
-void wustr_free(struct wustr_mut *w);
+struct wuptr wuptr_mem(const void *str, size_t len);
 
-bool wustr_malloc(struct wustr_mut *w, size_t len);
+struct wuptr wuptr_str(const char *str);
 
-bool wustr_memdup(struct wustr_mut *w, const char *str, size_t len);
+bool wuptr_suffix(struct wuptr w1, struct wuptr w2);
 
-bool wustr_strdup(struct wustr_mut *w, const char *str);
+bool wuptr_suffix_str(struct wuptr w1, const char *s2);
 
-bool wustr_append(struct wustr_mut *w, const char *str);
+bool wuptr_eq(struct wuptr w1, struct wuptr w2);
+
+bool wuptr_eq_str(struct wuptr w1, const char *s2);
+
+
+void wustr_free(struct wustr *w);
+
+bool wustr_realloc(struct wustr *w, size_t len);
+
+bool wustr_malloc(struct wustr *w, size_t len);
+
+bool wustr_memdup(struct wustr *w, const char *str, size_t len);
+
+bool wustr_append_line(struct wustr *w, const char *str);
 
 #endif /* WU_STR */

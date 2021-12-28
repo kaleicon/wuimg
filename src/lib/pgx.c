@@ -111,7 +111,7 @@ enum lib_fail pgx_read_header(struct pgx_desc *desc) {
 	fseek(desc->ifp, 4, SEEK_CUR);
 
 	uint8_t buf[16];
-	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
+	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
@@ -133,13 +133,9 @@ enum lib_fail pgx_read_header(struct pgx_desc *desc) {
 
 enum lib_fail pgx_open_file(struct pgx_desc *desc, FILE *ifp) {
 	const unsigned char sig[] = {'P', 'G', 'X', 0};
-	unsigned char buf[sizeof(sig)];
-	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
-		if (!memcmp(buf, sig, sizeof(buf))) {
-			desc->ifp = ifp;
-			return lib_ok;
-		}
-		return lib_invalid_signature;
+	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
+	if (st == lib_ok) {
+		desc->ifp = ifp;
 	}
-	return lib_unexpected_eof;
+	return st;
 }

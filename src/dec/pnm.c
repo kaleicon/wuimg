@@ -30,6 +30,8 @@ const struct wu_conf *wuconf) {
 		return wu_exceeds_size_limit;
 	}
 
+	tree_sprout_leaf(&infile->metadata, "Type", pnm_type_str(desc.type));
+
 	struct raw_img *img = alloc_sub_images(infile, zumin(desc.nr, UCHAR_MAX));
 	if (!img) {
 		return wu_alloc_error;

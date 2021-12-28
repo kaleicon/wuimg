@@ -6,15 +6,42 @@
 #include "wustr.h"
 #include "common.h"
 
-struct wustr wustr_const(const struct wustr_mut *orig) {
-	return (struct wustr){.len = orig->len, .str = orig->str};
+bool wugrow_reserve(void *restrict ptr_ptr, struct wugrow *grow, size_t extra) {
+	const size_t needed = grow->pos + extra;
+	if (needed >= grow->alloc) {
+		const size_t new_len = zumax(needed,
+			grow->alloc + grow->alloc / 4) + 16;
+		void **ptr = ptr_ptr;
+		void *hold = realloc(*ptr, grow->elem_size * new_len);
+		if (!hold) {
+			return false;
+		}
+		*ptr = hold;
+		grow->alloc = new_len;
+	}
+	return true;
 }
 
-struct wustr wustr_str(const char *str) {
-	return (struct wustr){.len = strlen(str), .str = (unsigned char *)str};
+bool wugrow_recheck(void *restrict ptr_ptr, struct wugrow *grow) {
+	return wugrow_reserve(ptr_ptr, grow, 0);
 }
 
-bool wustr_suffix(const struct wustr w1, const struct wustr w2) {
+struct wugrow wugrow_init(const size_t elem_size) {
+	return (struct wugrow) {
+		.elem_size = elem_size,
+	};
+}
+
+
+struct wuptr wuptr_mem(const void *str, const size_t len) {
+	return (struct wuptr){.len = len, .str = str};
+}
+
+struct wuptr wuptr_str(const char *str) {
+	return wuptr_mem(str, strlen(str));
+}
+
+bool wuptr_suffix(const struct wuptr w1, const struct wuptr w2) {
 	if (w1.len >= w2.len) {
 		const size_t diff = w1.len - w2.len;
 		return !memcmp(w1.str + diff, w2.str, w2.len);
@@ -22,57 +49,60 @@ bool wustr_suffix(const struct wustr w1, const struct wustr w2) {
 	return false;
 }
 
-bool wustr_suffix_str(const struct wustr w1, const char *s2) {
-	return wustr_suffix(w1, wustr_str(s2));
+bool wuptr_suffix_str(const struct wuptr w1, const char *s2) {
+	return wuptr_suffix(w1, wuptr_str(s2));
 }
 
-bool wustr_eq(const struct wustr w1, const struct wustr w2) {
+bool wuptr_eq(const struct wuptr w1, const struct wuptr w2) {
 	if (w1.len == w2.len) {
 		return !memcmp(w1.str, w2.str, w1.len);
 	}
 	return false;
 }
 
-bool wustr_eq_str(const struct wustr w1, const char *s2) {
-	return wustr_eq(w1, wustr_str(s2));
+bool wuptr_eq_str(const struct wuptr w1, const char *s2) {
+	return !strncmp((char *)w1.str, s2, w1.len);
 }
 
 
-void wustr_free(struct wustr_mut *w) {
+void wustr_free(struct wustr *w) {
 	free(w->str);
 }
 
-bool wustr_malloc(struct wustr_mut *w, const size_t len) {
+bool wustr_realloc(struct wustr *w, const size_t len) {
+	void *hold = realloc(w->str, len + 1);
+	if (hold) {
+		w->len = len;
+		w->str = hold;
+	}
+	return (bool)hold;
+}
+
+bool wustr_malloc(struct wustr *w, const size_t len) {
 	w->len = len;
 	w->str = malloc(len + 1);
 	return (bool)w->str;
 }
 
-bool wustr_memdup(struct wustr_mut *w, const char *str, const size_t len) {
-	if (wustr_malloc(w, len)) {
+bool wustr_memdup(struct wustr *w, const char *str, const size_t len) {
+	w->str = malloc(len + 1);
+	if (w->str) {
+		w->len = len;
 		memcpy(w->str, str, len);
 		w->str[len] = 0;
 	}
 	return (bool)w->str;
 }
 
-bool wustr_strdup(struct wustr_mut *w, const char *str) {
-	return wustr_memdup(w, str, strlen(str));
-}
-
-bool wustr_append(struct wustr_mut *w, const char *str) {
+bool wustr_append_line(struct wustr *w, const char *str) {
 	const size_t len = strlen(str);
-	const size_t total = len + w->len /* includes null */ + 1 /* newline */;
-	void *hold = realloc(w->str, total);
-	if (hold) {
-		w->str = hold;
-		size_t pos = w->len;
-		if (pos) {
-			w->str[pos] = '\n';
-			++pos;
-		}
-		memcpy(w->str + pos, str, len + 1);
-		w->len = total;
+	const size_t oldlen = w->len;
+	const size_t newlen = len + oldlen + 1 /* newline */;
+	if (wustr_realloc(w, newlen)) {
+		memcpy(w->str + oldlen, str, len);
+		w->str[newlen-1] = '\n';
+		w->str[newlen] = 0;
+		return true;
 	}
-	return (bool)hold;
+	return false;
 }

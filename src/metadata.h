@@ -9,7 +9,7 @@ enum metadata_type {
 	iptc_metadata,
 };
 
-void standard_metadata(enum metadata_type type, const void *metadata,
+bool standard_metadata(enum metadata_type type, const void *metadata,
 size_t len, struct wu_tree *tree);
 
 #endif /* WU_METADATA */

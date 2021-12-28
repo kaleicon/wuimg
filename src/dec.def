@@ -64,6 +64,11 @@ WUDEC(wbmp, NULL)
 WUDEC(xbm, NULL)
 #endif
 
+#ifdef WU_ENABLE_XCURSOR
+WUDEC(xcursor, NULL)
+#endif
+
+
 #ifdef WU_ENABLE_FLIF
 WUDEC(flif, NULL)
 #endif

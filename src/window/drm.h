@@ -5,9 +5,13 @@
 #include <libdrm/drm_mode.h>
 #include <xf86drmMode.h>
 
-#include "common.h"
+#include "../common.h"
+#include "base.h"
+#include "egl.h"
 
 struct drm_context {
+	struct window_public *pub;
+
 	struct drm {
 		drmModeCrtc *crtc_restore;
 		uint32_t connector_id;
@@ -22,16 +26,13 @@ struct drm_context {
 		struct gbm_bo *bo;
 	} gbm;
 
-	struct egl {
-		EGLDisplay display;
-		EGLSurface surface;
-	} egl;
+	struct egl egl;
 };
 
 void drm_terminate(struct drm_context *ctx);
 
 void drm_swap_buffers(struct drm_context *ctx);
 
-bool drm_init(struct drm_context *ctx, struct display_dims *dims);
+const char * drm_init(struct drm_context *ctx, struct window_public *pub);
 
 #endif /* DRM_BACKEND */

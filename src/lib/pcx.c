@@ -376,8 +376,7 @@ long file_len) {
 	file_len -= 128;
 	if (file_len > 0) {
 		uint8_t sig[3];
-		const size_t read = fread(sig, 1, sizeof(sig), ifp);
-		if (read == sizeof(sig)) {
+		if (fread(sig, sizeof(sig), 1, ifp)) {
 			if (sig[0] == 0x0a && sig[2] == 1) {
 				switch (sig[1]) {
 				case pcx_ver25:
@@ -434,14 +433,6 @@ enum lib_fail dcx_open_file(FILE *ifp) {
 		4       DWORD   PageTable[]; // 0 terminated, max 1024;
 	*/
 
-	const uint8_t dcx_magic[4] = {0xb1, 0x68, 0xde, 0x3a};
-	uint8_t sig[4];
-	const size_t read = fread(sig, 1, sizeof(sig), ifp);
-	if (read == sizeof(sig)) {
-		if (!memcmp(dcx_magic, sig, sizeof(sig))) {
-			return lib_ok;
-		}
-		return lib_unknown_format;
-	}
-	return lib_unexpected_eof;
+	const uint8_t sig[] = {0xb1, 0x68, 0xde, 0x3a};
+	return lib_sigcmp(sig, sizeof(sig), ifp);
 }

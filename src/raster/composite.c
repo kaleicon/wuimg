@@ -88,7 +88,7 @@ const unsigned char *restrict src, const struct anim_frame *frame) {
 
 void composite_frame_overwrite(struct raw_img *img,
 const unsigned char *restrict src, const struct anim_frame *frame) {
-	const size_t ch = img->palette ? 1 : img->channels;
+	const size_t ch = img->channels;
 
 	const size_t src_width = frame->w * ch;
 	size_t dst_pos = (frame->y * img->w + frame->x) * ch;
@@ -142,7 +142,7 @@ const size_t size, const size_t nmemb) {
 
 void composite_clear(struct raw_img *img, const struct anim_frame *frame,
 const int c) {
-	const size_t ch = img->palette ? 1 : img->channels;
+	const size_t ch = img->channels;
 	unsigned char *pos = img->data
 		+ ((frame->y * img->w + frame->x) * ch);
 
@@ -154,7 +154,7 @@ const int c) {
 
 void copy_unaffected(struct raw_img *img, const unsigned char *restrict prev,
 const struct anim_frame *frame) {
-	const size_t ch = img->palette ? 1 : img->channels;
+	const size_t ch = img->channels;
 
 	size_t offset = (frame->y * img->w + frame->x) * ch;
 	const size_t copy_stride = (img->w - frame->w) * ch;

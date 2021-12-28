@@ -13,11 +13,12 @@ struct term_restore {
 
 size_t term_printable_len(const char *str, size_t len);
 
-char * term_format_unsafe_data(const void *restrict data, size_t len,
+char * term_format_unsafe(const void *restrict data, size_t len, size_t *outlen);
+
+char * term_format_unsafe_or_same(void *restrict data, size_t len,
 size_t *outlen);
 
-void term_print_unsafe_data(const char *name, const void *restrict data,
-size_t len);
+void term_print_unsafe(const char *name, const void *restrict data, size_t len);
 
 size_t term_event_read(unsigned char *output, size_t len);
 

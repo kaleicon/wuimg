@@ -38,7 +38,7 @@ static const struct file_magic * search_magic(FILE *ifp) {
 	return NULL;
 }
 
-static const struct file_ext * search_extension(const struct wustr name) {
+static const struct file_ext * search_extension(const struct wuptr name) {
 	const size_t max = zumin(name.len, MAX_EXT_LEN + 1 /* dot */);
 	const unsigned char *end = name.str + name.len;
 	const unsigned char *ext = memrchr(end - max, '.', max);
@@ -63,7 +63,7 @@ int fmtmap_identify_file(FILE *ifp, const char *filename) {
 	 * actually TIFF), so we search by extension first.
 	 * Formats that are known but should be identified by their magic
 	 * sequence will return -1. */
-	const struct file_ext *ext = search_extension(wustr_str(filename));
+	const struct file_ext *ext = search_extension(wuptr_str(filename));
 	if (ext && ext->id != -1) {
 		return ext->id;
 	}
@@ -75,7 +75,7 @@ int fmtmap_identify_file(FILE *ifp, const char *filename) {
 	return -1;
 }
 
-bool fmtmap_known_extension(const struct wustr filename) {
+bool fmtmap_known_extension(const struct wuptr filename) {
 	return (bool)search_extension(filename);
 }
 

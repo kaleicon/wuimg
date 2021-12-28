@@ -26,11 +26,12 @@ static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 }
 
 unsigned char * tim_decode(const struct tim_desc *desc) {
-	void *out = lib_load_rast(desc->ifp, &desc->r);
-	if (out && desc->r.attr == pix_packing_1555) {
-		special_transparency_process(out, raster_size(&desc->r)/2);
+	struct memory mem;
+	const size_t read = lib_load_rast(&mem, &desc->r, desc->ifp);
+	if (read/2 && desc->r.attr == pix_packing_1555) {
+		special_transparency_process(mem.data, read/2);
 	}
-	return out;
+	return mem.data;
 }
 
 static enum lib_fail read_cluts(struct tim_desc *desc,
@@ -114,7 +115,7 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 	 */
 
 	unsigned char header[16];
-	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
+	if (!fread(header, sizeof(header), 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
@@ -151,7 +152,7 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 			return status;
 		}
 		const size_t image_header = sizeof(header) - 4;
-		if (fread(header + 4, 1, image_header, desc->ifp) != image_header) {
+		if (!fread(header + 4, image_header, 1, desc->ifp)) {
 			return lib_unexpected_eof;
 		}
 	}
@@ -167,18 +168,12 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 	return lib_ok;
 }
 
-enum lib_fail tim_open_file(FILE *ifp, struct tim_desc *desc) {
-	const unsigned char id[] = {0x10, 0, 0, 0};
-	unsigned char buf[sizeof(id)];
-	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
-		if (!memcmp(id, buf, sizeof(id))) {
-			desc->ifp = ifp;
-			desc->clut.data = NULL;
-			desc->clut.nb = 0;
-			desc->r = (struct raster_desc){0};
-			return lib_ok;
-		}
-		return lib_invalid_signature;
+enum lib_fail tim_open_file(struct tim_desc *desc, FILE *ifp) {
+	const unsigned char sig[] = {0x10, 0, 0, 0};
+	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
+	if (st == lib_ok) {
+		memset(desc, 0, sizeof(*desc));
+		desc->ifp = ifp;
 	}
-	return lib_unexpected_eof;
+	return st;
 }

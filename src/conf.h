@@ -35,7 +35,7 @@ struct wu_conf {
 	bool partial_decode:1; /* Decode at the smallest available resolution
 		that's bigger than the window when the format allows so. This
 		speeds up the time to first display and can make flipping
-		through big images actually bearable. A full decode is
+		through big images more bearable. A full decode is
 		triggered when zooming in.
 		  As an aside, this technique is used unconditionally when the
 		image dimensions would exceed the maximum image size.

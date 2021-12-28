@@ -45,7 +45,7 @@ const char * wu_error_message(const enum wu_error err) {
 
 static void raw_img_free(struct raw_img *img) {
 	free(img->data);
-	free(img->palette);
+	free(img->u.palette);
 	free(img->id);
 }
 
@@ -56,29 +56,20 @@ const size_t end) {
 	}
 }
 
-void raw_img_yuva_info(const struct raw_img *img, struct yuva_info *info) {
-	const size_t align = img->alignment ? img->alignment : 1;
-
-	info->ya.w = img->w;
-	info->ya.h = img->h;
-	info->ya.stride = scanline_length(img->w, img->bitdepth, align);
-	info->ya.size = info->ya.stride * info->ya.h;
-
-	const unsigned horz = (img->subsamp >> 2) + 1;
-	const unsigned vert = (img->subsamp & 0x3) + 1;
-
-	info->uv.w = (horz == 1) ? img->w : (img->w+1) / horz;
-	info->uv.h = (vert == 1) ? img->h : (img->h+1) / vert;
-	info->uv.stride = scanline_length(info->uv.w, img->bitdepth, align);
-	info->uv.size = info->uv.stride * info->uv.h;
-
-	// [0] = Y, [1] = U, [2] = V, [3] = Alpha
-	info->yuva[0] = img->data;
-	info->yuva[1] = info->yuva[0] + info->ya.size;
-	info->yuva[2] = info->yuva[1] + info->uv.size;
-	info->yuva[3] = (img->channels > 3)
-		? info->yuva[2] + info->uv.size
-		: NULL;
+int raw_img_geom_hash(const struct raw_img *img) {
+	int id = img->bitdepth / 2;
+	id = (id << 2) | (img->channels - 1);
+	id = (id << 3) | img->attr;
+	id = (id << 2) | img->mode;
+	if (img->mode == image_mode_planar) {
+		struct image_planes *planes = img->u.planes;
+		for (size_t i = 0; i < ARRAY_LEN(planes->p); ++i) {
+			int x = imax(0, planes->p[i].x.subsamp - 1);
+			int y = imax(0, planes->p[i].y.subsamp - 1);
+			id = (id << 4) | (x << 2) | y;
+		}
+	}
+	return (id << 1) | 1; // Ensure non-zero
 }
 
 size_t raw_img_stride(const struct raw_img *img) {
@@ -100,6 +91,96 @@ size_t raw_img_addbuf(struct raw_img *img) {
 		return stride;
 	}
 	return 0;
+}
+
+static size_t subsamp_dim(const size_t dim, const uint8_t subsamp) {
+	if (subsamp > 1) {
+		return (dim + 1) / subsamp;
+	}
+	return dim;
+}
+
+static size_t calc_plane_size(const struct raw_img *img,
+struct plane_info *plane) {
+	plane->w = subsamp_dim(img->w, plane->x.subsamp);
+	plane->h = subsamp_dim(img->h, plane->y.subsamp);
+	plane->stride = scanline_length(plane->w, img->bitdepth, img->alignment);
+	plane->size = scanline_length(plane->h, 8, img->u.planes->v_pad)
+		* plane->stride;
+	return plane->size;
+}
+
+void raw_img_plane_resolve(struct raw_img *img) {
+	size_t total = 0;
+	for (int i = 0; i < img->channels; ++i) {
+		struct plane_info *p = img->u.planes->p + i;
+		p->ptr = img->data + total;
+		total += calc_plane_size(img, p);
+	}
+}
+
+bool raw_img_plane_alloc(struct raw_img *img) {
+	size_t offsets[4];
+	size_t total = 0;
+	struct plane_info *p = img->u.planes->p;
+	for (int i = 0; i < img->channels; ++i) {
+		offsets[i] = total; // Start with 0
+		total += calc_plane_size(img, p + i);
+	}
+
+	img->data = malloc(total);
+	if (img->data) {
+		for (int i = 0; i < img->channels; ++i) {
+			p[i].ptr = img->data + offsets[i];
+		}
+	}
+	return (bool)img->data;
+}
+
+void raw_img_plane_subsamp(struct raw_img *img, const enum pix_subsampling s) {
+	const uint8_t horz = (uint8_t)((s >> 2) + 1);
+	const uint8_t vert = (uint8_t)((s & 0x3) + 1);
+
+	struct plane_info *p = img->u.planes->p;
+	p[1].x.subsamp = horz;
+	p[1].y.subsamp = vert;
+	p[2].x.subsamp = horz;
+	p[2].y.subsamp = vert;
+}
+
+static void set_img_mode(struct raw_img *img, const enum image_mode mode) {
+	if (img->mode) {
+		fatal_bug("Bad image mode", "Image mode had been set previously");
+	}
+	img->mode = mode;
+}
+
+struct image_planes * raw_img_plane_init(struct raw_img *img) {
+	img->u.planes = calloc(sizeof(*img->u.planes), 1);
+	if (img->u.planes) {
+		set_img_mode(img, image_mode_planar);
+		if (!img->alignment) {
+			img->alignment = 1;
+		}
+		img->u.planes->v_pad = 1;
+	}
+	return img->u.planes;
+}
+
+bool raw_img_plane_from_params(struct raw_img *img) {
+	if (raw_img_plane_init(img)) {
+		return raw_img_plane_alloc(img);
+	}
+	return false;
+}
+
+struct raster_pal * raw_img_set_palette(struct raw_img *img,
+struct raster_pal *pal) {
+	if (pal) {
+		set_img_mode(img, image_mode_palette);
+		img->u.palette = pal;
+	}
+	return pal;
 }
 
 void raw_img_clear(struct raw_img *img) {
@@ -133,43 +214,38 @@ struct raw_img * alloc_sub_images(struct image_file *file, const size_t nr) {
 	return file->sub_img;
 }
 
+
 static size_t print_dimensions(const struct raw_img *img) {
-	printf("  dimensions: %zu x %zu x %d",
-		img->w, img->h, img->channels);
+	printf("  dimensions: %zu x %zu x %d", img->w, img->h, img->channels);
 
-	size_t mem_size;
-	if (img->palette) {
-		printf(" (paletted) x %d", img->bitdepth);
-		mem_size = scanline_length(img->w, img->bitdepth,
-			img->alignment) * img->h;
-	} else if (img->yuva) {
-		const char *type = (img->channels == 4) ? "yuva" : "yuv";
-		const int h_samp = (img->subsamp >> 2) + 1;
-		const int v_samp = (img->subsamp & 0x03) + 1;
-		printf(" (%s %d%d) x %d", type, h_samp, v_samp, img->bitdepth);
-
-		struct yuva_info info;
-		raw_img_yuva_info(img, &info);
-		mem_size = info.ya.size + info.uv.size * 2;
-		if (img->channels == 4) {
-			mem_size += info.ya.size;
+	size_t memsize = 0;
+	if (img->mode == image_mode_planar) {
+		struct image_planes *planes = img->u.planes;
+		const char *colorspace[] = {"rgba", "yuva"};
+		printf(" (planar, %s)", colorspace[planes->yuva]);
+		for (int i = 0; i < img->channels; ++i) {
+			memsize += planes->p[i].size;
 		}
 	} else {
-		printf(" x %d", img->bitdepth);
-		if (img->attr) {
-			const char *attr[] = {"inverted", "float", "332", "1555"};
-			printf(" (%s)", attr[img->attr - 1]);
+		if (img->mode == image_mode_palette) {
+			fputs(" (paletted)", stdout);
 		}
-		mem_size = scanline_length(img->w * img->channels,
-			img->bitdepth, img->alignment) * img->h;
+		memsize = scanline_length(img->w, img->bitdepth,
+			img->alignment) * img->h;
 	}
 
-	printf(" x %d = %zu bytes", img->alignment, mem_size);
+	printf(" x %d", img->bitdepth);
+	if (img->attr) {
+		const char *attr[] = {"inverted", "float", "332", "1555"};
+		printf(" (%s)", attr[img->attr - 1]);
+	}
+
+	printf(" = %zu bytes", memsize);
 	if (img->dec_scale != 1) {
 		printf(", %.2fx original", img->dec_scale);
 	}
 	putchar('\n');
-	return mem_size;
+	return memsize;
 }
 
 void image_file_print(const struct image_file *file, const int verbosity) {
@@ -184,7 +260,8 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 	tree_print(&file->metadata, max_x, max_y);
 
 	if (file->errors.str) {
-		printf("Found warning: %s\n", file->errors.str);
+		fputs("Found warning: ", stdout);
+		fwrite(file->errors.str, 1, file->errors.len, stdout);
 	}
 	printf("Contained sub-images: %zu\n", file->nr);
 
@@ -219,71 +296,66 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 	}
 }
 
-static unsigned char compact_alignment(struct raw_img *img,
-const unsigned char to) {
-	const size_t line = img->w * (img->palette ? 1 : img->channels);
-	const size_t src = scanline_length(line, img->bitdepth, img->alignment);
-	const size_t dst = scanline_length(line, img->bitdepth, to);
-	if (src != dst) {
-		for (size_t i = 0; i < img->h; ++i) {
-			memmove(img->data + dst*i, img->data + src*i, dst);
-		}
-	}
-	return to;
-}
-
 void image_file_normalize(struct image_file *file) {
-	struct raw_img *img = file->sub_img;
 	for (size_t i = 0; i < file->nr; ++i) {
-		if (!img[i].data) {
+		struct raw_img *img = file->sub_img + i;
+		if (!img->data) {
 			continue;
 		}
-		const char *err_msg = raster_geom_verify(img[i].palette,
-			img[i].channels, img[i].bitdepth, img[i].attr);
+
+		struct raster_pal *pal = (img->mode == image_mode_palette)
+			? img->u.palette : NULL;
+		const char *err_msg = raster_geom_verify(pal, img->channels,
+			img->bitdepth, img->attr);
 		if (err_msg) {
 			fatal_bug("Bad image", err_msg);
 		}
 
-		switch (img[i].attr) {
+		switch (img->attr) {
 		case pix_packing_332:
-			img[i].channels = 1;
-			img[i].bitdepth = 8;
+			img->channels = 1;
+			img->bitdepth = 8;
 			break;
 		case pix_packing_1555:
-			img[i].channels = 1;
-			img[i].bitdepth = 16;
+			img->channels = 1;
+			img->bitdepth = 16;
 			break;
 		default:
 			break;
 		}
 
-		if (!img[i].layout) {
-			if (img[i].palette || img[i].attr == pix_packing_332) {
-				img[i].layout = pix_rgba;
+		if (img->mode == image_mode_planar && img->channels == 1) {
+			free(img->u.planes);
+			img->u.planes = NULL;
+			img->mode = image_mode_raw;
+		}
+
+		if (!img->alignment) {
+			img->alignment = 1;
+		}
+
+		if (!img->layout) {
+			if (img->mode == image_mode_palette
+			|| img->attr == pix_packing_332) {
+				img->layout = pix_rgba;
 			} else {
-				if (img[i].channels >= 3) {
-					img[i].layout = pix_rgba;
+				if (img->channels >= 3) {
+					img->layout = pix_rgba;
 				} else {
-					img[i].layout = pix_gray;
+					img->layout = pix_gray;
 				}
 			}
 		}
 
-		if (!img[i].disable_alpha && !img[i].palette) {
-			const uint8_t a = pix_layout_offset(img[i].layout, pix_alpha);
-			if (a >= img[i].channels) {
-				img[i].disable_alpha = true;
+		if (!img->disable_alpha && img->mode != image_mode_palette) {
+			const uint8_t a = pix_layout_offset(img->layout, pix_alpha);
+			if (a >= img->channels) {
+				img->disable_alpha = true;
 			}
 		}
 
-		if (!img[i].alignment) {
-			img[i].alignment = 1;
-		} else if (img[i].alignment > 8 && img[i].bitdepth >= 8) {
-			img[i].alignment = compact_alignment(img + i, 8);
-		}
-
-		if (!img[i].dec_scale) {
-			img[i].dec_scale = 1;
+		if (!img->dec_scale) {
+			img->dec_scale = 1;
 		}
 	}
 }
@@ -299,7 +371,7 @@ enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) 
 }
 
 void image_file_error_append(struct image_file *file, const char *str) {
-	wustr_append(&file->errors, str);
+	wustr_append_line(&file->errors, str);
 }
 
 void image_file_free(struct image_file *file) {
@@ -310,7 +382,6 @@ void image_file_free(struct image_file *file) {
 	if (file->ifp) {
 		fclose(file->ifp);
 	}
-	memset(file, 0, sizeof(*file));
 }
 
 static size_t fit(const size_t w, const size_t h, const size_t dw,

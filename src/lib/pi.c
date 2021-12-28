@@ -6,6 +6,7 @@
 #include <limits.h>
 
 #include "../common.h"
+#include "../wustr.h"
 #include "pi.h"
 
 // Define to use slightly slower but clearly correct code.
@@ -422,52 +423,45 @@ const uint16_t height) {
 }
 
 static enum lib_fail read_comment(struct pi_desc *desc) {
-	const uint8_t PI_EOC = 0x1a;
-	uint8_t buf[2];
-	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
+	unsigned char buf[2];
+	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
 		return lib_unexpected_eof;
-	} else if ((buf[0] == 0 || buf[0] == PI_EOC) && buf[1] == 0) {
+	}
+	if (!buf[0] || (buf[0] == 0x1a && !buf[1])) {
 		return lib_ok;
 	}
 
 	struct pi_comment *comm = &desc->comment;
-	size_t alloc = 80;
-	comm->data = malloc(alloc);
-	if (!comm->data) {
+	struct wugrow grow = wugrow_init(1);
+	grow.pos = sizeof(buf);
+	if (!wugrow_recheck(&comm->data, &grow)) {
 		return lib_alloc_error;
 	}
 	memcpy(comm->data, buf, sizeof(buf));
+	comm->text_len = (buf[1] == 0x1a);
 
-	/* For whatever reason, text data ends with 0x1A but the comment area
-	 * ends with a null byte. */
-	size_t len = 2;
-	bool found_eoc = (buf[0] == PI_EOC || buf[1] == PI_EOC);
-	for (;;) {
+	while (!comm->area_len && grow.pos < USHRT_MAX) {
 		const int c = getc(desc->ifp);
-		if (c == EOF) {
-			return lib_unexpected_eof;
-		} else if (len == USHRT_MAX) {
-			if (found_eoc) {
-				break;
-			}
-			return lib_pi_comment_too_long;
-		} else if (!grow_buffer(&comm->data, &alloc, len, 1)) {
+		if (!wugrow_recheck(&comm->data, &grow)) {
 			return lib_alloc_error;
 		}
 
-		if (c == PI_EOC && !found_eoc) {
-			found_eoc = true;
-			comm->text_len = (unsigned short)len;
-		}
-
-		comm->data[len] = (uint8_t)c;
-		if (!c && found_eoc) {
+		comm->data[grow.pos] = (unsigned char)c;
+		switch (c) {
+		case EOF:
+			return lib_unexpected_eof;
+		case 0:
+			comm->area_len = (unsigned short)grow.pos;
+			// fallthrough
+		case 0x1a:
+			if (!comm->text_len) {
+				comm->text_len = (unsigned short)grow.pos;
+			}
 			break;
 		}
-		++len;
+		++grow.pos;
 	}
-	comm->area_len = (unsigned short)len;
-	return lib_ok;
+	return comm->area_len ? lib_ok : lib_pi_comment_too_long;
 }
 
 enum lib_fail pi_read_header(struct pi_desc *desc) {
@@ -492,7 +486,7 @@ enum lib_fail pi_read_header(struct pi_desc *desc) {
 	*/
 
 	uint8_t buf[10];
-	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
+	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
@@ -504,12 +498,12 @@ enum lib_fail pi_read_header(struct pi_desc *desc) {
 		if (!desc->saver.data) {
 			return lib_alloc_error;
 		}
-		if (fread(desc->saver.data, 1, saver_len, desc->ifp) != saver_len) {
+		if (!fread(desc->saver.data, saver_len, 1, desc->ifp)) {
 			return lib_unexpected_eof;
 		}
 	}
 
-	if (fread(buf + 4, 1, 4, desc->ifp) != 4) {
+	if (!fread(buf + 4, 4, 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
@@ -530,16 +524,12 @@ enum lib_fail pi_read_header(struct pi_desc *desc) {
 	return lib_ok;
 }
 
-enum lib_fail pi_open_file(FILE *ifp, struct pi_desc *desc) {
-	memset(desc, 0, sizeof(*desc));
-
-	char buf[2];
-	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
-		if (!memcmp(buf, "Pi", sizeof(buf))) {
-			desc->ifp = ifp;
-			return lib_ok;
-		}
-		return lib_invalid_signature;
+enum lib_fail pi_open_file(struct pi_desc *desc, FILE *ifp) {
+	const unsigned char sig[] = {'P', 'i'};
+	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
+	if (st == lib_ok) {
+		memset(desc, 0, sizeof(*desc));
+		desc->ifp = ifp;
 	}
-	return lib_unexpected_eof;
+	return st;
 }

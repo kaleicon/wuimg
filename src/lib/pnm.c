@@ -11,6 +11,11 @@
 #include "../raster/text.h"
 #include "pnm.h"
 
+union int_real {
+	uint32_t bytes;
+	float real;
+};
+
 const char * pnm_type_str(const enum pnm_type type) {
 	switch (type) {
 	case plain_pbm: return "Text PBM";
@@ -46,18 +51,8 @@ const unsigned short maxval) {
 	}
 }
 
-static unsigned char * pfm_decode(const struct pnm_desc *desc) {
-	union int_real {
-		uint32_t bytes;
-		float real;
-	};
-
-	const size_t dims = desc->rast.w * desc->rast.h * desc->rast.ch;
-	union int_real *out = malloc(dims * sizeof(out->real));
-	if (!out) {
-		return NULL;
-	}
-
+static unsigned char * pfm_decode(const struct pnm_desc *desc,
+const size_t dims, union int_real *out) {
 	const size_t read = fread(out, sizeof(*out), dims, desc->ifp);
 	if (read != dims) {
 		puts(RASTER_EOF);
@@ -75,13 +70,8 @@ static unsigned char * pfm_decode(const struct pnm_desc *desc) {
 	return (unsigned char *)out;
 }
 
-static unsigned char * raw_ppm_decode(const struct pnm_desc *desc) {
-	const size_t dims = desc->rast.w * desc->rast.ch * desc->rast.h;
-	void *output = malloc(dims * desc->bytedepth);
-	if (!output) {
-		return NULL;
-	}
-
+static unsigned char * raw_ppm_decode(const struct pnm_desc *restrict desc,
+const size_t dims, void *restrict output) {
 	const size_t read = fread(output, desc->bytedepth, dims, desc->ifp);
 	if (read != dims) {
 		puts(RASTER_EOF);
@@ -102,13 +92,8 @@ static unsigned char * raw_ppm_decode(const struct pnm_desc *desc) {
 	return output;
 }
 
-static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc) {
-	const size_t dims = desc->rast.w * desc->rast.h * desc->rast.ch;
-	void *restrict output = malloc(dims * desc->bytedepth);
-	if (!output) {
-		return NULL;
-	}
-
+static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc,
+const size_t dims, void *restrict output) {
 	struct text_block *text = text_block_new();
 	if (!text) {
 		free(output);
@@ -158,13 +143,8 @@ static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc) {
 	return output;
 }
 
-static unsigned char * plain_pbm_decode(const struct pnm_desc *desc) {
-	const size_t dims = desc->rast.w * desc->rast.h;
-	unsigned char *output = malloc(dims);
-	if (!output) {
-		return NULL;
-	}
-
+static unsigned char * plain_pbm_decode(const struct pnm_desc *restrict desc,
+const size_t dims, unsigned char *restrict output) {
 	unsigned char *buf = malloc(BUFSIZ);
 	if (!buf) {
 		free(output);
@@ -172,7 +152,7 @@ static unsigned char * plain_pbm_decode(const struct pnm_desc *desc) {
 	}
 
 	size_t cnt = 0;
-	while (cnt < dims) {
+	do {
 		const size_t read = fread(buf, 1, BUFSIZ, desc->ifp);
 		if (read == 0) {
 			puts(RASTER_EOF);
@@ -199,34 +179,45 @@ static unsigned char * plain_pbm_decode(const struct pnm_desc *desc) {
 				return NULL;
 			}
 		}
-	}
+	} while (cnt < dims);
 	free(buf);
 	return output;
 }
 
 unsigned char * pnm_decode_next(const struct pnm_desc *desc) {
+	const size_t elems = desc->rast.w * desc->rast.h * desc->rast.ch;
+	void *output = malloc(elems * desc->bytedepth);
+	if (!output) {
+		return NULL;
+	}
+
 	switch (desc->type) {
 	case plain_pbm:
-		return plain_pbm_decode(desc);
+		return plain_pbm_decode(desc, elems, output);
 	case plain_pgm:
 	case plain_ppm:
-		return plain_ppm_decode(desc);
+		return plain_ppm_decode(desc, elems, output);
 	case raw_pgm:
 	case raw_ppm:
 	case pam:
 		if (desc->scale.pnm != UCHAR_MAX) {
-			return raw_ppm_decode(desc);
+			return raw_ppm_decode(desc, elems, output);
 		}
 		break;
 	case color_pfm:
 	case gray_pfm:
-		return pfm_decode(desc);
+		return pfm_decode(desc, elems, output);
 	case raw_pbm:
 	case xv_thumb:
 	case mtv:
 		break;
 	}
-	return lib_load_rast(desc->ifp, &desc->rast);
+
+	if (fread(output, desc->bytedepth, elems, desc->ifp)) {
+		return output;
+	}
+	free(output);
+	return NULL;
 }
 
 /* Header parsing */
@@ -311,9 +302,19 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 	return lib_ok;
 }
 
+static enum lib_fail skip_line(FILE *ifp) {
+	for (;;) {
+		switch (getc(ifp)) {
+		case '\n': return lib_ok;
+		case EOF: return lib_unexpected_eof;
+		}
+	}
+	return lib_unexpected_eof;
+}
+
 static enum lib_fail read_pam_token(FILE *ifp, const char *fmt,
-void *where, const bool where_val) {
-	if (!where_val) {
+void *where, const bool cur_val) {
+	if (!cur_val) {
 		unsigned char newline;
 		switch (fscanf(ifp, fmt, where, &newline)) {
 		case 2:
@@ -331,8 +332,7 @@ void *where, const bool where_val) {
 static enum lib_fail match_pam_token(struct pnm_desc *desc, const char *token,
 bool *finished) {
 	if (token[0] == '#') {
-		skip_line(desc->ifp);
-		return lib_ok;
+		return skip_line(desc->ifp);
 	} else if (!strcmp("WIDTH", token)) {
 		return read_pam_token(desc->ifp, " %zu%c", &desc->rast.w, desc->rast.w);
 	} else if (!strcmp("HEIGHT", token)) {
@@ -343,18 +343,14 @@ bool *finished) {
 		return read_pam_token(desc->ifp, " %hu%c", &desc->scale.pnm,
 			desc->scale.pnm);
 	} else if (!strcmp("TUPLTYPE", token)) {
-		skip_line(desc->ifp);
-		return lib_ok;
+		return skip_line(desc->ifp);
 	} else if (!strcmp("ENDHDR", token)) {
-		const int c = getc(desc->ifp);
-		if (c != '\n') {
-			if (c == EOF) {
-				return lib_unexpected_eof;
-			}
-			return lib_invalid_header;
+		switch (getc(desc->ifp)) {
+		case EOF: return lib_unexpected_eof;
+		case '\n':
+			*finished = true;
+			return lib_ok;
 		}
-		*finished = true;
-		return lib_ok;
 	}
 	return lib_invalid_header;
 }

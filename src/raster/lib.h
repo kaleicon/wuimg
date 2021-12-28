@@ -15,7 +15,7 @@ enum lib_fail {
 	lib_invalid_signature,
 	lib_invalid_header,
 	lib_unknown_format,
-	lib_unsupported_format,
+	lib_unsupported_feature,
 	lib_alloc_error,
 	lib_invalid_data,
 	lib_int_overflow,
@@ -45,9 +45,13 @@ struct raster_pal * lib_raster_take_palette(struct raster_desc *desc);
 void lib_raster_endian(void *data, const struct raster_desc *desc,
 const enum endianness end);
 
-void * lib_load_rast(FILE *ifp, const struct raster_desc *desc);
+size_t lib_load_rast(struct memory *mem, const struct raster_desc *desc,
+FILE *ifp);
 
 enum lib_fail lib_load_pal(FILE *ifp, struct raster_pal **pal,
 enum lib_pal pal_type, size_t entries);
+
+enum lib_fail lib_sigcmp(const unsigned char *restrict sig, size_t size,
+FILE *ifp);
 
 #endif /* COMMON_LIB */

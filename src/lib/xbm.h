@@ -20,8 +20,8 @@ struct xbm_desc {
 	bool has_hotspot;
 	enum xbm_type type;
 
-	struct wustr name;
-	struct wustr comment;
+	struct wuptr name;
+	struct wuptr comment;
 };
 
 void xbm_cleanup(struct xbm_desc *desc);

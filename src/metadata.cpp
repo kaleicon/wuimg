@@ -44,14 +44,14 @@ static void read_any(Datum meta, struct wu_tree *tree) {
 	}
 }
 
-static void read_xmp(const char *metadata, const size_t len,
+static bool read_xmp(const char *metadata, const size_t len,
 struct wu_tree *tree) {
 	const std::string str_xmp(metadata, len);
 
 	Exiv2::XmpData data;
 	Exiv2::XmpParser::decode(data, str_xmp);
 	if (!data.count()) {
-		return;
+		return false;
 	}
 
 	Exiv2::XmpData::const_iterator end = data.end();
@@ -62,14 +62,15 @@ struct wu_tree *tree) {
 		}
 	}
 	data.clear();
+	return true;
 }
 
-static void read_iptc(const unsigned char *metadata, const size_t len,
+static bool read_iptc(const unsigned char *metadata, const size_t len,
 struct wu_tree *tree) {
 	Exiv2::IptcData data;
 	Exiv2::IptcParser::decode(data, metadata, len);
 	if (!data.count()) {
-		return;
+		return false;
 	}
 
 	Exiv2::IptcData::const_iterator end = data.end();
@@ -80,14 +81,15 @@ struct wu_tree *tree) {
 		}
 	}
 	data.clear();
+	return true;
 }
 
-static void read_exif(const unsigned char *metadata, const size_t len,
+static bool read_exif(const unsigned char *metadata, const size_t len,
 struct wu_tree *tree) {
 	Exiv2::ExifData data;
 	Exiv2::ExifParser::decode(data, metadata, len);
 	if (!data.count()) {
-		return;
+		return false;
 	}
 
 	Exiv2::ExifData::const_iterator end = data.end();
@@ -98,22 +100,22 @@ struct wu_tree *tree) {
 		}
 	}
 	data.clear();
+	return true;
 }
 
-extern "C" void standard_metadata(const enum metadata_type type,
+extern "C" bool standard_metadata(const enum metadata_type type,
 const void *metadata, const size_t len, struct wu_tree *tree) {
+	bool st = false;
 	try {
 		switch (type) {
 		case exif_metadata:
-			read_exif((const unsigned char *)metadata, len, tree);
+			st = read_exif((const unsigned char *)metadata, len, tree);
 			break;
 		case xmp_metadata:
-			read_xmp((const char *)metadata, len, tree);
+			st = read_xmp((const char *)metadata, len, tree);
 			break;
 		case iptc_metadata:
-			read_iptc((const unsigned char *)metadata, len, tree);
-			break;
-		default:
+			st = read_iptc((const unsigned char *)metadata, len, tree);
 			break;
 		}
 	} catch (...) {
@@ -124,4 +126,5 @@ const void *metadata, const size_t len, struct wu_tree *tree) {
 		}
 		fputs(" parsing failed.\n", stdout);
 	}
+	return st;
 }

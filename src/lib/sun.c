@@ -87,7 +87,11 @@ unsigned char * sun_decode(const struct sun_desc *desc) {
 	if (desc->type == sun_byte_encoded) {
 		return rle_decode(desc);
 	}
-	return lib_load_rast(desc->ifp, &desc->rast);
+	struct memory mem;
+	if (lib_load_rast(&mem, &desc->rast, desc->ifp)) {
+		return mem.data;
+	}
+	return NULL;
 }
 
 static enum lib_fail interleave_colormap(struct sun_desc *desc) {
@@ -105,8 +109,7 @@ static enum lib_fail interleave_colormap(struct sun_desc *desc) {
 		return lib_alloc_error;
 	}
 
-	const size_t read = fread(buf, 1, len, desc->ifp);
-	if (read != len) {
+	if (!fread(buf, len, 1, desc->ifp)) {
 		free(buf);
 		return lib_unexpected_eof;
 	}
@@ -203,7 +206,7 @@ enum lib_fail sun_parse_header(struct sun_desc *desc) {
 	*/
 
 	uint32_t header[7];
-	if (fread(header, 1, sizeof(header), desc->ifp) != sizeof(header)) {
+	if (!fread(header, sizeof(header), 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
@@ -230,14 +233,10 @@ enum lib_fail sun_parse_header(struct sun_desc *desc) {
 
 enum lib_fail sun_open_file(struct sun_desc *desc, FILE *ifp) {
 	const unsigned char sig[] = {0x59, 0xa6, 0x6a, 0x95};
-	unsigned char buf[sizeof(sig)];
-	if (fread(buf, 1, sizeof(buf), ifp) == sizeof(buf)) {
-		if (!memcmp(buf, sig, sizeof(buf))) {
-			desc->ifp = ifp;
-			desc->rast.palette = NULL;
-			return lib_ok;
-		}
-		return lib_invalid_signature;
+	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
+	if (st == lib_ok) {
+		desc->ifp = ifp;
+		desc->rast.palette = NULL;
 	}
-	return lib_unexpected_eof;
+	return st;
 }

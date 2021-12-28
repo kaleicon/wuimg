@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stddef.h>
 #include <limits.h>
 
@@ -6,6 +7,12 @@
 uint8_t pix_layout_offset(const enum pix_layout layout,
 const enum pix_color color) {
 	return (layout >> (color*2)) & 0x03;
+}
+
+void pix_layout_print(const enum pix_layout layout) {
+	for (enum pix_color i = 0; i < pix_color_total; ++i) {
+		putchar(pix_layout_offset(layout, i) + '0');
+	}
 }
 
 void pix_swizzle_mask(uint8_t swizzle[static 4], const enum pix_layout layout) {

@@ -49,7 +49,7 @@ int text_next_nonblank(struct text_parser *tp);
 
 int text_next_nonspace(struct text_parser *tp);
 
-struct wustr text_get_word(struct text_parser *tp);
+struct wuptr text_get_word(struct text_parser *tp);
 
 size_t text_get_uint(struct text_parser *tp, size_t digits, text_fast_t *val);
 
@@ -57,6 +57,6 @@ bool text_scan_xint(struct text_parser *tp, size_t size, void *val);
 
 bool text_scan_uint(struct text_parser *tp, size_t size, void *val);
 
-void text_parser_mem(struct text_parser *tp, size_t size, const void *data);
+struct text_parser text_parser_mem(size_t size, const void *data);
 
 #endif /* COMMON_TEXT */

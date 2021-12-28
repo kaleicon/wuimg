@@ -20,6 +20,16 @@ static void free_png_state(struct png_state *png) {
 	png_destroy_read_struct(&png->png, &png->info, &png->end);
 }
 
+static void little_trouble_fn(png_struct *png, const char *msg) {
+	struct image_file *infile = png_get_error_ptr(png);
+	image_file_error_append(infile, msg);
+}
+
+static void big_trouble_fn(png_struct *png, const char *msg) {
+	little_trouble_fn(png, msg);
+	png_longjmp(png, 1);
+}
+
 static void read_png_info(const png_struct *png, png_info *info,
 struct wu_tree *tree) {
 	png_text *text = NULL;
@@ -123,8 +133,7 @@ struct png_state *png) {
 	const png_byte bit_depth = png_get_bit_depth(png->png, png->info);
 	const png_byte color_type = png_get_color_type(png->png, png->info);
 	if (color_type == PNG_COLOR_TYPE_PALETTE) {
-		img->palette = read_palette(png);
-		if (!img->palette) {
+		if (!raw_img_set_palette(img, read_palette(png))) {
 			png_set_expand(png->png);
 		}
 	} else if (bit_depth >= 16) {
@@ -135,7 +144,7 @@ struct png_state *png) {
 
 	img->w = png_get_image_width(png->png, png->info);
 	img->h = png_get_image_height(png->png, png->info);
-	if (img->palette) {
+	if (img->u.palette) {
 		img->channels = 1;
 	} else {
 		img->channels = png_get_channels(png->png, png->info);
@@ -161,7 +170,7 @@ enum wu_error png_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct png_state png = {0};
 	png.png = png_create_read_struct(PNG_LIBPNG_VER_STRING,
-		NULL, NULL, NULL);
+		infile, big_trouble_fn, little_trouble_fn);
 	if (!png.png) {
 		return wu_alloc_error;
 	}
@@ -178,9 +187,7 @@ const struct wu_conf *wuconf) {
 	}
 
 	// We've already checked the signature for this stream
-	fseek(infile->ifp, 8, SEEK_SET);
 	png_init_io(png.png, infile->ifp);
-	png_set_sig_bytes(png.png, 8);
 	png_set_crc_action(png.png, PNG_CRC_WARN_USE, PNG_CRC_WARN_DISCARD);
 
 /*	png_byte apng_chunks[] = {

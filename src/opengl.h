@@ -15,54 +15,49 @@ enum gl_upload_status {
 	gl_upload_reused,
 };
 
-enum gl_color_mode {
-	gl_color_raw,
-	gl_color_palette,
-	gl_color_yuva,
-};
-
-enum gl_alpha {
+enum gl_alpha_mode {
 	gl_alpha_enabled = 0,
 	gl_alpha_opaque,
 	gl_alpha_checkers,
-	gl_alpha_disable,
 	gl_alpha_STATES,
 };
 
 struct gl_context {
 	struct gl_uni {
-		GLint matrix;
+		GLint pos_matrix;
 		GLint color_mode;
-		GLint checkers;
+		GLint alpha_mode;
+		GLint plane_offsets;
+		GLint colorspace;
 	} uni;
 	GLuint pixel_unpack_buf;
 	GLuint timer;
 
 	float fb_wh[2];
 	struct gl_texture {
-		unsigned w, h;
-		unsigned char ch, bpp;
-		enum gl_color_mode mode:8;
-		GLint alpha_swizzle;
+		size_t w, h;
+		int hash;
+		enum image_mode mode;
 	} tex;
-	enum gl_alpha alpha:8;
 	bool update_matrix;
+	bool disable_alpha;
+	enum gl_alpha_mode alpha:8;
 };
 
-void gl_context_delete(struct gl_context *context);
+const char * gl_strerror(GLenum error);
 
-GLuint64 gl_clock_end(struct gl_context *context);
+GLuint64 gl_clock_end(const struct gl_context *context);
 
-void gl_clock_start(struct gl_context *context);
+void gl_clock_start(const struct gl_context *context);
 
 void gl_alpha_toggle(struct gl_context *context);
 
-void gl_matrix_update(const struct gl_context *context, struct wu_state *state);
+void gl_matrix_update(struct gl_context *context, struct wu_state *state);
 
 float gl_fit_zoom(const struct gl_context *context,
 unsigned char rotation);
 
-void gl_viewport(struct gl_context *context, int w, int h);
+void gl_viewport(struct gl_context *context, const struct display_dims *dims);
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 const struct raw_img *img);

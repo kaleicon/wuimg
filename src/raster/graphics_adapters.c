@@ -29,7 +29,8 @@ const struct raster_desc *desc, const size_t lines, const size_t scanline) {
 			uint8_t *d = dst + y * desc->w + z;
 			for (size_t x = 0; x < desc->w; ++x) {
 				const uint8_t byte = s[x/8];
-				d[x*desc->ch] = byte & (0x80 >> (x%8)) ? 0xff : 0x00;
+				d[x*desc->ch] = (byte & (0x80 >> (x%8)))
+					? 0xff : 0x00;
 			}
 		}
 	}

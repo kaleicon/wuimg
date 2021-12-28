@@ -76,7 +76,9 @@ unsigned char * mac_decode(const struct mac_desc *desc) {
 
 unsigned char * mac_pattern_unpack(const struct mac_desc *desc) {
 	fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
-	return lib_load_rast(desc->ifp, &desc->patterns);
+	struct memory mem;
+	lib_load_rast(&mem, &desc->patterns, desc->ifp);
+	return mem.data;
 }
 
 static enum lib_fail read_mac_header(unsigned char *header,
@@ -105,13 +107,13 @@ struct mac_desc *desc) {
 		.ch = 1,
 		.bitdepth = 1,
 	};
-	raster_normalize(&desc->patterns);
 	desc->rast = (struct raster_desc) {
 		.w = 576,
 		.h = 720,
 		.ch = 1,
 		.bitdepth = 1,
 	};
+	raster_normalize(&desc->patterns);
 	raster_normalize(&desc->rast);
 	return lib_ok;
 }
@@ -197,7 +199,7 @@ enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp) {
 	*/
 
 	unsigned char header[128 + 4];
-	if (fread(header, 1, sizeof(header), ifp) != sizeof(header)) {
+	if (!fread(header, sizeof(header), 1, ifp)) {
 		return lib_unexpected_eof;
 	}
 

@@ -39,7 +39,7 @@ const struct pictor_desc *desc) {
 enum wu_error pictor_dec(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct pictor_desc desc;
-	enum lib_fail status = pictor_open_file(infile->ifp, &desc);
+	enum lib_fail status = pictor_open_file(&desc, infile->ifp);
 	if (status != lib_ok) {
 		rast_error(infile, status);
 		return wu_open_error;

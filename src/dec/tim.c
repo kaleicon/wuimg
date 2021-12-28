@@ -35,7 +35,7 @@ static void read_metadata(struct wu_tree *tree, const struct tim_desc *desc) {
 
 enum wu_error tim_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct tim_desc desc;
-	enum lib_fail status = tim_open_file(infile->ifp, &desc);
+	enum lib_fail status = tim_open_file(&desc, infile->ifp);
 	if (status != lib_ok) {
 		rast_error(infile, status);
 		return wu_open_error;

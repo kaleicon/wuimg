@@ -98,7 +98,7 @@ struct raw_img *img) {
 	img->data = raster;
 	return wu_ok;
 }
-
+/*
 static enum wu_error interleave_planes(struct raw_img *img, const size_t len) {
 	unsigned char *out = malloc(len);
 	if (!out) {
@@ -109,7 +109,7 @@ static enum wu_error interleave_planes(struct raw_img *img, const size_t len) {
 	free(img->data);
 	img->data = out;
 	return wu_ok;
-}
+}*/
 
 static void single_tile(unsigned char *restrict data,
 const struct tile_info *tiles, const size_t width, const size_t height,
@@ -272,8 +272,7 @@ static enum unpack_op select_filter(const struct tiff_info *info) {
 static enum wu_error nih_decode(TIFF *tif, struct raw_img *img,
 struct tiff_info *info) {
 	if (info->photometric == PHOTOMETRIC_PALETTE) {
-		img->palette = load_palette(tif, info->bps);
-		if (!img->palette) {
+		if (!raw_img_set_palette(img, load_palette(tif, info->bps))) {
 			return wu_alloc_error;
 		}
 	}
@@ -282,15 +281,20 @@ struct tiff_info *info) {
 
 	TIFFGetFieldDefaulted(tif, TIFFTAG_PLANARCONFIG, &info->planar);
 	info->is_tiled = TIFFIsTiled(tif);
-	info->planes = info->planar == PLANARCONFIG_CONTIG ? 1 : info->spp;
+	info->planes = (info->planar == PLANARCONFIG_CONTIG) ? 1 : info->spp;
 
 	const enum unpack_op op = select_filter(info);
 	if (op) {
 		img->bitdepth = (unsigned char)imax(info->bps, 8);
 	}
 
-	const size_t stride = raw_img_addbuf(img);
-	if (!stride) {
+	bool alloc_ok;
+	if (info->planes > 1) {
+		alloc_ok = raw_img_plane_from_params(img);
+	} else {
+		alloc_ok = raw_img_addbuf(img);
+	}
+	if (!alloc_ok) {
 		return wu_alloc_error;
 	}
 
@@ -299,9 +303,6 @@ struct tiff_info *info) {
 		status = unpack_tiles(tif, img, info, op);
 	} else {
 		status = unpack_strips(tif, img, info, op);
-	}
-	if (status == wu_ok && info->planar != PLANARCONFIG_CONTIG) {
-		status = interleave_planes(img, stride * img->h);
 	}
 
 	if (info->photometric == PHOTOMETRIC_MINISWHITE) {

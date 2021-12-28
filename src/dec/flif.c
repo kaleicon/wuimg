@@ -24,9 +24,7 @@ const struct wu_conf *wuconf) {
 		return wu_decoding_error;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile,
-		flif_decoder_num_images(dec));
-	if (!img) {
+	if (!alloc_sub_images(infile, flif_decoder_num_images(dec))) {
 		flif_destroy_decoder(dec);
 		munmap_file(map);
 		return wu_alloc_error;
@@ -36,35 +34,36 @@ const struct wu_conf *wuconf) {
 	enum wu_error status = wu_ok;
 	size_t o = 0;
 	for (size_t i = 0; i < infile->nr; ++i) {
+		struct raw_img *img = infile->sub_img + o;
 		FLIF_IMAGE *frame = flif_decoder_get_image(dec, i);
 
-		img[o].w = flif_image_get_width(frame);
-		img[o].h = flif_image_get_height(frame);
-		if (zumax(img[o].w, img[o].h) > wuconf->max_img_size) {
+		img->w = flif_image_get_width(frame);
+		img->h = flif_image_get_height(frame);
+		if (zumax(img->w, img->h) > wuconf->max_img_size) {
 			continue;
 		}
-		img[o].channels = flif_image_get_nb_channels(frame);
-		img[o].bitdepth = flif_image_get_depth(frame);
-		img[o].msec = (int)flif_image_get_frame_delay(frame);
+		img->channels = flif_image_get_nb_channels(frame);
+		img->bitdepth = flif_image_get_depth(frame);
+		img->msec = (int)flif_image_get_frame_delay(frame);
 
-		void (*read_func)(FLIF_IMAGE*, uint32_t, void*, size_t);
-		if (flif_image_get_palette_size(frame)) {
-			img[o].palette = malloc(sizeof(*img[o].palette));
+		void (*read_func)(FLIF_IMAGE *, uint32_t, void *, size_t);
+		if (img->channels == 1 && flif_image_get_palette_size(frame)) {
+			raw_img_set_palette(img, malloc(sizeof(*img->u.palette)));
 		}
 
-		if (img[o].palette) {
-			flif_image_get_palette(frame, img[o].palette);
+		if (img->u.palette) {
+			flif_image_get_palette(frame, img->u.palette);
 			read_func = flif_image_read_row_PALETTE8;
 		} else {
-			if (img[o].channels == 1) {
+			if (img->channels == 1) {
 				read_func = flif_image_read_row_GRAY8;
 			} else {
 				// There are no RGB functions.
-				if (img[i].channels == 3) {
-					img[o].channels = 4;
-					img[o].disable_alpha = true;
+				if (img->channels == 3) {
+					img->channels = 4;
+					img->disable_alpha = true;
 				}
-				if (img[o].bitdepth == 8) {
+				if (img->bitdepth == 8) {
 					read_func = flif_image_read_row_RGBA8;
 				} else {
 					read_func = flif_image_read_row_RGBA16;
@@ -77,8 +76,8 @@ const struct wu_conf *wuconf) {
 			break;
 		}
 
-		for (uint32_t row = 0; row < img[o].h; ++row) {
-			unsigned char *pos = img[o].data + row * row_size;
+		for (uint32_t row = 0; row < img->h; ++row) {
+			unsigned char *pos = img->data + row * row_size;
 			read_func(frame, row, pos, row_size);
 		}
 		++o;

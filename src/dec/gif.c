@@ -186,10 +186,9 @@ const struct wu_conf *wuconf, struct gif_state *ds) {
 		i = ds->idx;
 		if (img[i].data) {
 			return wu_ok;
-		} else if (i > 0 && img[0].palette) {
+		} else if (i > 0 && img[0].u.palette) {
 			const size_t size = sizeof(ds->global_pal);
-			img[i].palette = memdup(img[0].palette, size);
-			if (!img[i].palette) {
+			if (!raw_img_set_palette(img + i, memdup(img[0].u.palette, size))) {
 				return wu_alloc_error;
 			}
 		}
@@ -206,7 +205,7 @@ const struct wu_conf *wuconf, struct gif_state *ds) {
 	}
 
 	int fill = 0;
-	if (img[i].palette) {
+	if (img[i].u.palette) {
 		const int trans = ds->gcb[ds->idx].TransparentColor;
 		if (trans != -1) {
 			fill = trans;
@@ -270,7 +269,7 @@ const struct wu_conf *wuconf, const struct wu_state *state) {
 	struct gif_state *ds = infile->dec_state;
 
 	const int image_count = ds->gif_file->ImageCount;
-	int iters = imod(state->sub.cycle, image_count);
+	int iters = imod(state->cycle, image_count);
 	if (iters > image_count - ds->idx) {
 		iters -= image_count - ds->idx;
 		ds->idx = 0;
@@ -358,7 +357,7 @@ struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
 	}
 
 	int prev_disposals = 0;
-	const int DEFAULT_DELAY = 10;
+	const int default_delay = 10;
 	enum disposal_mode dispose = first_frame;
 	SavedImage *image = gif_file->SavedImages;
 	for (int i = 0; i < count; ++i) {
@@ -368,10 +367,10 @@ struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
 		if (gcb_status != GIF_OK) {
 			gcb[i].DisposalMode = unspecified;
 			gcb[i].UserInputFlag = 0;
-			gcb[i].DelayTime = DEFAULT_DELAY;
+			gcb[i].DelayTime = default_delay;
 			gcb[i].TransparentColor = NO_TRANSPARENT_COLOR;
 		} else if (gcb[i].DelayTime == 0 && gcb[i].UserInputFlag == 0) {
-			gcb[i].DelayTime = DEFAULT_DELAY;
+			gcb[i].DelayTime = default_delay;
 		}
 
 		const GifImageDesc *desc = &image[i].ImageDesc;
@@ -517,7 +516,7 @@ const struct wu_conf *wuconf) {
 			void *hold = malloc(sizeof(*loc));
 			if (hold) {
 				loc = hold;
-				img[0].palette = hold;
+				raw_img_set_palette(img, hold);
 				ds->comps = 1;
 			}
 		}

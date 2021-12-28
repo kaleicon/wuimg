@@ -490,7 +490,7 @@ static int skip_csi(struct text_parser *tp) {
 enum lib_fail sixel_open_mem(struct sixel_desc *desc,
 const struct mmap_info *mem) {
 	struct text_parser *tp = &desc->tp;
-	text_parser_mem(tp, mem->len, mem->data);
+	*tp = text_parser_mem(mem->len, mem->data);
 
 	/* The sixel format begins with the Device Control String, which might
 	 * come in single-byte and two-byte form. And since it is basically a

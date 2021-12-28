@@ -93,6 +93,10 @@ static struct file_magic magic_map[] = {
 	{"\xff\xff\xff\xff\xff\xff\xff\xff", "#define ", fmt_xbm},
 #endif // WU_ENABLE_XBM
 
+#ifdef WU_ENABLE_XCURSOR
+	{"\xff\xff\xff\xff", "Xcur", fmt_xcursor},
+#endif // WU_ENABLE_XCURSOR
+
 
 #ifdef WU_ENABLE_FLIF
 	{"\xff\xff\xff\xff", "FLIF", fmt_flif},
@@ -373,9 +377,9 @@ static int quine_fmaskmagiccmp(const void *restrict m1, const void *restrict m2)
 	const unsigned char *and_mask2 = magic2->and_mask;
 	int diff = 0;
 	for (size_t i = 0; i < sizeof(magic2->bytes) && !diff; ++i) {
-		const int m1 = and_mask1[i];
-		const int m2 = and_mask2[i];
-		diff = (magic1->bytes[i] & m1) - (magic2->bytes[i] & m2);
+		const unsigned char c1 = and_mask1[i];
+		const unsigned char c2 = and_mask2[i];
+		diff = (magic1->bytes[i] & c1) - (magic2->bytes[i] & c2);
 	}
 	return diff;
 }

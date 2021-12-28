@@ -33,6 +33,6 @@ unsigned char * pi_decode(const struct pi_desc *desc);
 
 enum lib_fail pi_read_header(struct pi_desc *desc);
 
-enum lib_fail pi_open_file(FILE *ifp, struct pi_desc *desc);
+enum lib_fail pi_open_file(struct pi_desc *desc, FILE *ifp);
 
 #endif /* LIB_PI */

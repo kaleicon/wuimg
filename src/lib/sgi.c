@@ -16,31 +16,14 @@ struct rle_info {
 	void *rle;
 };
 
-static bool undec16(uint16_t *restrict dst, uint16_t *restrict src,
-const struct sgi_desc *desc) {
-	const size_t row_len = desc->rast.w * desc->rast.ch;
+static bool undec16(uint16_t *restrict dst, const struct sgi_desc *desc) {
 	for (size_t z = 0; z < desc->rast.ch; ++z) {
 		for (size_t y = 0; y < desc->rast.h; ++y) {
-			const size_t read = fread(src, 2, desc->rast.w, desc->ifp);
-			for (size_t x = 0; x < read; ++x) {
-				dst[y*row_len + x*desc->rast.ch + z] =
-					endian16(src[x], big_endian);
+			uint16_t *d = dst + desc->rast.w * y * z;
+			const size_t read = fread(d, 2, desc->rast.w, desc->ifp);
+			for (size_t x = 0; x < desc->rast.w; ++x) {
+				d[x] = endian16(d[x], big_endian);
 			}
-			if (read < desc->rast.w) {
-				return false;
-			}
-		}
-	}
-	return true;
-}
-
-static bool undec8(uint8_t *restrict dst, uint8_t *restrict src,
-const struct sgi_desc *desc) {
-	const size_t row_len = desc->rast.w * desc->rast.ch;
-	for (size_t z = 0; z < desc->rast.ch; ++z) {
-		for (size_t y = 0; y < desc->rast.h; ++y) {
-			const size_t read = fread(src, 1, desc->rast.w, desc->ifp);
-			strip_spread(dst + y*row_len + z, src, read, desc->rast.ch);
 			if (read < desc->rast.w) {
 				return false;
 			}
@@ -50,26 +33,18 @@ const struct sgi_desc *desc) {
 }
 
 static unsigned char * uncompressed_decode(const struct sgi_desc *desc) {
-	const size_t row_bytes = raster_stride(&desc->rast);
-	const size_t dims = row_bytes * desc->rast.h;
+	const size_t dims = raster_size(&desc->rast);
 	void *output = malloc(dims);
 	if (!output) {
 		return NULL;
 	}
 
-	void *row = malloc(row_bytes);
-	if (!row) {
-		free(output);
-		return NULL;
-	}
-
 	bool full;
 	if (desc->bytedepth == 2) {
-		full = undec16(output, row, desc);
+		full = undec16(output, desc);
 	} else {
-		full = undec8(output, row, desc);
+		full = fread(output, dims, 1, desc->ifp);
 	}
-	free(row);
 	if (!full) {
 		puts(RASTER_EOF);
 	}
@@ -77,7 +52,7 @@ static unsigned char * uncompressed_decode(const struct sgi_desc *desc) {
 }
 
 static void rle_loop16(uint16_t *restrict output, const size_t out_limit,
-const uint16_t *restrict rle, const uint32_t rle_limit, const uint8_t ch) {
+const uint16_t *restrict rle, const uint32_t rle_limit) {
 	size_t o = 0;
 	uint32_t r = 0;
 	do {
@@ -86,13 +61,14 @@ const uint16_t *restrict rle, const uint32_t rle_limit, const uint8_t ch) {
 		++r;
 		if (packet & 0x80) {
 			for (uint16_t i = 0; i < len; ++i) {
-				output[o*ch] = endian16(rle[r], big_endian);
+				output[o] = endian16(rle[r], big_endian);
 				++o;
 				++r;
 			}
 		} else {
+			const uint16_t pix = endian16(rle[r], big_endian);
 			for (uint16_t i = 0; i < len; ++i) {
-				output[o*ch] = endian16(rle[r], big_endian);
+				output[o] = pix;
 				++o;
 			}
 			++r;
@@ -101,7 +77,7 @@ const uint16_t *restrict rle, const uint32_t rle_limit, const uint8_t ch) {
 }
 
 static void rle_loop8(uint8_t *restrict output, const size_t out_limit,
-const uint8_t *restrict rle, const uint32_t rle_limit, const uint8_t ch) {
+const uint8_t *restrict rle, const uint32_t rle_limit) {
 	size_t o = 0;
 	uint32_t r = 0;
 	do {
@@ -110,13 +86,13 @@ const uint8_t *restrict rle, const uint32_t rle_limit, const uint8_t ch) {
 		++r;
 		if (packet & 0x80) {
 			for (uint8_t i = 0; i < len; ++i) {
-				output[o*ch] = rle[r];
+				output[o] = rle[r];
 				++o;
 				++r;
 			}
 		} else {
 			for (uint8_t i = 0; i < len; ++i) {
-				output[o*ch] = rle[r];
+				output[o] = rle[r];
 				++o;
 			}
 			++r;
@@ -127,22 +103,17 @@ const uint8_t *restrict rle, const uint32_t rle_limit, const uint8_t ch) {
 static void rle_loop(void *restrict output, const struct rle_info *rle,
 const struct sgi_desc *desc) {
 	const size_t width = desc->rast.w;
-	const size_t height = desc->rast.h;
-	const size_t stride = width * desc->rast.ch;
-	for (uint8_t plane = 0; plane < desc->rast.ch; ++plane) {
-		for (size_t y = 0; y < height; ++y) {
-			const size_t offset = stride*y + plane;
-			const uint32_t row_off = rle->row_offset[plane*height + y];
-			const uint32_t row_len = rle->row_len[plane*height + y];
-			if (desc->bytedepth == 1) {
-				rle_loop8((uint8_t *)output + offset, width,
-					(uint8_t *)rle->rle + row_off, row_len,
-					desc->rast.ch);
-			} else {
-				rle_loop16((uint16_t *)output + offset, width,
-					(uint16_t *)rle->rle + row_off, row_len,
-					desc->rast.ch);
-			}
+	const size_t height = desc->rast.h * desc->rast.ch;
+	for (size_t y = 0; y < height; ++y) {
+		const size_t offset = width*y;
+		const uint32_t row_off = rle->row_offset[y];
+		const uint32_t row_len = rle->row_len[y];
+		if (desc->bytedepth == 1) {
+			rle_loop8((uint8_t *)output + offset, width,
+				(uint8_t *)rle->rle + row_off, row_len);
+		} else {
+			rle_loop16((uint16_t *)output + offset, width,
+				(uint16_t *)rle->rle + row_off, row_len);
 		}
 	}
 }
@@ -206,9 +177,8 @@ static unsigned char * rle_decode(const struct sgi_desc *desc) {
 		return NULL;
 	}
 
-	const size_t dims = desc->rast.w * desc->rast.h * desc->rast.ch
-		* desc->bytedepth;
-	void *output = malloc(dims * desc->bytedepth + padding);
+	const size_t dims = raster_size(&desc->rast);
+	void *output = malloc(dims + padding);
 	if (!output) {
 		free(rle.buf);
 		return NULL;
@@ -314,6 +284,7 @@ const uint16_t channels, const uint32_t bitmap_type) {
 		.ch = (unsigned char)channels,
 		.bitdepth = bytedepth * 8,
 		.attr = (bitmap_type == sgi_332) ? pix_packing_332 : 0,
+		.planar = true,
 	};
 	raster_normalize(&desc->rast);
 	desc->bytedepth = bytedepth;
@@ -331,26 +302,26 @@ enum lib_fail sgi_parse_header(struct sgi_desc *desc) {
 		4       WORD    XSize;
 		6       WORD    YSize;
 		8       WORD    ZSize;
-		10      LONG    PixMin;
-		14      LONG    PixMax;
+		10      LONG    PixMin;        // Min value
+		14      LONG    PixMax;        // Max value
 		18      CHAR    Dummy1[4];
 		22      CHAR    ImageName[80];
-		102     LONG    ColorMap;       // Bitmap interpretation
+		102     LONG    ColorMap;      // Bitmap interpretation
 		106     CHAR    Dummy2[404];
 		510
 	*/
 	uint8_t buf[14];
-	if (fread(buf, 1, 10, desc->ifp) != 10) {
+	if (!fread(buf, 10, 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
 	fseek(desc->ifp, 12, SEEK_CUR);
 	const size_t name_len = sizeof(desc->name);
-	if (fread(desc->name, 1, name_len, desc->ifp) != name_len) {
+	if (!fread(desc->name, name_len, 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
-	if (fread(buf + 10, 1, 4, desc->ifp) != 4) {
+	if (!fread(buf + 10, 4, 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
@@ -371,13 +342,9 @@ enum lib_fail sgi_parse_header(struct sgi_desc *desc) {
 
 enum lib_fail sgi_open_file(struct sgi_desc *desc, FILE *ifp) {
 	const unsigned char sig[2] = {0x01, 0xda};
-	unsigned char magic[sizeof(sig)];
-	if (fread(magic, 1, sizeof(magic), ifp) == sizeof(magic)) {
-		if (!memcmp(magic, sig, sizeof(magic))) {
-			desc->ifp = ifp;
-			return lib_ok;
-		}
-		return lib_invalid_signature;
+	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
+	if (st == lib_ok) {
+		desc->ifp = ifp;
 	}
-	return lib_unexpected_eof;
+	return st;
 }

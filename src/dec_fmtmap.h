@@ -8,7 +8,7 @@
 
 int fmtmap_identify_file(FILE *ifp, const char *filename);
 
-bool fmtmap_known_extension(const struct wustr filename);
+bool fmtmap_known_extension(const struct wuptr filename);
 
 void fmtmap_print_data(void);
 

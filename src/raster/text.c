@@ -167,13 +167,10 @@ int text_next_nonspace(struct text_parser *tp) {
 	return text_next_char(tp);
 }
 
-struct wustr text_get_word(struct text_parser *tp) {
+struct wuptr text_get_word(struct text_parser *tp) {
 	const size_t start = tp->pos;
 	text_skip_nonspace(tp);
-	return (struct wustr) {
-		.len = tp->pos - start,
-		.str = tp->text + start,
-	};
+	return wuptr_mem(tp->text + start, tp->pos - start);
 }
 
 size_t text_get_uint(struct text_parser *tp, size_t digits, text_fast_t *val) {
@@ -247,9 +244,8 @@ bool text_scan_uint(struct text_parser *tp, const size_t size, void *val) {
 	return scan_end(tp, start, size, read, num, val);
 }
 
-void text_parser_mem(struct text_parser *tp, const size_t len,
-const void *text) {
-	*tp = (struct text_parser) {
+struct text_parser text_parser_mem(const size_t len, const void *text) {
+	return (struct text_parser) {
 		.len = len,
 		.text = text,
 	};

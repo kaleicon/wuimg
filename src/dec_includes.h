@@ -60,6 +60,10 @@
 #include "dec/xbm.h"
 #endif
 
+#ifdef WU_ENABLE_XCURSOR
+#include "dec/xcursor.h"
+#endif
+
 
 #ifdef WU_ENABLE_FLIF
 #include "dec/flif.h"

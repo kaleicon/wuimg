@@ -11,8 +11,6 @@
 #include "raster/pix.h"
 #include "raster/pal.h"
 
-#define WU_CANON_NAME "wu"
-
 enum wu_error {
 	wu_no_change = -1, // For callbacks
 	wu_ok = 0,
@@ -29,14 +27,9 @@ enum wu_error {
 	wu_unknown_error,
 };
 
-struct wu_cycle {
-	int cycle;
-	float acc;
-};
-
 struct wu_state {
 	int idx;
-	struct wu_cycle sub;
+	int cycle;
 	enum anim_state {
 		anim_playing = 2,
 		anim_paused = 3, // For toggling with '^ 1'
@@ -51,18 +44,6 @@ struct wu_state {
 	float zoom;
 };
 
-struct yuva_geom {
-	size_t w, h;
-	size_t stride;
-	size_t size;
-};
-
-struct yuva_info {
-	unsigned char *yuva[4];
-	struct yuva_geom ya;
-	struct yuva_geom uv;
-};
-
 enum image_event {
 	ev_end = 0,
 	ev_subcycle = 1,
@@ -73,9 +54,48 @@ enum image_event {
 	ev_mirrot = 1 << 4,
 };
 
+struct plane_dim {
+	uint8_t subsamp;
+};
+
+struct plane_info {
+	unsigned char *ptr;
+	struct plane_dim x, y;
+	size_t w, h;
+	size_t stride;
+	size_t size;
+};
+
+struct image_planes {
+	bool yuva;
+	bool expand_range;
+	uint8_t v_pad;
+	struct plane_info p[4];
+};
+
+enum image_mode {
+	image_mode_raw = 0,
+	image_mode_palette = 1,
+	image_mode_planar = 2,
+};
+/*
+struct frame_info {
+	size_t x, y;
+	size_t w, h;
+	int msec;
+};
+
+struct image_frames {
+	size_t nr;
+	struct frame_info f[];
+};*/
+
 struct raw_img {
 	unsigned char *restrict data;
-	struct raster_pal *palette;
+	union {
+		struct raster_pal *palette;
+		struct image_planes *planes;
+	} u;
 
 	size_t w, h;
 	unsigned char channels;
@@ -83,13 +103,13 @@ struct raw_img {
 	unsigned char alignment;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
+	enum image_mode mode:8;
 
 	unsigned char rotate;
 	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate
 	bool disable_alpha:1;
-	bool yuva:1;
-	enum pix_subsampling subsamp:8;
 
+//	struct image_frames *frames;
 	int msec;
 	float dec_scale;
 
@@ -108,7 +128,7 @@ struct image_file {
 	enum image_event events:8;
 	void *restrict dec_state; // Used by decoder for callbacks
 
-	struct wustr_mut errors;
+	struct wustr errors;
 };
 
 struct image_context {
@@ -121,7 +141,8 @@ struct image_context {
 
 const char * wu_error_message(enum wu_error err);
 
-void raw_img_yuva_info(const struct raw_img *img, struct yuva_info *info);
+
+int raw_img_geom_hash(const struct raw_img *img);
 
 size_t raw_img_stride(const struct raw_img *img);
 
@@ -129,7 +150,21 @@ size_t raw_img_size(const struct raw_img *img);
 
 size_t raw_img_addbuf(struct raw_img *img);
 
+void raw_img_plane_resolve(struct raw_img *img);
+
+bool raw_img_plane_alloc(struct raw_img *img);
+
+void raw_img_plane_subsamp(struct raw_img *img, const enum pix_subsampling s);
+
+struct image_planes * raw_img_plane_init(struct raw_img *img);
+
+bool raw_img_plane_from_params(struct raw_img *img);
+
+struct raster_pal * raw_img_set_palette(struct raw_img *img,
+struct raster_pal *pal);
+
 void raw_img_clear(struct raw_img *img);
+
 
 struct raw_img * realloc_sub_images(struct image_file *file, size_t nr);
 

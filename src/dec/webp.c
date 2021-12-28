@@ -249,7 +249,7 @@ static enum wu_error webp_frame_iter(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, bool *clean) {
 	struct webp_state *ds = infile->dec_state;
 
-	int iters = imod(state->sub.cycle, (int)ds->frame_count);
+	int iters = imod(state->cycle, (int)ds->frame_count);
 	if (iters > (int)(ds->frame_count - ds->idx)) {
 		iters -= (int)(ds->frame_count - ds->idx);
 		rewind_webp_state(ds);
@@ -411,45 +411,49 @@ struct webp_state *ds) {
 	img->disable_alpha = !alpha;
 	WEBP_CSP_MODE colorspace;
 	if (ds->config.input.format == 1) {
-		colorspace = alpha ? MODE_YUVA : MODE_YUV;
-		img->yuva = true;
-		img->subsamp = pix_yuv420;
-	} else {
-		colorspace = alpha ? MODE_RGBA : MODE_RGB;
-	}
-	ds->config.output.colorspace = colorspace;
+		struct image_planes *planes = raw_img_plane_init(img);
+		if (!planes) {
+			return VP8_STATUS_OUT_OF_MEMORY;
+		}
 
-	const size_t stride = raw_img_addbuf(img);
-	if (!stride) {
-		return VP8_STATUS_OUT_OF_MEMORY;
-	}
+		planes->yuva = true;
+		planes->expand_range = true;
+		raw_img_plane_subsamp(img, pix_yuv420);
+		if (!raw_img_plane_alloc(img)) {
+			return VP8_STATUS_OUT_OF_MEMORY;
+		}
 
-	const size_t buf_size = stride * img->h;
-	if (ds->config.input.format == 1) {
-		struct yuva_info info;
-		raw_img_yuva_info(img, &info);
+		struct plane_info *p = planes->p;
 		ds->config.output.u.YUVA = (struct WebPYUVABuffer) {
-			.y = info.yuva[0],
-			.u = info.yuva[1],
-			.v = info.yuva[2],
-			.a = info.yuva[3],
-			.y_stride = (int)info.ya.stride,
-			.u_stride = (int)info.uv.stride,
-			.v_stride = (int)info.uv.stride,
-			.a_stride = (int)info.ya.stride,
-			.y_size = info.ya.size,
-			.u_size = info.uv.size,
-			.v_size = info.uv.size,
-			.a_size = info.ya.size,
+			.y = p[0].ptr,
+			.u = p[1].ptr,
+			.v = p[2].ptr,
+			.a = p[3].ptr,
+			.y_stride = (int)p[0].stride,
+			.u_stride = (int)p[1].stride,
+			.v_stride = (int)p[2].stride,
+			.a_stride = (int)p[3].stride,
+			.y_size = p[0].size,
+			.u_size = p[1].size,
+			.v_size = p[2].size,
+			.a_size = p[3].size,
 		};
+		colorspace = alpha ? MODE_YUVA : MODE_YUV;
 	} else {
+		const size_t stride = raw_img_addbuf(img);
+		if (!stride) {
+			return VP8_STATUS_OUT_OF_MEMORY;
+		}
+		const size_t buf_size = stride * img->h;
+
 		ds->config.output.u.RGBA = (struct WebPRGBABuffer) {
 			.rgba = img->data,
 			.stride = (int)stride,
 			.size = buf_size,
 		};
+		colorspace = alpha ? MODE_RGBA : MODE_RGB;
 	}
-
+	ds->config.output.colorspace = colorspace;
 	return WebPDecode(ds->data.bytes, ds->data.size, &ds->config);
 }
 

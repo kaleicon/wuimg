@@ -27,7 +27,7 @@ static void read_metadata(struct wu_tree *tree, const struct pi_desc *desc) {
 
 enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct pi_desc desc;
-	enum lib_fail fail = pi_open_file(infile->ifp, &desc);
+	enum lib_fail fail = pi_open_file(&desc, infile->ifp);
 	if (fail) {
 		rast_error(infile, fail);
 		return wu_invalid_signature;

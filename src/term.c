@@ -12,6 +12,7 @@
 
 #include "common.h"
 #include "term.h"
+#include "wustr.h"
 
 size_t term_printable_len(const char *str, size_t len) {
 	while (len) {
@@ -26,65 +27,63 @@ size_t term_printable_len(const char *str, size_t len) {
 
 static char * escape_data(const unsigned char *restrict data,
 const size_t len, size_t *outlen) {
-	size_t alloc = len;
-	char *out = malloc(alloc);
-	if (!out) {
+	char *out = NULL;
+	struct wugrow grow = wugrow_init(1);
+	if (!wugrow_reserve(&out, &grow, len)) {
 		return NULL;
 	}
 
 	bool escaping = false;
-	size_t pos = 0;
 	const char hex[16] = "0123456789ABCDEF";
-	const char HIGHLIGHT[] = {0x1b, '[', '7', 'm'}; //"\x1b[7m";
-	const char RESET[] = {0x1b, '[', 'm'}; //"\x1b[m";
+	const char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
+	const char RESET[] = {0x1b, '[', 'm'};
 	for (size_t i = 0; i < len; ++i) {
 		const unsigned char c = data[i];
-		size_t fut_pos = pos + 1;
+		size_t extra = 0;
 		if (isgraph(c) || isspace(c)) {
 			if (escaping) {
-				fut_pos += sizeof(RESET);
+				extra += sizeof(RESET);
 			}
-			if (!grow_buffer(&out, &alloc, fut_pos + 1 /*null*/, 1)) {
+			if (!wugrow_reserve(&out, &grow, extra)) {
 				free(out);
 				return NULL;
 			}
 			if (escaping) {
-				memcpy(out + pos, RESET, sizeof(RESET));
-				pos = fut_pos - 1;
+				memcpy(out + grow.pos, RESET, sizeof(RESET));
+				grow.pos += sizeof(RESET);
 				escaping = false;
 			}
-			out[pos] = (char)c;
-			++pos;
+			out[grow.pos] = (char)c;
+			++grow.pos;
 		} else {
 			char byte[] = {'x', hex[c >> 4], hex[c & 0x0f]};
-			fut_pos += sizeof(byte);
-			if (escaping) {
-				fut_pos += sizeof(HIGHLIGHT);
+			extra += sizeof(byte);
+			if (!escaping) {
+				extra += sizeof(HIGHLIGHT);
 			}
-			if (!grow_buffer(&out, &alloc, fut_pos + 1, 1)) {
+			if (!wugrow_reserve(&out, &grow, extra)) {
 				free(out);
 				return NULL;
 			}
-			if (escaping) {
-				memcpy(out + pos, HIGHLIGHT, sizeof(HIGHLIGHT));
-				pos = fut_pos - 1;
-				escaping = false;
+			if (!escaping) {
+				memcpy(out + grow.pos, HIGHLIGHT, sizeof(HIGHLIGHT));
+				grow.pos += sizeof(HIGHLIGHT);
+				escaping = true;
 			}
-			memcpy(out + pos, byte, sizeof(byte));
-			pos += sizeof(byte);
+			memcpy(out + grow.pos, byte, sizeof(byte));
+			grow.pos += sizeof(byte);
 		}
 	}
 	if (escaping) {
-		const size_t last = sizeof(RESET) - 1;
-		if (!grow_buffer(&out, &alloc, pos + last + 1, 1)) {
+		if (!wugrow_reserve(&out, &grow, sizeof(RESET))) {
 			free(out);
 			return NULL;
 		}
-		memcpy(out + pos, RESET, last);
-		pos += last;
+		memcpy(out + grow.pos, RESET, sizeof(RESET));
+		grow.pos += sizeof(RESET);
 	}
-	out[pos] = 0;
-	*outlen = pos;
+	out[grow.pos] = 0;
+	*outlen = grow.pos;
 	return out;
 }
 
@@ -132,7 +131,7 @@ const size_t len, size_t *outlen) {
 	return out;
 }
 
-char * term_format_unsafe_data(const void *restrict data, const size_t len,
+static char * format_unsafe(const void *restrict data, const size_t len,
 size_t *outlen) {
 	*outlen = len;
 	if (len == 0) {
@@ -154,7 +153,7 @@ size_t *outlen) {
 		return escape_data(data, len, outlen);
 	} else if (!strcmp(enc, "ASCII") || !strcmp(enc, "UTF-8")) {
 		uchardet_delete(ud);
-		return memdup(data, len);
+		return (char *)data;
 	}
 
 	const iconv_t cd = iconv_open("UTF-8", enc);
@@ -169,9 +168,30 @@ size_t *outlen) {
 	return escape_data(data, len, outlen);
 }
 
-void term_print_unsafe_data(const char *name, const void *restrict data,
+char * term_format_unsafe(const void *restrict data, const size_t len,
+size_t *outlen) {
+	char *val = format_unsafe(data, len, outlen);
+	if (val == data) {
+		return memdup(data, len);
+	}
+	return val;
+}
+
+char * term_format_unsafe_or_same(void *restrict data, const size_t len,
+size_t *outlen) {
+	char *val = format_unsafe(data, len, outlen);
+	if (val) {
+		if (val == data) {
+			return data;
+		}
+		free(data);
+	}
+	return val;
+}
+
+void term_print_unsafe(const char *name, const void *restrict data,
 size_t len) {
-	char *out = escape_data(data, len, &len);
+	char *out = term_format_unsafe(data, len, &len);
 	if (out) {
 		len = term_printable_len(out, len);
 

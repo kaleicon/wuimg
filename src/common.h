@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <time.h>
 
+#define WU_CANON_NAME "wu"
 #define ARRAY_LEN(arr) ( sizeof(arr) / sizeof(*arr) )
 //#define XSTRING_MACRO(arg) STRING_MACRO( arg )
 //#define STRING_MACRO(arg) #arg
@@ -18,6 +19,12 @@ struct utc_time { // Also known as patched-up time
 	int year, mon, day, hour, min, sec;
 };
 
+enum trit {
+	trit_false = 0,
+	trit_true = 1,
+	trit_what = 2,
+};
+
 enum endianness {
 	big_endian = 0,
 	little_endian = 1,
@@ -26,6 +33,11 @@ enum endianness {
 struct mmap_info {
 	const size_t len;
 	const unsigned char *data;
+};
+
+struct memory {
+	size_t len;
+	void *data;
 };
 
 void rfc3339_format(time_t t, FILE *out);
@@ -86,12 +98,9 @@ const void * memchk(const void *s, unsigned char c, size_t n);
 void * memrchr(const void *s, int c, size_t n);
 #endif
 
-bool grow_buffer(void *restrict ptr, size_t *alloc, size_t pos,
-size_t elem_size);
+size_t fread_alloc(struct memory *mem, size_t len, FILE *ifp);
 
-void skip_line(FILE *ifp);
-
-void * fread_alloc(FILE *ifp, size_t size, size_t nmemb);
+size_t fread_alloc_strict(struct memory *mem, size_t len, FILE *ifp);
 
 long file_get_remaining(FILE *ifp);
 
@@ -101,10 +110,10 @@ bool mmap_file(struct mmap_info *mm, FILE *ifp);
 
 bool mmap_file_fd(struct mmap_info *mm, const int fd);
 
-char * strerror_dup(int error);
-
 char * id_template(const char *prefix, size_t num);
 
 void fatal_bug(const char *name, const char *msg);
+
+void null_function();
 
 #endif /* COMMON_FUNCS */

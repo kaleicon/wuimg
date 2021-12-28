@@ -202,31 +202,67 @@ const uint8_t *restrict src, const size_t len) {
 	}
 }
 
-static void strip_pack24_16(uint16_t *dst, const uint8_t *src,
-const size_t len) {
-	for (size_t i = 0; i < len; ++i) {
-		int word;
+static inline uint16_t select_wordpack(const void *src, const size_t bitdepth) {
+	switch (bitdepth) {
+	case 24:
+		;const uint8_t *s = src;
 		if (which_end() == little_endian) {
-			word = (src[i*3 + 2] << 16) | (src[i*3 + 1]);
-		} else {
-			word = (src[i*3] << 16) | src[i*3 + 1];
+			return (uint16_t)( (s[2] << 8) | (s[1]) );
 		}
-		dst[i] = (uint16_t)word;
+		return (uint16_t)( (s[0] << 8) | s[1] );
+	case 32:
+		return (uint16_t)( ((uint32_t *)src)[0] >> (32 - 16) );
+	case 64:
+		return (uint16_t)( ((uint64_t *)src)[0] >> (64 - 16) );
+	}
+	return 0;
+}
+
+static inline void strip_wordpack_common(uint16_t *dst,
+const uint8_t *restrict src, const size_t width, const size_t height,
+const size_t boundary, const enum pix_attr attr, const size_t bitdepth) {
+	const size_t scan = scanline_length(width, bitdepth, boundary);
+	const size_t bytedepth = bitdepth / 8;
+
+	const uint16_t invert = (attr == pix_float) ? 0xff : 0x00;
+	for (size_t y = 0; y < height; ++y) {
+		for (size_t x = 0; x < width; ++x) {
+			const size_t s_off = y*scan + x*bytedepth;
+			dst[y*width + x] = (uint16_t)(
+				select_wordpack(src + s_off, bitdepth) ^ invert
+			);
+		}
 	}
 }
 
-static void strip_pack32_16(uint16_t *dst, const uint32_t *src,
-const size_t len) {
-	for (size_t i = 0; i < len; ++i) {
-		dst[i] = (uint16_t)(src[i] >> (32 - 16));
-	}
+static void strip_pack24_16(uint16_t *restrict dst, const uint8_t *restrict src,
+const size_t width, const size_t height, const size_t boundary) {
+	strip_wordpack_common(dst, src, width, height, boundary, pix_normal, 24);
 }
 
-static void strip_pack64_16(uint16_t *dst, const uint64_t *src,
-const size_t len) {
-	for (size_t i = 0; i < len; ++i) {
-		dst[i] = (uint16_t)(src[i] >> (64 - 16));
-	}
+static void strip_pack32_16(uint16_t *restrict dst, const uint8_t *restrict src,
+const size_t width, const size_t height, const size_t boundary) {
+	strip_wordpack_common(dst, src, width, height, boundary, pix_normal, 32);
+}
+
+static void strip_pack64_16(uint16_t *restrict dst, const uint8_t *restrict src,
+const size_t width, const size_t height, const size_t boundary) {
+	strip_wordpack_common(dst, src, width, height, boundary, pix_normal, 64);
+}
+
+static void strip_pack24_inv16(uint16_t *restrict dst, const uint8_t *restrict src,
+const size_t width, const size_t height, const size_t boundary) {
+	strip_wordpack_common(dst, src, width, height, boundary, pix_inverted, 24);
+}
+
+static void strip_pack32_inv16(uint16_t *restrict dst, const uint8_t *restrict src,
+const size_t width, const size_t height, const size_t boundary) {
+	strip_wordpack_common(dst, src, width, height, boundary, pix_inverted, 32);
+}
+
+static void strip_pack64_inv16(uint16_t *restrict dst, const uint8_t *restrict src,
+const size_t width, const size_t height, const size_t boundary) {
+	strip_wordpack_common(dst, src, width, height, boundary, pix_inverted, 64);
 }
 
 static void strip_pack64f_32f(float *dst, const double *src, const size_t len) {
@@ -289,44 +325,107 @@ const size_t width, const size_t height, const size_t boundary) {
 }
 
 void unpack_strip(void *restrict dst, const void *restrict src,
-const size_t width, const size_t height, const size_t alignment,
+const size_t width, const size_t height, const size_t align,
 const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
+/*	switch (op) {
+	case op_noop: break;
+	case op_unpack:
+		if (attr == pix_normal) {
+			switch (bitdepth) {
+			case 1: strip_unpack1(dst, src, width, height, align); break;
+			case 2: strip_unpack2(dst, src, width, height, align); break;
+			case 4: strip_unpack4(dst, src, width, height, align); break;
+			}
+			break;
+		}
+		break;
+	case op_expand:
+		switch (attr) {
+		case pix_normal:
+			switch (bitdepth) {
+			case 1: strip_expand1(dst, src, width, height, align); break;
+			case 2: strip_expand2(dst, src, width, height, align); break;
+			case 4: strip_expand4(dst, src, width, height, align); break;
+			case 24: strip_expand24(dst, src, width * height); break;
+			}
+			break;
+		case pix_inverted:
+			switch (bitdepth) {
+			case 1: strip_invert1(dst, src, width, height, align); break;
+			case 2: strip_invert2(dst, src, width, height, align); break;
+			case 4: strip_invert4(dst, src, width, height, align); break;
+			case 8: strip_invert8(dst, src, width, height, align); break;
+			}
+			break;
+		case pix_float: break;
+		case pix_packing_332:
+			if (bitdepth == 8) {
+				strip_expand332(dst, src, width, height, align);
+			}
+			break;
+		case pix_packing_1555:
+			if (bitdepth == 16) {
+				strip_expand1555(dst, src, width, height, align);
+			break;
+		}
+		break;
+	case op_pack:
+		switch (attr) {
+		case pix_normal:
+			switch (bitdepth) {
+			case 24: strip_pack24_16(dst, src, width * height); break;
+			case 32: strip_pack32_16(dst, src, width * height); break;
+			case 64: strip_pack64_16(dst, src, width * height); break;
+			}
+			break;*/
+
 	switch (attr) {
 	case pix_normal:
 		switch (op) {
 		case op_noop: break;
 		case op_unpack:
 			switch (bitdepth) {
-			case 1: strip_unpack1(dst, src, width, height, alignment); break;
-			case 2: strip_unpack2(dst, src, width, height, alignment); break;
-			case 4: strip_unpack4(dst, src, width, height, alignment); break;
+			case 1: strip_unpack1(dst, src, width, height, align); break;
+			case 2: strip_unpack2(dst, src, width, height, align); break;
+			case 4: strip_unpack4(dst, src, width, height, align); break;
 			}
 			break;
 		case op_expand:
 			switch (bitdepth) {
-			case 1: strip_expand1(dst, src, width, height, alignment); break;
-			case 2: strip_expand2(dst, src, width, height, alignment); break;
-			case 4: strip_expand4(dst, src, width, height, alignment); break;
+			case 1: strip_expand1(dst, src, width, height, align); break;
+			case 2: strip_expand2(dst, src, width, height, align); break;
+			case 4: strip_expand4(dst, src, width, height, align); break;
 			case 24: strip_expand24(dst, src, width * height); break;
 			}
 			break;
 		case op_pack:
 			switch (bitdepth) {
-			case 24: strip_pack24_16(dst, src, width * height); break;
-			case 32: strip_pack32_16(dst, src, width * height); break;
-			case 64: strip_pack64_16(dst, src, width * height); break;
+			case 24: strip_pack24_16(dst, src, width, height, align); break;
+			case 32: strip_pack32_16(dst, src, width, height, align); break;
+			case 64: strip_pack64_16(dst, src, width, height, align); break;
 			}
 			break;
 		}
 		break;
 	case pix_inverted:
-		if (op == op_expand) {
+		switch (op) {
+		case op_noop: break;
+		case op_unpack: break;
+		case op_expand:
 			switch (bitdepth) {
-			case 1: strip_invert1(dst, src, width, height, alignment); break;
-			case 2: strip_invert2(dst, src, width, height, alignment); break;
-			case 4: strip_invert4(dst, src, width, height, alignment); break;
-			case 8: strip_invert8(dst, src, width, height, alignment); break;
+			case 1: strip_invert1(dst, src, width, height, align); break;
+			case 2: strip_invert2(dst, src, width, height, align); break;
+			case 4: strip_invert4(dst, src, width, height, align); break;
+			case 8: strip_invert8(dst, src, width, height, align); break;
 			}
+			break;
+		case op_pack:
+			switch (bitdepth) {
+			case 24: strip_pack24_inv16(dst, src, width, height, align); break;
+			case 32: strip_pack32_inv16(dst, src, width, height, align); break;
+			case 64: strip_pack64_inv16(dst, src, width, height, align); break;
+			}
+			break;
 		}
 		break;
 	case pix_float:
@@ -336,14 +435,39 @@ const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
 		break;
 	case pix_packing_332:
 		if (op == op_expand && bitdepth == 8) {
-			strip_expand332(dst, src, width, height, alignment);
+			strip_expand332(dst, src, width, height, align);
 		}
 		break;
 	case pix_packing_1555:
 		if (op == op_expand && bitdepth == 16) {
-			strip_expand1555(dst, src, width, height, alignment);
+			strip_expand1555(dst, src, width, height, align);
 		}
 		break;
+	}
+}
+
+static void copy_strip(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t width, const size_t height, const size_t align,
+const size_t bitdepth) {
+	const size_t instride = scanline_length(width, bitdepth, align);
+	if (align == 1) {
+		memcpy(dst, src, instride * height);
+	} else {
+		const size_t outstride = scanline_length(width, bitdepth, 1);
+		for (size_t y = 0; y < height; ++y) {
+			memcpy(dst + y*outstride, src + y*instride, outstride);
+		}
+	}
+}
+
+void unpack_or_copy_strip(void *restrict dst, const void *restrict src,
+const size_t width, const size_t height, const size_t align,
+const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
+	if (op == op_noop) {
+		copy_strip(dst, src, width, height, align, bitdepth);
+	} else {
+		unpack_strip(dst, src, width, height, align, attr, op,
+			bitdepth);
 	}
 }
 
@@ -459,7 +583,7 @@ const size_t width, const size_t ch) {
 }
 
 void strip_swizzle(uint8_t *dst, const uint8_t *src, const size_t w,
-const size_t h, const size_t ch, const size_t bitdepth, const size_t alignment,
+const size_t h, const size_t ch, const size_t bitdepth, const size_t align,
 const enum pix_layout src_layout, const enum pix_layout dst_layout) {
 	uint8_t dst_swizzle[4];
 	uint8_t src_swizzle[4];
@@ -467,8 +591,8 @@ const enum pix_layout src_layout, const enum pix_layout dst_layout) {
 	pix_swizzle_mask(src_swizzle, src_layout);
 
 	const size_t elem_size = bitdepth / 8;
-	const size_t padding = (alignment - (w * ch * elem_size % alignment))
-		% alignment;
+	const size_t padding = (align - (w * ch * elem_size % align))
+		% align;
 
 	for (size_t y = 0; y < h; ++y) {
 		for (size_t x = 0; x < w; ++x) {

@@ -148,16 +148,17 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		return wu_open_error;
 	}
 
-	struct window_control control = {
-		.image.conf = conf_load(),
+	struct window_context window = {
+		.pub.image.conf = conf_load(),
 	};
+
 	struct term_restore tr;
-	if (!display_setup(&control, &tr)) {
+	if (!display_setup(&window, &tr)) {
 		return wu_unknown_error;
 	}
 
-	struct image_context *image = &control.image;
-	struct window_context *window = &control.window;
+	struct image_context *image = &window.pub.image;
+	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	size_t deleted = 0;
 	long idx = 0;
@@ -170,13 +171,13 @@ static enum wu_error run_with_archive(const char *archive_name) {
 			idx += direction;
 			continue;
 		}
-		idx = lmod(idx, (long)iter.pos);
+		idx = lmod(idx, (long)iter.grow.pos);
 
 		printf("%ld/", idx + 1);
 		if (iter.ra) {
 			putchar('?');
 		} else {
-			printf("%zu", iter.pos);
+			printf("%zu", iter.grow.pos);
 		}
 		printf(", %s/%s\n", archive_name, entry->name);
 
@@ -185,9 +186,9 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		bool free_entry = false;
 		result = decode_with_stats(image, true, true, NULL);
 		if (result == wu_ok) {
-			const bool sole_entry = iter.ra ? false : (iter.pos == 1);
-			const bool ok = display_loop(&control, sole_entry);
-			if (!ok || window->event.rm == yes_rm) {
+			const bool sole_entry = iter.ra ? false : (iter.grow.pos == 1);
+			const bool ok = display_loop(&window, sole_entry);
+			if (!ok || event->rm == yes_rm) {
 				free_entry = true;
 			}
 		} else {
@@ -199,32 +200,32 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		if (free_entry) {
 			extract_file_free(entry);
 			++deleted;
-			window->event.file.cycle = 1;
+			event->cycle = 1;
 		}
 		putchar('\n');
 
-		idx += window->event.file.cycle;
-		direction = lsign(window->event.file.cycle);
-	} while (window->event.program != close_window
-	&& (iter.ra || deleted < iter.pos));
+		idx += event->cycle;
+		direction = lsign(event->cycle);
+	} while (event->program != close_window
+	&& (iter.ra || deleted < iter.grow.pos));
 
-	display_end(&control, &tr);
+	display_end(&window, &tr);
 	extract_iter_free(&iter);
 	return result;
 }
 
 static enum wu_error run_with_list(struct image_list *entries, long idx) {
-	struct window_control control = {
-		.image.conf = conf_load(),
+	struct window_context window = {
+		.pub.image.conf = conf_load(),
 	};
 
 	struct term_restore tr;
-	if (!display_setup(&control, &tr)) {
+	if (!display_setup(&window, &tr)) {
 		return wu_unknown_error;
 	}
 
-	struct image_context *image = &control.image;
-	struct window_context *window = &control.window;
+	struct image_context *image = &window.pub.image;
+	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	size_t remaining = entries->nr;
 	long direction = 1;
@@ -239,11 +240,11 @@ static enum wu_error run_with_list(struct image_list *entries, long idx) {
 		bool free_entry = false;
 		result = decode_with_stats(image, true, true, NULL);
 		if (result == wu_ok) {
-			const bool ok = display_loop(&control, remaining == 1);
+			const bool ok = display_loop(&window, remaining == 1);
 			if (!ok) {
 				free_entry = true;
-			} else if (window->event.rm == yes_rm) {
-				remove(image->name);
+			} else if (event->rm == yes_rm) {
+				unlink(image->name);
 				puts("File deleted.");
 				free_entry = true;
 			}
@@ -255,15 +256,15 @@ static enum wu_error run_with_list(struct image_list *entries, long idx) {
 		if (free_entry) {
 			image_list_remove_entry(entries, idx);
 			--remaining;
-			window->event.file.cycle = 1;
+			event->cycle = 1;
 		}
 		putchar('\n');
 
-		idx = lmod(idx + window->event.file.cycle, (long)entries->nr);
-		direction = lsign(window->event.file.cycle);
-	} while (window->event.program != close_window && remaining);
+		idx = lmod(idx + event->cycle, (long)entries->nr);
+		direction = lsign(event->cycle);
+	} while (event->program != close_window && remaining);
 
-	display_end(&control, &tr);
+	display_end(&window, &tr);
 	return result;
 }
 
@@ -294,15 +295,16 @@ static enum wu_error from_path(const char *name) {
 
 	enum wu_error result;
 	if (entries.name) {
-		printf("dir processed in %f seconds\n", clock_ellapsed(start));
+		printf("dir processed in %f\n", clock_ellapsed(start));
 		result = run_with_list(&entries, (long)start_idx);
 		image_list_free(&entries);
 	} else {
 		if (errno) {
 			perror("Error while filtering images");
 		} else {
-			fprintf(stderr, "ERROR: %s is not a valid file or "
-				"directory.\n", name[0] ? name : ".");
+			fprintf(stderr, "ERROR: %s is neither a valid file or "
+				"directory with identifiable images.\n",
+				name[0] ? name : ".");
 		}
 		result = wu_open_error;
 	}

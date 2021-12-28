@@ -7,11 +7,19 @@
 #include "../raster/lib.h"
 #include "../raster/pal.h"
 
+enum dib_os2_compression {
+	os2_no_compression = 0,
+	os2_8bit_rle = 1,
+	os2_4bit_rle = 2,
+	os2_1d_huffman = 3,
+	os2_24bit_rle = 4,
+};
+
 enum dib_compression {
 	dib_no_compression = 0,
-	dib_8bit_rle,
-	dib_4bit_rle,
-	dib_bitfield,
+	dib_8bit_rle = 1,
+	dib_4bit_rle = 2,
+	dib_bitfield = 3,
 };
 
 enum dib_order {
@@ -37,6 +45,8 @@ struct dib_bitfield {
 struct dib_desc {
 	FILE *ifp;
 	struct raster_desc r;
+
+	enum trit is_os2:8;
 
 	unsigned char depth;
 	enum dib_type type:8;
