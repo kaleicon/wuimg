@@ -13,8 +13,8 @@ struct raster_desc {
 	bool planar;
 };
 
-const char * raster_geom_verify(const struct raster_pal *palette,
-const uint8_t ch, const uint8_t bitdepth, const enum pix_attr attr);
+const char * raster_geom_verify(bool has_palette, uint8_t ch, uint8_t bitdepth,
+enum pix_attr attr);
 
 void raster_free(struct raster_desc *desc);
 

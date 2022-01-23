@@ -4,8 +4,10 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <dirent.h>
 #include <limits.h>
+#include <unistd.h>
 
 #include <unicode/ucol.h>
 #include <unicode/uiter.h>
@@ -27,18 +29,18 @@ static const size_t POOL_SIZE = 1 << 14;
 struct keypool {
 	/* We use memory pools to store sorting keys quickly and compactly.
 	 * Since it's not possible to know the key size before-hand, using
-	 * malloc would be wasteful.
+	 * malloc on each would be wasteful.
 	 * Since we store pointers to the keys, using a single memory area
 	 * would invalidate them on realloc. */
 	struct wugrow grow;
 	size_t used; // Space used on the last buffer
 	unsigned char **buf;
 };
-
+/*
 struct fs_path {
 	struct wustr parent;
 	struct wuptr file;
-};
+};*/
 
 struct fs_dir {
 	struct fs_path path;
@@ -58,6 +60,10 @@ struct collator {
 	UErrorCode err;
 };
 
+
+void fs_path_free(struct fs_path *path) {
+	wustr_free(&path->parent);
+}
 
 static bool fs_path_set_empty_dir(struct fs_path *path) {
 	return wustr_memdup(&path->parent, "", 0);
@@ -245,45 +251,54 @@ struct collator *icu) {
 	return dir->entries_grow.pos > 0;
 }
 
-static DIR * get_dir(const char *str, struct fs_path *path) {
-	DIR *dp = NULL;
+static int open_dirfd(const char *str) {
+	return open(str, O_RDONLY | O_DIRECTORY);
+}
+
+int fs_get_parent_dir(const char *str, struct fs_path *path) {
+	int dfd = -1;
 	const struct wuptr name = wuptr_str(str);
 	if (name.len) {
 		errno = 0;
-		dp = opendir(str);
-		if (dp) {
+		dfd = open_dirfd(str);
+		if (dfd != -1) {
 			fs_path_set_dir(path, name);
 		} else if (errno == ENOTDIR) {
 			errno = 0;
 			if (fs_path_set_file(path, name)) {
-				dp = opendir(path->parent.str[0]
+				dfd = open_dirfd(path->parent.str[0]
 					? (char *)path->parent.str : ".");
 			}
 		}
 	} else {
-		dp = opendir(".");
+		dfd = open_dirfd(".");
 		fs_path_set_empty_dir(path);
 	}
-	return dp;
+	return dfd;
 }
 
 static bool get_files(const char *name, struct fs_dir *dir,
 struct fs_entry *init_key) {
-	DIR *dp = get_dir(name, &dir->path);
+	const int dfd = fs_get_parent_dir(name, &dir->path);
 	bool status = false;
-	if (dp) {
-		struct collator icu = {
-			.coll = ucol_open(NULL, &icu.err),
-		};
-		if (U_SUCCESS(icu.err)) {
-			ucol_setAttribute(icu.coll,
-				UCOL_NUMERIC_COLLATION, UCOL_ON, &icu.err);
-			status = filter_dir(dp, dir, init_key, &icu);
-			ucol_close(icu.coll);
+	if (dfd != -1) {
+		DIR *dp = fdopendir(dfd);
+		if (dp) {
+			struct collator icu = {
+				.coll = ucol_open(NULL, &icu.err),
+			};
+			if (U_SUCCESS(icu.err)) {
+				ucol_setAttribute(icu.coll,
+					UCOL_NUMERIC_COLLATION, UCOL_ON, &icu.err);
+				status = filter_dir(dp, dir, init_key, &icu);
+				ucol_close(icu.coll);
+			}
+			closedir(dp);
+		} else {
+			close(dfd);
 		}
-		closedir(dp);
 	}
-	wustr_free(&dir->path.parent);
+	fs_path_free(&dir->path);
 	return status;
 }
 
@@ -292,7 +307,6 @@ static int icu_strcoll(const void *restrict v1, const void *restrict v2) {
 	const struct fs_entry *f2 = v2;
 	const struct lenstr *l1 = f1->key;
 	const struct lenstr *l2 = f2->key;
-//	printf("l1: %u, l2: %u\n", l1->len, l2->len);
 	return memcmp(l1->str, l2->str, zumin((size_t)l1->len, (size_t)l2->len));
 }
 

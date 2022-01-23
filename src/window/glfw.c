@@ -173,6 +173,7 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 		return "glfwInit() failed";
 	}
 
+	*glfw = (struct glfw_context){0};
 	struct wu_conf *conf = &pub->image.conf;
 	int width = (int)conf->initial_size.w;
 	int height = (int)conf->initial_size.h;

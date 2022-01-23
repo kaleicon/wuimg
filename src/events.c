@@ -19,13 +19,11 @@ static unsigned char * get_map(struct wu_keymap *held_keys) {
 static bool apply_event(struct image_context *image,
 struct wu_event *event, const int code, const float msecs, const bool shift) {
 	const float MAX_ZOOM = 64.0f;
-	const float MIN_ZOOM = 1.0f / (MAX_ZOOM * 2);
+	const float MIN_ZOOM = 1.0f / MAX_ZOOM;
 
 	const struct image_file *file = &image->file;
 	struct wu_state *state = &image->state;
 
-	float new_zoom = 0;
-	int subcycle = 0;
 	switch (code) {
 	// Exit
 	case 'Q':
@@ -75,20 +73,31 @@ struct wu_event *event, const int code, const float msecs, const bool shift) {
 		event->cycle -= shift ? 10 : 1;
 		break;
 	// Sub-cycling
-	case '.': // Next
-		subcycle = 1;
+	case '<': // Prev
+		event->image = image_sub_cycle(image, -1);
 		break;
+	case '>': // Next
+		event->image = image_sub_cycle(image, 1);
+		break;
+	// Frame cycling
 	case ',': // Prev
-		subcycle = -1;
+		event->image = image_frame_cycle(image, -1);
+		state->anim_playing = false;
 		break;
-	case ':':
-		subcycle = 5;
+	case '.': // Next
+		event->image = image_frame_cycle(image, 1);
+		state->anim_playing = false;
 		break;
 	case ';':
-		subcycle = -5;
+		event->image = image_sub_cycle(image, -5);
+		state->anim_playing = false;
+		break;
+	case ':':
+		event->image = image_sub_cycle(image, 5);
+		state->anim_playing = false;
 		break;
 	case ' ':
-		state->anim ^= 1;
+		state->anim_playing = !state->anim_playing;
 		break;
 
 	// Image movement
@@ -132,35 +141,24 @@ struct wu_event *event, const int code, const float msecs, const bool shift) {
 
 	// Zoom
 	case '+':
-		new_zoom = fclampf(state->zoom * cbrtf(2.0f),
-			MIN_ZOOM, MAX_ZOOM);
+		event->image = image_zoom(image,
+			fclampf(state->zoom * cbrtf(2.0f), MIN_ZOOM, MAX_ZOOM));
 		break;
 	case '-':
-		new_zoom = fclampf(state->zoom * cbrtf(0.5f),
-			MIN_ZOOM, MAX_ZOOM);
+		event->image = image_zoom(image,
+			fclampf(state->zoom * cbrtf(0.5f), MIN_ZOOM, MAX_ZOOM));
 		break;
 	case '0':
 		state->x_offset = 0;
 		state->y_offset = 0;
-		new_zoom = state->fit_zoom;
+		event->image = image_zoom(image, state->fit_zoom);
 		break;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
 		; const struct raw_img *img = file->sub_img + state->idx;
-		new_zoom = (float)(code - '0') * (1/img->dec_scale);
+		event->image = image_zoom(image,
+			(float)(code - '0') * (1/img->dec_scale));
 		break;
-	}
-
-	if (new_zoom && new_zoom != state->zoom) {
-		if (new_zoom > state->zoom) {
-			event->image = ev_upscale;
-		} else {
-			event->image = ev_downscale;
-		}
-		state->zoom = new_zoom;
-	} else if (subcycle) {
-		state->cycle += subcycle;
-		event->image |= ev_subcycle;
 	}
 	return false;
 }
@@ -212,15 +210,15 @@ int code, const bool shift) {
 void print_keys(void) {
 	fputs("Keybinds (case insensitive unless specified):\n"
 
-		"\tq | Alt + F4 | Ctrl + w\n"
+		"\tq | Alt+F4 | Ctrl+w\n"
 		"\t\tQuit.\n"
 
 		"\tf | F11\n"
 		"\t\tToggle fullscreen.\n"
 
 		"\ta\n"
-		"\t\tCycle between alpha blending enabled, opaque, as\n"
-		"\t\tcheckerboard pattern, or disabled.\n"
+		"\t\tCycle between alpha blending enabled, as checkerboard\n"
+		"\t\tpattern, or opaque.\n"
 
 		"\tm | M\n"
 		"\t\tPrint unabreviatted metadata. For 'm', display the full\n"
@@ -235,16 +233,21 @@ void print_keys(void) {
 		"\t\tto dismiss.\n"
 
 		"\tn | p | N | P\n"
-		"\t\tGo to next or previous image. If uppercase, skip 10\n"
+		"\t\tGo to the next or previous file. If uppercase, skip 10\n"
 		"\t\timages at a time.\n"
 
+		"\t< | >\n"
+		"\t\tGo to the previous or next sub-image, respectively.\n"
+
 		"\t. | , | : | ;\n"
-		"\t\tFor period and comma, go to next or previous sub-image.\n"
-		"\t\tFor colons, skip 5 sub-images at a time.\n"
+		"\t\tFor period and comma, go to the next or previous frame\n"
+		"\t\twithin an animated sub-image. For colons, skip 5 frames\n"
+		"\t\tat a time.\n"
 
 		"\th | j | k | l | H | J | K | L | Arrow keys\n"
 		"\t\tMove viewport to the left, down, up, and right,\n"
-		"\t\trespectively. If uppercase, move twice as much.\n"
+		"\t\trespectively. If shift is pressed (uppercase), move\n"
+		"\t\ttwice as much.\n"
 
 		"\tz | x\n"
 		"\t\tRotate counter- or clockwise.\n"
@@ -263,5 +266,5 @@ void print_keys(void) {
 
 		"\t2 .. 9\n"
 		"\t\t[n]x zoom.\n",
-		stderr);
+		stdout);
 }

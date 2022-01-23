@@ -9,11 +9,11 @@
 struct pgx_desc {
 	FILE *ifp;
 	struct raster_desc rast;
+	uint32_t comp_size;
 	bool transparent;
-	uint32_t compressed_size;
 };
 
-unsigned char * pgx_decode(const struct pgx_desc *desc);
+size_t pgx_decode(const struct pgx_desc *desc, void *restrict dst);
 
 enum lib_fail pgx_read_header(struct pgx_desc *desc);
 

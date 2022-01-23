@@ -40,7 +40,6 @@ static void unpack1(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
 
 // Expand n-bit to 8-bit
 static void expand4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-/*
 	const int s = 0xff / 0x0f;
 	switch (nr) {
 	case 2:
@@ -48,10 +47,6 @@ static void expand4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
 		// fallthrough
 	case 1:
 		dst[0] = (uint8_t)( (byte >> 4) * s);
-	}*/
-	unpack4(byte, dst, nr);
-	for (size_t i = 0; i < nr; ++i) {
-		dst[i] *= (0xff / 0x0f);
 	}
 }
 
@@ -106,86 +101,80 @@ const size_t nr, const enum unpack_op action, const size_t bitdepth) {
 
 // The above but looping
 static inline void strip_common(uint8_t *restrict dst,
-const uint8_t *restrict src, const size_t width, const size_t height,
-const size_t boundary, const enum unpack_op op, const size_t bitdepth,
-const enum pix_attr attr) {
-	const size_t biab = 8 / bitdepth;
+const uint8_t *restrict src, const size_t width, const uint8_t bitdepth,
+const enum unpack_op op, const enum pix_attr attr) {
+	const size_t ipb = 8 / bitdepth;
 
-	const size_t bytes = width / biab;
-	const size_t remainer = width % biab;
-	const size_t line_end = width - remainer;
-	const size_t scan = scanline_length(width, bitdepth, boundary);
+	const size_t bytes = width / ipb;
+	const size_t remainer = width % ipb;
 
 	const uint8_t invert = (attr == pix_inverted) ? 0xff : 0x00;
-	for (size_t y = 0; y < height; ++y) {
-		const size_t src_y = y*scan;
-		const size_t dst_y = y*width;
-		for (size_t x = 0; x < bytes; ++x) {
-			const size_t o = dst_y + x * biab;
-			uint8_t byte = src[src_y + x] ^ invert;
-			select_unpack(byte, dst + o, biab, op, bitdepth);
-		}
-		uint8_t byte = src[src_y + bytes] ^ invert;
-		select_unpack(byte, dst + dst_y + line_end, remainer, op,
+	for (size_t x = 0; x < bytes; ++x) {
+		const size_t o = x * ipb;
+		uint8_t byte = src[x] ^ invert;
+		select_unpack(byte, dst + o, ipb, op, bitdepth);
+	}
+	if (remainer) {
+		uint8_t byte = src[bytes] ^ invert;
+		select_unpack(byte, dst + width - remainer, remainer, op,
 			bitdepth);
 	}
 }
 
 // Inline the common version in each variant for maximum speed
 static void strip_invert8(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_expand, 8, pix_inverted);
+const size_t n) {
+	strip_common(dst, src, n, 8, op_expand, pix_inverted);
 }
 
 static void strip_invert4(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_expand, 4, pix_inverted);
+const size_t n) {
+	strip_common(dst, src, n, 4, op_expand, pix_inverted);
 }
 
 static void strip_invert2(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_expand, 2, pix_inverted);
+const size_t n) {
+	strip_common(dst, src, n, 2, op_expand, pix_inverted);
 }
 
 static void strip_invert1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_expand, 1, pix_inverted);
+const size_t n) {
+	strip_common(dst, src, n, 1, op_expand, pix_inverted);
 }
 
 static void strip_expand4(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_expand, 4, pix_normal);
+const size_t n) {
+	strip_common(dst, src, n, 4, op_expand, pix_normal);
 }
 
 static void strip_expand2(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_expand, 2, pix_normal);
+const size_t n) {
+	strip_common(dst, src, n, 2, op_expand, pix_normal);
 }
 
 static void strip_expand1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_expand, 1, pix_normal);
+const size_t n) {
+	strip_common(dst, src, n, 1, op_expand, pix_normal);
 }
 
 static void strip_unpack4(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_unpack, 4, pix_normal);
+const size_t n) {
+	strip_common(dst, src, n, 4, op_unpack, pix_normal);
 }
 
 static void strip_unpack2(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_unpack, 2, pix_normal);
+const size_t n) {
+	strip_common(dst, src, n, 2, op_unpack, pix_normal);
 }
 
 static void strip_unpack1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_common(dst, src, width, height, boundary, op_unpack, 1, pix_normal);
+const size_t n) {
+	strip_common(dst, src, n, 1, op_unpack, pix_normal);
 }
 
 static void strip_expand24(uint8_t *restrict dst,
-const uint8_t *restrict src, const size_t len) {
-	// src should be in native order
-	for (size_t i = 0; i < len; ++i) {
+const uint8_t *restrict src, const size_t n) {
+	for (size_t x = 0; x < n; ++x) {
 		if (which_end() == little_endian) {
 			dst[0] = src[2];
 			dst[1] = src[0];
@@ -202,7 +191,7 @@ const uint8_t *restrict src, const size_t len) {
 	}
 }
 
-static inline uint16_t select_wordpack(const void *src, const size_t bitdepth) {
+static inline uint16_t select_wordpack(const void *src, const uint8_t bitdepth) {
 	switch (bitdepth) {
 	case 24:
 		;const uint8_t *s = src;
@@ -219,9 +208,12 @@ static inline uint16_t select_wordpack(const void *src, const size_t bitdepth) {
 }
 
 static inline void strip_wordpack_common(uint16_t *dst,
-const uint8_t *restrict src, const size_t width, const size_t height,
-const size_t boundary, const enum pix_attr attr, const size_t bitdepth) {
-	const size_t scan = scanline_length(width, bitdepth, boundary);
+const uint8_t *restrict src, const size_t width, const uint8_t bitdepth,
+const enum pix_attr attr) {
+	const size_t height = 1;
+	const size_t align = 1;
+
+	const size_t scan = scanline_length(width, bitdepth, align);
 	const size_t bytedepth = bitdepth / 8;
 
 	const uint16_t invert = (attr == pix_float) ? 0xff : 0x00;
@@ -236,33 +228,33 @@ const size_t boundary, const enum pix_attr attr, const size_t bitdepth) {
 }
 
 static void strip_pack24_16(uint16_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_wordpack_common(dst, src, width, height, boundary, pix_normal, 24);
+const size_t n) {
+	strip_wordpack_common(dst, src, n, 24, pix_normal);
 }
 
 static void strip_pack32_16(uint16_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_wordpack_common(dst, src, width, height, boundary, pix_normal, 32);
+const size_t n) {
+	strip_wordpack_common(dst, src, n, 32, pix_normal);
 }
 
 static void strip_pack64_16(uint16_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_wordpack_common(dst, src, width, height, boundary, pix_normal, 64);
+const size_t n) {
+	strip_wordpack_common(dst, src, n, 64, pix_normal);
 }
 
 static void strip_pack24_inv16(uint16_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_wordpack_common(dst, src, width, height, boundary, pix_inverted, 24);
+const size_t n) {
+	strip_wordpack_common(dst, src, n, 24, pix_inverted);
 }
 
 static void strip_pack32_inv16(uint16_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_wordpack_common(dst, src, width, height, boundary, pix_inverted, 32);
+const size_t n) {
+	strip_wordpack_common(dst, src, n, 32, pix_inverted);
 }
 
 static void strip_pack64_inv16(uint16_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	strip_wordpack_common(dst, src, width, height, boundary, pix_inverted, 64);
+const size_t n) {
+	strip_wordpack_common(dst, src, n, 64, pix_inverted);
 }
 
 static void strip_pack64f_32f(float *dst, const double *src, const size_t len) {
@@ -285,16 +277,9 @@ static void expand1555(const uint16_t word, uint8_t *dst) {
 }
 
 static void strip_expand1555(uint8_t *restrict dst,
-const uint16_t *restrict src, const size_t width, const size_t height,
-const size_t boundary) {
-	const size_t rowpad = scanline_length(width, 16, boundary)/2 - width;
-	for (size_t y = 0; y < height; ++y) {
-		for (size_t x = 0; x < width; ++x) {
-			expand1555(*src, dst);
-			dst += 4;
-			++src;
-		}
-		src += rowpad;
+const uint16_t *restrict src, const size_t n) {
+	for (size_t x = 0; x < n; ++x) {
+		expand1555(src[x], dst + x*4);
 	}
 }
 
@@ -312,97 +297,39 @@ static void expand332(const int byte, uint8_t *dst) {
 }
 
 static void strip_expand332(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t boundary) {
-	const size_t rowpad = scanline_length(width, 8, boundary) - width;
-	for (size_t i = 0; i < height; ++i) {
-		for (size_t j = 0; j < width; ++j) {
-			expand332(*src, dst);
-			dst += 3;
-			++src;
-		}
-		src += rowpad;
+const size_t n) {
+	for (size_t x = 0; x < n; ++x) {
+		expand332(src[x], dst + x*3);
 	}
 }
 
 void unpack_strip(void *restrict dst, const void *restrict src,
-const size_t width, const size_t height, const size_t align,
-const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
-/*	switch (op) {
-	case op_noop: break;
-	case op_unpack:
-		if (attr == pix_normal) {
-			switch (bitdepth) {
-			case 1: strip_unpack1(dst, src, width, height, align); break;
-			case 2: strip_unpack2(dst, src, width, height, align); break;
-			case 4: strip_unpack4(dst, src, width, height, align); break;
-			}
-			break;
-		}
-		break;
-	case op_expand:
-		switch (attr) {
-		case pix_normal:
-			switch (bitdepth) {
-			case 1: strip_expand1(dst, src, width, height, align); break;
-			case 2: strip_expand2(dst, src, width, height, align); break;
-			case 4: strip_expand4(dst, src, width, height, align); break;
-			case 24: strip_expand24(dst, src, width * height); break;
-			}
-			break;
-		case pix_inverted:
-			switch (bitdepth) {
-			case 1: strip_invert1(dst, src, width, height, align); break;
-			case 2: strip_invert2(dst, src, width, height, align); break;
-			case 4: strip_invert4(dst, src, width, height, align); break;
-			case 8: strip_invert8(dst, src, width, height, align); break;
-			}
-			break;
-		case pix_float: break;
-		case pix_packing_332:
-			if (bitdepth == 8) {
-				strip_expand332(dst, src, width, height, align);
-			}
-			break;
-		case pix_packing_1555:
-			if (bitdepth == 16) {
-				strip_expand1555(dst, src, width, height, align);
-			break;
-		}
-		break;
-	case op_pack:
-		switch (attr) {
-		case pix_normal:
-			switch (bitdepth) {
-			case 24: strip_pack24_16(dst, src, width * height); break;
-			case 32: strip_pack32_16(dst, src, width * height); break;
-			case 64: strip_pack64_16(dst, src, width * height); break;
-			}
-			break;*/
-
+const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
+const enum unpack_op op) {
 	switch (attr) {
 	case pix_normal:
 		switch (op) {
 		case op_noop: break;
 		case op_unpack:
 			switch (bitdepth) {
-			case 1: strip_unpack1(dst, src, width, height, align); break;
-			case 2: strip_unpack2(dst, src, width, height, align); break;
-			case 4: strip_unpack4(dst, src, width, height, align); break;
+			case 1: strip_unpack1(dst, src, n); break;
+			case 2: strip_unpack2(dst, src, n); break;
+			case 4: strip_unpack4(dst, src, n); break;
 			}
 			break;
 		case op_expand:
 			switch (bitdepth) {
-			case 1: strip_expand1(dst, src, width, height, align); break;
-			case 2: strip_expand2(dst, src, width, height, align); break;
-			case 4: strip_expand4(dst, src, width, height, align); break;
-			case 24: strip_expand24(dst, src, width * height); break;
+			case 1: strip_expand1(dst, src, n); break;
+			case 2: strip_expand2(dst, src, n); break;
+			case 4: strip_expand4(dst, src, n); break;
+			case 24: strip_expand24(dst, src, n); break;
 			}
 			break;
 		case op_pack:
 			switch (bitdepth) {
-			case 24: strip_pack24_16(dst, src, width, height, align); break;
-			case 32: strip_pack32_16(dst, src, width, height, align); break;
-			case 64: strip_pack64_16(dst, src, width, height, align); break;
+			case 24: strip_pack24_16(dst, src, n); break;
+			case 32: strip_pack32_16(dst, src, n); break;
+			case 64: strip_pack64_16(dst, src, n); break;
 			}
 			break;
 		}
@@ -413,66 +340,56 @@ const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
 		case op_unpack: break;
 		case op_expand:
 			switch (bitdepth) {
-			case 1: strip_invert1(dst, src, width, height, align); break;
-			case 2: strip_invert2(dst, src, width, height, align); break;
-			case 4: strip_invert4(dst, src, width, height, align); break;
-			case 8: strip_invert8(dst, src, width, height, align); break;
+			case 1: strip_invert1(dst, src, n); break;
+			case 2: strip_invert2(dst, src, n); break;
+			case 4: strip_invert4(dst, src, n); break;
+			case 8: strip_invert8(dst, src, n); break;
 			}
 			break;
 		case op_pack:
 			switch (bitdepth) {
-			case 24: strip_pack24_inv16(dst, src, width, height, align); break;
-			case 32: strip_pack32_inv16(dst, src, width, height, align); break;
-			case 64: strip_pack64_inv16(dst, src, width, height, align); break;
+			case 24: strip_pack24_inv16(dst, src, n); break;
+			case 32: strip_pack32_inv16(dst, src, n); break;
+			case 64: strip_pack64_inv16(dst, src, n); break;
 			}
 			break;
 		}
 		break;
 	case pix_float:
 		if (op == op_pack && bitdepth == 64) {
-			strip_pack64f_32f(dst, src, width * height);
+			strip_pack64f_32f(dst, src, n);
 		}
 		break;
 	case pix_packing_332:
 		if (op == op_expand && bitdepth == 8) {
-			strip_expand332(dst, src, width, height, align);
+			strip_expand332(dst, src, n);
 		}
 		break;
 	case pix_packing_1555:
 		if (op == op_expand && bitdepth == 16) {
-			strip_expand1555(dst, src, width, height, align);
+			strip_expand1555(dst, src, n);
 		}
 		break;
 	}
 }
 
-static void copy_strip(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t height, const size_t align,
-const size_t bitdepth) {
-	const size_t instride = scanline_length(width, bitdepth, align);
-	if (align == 1) {
-		memcpy(dst, src, instride * height);
-	} else {
-		const size_t outstride = scanline_length(width, bitdepth, 1);
-		for (size_t y = 0; y < height; ++y) {
-			memcpy(dst + y*outstride, src + y*instride, outstride);
-		}
-	}
+static void copy_strip(void *restrict dst, const void *restrict src,
+const size_t n, const size_t bitdepth) {
+	memcpy(dst, src, scanline_length(n, bitdepth, 1));
 }
 
 void unpack_or_copy_strip(void *restrict dst, const void *restrict src,
-const size_t width, const size_t height, const size_t align,
-const enum pix_attr attr, const enum unpack_op op, const size_t bitdepth) {
+const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
+const enum unpack_op op) {
 	if (op == op_noop) {
-		copy_strip(dst, src, width, height, align, bitdepth);
+		copy_strip(dst, src, n, bitdepth);
 	} else {
-		unpack_strip(dst, src, width, height, align, attr, op,
-			bitdepth);
+		unpack_strip(dst, src, n, bitdepth, attr, op);
 	}
 }
 
-uint8_t unpack_depth(const enum pix_attr attr, const enum unpack_op op,
-const size_t bitdepth) {
+uint8_t unpack_depth(const uint8_t bitdepth, const enum pix_attr attr,
+const enum unpack_op op) {
 	uint8_t outdepth = 0;
 	switch (attr) {
 	case pix_normal:
@@ -524,55 +441,16 @@ const size_t bitdepth) {
 		}
 		break;
 	}
-
 	return outdepth;
 }
 
-size_t unpack_stride(const size_t width, enum pix_attr attr,
-const enum unpack_op op, const size_t bitdepth) {
-	uint8_t outdepth = unpack_depth(attr, op, bitdepth);
+size_t unpack_stride(const size_t n, const uint8_t bitdepth,
+const enum pix_attr attr, const enum unpack_op op) {
+	uint8_t outdepth = unpack_depth(bitdepth, attr, op);
 	if (outdepth) {
-		return scanline_length(width, outdepth, 1);
+		return scanline_length(n, outdepth, 1);
 	}
 	return 0;
-}
-
-static inline void strip_interleave_inline(uint8_t *restrict dst,
-const uint8_t *restrict src, const size_t dims, const size_t planes,
-const size_t word) {
-	for (size_t x = 0; x < dims; ++x) {
-		for (size_t p = 0; p < planes; ++p) {
-			const size_t dst_off = (x*planes + p) * word;
-			const size_t src_off = (dims*p + x) * word;
-			memcpy(dst + dst_off, src + src_off, word);
-		}
-	}
-}
-
-static void strip_interleave8(uint8_t *restrict dst,
-const uint8_t *restrict src, const size_t dims, const size_t planes) {
-	const size_t word = 1;
-	switch (planes) {
-	case 2: strip_interleave_inline(dst, src, dims, planes, word); break;
-	case 3: strip_interleave_inline(dst, src, dims, planes, word); break;
-	case 4: strip_interleave_inline(dst, src, dims, planes, word); break;
-	}
-}
-
-void strip_interleave(void *restrict dst, const void *restrict src,
-const size_t dims, const size_t planes, const size_t bitdepth) {
-	const size_t word = (size_t)bitdepth / 8;
-	if (planes == 1) {
-		puts("An unnecesary copy has been made. Repent.");
-		memcpy(dst, src, dims * word);
-		return;
-	}
-
-	switch (bitdepth) {
-	case 8: strip_interleave8(dst, src, dims, planes); break;
-	default:
-		strip_interleave_inline(dst, src, dims, planes, word);
-	}
 }
 
 void strip_spread(uint8_t *restrict dst, const uint8_t *restrict src,
@@ -582,31 +460,24 @@ const size_t width, const size_t ch) {
 	}
 }
 
-void strip_swizzle(uint8_t *dst, const uint8_t *src, const size_t w,
-const size_t h, const size_t ch, const size_t bitdepth, const size_t align,
-const enum pix_layout src_layout, const enum pix_layout dst_layout) {
+void strip_swizzle(void *data, const size_t w, const uint8_t ch,
+const size_t elem_size, const enum pix_layout dst_layout,
+const enum pix_layout src_layout) {
 	uint8_t dst_swizzle[4];
 	uint8_t src_swizzle[4];
 	pix_swizzle_mask(dst_swizzle, dst_layout);
 	pix_swizzle_mask(src_swizzle, src_layout);
 
-	const size_t elem_size = bitdepth / 8;
-	const size_t padding = (align - (w * ch * elem_size % align))
-		% align;
-
-	for (size_t y = 0; y < h; ++y) {
-		for (size_t x = 0; x < w; ++x) {
-			uint8_t buf[8*4];
-			for (uint8_t z = 0; z < ch; ++z) {
-				const size_t dst_z = dst_swizzle[z] * elem_size;
-				const size_t src_z = src_swizzle[z] * elem_size;
-				memcpy(buf + dst_z, src + src_z, elem_size);
-			}
-			const size_t span = elem_size * ch;
-			memcpy(dst, buf, span);
-			dst += span;
-			src += span;
+	const size_t pix_size = elem_size * ch;
+	uint8_t *d = data;
+	for (size_t x = 0; x < w; ++x) {
+		uint8_t buf[8*4];
+		for (uint8_t z = 0; z < ch; ++z) {
+			const size_t dst_z = dst_swizzle[z] * elem_size;
+			const size_t src_z = src_swizzle[z] * elem_size;
+			memcpy(buf + dst_z, d + src_z, elem_size);
 		}
-		src += padding;
+		memcpy(d, buf, pix_size);
+		d += pix_size;
 	}
 }

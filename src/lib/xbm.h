@@ -8,8 +8,8 @@
 #include "../raster/text.h"
 
 enum xbm_type {
-	xbm_x10,
-	xbm_x11,
+	xbm_x11 = 1,
+	xbm_x10 = 2,
 };
 
 struct xbm_desc {
@@ -24,10 +24,8 @@ struct xbm_desc {
 	struct wuptr comment;
 };
 
-void xbm_cleanup(struct xbm_desc *desc);
+size_t xbm_decode(const struct xbm_desc *desc, void *restrict dst);
 
-unsigned char * xbm_decode(const struct xbm_desc *desc);
-
-enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct mmap_info *mem);
+enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct map_info *mm);
 
 #endif /* LIB_XBM */

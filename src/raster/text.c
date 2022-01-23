@@ -35,23 +35,6 @@ static bool fill_buf(struct text_block *text, FILE *ifp, size_t *read) {
 	return rem == *read;
 }
 
-/*size_t text_block_read_delim(struct text_block *text,
-const unsigned char delim, FILE *ifp) {
-	size_t read;
-	if (fill_buf(text, ifp, &read)) {
-		size_t end = sizeof(text->buf);
-		while (end && text->buf[end - 1] != delim) {
-			--end;
-		}
-		text->tail = sizeof(text->buf) - end;
-		return end;
-	} else {
-		text->buf[text->tail + read] = 0;
-		text->tail = 0;
-	}
-	return read;
-}*/
-
 size_t text_block_read_spaced(struct text_block *text, FILE *ifp) {
 	size_t read;
 	if (fill_buf(text, ifp, &read)) {
@@ -95,7 +78,6 @@ const size_t digits) {
 }
 
 
-// Highly refined sugar
 static bool bndchk(struct text_parser *tp) {
 	return tp->pos < tp->len;
 }
@@ -103,6 +85,7 @@ static bool bndchk(struct text_parser *tp) {
 static unsigned char curc(struct text_parser *tp) {
 	return tp->text[tp->pos];
 }
+
 
 unsigned char text_next_char_unsafe(struct text_parser *tp) {
 	const unsigned char c = curc(tp);

@@ -61,6 +61,7 @@ struct tga_desc {
 	enum tga_image_type type;
 	unsigned char depth;
 	unsigned char attr_bits, orientation;
+	bool read_metadata;
 
 	long data_start;
 	struct tga_colormap map;
@@ -80,6 +81,6 @@ bool tga_parse_footer(struct tga_desc *desc);
 
 enum lib_fail tga_parse_header(struct tga_desc *desc);
 
-enum lib_fail tga_open_file(FILE *ifp, struct tga_desc *desc, bool read_metadata);
+enum lib_fail tga_open_file(struct tga_desc *desc, FILE *ifp, bool read_metadata);
 
 #endif /* LIB_TGA */

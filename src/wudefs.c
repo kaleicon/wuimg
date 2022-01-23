@@ -36,6 +36,8 @@ const char * wu_error_message(const enum wu_error err) {
 		return "Failed to decode image";
 	case wu_exceeds_size_limit:
 		return "Image exceeds the max dimension limit";
+	case wu_display_error:
+		return "Error ocurred during display";
 	case wu_unknown_error:
 		return "Purposely unspecified error o.O";
 	}
@@ -46,6 +48,7 @@ const char * wu_error_message(const enum wu_error err) {
 static void raw_img_free(struct raw_img *img) {
 	free(img->data);
 	free(img->u.palette);
+	free(img->frames);
 	free(img->id);
 }
 
@@ -93,6 +96,14 @@ size_t raw_img_addbuf(struct raw_img *img) {
 	return 0;
 }
 
+struct image_frames * raw_img_alloc_frames(struct raw_img *img, size_t nr) {
+	img->frames = malloc(sizeof(*img->frames) + nr * sizeof(*img->frames->f));
+	if (img->frames) {
+		img->frames->nr = nr;
+	}
+	return img->frames;
+}
+
 static size_t subsamp_dim(const size_t dim, const uint8_t subsamp) {
 	if (subsamp > 1) {
 		return (dim + 1) / subsamp;
@@ -100,7 +111,7 @@ static size_t subsamp_dim(const size_t dim, const uint8_t subsamp) {
 	return dim;
 }
 
-static size_t calc_plane_size(const struct raw_img *img,
+static size_t plane_calc_size(const struct raw_img *img,
 struct plane_info *plane) {
 	plane->w = subsamp_dim(img->w, plane->x.subsamp);
 	plane->h = subsamp_dim(img->h, plane->y.subsamp);
@@ -115,7 +126,7 @@ void raw_img_plane_resolve(struct raw_img *img) {
 	for (int i = 0; i < img->channels; ++i) {
 		struct plane_info *p = img->u.planes->p + i;
 		p->ptr = img->data + total;
-		total += calc_plane_size(img, p);
+		total += plane_calc_size(img, p);
 	}
 }
 
@@ -125,7 +136,7 @@ bool raw_img_plane_alloc(struct raw_img *img) {
 	struct plane_info *p = img->u.planes->p;
 	for (int i = 0; i < img->channels; ++i) {
 		offsets[i] = total; // Start with 0
-		total += calc_plane_size(img, p + i);
+		total += plane_calc_size(img, p + i);
 	}
 
 	img->data = malloc(total);
@@ -215,14 +226,21 @@ struct raw_img * alloc_sub_images(struct image_file *file, const size_t nr) {
 }
 
 
+void image_file_free_if_single(struct image_file *file) {
+	if (!file->events && !file->dec_state && file->nr == 1) {
+		struct raw_img *img = file->sub_img;
+		free(img->data);
+		img->data = NULL;
+	}
+}
+
 static size_t print_dimensions(const struct raw_img *img) {
 	printf("  dimensions: %zu x %zu x %d", img->w, img->h, img->channels);
 
 	size_t memsize = 0;
 	if (img->mode == image_mode_planar) {
 		struct image_planes *planes = img->u.planes;
-		const char *colorspace[] = {"rgba", "yuva"};
-		printf(" (planar, %s)", colorspace[planes->yuva]);
+		printf(" (planar, %s)", color_space_str(planes->cs));
 		for (int i = 0; i < img->channels; ++i) {
 			memsize += planes->p[i].size;
 		}
@@ -230,7 +248,7 @@ static size_t print_dimensions(const struct raw_img *img) {
 		if (img->mode == image_mode_palette) {
 			fputs(" (paletted)", stdout);
 		}
-		memsize = scanline_length(img->w, img->bitdepth,
+		memsize = scanline_length(img->w * img->channels, img->bitdepth,
 			img->alignment) * img->h;
 	}
 
@@ -265,47 +283,51 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 	}
 	printf("Contained sub-images: %zu\n", file->nr);
 
-	const struct raw_img *img = file->sub_img;
 	size_t overall_size = 0;
 	for (size_t i = 0; i < file->nr; ++i) {
-		if (file->is_animation) {
-			printf(" */%zu, id: frame*\n", file->nr);
-		} else {
-			printf(" %zu/%zu", i+1, file->nr);
-			if (img[i].id) {
-				printf(", id: %s", img[i].id);
-			}
-			putchar('\n');
+		const struct raw_img *img = file->sub_img + i;
+		printf(" %zu/%zu", i+1, file->nr);
+		if (img->frames) {
+			printf(", frames: %zu", img->frames->nr);
 		}
+		if (img->id) {
+			printf(", id: %s", img->id);
+		}
+		putchar('\n');
 
-		if (img[i].data) {
-			const size_t mem_size = print_dimensions(img + i);
-			if (file->is_animation) {
-				overall_size = mem_size * file->nr;
-				break;
-			} else {
-				overall_size += mem_size;
-			}
+		if (img->data) {
+			overall_size += print_dimensions(img);
 		} else {
 			puts("  Not loaded");
 		}
 	}
 
-	if (file->nr > 1 || file->is_animation) {
+	if (file->nr > 1) {
 		printf("Total size in memory: %zu\n", overall_size);
 	}
 }
 
+static void figure_out_alignment(struct raw_img *img) {
+	const size_t bytes = (img->w * img->channels * img->bitdepth + 7) / 8;
+	const size_t align = img->alignment - 1;
+	const size_t diff = ((bytes + align) & (~align)) - bytes;
+	if (diff < 8) {
+		img->alignment = 8;
+	}
+}
+
 void image_file_normalize(struct image_file *file) {
+	if (!file->nr) {
+		fatal_bug("Bad image", "No sub-images contained!");
+	}
 	for (size_t i = 0; i < file->nr; ++i) {
 		struct raw_img *img = file->sub_img + i;
 		if (!img->data) {
 			continue;
 		}
 
-		struct raster_pal *pal = (img->mode == image_mode_palette)
-			? img->u.palette : NULL;
-		const char *err_msg = raster_geom_verify(pal, img->channels,
+		const char *err_msg = raster_geom_verify(
+			img->mode == image_mode_palette, img->channels,
 			img->bitdepth, img->attr);
 		if (err_msg) {
 			fatal_bug("Bad image", err_msg);
@@ -324,14 +346,10 @@ void image_file_normalize(struct image_file *file) {
 			break;
 		}
 
-		if (img->mode == image_mode_planar && img->channels == 1) {
-			free(img->u.planes);
-			img->u.planes = NULL;
-			img->mode = image_mode_raw;
-		}
-
 		if (!img->alignment) {
 			img->alignment = 1;
+		} else if (img->mode != image_mode_planar && img->alignment > 8) {
+			figure_out_alignment(img);
 		}
 
 		if (!img->layout) {
@@ -383,6 +401,38 @@ void image_file_free(struct image_file *file) {
 		fclose(file->ifp);
 	}
 }
+
+enum image_event image_zoom(struct image_context *image, float new_zoom) {
+	enum image_event ev = 0;
+	if (new_zoom != image->state.zoom) {
+		ev = (new_zoom > image->state.zoom) ? ev_upscale : ev_downscale;
+		image->state.zoom = new_zoom;
+	}
+	return ev;
+}
+
+enum image_event image_sub_cycle(struct image_context *image, int subcycle) {
+	const int c = imod(image->state.idx + subcycle, (int)image->file.nr);
+	if (c != image->state.idx) {
+		image->state.idx = c;
+		return ev_subcycle;
+	}
+	return 0;
+}
+
+enum image_event image_frame_cycle(struct image_context *image, int steps) {
+	const struct image_frames *frames =
+		image->file.sub_img[image->state.idx].frames;
+	if (frames) {
+		const int f = imod(image->state.frame + steps, (int)frames->nr);
+		if (f != image->state.frame) {
+			image->state.frame = f;
+			return ev_frame;
+		}
+	}
+	return 0;
+}
+
 
 static size_t fit(const size_t w, const size_t h, const size_t dw,
 const size_t dh, const size_t m) {

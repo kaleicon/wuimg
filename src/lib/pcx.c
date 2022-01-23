@@ -10,7 +10,7 @@
 
 #include "pcx.h"
 
-// Disclaimer: I hate this format.
+// It's like this format was intelligently designed to be terrible.
 
 static const size_t RLE_MAX_RUN = 0x3f;
 static const size_t VGA_PAL_LEN = 256*3;
@@ -71,18 +71,14 @@ static bool check_cga_mode(const struct pcx_desc *desc) {
 	 * the PCX format means there's no indication of when was each meant to
 	 * be used, and plenty of samples relying on either behaviour.
 
-	 * Although some docs talk about strange heuristics like checking for
-	 * common CGA resolutions or bits/planes combinations, I believe the
-	 * cowboy programmers who made this mess in the first place expected us
-	 * to realize that, if CGA mode needs only 2 out of 4 entries, the
-	 * other two were obviously going to be be zeroed. Checking this makes
-	 * all the images in the FFmpeg samples display OK, as far as one can
-	 * tell with a format that is undecidable to render.
+	 * Although some docs talk about strange heuristics like testing for
+	 * common CGA resolutions or bits/planes combinations, here we opt for
+	 * checking whether the last two entries are zeroed. This makes all
+	 * the images in the FFmpeg samples display OK, as far as one can tell
+	 * with a format that's borderline undecidable to render.
 
-	 * Care should be taken, however, NOT to check the rest of the palette
-	 * area for zeroes, as them cowboy programmers will also merrily leave
-	 * arbitrary data in there, either because of uncleared memory or as a
-	 * sort of not-backwards-incompatible header extension. */
+	 * Care should be taken NOT to check the whole palette area for
+	 * zeroes, as uncleared memory will be found in there. */
 	return desc->r.bitdepth == 2 && !memchk(desc->file_pal + 6, 0, 6);
 }
 
@@ -99,7 +95,7 @@ const struct pix_rgb8 *pal_data) {
 	if (entries == 2) {
 		/* PC Paintbrush will display a dialog asking the user whether
 		 * to open 1-bit 1-plane files as B&W or using the header
-		 * palette. So one shouldn't get too stressed about which way
+		 * palette, so one shouldn't get too stressed about which way
 		 * is correct.
 		 * Here, to use the file palette, we check if
 		 *  · the file version allows a palette
@@ -235,7 +231,8 @@ unsigned char * pcx_decode(struct pcx_desc *desc) {
 		return NULL;
 	}
 
-	const size_t rle_len = zumin(dims*2 + VGA_PAL_LEN, (size_t)desc->rle_len);
+	const size_t rle_len = zumin(dims*2 + VGA_PAL_LEN,
+		(size_t)desc->rle_len);
 	unsigned char *rle = malloc(rle_len);
 	if (!rle) {
 		free(data);
@@ -244,11 +241,14 @@ unsigned char * pcx_decode(struct pcx_desc *desc) {
 
 	const size_t read = fread(rle, 1, rle_len, desc->ifp);
 	if (read < rle_len) {
+		if (!read) {
+			free(data);
+			return NULL;
+		}
 		puts(RASTER_EOF);
 	}
 
 	const size_t remaining = rle_decode(data, dims, rle, read);
-
 	const enum lib_fail fail = looking_for_lost_pauline(desc, rle + read,
 		remaining);
 	free(rle);
@@ -333,8 +333,8 @@ enum lib_fail pcx_read_header(struct pcx_desc *desc) {
 		stopped being updated.
 	*/
 
-	uint8_t header1[13]; // Header from offset 0 to 13
-	uint8_t header2[10]; // Header from offset 61 to 71
+	uint8_t header1[13]; // Header bytes 0 to 13
+	uint8_t header2[10]; // Header bytes 61 to 71
 	size_t read = fread(header1, 1, sizeof(header1), desc->ifp);
 	read += fread(desc->file_pal, 1, sizeof(desc->file_pal), desc->ifp);
 	read += fread(header2, 1, sizeof(header2), desc->ifp);

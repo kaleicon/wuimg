@@ -8,6 +8,10 @@
 #include "dec/dib.h"
 #endif
 
+#ifdef WU_ENABLE_G00
+#include "dec/g00.h"
+#endif
+
 #ifdef WU_ENABLE_MAC
 #include "dec/mac.h"
 #endif

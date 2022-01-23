@@ -44,7 +44,7 @@ int main(const int argc, const char *argv[]) {
 		.conf.max_img_size = USHRT_MAX / 4,
 	};
 
-	const enum wu_error result = decode_image(&image);
+	const enum wu_error result = dec_decode_image(&image);
 	if (result == wu_ok) {
 		float bg[3] = {0};
 		struct timespec start;
@@ -55,6 +55,6 @@ int main(const int argc, const char *argv[]) {
 			samples, clock_nanodiff(&start));
 		printf("Colors: r=%f g=%f b=%f\n", bg[0], bg[1], bg[2]);
 	}
-	free_image_file(&image.file);
+	dec_free_image(&image.file);
 	return 0;
 }

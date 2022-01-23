@@ -21,7 +21,7 @@ struct tim_desc {
 
 void tim_cleanup(struct tim_desc *desc);
 
-unsigned char * tim_decode(const struct tim_desc *desc);
+size_t tim_decode(const struct tim_desc *desc, void *restrict dst);
 
 enum lib_fail tim_parse_header(struct tim_desc *desc);
 

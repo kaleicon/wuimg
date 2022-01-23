@@ -21,7 +21,38 @@ static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 	return i;
 }
 
-enum wu_error common_pcx(FILE *ifp, struct raw_img *img,
+static void add_metadata(struct wu_tree *metadata,
+const struct pcx_desc *desc) {
+	const char ver_fmt[] = "%hhu (%s)";
+	char buf[sizeof(ver_fmt) + 20];
+	const size_t w = (size_t)sprintf(buf, ver_fmt, desc->version,
+		pcx_version_string(desc->version));
+	tree_sprout_measured_leaf(metadata, "Format version", buf, w);
+
+	struct wu_leaf leaf = {
+		.val.u = desc->r.ch,
+		.type = wu_leaf_unsigned
+	};
+	tree_bud_leaf(metadata, "Planes", leaf);
+
+	leaf.val.u = desc->r.bitdepth;
+	tree_bud_leaf(metadata, "Bitdepth", leaf);
+
+	leaf.val.u = desc->palette_type;
+	tree_bud_leaf(metadata, "Palette mode", leaf);
+
+	if (desc->entries <= 4) {
+		const void *garbage = desc->file_pal + 12;
+		const size_t len = is_readable_garbage(garbage,
+			sizeof(desc->file_pal) - 12);
+		if (len) {
+			tree_sprout_measured_leaf(metadata, "Garbage", garbage,
+				len);
+		}
+	}
+}
+
+static enum wu_error common_pcx(FILE *ifp, struct raw_img *img,
 struct wu_tree *metadata, const struct wu_conf *wuconf, const long file_len) {
 	struct pcx_desc desc;
 	enum lib_fail status = pcx_open_file(ifp, &desc, file_len);
@@ -35,34 +66,7 @@ struct wu_tree *metadata, const struct wu_conf *wuconf, const long file_len) {
 	}
 
 	if (metadata) {
-		const char ver_fmt[] = "%hhu (%s)";
-		char buf[sizeof(ver_fmt) + 20];
-		const size_t w = (size_t)sprintf(buf, ver_fmt, desc.version,
-			pcx_version_string(desc.version));
-		tree_sprout_measured_leaf(metadata, "Format version", buf, w);
-
-		struct wu_leaf leaf = {
-			.val.u = desc.r.ch,
-			.type = wu_leaf_unsigned
-		};
-		tree_bud_leaf(metadata, "Planes", leaf);
-
-		leaf.val.u = desc.r.bitdepth;
-		tree_bud_leaf(metadata, "Bitdepth", leaf);
-
-		leaf.val.u = desc.palette_type;
-		tree_bud_leaf(metadata, "Palette mode", leaf);
-
-		if (desc.entries <= 4) {
-			const void *garbage = desc.file_pal
-				+ 12;
-			const size_t len = is_readable_garbage(garbage,
-				sizeof(desc.file_pal) - 12);
-			if (len) {
-				tree_sprout_measured_leaf(metadata, "Garbage",
-					garbage, len);
-			}
-		}
+		add_metadata(metadata, &desc);
 	}
 
 	if (rast_exceeds_size(&desc.r, wuconf)) {
@@ -79,7 +83,6 @@ enum wu_error pcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	if (!img) {
 		return wu_alloc_error;
 	}
-
 	return common_pcx(infile->ifp, img, &infile->metadata, wuconf, 0);
 }
 

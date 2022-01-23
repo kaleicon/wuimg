@@ -23,7 +23,7 @@ static const uint32_t XCURSOR_TOC_LIMIT = 0x10000;
 static const uint32_t XCURSOR_STR_LIMIT = 0x1000000;
 static const uint32_t XCURSOR_DIM_LIMIT = 0x7fff;
 
-const char * xcursor_comment_type_string(enum xcursor_comment_type type) {
+const char * xcursor_comment_type_str(enum xcursor_comment_type type) {
 	switch (type) {
 	case xcursor_comment_copyright: return "Copyright";
 	case xcursor_comment_license: return "License";
@@ -37,15 +37,9 @@ void xcursor_free(struct xcursor_desc *desc) {
 }
 
 size_t xcursor_get_chunk_data(struct xcursor_desc *desc,
-struct xcursor_chunk *chunk, struct memory *mem) {
-	switch (chunk->type) {
-	case xcursor_chunk_comment:
-		return fread_alloc_strict(mem, chunk->u.comment.len,
-			desc->ifp);
-	case xcursor_chunk_image:
-		return lib_load_rast(mem, &chunk->u.image.r, desc->ifp);
-	}
-	return 0;
+struct xcursor_chunk *chunk, void *restrict dst) {
+	fseek(desc->ifp, chunk->pos, SEEK_SET);
+	return fread(dst, 1, chunk->len, desc->ifp);
 }
 
 enum lib_fail xcursor_get_chunk(struct xcursor_desc *desc,
@@ -61,7 +55,6 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 	 * Comment chunk structure:
 		HeaderSize must be 20
 		SubType must be one of 1 (copyright), 2 (license), or 3 (other)
-		StringLength must be less than 0x100000
 		String must be encoded as UTF-8 and not include the ending null
 			Offset  Size    Name
 			16      DWORD   StringLength
@@ -84,12 +77,13 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 	struct xcursor_toc *entry = desc->toc + i;
 	uint32_t buf[9];
 
-	size_t size = sizeof(*buf);
+	size_t elems;
 	switch (entry->type) {
-	case xcursor_chunk_comment: size *= 5; break;
-	case xcursor_chunk_image: size *= 9; break;
+	case xcursor_chunk_comment: elems = 5; break;
+	case xcursor_chunk_image: elems = 9; break;
 	default: return lib_invalid_header;
 	}
+	const size_t size = elems * sizeof(*buf);
 
 	fseek(desc->ifp, entry->pos, SEEK_SET);
 	if (!fread(buf, size, 1, desc->ifp)) {
@@ -106,6 +100,7 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 		return lib_invalid_header;
 	}
 
+	chunk->pos = ftell(desc->ifp);
 	switch (chunk->type) {
 	case xcursor_chunk_comment:
 		switch (subtype) {
@@ -119,9 +114,9 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 
 		chunk->u.comment = (struct xcursor_comment) {
 			.type = subtype,
-			.len = endian32(buf[4], little_endian),
 		};
-		if (chunk->u.comment.len > XCURSOR_STR_LIMIT) {
+		chunk->len = endian32(buf[4], little_endian);
+		if (chunk->len > XCURSOR_STR_LIMIT) {
 			return lib_invalid_header;
 		}
 		break;
@@ -144,6 +139,7 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 			return lib_invalid_header;
 		}
 		raster_normalize(&image->r);
+		chunk->len = raster_size(&image->r);
 		break;
 	}
 	return lib_ok;
@@ -159,26 +155,31 @@ static enum lib_fail load_toc(struct xcursor_desc *desc) {
 	*/
 
 	errno = 0;
-	struct memory mem;
-	if (fread_alloc_strict(&mem, sizeof(*desc->toc) * desc->ntoc, desc->ifp)) {
-		desc->toc = mem.data;
-		for (uint32_t i = 0; i < desc->ntoc; ++i) {
-			struct xcursor_toc *entry = desc->toc + i;
-			uint32_t *data = (uint32_t *)entry;
-			loop_endian32(data, little_endian,
-				sizeof(*desc->toc) / sizeof(*data));
-			switch (entry->type) {
-			case xcursor_chunk_comment:
-				desc->comments += 1;
-				break;
-			case xcursor_chunk_image:
-				desc->images += 1;
-				break;
-			}
-		}
-		return lib_ok;
+	const size_t size = sizeof(*desc->toc) * desc->ntoc;
+	desc->toc = malloc(size);
+	if (!desc->toc) {
+		return lib_alloc_error;
 	}
-	return errno == ENOMEM ? lib_alloc_error : lib_unexpected_eof;
+
+	if (!fread(desc->toc, size, 1, desc->ifp)) {
+		return lib_unexpected_eof;
+	}
+
+	for (uint32_t i = 0; i < desc->ntoc; ++i) {
+		struct xcursor_toc *entry = desc->toc + i;
+		uint32_t *data = (uint32_t *)entry;
+		loop_endian32(data, little_endian,
+			sizeof(*desc->toc) / sizeof(*data));
+		switch (entry->type) {
+		case xcursor_chunk_comment:
+			desc->comments += 1;
+			break;
+		case xcursor_chunk_image:
+			desc->images += 1;
+			break;
+		}
+	}
+	return lib_ok;
 }
 
 enum lib_fail xcursor_parse_header(struct xcursor_desc *desc,
@@ -187,7 +188,7 @@ uint32_t max_entries) {
 		Offset  Size    Name
 		0       DWORD   HeaderBytes     // 16
 		4       DWORD   FileVersion     // 0x00010000 (means 1.0)
-		8       DWORD   Entries         // Must be <= 0x10000
+		8       DWORD   NrOfEntries
 		12              TableOfContents
 	*/
 	uint32_t header[3];
@@ -217,8 +218,9 @@ enum lib_fail xcursor_open_file(struct xcursor_desc *desc, FILE *ifp) {
 	const uint8_t sig[] = {'X', 'c', 'u', 'r'};
 	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
 	if (st == lib_ok) {
-		memset(desc, 0, sizeof(*desc));
-		desc->ifp = ifp;
+		*desc = (struct xcursor_desc) {
+			.ifp = ifp,
+		};
 	}
 	return st;
 }

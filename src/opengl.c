@@ -8,10 +8,11 @@
 #include "wudefs.h"
 #include "common.h"
 #include "opengl.h"
+#include "raster/color.h"
 #include "raster/pix.h"
 #include "raster/unpack.h"
 
-#define WU_GL_DEBUG
+//#define WU_GL_DEBUG
 
 /* GLSL variables */
 #define ATTR_POS "pos"
@@ -32,17 +33,18 @@
 #define MODE_PLANAR "2"
 
 #define ALPHA_ENABLED "0"
-#define ALPHA_OPAQUE "1"
-#define ALPHA_CHECKERS "2"
+#define ALPHA_CHECKERS "1"
+#define ALPHA_OPAQUE "2"
 
 static const GLint WU_MIPMAP_MAX = 6;
 static const GLint WU_MIN_FILTER = GL_LINEAR_MIPMAP_LINEAR;
 
 enum gl_tex_unit {
 	gl_tex_img = GL_TEXTURE0,
-	gl_tex_pal = GL_TEXTURE0 + 1,
-	gl_tex_plane3 = GL_TEXTURE0 + 2,
-	gl_tex_plane4 = GL_TEXTURE0 + 3,
+	gl_tex_pal = GL_TEXTURE1,
+	gl_tex_plane3 = GL_TEXTURE2,
+	gl_tex_plane4 = GL_TEXTURE3,
+	gl_tex_reader = GL_TEXTURE4,
 };
 
 struct gl_upload_params {
@@ -52,11 +54,6 @@ struct gl_upload_params {
 	enum unpack_op op:8;
 	bool disable_alpha;
 	uint8_t comps;
-};
-
-struct colorspace {
-	float off[4];
-	float mat[16];
 };
 
 const char * gl_strerror(const GLenum error) {
@@ -152,7 +149,7 @@ void gl_matrix_update(struct gl_context *context, struct wu_state *state) {
 	 * is sort of like the interval 0..1, but GL renders from the center
 	 * between -1..1, so we multiply by 2 to keep things working. */
 	const float scale = 2;
-	/* It seems having integer offsets causes ugly artifacts
+	/* It seems having exact integer offsets causes ugly artifacts
 	 * when rendering. We add a fraction of a pixel to remedy this. */
 	const float fix = 1.0f / 17.0f;
 	mat[12] += (floorf( state->x_offset*scale) + fix) / context->fb_wh[0];
@@ -213,7 +210,8 @@ static void tex_2d_null(void) {
 	tex_2d(GL_RED, 0, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
 }
 
-static void tex_2d_solid(const uint8_t c) {
+static void tex_2d_solid(void) {
+	const uint8_t c = 0xff;
 	tex_2d(GL_RED, 1, 1, GL_RED, GL_UNSIGNED_BYTE, &c);
 }
 
@@ -229,7 +227,7 @@ const size_t size, const GLvoid *data, const GLenum usage) {
 
 static void * map_unpack_buffer(const GLuint pix_buf, const size_t size) {
 	bind_buffer_data(GL_PIXEL_UNPACK_BUFFER, pix_buf, size, NULL,
-		GL_STATIC_DRAW);
+		GL_STREAM_DRAW);
 	return glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
 }
 
@@ -273,15 +271,15 @@ static void palette_parameters(const bool enable) {
 }
 
 static void switch_color_mode(struct gl_context *context,
-const enum image_mode mode) {
-	if (mode != context->tex.mode) {
+const enum image_mode new_mode) {
+	if (new_mode != context->tex.mode) {
 		switch (context->tex.mode) {
 		case image_mode_raw: break;
 		case image_mode_palette:
 			palette_parameters(false);
 			break;
 		case image_mode_planar:
-			if (mode != image_mode_palette) {
+			if (new_mode != image_mode_palette) {
 				glActiveTexture(gl_tex_pal);
 				tex_2d_null();
 			}
@@ -293,7 +291,7 @@ const enum image_mode mode) {
 			break;
 		}
 
-		switch (mode) {
+		switch (new_mode) {
 		case image_mode_raw: break;
 		case image_mode_palette:
 			palette_parameters(true);
@@ -302,76 +300,40 @@ const enum image_mode mode) {
 			break;
 		}
 
-		context->tex.mode = mode;
-		glUniform1i(context->uni.color_mode, mode);
+		context->tex.mode = new_mode;
+		glUniform1i(context->uni.color_mode, new_mode);
 	}
 }
 
 static void plane_colorspace_conversion(const struct gl_uni *uni,
-const struct image_planes *planes) {
-	struct colorspace cs;
-	if (planes->yuva) {
-		/* BT.601 YCbCr-to-RGB.
-		 * Handles both full and limited range. */
-		const bool er = planes->expand_range;
+const enum color_space space, enum pix_layout layout) {
+	struct color_mat cm;
+	color_mat_gen(&cm, space, layout);
 
-		const double b = 0.114;
-		const double r = 0.299;
-		const double mg = 1.0 / (-1.0 + b + r);
-
-		const float lum = (er) ? (float)(255.0/(235-16)) : 1.0;
-		const double chr = (er) ? 255.0/(240-16) : 1.0;
-
-		const double two_b = (2 - 2*b) * chr;
-		const double two_r = (2 - 2*r) * chr;
-
-		cs = (struct colorspace) {
-			.off = {
-				(er) ? (float)(-1.0/16) : 0.0,
-				-0.5,
-				-0.5,
-				0,
-			},
-			.mat = {
-				lum,          lum,                   lum,          0,
-				0,            (float)(b*mg * two_b), (float)two_b, 0,
-				(float)two_r, (float)(r*mg * two_r), 0,            0,
-				0, 0, 0, 1,
-			},
-		};
-	} else {
-		/* RGB-to-RGB. */
-		cs = (struct colorspace) {
-			.off = {0},
-			.mat = {
-				1, 0, 0, 0,
-				0, 1, 0, 0,
-				0, 0, 1, 0,
-				0, 0, 0, 1,
-			},
-		};
-	}
-	glUniform4f(uni->plane_offsets, cs.off[0], cs.off[1], cs.off[2], cs.off[3]);
-	glUniformMatrix4fv(uni->colorspace, 1, GL_FALSE, cs.mat);
+	glUniform4f(uni->plane_offsets,
+		cm.off[0], cm.off[1], cm.off[2], cm.off[3]);
+	glUniformMatrix4fv(uni->colorspace, 1, GL_FALSE, cm.mat);
 }
 
 static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
 const struct raw_img *img, const size_t w, const size_t h,
 const unsigned char *data) {
-	size_t stride = unpack_stride(w, img->attr, op, img->bitdepth);
-	if (!stride) {
+	size_t instride = scanline_length(w, img->bitdepth, img->alignment);
+	size_t outstride = unpack_stride(w, img->bitdepth, img->attr, op);
+	if (!outstride) {
 		if (op == op_noop) {
-			stride = scanline_length(w, img->bitdepth, img->alignment);
+			outstride = instride;
 		} else {
 			fatal_bug("Upload failure", "Unsupported raster format");
 		}
 	}
 
-	const size_t size = stride * h;
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	void *map = map_unpack_buffer(pix_buf, size);
-	unpack_or_copy_strip(map, data, w, h, img->alignment, img->attr, op,
-		img->bitdepth);
+	unsigned char *map = map_unpack_buffer(pix_buf, outstride * h);
+	for (size_t y = 0; y < h; ++y) {
+		unpack_or_copy_strip(map + outstride*y, data + instride*y,
+			w, img->bitdepth, img->attr, op);
+	}
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
@@ -405,20 +367,23 @@ static enum gl_upload_status planar_upload(struct gl_context *context,
 const struct raw_img *img, const struct gl_upload_params *params,
 const bool reuse) {
 	const struct plane_info *plane = img->u.planes->p;
-	const uint8_t alpha = pix_layout_offset(img->layout, pix_alpha);
+	enum gl_upload_status status = gl_upload_fail;
 	for (GLenum i = 0; i < 4; ++i) {
 		glActiveTexture(GL_TEXTURE0 + i);
 		if (i < img->channels) {
-			tex_upload(context, img, params, plane[i].w, plane[i].h,
-				plane[i].ptr, reuse);
+			status = tex_upload(context, img, params, plane[i].w,
+				plane[i].h, plane[i].ptr, reuse);
+			if (status == gl_upload_fail) {
+				break;
+			}
 		} else {
-			tex_2d_solid((i == alpha) ? 0xff : 0x00);
+			tex_2d_solid();
 		}
 	}
 	glActiveTexture(gl_tex_img);
 
-	plane_colorspace_conversion(&context->uni, img->u.planes);
-	return gl_upload_success;
+	plane_colorspace_conversion(&context->uni, img->u.planes->cs, img->layout);
+	return status;
 }
 
 static int reusable_texture(const struct gl_context *context,
@@ -549,19 +514,16 @@ const struct raw_img *img) {
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 const struct raw_img *img) {
 	struct gl_upload_params params = {.op = op_noop};
-	bool valid = false;
 	switch_color_mode(context, img->mode);
 	if (img->mode == image_mode_raw) {
 		params.layout = img->layout;
 		params.comps = img->channels;
-		valid = set_upload_params(&params, img);
 	} else {
 		params.layout = pix_gray;
 		params.comps = 1;
-		valid = set_upload_params(&params, img);
 	}
 
-	if (!valid) {
+	if (!set_upload_params(&params, img)) {
 		printf("Invalid channel/bitdepth combination (%d/%d)\n",
 			img->channels, img->bitdepth);
 		return gl_upload_fail;
@@ -590,8 +552,92 @@ void gl_clear_color(const float bg[static 4]) {
 	glClearColor(bg[0], bg[1], bg[2], bg[3]);
 }
 
+void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
+const struct gl_reader *reader, void *restrict data, const size_t row) {
+	state->y_offset = (float)row;
+	gl_matrix_update(context, state);
+	gl_draw();
+	glReadPixels(0, 0, (GLsizei)reader->w, 1, reader->fmt, reader->type,
+		data);
+}
+
+bool gl_reader_set(struct gl_context *context, struct wu_state *state,
+struct gl_reader *r, const struct raw_img *img) {
+	const GLint in_fmts[][4] = {
+		{GL_R8, GL_RG8, GL_RGB8, GL_RGBA8},
+		{GL_R16, GL_RG16, GL_RGB16, GL_RGBA16},
+	};
+	const GLenum fmts[] = {GL_RED, GL_RG, GL_RGB, GL_RGBA};
+
+	const bool swap = img->rotate & 1;
+	r->w = (swap) ? img->h : img->w;
+	r->h = (swap) ? img->w : img->h;
+	r->ch = (img->mode == image_mode_palette) ? 4 : img->channels;
+	r->bd = (img->bitdepth > 8) ? 16 : 8;
+	r->fmt = fmts[r->ch - 1];
+	r->type = (img->bitdepth > 8) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE;
+	r->len = r->w * r->ch * (r->bd / 8);
+
+	const GLint in_fmt = in_fmts[img->bitdepth > 8][r->ch - 1];
+
+	glActiveTexture(gl_tex_reader);
+	tex_2d(in_fmt, (GLsizei)r->w, 1, r->fmt, r->type, NULL);
+	glActiveTexture(gl_tex_img);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		return false;
+	}
+
+	state->rotate = img->rotate;
+	state->mirror = !img->mirror; /* At this point I don't know why this
+		extra flip is needed. */
+
+	struct display_dims dims = {
+		.w = (unsigned)r->w,
+		.h = (unsigned)r->h,
+	};
+	gl_viewport(context, &dims);
+
+	if (img->layout == pix_gray) {
+		swizzle_set(pix_rgba);
+	}
+	return true;
+}
+
+void gl_reader_disable(struct gl_context *context,
+const struct gl_reader *reader) {
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	gl_viewport(context, &reader->prev);
+}
+
+void gl_reader_enable(struct gl_context *context, struct gl_reader *reader) {
+	GLint dims[4];
+	glGetIntegerv(GL_VIEWPORT, dims);
+	reader->prev = (struct display_dims) {
+		.w = (unsigned)dims[2],
+		.h = (unsigned)dims[3],
+	};
+
+	if (context->framebuffer) {
+		glBindFramebuffer(GL_FRAMEBUFFER, context->framebuffer);
+	} else {
+		glGenFramebuffers(1, &context->framebuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, context->framebuffer);
+
+		GLuint tex;
+		glGenTextures(1, &tex);
+		glActiveTexture((GLenum)gl_tex_reader);
+		glBindTexture(GL_TEXTURE_2D, tex);
+		tex_parameteri(GL_TEXTURE_MAX_LEVEL, 0);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+			GL_TEXTURE_2D, tex, 0);
+		glActiveTexture(gl_tex_img);
+	}
+}
+
 static void setup_texture(const GLint idx, const GLuint *texs,
-const GLint *samps) {
+const GLint *samps, const enum pix_layout layout) {
 	const GLenum target = GL_TEXTURE_2D;
 	glActiveTexture((GLenum)(GL_TEXTURE0 + idx));
 	glBindTexture(target, texs[idx]);
@@ -603,7 +649,7 @@ const GLint *samps) {
 	tex_parameteri(GL_TEXTURE_MIN_FILTER, WU_MIN_FILTER);
 	tex_parameteri(GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	tex_parameteri(GL_TEXTURE_MAX_LEVEL, WU_MIPMAP_MAX);
-	swizzle_set(pix_gray);
+	swizzle_set(layout);
 }
 
 static bool check_uniforms(const GLint *uniforms, const size_t len) {
@@ -707,17 +753,17 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform mat4 " UNI_COLORSPACE ";"
 
 		"vec4 planar_color() {"
-			"return " UNI_COLORSPACE "* (vec4("
+			"return (vec4("
 				"texture2D(" UNI_IMG ", texcoord).r,"
 				"texture2D(" UNI_PAL ", texcoord).r,"
 				"texture2D(" UNI_PLANE3 ", texcoord).r,"
 				"texture2D(" UNI_PLANE4 ", texcoord).r"
-			") +" UNI_PLANE_OFFSETS ");"
+			") +" UNI_PLANE_OFFSETS ") *" UNI_COLORSPACE ";"
 		"}"
 		"vec4 check_pattern(vec4 fg) {"
-			"vec2 d = floor(texcoord / (fwidth(texcoord) * 16));"
+			"vec2 d = floor(texcoord / (fwidth(texcoord) * 16.0));"
 			"vec3 bg = vec3(mod(d.x + d.y, 2.0) * .25 + .5);"
-			"return vec4(mix(bg, fg.rgb, fg.a), 1);"
+			"return vec4(mix(bg, fg.rgb, fg.a), 1.0);"
 		"}"
 		"void main() {"
 			"if (" UNI_COLOR_MODE "==" MODE_PLANAR ") {"
@@ -730,8 +776,12 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 				"}"
 			"}"
 			"switch (" UNI_ALPHA_MODE ") {"
-			"case " ALPHA_OPAQUE ": color.a = 1; break;"
-			"case " ALPHA_CHECKERS ": color = check_pattern(color); break;"
+			"case " ALPHA_CHECKERS ":"
+				"color = check_pattern(color);"
+				"break;"
+			"case " ALPHA_OPAQUE ":"
+				"color.a = 1.0;"
+				"break;"
 			"}"
 		"}";
 	const GLuint vshader = setup_shader(vs, GL_VERTEX_SHADER);
@@ -802,7 +852,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 	glGenTextures(ARRAY_LEN(texs), texs);
 
 	for (GLint i = (GLint)ARRAY_LEN(samps); i > 0; --i) {
-		setup_texture(i - 1, texs, samps);
+		setup_texture(i - 1, texs, samps, pix_gray);
 	}
 
 

@@ -17,9 +17,19 @@ enum gl_upload_status {
 
 enum gl_alpha_mode {
 	gl_alpha_enabled = 0,
-	gl_alpha_opaque,
 	gl_alpha_checkers,
+	gl_alpha_opaque,
 	gl_alpha_STATES,
+};
+
+struct gl_reader {
+	struct display_dims prev;
+	size_t len;
+	size_t w, h;
+	GLenum fmt;
+	GLenum type;
+	uint8_t ch;
+	uint8_t bd;
 };
 
 struct gl_context {
@@ -32,6 +42,7 @@ struct gl_context {
 	} uni;
 	GLuint pixel_unpack_buf;
 	GLuint timer;
+	GLuint framebuffer;
 
 	float fb_wh[2];
 	struct gl_texture {
@@ -65,6 +76,17 @@ const struct raw_img *img);
 void gl_draw(void);
 
 void gl_clear_color(const float bg[static 4]);
+
+void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
+const struct gl_reader *reader, void *restrict data, size_t row);
+
+bool gl_reader_set(struct gl_context *context,
+struct wu_state *state, struct gl_reader *reader, const struct raw_img *img);
+
+void gl_reader_disable(struct gl_context *context,
+const struct gl_reader *reader);
+
+void gl_reader_enable(struct gl_context *context, struct gl_reader *reader);
 
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
 

@@ -1,12 +1,11 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <ctype.h>
 #include <limits.h>
 
 #include <unistd.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <sys/mman.h>
 
 #include "conf.h"
 #include "common.h"
@@ -110,8 +109,6 @@ static bool parse_config_file(struct wu_conf *conf, struct text_parser *tp) {
 		} else if (wuptr_eq_str(key, "partial_decode")) {
 			conf->partial_decode = read_bool(tp, &ok);
 
-		} else if (wuptr_eq_str(key, "cache_frames")) {
-			conf->cache_frames = read_bool(tp, &ok);
 		} else if (wuptr_eq_str(key, "anim_space_over_speed")) {
 			conf->anim_space_over_speed = read_bool(tp, &ok);
 
@@ -211,8 +208,8 @@ struct wu_conf conf_load(void) {
 		return conf;
 	}
 
-	struct mmap_info mm;
-	bool ok = mmap_file_fd(&mm, fd);
+	struct map_info mm;
+	bool ok = map_file_fd(&mm, fd);
 	close(fd);
 	if (!ok) {
 		return conf;
@@ -221,7 +218,7 @@ struct wu_conf conf_load(void) {
 	struct text_parser tp = text_parser_mem(mm.len, mm.data);
 
 	ok = parse_config_file(&conf, &tp);
-	munmap_file(mm);
+	unmap_file(&mm);
 	if (ok) {
 		return conf;
 	}

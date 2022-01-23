@@ -11,6 +11,10 @@ WUDEC(dib, NULL)
 WUDEC(ico, NULL)
 #endif
 
+#ifdef WU_ENABLE_G00
+WUDEC(g00, g00_callback)
+#endif
+
 #ifdef WU_ENABLE_MAC
 WUDEC(mac, NULL)
 #endif
@@ -70,7 +74,7 @@ WUDEC(xcursor, NULL)
 
 
 #ifdef WU_ENABLE_FLIF
-WUDEC(flif, NULL)
+WUDEC(flif, flif_callback)
 #endif
 
 #ifdef WU_ENABLE_GIF

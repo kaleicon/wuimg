@@ -1,8 +1,9 @@
 #include <epoxy/egl.h>
 
 #include "egl.h"
-// WU_GL_MAJOR|MINOR macros
 #include "opengl.h"
+
+static const char CREATE_CONTEXT_FAIL[] = "EGL: Failed to create context";
 
 void egl_print_error(void) {
 	const EGLint error = eglGetError();
@@ -11,47 +12,96 @@ void egl_print_error(void) {
 	}
 }
 
+static const char * egl_make_current(EGLDisplay display, EGLSurface surface,
+EGLContext context) {
+	if (eglMakeCurrent(display, surface, surface, context) != EGL_TRUE) {
+		return "EGL: Couldn't make context current";
+	}
+	return NULL;
+}
+
+void egl_offscreen_terminate(EGLDisplay display) {
+	egl_make_current(display, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+	eglTerminate(display);
+}
+
+void egl_terminate(struct egl *egl) {
+	egl_offscreen_terminate(egl->display);
+}
+
 bool egl_swap(const struct egl *egl) {
 	return eglSwapBuffers(egl->display, egl->surface);
 }
 
-EGLint egl_init_common(struct egl *egl, void *native_display,
-const EGLint *restrict cfg_attrib, EGLConfig *cfg, EGLint *restrict cnt) {
-	if (eglBindAPI(EGL_OPENGL_API) != EGL_TRUE) {
-		fputs("eglBindAPI fail\n", stderr);
-		return -1;
-	}
-
+static const char * egl_init_common(EGLDisplay *display,
+EGLNativeDisplayType native_display, const EGLint *restrict cfg_attr,
+EGLConfig *cfg, EGLint *restrict cfg_cnt, EGLint ctx_attr[static 9]) {
 	EGLint major, minor;
-	egl->display = eglGetDisplay(native_display);
-	if (eglInitialize(egl->display, &major, &minor) != EGL_TRUE) {
-		fputs("eglInitialize fail\n", stderr);
-		return -1;
+	*display = eglGetDisplay(native_display);
+	if (*display == EGL_NO_DISPLAY) {
+		return "EGL: No matching display";
+	} else if (eglInitialize(*display, &major, &minor) != EGL_TRUE) {
+		return "EGL: eglInitializate failed";
 	} else if (major != 1 || minor < 4) {
-		fprintf(stderr, "egl version too old: %d.%d\n", major, minor);
-		return -1;
+		return "EGL: EGL version too old, 1.4+ required";
 	}
 
-	eglChooseConfig(egl->display, cfg_attrib, cfg, *cnt, cnt);
-	if (*cnt < 1) {
-		fputs("egl: no good config\n", stderr);
-		return -1;
+	if (eglBindAPI(EGL_OPENGL_API) != EGL_TRUE) {
+		return "EGL: Couldn't bind to OpenGL API";
 	}
-	return minor;
+
+	eglChooseConfig(*display, cfg_attr, cfg, *cfg_cnt, cfg_cnt);
+	if (*cfg_cnt < 1) {
+		return "EGL: No config found";
+	}
+
+	ctx_attr[0] = EGL_CONTEXT_MAJOR_VERSION_KHR;
+	ctx_attr[1] = WU_GL_MAJOR;
+
+	ctx_attr[2] = EGL_CONTEXT_MINOR_VERSION_KHR;
+	ctx_attr[3] = WU_GL_MINOR;
+
+	ctx_attr[4] = EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR;
+	ctx_attr[5] = EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR;
+
+	if (minor == 4) {
+		ctx_attr[6] = EGL_CONTEXT_FLAGS_KHR;
+		ctx_attr[7] = EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE_BIT_KHR;
+	} else {
+		ctx_attr[6] = EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE;
+		ctx_attr[7] = EGL_TRUE;
+	}
+	ctx_attr[8] = EGL_NONE;
+	return NULL;
 }
 
-bool egl_surfaceless_init(struct egl *egl) {
+const char * egl_offscreen_init(EGLDisplay *display,
+EGLNativeDisplayType native_display) {
+	const EGLint cfg_attr[] = {
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+		EGL_NONE,
+	};
 	EGLConfig cfg[1];
-	EGLint cnt = (EGLint)ARRAY_LEN(cfg);
-	if (egl_init_common(egl, EGL_DEFAULT_DISPLAY, NULL, cfg, &cnt) == -1) {
-		return false;
+	EGLint cfg_cnt = (EGLint)ARRAY_LEN(cfg);
+	EGLint ctx_attr[9];
+
+	const char *err = egl_init_common(display, native_display, cfg_attr,
+		cfg, &cfg_cnt, ctx_attr);
+	if (err) {
+		return err;
 	}
-	return true;
+
+	EGLContext context = eglCreateContext(*display, *cfg, EGL_NO_CONTEXT,
+		ctx_attr);
+	if (context == EGL_NO_CONTEXT) {
+		return CREATE_CONTEXT_FAIL;
+	}
+	return egl_make_current(*display, EGL_NO_SURFACE, context);
 }
 
-bool egl_init(struct egl *egl, void *native_display, void *native_window,
-const uint32_t native_visual, const bool transparent) {
-	const EGLint cfg_attrib[] = {
+const char * egl_init(struct egl *egl, EGLNativeDisplayType native_display,
+void *native_window, const uint32_t native_visual, const bool transparent) {
+	const EGLint cfg_attr[] = {
 		EGL_RED_SIZE, 1,
 		EGL_GREEN_SIZE, 1,
 		EGL_BLUE_SIZE, 1,
@@ -60,30 +110,18 @@ const uint32_t native_visual, const bool transparent) {
 		EGL_NONE,
 	};
 	EGLConfig cfg[64];
-	EGLint cnt = (EGLint)ARRAY_LEN(cfg);
-	EGLint minor = egl_init_common(egl, native_display, cfg_attrib, cfg, &cnt);
-	if (minor == -1) {
-		return false;
-	}
+	EGLint cfg_cnt = (EGLint)ARRAY_LEN(cfg);
+	EGLint ctx_attr[9];
 
-	EGLint context_attrib[9] = {
-		EGL_CONTEXT_MAJOR_VERSION_KHR, WU_GL_MAJOR,
-		EGL_CONTEXT_MINOR_VERSION_KHR, WU_GL_MINOR,
-		EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR,
-			EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
-	};
-	if (minor == 4) {
-		context_attrib[6] = EGL_CONTEXT_FLAGS_KHR;
-		context_attrib[7] = EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE_BIT_KHR;
-	} else {
-		context_attrib[6] = EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE;
-		context_attrib[7] = EGL_TRUE;
+	const char *err = egl_init_common(&egl->display, native_display,
+		cfg_attr, cfg, &cfg_cnt, ctx_attr);
+	if (err) {
+		return err;
 	}
-	context_attrib[8] = EGL_NONE;
 
 	EGLContext context = EGL_NO_CONTEXT;
 	int i = 0;
-	while (i < cnt) {
+	for (; i < cfg_cnt; ++i) {
 		if (native_visual) {
 			EGLint id;
 			if (eglGetConfigAttrib(egl->display, cfg[i],
@@ -96,29 +134,20 @@ const uint32_t native_visual, const bool transparent) {
 		}
 
 		context = eglCreateContext(egl->display, cfg[i],
-			EGL_NO_CONTEXT, context_attrib);
+			EGL_NO_CONTEXT, ctx_attr);
 		if (context != EGL_NO_CONTEXT) {
 			break;
 		}
-		++i;
 	}
-
 	if (context == EGL_NO_CONTEXT) {
-		fputs("egl: failed to create context\n", stderr);
-		return false;
+		return CREATE_CONTEXT_FAIL;
 	}
 
 	egl->surface = eglCreateWindowSurface(egl->display, cfg[i],
 		(EGLNativeWindowType)native_window, NULL);
 	if (egl->surface == EGL_NO_SURFACE) {
-		fputs("eglCreateWindowSurface fail\n", stderr);
-		return false;
+		return "egl: Failed to create window surface";
 	}
-
-	if (eglMakeCurrent(egl->display, egl->surface, egl->surface, context)
-	!= EGL_TRUE) {
-		fputs("eglMakeCurrent fail\n", stderr);
-		return false;
-	}
-	return true;
+	return egl_make_current(egl->display, egl->surface, context);
+//	eglSwapInterval(egl->display, 0);
 }

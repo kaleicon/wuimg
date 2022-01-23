@@ -22,12 +22,13 @@ static bool test_mod(struct xkb_state *state, const char *name) {
 static uint8_t convert_by_codepoint(struct xkb_state *state, const uint32_t key) {
 	const uint32_t codepoint = xkb_state_key_get_utf32(state, key + 8);
 	switch (codepoint) {
+	case ' ':
 	case ',': case ';':
 	case '.': case ':':
 	case '-': case '+':
+	case '<': case '>':
 	case '0': case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
-	case ' ':
 		return (uint8_t)codepoint;
 	}
 	return 0;
@@ -217,6 +218,9 @@ void wayland_terminate(struct wayland *wl) {
 	}
 	if (wl->egl_window) {
 		wl_egl_window_destroy(wl->egl_window);
+	}
+	if (wl->display) {
+		wl_display_disconnect(wl->display);
 	}
 }
 
@@ -440,17 +444,19 @@ static void reg_global_remove(void *data, struct wl_registry *reg, uint32_t name
 }
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub) {
+	*wl = (struct wayland){0};
+
 	struct wu_conf *conf = &pub->image.conf;
 	wl->pub = pub;
 
 	wl->display = wl_display_connect(NULL);
 	if (!wl->display) {
-		return "Couldn't connect to display";
+		return "Wayland: Couldn't connect to display";
 	}
 
 	wl->reg = wl_display_get_registry(wl->display);
 	if (!wl->reg) {
-		return "Couldn't obtain registry";
+		return "Wayland: Couldn't obtain registry";
 	}
 
 	wl->listen = (struct wayland_listeners) {
@@ -493,11 +499,11 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	wl_display_roundtrip(wl->display);
 
 	if (!wl->binds.comp) {
-		return "Failed to bind to compositor";
+		return "Wayland: Failed to bind to compositor";
 	} else if (!wl->binds.seat) {
-		return "Failed to bind to seat";
+		return "Wayland: Failed to bind to seat";
 	} else if (!wl->binds.xwb) {
-		return "Failed to bind to wm_base";
+		return "Wayland: Failed to bind to wm_base";
 	}
 	if (wl->binds.shm) {
 		prepare_cursor(wl);
@@ -505,30 +511,32 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 
 	wl->surf = wl_compositor_create_surface(wl->binds.comp);
 	if (!wl->surf) {
-		return "Failed to create surface";
+		return "Wayland: Failed to create surface";
 	}
 
 	wl->xdg_surf = xdg_wm_base_get_xdg_surface(wl->binds.xwb, wl->surf);
 	if (!wl->xdg_surf) {
-		return "Failed to get xdg_surface";
+		return "Wayland: Failed to get xdg_surface";
 	}
 	xdg_surface_add_listener(wl->xdg_surf, &wl->listen.surface, NULL);
 
 	wl->toplevel = xdg_surface_get_toplevel(wl->xdg_surf);
 	if (!wl->toplevel) {
-		return "Failed to get toplevel";
+		return "Wayland: Failed to get toplevel";
 	}
 	xdg_toplevel_add_listener(wl->toplevel, &wl->listen.toplevel, wl);
 
 	wl->egl_window = wl_egl_window_create(wl->surf,
 		(int)conf->initial_size.w, (int)conf->initial_size.h);
 	if (!wl->egl_window) {
-		return "Failed to get EGL window";
+		return "Wayland: Failed to get EGL window";
 	}
 	const bool alpha = conf->bg[3] < 0xff;
-	if (!egl_init(&wl->egl, wl->display, wl->egl_window, 0, alpha)) {
+	const char *err = egl_init(&wl->egl, (EGLNativeDisplayType)wl->display,
+		wl->egl_window, 0, alpha);
+	if (err) {
 		egl_print_error();
-		return "EGL setup failed";
+		return err;
 	}
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
 
@@ -539,4 +547,25 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	wayland_swap_buffers(wl);
 //	wl_display_dispatch(wl->display);
 	return NULL;
+}
+
+void wayland_offscreen_terminate(struct wayland_offscreen *wl) {
+	if (wl->egl_display) {
+		egl_offscreen_terminate(wl->egl_display);
+	}
+	if (wl->display) {
+		wl_display_disconnect(wl->display);
+	}
+}
+
+const char * wayland_offscreen_init(struct wayland_offscreen *wl) {
+	wl->display = wl_display_connect(NULL);
+	if (!wl->display) {
+		return "Wayland: Couldn't connect to display";
+	}
+	const char *err = egl_offscreen_init(&wl->egl_display, wl->display);
+	if (err) {
+		wayland_offscreen_terminate(wl);
+	}
+	return err;
 }

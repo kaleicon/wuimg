@@ -22,7 +22,8 @@ const size_t rle_limit) {
 	// We've padded both buffers so we can skip some bound checks
 	do {
 		// This is somehow slightly faster than using memccpy
-		const unsigned char *flag_pos = memchr(rle + r, RLE_FLAG, RLE_MAX_RUN);
+		const unsigned char *flag_pos = memchr(rle + r, RLE_FLAG,
+			RLE_MAX_RUN);
 		if (flag_pos) {
 			if (flag_pos != rle + r) {
 				const size_t read = (size_t)(flag_pos - (rle + r));
@@ -109,19 +110,18 @@ static enum lib_fail interleave_colormap(struct sun_desc *desc) {
 		return lib_alloc_error;
 	}
 
-	if (!fread(buf, len, 1, desc->ifp)) {
-		free(buf);
-		return lib_unexpected_eof;
-	}
-
-	for (size_t i = 0; i < entries; ++i) {
-		map->color[i].r = buf[i];
-		map->color[i].g = buf[i + entries];
-		map->color[i].b = buf[i + entries * 2];
-		map->color[i].a = 0xff;
+	enum lib_fail status = lib_unexpected_eof;
+	if (fread(buf, len, 1, desc->ifp)) {
+		for (size_t i = 0; i < entries; ++i) {
+			map->color[i].r = buf[i];
+			map->color[i].g = buf[i + entries];
+			map->color[i].b = buf[i + entries * 2];
+			map->color[i].a = 0xff;
+		}
+		status = lib_ok;
 	}
 	free(buf);
-	return lib_ok;
+	return status;
 }
 
 static enum lib_fail validate_header(struct sun_desc *desc,

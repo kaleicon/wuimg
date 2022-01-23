@@ -7,30 +7,21 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "wudefs.h"
-#include "common.h"
-#include "raster/unpack.h"
-
+#include "dec.h"
+#include "filesystem.h"
 #include "write_pam.h"
 
-struct filename_template {
-	char *restrict name;
-	size_t base_len;
-	const char *restrict ext;
-	size_t ext_len;
-};
-
-static void network_fwrite(void *out, const size_t depth, const size_t buflen,
+static void pam_write_row(void *out, const uint8_t depth, const size_t len,
 FILE *ofp) {
 	if (which_end() != big_endian) {
 		if (depth == 16) {
-			loop_endian16(out, big_endian, buflen / 2);
+			loop_endian16(out, big_endian, len);
 		}
 	}
-	fwrite(out, 1, buflen, ofp);
+	fwrite(out, depth/8, len, ofp);
 }
 
-static void write_pam_tuple(const size_t ch, FILE *ofp) {
+static void pam_write_tuple(const uint8_t ch, FILE *ofp) {
 	const char *tupl;
 	switch (ch) {
 	case 1: tupl = "GRAYSCALE"; break;
@@ -42,230 +33,204 @@ static void write_pam_tuple(const size_t ch, FILE *ofp) {
 	fprintf(ofp, "TUPLTYPE %s\n", tupl);
 }
 
-static void write_pam_header(const size_t w, const size_t h, const size_t ch,
-const size_t bd, FILE *ofp) {
-	const size_t maxval = (bd > 8) ? USHRT_MAX : UCHAR_MAX;
+static void pam_write_header(const size_t w, const size_t h, const uint8_t ch,
+const uint8_t bd, FILE *ofp) {
+	const unsigned short maxval = (bd > 8) ? USHRT_MAX : UCHAR_MAX;
 	fprintf(ofp,
 		"P7\n"
 		"WIDTH %zu\n"
 		"HEIGHT %zu\n"
-		"DEPTH %zu\n"
-		"MAXVAL %zu\n",
+		"DEPTH %hhu\n"
+		"MAXVAL %hu\n",
 		w, h, ch, maxval);
-	write_pam_tuple(ch, ofp);
+	pam_write_tuple(ch, ofp);
 	fputs("ENDHDR\n", ofp);
 }
 
-static void write_expand(const struct raw_img *img, FILE *ofp,
-const enum unpack_op op, const bool swizzle) {
-	uint8_t outch = img->channels;
-	uint8_t outdepth = img->bitdepth;
-	size_t buflen = 0;
-	if (img->u.palette) {
-		outdepth = 8;
-		outch = 4;
-		buflen = img->w * outch;
-	} else if (op) {
-		outdepth = unpack_depth(img->attr, op, img->bitdepth);
-		if (!outdepth) {
-			fputs("Error: Unsupported depth conversion.", stderr);
-			return;
-		}
-		buflen = scanline_length(img->w * img->channels, outdepth, 1);
-	}
+static FILE * get_file(const struct wu_state *state,
+struct write_out *out, const bool overwrite, const bool anim) {
+	char *suffix = out->name + out->base_len;
+	const size_t rem = sizeof(*out->name) - out->base_len;
+	const char ext[] = "pam";
 
-	uint8_t *linebuf = NULL;
-	if (buflen) {
-		linebuf = malloc(buflen);
-		if (!linebuf) {
-			fputs("ERROR: Out of memory.\n", stderr);
-			return;
-		}
-	}
-
-	const size_t instride = raw_img_stride(img);
-	write_pam_header(img->w, img->h, outch, outdepth, ofp);
-	for (size_t y = 0; y < img->h; ++y) {
-		unsigned char *src = img->data + instride*y;
-		if (img->u.palette) {
-			raster_pal_expand(linebuf, src, img->u.palette, img->w,
-				1, 1, 4, img->bitdepth);
-			src = linebuf;
-		} else if (op) {
-			unpack_strip(linebuf, src, img->w * img->channels, 1, 1,
-				img->attr, op, img->bitdepth);
-			src = linebuf;
-		}
-
-		if (swizzle) {
-			strip_swizzle(src, src, img->w, 1, img->channels,
-				outdepth, 1, img->layout, pix_rgba);
-		}
-		network_fwrite(src, outdepth, buflen, ofp);
-	}
-	free(linebuf);
-}
-
-static void write_raw(const struct raw_img *img, FILE *ofp) {
-	size_t w = img->w;
-	size_t bd = img->bitdepth;
-	if (img->bitdepth > 16) {
-		w *= bd / 8;
-		bd = 8;
-	} else if (img->bitdepth < 8) {
-		size_t div = 8 / bd;
-		w = (w + (div - 1)) / div;
-		bd *= div;
-	}
-
-	write_pam_header(w, img->h, img->channels, bd, ofp);
-	const size_t line = w * img->channels * bd / 8;
-	const size_t stride = scanline_length(line, 8, img->alignment);
-	for (size_t y = 0; y < img->h; ++y) {
-		network_fwrite(img->data + stride*y, bd, line, ofp);
-	}
-}
-
-static void write_sub_img(const struct raw_img *img, FILE *ofp,
-const bool raw_output) {
-	enum unpack_op op = op_noop;
-	bool swizzle = false;
-	if (!raw_output) {
-		if (img->mode == image_mode_palette) {
-			op = op_unpack;
-		} else {
-			switch (img->attr) {
-			case pix_normal:
-			case pix_inverted:
-				if (img->bitdepth < 8) {
-					op = op_expand;
-				} else if (img->bitdepth > 16) {
-					op = op_pack;
-				}
-				break;
-			case pix_packing_332:
-			case pix_packing_1555:
-				op = op_expand;
-				break;
-			default:
-				return;
-			}
-		}
-
-		if (img->channels > 2 && img->layout != pix_rgba) {
-			swizzle = true;
-		}
-	}
-
-	if (op || swizzle) {
-		write_expand(img, ofp, op, swizzle);
+	int chars;
+	if (anim) {
+		chars = snprintf(suffix, rem, "_%d:%d.%s", state->idx,
+			state->frame, ext);
+	} else if (out->omit_idx) {
+		chars = snprintf(suffix, rem, ".%s", ext);
 	} else {
-		write_raw(img, ofp);
-	}
-}
-
-static FILE * create_file(const char *outname, const bool overwrite) {
-	int flags = O_WRONLY | O_CREAT | O_TRUNC;
-	if (!overwrite) {
-		flags |= O_EXCL;
+		chars = snprintf(suffix, rem, "_%d.%s", state->idx, ext);
 	}
 
+	errno = 0;
 	FILE *ofp = NULL;
-	const int fd = open(outname, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-	if (fd != -1) {
-		ofp = fdopen(fd, "wb");
-		if (!ofp) {
-			close(fd);
+	if (chars > 0 && (size_t)chars < rem) {
+		int flags = O_WRONLY | O_CREAT | O_TRUNC;
+		if (!overwrite) {
+			flags |= O_EXCL;
+		}
+
+		const int fd = openat(out->dirfd, out->name, flags,
+			S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		if (fd != -1) {
+			ofp = fdopen(fd, "wb");
+			if (!ofp) {
+				close(fd);
+			}
 		}
 	}
 	return ofp;
 }
 
-static void id_replace(struct filename_template *tpl, const char *restrict id) {
-	size_t pos = tpl->base_len;
-	if (id) {
-		tpl->name[pos] = '_';
-		++pos;
-
-		const size_t id_len = strlen(id);
-		memcpy(tpl->name + pos, id, id_len);
-		pos += id_len;
+static bool set_out_dir(const struct image_context *image,
+struct write_out *out, const char *outdir) {
+	if (!outdir) {
+		outdir = image->name;
 	}
-	memcpy(tpl->name + pos, tpl->ext, tpl->ext_len);
+	struct fs_path path;
+	out->dirfd = fs_get_parent_dir(outdir, &path);
+	if (out->dirfd >= 0) {
+		out->base_len = path.file.len;
+		if (out->base_len < sizeof(out->name)) {
+			memcpy(out->name, path.file.str, out->base_len);
+			fs_path_free(&path);
+			out->omit_idx = image->file.nr == 1;
+			return true;
+		}
+		close(out->dirfd);
+		fs_path_free(&path);
+	}
+	return false;
 }
 
-static bool name_template(const struct image_file *file,
-const char *restrict filename, const char *restrict optname,
-struct filename_template *tpl) {
-	const struct raw_img *img = file->sub_img;
-	size_t id_max = 0;
-	for (size_t i = 0; i < file->nr; ++i) {
-		if (img[i].id) {
-			id_max = zumax(id_max, strlen(img[i].id));
-		}
-	}
-
-	if (optname) {
-		filename = optname;
-		tpl->base_len = strlen(filename);
-	} else {
-		const char *dot = strrchr(filename, '.');
-		if (dot) {
-			tpl->base_len = (size_t)(dot - filename);
+static bool try_write(struct wu_state *state, struct write_out *out,
+struct gl_context *gl, struct gl_reader *reader, uint8_t *restrict data,
+const bool overwrite, const bool frame_nr) {
+	FILE *ofp = get_file(state, out, overwrite, frame_nr);
+	if (!ofp) {
+		if (errno) {
+			perror("Failed to open output file");
 		} else {
-			tpl->base_len = strlen(filename);
+			fputs("Filename too long\n", stderr);
 		}
+		return false;
 	}
 
-	const size_t sep_len = 1;
-	tpl->name = malloc(tpl->base_len + sep_len + id_max + tpl->ext_len);
-	if (tpl->name) {
-		memcpy(tpl->name, filename, tpl->base_len);
+	pam_write_header(reader->w, reader->h, reader->ch, reader->bd, ofp);
+	for (size_t y = 0; y < reader->h; ++y) {
+		gl_reader_read_row(gl, state, reader, data, y);
+		pam_write_row(data, reader->bd, reader->w * reader->ch, ofp);
 	}
-	return (bool)tpl->name;
+	fclose(ofp);
+	return true;
 }
 
-void write_to_file(const struct image_file *infile, const char *filename,
-const struct write_args *args) {
-	const char ext[] = ".pam";
-	struct filename_template tpl = {
-		.ext = ext,
-		.ext_len = sizeof(ext),
-	};
-	if (!name_template(infile, filename, args->outname, &tpl)) {
-		fputs("ERROR: Out of memory.\n", stderr);
+/*void write_current(struct image_context *image, struct gl_context *gl) {
+	struct write_out out;
+	if (!set_out_dir(image, &writer->out, NULL)) {
+		perror("Failed to open output directory");
 		return;
 	}
 
-	const struct raw_img *img = infile->sub_img;
-	for (size_t i = 0; i < infile->nr; ++i) {
-		if (img[i].attr == pix_float) {
-			fputs("Error: Float output unsupported.\n", stderr);
-			continue;
-		} else if (img[i].mode == image_mode_planar) {
-			fputs("Error: Planar output unsupported.\n", stderr);
-			continue;
+	struct wu_state *state = &image->state;
+	struct raw_img *img = image->file.sub_img + state->idx;
+
+	struct gl_reader reader;
+	gl_reader_enable(gl, &reader);
+
+ 	if (gl_reader_set(gl, state, &reader, img)) {
+		uint8_t *data = malloc(reader.len);
+		if (data) {
+			try_write(state, &out, gl, &reader, data, false,
+				img->frames);
+			free(data);
+		} else {
+			fputs("Failed to allocate row memory\n", stderr);
+		}
+	} else {
+		fputs("Failed to set framebuffer\n", stderr);
+	}
+	close(out.dirfd);
+	gl_reader_disable(gl, &reader);
+}*/
+
+static void write_sub_img(struct image_context *image,
+struct write_writer *writer, const struct write_args *args) {
+	struct image_file *file = &image->file;
+	struct wu_state *state = &image->state;
+	struct raw_img *img = file->sub_img + state->idx;
+
+	struct gl_reader reader;
+ 	if (!gl_reader_set(&writer->gl, state, &reader, img)) {
+		fputs("Failed to set framebuffer\n", stderr);
+		return;
+	}
+
+	uint8_t *data = malloc(reader.len);
+	if (!data) {
+		fputs("Failed to allocate row memory\n", stderr);
+		return;
+	}
+
+	const int frames = (int)(img->frames ? img->frames->nr : 1);
+	for (state->frame = 0; state->frame < frames; ++state->frame) {
+		if (state->frame > 0) {
+			const enum wu_error err = dec_callback_image(image,
+				ev_frame);
+			if (err > wu_ok) {
+				fprintf(stderr, "%s\n", wu_error_message(err));
+				break;
+			}
 		}
 
-		id_replace(&tpl, img[i].id);
-		errno = 0;
-		FILE *ofp = create_file(tpl.name, args->overwrite);
-		if (ofp) {
-			write_sub_img(img + i, ofp, args->raw);
-			fclose(ofp);
-		} else {
-			char errstr[1024];
-			strerror_r(errno, errstr, sizeof(errstr));
-			fprintf(stderr, "Failed to open %s for writing: %s\n",
-				tpl.name, errstr);
+		if (gl_texture_upload(&writer->gl, img) == gl_upload_fail) {
+			continue;
 		}
+		try_write(state, &writer->out, &writer->gl, &reader, data,
+			args->overwrite, img->frames);
 	}
-	free(tpl.name);
+	free(data);
+}
+
+void write_image(struct image_context *image, struct write_writer *writer,
+const struct write_args *args) {
+	errno = 0;
+	if (!set_out_dir(image, &writer->out, args->outdir)) {
+		perror("Failed to open output directory");
+		return;
+	}
+
+	struct wu_state *state = &image->state;
+	*state = (struct wu_state) {
+		.zoom = 1,
+	};
+
+	for (state->idx = 0; state->idx < (int)image->file.nr; ++state->idx) {
+		write_sub_img(image, writer, args);
+	}
+	close(writer->out.dirfd);
+}
+
+void write_writer_terminate(struct write_writer *writer) {
+	window_offscreen_terminate(&writer->window);
+}
+
+bool write_writer_init(struct write_writer *writer, struct wu_conf *wuconf) {
+	*writer = (struct write_writer){0};
+	if (window_offscreen_setup(&writer->window)) {
+		if (gl_context_setup(&writer->gl, wuconf)) {
+			gl_reader_enable(&writer->gl, &writer->reader);
+			return true;
+		}
+		window_offscreen_terminate(&writer->window);
+	}
+	return false;
 }
 
 int write_args(const int argc, char **argv, struct write_args *args) {
 	int idx = 0;
-	*args = (struct write_args){0};
+	memset(args, 0, sizeof(*args));
 	while (idx < argc) {
 		const char *arg = argv[idx];
 		if (arg[0] == '-' && arg[1] && !arg[2]) {
@@ -275,7 +240,7 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 			case 'o':
 				++idx;
 				if (idx < argc) {
-					args->outname = argv[idx];
+					args->outdir = argv[idx];
 				}
 				break;
 			default:

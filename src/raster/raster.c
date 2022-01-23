@@ -23,11 +23,11 @@ size_t raster_size(const struct raster_desc *desc) {
 	return size;
 }
 
-const char * raster_geom_verify(const struct raster_pal *palette,
-const uint8_t ch, const uint8_t bitdepth, const enum pix_attr attr) {
-	if (palette) {
+const char * raster_geom_verify(const bool has_palette, const uint8_t ch,
+const uint8_t bitdepth, const enum pix_attr attr) {
+	if (has_palette) {
 		if (ch != 1) {
-			return "Paletted images must use 1 channel only";
+			return "Paletted images must use 1 channel";
 		} else if (bitdepth > 8) {
 			return "Paletted images must not use more than 8 bits";
 		} else {

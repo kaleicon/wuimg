@@ -1,9 +1,13 @@
+#include <stdlib.h>
+
 #include "rast_utils.h"
 #include "common.h"
 #include "raster/lib.h"
 
 void rast_to_raw(struct raw_img *img, struct raster_desc *desc) {
-	raw_img_set_palette(img, lib_raster_take_palette(desc));
+	if (desc->palette) {
+		raw_img_set_palette(img, lib_raster_take_palette(desc));
+	}
 	img->w = desc->w;
 	img->h = desc->h;
 	img->channels = desc->ch;
@@ -11,11 +15,19 @@ void rast_to_raw(struct raw_img *img, struct raster_desc *desc) {
 	img->alignment = desc->alignment;
 	img->layout = desc->layout;
 	img->attr = desc->attr;
-	if (desc->planar) {
-		if (raw_img_plane_init(img)) {
-			raw_img_plane_resolve(img);
-		}
+	if (desc->planar && raw_img_plane_init(img)) {
+		raw_img_plane_resolve(img);
 	}
+}
+
+size_t rast_to_raw_img(struct raster_desc *desc, struct raw_img *img) {
+	const size_t size = raster_size(desc);
+	img->data = malloc(size);
+	if (img->data) {
+		rast_to_raw(img, desc);
+		return size;
+	}
+	return 0;
 }
 
 bool rast_exceeds_size(const struct raster_desc *desc,

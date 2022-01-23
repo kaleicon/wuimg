@@ -206,27 +206,34 @@ struct jpeg_decompress_struct *dinfo) {
 
 static bool use_raw(struct raw_img *img,
 const struct jpeg_decompress_struct *dinfo) {
-	if (dinfo->jpeg_color_space != JCS_YCbCr) {
-		return false;
-	}
-	switch (dinfo->num_components) {
-	case 1: return true;
-	case 3:
-		;const jpeg_component_info *nfo = dinfo->comp_info;
-		struct image_planes *planes = raw_img_plane_init(img);
-		if (!planes) {
-			return false;
+	switch (dinfo->jpeg_color_space) {
+	case JCS_GRAYSCALE:
+	case JCS_RGB:
+	case JCS_YCbCr:
+		switch (dinfo->num_components) {
+		case 1:
+		case 3:
+		case 4:
+			;const jpeg_component_info *nfo = dinfo->comp_info;
+			struct image_planes *planes = raw_img_plane_init(img);
+			if (!planes) {
+				return false;
+			}
+			for (int i = 0; i < dinfo->num_components; ++i) {
+				const int xsamp = dinfo->max_h_samp_factor
+					/ nfo[i].h_samp_factor;
+				const int ysamp = dinfo->max_v_samp_factor
+					/ nfo[i].v_samp_factor;
+				planes->p[i].x.subsamp = (uint8_t)xsamp;
+				planes->p[i].y.subsamp = (uint8_t)ysamp;
+			}
+			planes->cs = (dinfo->jpeg_color_space == JCS_YCbCr)
+				? color_space_ycbcr : color_space_rgb;
+			return true;
 		}
-		for (int i = 0; i < dinfo->num_components; ++i) {
-			const int xsamp = dinfo->max_h_samp_factor
-				/ nfo[i].h_samp_factor;
-			const int ysamp = dinfo->max_v_samp_factor
-				/ nfo[i].v_samp_factor;
-			planes->p[i].x.subsamp = (uint8_t)xsamp;
-			planes->p[i].y.subsamp = (uint8_t)ysamp;
-		}
-		planes->yuva = true;
-		return true;
+		break;
+	default:
+		break;
 	}
 	return false;
 }
@@ -271,6 +278,7 @@ const bool get_markers) {
 			return wu_exceeds_size_limit;
 		}
 		dinfo->scale_denom = 1 << zulog2(f);
+		img->dec_scale = 1.0f / (float)dinfo->scale_denom;
 	}
 
 	dinfo->do_block_smoothing = FALSE;
@@ -281,7 +289,6 @@ const bool get_markers) {
 	if (wuconf->jpeg_fast_upsamp && dinfo->max_v_samp_factor == 1) {
 		dinfo->do_fancy_upsampling = FALSE;
 	}
-	img->dec_scale = 1.0f / (float)dinfo->scale_denom;
 
 	jpeg_start_decompress(dinfo);
 

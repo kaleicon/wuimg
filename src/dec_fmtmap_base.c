@@ -5,7 +5,11 @@
 #include "common.h"
 #include "dec_fmtmap.h"
 
-/* The code output of dec_fmtmap_sort_quine.c goes here. */
+/*
+
+The code output of dec_fmtmap_sort_quine.c goes here.
+
+*/
 
 static int fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 	const unsigned char *restrict magic1 = m1;

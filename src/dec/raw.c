@@ -21,7 +21,7 @@ struct raw_image_info {
 };
 
 struct raw_state {
-	struct mmap_info map;
+	struct map_info map;
 	libraw_data_t *data;
 	struct raw_image_info raw;
 	enum raw_thumbnail thumb_type;
@@ -63,7 +63,7 @@ static void raw_state_free(struct image_file *infile) {
 	}
 
 	libraw_close(rs->data);
-	munmap_file(rs->map);
+	unmap_file(&rs->map);
 	free(rs);
 	infile->dec_state = NULL;
 	infile->events = 0;
@@ -253,7 +253,7 @@ static void read_metadata(struct wu_tree *tree, const libraw_data_t *data) {
 
 static enum wu_error raw_setup(struct image_file *infile,
 const struct wu_conf *wuconf, struct raw_state *rs) {
-	if (!mmap_file(&rs->map, infile->ifp)) {
+	if (!map_file(&rs->map, infile->ifp)) {
 		return wu_alloc_error;
 	}
 

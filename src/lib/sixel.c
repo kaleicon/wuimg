@@ -15,6 +15,8 @@
 #define MACRO_CASE_SPACE case ' ': case '\f': case '\n': case '\r': case '\t': case '\v':
 #define MACRO_CASE_DIGIT case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
 
+static const size_t LINE_HEIGHT = 6;
+
 struct sixel_colormap {
 	struct pix_rgba8 active;
 	struct raster_pal map;
@@ -35,8 +37,6 @@ enum sixel_colorspace {
 	sixel_hls = '1',
 	sixel_rgb = '2',
 };
-
-static const size_t LINE_HEIGHT = 6;
 
 static bool issixel(int c) {
 	return c >= '?' && c <= '~';
@@ -112,7 +112,8 @@ static bool validate_color(struct text_parser *tp) {
 	 *    in range 0-100 if RGB.
 	 * Py and Pz are the second and third components, in range 0-100.
 	 * All three components are zero if omitted.
-	 * Note that the 'set' form leaves Pc as the active color. Crazy bug, that one. */
+	 * Note that the 'set' form leaves Pc as the active color. That was
+	 * a fun bug to hunt. */
 	text_fast_t idx;
 	if (!text_get_uint(tp, 3, &idx) || idx > UCHAR_MAX) {
 		return false;
@@ -211,13 +212,7 @@ static void xterm_colormap_init(struct sixel_colormap *map) {
 	}
 }
 
-struct pix_rgba8 * sixel_decode(const struct sixel_desc *desc) {
-	const size_t dims = desc->r.w * desc->r.h;
-	struct pix_rgba8 *out = calloc(dims, sizeof(*out));
-	if (!out) {
-		return NULL;
-	}
-
+size_t sixel_decode(const struct sixel_desc *desc, struct pix_rgba8 *out) {
 	struct sixel_colormap map;
 	xterm_colormap_init(&map);
 
@@ -260,7 +255,8 @@ struct pix_rgba8 * sixel_decode(const struct sixel_desc *desc) {
 			++x;
 		}
 	}
-	return (struct pix_rgba8 *)out;
+	return y*desc->r.w + x;
+//	return (struct pix_rgba8 *)out;
 }
 
 static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
@@ -488,9 +484,9 @@ static int skip_csi(struct text_parser *tp) {
 }
 
 enum lib_fail sixel_open_mem(struct sixel_desc *desc,
-const struct mmap_info *mem) {
+const struct map_info *mm) {
 	struct text_parser *tp = &desc->tp;
-	*tp = text_parser_mem(mem->len, mem->data);
+	*tp = text_parser_mem(mm->len, mm->data);
 
 	/* The sixel format begins with the Device Control String, which might
 	 * come in single-byte and two-byte form. And since it is basically a

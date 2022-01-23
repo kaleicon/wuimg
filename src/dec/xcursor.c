@@ -1,11 +1,13 @@
+#include <stdlib.h>
+
 #include "../wudefs.h"
 #include "../rast_utils.h"
 #include "../lib/xcursor.h"
 
-static void add_metadata(struct memory *mem,
-const enum xcursor_comment_type type, struct wu_tree *tree) {
-	tree_graft_unsafe_leaf(tree, xcursor_comment_type_string(type),
-		mem->data, mem->len);
+static void add_metadata(struct wu_tree *tree,
+const enum xcursor_comment_type type, uint8_t *restrict data, const size_t len) {
+	tree_graft_unsafe_leaf(tree, xcursor_comment_type_str(type),
+		data, len);
 }
 
 enum wu_error xcursor_dec(struct image_file *infile,
@@ -41,15 +43,20 @@ const struct wu_conf *wuconf) {
 			continue;
 		}
 
-		struct memory mem;
-		if (xcursor_get_chunk_data(&desc, &chunk, &mem)) {
+		uint8_t *data = malloc(chunk.len);
+		if (!data) {
+			continue;
+		}
+
+		const size_t read = xcursor_get_chunk_data(&desc, &chunk, data);
+		if (read) {
 			switch (chunk.type) {
 			case xcursor_chunk_comment:
-				add_metadata(&mem, chunk.u.comment.type,
-					&infile->metadata);
+				add_metadata(&infile->metadata,
+					chunk.u.comment.type, data, read);
 				break;
 			case xcursor_chunk_image:
-				img[o].data = mem.data;
+				img[o].data = data;
 				rast_to_raw(img + o, &chunk.u.image.r);
 				++o;
 				break;

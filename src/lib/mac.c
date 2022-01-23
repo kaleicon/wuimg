@@ -6,20 +6,21 @@
 #include "../raster/lib.h"
 #include "mac.h"
 
+static const size_t RLE_PAD = 129;
+
 static size_t rle_decode(uint8_t *restrict out, const size_t dims,
 const signed char *restrict rle, const size_t rle_len) {
 	size_t p = 0;
 	size_t i = 0;
 	while (i < rle_len - 1 && p < dims) {
-		const size_t left = dims - p;
 		size_t cnt;
 		if (rle[i] < 0) {
-			cnt = zumin(left, (size_t)(1 - rle[i]));
+			cnt = (size_t)(1 - rle[i]);
 			++i;
 			memset(out + p, (unsigned char)rle[i], cnt);
 			++i;
 		} else {
-			cnt = zumin(rle_len - i, zumin(left, 1 + (size_t)rle[i]));
+			cnt = 1 + (size_t)rle[i];
 			++i;
 			memcpy(out + p, rle + i, cnt);
 			i += cnt;
@@ -48,12 +49,12 @@ unsigned char * mac_decode(const struct mac_desc *desc) {
 		return NULL;
 	}
 
-	unsigned char *out = malloc(dims);
+	unsigned char *out = malloc(dims + RLE_PAD);
 	if (!out) {
 		return NULL;
 	}
 
-	signed char *rle = malloc(rle_len);
+	signed char *rle = malloc(rle_len + RLE_PAD);
 	if (!rle) {
 		free(out);
 		return NULL;
@@ -84,7 +85,7 @@ unsigned char * mac_pattern_unpack(const struct mac_desc *desc) {
 static enum lib_fail read_mac_header(unsigned char *header,
 struct mac_desc *desc) {
 	/* MacPaint header:
-		0       DWORD   Version         // 0, 2, 3, possibly 1 too I'm told
+		0       DWORD   Version         // 0, 2, 3, rarely 1 I'm told
 		4       QWORD   Patterns[38]    // Used by MacPaint
 		308     BYTE    Pad[204]
 		512

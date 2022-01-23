@@ -18,17 +18,16 @@ enum disposal_mode {
 };
 
 struct gif_frame {
-	struct anim_frame geom;
 	GifByteType *raster;
 	struct raster_pal *palette;
 	int alpha_idx;
 };
 
 struct gif_disposal_prev {
-	unsigned char *buf;
-	int num_of_disposals;
 	bool written;
 	bool rolling;
+	int num_of_disposals;
+	unsigned char *buf;
 };
 
 struct gif_state {
@@ -36,7 +35,6 @@ struct gif_state {
 	GraphicsControlBlock *gcb;
 	struct gif_disposal_prev previous;
 	int idx;
-	unsigned char comps;
 	bool opaque_first_frame;
 	struct raster_pal global_pal;
 	struct raster_pal local_pal;
@@ -122,55 +120,26 @@ const unsigned char ch, const int alpha_idx) {
 	}
 }
 
-static void composite_color_frame(struct raw_img *img,
-const struct gif_frame *frame, const unsigned char ch) {
-	const struct anim_frame *geom = &frame->geom;
+static void composite_gif_frame(struct raw_img *img,
+const struct frame_info *geom, const GifByteType *restrict raster,
+const struct raster_pal *palette, const int trans) {
+	const unsigned char ch = img->channels;
 
 	size_t offset = (geom->y * img->w + geom->x) * ch;
 	size_t raster_offset = 0;
-	const GifByteType *raster = frame->raster;
 	for (size_t i = 0; i < geom->h; ++i) {
 		palette_to_color(img->data + offset, raster + raster_offset,
-			frame->palette, geom->w, ch, frame->alpha_idx);
+			palette, geom->w, ch, trans);
 		raster_offset += geom->w;
 		offset += img->w * ch;
 	}
 }
 
-static void expand_palette(const ColorMapObject *gif_map,
-struct raster_pal *out_pal, int alpha_idx) {
-	const GifColorType *pal = gif_map->Colors;
-	for (int i = 0; i < gif_map->ColorCount; ++i) {
-		memcpy(out_pal->color + i, pal + i, 3);
-		out_pal->color[i].a = 0xff;
-	}
+static void expand_palette(struct raster_pal *pal,
+const ColorMapObject *gif_map, const int alpha_idx) {
+	raster_pal_from_rgb8(pal, gif_map->Colors, (size_t)gif_map->ColorCount);
 	if (alpha_idx != -1) {
-		out_pal->color[alpha_idx].a = 0x00;
-	}
-}
-
-static struct anim_frame gif_desc_to_frame(const GifImageDesc *desc) {
-	return (struct anim_frame) {
-		.x = (size_t)desc->Left,
-		.y = (size_t)desc->Top,
-		.w = (size_t)desc->Width,
-		.h = (size_t)desc->Height
-	};
-}
-
-static void init_gif_frame(struct gif_frame *fr, struct gif_state *ds) {
-	const int i = ds->idx;
-	const SavedImage *gif_image = ds->gif_file->SavedImages;
-
-	fr->geom = gif_desc_to_frame(&gif_image[i].ImageDesc);
-	fr->raster = gif_image[i].RasterBits;
-	fr->alpha_idx = ds->gcb[i].TransparentColor;
-	if (gif_image[i].ImageDesc.ColorMap) {
-		expand_palette(gif_image[i].ImageDesc.ColorMap, &ds->local_pal,
-			fr->alpha_idx);
-		fr->palette = &ds->local_pal;
-	} else {
-		fr->palette = &ds->global_pal;
+		pal->color[alpha_idx].a = 0x00;
 	}
 }
 
@@ -178,45 +147,26 @@ static bool should_cache_prev(struct gif_state *ds) {
 	return ds->previous.num_of_disposals > 1 || !ds->previous.written;
 }
 
-static enum wu_error gif_dec_frame(struct raw_img *img,
-const struct wu_conf *wuconf, struct gif_state *ds) {
+static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 	const GraphicsControlBlock *gcb = ds->gcb + ds->idx;
-	int i = 0;
-	if (wuconf->cache_frames) {
-		i = ds->idx;
-		if (img[i].data) {
-			return wu_ok;
-		} else if (i > 0 && img[0].u.palette) {
-			const size_t size = sizeof(ds->global_pal);
-			if (!raw_img_set_palette(img + i, memdup(img[0].u.palette, size))) {
-				return wu_alloc_error;
-			}
-		}
-	} else {
-		img[i].msec = gcb->DelayTime * 10;
-	}
 
-	const size_t image_size = img[i].w * img[i].h * img[i].channels;
-	if (!img[i].data) {
-		img[i].data = malloc(image_size);
-		if (!img[i].data) {
+	const size_t image_size = img->w * img->h * img->channels;
+	if (!img->data) {
+		img->data = malloc(image_size);
+		if (!img->data) {
 			return wu_alloc_error;
 		}
 	}
 
+	const int trans = gcb->TransparentColor;
 	int fill = 0;
-	if (img[i].u.palette) {
-		const int trans = ds->gcb[ds->idx].TransparentColor;
-		if (trans != -1) {
-			fill = trans;
-		} else {
-			fill = ds->gif_file->SBackGroundColor;
-		}
+	if (img->u.palette) {
+		fill = (trans > -1) ? trans : ds->gif_file->SBackGroundColor;
 	}
 
 	if (ds->idx == 0) {
 		if (!ds->opaque_first_frame) {
-			memset(img[i].data, fill, image_size);
+			memset(img->data, fill, image_size);
 		}
 		if (gcb->DisposalMode == dispose_previous && should_cache_prev(ds)) {
 			memset(ds->previous.buf, fill, image_size);
@@ -226,7 +176,7 @@ const struct wu_conf *wuconf, struct gif_state *ds) {
 	} else {
 		if (gcb->DisposalMode == dispose_previous) {
 			if (should_cache_prev(ds) && !ds->previous.rolling) {
-				memcpy(ds->previous.buf, img[i].data, image_size);
+				memcpy(ds->previous.buf, img->data, image_size);
 				ds->previous.written = true;
 				ds->previous.rolling = true;
 			}
@@ -234,74 +184,73 @@ const struct wu_conf *wuconf, struct gif_state *ds) {
 			ds->previous.rolling = false;
 		}
 
-		int p = ds->idx - 1;
 		switch (gcb[-1].DisposalMode) {
 		case dispose_background:;
-			const struct anim_frame geom = gif_desc_to_frame(
-				&ds->gif_file->SavedImages[p].ImageDesc);
-			if (wuconf->cache_frames) {
-				copy_unaffected(img + i, img[p].data, &geom);
-			}
-			composite_clear(img + i, &geom, fill);
+			int p = ds->idx - 1;
+			composite_clear(img, img->frames->f + p, fill);
 			break;
 		case dispose_previous:
-			memcpy(img[i].data, ds->previous.buf, image_size);
+			memcpy(img->data, ds->previous.buf, image_size);
 			break;
 		case dispose_do_not:
 		case unspecified:
-			if (wuconf->cache_frames) {
-				memcpy(img[i].data, img[p].data, image_size);
-			}
+			break;
 		}
 	}
 
-	const unsigned char comps = ds->comps;
-	struct gif_frame frame;
-	init_gif_frame(&frame, ds);
-	composite_color_frame(img + i, &frame, comps);
+	const SavedImage *gif_image = ds->gif_file->SavedImages + ds->idx;
+	struct raster_pal *pal;
+	if (gif_image->ImageDesc.ColorMap) {
+		pal = &ds->local_pal;
+		expand_palette(pal, gif_image->ImageDesc.ColorMap, trans);
+	} else {
+		pal = &ds->global_pal;
+	}
+	composite_gif_frame(img, img->frames->f + ds->idx,
+		gif_image->RasterBits, pal, trans);
 
 	++ds->idx;
 	return wu_ok;
 }
 
 static enum wu_error gif_frame_iter(struct image_file *infile,
-const struct wu_conf *wuconf, const struct wu_state *state) {
+const struct wu_state *state) {
 	struct gif_state *ds = infile->dec_state;
 
-	const int image_count = ds->gif_file->ImageCount;
-	int iters = imod(state->cycle, image_count);
-	if (iters > image_count - ds->idx) {
-		iters -= image_count - ds->idx;
+	if (state->frame < ds->idx) {
 		ds->idx = 0;
 	}
-	for (int i = 0; i < iters; ++i) {
-		const enum wu_error err = gif_dec_frame(infile->sub_img,
-			wuconf, ds);
+	while (ds->idx <= state->frame) {
+		const enum wu_error err = gif_dec_frame(infile->sub_img, ds);
 		if (err != wu_ok) {
 			clean_gif_state(infile);
 			return err;
-		} else if (ds->idx >= image_count) {
-			if (wuconf->cache_frames) {
-				clean_gif_state(infile);
-				break;
-			} else {
-				ds->idx = 0;
-			}
 		}
 	}
 	return wu_ok;
 }
 
-
 enum wu_error gif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	if (event == ev_subcycle) {
-		return gif_frame_iter(infile, wuconf, state);
+	(void)wuconf;
+	if (event == ev_frame) {
+		return gif_frame_iter(infile, state);
 	} else if (event == 0) {
 		clean_gif_state(infile);
 	}
 	return wu_no_change;
+}
+
+static struct frame_info gif_desc_to_frame(const GifImageDesc *desc,
+const GraphicsControlBlock *gcb) {
+	return (struct frame_info) {
+		.x = (size_t)desc->Left,
+		.y = (size_t)desc->Top,
+		.w = (size_t)desc->Width,
+		.h = (size_t)desc->Height,
+		.msec = gcb->DelayTime * 10,
+	};
 }
 
 static int read_extensions(const int count, ExtensionBlock *ext,
@@ -342,13 +291,21 @@ const GifImageDesc *restrict prev) {
 	return (w_diff - x_diff >= 0) && (h_diff - y_diff >= 0);
 }
 
-static GraphicsControlBlock * gather_info(GifFileType *gif_file,
-struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
+static bool gather_info(struct image_file *infile,
+struct gif_state *ds, bool *uses_local_palette) {
+	GifFileType *gif_file = ds->gif_file;
+
 	const int count = gif_file->ImageCount;
-	GraphicsControlBlock *gcb = malloc(sizeof(GraphicsControlBlock)
-		* (size_t)count);
-	if (!gcb) {
-		return NULL;
+
+	struct raw_img *img = infile->sub_img;
+	struct image_frames *frames = raw_img_alloc_frames(img, (size_t)count);
+	if (!frames) {
+		return false;
+	}
+
+	ds->gcb = malloc(sizeof(*ds->gcb) * (size_t)count);
+	if (!ds->gcb) {
+		return false;
 	}
 
 	int global_colors = -1;
@@ -356,36 +313,37 @@ struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
 		global_colors = gif_file->SColorMap->ColorCount;
 	}
 
-	int prev_disposals = 0;
 	const int default_delay = 10;
 	enum disposal_mode dispose = first_frame;
-	SavedImage *image = gif_file->SavedImages;
 	for (int i = 0; i < count; ++i) {
-		const int block_count = image[i].ExtensionBlockCount;
+		GraphicsControlBlock *gcb = ds->gcb + i;
+		SavedImage *image = gif_file->SavedImages + i;
+
+		const int block_count = image->ExtensionBlockCount;
 		const int gcb_status = read_extensions(block_count,
-			image[i].ExtensionBlocks, gcb + i, tree);
+			image->ExtensionBlocks, gcb, &infile->metadata);
 		if (gcb_status != GIF_OK) {
-			gcb[i].DisposalMode = unspecified;
-			gcb[i].UserInputFlag = 0;
-			gcb[i].DelayTime = default_delay;
-			gcb[i].TransparentColor = NO_TRANSPARENT_COLOR;
-		} else if (gcb[i].DelayTime == 0 && gcb[i].UserInputFlag == 0) {
-			gcb[i].DelayTime = default_delay;
+			gcb->DisposalMode = unspecified;
+			gcb->UserInputFlag = 0;
+			gcb->DelayTime = default_delay;
+			gcb->TransparentColor = NO_TRANSPARENT_COLOR;
+		} else if (gcb->DelayTime == 0) {// && gcb->UserInputFlag == 0) {
+			gcb->DelayTime = default_delay;
 		}
 
-		const GifImageDesc *desc = &image[i].ImageDesc;
+		const GifImageDesc *desc = &image->ImageDesc;
+		frames->f[i] = gif_desc_to_frame(desc, gcb);
 		if (desc->ColorMap) {
 			*uses_local_palette = true;
 		}
 
-		if (gcb[i].DisposalMode == dispose_previous) {
-			++prev_disposals;
+		if (gcb->DisposalMode == dispose_previous) {
+			++ds->previous.num_of_disposals;
 		}
 
-		int alpha_idx = gcb[i].TransparentColor;
+		int alpha_idx = gcb->TransparentColor;
 		// Some quick tests for alpha.
-		if (ds->comps == 3 && alpha_idx != -1) {
-
+		if (img->channels == 3 && alpha_idx != -1) {
 			// Check if alpha_idx points to an unused index
 			if (desc->ColorMap) {
 				if (alpha_idx > desc->ColorMap->ColorCount) {
@@ -404,7 +362,7 @@ struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
 			if (alpha_idx != -1) {
 				const size_t len = (size_t)(desc->Width
 					* desc->Height);
-				if (!memchr(image[i].RasterBits, alpha_idx, len)) {
+				if (!memchr(image->RasterBits, alpha_idx, len)) {
 					puts("alpha index not in raster");
 					alpha_idx = -1;
 				}
@@ -414,12 +372,12 @@ struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
 			 * area is fully covered. */
 			if (dispose == dispose_background && alpha_idx == -1) {
 				if (!is_covered(desc, &image[i-1].ImageDesc)) {
-					ds->comps = 4;
+					img->channels = 4;
 				}
 			}
 
-			dispose = gcb[i].DisposalMode;
-			gcb[i].TransparentColor = alpha_idx;
+			dispose = gcb->DisposalMode;
+			gcb->TransparentColor = alpha_idx;
 		}
 
 		if (i == 0) {
@@ -427,29 +385,17 @@ struct gif_state *ds, bool *uses_local_palette, struct wu_tree *tree) {
 			const int frame = desc->Width * desc->Height;
 			if (frame < canvas || alpha_idx != -1) {
 				ds->opaque_first_frame = false;
-				ds->comps = 4;
+				img->channels = 4;
 			}
 		}
 	}
-
-	if (prev_disposals) {
-		const size_t dims = (size_t)gif_file->SWidth
-			* (size_t)gif_file->SHeight * ds->comps;
-		ds->previous.buf = malloc(dims);
-		if (!ds->previous.buf) {
-			free(gcb);
-			return NULL;
-		}
-		ds->previous.num_of_disposals = prev_disposals;
-	}
-	return gcb;
+	return true;
 }
 
 static int dgif_input_fn(GifFileType *gif_file, GifByteType *out, int len) {
 	FILE *ifp = gif_file->UserData;
 	return (int)fread(out, 1, (size_t)len, ifp);
 }
-
 
 enum wu_error gif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
@@ -491,21 +437,20 @@ const struct wu_conf *wuconf) {
 			"Pixel aspect ratio", buf, w);
 	}
 
-	infile->is_animation = (gif_file->ImageCount > 1);
-	infile->nr = wuconf->cache_frames ? (size_t)gif_file->ImageCount : 1;
-
-	bool uses_local_palette = false;
-	ds->opaque_first_frame = true;
-	ds->comps = 3 + !wuconf->anim_space_over_speed;
-	ds->gcb = gather_info(gif_file, ds, &uses_local_palette,
-		&infile->metadata);
-	if (!ds->gcb) {
+	struct raw_img *img = alloc_sub_images(infile, 1);
+	if (!img) {
 		clean_gif_state(infile);
 		return wu_alloc_error;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, infile->nr);
-	if (!img) {
+	img->w = (size_t)gif_file->SWidth;
+	img->h = (size_t)gif_file->SHeight;
+	img->channels = 3 + !wuconf->anim_space_over_speed;
+	img->bitdepth = 8;
+
+	bool uses_local_palette = false;
+	ds->opaque_first_frame = true;
+	if (!gather_info(infile, ds, &uses_local_palette)) {
 		clean_gif_state(infile);
 		return wu_alloc_error;
 	}
@@ -515,13 +460,12 @@ const struct wu_conf *wuconf) {
 		if (!uses_local_palette) {
 			void *hold = malloc(sizeof(*loc));
 			if (hold) {
-				loc = hold;
-				raw_img_set_palette(img, hold);
-				ds->comps = 1;
+				loc = raw_img_set_palette(img, hold);
+				img->channels = 1;
 			}
 		}
-		const int alpha_idx = ds->gcb[0].TransparentColor;
-		expand_palette(gif_file->SColorMap, loc, alpha_idx);
+		const int alpha_idx = ds->gcb->TransparentColor;
+		expand_palette(loc, gif_file->SColorMap, alpha_idx);
 
 		const int bg = gif_file->SBackGroundColor;
 		if (bg > -1 && bg < gif_file->SColorMap->ColorCount) {
@@ -529,17 +473,16 @@ const struct wu_conf *wuconf) {
 		}
 	}
 
-	for (size_t i = 0; i < infile->nr; ++i) {
-		img[i].w = (size_t)gif_file->SWidth;
-		img[i].h = (size_t)gif_file->SHeight;
-		img[i].channels = ds->comps;
-		img[i].bitdepth = 8;
-		img[i].msec = ds->gcb[i].DelayTime * 10;
+	if (ds->previous.num_of_disposals) {
+		ds->previous.buf = malloc(img->w * img->h * img->channels);
+		if (!ds->previous.buf) {
+			return wu_alloc_error;
+		}
 	}
 
-	enum wu_error err = gif_dec_frame(infile->sub_img, wuconf, ds);
-	if (err == wu_ok && infile->is_animation) {
-		infile->events = ev_subcycle;
+	const enum wu_error err = gif_dec_frame(img, ds);
+	if (err == wu_ok && img->frames) {
+		infile->events = ev_frame;
 	} else {
 		clean_gif_state(infile);
 	}

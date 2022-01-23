@@ -26,7 +26,9 @@ void pi_cleanup(struct pi_desc *desc) {
 	free(desc->saver.data);
 }
 
-static uint8_t table_lookup(uint8_t *table, const size_t y) {
+static uint8_t table_lookup(uint8_t *table, const unsigned depth, const size_t x,
+const size_t y) {
+	table += x * depth;
 	const uint8_t val = table[y];
 	memmove(table + 1, table, y);
 	*table = val;
@@ -241,26 +243,26 @@ size_t *restrict bitpos) {
 	}
 #else
 	const uint32_t word = current_dword(bs, *bitpos, false);
-	uint32_t read, mask;
-	if (word >= 0x01U << (32 - 1)) { // 1x
-		read = 2; mask = 0x01 << 1;
+	uint32_t read, xor;
+	if (word >= 0x01U << (32 - 1)) {        //       1x
+		read = 2; xor = 0x01 << 1;
 	} else if (word >= 0x3fU << (32 - 7)) { // 0111111xxxxxxx
-		read = 14; mask = 0x1f << 8;
+		read = 14; xor = 0x1f << 8;
 	} else if (word >= 0x1fU << (32 - 6)) { // 0111110xxxxxx
-		read = 13; mask = 0x3f << 6;
+		read = 13; xor = 0x3f << 6;
 	} else if (word >= 0x0fU << (32 - 5)) { //  011110xxxxx
-		read = 11; mask = 0x1f << 5;
+		read = 11; xor = 0x1f << 5;
 	} else if (word >= 0x07U << (32 - 4)) { //   01110xxxx
-		read = 9; mask = 0x0f << 4;
+		read = 9; xor = 0x0f << 4;
 	} else if (word >= 0x03U << (32 - 3)) { //    0110xxx
-		read = 7; mask = 0x07 << 3;
+		read = 7; xor = 0x07 << 3;
 	} else if (word >= 0x01U << (32 - 2)) { //     010xx--
-		read = 5; mask = 0x03 << 2;
+		read = 5; xor = 0x03 << 2;
 	} else {                                //      00x----
-		read = 3; mask = 0x01 << 1;
+		read = 3; xor = 0x01 << 1;
 	}
 	*bitpos += read;
-	return (word >> (32 - read)) ^ mask;
+	return (word >> (32 - read)) ^ xor;
 #endif
 }
 
@@ -289,59 +291,57 @@ size_t *restrict bitpos) {
 	}
 #else
 	const uint32_t word = current_word(bs, *bitpos, false);
-	uint32_t diff, mask;
+	uint32_t read, xor;
 	switch (word >> 13) {
 	case 0: case 1:
-		diff = 3; mask = 0x02;
+		read = 3; xor = 0x02;
 		break;
 	case 2:
-		diff = 5; mask = 0x0c;
+		read = 5; xor = 0x0c;
 		break;
 	case 3:
-		diff = 6; mask = 0x10;
+		read = 6; xor = 0x10;
 		break;
 	default:
-		diff = 2; mask = 0x02;
+		read = 2; xor = 0x02;
 		break;
 	}
-	*bitpos += diff;
-	return (word >> (16 - diff)) ^ mask;
+	*bitpos += read;
+	return (word >> (16 - read)) ^ xor;
 #endif
 }
+
 static size_t bt_decode_loop(uint8_t *restrict output,
 const size_t dims, const uint8_t *restrict bitstream, const size_t bitlen,
-const size_t width, uint8_t *restrict table, const size_t colors) {
+const size_t width, uint8_t *restrict table, const unsigned depth) {
 	size_t i = 0;
 	size_t bitpos = 0;
 	for (uint8_t prev = 0; i < dims && bitpos < bitlen; prev = output[i-1]) {
 		size_t dt[2];
-		if (colors == 1 << 4) {
+		if (depth == 1 << 4) {
 			dt[0] = read_4bit_delta(bitstream, &bitpos);
 			dt[1] = read_4bit_delta(bitstream, &bitpos);
 		} else {
 			dt[0] = read_8bit_delta(bitstream, &bitpos);
 			dt[1] = read_8bit_delta(bitstream, &bitpos);
 		}
-		output[i] = table_lookup(table + colors * prev, dt[0]);
-		output[i+1] = table_lookup(table + colors * output[i], dt[1]);
+		output[i] = table_lookup(table, depth, prev, dt[0]);
+		output[i+1] = table_lookup(table, depth, output[i], dt[1]);
 		i += 2;
 
 		if (i >= dims) {
 			break;
 		} else if (i == 2 || !read_bits(bitstream, &bitpos, 1)) {
 			enum pi_repeat_src loc[2];
-			loc[1] = colors; // invalid value
-			for (int cur = 0;; cur ^= 1) {
+			loc[1] = depth; // invalid value
+			for (int cur = 0;; cur = !cur) {
 				loc[cur] = read_repeat_loc(bitstream, &bitpos);
-				if (loc[cur] == loc[cur ^ 1]) {
+				if (loc[cur] == loc[!cur]) {
 					break;
 				}
 
-				size_t cnt = read_repeat_cnt(bitstream, &bitpos);
-				if (i == 2) {
-					--cnt;
-				}
-				if (cnt*2 + i >= dims) {
+				size_t cnt = read_repeat_cnt(bitstream, &bitpos) - (i == 2);
+				if (cnt*2 + i > dims) {
 					break;
 				}
 
@@ -363,26 +363,28 @@ uint8_t * pi_decode(const struct pi_desc *desc) {
 		return NULL;
 	}
 
-	const unsigned colors = 1 << desc->depth;
+	const unsigned colors = (1 << desc->depth);
+	const unsigned table_size = colors*colors;
 	const size_t bslen = max_bitstream_size(desc->ifp, dims);
 	/* The spec recommends that the last 32 bits be zero, and we'll
-	 * enforce this to do away with most bounds checks in the middle
+	 * enforce this to do away with some bounds checks in the middle
 	 * of decoding. */
-	uint8_t *buf = malloc(colors*colors + bslen + 4);
+	void *buf = malloc(table_size + bslen + 4);
 	if (!buf) {
 		free(output);
 		return NULL;
 	}
 
-	init_delta_table(buf, colors);
+	uint8_t *restrict delta_table = buf;
+	uint8_t *restrict bitstream = delta_table + table_size;
 
-	uint8_t *restrict bitstream = buf + colors*colors;
+	init_delta_table(delta_table, colors);
 	const size_t read = fread(bitstream, 1, bslen, desc->ifp);
 	memset(bitstream + read, 0, 4);
 
 	const size_t bitlen = read * 8;
 	const size_t written = bt_decode_loop(output, dims, bitstream, bitlen,
-		desc->rast.w, buf, colors);
+		desc->rast.w, buf, colors);//desc->depth);
 	free(buf);
 
 	if (written < dims) {

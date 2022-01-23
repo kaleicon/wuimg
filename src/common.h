@@ -30,8 +30,8 @@ enum endianness {
 	little_endian = 1,
 };
 
-struct mmap_info {
-	const size_t len;
+struct map_info {
+	size_t len;
 	const unsigned char *data;
 };
 
@@ -104,11 +104,11 @@ size_t fread_alloc_strict(struct memory *mem, size_t len, FILE *ifp);
 
 long file_get_remaining(FILE *ifp);
 
-int munmap_file(struct mmap_info mm);
+int unmap_file(struct map_info *mm);
 
-bool mmap_file(struct mmap_info *mm, FILE *ifp);
+bool map_file(struct map_info *mm, FILE *ifp);
 
-bool mmap_file_fd(struct mmap_info *mm, const int fd);
+bool map_file_fd(struct map_info *mm, int fd);
 
 char * id_template(const char *prefix, size_t num);
 

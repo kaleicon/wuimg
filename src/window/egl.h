@@ -10,9 +10,16 @@ struct egl {
 
 void egl_print_error(void);
 
+void egl_offscreen_terminate(EGLDisplay display);
+
+const char * egl_offscreen_init(EGLDisplay *display,
+EGLNativeDisplayType native_display);
+
+void egl_terminate(struct egl *egl);
+
 bool egl_swap(const struct egl *egl);
 
-bool egl_init(struct egl *egl, void *native_display, void *native_window,
-uint32_t native_visual, bool transparent);
+const char * egl_init(struct egl *egl, EGLNativeDisplayType native_display,
+void *native_window, uint32_t native_visual, bool transparent);
 
 #endif /* WU_EGL */

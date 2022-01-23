@@ -38,7 +38,7 @@ static int toxint_rev(const int digit) {
 	return -1;
 }
 
-static size_t read_hex_num(const unsigned char *restrict buf, int *val,
+static size_t read_rev_hex_num(const unsigned char *restrict buf, int *val,
 const size_t size) {
 	size_t i = 0;
 	while (isspace(buf[i])) {
@@ -65,24 +65,26 @@ const size_t size) {
 	return i;
 }
 
-static void convert_loop(const struct xbm_desc *desc, void *restrict output,
-const size_t dims, const size_t size) {
+size_t xbm_decode(const struct xbm_desc *desc, void *restrict dst) {
+	const size_t size = desc->type;
+	const size_t dims = raster_size(&desc->r) / size;
+
 	const unsigned char *text = desc->tp.text;
 	const size_t end = desc->tp.len;
 	size_t pos = desc->tp.pos;
 	size_t cnt = 0;
 	while (pos < end && cnt < dims) {
 		int val;
-		pos += read_hex_num(text + pos, &val, size);
+		pos += read_rev_hex_num(text + pos, &val, size);
 		if (val == -1) {
 			puts(RASTER_INV);
 			break;
 		}
-		if (size == 2) {
-			uint16_t *wout = output;
+		if (desc->type == xbm_x10) {
+			uint16_t *wout = dst;
 			wout[cnt] = (uint16_t)val;
 		} else {
-			uint8_t *out = output;
+			uint8_t *out = dst;
 			out[cnt] = (uint8_t)val;
 		}
 		++cnt;
@@ -92,24 +94,13 @@ const size_t dims, const size_t size) {
 			if (c == ',') {
 				break;
 			} else if (!isspace(c)) {
-				return;
+				return cnt;
 			}
 			++pos;
 		} while (pos < end);
 		++pos;
 	}
-}
-
-unsigned char * xbm_decode(const struct xbm_desc *desc) {
-	const size_t bytes = raster_size(&desc->r);
-	void *restrict output = malloc(bytes);
-	if (!output) {
-		return NULL;
-	}
-
-	const size_t size = (desc->type == xbm_x11) ? 1 : 2;
-	convert_loop(desc, output, bytes / size, size);
-	return output;
+	return cnt;
 }
 
 static bool read_type(struct xbm_desc *desc, struct text_parser *tp,
@@ -266,9 +257,9 @@ static bool skip_comment(struct xbm_desc *desc, struct text_parser *tp) {
 	return false;
 }
 
-enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct mmap_info *mem) {
+enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct map_info *mm) {
 	struct text_parser *tp = &desc->tp;
-	*tp = text_parser_mem(mem->len, mem->data);
+	*tp = text_parser_mem(mm->len, mm->data);
 
 	desc->comment.len = 0;
 	desc->name.len = 0;

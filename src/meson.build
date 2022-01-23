@@ -1,5 +1,5 @@
-internal_fmts = ['avs', 'dib', 'mac', 'pcx', 'pgx', 'pi', 'pictor', 'pnm',
-	'sgi', 'sixel', 'sun', 'tga', 'tim', 'wbmp', 'xbm', 'xcursor']
+internal_fmts = ['avs', 'dib', 'g00', 'mac', 'pcx', 'pgx', 'pi', 'pictor',
+	'pnm', 'sgi', 'sixel', 'sun', 'tga', 'tim', 'wbmp', 'xbm', 'xcursor']
 external_fmts = ['flif', 'gif', 'heif', 'jbig', 'jpeg', 'jpeg2000', 'png',
 	'raw', 'svg', 'tiff', 'webp']
 
@@ -42,14 +42,16 @@ decs = [custom_target('dec_fmtmap',
 	'rast_utils.c',
 	'metadata.cpp'] \
 	+ internal_libs + internal_decs + external_decs
-rast = ['raster/composite.c',
-	'raster/unpack.c',
-	'raster/raster.c',
-	'raster/text.c',
+rast = ['raster/color.c',
+	'raster/composite.c',
 	'raster/graphics_adapters.c',
+	'raster/lib.c',
 	'raster/pal.c',
 	'raster/pix.c',
-	'raster/lib.c']
+	'raster/raster.c',
+	'raster/text.c',
+	'raster/unpack.c']
+
 base = ['common.c', 'conf.c', 'term.c', 'wudefs.c', 'wustr.c', 'wutree.c']
 util = ['colorimetry.c', 'extract.c', 'filesystem.c', 'write_pam.c']
 
@@ -95,6 +97,3 @@ wuview = ['main.c'] + rast + decs + util + gui + base
 #wuvib = ['wuvib.c', 'colorimetry.c'] + decs + base
 #wuglbench = ['gl_upload_bench.c'] + rast + gui + base
 executable('wu', wuview, dependencies : all_deps, install : true)
-#executable('wutime', timetest)
-#executable('wuvib', wuvib, dependencies : base_deps)
-#executable('wuglbench', wuglbench, dependencies : all_deps)

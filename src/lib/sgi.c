@@ -85,16 +85,12 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 		const uint8_t len = packet & RLE_LEN_MASK;
 		++r;
 		if (packet & 0x80) {
-			for (uint8_t i = 0; i < len; ++i) {
-				output[o] = rle[r];
-				++o;
-				++r;
-			}
+			memcpy(output + o, rle + r, len);
+			o += len;
+			r += len;
 		} else {
-			for (uint8_t i = 0; i < len; ++i) {
-				output[o] = rle[r];
-				++o;
-			}
+			memset(output + o, rle[r], len);
+			o += len;
 			++r;
 		}
 	} while (r < rle_limit - 1 && o < out_limit);

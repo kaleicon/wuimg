@@ -27,8 +27,8 @@ struct file_magic {
 };
 ) /* EXP_STRING structs end */
 
-/* Be careful with masks. This array is sorted dumbly. Masks should completely
- * cover continuous ranges of valid inputs. */
+/* Be careful with masks. This array is sorted dumbly. Masks should cover
+ * _continuous_ ranges of valid inputs. */
 static struct file_magic magic_map[] = {
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
@@ -112,27 +112,24 @@ static struct file_magic magic_map[] = {
 	 * clever with masks, or we could match a few hundred other formats.
 	 * https://github.com/file/file/blob/master/magic/Magdir/animation
 
-	 * The first 32-bit word (little-endian) is an offset to something.
-	 * I've only seen values is the range 0x18-0x30, so it ought to be safe
-	 * to depend only on the fourth byte. The offset must also be a
-	 * multiple of 4, so the two lower bits should be zero and not be
-	 * masked.
+	 * The first 32-bit word (little-endian) is an offset to something not
+	 * relevant to us. I've only seen values is the range 0x18-0x30, so it
+	 * ought to be safe to depend only on the fourth byte. The offset must
+	 * also be a multiple of 4, so the two lower bits should be zero and
+	 * not be masked.
 
 	 * Finally, JPEG2000 can also start with 3 zero bytes, followed
 	 * by 0x0c. Since the compile-time sorter ignores the mask, we ensure
 	 * HEIF sorts after JP2 by making the fourth byte greater than 0x0c. */
 
-	// AVIF
+	/* AVIF */
 	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xff" "ftypavif", fmt_avif},
 	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xff" "ftypavis", fmt_avif},
 
-	// HEIF
-	/* heic|heix|heim|heis
-	 * hevc|hevx|hevm|hevs
-	 * avic|avis
-	 * mif1|msf1 */
+	/* HEIF */
+	// heic|heix|heim|heis
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xfc" "ftypheic", fmt_heif},
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
@@ -142,6 +139,7 @@ static struct file_magic magic_map[] = {
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xfc" "ftypheis", fmt_heif},
 
+	// hevc|hevx|hevm|hevs
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xfc" "ftyphevc", fmt_heif},
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
@@ -151,11 +149,13 @@ static struct file_magic magic_map[] = {
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xfc" "ftyphevs", fmt_heif},
 
+	// avic|avis
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xfc" "ftypavic", fmt_heif},
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xfc" "ftypavis", fmt_heif},
 
+	// mif1|msf1
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\xfc" "ftypmif1", fmt_heif},
 	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
@@ -217,6 +217,10 @@ static struct file_ext extension_map[] = {
 	{"ico", fmt_ico},
 #endif // WU_ENABLE_DIB
 
+#ifdef WU_ENABLE_G00
+	{"g00", fmt_g00},
+#endif // WU_ENABLE_DIB
+
 #ifdef WU_ENABLE_MAC
 	{"mac", fmt_mac},
 	{"pntg", fmt_mac},
@@ -247,6 +251,7 @@ static struct file_ext extension_map[] = {
 	{"ppm", -1},
 	{"pam", -1},
 	{"pnm", -1},
+	{"pfm", -1},
 	{"p7", -1},
 #endif // WU_ENABLE_PNM
 
@@ -356,7 +361,8 @@ static struct file_ext extension_map[] = {
 	{"tif", -1},
 	{"tiff", -1},
 #ifndef WU_ENABLE_RAW
-	// The raw image won't be shown, but a thumbnail is better than nothing
+	/* Some RAW formats are just TIFF with extra data. Usually only a
+	 * thumbnail will be shown, but it's better than nothing. */
 	{"cr2", -1},
 	{"dng", -1},
 	{"nef", -1},

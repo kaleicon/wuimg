@@ -57,12 +57,15 @@ static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
 		leaf.val.u = desc->map.depth;
 		tree_bud_leaf(tree, "Map depth", leaf);
 	}
-	tree_sprout_unsafe_leaf(tree, "ID", desc->meta->id, desc->meta->id_len);
+	if (desc->meta) {
+		tree_sprout_unsafe_leaf(tree, "ID", desc->meta->id,
+			desc->meta->id_len);
+	}
 }
 
 enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct tga_desc desc;
-	enum lib_fail fail = tga_open_file(infile->ifp, &desc, true);
+	enum lib_fail fail = tga_open_file(&desc, infile->ifp, true);
 	if (fail) {
 		rast_error(infile, fail);
 		return wu_alloc_error;
@@ -83,7 +86,7 @@ enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	read_tga_info(&infile->metadata, &desc);
 	if (tga_parse_footer(&desc)) {
 		struct wu_tree *extra = tree_sprout_branch(&infile->metadata,
-			"Extension area data");
+			"Extension area");
 		read_extension_area(extra, desc.meta);
 		infile->bg = desc.meta->key_color;
 	}

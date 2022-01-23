@@ -42,11 +42,6 @@ struct wu_conf {
 		  Currently applies to JP2, JPEG, and SVG. */
 
 	// Animations
-	bool cache_frames:1; /* Cache individual frames in memory instead of
-		drawing each on top of the previous one. Frames will still be
-		decoded as required until a loop is completed. Expect memory
-		usage to add up fast. Very not recommended, I forgot why I
-		added this. */
 	bool anim_space_over_speed:1; /* Render animations as RGB if no alpha
 		is needed for any composited frame. This is quick to check and
 		will save some memory, but could actually increase the time to

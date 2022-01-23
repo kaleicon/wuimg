@@ -8,18 +8,18 @@
 #include "../raster/lib.h"
 
 enum pnm_type {
-	plain_pbm = '1',
-	plain_pgm = '2',
-	plain_ppm = '3',
-	raw_pbm = '4',
-	raw_pgm = '5',
-	raw_ppm = '6',
-	pam = '\n',
+	pnm_plain_pbm = '1',
+	pnm_plain_pgm = '2',
+	pnm_plain_ppm = '3',
+	pnm_raw_pbm = '4',
+	pnm_raw_pgm = '5',
+	pnm_raw_ppm = '6',
 
-	xv_thumb = ' ',
-	mtv = 1,
-	color_pfm = 'F',
-	gray_pfm = 'f',
+	pnm_pam = '\n',
+	pnm_xv_thumb = ' ',
+	pnm_mtv = 1,
+	pnm_color_pfm = 'F',
+	pnm_gray_pfm = 'f',
 };
 
 struct pnm_desc {

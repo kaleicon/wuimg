@@ -20,7 +20,6 @@ enum xcursor_comment_type {
 
 struct xcursor_comment {
 	enum xcursor_comment_type type;
-	uint32_t len;
 };
 
 enum xcursor_chunk_type {
@@ -30,6 +29,8 @@ enum xcursor_chunk_type {
 
 struct xcursor_chunk {
 	enum xcursor_chunk_type type;
+	long pos;
+	size_t len;
 	union {
 		struct xcursor_comment comment;
 		struct xcursor_image image;
@@ -50,12 +51,12 @@ struct xcursor_desc {
 	struct xcursor_toc *toc;
 };
 
-const char * xcursor_comment_type_string(enum xcursor_comment_type type);
+const char * xcursor_comment_type_str(enum xcursor_comment_type type);
 
 void xcursor_free(struct xcursor_desc *desc);
 
 size_t xcursor_get_chunk_data(struct xcursor_desc *desc,
-struct xcursor_chunk *chunk, struct memory *mem);
+struct xcursor_chunk *chunk, void *restrict dst);
 
 enum lib_fail xcursor_get_chunk(struct xcursor_desc *desc,
 struct xcursor_chunk *chunk, const uint32_t i);

@@ -32,7 +32,7 @@ static const struct format_fn format_map[] = {
 #undef WUDEC
 };
 
-enum wu_error callback_image(struct image_context *image,
+enum wu_error dec_callback_image(struct image_context *image,
 const enum image_event event) {
 	struct image_file *infile = &image->file;
 	const enum image_event ev = infile->events & event;
@@ -46,6 +46,14 @@ const enum image_event event) {
 		}
 	}
 	return status;
+}
+
+void dec_free_image(struct image_context *image) {
+	if (image->file.dec_state) {
+		format_map[image->fmt_id].callback(&image->file, &image->conf,
+			&image->state, 0);
+	}
+	image_file_free(&image->file);
 }
 
 static void stat_metadata(struct wu_tree *tree, const int fd) {
@@ -69,7 +77,7 @@ static void stat_metadata(struct wu_tree *tree, const int fd) {
 	tree_bud_leaves(meta, sap, ARRAY_LEN(sap));
 }
 
-enum wu_error decode_image(struct image_context *image) {
+enum wu_error dec_decode_image(struct image_context *image) {
 	struct image_file *infile = &image->file;
 	if (!infile->ifp) {
 		errno = 0;
@@ -105,6 +113,38 @@ enum wu_error decode_image(struct image_context *image) {
 		image_file_normalize(infile);
 	}
 	return result;
+}
+
+enum wu_error dec_iter_image(struct image_context *image,
+const struct raw_img **cur_img) {
+	enum wu_error err;
+	struct wu_state *state = &image->state;
+	if (!image->file.nr) {
+		err = dec_decode_image(image);
+		*cur_img = image->file.sub_img;
+		return err;
+	}
+
+	enum image_event ev = 0;
+	const struct raw_img *img = image->file.sub_img + state->idx;
+	const int frames = img->frames ? (int)img->frames->nr : 1;
+	if (state->frame + 1 < frames) {
+		ev = ev_frame;
+		++state->frame;
+	} else if (state->idx + 1 < (int)image->file.nr) {
+		ev = ev_subcycle;
+		++state->idx;
+		state->frame = 0;
+	}
+
+	if (ev) {
+		err = dec_callback_image(image, ev);
+		if (err == wu_ok) {
+			*cur_img = image->file.sub_img + state->idx;
+		}
+		return err;
+	}
+	return wu_no_change;
 }
 
 void print_known_formats(void) {

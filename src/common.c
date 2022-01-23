@@ -342,27 +342,30 @@ long file_get_remaining(FILE *ifp) {
 	return end - cur;
 }
 
-int munmap_file(struct mmap_info mm) {
-	return munmap((void *)mm.data, mm.len);
+int unmap_file(struct map_info *mm) {
+	return munmap((void *)mm->data, mm->len);
 }
 
-static bool mmap_common(struct mmap_info *mm, const int fd, const off_t end) {
+static bool map_common(struct map_info *mm, const int fd, const off_t end) {
 	const size_t len = (size_t)end;
-	struct mmap_info m = {
+	void *data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
+	if (data == MAP_FAILED) {
+		return false;
+	}
+	*mm = (struct map_info) {
 		.len = len,
-		.data = mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0),
+		.data = data,
 	};
-	memcpy(mm, &m, sizeof(m));
-	return mm->data != MAP_FAILED;
+	return true;
 }
 
-bool mmap_file(struct mmap_info *mm, FILE *ifp) {
+bool map_file(struct map_info *mm, FILE *ifp) {
 	fseek(ifp, 0, SEEK_END);
-	return mmap_common(mm, fileno(ifp), ftello(ifp));
+	return map_common(mm, fileno(ifp), ftello(ifp));
 }
 
-bool mmap_file_fd(struct mmap_info *mm, const int fd) {
-	return mmap_common(mm, fd, lseek(fd, 0, SEEK_END));
+bool map_file_fd(struct map_info *mm, const int fd) {
+	return map_common(mm, fd, lseek(fd, 0, SEEK_END));
 }
 
 char * id_template(const char *prefix, const size_t num) {

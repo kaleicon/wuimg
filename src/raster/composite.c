@@ -49,8 +49,7 @@ const unsigned char *restrict s) {
 
 static void blend_row(unsigned char *restrict dst,
 const unsigned char *restrict src, const size_t len, const size_t ch) {
-	/* The formula for premultiplied alpha blending, as given by the WebP
-	 * docs:
+	/* Premultiplied alpha blending, as given by the WebP docs:
 
 		blend.A = src.A + dst.A * (1 - src.A / 255)
 		if blend.A = 0 then
@@ -74,8 +73,32 @@ const unsigned char *restrict src, const size_t len, const size_t ch) {
 	}
 }
 
+void compost_alpha_blend(void *restrict dst, const size_t w, const uint8_t ch,
+const void *restrict src, const struct frame *fr) {
+	size_t dst_pos = (fr->y * w + fr->x) * ch;
+	size_t src_pos = 0;
+	for (size_t i = 0; i < fr->h; ++i) {
+		blend_row((uint8_t *)dst + dst_pos, (uint8_t *)src + src_pos,
+			fr->w, ch);
+		dst_pos += w * ch;
+		src_pos += fr->w * 4;
+	}
+}
+
+void compost_overwrite(void *restrict dst, const size_t w, const uint8_t ch,
+const void *restrict src, const struct frame *fr) {
+	size_t dst_pos = (fr->y * w + fr->x) * ch;
+	size_t src_pos = 0;
+	for (size_t i = 0; i < fr->h; ++i) {
+		memcpy((uint8_t *)dst + dst_pos, (uint8_t *)src + src_pos,
+			fr->w * ch);
+		dst_pos += w * ch;
+		src_pos += fr->w * ch;
+	}
+}
+
 void composite_frame_alpha_blend(struct raw_img *img,
-const unsigned char *restrict src, const struct anim_frame *frame) {
+const unsigned char *restrict src, const struct frame_info *frame) {
 	size_t dst_pos = (frame->y * img->w + frame->x) * img->channels;
 	size_t src_pos = 0;
 	for (size_t i = 0; i < frame->h; ++i) {
@@ -87,7 +110,7 @@ const unsigned char *restrict src, const struct anim_frame *frame) {
 }
 
 void composite_frame_overwrite(struct raw_img *img,
-const unsigned char *restrict src, const struct anim_frame *frame) {
+const unsigned char *restrict src, const struct frame_info *frame) {
 	const size_t ch = img->channels;
 
 	const size_t src_width = frame->w * ch;
@@ -100,47 +123,8 @@ const unsigned char *restrict src, const struct anim_frame *frame) {
 	}
 }
 
-static inline void color_set_common(unsigned char *restrict dst,
-const unsigned char *restrict src, const size_t size, const size_t nmemb) {
-	for (size_t i = 0; i < nmemb; ++i) {
-		memcpy(dst, src, size);
-		dst += size;
-	}
-}
 
-static void color_set4(unsigned char *restrict dst,
-const unsigned char *restrict src, const size_t nmemb) {
-	color_set_common(dst, src, 4, nmemb);
-}
-
-static void color_set3(unsigned char *restrict dst,
-const unsigned char *restrict src, const size_t nmemb) {
-	color_set_common(dst, src, 3, nmemb);
-}
-
-static void color_set2(unsigned char *restrict dst,
-const unsigned char *restrict src, size_t nmemb) {
-	color_set_common(dst, src, 2, nmemb);
-}
-
-void color_set(void *restrict dst, const void *restrict src,
-const size_t size, const size_t nmemb) {
-	unsigned char *restrict d = dst;
-	const unsigned char *restrict s = src;
-
-	if (!memchk(s + 1, s[0], size - 1)) {
-		memset(d, s[0], nmemb * size);
-	} else {
-		switch (size) {
-		case 2: color_set2(d, s, nmemb); break;
-		case 3: color_set3(d, s, nmemb); break;
-		case 4: color_set4(d, s, nmemb); break;
-		default: color_set_common(d, s, size, nmemb);
-		}
-	}
-}
-
-void composite_clear(struct raw_img *img, const struct anim_frame *frame,
+void composite_clear(struct raw_img *img, const struct frame_info *frame,
 const int c) {
 	const size_t ch = img->channels;
 	unsigned char *pos = img->data
@@ -150,22 +134,4 @@ const int c) {
 		memset(pos, c, frame->w * ch);
 		pos += img->w * ch;
 	}
-}
-
-void copy_unaffected(struct raw_img *img, const unsigned char *restrict prev,
-const struct anim_frame *frame) {
-	const size_t ch = img->channels;
-
-	size_t offset = (frame->y * img->w + frame->x) * ch;
-	const size_t copy_stride = (img->w - frame->w) * ch;
-	const size_t tail = (img->w * img->h - (frame->h - 1) * img->w
-		- frame->w) * ch - offset;
-
-	memcpy(img->data, prev, offset);
-	offset += frame->w * ch;
-	for (size_t i = 0; i < frame->h - 1; ++i) {
-		memcpy(img->data + offset, prev + offset, copy_stride);
-		offset += img->w * ch;
-	}
-	memcpy(img->data + offset, prev + offset, tail);
 }

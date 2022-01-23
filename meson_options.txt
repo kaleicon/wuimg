@@ -12,6 +12,7 @@ option('webp', type : 'feature', description : 'via libwebp and libwebpdemux')
 
 option('avs', type : 'feature')
 option('dib', type : 'feature')
+option('g00', type : 'feature')
 option('mac', type : 'feature')
 option('pcx', type : 'feature')
 option('pgx', type : 'feature')

@@ -46,8 +46,8 @@ const struct wu_conf *wuconf) {
 
 		rast_to_raw(img + i, &desc.rast);
 		switch (desc.type) {
-		case color_pfm:
-		case gray_pfm:
+		case pnm_color_pfm:
+		case pnm_gray_pfm:
 			img[i].mirror = true;
 			break;
 		default:

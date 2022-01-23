@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "../common.h"
+//#include "../common.h"
 #include "../raster/unpack.h"
 
 #include "tim.h"
@@ -14,24 +14,23 @@ void tim_cleanup(struct tim_desc *desc) {
 }
 
 static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
-	const unsigned int stp_bit = 1 << 15;
-	const unsigned int mask = ~stp_bit;
+	const uint16_t stp_bit = 1 << 15;
+	const uint16_t mask = stp_bit - 1;
 	for (size_t i = 0; i < nmemb; ++i) {
-		unsigned int w = endian16(buf[i], little_endian);
+		uint16_t w = endian16(buf[i], little_endian);
 		if (w & mask) {
 			w ^= stp_bit;
 		}
-		buf[i] = (uint16_t)w;
+		buf[i] = w;
 	}
 }
 
-unsigned char * tim_decode(const struct tim_desc *desc) {
-	struct memory mem;
-	const size_t read = lib_load_rast(&mem, &desc->r, desc->ifp);
-	if (read/2 && desc->r.attr == pix_packing_1555) {
-		special_transparency_process(mem.data, read/2);
+size_t tim_decode(const struct tim_desc *desc, void *restrict dst) {
+	const size_t read = fread(dst, 1, raster_size(&desc->r), desc->ifp);
+	if (desc->r.attr == pix_packing_1555) {
+		special_transparency_process(dst, read/2);
 	}
-	return mem.data;
+	return read;
 }
 
 static enum lib_fail read_cluts(struct tim_desc *desc,
@@ -62,8 +61,8 @@ unsigned char header[static 12]) {
 		}
 
 		special_transparency_process(buf, colors);
-		unpack_strip(pal, buf, colors, 1, 2, pix_packing_1555,
-			op_expand, 16);
+		unpack_strip(pal, buf, colors, 16, pix_packing_1555,
+			op_expand);
 	}
 	return lib_ok;
 }
@@ -105,9 +104,9 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 		10      WORD    ImageHeight
 		12      VAR     ImageData
 
-	 * [1] For 16bit image data, the "Alpha" bit (called the Special
+	 * [1] For 16bit image data, the "A" bit (called the Special
 	 *     Transparency Proccesing bit) is not really Alpha:
-	 *     If transparency processing is enabled in the PSX, then when
+	 *     If transparency processing is enabled in the PSX, then if
 	 *     the bit is set the color is transparent, except if the color
 	 *     is pure black (0,0,0), where it's opaque if set.
 	 *     In programming terms: for non-black colors, the STP bit must
@@ -130,7 +129,7 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 	default: return lib_invalid_header;
 	}
 
-	if (depth > 16) {
+	if (depth == 24) {
 		desc->r.ch = 3;
 		desc->r.bitdepth = 8;
 	} else {
@@ -146,7 +145,6 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 			return lib_invalid_header;
 		}
 
-		desc->r.layout = pix_abgr;
 		const enum lib_fail status = read_cluts(desc, header + 4);
 		if (status != lib_ok) {
 			return status;
@@ -159,8 +157,8 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 
 	desc->x = buf_endian16(header + 8, little_endian);
 	desc->y = buf_endian16(header + 10, little_endian);
-	const size_t line_len = buf_endian16(header + 12, little_endian);
 
+	const size_t line_len = buf_endian16(header + 12, little_endian);
 	desc->r.w = line_len * 16 / depth;
 	desc->r.h = buf_endian16(header + 14, little_endian);
 	desc->r.alignment = 2;

@@ -18,17 +18,17 @@ union int_real {
 
 const char * pnm_type_str(const enum pnm_type type) {
 	switch (type) {
-	case plain_pbm: return "Text PBM";
-	case plain_pgm: return "Text PGM";
-	case plain_ppm: return "Text PPM";
-	case raw_pbm: return "Raw PBM";
-	case raw_pgm: return "Raw PGM";
-	case raw_ppm: return "Raw PPM";
-	case pam: return "PAM";
-	case xv_thumb: return "Xv thumb";
-	case mtv: return "MTV";
-	case color_pfm: return "Color PFM";
-	case gray_pfm: return "Gray PFM";
+	case pnm_plain_pbm: return "Text PBM";
+	case pnm_plain_pgm: return "Text PGM";
+	case pnm_plain_ppm: return "Text PPM";
+	case pnm_raw_pbm: return "Raw PBM";
+	case pnm_raw_pgm: return "Raw PGM";
+	case pnm_raw_ppm: return "Raw PPM";
+	case pnm_pam: return "PAM";
+	case pnm_xv_thumb: return "Xv thumb";
+	case pnm_mtv: return "MTV";
+	case pnm_color_pfm: return "Color PFM";
+	case pnm_gray_pfm: return "Gray PFM";
 	}
 	return "???";
 }
@@ -192,24 +192,24 @@ unsigned char * pnm_decode_next(const struct pnm_desc *desc) {
 	}
 
 	switch (desc->type) {
-	case plain_pbm:
+	case pnm_plain_pbm:
 		return plain_pbm_decode(desc, elems, output);
-	case plain_pgm:
-	case plain_ppm:
+	case pnm_plain_pgm:
+	case pnm_plain_ppm:
 		return plain_ppm_decode(desc, elems, output);
-	case raw_pgm:
-	case raw_ppm:
-	case pam:
+	case pnm_raw_pgm:
+	case pnm_raw_ppm:
+	case pnm_pam:
 		if (desc->scale.pnm != UCHAR_MAX) {
 			return raw_ppm_decode(desc, elems, output);
 		}
 		break;
-	case color_pfm:
-	case gray_pfm:
+	case pnm_color_pfm:
+	case pnm_gray_pfm:
 		return pfm_decode(desc, elems, output);
-	case raw_pbm:
-	case xv_thumb:
-	case mtv:
+	case pnm_raw_pbm:
+	case pnm_xv_thumb:
+	case pnm_mtv:
 		break;
 	}
 
@@ -224,7 +224,10 @@ unsigned char * pnm_decode_next(const struct pnm_desc *desc) {
 
 static size_t count_images(struct pnm_desc *desc) {
 	const size_t len = (size_t)file_get_remaining(desc->ifp);
-	return len / raster_size(&desc->rast);
+	if (len) {
+		return zumax(1, len / raster_size(&desc->rast));
+	}
+	return 0;
 }
 
 static enum lib_fail setup_desc(struct pnm_desc *desc) {
@@ -233,22 +236,22 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 	}
 
 	switch (desc->type) {
-	case raw_pbm:
+	case pnm_raw_pbm:
 		desc->rast.bitdepth = 1;
 		desc->rast.attr = pix_inverted;
 		break;
-	case plain_pbm:
-	case mtv:
+	case pnm_plain_pbm:
+	case pnm_mtv:
 		desc->rast.bitdepth = 8;
 		break;
-	case xv_thumb:
+	case pnm_xv_thumb:
 		if (desc->scale.pnm != 255) {
 			return lib_invalid_header;
 		}
 		desc->rast.bitdepth = 8;
 		desc->rast.attr = pix_packing_332;
 		break;
-	case color_pfm: case gray_pfm:
+	case pnm_color_pfm: case pnm_gray_pfm:
 		if (fpclassify(desc->scale.pfm) != FP_NORMAL) {
 			return lib_invalid_header;
 		}
@@ -258,7 +261,9 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 			? little_endian : big_endian;
 		desc->scale.pfm = fabsf(desc->scale.pfm);
 		break;
-	case plain_pgm: case plain_ppm: case raw_pgm: case raw_ppm: case pam:
+	case pnm_plain_pgm: case pnm_plain_ppm:
+	case pnm_raw_pgm: case pnm_raw_ppm:
+	case pnm_pam:
 		if (!desc->scale.pnm) {
 			return lib_invalid_header;
 		}
@@ -266,14 +271,15 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 	}
 
 	switch (desc->type) {
-	case plain_pbm: case plain_pgm: case raw_pbm: case raw_pgm: case gray_pfm:
-	case xv_thumb:
+	case pnm_plain_pbm: case pnm_plain_pgm:
+	case pnm_raw_pbm: case pnm_raw_pgm: case pnm_gray_pfm:
+	case pnm_xv_thumb:
 		desc->rast.ch = 1;
 		break;
-	case plain_ppm: case raw_ppm: case mtv: case color_pfm:
+	case pnm_plain_ppm: case pnm_raw_ppm: case pnm_mtv: case pnm_color_pfm:
 		desc->rast.ch = 3;
 		break;
-	case pam:
+	case pnm_pam:
 		if (!desc->rast.ch) {
 			return lib_invalid_header;
 		}
@@ -282,19 +288,13 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 	raster_normalize(&desc->rast);
 
 	switch (desc->type) {
-	case plain_pbm: case plain_pgm: case plain_ppm:
-		desc->nr = 1;
-		break;
-	case raw_pbm: case raw_pgm: case raw_ppm:
+	case pnm_raw_pbm: case pnm_raw_pgm: case pnm_raw_ppm:
 		desc->nr = count_images(desc);
 		if (!desc->nr) {
 			return lib_unexpected_eof;
 		}
 		break;
 	default:
-		if (!count_images(desc)) {
-			return lib_unexpected_eof;
-		}
 		desc->nr = 1;
 		break;
 	}
@@ -410,7 +410,7 @@ static enum lib_fail parse_any_map(struct pnm_desc *desc) {
 		} else if (seen == 1) {
 			result = fscanf(desc->ifp, "%zu", &desc->rast.h);
 		} else {
-			if (desc->type == color_pfm || desc->type == gray_pfm) {
+			if (desc->type == pnm_color_pfm || desc->type == pnm_gray_pfm) {
 				result = fscanf(desc->ifp, "%f", &desc->scale.pfm);
 			} else {
 				result = fscanf(desc->ifp, "%hu", &desc->scale.pnm);
@@ -426,8 +426,8 @@ static enum lib_fail parse_any_map(struct pnm_desc *desc) {
 		}
 
 		if (seen == 1) {
-			if (desc->type == plain_pbm || desc->type == raw_pbm
-			|| desc->type == mtv) {
+			if (desc->type == pnm_plain_pbm
+			|| desc->type == pnm_raw_pbm || desc->type == pnm_mtv) {
 				status = lib_ok;
 				break;
 			}
@@ -452,18 +452,18 @@ static enum lib_fail parse_any_map(struct pnm_desc *desc) {
 
 enum lib_fail pnm_parse_header(struct pnm_desc *desc) {
 	switch (desc->type) {
-	case plain_pbm:
-	case plain_pgm:
-	case plain_ppm:
-	case raw_pbm:
-	case raw_pgm:
-	case raw_ppm:
-	case xv_thumb:
-	case mtv:
-	case color_pfm:
-	case gray_pfm:
+	case pnm_plain_pbm:
+	case pnm_plain_pgm:
+	case pnm_plain_ppm:
+	case pnm_raw_pbm:
+	case pnm_raw_pgm:
+	case pnm_raw_ppm:
+	case pnm_xv_thumb:
+	case pnm_mtv:
+	case pnm_color_pfm:
+	case pnm_gray_pfm:
 		return parse_any_map(desc);
-	case pam:
+	case pnm_pam:
 		return parse_arbitrary_map(desc);
 	}
 	return lib_unknown_format;
@@ -472,13 +472,13 @@ enum lib_fail pnm_parse_header(struct pnm_desc *desc) {
 static enum lib_fail disambiguate(struct pnm_desc *desc,
 const char next_char) {
 	if (next_char == '\n') {
-		desc->type = pam;
+		desc->type = pnm_pam;
 		return lib_ok;
 	} else if (next_char == ' ') {
 		char newline;
 		const int read = fscanf(desc->ifp, "332%c", &newline);
 		if (read == 1 && newline == '\n') {
-			desc->type = xv_thumb;
+			desc->type = pnm_xv_thumb;
 			return lib_ok;
 		} else if (read == EOF) {
 			return lib_unexpected_eof;
@@ -509,25 +509,25 @@ const bool maybe_mtv) {
 		}
 
 		switch (desc->type) {
-		case plain_pbm:
-		case plain_pgm:
-		case plain_ppm:
-		case raw_pbm:
-		case raw_pgm:
-		case raw_ppm:
-		case pam:
-		case xv_thumb:
-		case color_pfm:
-		case gray_pfm:
+		case pnm_plain_pbm:
+		case pnm_plain_pgm:
+		case pnm_plain_ppm:
+		case pnm_raw_pbm:
+		case pnm_raw_pgm:
+		case pnm_raw_ppm:
+		case pnm_pam:
+		case pnm_xv_thumb:
+		case pnm_color_pfm:
+		case pnm_gray_pfm:
 			return lib_ok;
-		case mtv: // Invalid here
+		case pnm_mtv: // Invalid here
 			break;
 		}
 	} else if (matches == EOF) {
 		return lib_unexpected_eof;
 	} else if (maybe_mtv) {
 		fseek(desc->ifp, pos, SEEK_SET);
-		desc->type = mtv;
+		desc->type = pnm_mtv;
 		return lib_ok;
 	}
 	return lib_unknown_format;

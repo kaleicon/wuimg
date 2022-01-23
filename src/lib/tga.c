@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <inttypes.h>
+#include <stddef.h>
 
 #include "../common.h"
-#include "../raster/composite.h"
+#include "../raster/pix.h"
 #include "../raster/unpack.h"
 
 #include "tga.h"
@@ -72,7 +72,7 @@ const unsigned char *restrict rle_limit, const size_t pixel_size) {
 
 		++rle;
 		if (packet & 0x80) {
-			color_set(output, rle, pixel_size, len);
+			pix_set(output, rle, pixel_size, len);
 			rle += pixel_size;
 		} else {
 			if (rle + len * pixel_size > rle_limit) {
@@ -298,8 +298,7 @@ static enum lib_fail load_colormap(struct tga_desc *desc) {
 		for (size_t i = 0; i < elems; ++i) {
 			wbuf[i] = endian16(wbuf[i], little_endian) ^ (1 << 15);
 		}
-		unpack_strip(pal, wbuf, elems, 1, 1, pix_packing_1555,
-			op_expand, 16);
+		unpack_strip(pal, wbuf, elems, 16, pix_packing_1555, op_expand);
 		break;
 	case 24:
 		raster_pal_from_rgb8(pal, buf, elems);
@@ -418,10 +417,11 @@ enum lib_fail tga_parse_header(struct tga_desc *desc) {
 		|
 		18              ImageID;
 
-	 * [1] 15-bit means A1R5G5B5 (MSB to LSB) packing with Alpha ignored.
+	 * [1] For colormaps, 15-bit means A1R5G5B5 (MSB to LSB) packing with
+	 *     Alpha ignored.
 	 *     16-bit means the Alpha bit is used, but 0 means opaque and 1
 	 *     transparent, which is the opposite of how pixel data is treated.
-	 * [2] 15-bit and 16-bit are equivalent for pixel data. Whether the
+	 * [2] For pixel data, 15-bit and 16-bit are equivalent. Whether the
 	 *     Alpha bit is used depends solely on the attribute bits field.
 	 * [3] Most docs non-indicatively call them attribute bits and say
 	 *     nothing about them. Should be 0 or 1 for 15/16-bit images and
@@ -447,13 +447,19 @@ enum lib_fail tga_parse_header(struct tga_desc *desc) {
 		return fail;
 	}
 
-	if (desc->meta) {
-		desc->meta->id_len = header[0];
-		if (!fread(desc->meta->id, desc->meta->id_len, 1, desc->ifp)) {
-			return lib_unexpected_eof;
+	if (header[0]) {
+		if (desc->read_metadata) {
+			desc->meta = calloc(1, sizeof(*desc->meta));
+			if (!desc->meta) {
+				return lib_alloc_error;
+			}
+			if (!fread(desc->meta->id, header[0], 1, desc->ifp)) {
+				return lib_unexpected_eof;
+			}
+			desc->meta->id_len = header[0];
+		} else {
+			fseek(desc->ifp, header[0], SEEK_CUR);
 		}
-	} else {
-		fseek(desc->ifp, header[0], SEEK_CUR);
 	}
 
 	if (desc->map.len) {
@@ -465,18 +471,11 @@ enum lib_fail tga_parse_header(struct tga_desc *desc) {
 	return lib_ok;
 }
 
-enum lib_fail tga_open_file(FILE *ifp, struct tga_desc *desc,
+enum lib_fail tga_open_file(struct tga_desc *desc, FILE *ifp,
 const bool read_metadata) {
-	desc->ifp = ifp;
-	desc->map.len = 0;
-	desc->map.pal = NULL;
-	if (read_metadata) {
-		desc->meta = calloc(1, sizeof(*desc->meta));
-		if (!desc->meta) {
-			return lib_alloc_error;
-		}
-	} else {
-		desc->meta = NULL;
-	}
+	*desc = (struct tga_desc) {
+		.ifp = ifp,
+		.read_metadata = read_metadata,
+	};
 	return lib_ok;
 }

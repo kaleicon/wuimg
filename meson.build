@@ -1,6 +1,6 @@
 project('wu', 'c', 'cpp',
 	default_options : ['optimization=3', 'warning_level=3', 'werror=true',
-		'b_lto=true', 'b_pie=true', 'c_std=c11',
+		'b_lto=true', 'b_pie=true', 'c_std=c99',
 		'c_args=-fallow-store-data-races'])
 add_project_arguments('-Wextra', '-Wconversion', '-Winline', '-Wno-pedantic',
 	'-Wwrite-strings', '-Wformat-signedness',

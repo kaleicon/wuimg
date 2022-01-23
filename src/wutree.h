@@ -38,8 +38,8 @@ struct wu_tree_sap {
 struct wu_tree {
 	size_t name_len;
 	union {
-		char *string;
 		char array[sizeof(char *)];
+		char *string;
 	} name;
 	size_t alloc;
 	size_t len;

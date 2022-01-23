@@ -24,14 +24,13 @@ enum wu_error pgx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
-	if (img) {
-		img->data = pgx_decode(&desc);
-		if (img->data) {
-			rast_to_raw(img, &desc.rast);
-			img->disable_alpha = !desc.transparent;
-			return wu_ok;
-		}
-		return wu_decoding_error;
+	if (!img) {
+		return wu_alloc_error;
 	}
-	return wu_alloc_error;
+
+	if (!rast_to_raw_img(&desc.rast, img)) {
+		return wu_alloc_error;
+	}
+	img->disable_alpha = !desc.transparent;
+	return pgx_decode(&desc, img->data) ? wu_ok : wu_decoding_error;
 }

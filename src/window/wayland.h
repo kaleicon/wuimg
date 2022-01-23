@@ -6,7 +6,6 @@
 #include "xdg-shell-client-protocol.h"
 #include <xkbcommon/xkbcommon.h>
 
-#include "../opengl.h"
 #include "../conf.h"
 #include "egl.h"
 #include "base.h"
@@ -65,6 +64,11 @@ struct wayland {
 	bool fullscreen;
 };
 
+struct wayland_offscreen {
+	struct wl_display *display;
+	EGLDisplay egl_display;
+};
+
 void wayland_terminate(struct wayland *wl);
 
 void wayland_set_title(const struct wayland *wl, const char *title);
@@ -76,5 +80,10 @@ void wayland_poll(struct wayland *wl);
 void wayland_fullscreen(struct wayland *wl);
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub);
+
+
+void wayland_offscreen_terminate(struct wayland_offscreen *wl);
+
+const char * wayland_offscreen_init(struct wayland_offscreen *wl);
 
 #endif /* WU_WAYLAND */

@@ -47,27 +47,27 @@ void drm_terminate(struct drm_context *ctx) {
 }
 
 static void fb_destroy_fn(struct gbm_bo *bo, void *data) {
-	uint32_t *fb_id = data;
-	drmModeRmFB(gbm_bo_get_fd(bo), *fb_id);
-	*fb_id = 0;
+	uint32_t *fb_ptr = data;
+	drmModeRmFB(gbm_bo_get_fd(bo), *fb_ptr);
+	*fb_ptr = 0;
 }
 
 static uint32_t get_framebuffer(struct drm *drm, struct gbm_bo *bo,
 struct window_public *pub) {
-	uint32_t *fb_id = gbm_bo_get_user_data(bo);
-	if (fb_id) {
-		if (*fb_id) {
-			return *fb_id;
+	uint32_t *fb_ptr = gbm_bo_get_user_data(bo);
+	if (fb_ptr) {
+		if (*fb_ptr) {
+			return *fb_ptr;
 		}
 	} else {
 		for (size_t i = 0; i < ARRAY_LEN(drm->fb_id); ++i) {
-			if (!drm->fb_id[i]) {
-				fb_id = drm->fb_id + i;
+			if (drm->fb_id[i] == 0) {
+				fb_ptr = drm->fb_id + i;
 				break;
 			}
 		}
-		if (fb_id == NULL) {
-			fputs("not enough framebuffers :o\n", stderr);
+		if (!fb_ptr) {
+			fputs("no free framebuffers :o\n", stderr);
 			return 0;
 		}
 	}
@@ -81,14 +81,14 @@ struct window_public *pub) {
 	uint32_t offsets[4] = {0};
 
 	const int fail = drmModeAddFB2(drm->fd, width, height, format, handles,
-		pitches, offsets, fb_id, 0);
+		pitches, offsets, fb_ptr, 0);
 	if (fail) {
-		*fb_id = 0;
+		*fb_ptr = 0;
 	} else {
-		gbm_bo_set_user_data(bo, fb_id, fb_destroy_fn);
+		gbm_bo_set_user_data(bo, fb_ptr, fb_destroy_fn);
 		window_size_update(pub, width, height);
 	}
-	return *fb_id;
+	return *fb_ptr;
 }
 
 static void flipper_fn(int _fd, unsigned int _sequence, unsigned int _sec,
@@ -204,20 +204,36 @@ const drmModeConnector *connector) {
 			const uint32_t possible_crtcs = ec->possible_crtcs;
 			drmModeFreeEncoder(ec);
 
-			uint32_t crtc_id = 0;
 			for (int k = 0; k < res->count_crtcs; ++k) {
 				if (possible_crtcs & (1 << k)) {
-					crtc_id = res->crtcs[k];
-					break;
+					if (res->crtcs[k]) {
+						return res->crtcs[k];
+					} else {
+						break;
+					}
 				}
-			}
-
-			if (crtc_id) {
-				return crtc_id;
 			}
 		}
 	}
 	return 0;
+}
+
+static drmModeModeInfo * find_preferred_mode(drmModeConnector *connector) {
+	drmModeModeInfo *mode_info = NULL;
+	int greatest_area = 0;
+	for (int i = 0; i < connector->count_modes; ++i) {
+		drmModeModeInfo *mi = connector->modes + i;
+		if (mi->type & DRM_MODE_TYPE_PREFERRED) {
+			return mi;
+		}
+
+		const int mode_area = mi->hdisplay * mi->vdisplay;
+		if (mode_area > greatest_area) {
+			mode_info = mi;
+			greatest_area = mode_area;
+		}
+	}
+	return mode_info;
 }
 
 static drmModeConnector * find_connector(drmModeRes *res, const int fd) {
@@ -228,7 +244,7 @@ static drmModeConnector * find_connector(drmModeRes *res, const int fd) {
 		switch (cn->connection) {
 		case DRM_MODE_CONNECTED:
 			if (unknown) {
-				drmModeFreeConnector(cn);
+				drmModeFreeConnector(unknown);
 			}
 			return cn;
 		case DRM_MODE_UNKNOWNCONNECTION:
@@ -245,32 +261,38 @@ static drmModeConnector * find_connector(drmModeRes *res, const int fd) {
 	return unknown;
 }
 
-static drmModeRes * find_device(struct drm *drm) {
+static int open_device(drmDevice *device) {
+	if (device->available_nodes & (1 << DRM_NODE_PRIMARY)) {
+		return open(device->nodes[DRM_NODE_PRIMARY], O_RDWR);
+	}
+	return -1;
+}
+
+static int get_device_fd(void) {
 	drmDevice *devices[64];
 	const int dev_len = drmGetDevices2(0, devices, ARRAY_LEN(devices));
-	if (dev_len < 1) {
-		return NULL;
+	int fd = -1;
+	for (int i = 0; fd < 0 && i < dev_len; ++i) {
+		fd = open_device(devices[i]);
 	}
+	drmFreeDevices(devices, dev_len);
+	return fd;
+}
 
+static drmModeRes * find_primary_device(struct drm *drm) {
+	drmDevice *devices[64];
+	const int dev_len = drmGetDevices2(0, devices, ARRAY_LEN(devices));
 	drmModeRes *res = NULL;
 	for (int i = 0; i < dev_len; ++i) {
-		drmDevice *device = devices[i];
-		const bool is_primary = device->available_nodes
-			& (1 << DRM_NODE_PRIMARY);
-		if (!is_primary) {
-			continue;
+		const int fd = open_device(devices[i]);
+		if (fd >= 0) {
+			res = drmModeGetResources(fd);
+			if (res) {
+				drm->fd = fd;
+				break;
+			}
+			close(fd);
 		}
-
-		const int fd = open(device->nodes[DRM_NODE_PRIMARY], O_RDWR);
-		if (fd < 0) {
-			continue;
-		}
-		res = drmModeGetResources(fd);
-		if (res) {
-			drm->fd = fd;
-			break;
-		}
-		close(fd);
 	}
 	drmFreeDevices(devices, dev_len);
 	return res;
@@ -278,73 +300,87 @@ static drmModeRes * find_device(struct drm *drm) {
 
 static bool drm_setup(struct drm *drm, drmModeConnector **connector,
 drmModeModeInfo **mode_info) {
-	drmModeRes *res = find_device(drm);
-	if (!res) {
-		return false;
-	}
-
-	*connector = find_connector(res, drm->fd);
-	if (!*connector) {
-		drmModeFreeResources(res);
-		return false;
-	}
-
-	int max_area = 0;
-	for (int i = 0; i < (*connector)->count_modes; ++i) {
-		drmModeModeInfo *mi = (*connector)->modes + i;
-		if (mi->type & DRM_MODE_TYPE_PREFERRED) {
-			*mode_info = mi;
-			break;
+	drmModeRes *res = find_primary_device(drm);
+	if (res) {
+		*connector = find_connector(res, drm->fd);
+		if (*connector) {
+			*mode_info = find_preferred_mode(*connector);
+			if (*mode_info) {
+				drm->connector_id = (*connector)->connector_id;
+				drm->crtc_id = find_crtc(drm->fd, res, *connector);
+			}
 		}
-
-		const int mode_area = mi->hdisplay * mi->vdisplay;
-		if (mode_area > max_area) {
-			*mode_info = mi;
-			max_area = mode_area;
-		}
-	}
-	if (!*mode_info) {
 		drmModeFreeResources(res);
-		return false;
 	}
-
-	drm->connector_id = (*connector)->connector_id;
-	drm->crtc_id = find_crtc(drm->fd, res, *connector);
-	drmModeFreeResources(res);
 	return drm->crtc_id != 0;
 }
 
 const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
+	*ctx = (struct drm_context){0};
+
 	ctx->pub = pub;
 	ctx->drm.fd = -1;
 
 	drmModeConnector *connector = NULL;
-	drmModeModeInfo *mode_info = NULL; // will point to a *connector member
+	drmModeModeInfo *mode_info = NULL; // ptr to a *connector member
 
-	const char *err = "Undefined behaviour in DRM";
+	const char *err = "DRM: This string shouldn't be seen";
 	if (drm_setup(&ctx->drm, &connector, &mode_info)) {
 		if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
-			if (egl_init(&ctx->egl, ctx->gbm.device, ctx->gbm.surface, WU_GBM_FORMAT, false)) {
+			err = egl_init(&ctx->egl,
+				(EGLNativeDisplayType)ctx->gbm.device,
+				ctx->gbm.surface, WU_GBM_FORMAT, false);
+			if (!err) {
 				if (mode_set(ctx, mode_info)) {
 					// Phew
 					err = NULL;
 				} else {
-					err = "Mode set failed";
+					err = "DRM: Mode set failed";
 				}
 			} else {
 				egl_print_error();
-				err = "EGL setup failed";
 			}
 		} else {
-			err = "GBM setup failed";
+			err = "DRM: GBM setup failed";
 		}
 	} else {
-		err = "DRM setup failed";
+		err = "DRM: DRM setup failed";
 	}
 	drmModeFreeConnector(connector);
 
 	if (err) {
 		drm_terminate(ctx);
 	}
-	return NULL;
+	return err;
+}
+
+void drm_offscreen_terminate(struct drm_offscreen *ctx) {
+	egl_offscreen_terminate(ctx->egl_display);
+	if (ctx->device) {
+		gbm_device_destroy(ctx->device);
+	}
+	if (ctx->fd >= 0) {
+		close(ctx->fd);
+	}
+}
+
+const char * drm_offscreen_init(struct drm_offscreen *ctx) {
+	*ctx = (struct drm_offscreen){0};
+
+	ctx->fd = get_device_fd();
+	if (ctx->fd < 0) {
+		return "DRM: No device found";
+	}
+
+	const char *err = NULL;
+	ctx->device = gbm_create_device(ctx->fd);
+	if (ctx->device) {
+		err = egl_offscreen_init(&ctx->egl_display, ctx->device);
+	} else {
+		err = "DRM: Failed to create GBM device.";
+	}
+	if (err) {
+		drm_offscreen_terminate(ctx);
+	}
+	return err;
 }

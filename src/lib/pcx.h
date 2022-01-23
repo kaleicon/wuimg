@@ -23,10 +23,10 @@ struct pcx_desc {
 	bool palette_type;
 	enum pcx_version version:8;
 
+	uint16_t bytes_per_line;
 	uint16_t horz_res, vert_res;
 	uint16_t horz_screen, vert_screen;
 
-	uint16_t bytes_per_line;
 	unsigned entries;
 	unsigned char file_pal[48];
 };

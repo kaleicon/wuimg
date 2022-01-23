@@ -31,16 +31,11 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 	}
 }
 
-enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct mmap_info mm;
-	if (!mmap_file(&mm, infile->ifp)) {
-		return wu_alloc_error;
-	}
-
+static enum wu_error decode(struct image_file *infile,
+const struct wu_conf *wuconf, struct map_info *mm) {
 	struct xbm_desc desc;
-	enum lib_fail fail = xbm_open_mem(&desc, &mm);
+	enum lib_fail fail = xbm_open_mem(&desc, mm);
 	if (fail) {
-		munmap_file(mm);
 		rast_error(infile, fail);
 		return wu_unknown_file_type;
 	}
@@ -48,21 +43,27 @@ enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	get_metadata(&infile->metadata, &desc);
 
 	if (rast_exceeds_size(&desc.r, wuconf)) {
-		munmap_file(mm);
 		return wu_exceeds_size_limit;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
-		munmap_file(mm);
 		return wu_alloc_error;
 	}
 
-	rast_to_raw(img, &desc.r);
-	img->data = xbm_decode(&desc);
-	munmap_file(mm);
-	if (!img->data) {
-		return wu_decoding_error;
+	if (!rast_to_raw_img(&desc.r, img)) {
+		return wu_alloc_error;
 	}
-	return wu_ok;
+	return xbm_decode(&desc, img->data) ? wu_ok : wu_decoding_error;
+}
+
+enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	struct map_info mm;
+	if (!map_file(&mm, infile->ifp)) {
+		return wu_alloc_error;
+	}
+
+	const enum wu_error st = decode(infile, wuconf, &mm);
+	unmap_file(&mm);
+	return st;
 }
