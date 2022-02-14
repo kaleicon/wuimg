@@ -11,6 +11,7 @@
 #include "raster/color.h"
 #include "raster/pix.h"
 #include "raster/pal.h"
+#include "raster/compost.h"
 
 enum wu_error {
 	wu_no_change = -1, // For callbacks
@@ -37,10 +38,10 @@ struct wu_state {
 	unsigned char rotate;
 	bool mirror;
 
-	float x_offset;
-	float y_offset;
 	float fit_zoom;
 	float zoom;
+	float x_offset;
+	float y_offset;
 };
 
 enum image_event {
@@ -76,12 +77,6 @@ enum image_mode {
 	image_mode_raw = 0,
 	image_mode_palette = 1,
 	image_mode_planar = 2,
-};
-
-struct frame_info {
-	size_t x, y;
-	size_t w, h;
-	int msec;
 };
 
 struct image_frames {
@@ -131,21 +126,21 @@ struct image_file {
 struct image_context {
 	const char *name;
 	struct image_file file;
-	int fmt_id;
-	struct wu_conf conf;
 	struct wu_state state;
+	struct wu_conf conf;
+	int fmt_id;
 };
 
 const char * wu_error_message(enum wu_error err);
 
-
-int raw_img_geom_hash(const struct raw_img *img);
 
 size_t raw_img_stride(const struct raw_img *img);
 
 size_t raw_img_size(const struct raw_img *img);
 
 size_t raw_img_addbuf(struct raw_img *img);
+
+size_t raw_img_nr_frames(const struct raw_img *img);
 
 struct image_frames * raw_img_alloc_frames(struct raw_img *img, size_t nr);
 
@@ -182,11 +177,16 @@ void image_file_error_append(struct image_file *file, const char *str);
 
 void image_file_free(struct image_file *file);
 
+
+struct raw_img * image_cur_sub_img(const struct image_context *image);
+
 enum image_event image_zoom(struct image_context *image, float new_zoom);
 
 enum image_event image_sub_cycle(struct image_context *image, int steps);
 
 enum image_event image_frame_cycle(struct image_context *image, int steps);
+
+void image_reset(struct image_context *image);
 
 
 size_t image_fit_factor(const struct wu_conf *conf, size_t w, size_t h,

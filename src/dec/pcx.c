@@ -45,7 +45,7 @@ const struct pcx_desc *desc) {
 		const void *garbage = desc->file_pal + 12;
 		const size_t len = is_readable_garbage(garbage,
 			sizeof(desc->file_pal) - 12);
-		if (len) {
+		if (len > 3) {
 			tree_sprout_measured_leaf(metadata, "Garbage", garbage,
 				len);
 		}
@@ -96,15 +96,6 @@ enum wu_error dcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	if (!desc) {
 		return wu_alloc_error;
 	} else if (!desc->nr) {
-		return wu_unexpected_eof;
-	}
-
-	size_t max = 0;
-	for (size_t i = 0; i < desc->nr; ++i) {
-		max = zumax(max, desc->len[i]);
-	}
-	if (max <= 128) {
-		free(desc);
 		return wu_unexpected_eof;
 	}
 

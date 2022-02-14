@@ -5,7 +5,7 @@
 
 #include "../wustr.h"
 #include "../raster/lib.h"
-#include "../raster/text.h"
+#include "../raster/memparser.h"
 
 enum xbm_type {
 	xbm_x11 = 1,
@@ -13,7 +13,7 @@ enum xbm_type {
 };
 
 struct xbm_desc {
-	struct text_parser tp;
+	struct mem_parser tp;
 	struct raster_desc r;
 
 	unsigned int x_hot, y_hot;

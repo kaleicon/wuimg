@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 
-#include "../common.h"
 #include "pix.h"
 
 enum unpack_op {
@@ -12,7 +11,6 @@ enum unpack_op {
 	op_expand,
 	op_pack,
 };
-
 
 void unpack_strip(void *restrict out, const void *restrict src,
 size_t n, uint8_t bitdepth, enum pix_attr attr, enum unpack_op op);

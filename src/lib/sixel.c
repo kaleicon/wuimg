@@ -5,10 +5,6 @@
 #include <string.h>
 #include <limits.h>
 
-#include "../raster/lib.h"
-#include "../raster/pix.h"
-#include "../raster/pal.h"
-#include "../raster/text.h"
 #include "../common.h"
 #include "sixel.h"
 
@@ -84,15 +80,15 @@ int_fast16_t comp[static 3], const enum sixel_colorspace pu) {
 	}
 }
 
-static void read_color(struct text_parser *tp, struct sixel_colormap *map) {
-	text_fast_t idx;
-	text_get_uint_unsafe(tp, 3, &idx);
-	if (text_next_char_unsafe(tp) == ';') {
-		enum sixel_colorspace pu = text_next_char_unsafe(tp);
-		text_fast_t tmp[3] = {0};
+static void read_color(struct mem_parser *tp, struct sixel_colormap *map) {
+	mem_fast_t idx;
+	mem_get_uint_unsafe(tp, 3, &idx);
+	if (mem_next_char_unsafe(tp) == ';') {
+		enum sixel_colorspace pu = mem_next_char_unsafe(tp);
+		mem_fast_t tmp[3] = {0};
 		for (size_t i = 0; i < ARRAY_LEN(tmp); ++i) {
 			++tp->pos;
-			text_get_uint_unsafe(tp, 3, tmp + i);
+			mem_get_uint_unsafe(tp, 3, tmp + i);
 		}
 		normalize_color(map->map.color + idx, tmp, pu);
 	} else {
@@ -101,7 +97,7 @@ static void read_color(struct text_parser *tp, struct sixel_colormap *map) {
 	map->active = map->map.color[idx];
 }
 
-static bool validate_color(struct text_parser *tp) {
+static bool validate_color(struct mem_parser *tp) {
 	/* Format:
 	 * (select color entry) '#' Pc
 	 * (set color value)    '#' Pc ; Pu ; Px ; Py ; Pz
@@ -114,12 +110,12 @@ static bool validate_color(struct text_parser *tp) {
 	 * All three components are zero if omitted.
 	 * Note that the 'set' form leaves Pc as the active color. That was
 	 * a fun bug to hunt. */
-	text_fast_t idx;
-	if (!text_get_uint(tp, 3, &idx) || idx > UCHAR_MAX) {
+	mem_fast_t idx;
+	if (!mem_get_uint(tp, 3, &idx) || idx > UCHAR_MAX) {
 		return false;
 	}
-	if (text_next_char(tp) == ';') {
-		enum sixel_colorspace pu = text_next_char(tp);
+	if (mem_next_char(tp) == ';') {
+		enum sixel_colorspace pu = mem_next_char(tp);
 		switch (pu) {
 		case sixel_hls: case sixel_rgb:
 			break;
@@ -127,13 +123,13 @@ static bool validate_color(struct text_parser *tp) {
 			return false;
 		}
 		for (size_t i = 0; i < 3; ++i) {
-			if (text_next_char(tp) != ';') {
+			if (mem_next_char(tp) != ';') {
 				return false;
 			}
-			const text_fast_t max =
+			const mem_fast_t max =
 				(i == 0 && pu == sixel_hls) ? 360 : 100;
-			text_fast_t val;
-			text_get_uint(tp, 3, &val);
+			mem_fast_t val;
+			mem_get_uint(tp, 3, &val);
 			if (val > max) {
 				return false;
 			}
@@ -216,8 +212,8 @@ size_t sixel_decode(const struct sixel_desc *desc, struct pix_rgba8 *out) {
 	struct sixel_colormap map;
 	xterm_colormap_init(&map);
 
-	struct text_parser tp = (struct text_parser) {
-		.text = desc->tp.text,
+	struct mem_parser tp = (struct mem_parser) {
+		.mem = desc->tp.mem,
 		.len = desc->data_end,
 		.pos = desc->tp.pos,
 	};
@@ -225,7 +221,7 @@ size_t sixel_decode(const struct sixel_desc *desc, struct pix_rgba8 *out) {
 	size_t y = 0;
 	// We've already validated the data so we can omit most checks.
 	while (tp.pos < tp.len) {
-		unsigned char c = text_next_char_unsafe(&tp);
+		unsigned char c = mem_next_char_unsafe(&tp);
 		size_t pos;
 		switch (c) {
 		case graphics_new_line:
@@ -235,9 +231,9 @@ size_t sixel_decode(const struct sixel_desc *desc, struct pix_rgba8 *out) {
 			x = 0;
 			break;
 		case graphics_repeat_introducer:
-			;text_fast_t repeat;
-			text_get_uint_unsafe(&tp, 3, &repeat);
-			c = text_next_char_unsafe(&tp);
+			;mem_fast_t repeat;
+			mem_get_uint_unsafe(&tp, 3, &repeat);
+			c = mem_next_char_unsafe(&tp);
 
 			pos = y*desc->r.w;
 			const size_t pixs = (size_t)repeat;
@@ -264,9 +260,9 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 	 * dimensions. No other way around it. */
 	size_t row_width = 0;
 	size_t height = LINE_HEIGHT;
-	struct text_parser tp = desc->tp; // Local copy
+	struct mem_parser tp = desc->tp; // Local copy
 	for (bool end = false; !end;) {
-		const int c = text_next_char(&tp);
+		const int c = mem_next_char(&tp);
 		switch (c) {
 		case EOF:
 			puts("SIXEL error: Ending escape byte not found.");
@@ -284,14 +280,14 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 			row_width = 0;
 			break;
 		case graphics_repeat_introducer:
-			;text_fast_t repeat;
-			if (!text_get_uint(&tp, 3, &repeat)) {
+			;mem_fast_t repeat;
+			if (!mem_get_uint(&tp, 3, &repeat)) {
 				puts("SIXEL error: Repeat introducer lacks "
 					"digits.");
 				return lib_invalid_data;
 			}
 
-			if (!issixel(text_next_char(&tp))) {
+			if (!issixel(mem_next_char(&tp))) {
 				puts("SIXEL error: Found non-sixel graphics "
 					"repeat.");
 				return lib_invalid_data;
@@ -333,7 +329,7 @@ static enum lib_fail calc_dimensions(struct sixel_desc *desc) {
 	return lib_invalid_data;
 }
 
-static enum lib_fail get_raster_attributes(struct text_parser *tp,
+static enum lib_fail get_raster_attributes(struct mem_parser *tp,
 unsigned int raster[4]) {
 	/* Format: '"' Pan ; Pad ; Ph ; Pv
 	 * Pan (aspect numerator) is the vertical aspect ratio. Required.
@@ -341,7 +337,7 @@ unsigned int raster[4]) {
 	 * Ph is the horizontal image size in pixels. Optional.
 	 * Pv in the vertical size. Optional. */
 	for (size_t i = 0; i < 4;) {
-		const int c = text_next_char(tp);
+		const int c = mem_next_char(tp);
 		switch (c) {
 		MACRO_CASE_DIGIT
 			;const unsigned prev = raster[i];
@@ -367,11 +363,11 @@ unsigned int raster[4]) {
 	return lib_invalid_header;
 }
 
-static enum lib_fail dcs_parse(struct text_parser *tp,
+static enum lib_fail dcs_parse(struct mem_parser *tp,
 unsigned char macro[3]) {
 	int num_len = 0;
 	for (size_t i = 0; i < 3;) {
-		int c = text_next_char(tp);
+		int c = mem_next_char(tp);
 		switch (c) {
 		MACRO_CASE_DIGIT
 			if (num_len > 0) {
@@ -392,7 +388,7 @@ unsigned char macro[3]) {
 			return lib_invalid_header;
 		}
 	}
-	return (text_next_char(tp) == 'q') ? lib_ok : lib_invalid_header;
+	return (mem_next_char(tp) == 'q') ? lib_ok : lib_invalid_header;
 }
 
 enum lib_fail sixel_calc_parameters(struct sixel_desc *desc) {
@@ -403,7 +399,7 @@ enum lib_fail sixel_calc_parameters(struct sixel_desc *desc) {
 	 * P3 is the horizontal grid size, the distance between two pixels.
 	 *     I don't know its range.
 	 * Any of these components may be omitted. */
-	struct text_parser *tp = &desc->tp;
+	struct mem_parser *tp = &desc->tp;
 
 	unsigned char macro[3] = {0};
 	enum lib_fail status = dcs_parse(tp, macro);
@@ -444,7 +440,7 @@ enum lib_fail sixel_calc_parameters(struct sixel_desc *desc) {
 		.ch = 4,
 		.bitdepth = 8,
 	};
-	const int c = text_next_nonspace(tp);
+	const int c = mem_next_nonspace(tp);
 	if (c == raster_attributes) {
 		unsigned int raster[4] = {0};
 		status = get_raster_attributes(tp, raster);
@@ -465,12 +461,12 @@ enum lib_fail sixel_calc_parameters(struct sixel_desc *desc) {
 	return calc_dimensions(desc);
 }
 
-static int skip_csi(struct text_parser *tp) {
+static int skip_csi(struct mem_parser *tp) {
 	const int max_chars = 12;
 	bool prev_escape = true;
 	int c = 0;
 	for (int i = 0; i < max_chars; ++i) {
-		c = text_next_char(tp);
+		c = mem_next_char(tp);
 		if (prev_escape) {
 			if (c == 'P') {
 				return c;
@@ -485,15 +481,15 @@ static int skip_csi(struct text_parser *tp) {
 
 enum lib_fail sixel_open_mem(struct sixel_desc *desc,
 const struct map_info *mm) {
-	struct text_parser *tp = &desc->tp;
-	*tp = text_parser_mem(mm->len, mm->data);
+	struct mem_parser *tp = &desc->tp;
+	*tp = mem_parser_mem(mm->len, mm->data);
 
 	/* The sixel format begins with the Device Control String, which might
 	 * come in single-byte and two-byte form. And since it is basically a
 	 * giant terminal command written to a file, some escape codes can be
 	 * expected before that. */
 	bool valid = false;
-	int c = text_next_char(tp);
+	int c = mem_next_char(tp);
 	if (c == ansi_escape) {
 		c = skip_csi(tp);
 		valid = (c == 'P');

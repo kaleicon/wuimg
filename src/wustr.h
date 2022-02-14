@@ -17,7 +17,7 @@ struct wustr {
 
 struct wuptr {
 	size_t len;
-	const unsigned char *str;
+	const unsigned char *ptr;
 };
 
 bool wugrow_reserve(void *restrict ptr_ptr, struct wugrow *grow, size_t extra);

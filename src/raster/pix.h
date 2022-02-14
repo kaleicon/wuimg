@@ -50,6 +50,9 @@ void pix_layout_print(const enum pix_layout layout);
 
 void pix_swizzle_mask(uint8_t swizzle[static 4], enum pix_layout layout);
 
+void pix_set_word(uint16_t *restrict dst, const uint16_t word,
+const size_t nmemb);
+
 void pix_set(void *restrict dst, const void *restrict pix,
 const size_t pix_size, const size_t nmemb);
 

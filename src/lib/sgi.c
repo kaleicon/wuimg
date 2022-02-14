@@ -4,51 +4,28 @@
 
 #include "../common.h"
 #include "../raster/unpack.h"
+#include "../raster/pix.h"
 #include "sgi.h"
 
 static const uint8_t RLE_LEN_MASK = 0x7f;
 
 struct rle_info {
 	size_t entries;
-	uint32_t *buf;
-	uint32_t *row_offset;
+	size_t table_size;
+	size_t rle_size;
+	size_t total;
+	uint32_t *row_offset; // Base pointer
 	uint32_t *row_len;
 	void *rle;
 };
 
-static bool undec16(uint16_t *restrict dst, const struct sgi_desc *desc) {
-	for (size_t z = 0; z < desc->rast.ch; ++z) {
-		for (size_t y = 0; y < desc->rast.h; ++y) {
-			uint16_t *d = dst + desc->rast.w * y * z;
-			const size_t read = fread(d, 2, desc->rast.w, desc->ifp);
-			for (size_t x = 0; x < desc->rast.w; ++x) {
-				d[x] = endian16(d[x], big_endian);
-			}
-			if (read < desc->rast.w) {
-				return false;
-			}
-		}
-	}
-	return true;
-}
-
-static unsigned char * uncompressed_decode(const struct sgi_desc *desc) {
-	const size_t dims = raster_size(&desc->rast);
-	void *output = malloc(dims);
-	if (!output) {
-		return NULL;
-	}
-
-	bool full;
+static size_t uncompressed_decode(const struct sgi_desc *desc,
+void *restrict dst) {
+	const size_t w = fread(dst, 1, raster_size(&desc->rast), desc->ifp);
 	if (desc->bytedepth == 2) {
-		full = undec16(output, desc);
-	} else {
-		full = fread(output, dims, 1, desc->ifp);
+		loop_endian16(dst, big_endian, w/2);
 	}
-	if (!full) {
-		puts(RASTER_EOF);
-	}
-	return output;
+	return w;
 }
 
 static void rle_loop16(uint16_t *restrict output, const size_t out_limit,
@@ -58,6 +35,9 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 	do {
 		const uint16_t packet = endian16(rle[r], big_endian);
 		const uint16_t len = packet & RLE_LEN_MASK;
+		if (out_limit - o < len) {
+			return;
+		}
 		++r;
 		if (packet & 0x80) {
 			for (uint16_t i = 0; i < len; ++i) {
@@ -68,12 +48,12 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 		} else {
 			const uint16_t pix = endian16(rle[r], big_endian);
 			for (uint16_t i = 0; i < len; ++i) {
-				output[o] = pix;
-				++o;
+				output[o + i] = pix;
 			}
+			o += len;
 			++r;
 		}
-	} while (r < rle_limit - 1 && o < out_limit);
+	} while (rle_limit - r >= 2);
 }
 
 static void rle_loop8(uint8_t *restrict output, const size_t out_limit,
@@ -83,6 +63,9 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 	do {
 		const uint8_t packet = rle[r];
 		const uint8_t len = packet & RLE_LEN_MASK;
+		if (out_limit - o < len) {
+			return;
+		}
 		++r;
 		if (packet & 0x80) {
 			memcpy(output + o, rle + r, len);
@@ -93,14 +76,13 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 			o += len;
 			++r;
 		}
-	} while (r < rle_limit - 1 && o < out_limit);
+	} while (rle_limit - r >= 2);
 }
 
-static void rle_loop(void *restrict output, const struct rle_info *rle,
-const struct sgi_desc *desc) {
+static void rle_loop(const struct sgi_desc *desc, void *restrict output,
+const struct rle_info *rle) {
 	const size_t width = desc->rast.w;
-	const size_t height = desc->rast.h * desc->rast.ch;
-	for (size_t y = 0; y < height; ++y) {
+	for (size_t y = 0; y < rle->entries; ++y) {
 		const size_t offset = width*y;
 		const uint32_t row_off = rle->row_offset[y];
 		const uint32_t row_len = rle->row_len[y];
@@ -114,11 +96,9 @@ const struct sgi_desc *desc) {
 	}
 }
 
-static bool resolve_offsets(struct rle_info *rle, const uint32_t rle_len,
-const uint32_t bytedepth) {
-	const uint32_t file_pos = (uint32_t)(
-		rle->entries * sizeof(uint32_t) * 2 + 512);
-	const uint32_t rle_end = file_pos + rle_len;
+static bool resolve_offsets(struct rle_info *rle, const uint8_t bytedepth) {
+	const uint32_t file_pos = (uint32_t)(512 + rle->table_size);
+	const uint32_t rle_end = (uint32_t)(file_pos + rle->rle_size);
 	const uint32_t min_len = bytedepth * 2; // Packet + payload
 
 	for (size_t i = 0; i < rle->entries; ++i) {
@@ -137,81 +117,68 @@ const uint32_t bytedepth) {
 	return true;
 }
 
-static unsigned char * rle_decode(const struct sgi_desc *desc) {
+static size_t get_filesize(const struct sgi_desc *desc,
+const size_t table_size, const size_t dims) {
+	const size_t size = (size_t)file_get_remaining(desc->ifp);
+	if (size > table_size) {
+		// E.g. (bytedepth == 1) 01 ff  01 ff ...
+		// E.g. (bytedepth == 2) 00 01 ff ff  00 01 ff ff ...
+		const size_t pathological_rle = dims * 2;
+		return zumin(pathological_rle, size - table_size);
+	}
+	return 0;
+}
+
+static bool rle_wrap(const struct sgi_desc *desc, void *restrict dst,
+struct rle_info *rle) {
+	const size_t read = fread(rle->row_offset, 1, rle->total, desc->ifp);
+	if (read <= rle->table_size) {
+		return 0;
+	}
+
+	rle->row_len = rle->row_offset + rle->entries;
+	rle->rle = rle->row_len + rle->entries;
+
+	const bool valid = resolve_offsets(rle, desc->bytedepth);
+	if (valid) {
+		rle_loop(desc, dst, rle);
+		return true;
+	}
+	return false;
+}
+
+static size_t rle_decode(const struct sgi_desc *desc, void *restrict dst) {
 	/* RLE table:
 		LONG    RLEOffset[Y*Z]; // From the beginning of the file. In bytes
 		LONG    RLELen[Y*Z];    // In bytes
 	*/
-	struct rle_info rle;
-	rle.entries = desc->rast.h * desc->rast.ch;
-
-	const size_t table_size = rle.entries * sizeof(uint32_t) * 2;
-	const size_t rle_total = table_size + desc->rle_size;
-	const size_t padding = RLE_LEN_MASK * desc->bytedepth;
-	rle.buf = malloc(rle_total + padding);
-	if (!rle.buf) {
-		return NULL;
-	}
-
-	size_t read = fread(rle.buf, 1, rle_total, desc->ifp);
-	if (read <= table_size) {
-		free(rle.buf);
-		return NULL;
-	} else if (read < rle_total) {
-		puts(RASTER_EOF);
-	}
-
-	rle.row_offset = rle.buf;
-	rle.row_len = rle.buf + rle.entries;
-	rle.rle = rle.buf + rle.entries * 2;
-
-	const bool valid = resolve_offsets(&rle, (uint32_t)desc->rle_size,
-		desc->bytedepth);
-	if (!valid) {
-		free(rle.buf);
-		puts("SGI Error: RLE data goes out of bounds.");
-		return NULL;
-	}
 
 	const size_t dims = raster_size(&desc->rast);
-	void *output = malloc(dims + padding);
-	if (!output) {
-		free(rle.buf);
-		return NULL;
-	}
+	struct rle_info rle;
+	rle.entries = desc->rast.h * desc->rast.ch;
+	rle.table_size = rle.entries * sizeof(uint32_t) * 2;
+	rle.rle_size = get_filesize(desc, rle.table_size, dims);
 
-	rle_loop(output, &rle, desc);
-	free(rle.buf);
-	return output;
-}
+	bool ok = false;
+	if (rle.rle_size) {
+		const size_t padding = RLE_LEN_MASK * desc->bytedepth;
+		rle.total = rle.table_size + rle.rle_size;
+		rle.row_offset = malloc(rle.total + padding);
 
-unsigned char * sgi_decode(const struct sgi_desc *desc) {
-	switch (desc->compression) {
-	case sgi_uncompressed:
-		return uncompressed_decode(desc);
-	case sgi_rle:
-		return rle_decode(desc);
-	}
-	return NULL;
-}
-
-
-static enum lib_fail validate_filesize(struct sgi_desc *desc) {
-	if (desc->compression == sgi_rle) {
-		const size_t size = (size_t)file_get_remaining(desc->ifp);
-		const size_t dims = desc->rast.w * desc->rast.h
-			* desc->rast.ch * desc->bytedepth;
-		const size_t table_size = desc->rast.h * desc->rast.ch
-			* sizeof(uint32_t) * 2;
-		if (size <= table_size) {
-			return lib_unexpected_eof;
+		if (rle.row_offset) {
+			ok = rle_wrap(desc, dst, &rle);
+			free(rle.row_offset);
 		}
-		// E.g. (bytedepth == 1) 01 ff  01 ff ...
-		// E.g. (bytedepth == 2) 00 01 ff ff  00 01 ff ff ...
-		const size_t pathological_rle = dims * 2;
-		desc->rle_size = zumin(pathological_rle, size - table_size);
 	}
-	return lib_ok;
+	return ok;
+}
+
+size_t sgi_decode(const struct sgi_desc *desc, void *restrict dst) {
+	fseek(desc->ifp, 512, SEEK_SET);
+	if (desc->compression == sgi_rle) {
+		return rle_decode(desc, dst);
+	}
+	return uncompressed_decode(desc, dst);
 }
 
 static enum lib_fail validate_header(struct sgi_desc *desc,
@@ -225,10 +192,7 @@ const uint16_t channels, const uint32_t bitmap_type) {
 		return lib_invalid_header;
 	}
 
-	switch (bytedepth) {
-	case 1: case 2:
-		break;
-	default:
+	if (bytedepth < 1 || bytedepth > 2) {
 		return lib_invalid_header;
 	}
 
@@ -255,18 +219,11 @@ const uint16_t channels, const uint32_t bitmap_type) {
 		return lib_invalid_header;
 	}
 
-	if (!width || !height) {
-		return lib_invalid_header;
-	}
-
 	switch (bitmap_type) {
 	case sgi_raw:
 		break;
-	case sgi_332: // Just guessing here
-		if (channels != 1 || bytedepth != 1) {
-			return lib_invalid_header;
-		}
-		break;
+	case sgi_332:
+		return lib_unsupported_feature;
 	case sgi_colormap:
 	case sgi_colormap_define:
 		return lib_sgi_is_colormap_file;
@@ -279,14 +236,12 @@ const uint16_t channels, const uint32_t bitmap_type) {
 		.h = height,
 		.ch = (unsigned char)channels,
 		.bitdepth = bytedepth * 8,
-		.attr = (bitmap_type == sgi_332) ? pix_packing_332 : 0,
 		.planar = true,
 	};
-	raster_normalize(&desc->rast);
 	desc->bytedepth = bytedepth;
 	desc->compression = (enum sgi_compression)compression;
 	desc->type = (enum sgi_bitmap_type)bitmap_type;
-	return lib_ok;
+	return raster_normalize(&desc->rast) ? lib_ok : lib_int_overflow;
 }
 
 enum lib_fail sgi_parse_header(struct sgi_desc *desc) {
@@ -321,19 +276,12 @@ enum lib_fail sgi_parse_header(struct sgi_desc *desc) {
 		return lib_unexpected_eof;
 	}
 
-	const enum lib_fail fail = validate_header(desc,
-		buf[0], buf[1],
+	return validate_header(desc, buf[0], buf[1],
 		buf_endian16(buf + 2, big_endian),
 		buf_endian16(buf + 4, big_endian),
 		buf_endian16(buf + 6, big_endian),
 		buf_endian16(buf + 8, big_endian),
 		buf_endian32(buf + 10, big_endian));
-	if (fail) {
-		return fail;
-	}
-
-	fseek(desc->ifp, 512, SEEK_SET);
-	return validate_filesize(desc);
 }
 
 enum lib_fail sgi_open_file(struct sgi_desc *desc, FILE *ifp) {

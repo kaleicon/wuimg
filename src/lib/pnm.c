@@ -3,12 +3,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
-#include <inttypes.h>
 #include <stdbool.h>
 #include <math.h>
 
 #include "../common.h"
-#include "../raster/text.h"
+#include "../raster/other.h"
 #include "pnm.h"
 
 union int_real {
@@ -33,31 +32,27 @@ const char * pnm_type_str(const enum pnm_type type) {
 	return "???";
 }
 
-static void scale_16(unsigned short *output, const size_t dims,
+static void scale_16(unsigned short *dst, const size_t dims,
 const unsigned short maxval) {
 	const uint_fast32_t scale = ((unsigned)USHRT_MAX << 16) / maxval + 1;
 	for (size_t i = 0; i < dims; ++i) {
-		uint_fast32_t val = endian16(output[i], big_endian);
-		output[i] = (unsigned short)((val * scale) >> 16);
+		uint_fast32_t val = endian16(dst[i], big_endian);
+		dst[i] = (unsigned short)((val * scale) >> 16);
 	}
 }
 
-static void scale_8(unsigned char *output, const size_t dims,
+static void scale_8(unsigned char *dst, const size_t dims,
 const unsigned short maxval) {
 	const uint_fast16_t scale = ((unsigned)UCHAR_MAX << 8) / maxval + 1;
 	for (size_t i = 0; i < dims; ++i) {
-		output[i] = (unsigned char)((scale * output[i]) >> 8);
+		dst[i] = (unsigned char)((scale * dst[i]) >> 8);
 
 	}
 }
 
-static unsigned char * pfm_decode(const struct pnm_desc *desc,
+static size_t pfm_decode(const struct pnm_desc *desc,
 const size_t dims, union int_real *out) {
 	const size_t read = fread(out, sizeof(*out), dims, desc->ifp);
-	if (read != dims) {
-		puts(RASTER_EOF);
-	}
-
 	if (desc->scale.pfm == 1.0f) {
 		loop_endian32(&out->bytes, desc->pfm_endian, read);
 	} else {
@@ -67,165 +62,145 @@ const size_t dims, union int_real *out) {
 			out[i].real = val.real * desc->scale.pfm;
 		}
 	}
-	return (unsigned char *)out;
+	return read;
 }
 
-static unsigned char * raw_ppm_decode(const struct pnm_desc *restrict desc,
-const size_t dims, void *restrict output) {
-	const size_t read = fread(output, desc->bytedepth, dims, desc->ifp);
-	if (read != dims) {
-		puts(RASTER_EOF);
-	}
-
+static size_t raw_ppm_decode(const struct pnm_desc *restrict desc,
+const size_t dims, void *restrict dst) {
+	const size_t read = fread(dst, desc->bytedepth, dims, desc->ifp);
 	switch (desc->bytedepth) {
 	case 1:
-		scale_8(output, read, desc->scale.pnm);
+		scale_8(dst, read, desc->scale.pnm);
 		break;
 	case 2:
 		if (desc->scale.pnm == USHRT_MAX) {
-			loop_endian16(output, big_endian, read);
+			loop_endian16(dst, big_endian, read);
 		} else {
-			scale_16(output, read, desc->scale.pnm);
+			scale_16(dst, read, desc->scale.pnm);
 		}
 		break;
 	}
-	return output;
+	return read;
 }
 
-static unsigned char * plain_ppm_decode(const struct pnm_desc *restrict desc,
-const size_t dims, void *restrict output) {
+static size_t plain_ppm_decode(const struct pnm_desc *restrict desc,
+const size_t dims, void *restrict dst) {
 	struct text_block *text = text_block_new();
 	if (!text) {
-		free(output);
-		return NULL;
+		return 0;
 	}
 
-	const text_fast_t range = (desc->scale.pnm > UCHAR_MAX)
+	const mem_fast_t range = (desc->scale.pnm > UCHAR_MAX)
 		? USHRT_MAX : UCHAR_MAX;
-	const text_fast_t scale = (range << 16) / desc->scale.pnm + 1;
+	const mem_fast_t scale = (range << 16) / desc->scale.pnm + 1;
 	const size_t digits = (desc->scale.pnm > UCHAR_MAX) ? 5 : 3;
 
 	size_t cnt = 0;
 	do {
 		const size_t end = text_block_read_spaced(text, desc->ifp);
 		if (!end) {
-			puts(RASTER_EOF);
 			break;
 		}
 
 		size_t pos = 0;
 		do {
-			text_fast_t val;
+			mem_fast_t val;
 			pos += text_read_uint(text->buf + pos, &val, digits);
 			if (val > desc->scale.pnm) {
-				puts(RASTER_INV);
 				free(text);
-				return output;
+				return cnt;
 			}
 
 			val = (val * scale) >> 16;
 			if (desc->rast.bitdepth == 16) {
-				unsigned short *out = output;
+				unsigned short *out = dst;
 				out[cnt] = (unsigned short)(val);
 			} else {
-				unsigned char *out = output;
+				unsigned char *out = dst;
 				out[cnt] = (unsigned char)(val);
 			}
 			++cnt;
 			if (!isspace(text->buf[pos]) && cnt < dims) {
-				puts(RASTER_INV);
 				free(text);
-				return output;
+				return cnt;
 			}
 		} while (pos < end && cnt < dims);
 	} while (cnt < dims);
 	free(text);
-	return output;
+	return cnt;
 }
 
-static unsigned char * plain_pbm_decode(const struct pnm_desc *restrict desc,
-const size_t dims, unsigned char *restrict output) {
-	unsigned char *buf = malloc(BUFSIZ);
-	if (!buf) {
-		free(output);
-		return NULL;
-	}
-
+static size_t plain_pbm_decode(const struct pnm_desc *restrict desc,
+const size_t dims, unsigned char *restrict dst) {
 	size_t cnt = 0;
-	do {
-		const size_t read = fread(buf, 1, BUFSIZ, desc->ifp);
-		if (read == 0) {
-			puts(RASTER_EOF);
-			break;
-		}
-
-		for (size_t i = 0; i < read && cnt < dims; ++i) {
-			switch (buf[i]) {
-			case '\t': case '\n': case '\v': case '\f': case '\r':
-			case ' ':
+	unsigned char *buf = malloc(BUFSIZ);
+	if (buf) {
+		do {
+			const size_t read = fread(buf, 1, BUFSIZ, desc->ifp);
+			if (!read) {
 				break;
-			case '0':
-				output[cnt] = 0xff;
-				++cnt;
-				break;
-			case '1':
-				output[cnt] = 0x00;
-				++cnt;
-				break;
-			default:
-				puts(RASTER_INV);
-				free(buf);
-				free(output);
-				return NULL;
 			}
-		}
-	} while (cnt < dims);
-	free(buf);
-	return output;
+
+			for (size_t i = 0; i < read && cnt < dims; ++i) {
+				switch (buf[i]) {
+				case '\t': case '\n': case '\v':
+				case '\f': case '\r': case ' ':
+					continue;
+				case '0':
+					dst[cnt] = 0xff;
+					++cnt;
+					continue;
+				case '1':
+					dst[cnt] = 0x00;
+					++cnt;
+					continue;
+				default: break;
+				}
+				break;
+			}
+		} while (cnt < dims);
+		free(buf);
+	}
+	return cnt;
 }
 
-unsigned char * pnm_decode_next(const struct pnm_desc *desc) {
+size_t pnm_decode(const struct pnm_desc *desc, void *restrict dst,
+const size_t i) {
 	const size_t elems = desc->rast.w * desc->rast.h * desc->rast.ch;
-	void *output = malloc(elems * desc->bytedepth);
-	if (!output) {
-		return NULL;
-	}
+	const size_t size = elems * desc->bytedepth;
+	fseek(desc->ifp, desc->data_start + (long)(size * i), SEEK_SET);
 
 	switch (desc->type) {
 	case pnm_plain_pbm:
-		return plain_pbm_decode(desc, elems, output);
+		return plain_pbm_decode(desc, elems, dst);
 	case pnm_plain_pgm:
 	case pnm_plain_ppm:
-		return plain_ppm_decode(desc, elems, output);
+		return plain_ppm_decode(desc, elems, dst);
 	case pnm_raw_pgm:
 	case pnm_raw_ppm:
 	case pnm_pam:
 		if (desc->scale.pnm != UCHAR_MAX) {
-			return raw_ppm_decode(desc, elems, output);
+			return raw_ppm_decode(desc, elems, dst);
 		}
 		break;
 	case pnm_color_pfm:
 	case pnm_gray_pfm:
-		return pfm_decode(desc, elems, output);
+		return pfm_decode(desc, elems, dst);
 	case pnm_raw_pbm:
 	case pnm_xv_thumb:
 	case pnm_mtv:
 		break;
 	}
-
-	if (fread(output, desc->bytedepth, elems, desc->ifp)) {
-		return output;
-	}
-	free(output);
-	return NULL;
+	return fread(dst, desc->bytedepth, elems, desc->ifp);
 }
 
 /* Header parsing */
 
 static size_t count_images(struct pnm_desc *desc) {
-	const size_t len = (size_t)file_get_remaining(desc->ifp);
-	if (len) {
-		return zumax(1, len / raster_size(&desc->rast));
+	fseek(desc->ifp, 0, SEEK_END);
+	const long len = ftell(desc->ifp) - desc->data_start;
+	if (len > 0) {
+		return zumax(1, (size_t)len / raster_size(&desc->rast));
 	}
 	return 0;
 }
@@ -286,6 +261,8 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 	}
 
 	raster_normalize(&desc->rast);
+	desc->bytedepth = desc->rast.bitdepth / 8;
+	desc->data_start = ftell(desc->ifp);
 
 	switch (desc->type) {
 	case pnm_raw_pbm: case pnm_raw_pgm: case pnm_raw_ppm:
@@ -298,7 +275,6 @@ static enum lib_fail setup_desc(struct pnm_desc *desc) {
 		desc->nr = 1;
 		break;
 	}
-	desc->bytedepth = desc->rast.bitdepth / 8;
 	return lib_ok;
 }
 
@@ -451,22 +427,10 @@ static enum lib_fail parse_any_map(struct pnm_desc *desc) {
 }
 
 enum lib_fail pnm_parse_header(struct pnm_desc *desc) {
-	switch (desc->type) {
-	case pnm_plain_pbm:
-	case pnm_plain_pgm:
-	case pnm_plain_ppm:
-	case pnm_raw_pbm:
-	case pnm_raw_pgm:
-	case pnm_raw_ppm:
-	case pnm_xv_thumb:
-	case pnm_mtv:
-	case pnm_color_pfm:
-	case pnm_gray_pfm:
-		return parse_any_map(desc);
-	case pnm_pam:
+	if (desc->type == pnm_pam) {
 		return parse_arbitrary_map(desc);
 	}
-	return lib_unknown_format;
+	return parse_any_map(desc);
 }
 
 static enum lib_fail disambiguate(struct pnm_desc *desc,
@@ -484,10 +448,10 @@ const char next_char) {
 			return lib_unexpected_eof;
 		}
 	}
-	return lib_unknown_format;
+	return lib_invalid_signature;
 }
 
-enum lib_fail pnm_open_file(FILE *ifp, struct pnm_desc *desc,
+enum lib_fail pnm_open_file(struct pnm_desc *desc, FILE *ifp,
 const bool maybe_mtv) {
 	memset(desc, 0, sizeof(*desc));
 	desc->ifp = ifp;
@@ -503,7 +467,7 @@ const bool maybe_mtv) {
 			}
 		} else {
 			if (!isspace(magic[1])) {
-				return lib_unknown_format;
+				return lib_invalid_signature;
 			}
 			desc->type = (enum pnm_type)magic[0];
 		}
@@ -530,5 +494,5 @@ const bool maybe_mtv) {
 		desc->type = pnm_mtv;
 		return lib_ok;
 	}
-	return lib_unknown_format;
+	return lib_invalid_signature;
 }

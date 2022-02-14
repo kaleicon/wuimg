@@ -13,11 +13,11 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 	};
 	tree_bud_leaf(tree, "Version", leaf);
 	if (desc->name.len) {
-		tree_sprout_unsafe_leaf(tree, "Source name", desc->name.str,
+		tree_sprout_unsafe_leaf(tree, "Source name", desc->name.ptr,
 			desc->name.len);
 	}
 	if (desc->comment.len) {
-		tree_sprout_unsafe_leaf(tree, "Comment", desc->comment.str,
+		tree_sprout_unsafe_leaf(tree, "Comment", desc->comment.ptr,
 			desc->comment.len);
 	}
 	if (desc->has_hotspot) {

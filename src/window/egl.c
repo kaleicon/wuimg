@@ -17,6 +17,9 @@ EGLContext context) {
 	if (eglMakeCurrent(display, surface, surface, context) != EGL_TRUE) {
 		return "EGL: Couldn't make context current";
 	}
+	if (context != EGL_NO_CONTEXT) {
+		eglSwapInterval(display, 0);
+	}
 	return NULL;
 }
 
@@ -143,11 +146,14 @@ void *native_window, const uint32_t native_visual, const bool transparent) {
 		return CREATE_CONTEXT_FAIL;
 	}
 
+	const EGLint surf_attr[] = {
+		EGL_RENDER_BUFFER, EGL_SINGLE_BUFFER,
+		EGL_NONE,
+	};
 	egl->surface = eglCreateWindowSurface(egl->display, cfg[i],
-		(EGLNativeWindowType)native_window, NULL);
+		(EGLNativeWindowType)native_window, surf_attr);
 	if (egl->surface == EGL_NO_SURFACE) {
 		return "egl: Failed to create window surface";
 	}
 	return egl_make_current(egl->display, egl->surface, context);
-//	eglSwapInterval(egl->display, 0);
 }

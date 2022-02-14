@@ -7,12 +7,11 @@
 #include "../lib/tim.h"
 
 static void read_metadata(struct wu_tree *tree, const struct tim_desc *desc) {
-	struct wu_tree_sap sap[] = {
-		{"Bitdepth", wu_leaf_unsigned, {.u = desc->r.ch * desc->r.bitdepth}},
+	struct wu_tree_sap sap[3] = {
+		{"Depth", wu_leaf_unsigned, {.u = desc->r.ch * desc->r.bitdepth}},
 		{"X", wu_leaf_unsigned, {.u = desc->x}},
 		{"Y", wu_leaf_unsigned, {.u = desc->y}},
 	};
-
 	tree_bud_leaves(tree, sap, 1);
 
 	struct wu_tree *offset = tree_sprout_branch(tree, "Offset");
@@ -25,9 +24,9 @@ static void read_metadata(struct wu_tree *tree, const struct tim_desc *desc) {
 		if (pal) {
 			const struct tim_clut *clut = &desc->clut;
 			sap[0].name = "Number";
-			sap[0].value.u = clut->nb;
-			sap[1].value.u = clut->x;
-			sap[2].value.u = clut->y;
+			sap[0].val.u = clut->nb;
+			sap[1].val.u = clut->x;
+			sap[2].val.u = clut->y;
 			tree_bud_leaves(pal, sap, 3);
 		}
 	}

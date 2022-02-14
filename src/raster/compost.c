@@ -1,11 +1,6 @@
-#include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
-#include <stdint.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "composite.h"
+#include "compost.h"
 
 static void blend_rgba_on_rgba_pixel(unsigned char *restrict d,
 const unsigned char *restrict s) {
@@ -74,7 +69,7 @@ const unsigned char *restrict src, const size_t len, const size_t ch) {
 }
 
 void compost_alpha_blend(void *restrict dst, const size_t w, const uint8_t ch,
-const void *restrict src, const struct frame *fr) {
+const void *restrict src, const struct frame_info *fr) {
 	size_t dst_pos = (fr->y * w + fr->x) * ch;
 	size_t src_pos = 0;
 	for (size_t i = 0; i < fr->h; ++i) {
@@ -86,7 +81,7 @@ const void *restrict src, const struct frame *fr) {
 }
 
 void compost_overwrite(void *restrict dst, const size_t w, const uint8_t ch,
-const void *restrict src, const struct frame *fr) {
+const void *restrict src, const struct frame_info*fr) {
 	size_t dst_pos = (fr->y * w + fr->x) * ch;
 	size_t src_pos = 0;
 	for (size_t i = 0; i < fr->h; ++i) {
@@ -97,41 +92,11 @@ const void *restrict src, const struct frame *fr) {
 	}
 }
 
-void composite_frame_alpha_blend(struct raw_img *img,
-const unsigned char *restrict src, const struct frame_info *frame) {
-	size_t dst_pos = (frame->y * img->w + frame->x) * img->channels;
-	size_t src_pos = 0;
-	for (size_t i = 0; i < frame->h; ++i) {
-		blend_row(img->data + dst_pos, src + src_pos, frame->w,
-			img->channels);
-		dst_pos += img->w * img->channels;
-		src_pos += frame->w * 4;
-	}
-}
-
-void composite_frame_overwrite(struct raw_img *img,
-const unsigned char *restrict src, const struct frame_info *frame) {
-	const size_t ch = img->channels;
-
-	const size_t src_width = frame->w * ch;
-	size_t dst_pos = (frame->y * img->w + frame->x) * ch;
-	size_t src_pos = 0;
-	for (size_t i = 0; i < frame->h; ++i) {
-		memcpy(img->data + dst_pos, src + src_pos, src_width);
-		dst_pos += img->w * ch;
-		src_pos += src_width;
-	}
-}
-
-
-void composite_clear(struct raw_img *img, const struct frame_info *frame,
-const int c) {
-	const size_t ch = img->channels;
-	unsigned char *pos = img->data
-		+ ((frame->y * img->w + frame->x) * ch);
-
-	for (size_t i = 0; i < frame->h; ++i) {
-		memset(pos, c, frame->w * ch);
-		pos += img->w * ch;
+void compost_clear(void *restrict dst, const size_t w, const uint8_t ch,
+const int c, const struct frame_info*fr) {
+	size_t dst_pos = (fr->y * w + fr->x) * ch;
+	for (size_t i = 0; i < fr->h; ++i) {
+		memset((uint8_t *)dst + dst_pos, c, fr->w * ch);
+		dst_pos += w * ch;
 	}
 }

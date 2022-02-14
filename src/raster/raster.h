@@ -13,15 +13,15 @@ struct raster_desc {
 	bool planar;
 };
 
-const char * raster_geom_verify(bool has_palette, uint8_t ch, uint8_t bitdepth,
-enum pix_attr attr);
-
 void raster_free(struct raster_desc *desc);
 
 size_t raster_stride(const struct raster_desc *desc);
 
 size_t raster_size(const struct raster_desc *desc);
 
-void raster_normalize(struct raster_desc *desc);
+const char * raster_geom_verify(bool has_palette, uint8_t ch, uint8_t bitdepth,
+enum pix_attr attr);
+
+bool raster_normalize(struct raster_desc *desc);
 
 #endif /* RASTER_LIB */

@@ -55,15 +55,33 @@ OPJ_UINT32 w, OPJ_UINT32 h) {
 
 static enum wu_error join_components(struct raw_img *img,
 const opj_image_t *jp2) {
-	struct plane_info *p = img->u.planes->p;
 	opj_image_comp_t *comps = jp2->comps;
+
+	const OPJ_UINT32 prec = comps[0].prec;
+	if (prec > 16) {
+		return wu_unsupported_feature;
+	}
 
 	const OPJ_UINT32 ch = jp2->numcomps;
 	img->w = comps[0].w;
 	img->h = comps[0].h;
 	img->channels = (unsigned char)ch;
-	img->bitdepth = (unsigned char)comps[0].prec;
+	img->bitdepth = (prec > 8) ? 16 : 8;
 
+	struct image_planes *planes = img->u.planes;
+	switch (jp2->color_space) {
+	case OPJ_CLRSPC_SRGB:
+	case OPJ_CLRSPC_GRAY:
+		planes->cs = color_space_rgb;
+		break;
+	case OPJ_CLRSPC_SYCC:
+		planes->cs = color_space_ycbcr_limited;
+		break;
+	default:
+		return wu_unsupported_feature;
+	}
+
+	struct plane_info *p = planes->p;
 	for (OPJ_UINT32 j = 0; j < ch; ++j) {
 		p[j].x.subsamp = (unsigned char)comps[j].dx;
 		p[j].y.subsamp = (unsigned char)comps[j].dy;
@@ -76,9 +94,18 @@ const opj_image_t *jp2) {
 		return wu_alloc_error;
 	}
 
+	const OPJ_INT32 scale = (((1 << img->bitdepth) - 1) << img->bitdepth)
+		/ ((1 << prec) - 1) + 1;
 	for (OPJ_UINT32 j = 0; j < ch; ++j) {
+		void *ptr = p[j].ptr;
 		for (size_t i = 0; i < p[j].size; ++i) {
-			p[j].ptr[i] = (unsigned char)comps[j].data[i];
+			const OPJ_INT32 p = (comps[j].data[i] * scale)
+				>> img->bitdepth;
+			if (prec > 16) {
+				((uint16_t *)ptr)[i] = (uint16_t)p;
+			} else {
+				((uint8_t *)ptr)[i] = (uint8_t)p;
+			}
 		}
 	}
 	return wu_ok;
@@ -121,11 +148,11 @@ const bool callback) {
 	const OPJ_UINT32 tex_fit = log_fit_factor(wuconf->max_img_size,
 		wuconf->max_img_size, jp2->comps[0].w, jp2->comps[0].h);
 	OPJ_UINT32 screen_fit;
-	if (callback) {
+	if (callback || !wuconf->partial_decode) {
 		screen_fit = tex_fit;
 		if (tex_fit) {
-			puts("Warning: JP2 exceeds the max image size. Output "
-				"will be downscaled.");
+			image_file_error_append(infile, "Warning: JP2 exceeds "
+				"the max image size. Output will be downscaled.");
 		}
 	} else {
 		screen_fit = log_fit_factor(wuconf->fb.w, wuconf->fb.h,

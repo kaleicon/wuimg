@@ -67,14 +67,9 @@ void tree_unroot(struct wu_tree *root) {
 
 static void ident_print(const struct wu_tree *node, const size_t max_x,
 const size_t max_y, const size_t ident, FILE *out) {
-	const char block[8] = "        ";
-	const size_t chunks = sizeof(block);
-	size_t pos = ident;
-	while (pos > chunks) {
-		fwrite(block, 1, chunks, out);
-		pos -= chunks;
+	for (size_t n = 0; n < ident; ++n) {
+		fputc(' ', out);
 	}
-	fwrite(block, 1, pos, out);
 
 	fwrite(get_name(node), 1, node->name_len, out);
 	switch (node->is_leaf) {
@@ -115,6 +110,8 @@ const size_t max_y, const size_t ident, FILE *out) {
 		fputs(": ", out);
 		rfc3339_format(node->pick.time, out);
 		break;
+	case wu_leaf_bool:
+		fputs((node->pick.b) ? ": true" : ": false", out);
 	}
 	fputc('\n', out);
 }
@@ -216,15 +213,16 @@ const char *restrict value) {
 }
 
 static bool sap_bud(struct wu_tree *bud, const char *name,
-const struct wu_leaf leaf) {
-	switch (leaf.type) {
+const enum wu_leaf_type type, const union wu_leaf_val val) {
+	switch (type) {
 	case wu_leaf_unsigned:
 	case wu_leaf_signed:
 	case wu_leaf_double:
 	case wu_leaf_time:
+	case wu_leaf_bool:
 		if (copy_name(bud, name)) {
-			bud->is_leaf = leaf.type;
-			bud->pick = leaf.val;
+			bud->is_leaf = type;
+			bud->pick = val;
 			return true;
 		}
 	case not_a_leaf:
@@ -241,7 +239,7 @@ const struct wu_leaf leaf) {
 	if (!bud) {
 		return false;
 	}
-	const bool success = sap_bud(bud, name, leaf);
+	const bool success = sap_bud(bud, name, leaf.type, leaf.val);
 	if (success) {
 		++par->len;
 	}
@@ -256,8 +254,8 @@ const size_t len) {
 	}
 
 	for (size_t i = 0; i < len; ++i) {
-		const struct wu_leaf l = {.val = sap[i].value, .type = sap[i].type};
-		const bool success = sap_bud(buds + i, sap[i].name, l);
+		const bool success = sap_bud(buds + i, sap[i].name, sap[i].type,
+			sap[i].val);
 		if (success) {
 			++par->len;
 		} else {

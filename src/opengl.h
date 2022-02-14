@@ -12,7 +12,7 @@
 enum gl_upload_status {
 	gl_upload_fail = 0,
 	gl_upload_success,
-	gl_upload_reused,
+	gl_upload_same_size,
 };
 
 enum gl_alpha_mode {
@@ -45,11 +45,10 @@ struct gl_context {
 	GLuint framebuffer;
 
 	float fb_wh[2];
-	struct gl_texture {
+	struct gl_image_info {
 		size_t w, h;
-		int hash;
-		enum image_mode mode;
 	} tex;
+	enum image_mode mode:8;
 	bool update_matrix;
 	bool disable_alpha;
 	enum gl_alpha_mode alpha:8;
@@ -63,7 +62,8 @@ void gl_clock_start(const struct gl_context *context);
 
 void gl_alpha_toggle(struct gl_context *context);
 
-void gl_matrix_update(struct gl_context *context, struct wu_state *state);
+void gl_matrix_update(struct gl_context *context, struct wu_state *state,
+unsigned char base_rotate, bool base_mirror);
 
 float gl_fit_zoom(const struct gl_context *context,
 unsigned char rotation);
@@ -78,15 +78,14 @@ void gl_draw(void);
 void gl_clear_color(const float bg[static 4]);
 
 void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
-const struct gl_reader *reader, void *restrict data, size_t row);
+const struct gl_reader *reader, void *restrict dst, size_t row);
 
-bool gl_reader_set(struct gl_context *context,
-struct wu_state *state, struct gl_reader *reader, const struct raw_img *img);
+bool gl_reader_set(struct gl_context *context, struct wu_state *state,
+struct gl_reader *reader, const struct raw_img *img);
 
-void gl_reader_disable(struct gl_context *context,
-const struct gl_reader *reader);
+void gl_reader_unbind(void);
 
-void gl_reader_enable(struct gl_context *context, struct gl_reader *reader);
+void gl_reader_bind(struct gl_context *context);
 
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
 

@@ -8,9 +8,10 @@
 #include "common.h"
 #include "dec.h"
 
-// Semi-generated files
-#include "dec_includes.h" /* enabled file formats */
-#include "dec_fmtmap.h" /* output of dec_fmtmap_sort_quine.c */
+// Generated files
+#include "dec_enable.def"
+#include "dec_include.def"
+#include "dec_fmtmap.h"
 
 typedef enum wu_error (*dec_func_t)(struct image_file *infile,
 	const struct wu_conf *wuconf);
@@ -20,13 +21,13 @@ typedef enum wu_error (*dec_callback_t)(struct image_file *infile,
 	enum image_event);
 
 
-struct format_fn {
+struct fmt_fn {
 	const dec_func_t dec;
 	const dec_callback_t callback;
 	const char name[8];
 };
 
-static const struct format_fn format_map[] = {
+static const struct fmt_fn format_map[] = {
 #define WUDEC(name, callback) {name##_dec, callback, #name},
 #include "dec.def"
 #undef WUDEC
@@ -150,7 +151,7 @@ const struct raw_img **cur_img) {
 void print_known_formats(void) {
 	printf("Known formats: %zu\n", ARRAY_LEN(format_map));
 	for (size_t i = 0; i < ARRAY_LEN(format_map); ++i) {
-		const struct format_fn *f = format_map + i;
+		const struct fmt_fn *f = format_map + i;
 		fwrite(f->name, 1, zumin(sizeof(f->name), strlen(f->name)),
 			stdout);
 		const char *sep = (i + 1 < ARRAY_LEN(format_map))

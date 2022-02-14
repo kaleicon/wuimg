@@ -23,6 +23,14 @@ static const uint32_t XCURSOR_TOC_LIMIT = 0x10000;
 static const uint32_t XCURSOR_STR_LIMIT = 0x1000000;
 static const uint32_t XCURSOR_DIM_LIMIT = 0x7fff;
 
+static enum xcursor_chunk_type type_to_enum(const uint32_t type) {
+	const uint32_t id = type & 0xffff;
+	if (0xffff - id == (type >> 16)) {
+		return id;
+	}
+	return 0;
+}
+
 const char * xcursor_comment_type_str(enum xcursor_comment_type type) {
 	switch (type) {
 	case xcursor_comment_copyright: return "Copyright";
@@ -91,7 +99,7 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 	}
 
 	const uint32_t header_size = endian32(buf[0], little_endian);
-	chunk->type = endian32(buf[1], little_endian);
+	chunk->type = type_to_enum(endian32(buf[1], little_endian));
 	const uint32_t subtype = endian32(buf[2], little_endian);
 	const uint32_t version = endian32(buf[3], little_endian);
 
@@ -167,9 +175,9 @@ static enum lib_fail load_toc(struct xcursor_desc *desc) {
 
 	for (uint32_t i = 0; i < desc->ntoc; ++i) {
 		struct xcursor_toc *entry = desc->toc + i;
-		uint32_t *data = (uint32_t *)entry;
-		loop_endian32(data, little_endian,
-			sizeof(*desc->toc) / sizeof(*data));
+		loop_endian32((uint32_t *)entry, little_endian,
+			3);
+		entry->type = type_to_enum(entry->type);
 		switch (entry->type) {
 		case xcursor_chunk_comment:
 			desc->comments += 1;

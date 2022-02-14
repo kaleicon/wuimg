@@ -55,7 +55,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 	struct mac_desc desc;
 	const enum lib_fail status = mac_open_file(&desc, infile->ifp);
 	if (status != lib_ok) {
-		image_file_error_append(infile, lib_fail_string(status));
+		rast_error(infile, status);
 		return wu_open_error;
 	}
 
@@ -71,23 +71,26 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 		return wu_alloc_error;
 	}
 
-	// Read the patterns first to keep access sequential
+	// Read patterns first to keep access sequential
 	if (infile->nr == 2) {
-		img[1].data = mac_pattern_unpack(&desc);
-		if (img[1].data) {
-			rast_to_raw(img + 1, &desc.patterns);
-			img[1].id = strdup("patterns");
-		} else {
-			image_file_error_append(infile, "Failed to allocate "
-				"pattern data");
+		const char *err = NULL;
+		if (!rast_to_raw_img(&desc.patterns, img + 1)) {
+			err = "Couldn't allocate memory for pattern";
+		} else if (!mac_patterns_load(&desc, img[1].data)) {
+			err = "Couldn't load pattern data";
+		}
+
+		if (err) {
+			image_file_error_append(infile, err);
 			realloc_sub_images(infile, 1);
+		} else {
+			img[1].id = strdup("patterns");
 		}
 	}
 
 	img[0].data = mac_decode(&desc);
 	if (img[0].data) {
 		rast_to_raw(img, &desc.rast);
-		img[0].attr = pix_inverted;
 		return wu_ok;
 	}
 	return wu_decoding_error;

@@ -4,7 +4,6 @@
 #include <limits.h>
 #include <ctype.h>
 
-#include "../raster/text.h"
 #include "../common.h"
 
 #include "xbm.h"
@@ -69,7 +68,7 @@ size_t xbm_decode(const struct xbm_desc *desc, void *restrict dst) {
 	const size_t size = desc->type;
 	const size_t dims = raster_size(&desc->r) / size;
 
-	const unsigned char *text = desc->tp.text;
+	const unsigned char *text = desc->tp.mem;
 	const size_t end = desc->tp.len;
 	size_t pos = desc->tp.pos;
 	size_t cnt = 0;
@@ -77,7 +76,6 @@ size_t xbm_decode(const struct xbm_desc *desc, void *restrict dst) {
 		int val;
 		pos += read_rev_hex_num(text + pos, &val, size);
 		if (val == -1) {
-			puts(RASTER_INV);
 			break;
 		}
 		if (desc->type == xbm_x10) {
@@ -103,23 +101,23 @@ size_t xbm_decode(const struct xbm_desc *desc, void *restrict dst) {
 	return cnt;
 }
 
-static bool read_type(struct xbm_desc *desc, struct text_parser *tp,
+static bool read_type(struct xbm_desc *desc, struct mem_parser *tp,
 const struct xbm_define *define) {
 	if (!define[0].found || !define[1].found
 	|| define[0].d < 1 || define[1].d < 1) {
 		return false;
 	}
 
-	struct wuptr word = text_get_word(tp);
+	struct wuptr word = mem_get_word(tp);
 	if (!wuptr_eq_str(word, "static")) {
 		return false;
 	}
 
-	text_skip_space(tp);
-	word = text_get_word(tp);
+	mem_skip_space(tp);
+	word = mem_get_word(tp);
 	if (wuptr_eq_str(word, "unsigned")) {
-		text_skip_space(tp);
-		word = text_get_word(tp);
+		mem_skip_space(tp);
+		word = mem_get_word(tp);
 	}
 
 	if (wuptr_eq_str(word, "char")) {
@@ -130,12 +128,12 @@ const struct xbm_define *define) {
 		return false;
 	}
 
-	text_skip_space(tp);
-	word = text_get_word(tp);
+	mem_skip_space(tp);
+	word = mem_get_word(tp);
 	if (wuptr_suffix_str(word, "_bits[]")) {
-		int c = text_next_nonspace(tp);
+		int c = mem_next_nonspace(tp);
 		if (c == '=') {
-			c = text_next_nonspace(tp);
+			c = mem_next_nonspace(tp);
 			if (c == '{') {
 				desc->r = (struct raster_desc) {
 					.w = (size_t)define[0].d,
@@ -161,11 +159,11 @@ const struct xbm_define *define) {
 	return false;
 }
 
-static bool match_num(struct text_parser *tp, struct xbm_define *define) {
-	text_skip_blank(tp);
-	const struct wuptr word = text_get_word(tp);
+static bool match_num(struct mem_parser *tp, struct xbm_define *define) {
+	mem_skip_blank(tp);
+	const struct wuptr word = mem_get_word(tp);
 	for (size_t i = 0; i < word.len; ++i) {
-		const unsigned char c = (unsigned char)word.str[i];
+		const unsigned char c = (unsigned char)word.ptr[i];
 		if (!isdigit(c)) {
 			return false;
 		}
@@ -179,16 +177,16 @@ static bool match_num(struct text_parser *tp, struct xbm_define *define) {
 	return define->found;
 }
 
-static bool parse_define(struct xbm_desc *desc, struct text_parser *tp,
+static bool parse_define(struct xbm_desc *desc, struct mem_parser *tp,
 struct xbm_define *define) {
-	struct wuptr word = text_get_word(tp);
-	if (!isblank(text_next_char(tp)) || !wuptr_eq_str(word, "define")) {
+	struct wuptr word = mem_get_word(tp);
+	if (!isblank(mem_next_char(tp)) || !wuptr_eq_str(word, "define")) {
 		return false;
 	}
 
-	text_skip_blank(tp);
-	word = text_get_word(tp);
-	if (!isblank(text_next_char(tp))) {
+	mem_skip_blank(tp);
+	word = mem_get_word(tp);
+	if (!isblank(mem_next_char(tp))) {
 		return false;
 	}
 
@@ -199,14 +197,14 @@ struct xbm_define *define) {
 				return false;
 			}
 			if (!desc->name.len) {
-				desc->name.str = word.str;
+				desc->name.ptr = word.ptr;
 				desc->name.len = word.len - define[i].name.len;
 			}
 			ok = match_num(tp, define + i);
 			break;
 		}
 	}
-	text_skip_line(tp);
+	mem_skip_line(tp);
 	return ok;
 }
 
@@ -225,31 +223,31 @@ const unsigned char end, size_t len) {
 	return ch;
 }
 
-static bool skip_comment(struct xbm_desc *desc, struct text_parser *tp) {
+static bool skip_comment(struct xbm_desc *desc, struct mem_parser *tp) {
 	unsigned char end;
-	switch (text_next_char(tp)) {
+	switch (mem_next_char(tp)) {
 	case '*': end = '/'; break;
 	case '/': end = '\n'; break;
 	default: return false;
 	}
 	const bool multiline = (end == '/');
 
-	text_skip_space(tp);
-	const unsigned char *base = tp->text + tp->pos;
+	mem_skip_space(tp);
+	const unsigned char *base = tp->mem + tp->pos;
 	const unsigned char *comm = comment_end(base, end, tp->len - tp->pos);
 	if (comm) {
 		size_t len = (size_t)comm - (size_t)base;
 		tp->pos += len;
 
 		if (multiline) {
-			text_skip_line(tp);
+			mem_skip_line(tp);
 			--len;
 		}
 		if (!desc->comment.len) {
 			while (len && isspace(base[len - 1])) {
 				--len;
 			}
-			desc->comment.str = base;
+			desc->comment.ptr = base;
 			desc->comment.len = len;
 		}
 		return true;
@@ -258,8 +256,8 @@ static bool skip_comment(struct xbm_desc *desc, struct text_parser *tp) {
 }
 
 enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct map_info *mm) {
-	struct text_parser *tp = &desc->tp;
-	*tp = text_parser_mem(mm->len, mm->data);
+	struct mem_parser *tp = &desc->tp;
+	*tp = mem_parser_mem(mm->len, mm->data);
 
 	desc->comment.len = 0;
 	desc->name.len = 0;
@@ -273,7 +271,7 @@ enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct map_info *mm) {
 
 	bool ok = false;
 	do {
-		const int c = text_next_nonspace(tp);
+		const int c = mem_next_nonspace(tp);
 		if (c == '/') {
 			ok = skip_comment(desc, tp);
 		} else if (c == '#') {

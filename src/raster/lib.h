@@ -7,16 +7,14 @@
 #include "raster.h"
 
 extern const char RASTER_EOF[];
-extern const char RASTER_INV[];
 
 enum lib_fail {
 	lib_ok = 0,
 	lib_unexpected_eof,
 	lib_invalid_signature,
 	lib_invalid_header,
-	lib_unknown_format,
-	lib_unsupported_feature,
 	lib_alloc_error,
+	lib_unsupported_feature,
 	lib_invalid_data,
 	lib_int_overflow,
 
@@ -44,9 +42,6 @@ struct raster_pal * lib_raster_take_palette(struct raster_desc *desc);
 
 void lib_raster_endian(void *data, const struct raster_desc *desc,
 const enum endianness end);
-
-size_t lib_load_rast(struct memory *mem, const struct raster_desc *desc,
-FILE *ifp);
 
 enum lib_fail lib_load_pal(FILE *ifp, struct raster_pal **pal,
 enum lib_pal pal_type, size_t entries);

@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+#include <limits.h>
 
 #include <tiffio.h>
 
@@ -93,11 +93,12 @@ struct raw_img *img) {
 
 static void single_tile(unsigned char *restrict dst,
 const struct tile_info *tiles, const size_t width, const size_t height,
-const size_t dst_stride, const enum unpack_op op, const uint16_t bps) {
+const size_t dst_stride, const enum pix_attr attr, const enum unpack_op op,
+const uint16_t bps) {
 	for (size_t h = 0; h < height; ++h) {
 		const unsigned char *src = tiles->buf + tiles->stride * h;
 		unpack_or_copy_strip(dst, src, width, (uint8_t)bps,
-			pix_normal, op);
+			attr, op);
 		dst += dst_stride;
 	}
 }
@@ -143,13 +144,17 @@ const struct tiff_info *info, const enum unpack_op op) {
 
 				TIFFReadEncodedTile(tif, ts, tiles.buf, tiles.len);
 				single_tile(dst, &tiles, src_width * comps,
-					height, dst_stride, op, info->bps);
+					height, dst_stride, img->attr, op,
+					info->bps);
 				++ts;
 			}
 			dst += dst_stride * height;
 		}
 	}
 	free(tiles.buf);
+	if (op != op_noop && img->attr == pix_inverted) {
+		img->attr = pix_normal;
+	}
 	return wu_ok;
 }
 
@@ -172,7 +177,7 @@ const struct tiff_info *info) {
 				: strip_height;
 			const uint32_t n = strips * p + st;
 			/* This function returns -1 in case of errors,
-			 * but even libtiff seems to ignore it */
+			 * but even libtiff interface seems to ignore it */
 			TIFFReadEncodedStrip(tif, n, img->data + offset, buflen);
 			offset += stride * height;
 		}
@@ -198,22 +203,6 @@ static struct raster_pal * load_palette(TIFF *tif, uint16_t bps) {
 	return NULL;
 }
 
-static enum unpack_op select_filter(const struct tiff_info *info) {
-	enum unpack_op op = op_noop;
-	if (info->bps < 8) {
-		switch (info->photometric) {
-		case PHOTOMETRIC_MINISWHITE:
-		case PHOTOMETRIC_MINISBLACK:
-		case PHOTOMETRIC_RGB:
-			if (info->is_tiled) {
-				op = op_expand;
-			}
-			break;
-		}
-	}
-	return op;
-}
-
 static enum wu_error nih_decode(TIFF *tif, struct raw_img *img,
 struct tiff_info *info) {
 	if (info->photometric == PHOTOMETRIC_PALETTE) {
@@ -222,31 +211,16 @@ struct tiff_info *info) {
 		}
 	}
 	img->channels = (unsigned char)info->spp;
-	img->bitdepth = (unsigned char)info->bps;
 
 	info->planes = (info->planar == PLANARCONFIG_CONTIG) ? 1 : info->spp;
-	const enum unpack_op op = select_filter(info);
-	if (op) {
-		img->bitdepth = 8;
-	}
-
-	bool alloc_ok;
-	if (info->planes > 1) {
-		alloc_ok = raw_img_plane_from_params(img);
+	enum unpack_op op;
+	if (info->is_tiled && info->bps % 8) {
+		op = op_expand;
+		img->bitdepth = (info->bps > 8) ? 16 : 8;
 	} else {
-		alloc_ok = raw_img_addbuf(img);
+		op = op_noop;
+		img->bitdepth = (unsigned char)info->bps;
 	}
-	if (!alloc_ok) {
-		return wu_alloc_error;
-	}
-
-	enum wu_error status = wu_ok;
-	if (info->is_tiled) {
-		status = read_tiles(tif, img, info, op);
-	} else {
-		status = read_strips(tif, img, info);
-	}
-
 	if (info->photometric == PHOTOMETRIC_MINISWHITE) {
 		img->attr = pix_inverted;
 	}
@@ -254,7 +228,16 @@ struct tiff_info *info) {
 		// What about float + miniswhite?
 		img->attr = pix_float;
 	}
-	return status;
+
+	const bool alloc_ok = (info->planes > 1)
+		? raw_img_plane_from_params(img)
+		: raw_img_addbuf(img);
+	if (alloc_ok) {
+		return (info->is_tiled)
+			? read_tiles(tif, img, info, op)
+			: read_strips(tif, img, info);
+	}
+	return wu_alloc_error;
 }
 
 static bool check_support(const struct tiff_info *info) {
@@ -279,23 +262,21 @@ static bool check_support(const struct tiff_info *info) {
 		return false;
 	}
 
-	switch (info->bps) {
-	case 1: case 2: case 4: case 8: case 24:
-		// With TIFF, literally anything can happen
-		if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
-			return false;
-		}
-		break;
-	case 16: case 32: case 64:
-		break;
-	default:
+	if (!info->bps || info->bps > UCHAR_MAX) {
 		return false;
 	}
 
 	switch (info->sfmt) {
+	case SAMPLEFORMAT_IEEEFP:
+		switch (info->bps) {
+		case 16: case 32: case 64:
+			break;
+		default:
+			return false;
+		}
+		break;
 	case SAMPLEFORMAT_UINT:
 	case SAMPLEFORMAT_INT:
-	case SAMPLEFORMAT_IEEEFP:
 	case SAMPLEFORMAT_VOID:
 		break;
 	default:

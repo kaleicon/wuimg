@@ -32,7 +32,7 @@ const char * pcx_version_string(const enum pcx_version ver) {
 	}
 	return "Unknown version";
 }
-__attribute__((unused))
+
 static unsigned char * pcx_unpack_interleave(unsigned char *restrict src,
 struct raster_desc *desc) {
 	size_t comps = 1;
@@ -48,10 +48,10 @@ struct raster_desc *desc) {
 	}
 
 	const size_t scanline = scanline_length(desc->w, desc->bitdepth,
-		desc->alignment);
+		desc->alignment) * desc->ch;
 	for (size_t y = 0; y < desc->h; ++y) {
-		vga_interleave(dst + y * desc->w * comps,
-			src + y * scanline * desc->ch, desc, 1, scanline);
+		vga_interleave(dst + y*desc->w*comps, src + y*scanline, desc->w,
+			1, desc->ch, desc->bitdepth, desc->palette);
 	}
 	free(src);
 
@@ -162,8 +162,6 @@ const unsigned char *restrict rle_end, const size_t rle_remaining) {
 	enum pcx_palette_source pal_src = pcx_no_pal;
 	const unsigned char *vga_id = rle_end - rle_remaining;
 	if (desc->r.bitdepth == 8) {
-		/* Beware: Some internet weasels say the magic byte is 0xC0,
-		 * but it's actually 0x0C */
 		if (rle_remaining > VGA_PAL_LEN && *vga_id == 0x0c) {
 			pal_src = pcx_vga;
 		}
@@ -391,7 +389,7 @@ long file_len) {
 					return lib_ok;
 				}
 			}
-			return lib_unknown_format;
+			return lib_invalid_signature;
 		}
 	}
 	return lib_unexpected_eof;

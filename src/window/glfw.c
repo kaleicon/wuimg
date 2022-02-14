@@ -8,7 +8,7 @@
 
 static void callback_close(GLFWwindow *wnd) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	glfw->pub->event.program = close_window;
+	glfw->pub->event.program = wu_program_exit;
 }
 
 static void callback_focus(GLFWwindow *wnd, const int focused) {
@@ -76,6 +76,9 @@ const int action, const int mode) {
 		break;
 	case GLFW_KEY_A:
 		event = 'A';
+		break;
+	case GLFW_KEY_S:
+		event = 'S';
 		break;
 	case GLFW_KEY_M:
 		event = 'M';
@@ -235,7 +238,7 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	glfwSetScrollCallback(window, callback_scroll);
 	glfwSetKeyCallback(window, callback_key);
 
-	glfwSwapInterval(1);
+	glfwSwapInterval(0);
 //	glfwSwapBuffers(window);
 //	glfwPollEvents();
 	return NULL;

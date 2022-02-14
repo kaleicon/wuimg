@@ -19,7 +19,7 @@ struct tga_metadata {
 	} author;
 
 	bool has_timestamp;
-	struct utc_time timestamp;
+	time_t timestamp;
 
 	struct tga_job {
 		char name[41];
@@ -37,6 +37,7 @@ struct tga_metadata {
 	unsigned short gamma_numerator, gamma_denominator;
 
 	unsigned int stamp_offset;
+	struct raster_desc stamp;
 };
 
 enum tga_image_type {
@@ -50,37 +51,33 @@ enum tga_image_type {
 };
 
 struct tga_colormap {
+	struct raster_pal *pal;
 	unsigned int offset, len;
 	unsigned char depth;
-	struct raster_pal *pal;
 };
 
 struct tga_desc {
 	FILE *ifp;
 	struct raster_desc r;
-	enum tga_image_type type;
+	enum tga_image_type type:8;
 	unsigned char depth;
 	unsigned char attr_bits, orientation;
-	bool read_metadata;
 
 	long data_start;
 	struct tga_colormap map;
-	struct tga_metadata *meta;
+	struct tga_metadata meta;
 };
 
 void tga_cleanup(struct tga_desc *desc);
 
-unsigned char * tga_decode_stamp(const struct tga_desc *desc, size_t *width,
-size_t *height);
+size_t tga_decode_stamp(const struct tga_desc *desc, void *restrict dst);
 
-unsigned char * tga_decode(const struct tga_desc *desc);
+size_t tga_decode(const struct tga_desc *desc, void *restrict dst);
 
 struct raster_pal * tga_take_extra_palette(struct tga_desc *desc);
 
 bool tga_parse_footer(struct tga_desc *desc);
 
-enum lib_fail tga_parse_header(struct tga_desc *desc);
-
-enum lib_fail tga_open_file(struct tga_desc *desc, FILE *ifp, bool read_metadata);
+enum lib_fail tga_parse_header(struct tga_desc *desc, FILE *ifp);
 
 #endif /* LIB_TGA */

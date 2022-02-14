@@ -1,3 +1,9 @@
+/*
+
+The output of dec_comptime -f goes here
+
+*/
+
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -5,15 +11,9 @@
 #include "common.h"
 #include "dec_fmtmap.h"
 
-/*
-
-The code output of dec_fmtmap_sort_quine.c goes here.
-
-*/
-
 static int fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 	const unsigned char *restrict magic1 = m1;
-	const struct file_magic *restrict magic2 = m2;
+	const struct fmt_magic *restrict magic2 = m2;
 	int diff = 0;
 	for (size_t i = 0; i < MAX_MAG_LEN; ++i) {
 		const unsigned char m = magic2->and_mask[i];
@@ -27,11 +27,11 @@ static int fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 
 static int fextcmp(const void *restrict e1, const void *restrict e2) {
 	const char *restrict ext1 = e1;
-	const struct file_ext *restrict ext2 = e2;
+	const struct fmt_ext *restrict ext2 = e2;
 	return memcmp(ext1, ext2->ext, MAX_EXT_LEN);
 }
 
-static const struct file_magic * search_magic(FILE *ifp) {
+static const struct fmt_magic * search_magic(FILE *ifp) {
 	unsigned char magic[sizeof(magic_map->bytes)] = {0};
 	const size_t read = fread(magic, 1, MAX_MAG_LEN, ifp);
 	fseek(ifp, -(long)read, SEEK_CUR);
@@ -42,10 +42,10 @@ static const struct file_magic * search_magic(FILE *ifp) {
 	return NULL;
 }
 
-static const struct file_ext * search_extension(const struct wuptr name) {
-	const size_t max = zumin(name.len, MAX_EXT_LEN + 1 /* dot */);
-	const unsigned char *end = name.str + name.len;
-	const unsigned char *ext = memrchr(end - max, '.', max);
+static const struct fmt_ext * search_extension(const struct wuptr name) {
+	const size_t max_check = zumin(name.len, MAX_EXT_LEN + 1 /* dot */);
+	const unsigned char *end = name.ptr + name.len;
+	const unsigned char *ext = memrchr(end - max_check, '.', max_check);
 	if (ext) {
 		++ext;
 		const size_t len = (size_t)(end - ext);
@@ -65,14 +65,14 @@ static const struct file_ext * search_extension(const struct wuptr name) {
 int fmtmap_identify_file(FILE *ifp, const char *filename) {
 	/* Some formats must be handled specially (i.e. RAW formats which are
 	 * actually TIFF), so we search by extension first.
-	 * Formats that are known but should be identified by their magic
-	 * sequence will return -1. */
-	const struct file_ext *ext = search_extension(wuptr_str(filename));
+	 * Formats that should be identified by their magic sequence will
+	 * return -1. */
+	const struct fmt_ext *ext = search_extension(wuptr_str(filename));
 	if (ext && ext->id != -1) {
 		return ext->id;
 	}
 
-	const struct file_magic *magic = search_magic(ifp);
+	const struct fmt_magic *magic = search_magic(ifp);
 	if (magic) {
 		return magic->id;
 	}

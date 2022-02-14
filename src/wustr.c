@@ -34,7 +34,7 @@ struct wugrow wugrow_init(const size_t elem_size) {
 
 
 struct wuptr wuptr_mem(const void *str, const size_t len) {
-	return (struct wuptr){.len = len, .str = str};
+	return (struct wuptr){.len = len, .ptr = str};
 }
 
 struct wuptr wuptr_str(const char *str) {
@@ -44,7 +44,7 @@ struct wuptr wuptr_str(const char *str) {
 bool wuptr_suffix(const struct wuptr w1, const struct wuptr w2) {
 	if (w1.len >= w2.len) {
 		const size_t diff = w1.len - w2.len;
-		return !memcmp(w1.str + diff, w2.str, w2.len);
+		return !memcmp(w1.ptr + diff, w2.ptr, w2.len);
 	}
 	return false;
 }
@@ -55,13 +55,13 @@ bool wuptr_suffix_str(const struct wuptr w1, const char *s2) {
 
 bool wuptr_eq(const struct wuptr w1, const struct wuptr w2) {
 	if (w1.len == w2.len) {
-		return !memcmp(w1.str, w2.str, w1.len);
+		return !memcmp(w1.ptr, w2.ptr, w1.len);
 	}
 	return false;
 }
 
 bool wuptr_eq_str(const struct wuptr w1, const char *s2) {
-	return !strncmp((char *)w1.str, s2, w1.len);
+	return !strncmp((char *)w1.ptr, s2, w1.len);
 }
 
 

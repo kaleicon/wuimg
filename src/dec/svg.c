@@ -8,7 +8,7 @@
 #include "../common.h"
 
 struct svg_state {
-	RsvgDimensionData dims;
+	RsvgRectangle viewport;
 	RsvgHandle *handle;
 	float dec_scale;
 };
@@ -22,17 +22,15 @@ static void clean_svg_state(struct image_file *infile) {
 	infile->events = 0;
 }
 
-static float limit_zoom(const float zoom, const RsvgDimensionData *dims,
+static float limit_zoom(const float zoom, const RsvgRectangle *viewport,
 unsigned int limit, bool *reached_limit) {
 	const unsigned int cairo_size_limit = 1 << 14;
-	limit = umin(limit, cairo_size_limit);
+	const double flimit = (double)umin(limit, cairo_size_limit);
 
-	const float max = (float)imax(dims->width, dims->height) * zoom;
-	if (max > (float)limit) {
-		if (reached_limit) {
-			*reached_limit = true;
-		}
-		return zoom * ((float)limit / max);
+	const double max = fmax(viewport->width, viewport->height) * zoom;
+	if (max > flimit) {
+		*reached_limit = true;
+		return (float)(zoom * (flimit / max));
 	}
 	return zoom;
 }
@@ -42,8 +40,8 @@ struct svg_state *ds) {
 	struct raw_img *img = infile->sub_img;
 
 	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
-	const int width = (int)((float)ds->dims.width * ds->dec_scale);
-	const int height = (int)((float)ds->dims.height * ds->dec_scale);
+	const int width = (int)(ds->viewport.width * ds->dec_scale);
+	const int height = (int)(ds->viewport.height * ds->dec_scale);
 	const int stride = cairo_format_stride_for_width(format, width);
 
 	free(img->data);
@@ -72,7 +70,8 @@ struct svg_state *ds) {
 	}
 
 	cairo_scale(canvas, ds->dec_scale, ds->dec_scale);
-	const bool success = rsvg_handle_render_cairo(ds->handle, canvas);
+	const bool success = rsvg_handle_render_document(ds->handle, canvas,
+		&ds->viewport, NULL);
 	cairo_destroy(canvas);
 	if (!success) {
 		clean_svg_state(infile);
@@ -97,7 +96,7 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 
 	bool reached_limit = false;
 	const float new_zoom = limit_zoom(ds->dec_scale * state->zoom,
-		&ds->dims, wuconf->max_img_size, &reached_limit);
+		&ds->viewport, wuconf->max_img_size, &reached_limit);
 	if (wuconf->svg_redraw == svg_upscale && reached_limit) {
 		infile->events = 0;
 	}
@@ -146,7 +145,14 @@ const struct wu_conf *wuconf) {
 		return wu_open_error;
 	}
 
-	rsvg_handle_get_dimensions(ds->handle, &ds->dims);
+	ds->viewport.x = 0;
+	ds->viewport.y = 0;
+	if (!rsvg_handle_get_intrinsic_size_in_pixels(ds->handle,
+	&ds->viewport.width, &ds->viewport.height)) {
+		ds->viewport.width = (double)wuconf->fb.w;
+		ds->viewport.height = (double)wuconf->fb.h;
+	}
+
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		clean_svg_state(infile);
@@ -154,7 +160,6 @@ const struct wu_conf *wuconf) {
 	}
 	img->channels = 4;
 	img->bitdepth = 8;
-
 	/* Cairo renders in ARGB, which on little-endian means BGRA. */
 	switch (which_end()) {
 	case little_endian: img->layout = pix_bgra; break;
@@ -162,12 +167,12 @@ const struct wu_conf *wuconf) {
 	}
 
 	bool reached_limit = false;
-	ds->dec_scale = limit_zoom(1, &ds->dims, wuconf->max_img_size,
+	ds->dec_scale = limit_zoom(1, &ds->viewport, wuconf->max_img_size,
 		&reached_limit);
 
 	enum wu_error err = svg_render(infile, ds);
 	if (err == wu_ok) {
-		if (wuconf->svg_redraw == svg_never || reached_limit) {
+		if (reached_limit || wuconf->svg_redraw == svg_never) {
 			clean_svg_state(infile);
 		} else {
 			switch (wuconf->svg_redraw) {

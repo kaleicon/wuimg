@@ -6,7 +6,6 @@
 #include <epoxy/gl.h>
 
 #include "wudefs.h"
-#include "common.h"
 #include "opengl.h"
 #include "raster/color.h"
 #include "raster/pix.h"
@@ -94,13 +93,14 @@ void gl_alpha_toggle(struct gl_context *context) {
 		context->alpha = (enum gl_alpha_mode)(
 			(context->alpha + 1) % gl_alpha_STATES);
 		glUniform1i(context->uni.alpha_mode, context->alpha);
+		context->update_matrix = true;
 	}
 }
 
 static float fix_aspect_ratio(GLfloat *mat, const struct gl_context *context,
-const unsigned char rotation) {
+const int rotate) {
 	// Scale the image to its natural size, taking rotation into account.
-	const int r1 = rotation & 1;
+	const int r1 = rotate & 1;
 	const float ratio_w = (float)context->tex.w / context->fb_wh[r1];
 	const float ratio_h = (float)context->tex.h / context->fb_wh[r1^1];
 
@@ -127,14 +127,15 @@ static void set_mirrot(GLfloat *mat, const int rotate, const bool mirror) {
 	const GLfloat mirror_mult = (GLfloat)bool_to_sign(mirror);
 
 	/* GL textures are bottom-up. We switch the signs of mirror_mult to
-	 * flip to top-down. */
+	 * flip to top-down without anyone knowing. */
 	mat[0] = cosy;
 	mat[1] = sinner;
 	mat[4] = sinner * -mirror_mult;
 	mat[5] = cosy * mirror_mult;
 }
 
-void gl_matrix_update(struct gl_context *context, struct wu_state *state) {
+void gl_matrix_update(struct gl_context *context, struct wu_state *state,
+const unsigned char base_rotate, const bool base_mirror) {
 	GLfloat mat[16] = {
 		1, 0, 0, 0,
 		0, 1, 0, 0,
@@ -142,12 +143,13 @@ void gl_matrix_update(struct gl_context *context, struct wu_state *state) {
 		0, 0, 0, 1,
 	};
 
-	set_mirrot(mat, state->rotate, state->mirror);
-	state->fit_zoom = fix_aspect_ratio(mat, context, state->rotate);
+	const int rot = base_rotate + state->rotate;
+	set_mirrot(mat, rot, base_mirror ^ state->mirror);
+	state->fit_zoom = fix_aspect_ratio(mat, context, rot);
 
 	/* We receive input measured in pixels from the top left corner, which
 	 * is sort of like the interval 0..1, but GL renders from the center
-	 * between -1..1, so we multiply by 2 to keep things working. */
+	 * between -1..1, so we scale offsets by 2 to keep things working. */
 	const float scale = 2;
 	/* It seems having exact integer offsets causes ugly artifacts
 	 * when rendering. We add a fraction of a pixel to remedy this. */
@@ -191,13 +193,6 @@ static void tex_sub2d(const GLint x, const GLint y, const GLsizei w,
 const GLsizei h, const GLenum fmt, const GLenum type, const void *ptr) {
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, fmt, type, ptr);
 	glGenerateMipmap(GL_TEXTURE_2D);
-}
-
-static void tex_sub2d_params(const struct gl_upload_params *p, const size_t x,
-const size_t y, size_t w, const size_t h, const void *data) {
-	tex_sub2d((GLsizei)x, (GLsizei)y, (GLsizei)w, (GLsizei)h,
-		p->fmt, p->type, data);
-	swizzle_set(p->layout);
 }
 
 static void tex_2d_params(const struct gl_upload_params *p, const size_t w,
@@ -272,8 +267,8 @@ static void palette_parameters(const bool enable) {
 
 static void switch_color_mode(struct gl_context *context,
 const enum image_mode new_mode) {
-	if (new_mode != context->tex.mode) {
-		switch (context->tex.mode) {
+	if (new_mode != context->mode) {
+		switch (context->mode) {
 		case image_mode_raw: break;
 		case image_mode_palette:
 			palette_parameters(false);
@@ -291,16 +286,11 @@ const enum image_mode new_mode) {
 			break;
 		}
 
-		switch (new_mode) {
-		case image_mode_raw: break;
-		case image_mode_palette:
+		if (new_mode == image_mode_palette) {
 			palette_parameters(true);
-			break;
-		case image_mode_planar:
-			break;
 		}
 
-		context->tex.mode = new_mode;
+		context->mode = new_mode;
 		glUniform1i(context->uni.color_mode, new_mode);
 	}
 }
@@ -319,28 +309,31 @@ static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
 const struct raw_img *img, const size_t w, const size_t h,
 const unsigned char *data) {
 	size_t instride = scanline_length(w, img->bitdepth, img->alignment);
-	size_t outstride = unpack_stride(w, img->bitdepth, img->attr, op);
-	if (!outstride) {
-		if (op == op_noop) {
-			outstride = instride;
-		} else {
+	size_t outstride;
+	if (op == op_noop) {
+		outstride = instride;
+	} else {
+		outstride = unpack_stride(w, img->bitdepth, img->attr, op);
+		if (!outstride) {
 			fatal_bug("Upload failure", "Unsupported raster format");
 		}
 	}
 
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	unsigned char *map = map_unpack_buffer(pix_buf, outstride * h);
+//	const clock_t start = clock();
 	for (size_t y = 0; y < h; ++y) {
 		unpack_or_copy_strip(map + outstride*y, data + instride*y,
 			w, img->bitdepth, img->attr, op);
 	}
+//	printf("unpacked in %f\n", clock_ellapsed(start));
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
 
-static enum gl_upload_status tex_upload(struct gl_context *context,
-const struct raw_img *img, const struct gl_upload_params *params,
-const size_t w, const size_t h, const void *data, const bool reuse) {
+static bool tex_upload(struct gl_context *context, const struct raw_img *img,
+const struct gl_upload_params *params, const size_t w, const size_t h,
+const void *data) {
 	const GLuint pix_buf = context->pixel_unpack_buf;
 	bool bind_buffer = false;
 	const size_t elems = w * params->comps;
@@ -351,55 +344,46 @@ const size_t w, const size_t h, const void *data, const bool reuse) {
 		glPixelStorei(GL_UNPACK_ALIGNMENT, img->alignment);
 	}
 
-	if (reuse) {
-		tex_sub2d_params(params, 0, 0, w, h, data);
-	} else {
-		tex_2d_params(params, w, h, data);
-	}
-
+	tex_2d_params(params, w, h, data);
 	if (bind_buffer) {
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
-	return reuse ? gl_upload_reused : gl_upload_success;
+
+	const GLenum err = glGetError();
+	if (err) {
+		printf("Encountered error %x when uploading to texture: %s\n",
+			err, gl_strerror(err));
+		return false;
+	}
+	return true;
 }
 
-static enum gl_upload_status planar_upload(struct gl_context *context,
-const struct raw_img *img, const struct gl_upload_params *params,
-const bool reuse) {
+static bool planar_upload(struct gl_context *context,
+const struct raw_img *img, const struct gl_upload_params *params) {
 	const struct plane_info *plane = img->u.planes->p;
-	enum gl_upload_status status = gl_upload_fail;
 	for (GLenum i = 0; i < 4; ++i) {
 		glActiveTexture(GL_TEXTURE0 + i);
 		if (i < img->channels) {
-			status = tex_upload(context, img, params, plane[i].w,
-				plane[i].h, plane[i].ptr, reuse);
-			if (status == gl_upload_fail) {
-				break;
-			}
+			tex_upload(context, img, params, plane[i].w, plane[i].h,
+				plane[i].ptr);
 		} else {
 			tex_2d_solid();
+		}
+		const GLenum err = glGetError();
+		if (err) {
+			printf("Encountered error %x when uploading to plane %u: %s\n",
+				err, i, gl_strerror(err));
+			return false;
 		}
 	}
 	glActiveTexture(gl_tex_img);
 
 	plane_colorspace_conversion(&context->uni, img->u.planes->cs, img->layout);
-	return status;
+	return true;
 }
 
-static int reusable_texture(const struct gl_context *context,
-const struct raw_img *img) {
-	const int hash = raw_img_geom_hash(img);
-	const bool reuse = img->w == context->tex.w
-		&& img->h == context->tex.h
-		&& hash == context->tex.hash;
-	return (reuse) ? 0 : hash;
-}
-
-static enum gl_upload_status mode_upload(struct gl_context *context,
-const struct raw_img *img, const struct gl_upload_params *params) {
-	const int hash = reusable_texture(context, img);
-
-	enum gl_upload_status status = gl_upload_fail;
+static bool mode_upload(struct gl_context *context, const struct raw_img *img,
+const struct gl_upload_params *params) {
 	switch (img->mode) {
 	case image_mode_palette:
 		glActiveTexture(gl_tex_pal);
@@ -408,41 +392,31 @@ const struct raw_img *img, const struct gl_upload_params *params) {
 		glActiveTexture(gl_tex_img);
 		// fallthrough
 	case image_mode_raw:
-		status = tex_upload(context, img, params, img->w, img->h,
-			img->data, !hash);
-		break;
+		return tex_upload(context, img, params, img->w, img->h, img->data);
 	case image_mode_planar:
-		status = planar_upload(context, img, params, !hash);
-		break;
+		return planar_upload(context, img, params);
 	}
-
-	if (status != gl_upload_fail && hash) {
-		context->tex.w = img->w;
-		context->tex.h = img->h;
-		context->tex.hash = hash;
-	}
-	return status;
+	return false;
 }
 
-static bool set_upload_params(struct gl_upload_params *params,
+static const char * set_upload_params(struct gl_upload_params *params,
 const struct raw_img *img) {
 	const uint8_t ch = params->comps;
-	const uint8_t bd = img->bitdepth;
+	uint8_t bd = img->bitdepth;
 	bool is_float = false;
 	switch (img->attr) {
 	case pix_packing_332:
 		params->in_fmt = GL_R3_G3_B2;
 		params->fmt = GL_RGB;
 		params->type = GL_UNSIGNED_BYTE_3_3_2;
-		return true;
+		return NULL;
 	case pix_packing_1555:
 		params->in_fmt = GL_RGB5_A1;
 		params->fmt = GL_BGRA;
 		params->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
 		params->layout = layout_equiv(params->layout, true, false);
-		return true;
+		return NULL;
 	case pix_float:
-		is_float = true;
 		switch (bd) {
 		case 16: case 32:
 			break;
@@ -450,46 +424,37 @@ const struct raw_img *img) {
 			params->op = op_pack;
 			break;
 		default:
-			return false;
+			return "Invalid floating-point depth";
 		}
-		break;
-	case pix_inverted:
-		switch (bd) {
-		case 1: case 2: case 4: case 8:
-			params->op = (img->mode == image_mode_palette)
-				? op_unpack : op_expand;
-			break;
-		default:
-			return false;
-		}
+		is_float = true;
 		break;
 	case pix_normal:
+		if (bd == 4 && ch == 4) {
+			params->in_fmt = GL_RGBA4;
+			params->fmt = GL_BGRA;
+			params->type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
+			params->layout = layout_equiv(params->layout,
+				true, true);
+			return NULL;
+		}
+		// fallthrough
+	case pix_inverted:
 		switch (bd) {
-		case 4:
-			if (ch == 4) {
-				params->in_fmt = GL_RGBA4;
-				params->fmt = GL_BGRA;
-				params->type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
-				params->layout = layout_equiv(params->layout,
-					true, true);
-				return true;
-			}
-			// fallthrough
-		case 1: case 2:
-			params->op = (img->mode == image_mode_palette)
-				? op_unpack : op_expand;
-			break;
-		case 24: case 64:
-			params->op = op_pack;
-			break;
 		case 8: case 16: case 32:
 			break;
 		default:
-			return false;
+			if (bd > 16) {
+				params->op = op_pack;
+				bd = 16;
+			} else if (img->mode == image_mode_palette) {
+				params->op = op_unpack;
+			} else {
+				params->op = op_expand;
+			}
 		}
 		break;
 	default:
-		return false;
+		return "Invalid pix attribute";
 	}
 
 	const GLint in_fmt_lut[] = {GL_RED, GL_RG, GL_RGB, GL_RGBA};
@@ -497,22 +462,27 @@ const struct raw_img *img) {
 	const GLenum type_lut[] = {
 		GL_UNSIGNED_BYTE,
 		(is_float) ? GL_HALF_FLOAT : GL_UNSIGNED_SHORT,
-		GL_UNSIGNED_SHORT, // packed 24bpc
 		(is_float) ? GL_FLOAT : GL_UNSIGNED_INT,
 	};
 
-	const int depth = iclamp(bd / 8, 1, 4);
+	const int depth = imin(ilog2(bd+7) - 3, 2);
 	params->in_fmt = in_fmt_lut[ch - 1];
 	params->fmt = fmt_lut[ch - 1];
-	params->type = type_lut[depth - 1];
+	params->type = type_lut[depth];
 	if (ch >= 3) {
 		params->layout = layout_equiv(params->layout, true, false);
 	}
-	return true;
+	return NULL;
 }
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 const struct raw_img *img) {
+	if (img->channels > 4) {
+		printf("Number of color channels unsupported (%d given)\n",
+			img->channels);
+		return gl_upload_fail;
+	}
+
 	struct gl_upload_params params = {.op = op_noop};
 	switch_color_mode(context, img->mode);
 	if (img->mode == image_mode_raw) {
@@ -523,24 +493,26 @@ const struct raw_img *img) {
 		params.comps = 1;
 	}
 
-	if (!set_upload_params(&params, img)) {
-		printf("Invalid channel/bitdepth combination (%d/%d)\n",
-			img->channels, img->bitdepth);
+	const char *errmsg = set_upload_params(&params, img);
+	if (errmsg) {
+		puts(errmsg);
 		return gl_upload_fail;
 	}
 
-	const enum gl_upload_status status = mode_upload(context, img, &params);
-	const GLenum err = glGetError();
-	if (err) {
-		printf("Encountered error %x when uploading to texture: %s\n",
-			err, gl_strerror(err));
+	if (!mode_upload(context, img, &params)) {
 		return gl_upload_fail;
 	}
 
 	context->disable_alpha = img->disable_alpha;
 	glUniform1i(context->uni.alpha_mode,
 		(context->disable_alpha) ? gl_alpha_opaque : context->alpha);
-	return status;
+
+	if (context->tex.w != img->w || context->tex.h != img->h) {
+		context->tex.w = img->w;
+		context->tex.h = img->h;
+		return gl_upload_success;
+	}
+	return gl_upload_same_size;
 }
 
 void gl_draw(void) {
@@ -553,12 +525,12 @@ void gl_clear_color(const float bg[static 4]) {
 }
 
 void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
-const struct gl_reader *reader, void *restrict data, const size_t row) {
+const struct gl_reader *reader, void *restrict dst, const size_t row) {
 	state->y_offset = (float)row;
-	gl_matrix_update(context, state);
+	gl_matrix_update(context, state, 0, 0);
 	gl_draw();
 	glReadPixels(0, 0, (GLsizei)reader->w, 1, reader->fmt, reader->type,
-		data);
+		dst);
 }
 
 bool gl_reader_set(struct gl_context *context, struct wu_state *state,
@@ -588,6 +560,7 @@ struct gl_reader *r, const struct raw_img *img) {
 		return false;
 	}
 
+	state->zoom = 1;
 	state->rotate = img->rotate;
 	state->mirror = !img->mirror; /* At this point I don't know why this
 		extra flip is needed. */
@@ -604,20 +577,11 @@ struct gl_reader *r, const struct raw_img *img) {
 	return true;
 }
 
-void gl_reader_disable(struct gl_context *context,
-const struct gl_reader *reader) {
+void gl_reader_unbind(void) {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	gl_viewport(context, &reader->prev);
 }
 
-void gl_reader_enable(struct gl_context *context, struct gl_reader *reader) {
-	GLint dims[4];
-	glGetIntegerv(GL_VIEWPORT, dims);
-	reader->prev = (struct display_dims) {
-		.w = (unsigned)dims[2],
-		.h = (unsigned)dims[3],
-	};
-
+void gl_reader_bind(struct gl_context *context) {
 	if (context->framebuffer) {
 		glBindFramebuffer(GL_FRAMEBUFFER, context->framebuffer);
 	} else {

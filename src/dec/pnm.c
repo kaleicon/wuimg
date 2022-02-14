@@ -1,7 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string.h>
 #include <limits.h>
 
 #include "../wudefs.h"
@@ -12,7 +8,7 @@
 enum wu_error pnm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct pnm_desc desc;
-	enum lib_fail fail = pnm_open_file(infile->ifp, &desc, true);
+	enum lib_fail fail = pnm_open_file(&desc, infile->ifp, true);
 	if (fail) {
 		rast_error(infile, fail);
 		return wu_open_error;
@@ -32,29 +28,27 @@ const struct wu_conf *wuconf) {
 
 	tree_sprout_leaf(&infile->metadata, "Type", pnm_type_str(desc.type));
 
-	struct raw_img *img = alloc_sub_images(infile, zumin(desc.nr, UCHAR_MAX));
-	if (!img) {
+	if (!alloc_sub_images(infile, zumin(desc.nr, UCHAR_MAX))) {
 		return wu_alloc_error;
 	}
 
 	size_t i = 0;
-	do {
-		img[i].data = pnm_decode_next(&desc);
-		if (!img[i].data) {
+	while (i < infile->nr) {
+		struct raw_img *img = infile->sub_img + i;
+		rast_to_raw_img(&desc.rast, img);
+		if (!pnm_decode(&desc, img->data, i)) {
 			break;
 		}
 
-		rast_to_raw(img + i, &desc.rast);
 		switch (desc.type) {
 		case pnm_color_pfm:
 		case pnm_gray_pfm:
-			img[i].mirror = true;
+			img->mirror = true;
 			break;
 		default:
 			break;
 		}
-
 		++i;
-	} while (i < infile->nr);
+	}
 	return image_file_total_decoded(infile, i);
 }

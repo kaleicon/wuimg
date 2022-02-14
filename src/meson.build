@@ -1,13 +1,15 @@
 internal_fmts = ['avs', 'dib', 'g00', 'mac', 'pcx', 'pgx', 'pi', 'pictor',
-	'pnm', 'sgi', 'sixel', 'sun', 'tga', 'tim', 'wbmp', 'xbm', 'xcursor']
+	'pnm', 'sgi', 'sixel', 'sun', 'tga', 'tim', 'tlg', 'wbm', 'wbmp', 'xbm',
+	'xcursor']
 external_fmts = ['flif', 'gif', 'heif', 'jbig', 'jpeg', 'jpeg2000', 'png',
 	'raw', 'svg', 'tiff', 'webp']
 
 fmt_deps = []
+dec_files = []
+dec_headers = []
 pkg_deps = {'jpeg2000': 'libopenjp2', 'svg': 'librsvg-2.0', 'webp': 'libwebpdemux'}
 conf_data = configuration_data()
 
-external_decs = []
 foreach f : external_fmts
 	state = get_option(f)
 	if f in pkg_deps
@@ -18,38 +20,49 @@ foreach f : external_fmts
 
 	if dep.found()
 		fmt_deps += dep
-		external_decs += ''.join(['dec/', f, '.c'])
+		dec_files += ''.join(['dec/', f, '.c'])
+		dec_headers += ''.join(['dec/', f, '.h'])
 		conf_data.set('WU_ENABLE_' + f.to_upper(), true)
 	endif
 endforeach
 
 internal_libs = []
-internal_decs = []
 foreach f : internal_fmts
 	if not get_option(f).disabled()
 		internal_libs += ''.join(['lib/', f, '.c'])
-		internal_decs += ''.join(['dec/', f, '.c'])
+		dec_files += ''.join(['dec/', f, '.c'])
+		dec_headers += ''.join(['dec/', f, '.h'])
 		conf_data.set('WU_ENABLE_' + f.to_upper(), true)
 	endif
 endforeach
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : conf_data)
-decs = [custom_target('dec_fmtmap',
-		output : ['dec_fmtmap.c'],
-		capture : true, depend_files : dec_enable,
-		command : [executable('fmtmap_sorted', 'dec_fmtmap_sort_quine.c')]),
+dec_comptime = executable('dec_comptime', 'dec_comptime.c')
+dec_all = [custom_target('dec_fmtmap',
+		output : ['dec_fmtmap_map.c'],
+		capture : true,
+		depend_files : [dec_enable, 'dec_fmtmap.c'],
+		command : [dec_comptime, '-f']),
+	custom_target('dec_include',
+		output : ['dec_include.def'],
+		capture : true,
+		depend_files : dec_enable,
+		command : [dec_comptime, '-h'] + dec_headers),
 	'dec.c',
 	'rast_utils.c',
 	'metadata.cpp'] \
-	+ internal_libs + internal_decs + external_decs
-rast = ['raster/color.c',
-	'raster/composite.c',
+	+ internal_libs + dec_files
+rast = ['raster/bit.c',
+	'raster/color.c',
+	'raster/compost.c',
 	'raster/graphics_adapters.c',
 	'raster/lib.c',
+	'raster/mem.c',
+	'raster/memparser.c',
 	'raster/pal.c',
 	'raster/pix.c',
 	'raster/raster.c',
-	'raster/text.c',
+	'raster/other.c',
 	'raster/unpack.c']
 
 base = ['common.c', 'conf.c', 'term.c', 'wudefs.c', 'wustr.c', 'wutree.c']
@@ -92,7 +105,7 @@ all_deps = base_deps + [
 	cc.find_library('rt')
 ]
 
-wuview = ['main.c'] + rast + decs + util + gui + base
+wuview = ['main.c'] + rast + dec_all + util + gui + base
 #timetest = ['time.c', 'common.c']
 #wuvib = ['wuvib.c', 'colorimetry.c'] + decs + base
 #wuglbench = ['gl_upload_bench.c'] + rast + gui + base

@@ -5,6 +5,30 @@
 #include "common.h"
 #include "dec_enable.def"
 
+// Placeholders
+typedef int dec_func_t;
+typedef int dec_callback_t;
+
+#define EXP_STRING(exp) #exp; exp
+static const char search_structs[] = EXP_STRING(
+	struct fmt_dec {
+		const char name[8];
+		const dec_func_t dec;
+		const dec_callback_t callback;
+	};
+
+	struct fmt_ext {
+		const char ext[8];
+		const int id;
+	};
+
+	struct fmt_magic {
+		const unsigned char and_mask[12];
+		const unsigned char bytes[12];
+		const int id;
+	};
+) /* EXP_STRING search_structs end */
+
 enum format_id {
 	fmt_unknown = -1,
 #define WUDEC(name, callback) fmt_##name,
@@ -12,24 +36,15 @@ enum format_id {
 #undef WUDEC
 };
 
-#define EXP_STRING(exp) #exp; exp
-
-static const char structs[] = EXP_STRING(
-struct file_ext {
-	const char ext[8];
-	const int id;
+static const struct fmt_dec dec_map[] = {
+#define WUDEC(name, callback) fmt_##name,
+#include "dec.def"
+#undef WUDEC
 };
-
-struct file_magic {
-	const unsigned char and_mask[12];
-	const unsigned char bytes[12];
-	const int id;
-};
-) /* EXP_STRING structs end */
 
 /* Be careful with masks. This array is sorted dumbly. Masks should cover
  * _continuous_ ranges of valid inputs. */
-static struct file_magic magic_map[] = {
+static struct fmt_magic magic_map[] = {
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
 #endif // WU_ENABLE_DIB
@@ -84,6 +99,17 @@ static struct file_magic magic_map[] = {
 #ifdef WU_ENABLE_TIM
 	{"\xff\xff\xff\xff", "\x10\x00\x00\x00", fmt_tim},
 #endif // WU_ENABLE_TIM
+
+#ifdef WU_ENABLE_TLG
+	{"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
+		"TLG5.0\x00raw\x1a", fmt_tlg},
+	{"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
+		"TLG6.0\x00raw\x1a", fmt_tlg},
+#endif // WU_ENABLE_TLG
+
+#ifdef WU_ENABLE_WBM
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "WPX\x1a" "BMP", fmt_wbm},
+#endif // WU_ENABLE_WBM
 
 #ifdef WU_ENABLE_XBM
 	{"\xff\xff", "\x2f\x2a", fmt_xbm}, // C asterisk comment in hex because
@@ -204,7 +230,7 @@ static struct file_magic magic_map[] = {
 
 /* File extensions. An enum is used where the format has no clear magic
  * sequence, or where it must be treated specially. */
-static struct file_ext extension_map[] = {
+static struct fmt_ext extension_map[] = {
 #ifdef WU_ENABLE_AVS
 	{"avs", fmt_avs},
 	{"mbfavs", fmt_avs},
@@ -284,6 +310,14 @@ static struct file_ext extension_map[] = {
 #ifdef WU_ENABLE_TIM
 	{"tim", fmt_tim},
 #endif // WU_ENABLE_TIM
+
+#ifdef WU_ENABLE_TLG
+	{"tlg", -1},
+#endif // WU_ENABLE_TLG
+
+#ifdef WU_ENABLE_WBM
+	{"wbm", -1},
+#endif // WU_ENABLE_WBM
 
 #ifdef WU_ENABLE_WBMP
 	{"wbmp", fmt_wbmp},
@@ -377,8 +411,8 @@ static struct file_ext extension_map[] = {
 
 /* These are different from the ones in dec_fmtmap_base.c */
 static int quine_fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
-	const struct file_magic *restrict magic1 = m1;
-	const struct file_magic *restrict magic2 = m2;
+	const struct fmt_magic *restrict magic1 = m1;
+	const struct fmt_magic *restrict magic2 = m2;
 	const unsigned char *and_mask1 = magic1->and_mask;
 	const unsigned char *and_mask2 = magic2->and_mask;
 	int diff = 0;
@@ -391,8 +425,8 @@ static int quine_fmaskmagiccmp(const void *restrict m1, const void *restrict m2)
 }
 
 static int quine_fextcmp(const void *restrict e1, const void *restrict e2) {
-	const struct file_ext *restrict ext1 = e1;
-	const struct file_ext *restrict ext2 = e2;
+	const struct fmt_ext *restrict ext1 = e1;
+	const struct fmt_ext *restrict ext2 = e2;
 	return memcmp(ext1->ext, ext2->ext, sizeof(ext2->ext));
 }
 
@@ -407,7 +441,7 @@ static size_t print_hex_string(const void *str, size_t len, FILE *outfile) {
 	return len;
 }
 
-int main(void) {
+static int fmtsort(void) {
 	qsort(magic_map, ARRAY_LEN(magic_map), sizeof(*magic_map),
 		quine_fmaskmagiccmp);
 	qsort(extension_map, ARRAY_LEN(extension_map), sizeof(*extension_map),
@@ -418,12 +452,12 @@ int main(void) {
 	fputs("#include <stddef.h>\n", stdout);
 
 	/* Struct maps definition */
-	fwrite(structs, 1, sizeof(structs) - 1, stdout);
+	fwrite(search_structs, 1, sizeof(search_structs) - 1, stdout);
 
 	/* The maps proper, with added const */
 	size_t max_mag_len = 0;
 	size_t min_mag_len = SIZE_MAX;
-	fputs("static const struct file_magic magic_map[] = {", stdout);
+	fputs("static const struct fmt_magic magic_map[] = {", stdout);
 	for (size_t i = 0; i < ARRAY_LEN(magic_map); ++i) {
 		fputs("{{", stdout);
 
@@ -447,7 +481,7 @@ int main(void) {
 
 	size_t max_ext_len = 0;
 	size_t min_ext_len = SIZE_MAX;
-	fputs("static const struct file_ext extension_map[] = {", stdout);
+	fputs("static const struct fmt_ext extension_map[] = {", stdout);
 	for (size_t i = 0; i < ARRAY_LEN(extension_map); ++i) {
 		fputs("{{", stdout);
 
@@ -475,6 +509,26 @@ int main(void) {
 		max_ext_len, min_ext_len);
 
 	/* Include the rest of the file */
-	fputs("\n#include \"dec_fmtmap_base.c\"\n", stdout);
+	fputs("\n#include \"dec_fmtmap.c\"\n", stdout);
 	return 0;
+}
+
+static int echo_includes(const int argc, const char *argv[]) {
+	for (int i = 0; i < argc; ++i) {
+		fputs("#include \"", stdout);
+		fputs(argv[i], stdout);
+		fputs("\"\n", stdout);
+	}
+	return 0;
+}
+
+int main(const int argc, const char *argv[]) {
+	if (argc > 1) {
+		if (!strcmp(argv[1], "-f")) {
+			return fmtsort();
+		} else if (!strcmp(argv[1], "-h")) {
+			return echo_includes(argc - 2, argv + 2);
+		}
+	}
+	return 1;
 }

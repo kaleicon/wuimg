@@ -74,10 +74,10 @@ static bool fs_path_set_dir(struct fs_path *path, const struct wuptr dir) {
 		return fs_path_set_empty_dir(path);
 	}
 
-	const size_t len = dir.len + (dir.str[dir.len - 1] != '/');
+	const size_t len = dir.len + (dir.ptr[dir.len - 1] != '/');
 	if (wustr_malloc(&path->parent, len)) {
 		unsigned char *str = path->parent.str;
-		memcpy(str, dir.str, dir.len);
+		memcpy(str, dir.ptr, dir.len);
 		str[len-1] = '/';
 		str[len] = 0;
 		return true;
@@ -86,15 +86,15 @@ static bool fs_path_set_dir(struct fs_path *path, const struct wuptr dir) {
 }
 
 static bool fs_path_set_file(struct fs_path *path, const struct wuptr name) {
-	const unsigned char *slash = memrchr(name.str, '/', name.len);
+	const unsigned char *slash = memrchr(name.ptr, '/', name.len);
 	if (slash) {
 		++slash;
-		const size_t dirlen = (size_t)(slash - name.str);
+		const size_t dirlen = (size_t)(slash - name.ptr);
 		path->file = (struct wuptr) {
 			.len = name.len - dirlen,
-			.str = slash,
+			.ptr = slash,
 		};
-		return fs_path_set_dir(path, wuptr_mem(name.str, dirlen));
+		return fs_path_set_dir(path, wuptr_mem(name.ptr, dirlen));
 	}
 	path->file = name;
 	return fs_path_set_empty_dir(path);
@@ -179,7 +179,7 @@ struct collator *icu) {
 		return NULL;
 	}
 
-	uiter_setUTF8(&icu->iter, (const char *)file->str, (int32_t)file->len);
+	uiter_setUTF8(&icu->iter, (const char *)file->ptr, (int32_t)file->len);
 	uint32_t state[2] = {0};
 	const int32_t written = ucol_nextSortKeyPart(icu->coll, &icu->iter,
 		state, ptr->str, (int32_t)count, &icu->err);
@@ -206,7 +206,7 @@ struct collator *icu) {
 	char *name = malloc(parent->len + file->len + 1);
 	if (name) {
 		memcpy(name, parent->str, parent->len);
-		memcpy(name + parent->len, file->str, file->len + 1);
+		memcpy(name + parent->len, file->ptr, file->len + 1);
 		dir->entries[dir->entries_grow.pos] = (struct fs_entry) {
 			.key = keyptr,
 			.name = name,
@@ -220,7 +220,7 @@ static bool filter_dir(DIR *dp, struct fs_dir *dir, struct fs_entry *init_key,
 struct collator *icu) {
 	dir->entries_grow = wugrow_init(sizeof(*dir->entries));
 	dir->pool.grow = wugrow_init(sizeof(*dir->pool.buf));
-	if (dir->path.file.str) {
+	if (dir->path.file.ptr) {
 		if (!pathcat(dir, &dir->path.file, icu)) {
 			return false;
 		}

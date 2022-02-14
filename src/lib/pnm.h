@@ -27,6 +27,7 @@ struct pnm_desc {
 	struct raster_desc rast;
 
 	size_t nr;
+	long data_start;
 	union {
 		unsigned short pnm;
 		float pfm;
@@ -38,10 +39,10 @@ struct pnm_desc {
 
 const char * pnm_type_str(enum pnm_type type);
 
-unsigned char * pnm_decode_next(const struct pnm_desc *desc);
+size_t pnm_decode(const struct pnm_desc *desc, void *restrict dst, size_t i);
 
 enum lib_fail pnm_parse_header(struct pnm_desc *desc);
 
-enum lib_fail pnm_open_file(FILE *ifp, struct pnm_desc *desc, bool maybe_mtv);
+enum lib_fail pnm_open_file(struct pnm_desc *desc, FILE *ifp, bool maybe_mtv);
 
 #endif /* LIB_PNM */

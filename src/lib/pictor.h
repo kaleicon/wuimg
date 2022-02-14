@@ -12,26 +12,25 @@ enum pictor_palette_type {
 	pictor_vga_too_i_think = 5,
 };
 
-struct pictor_palette {
-	bool enabled;
-	enum pictor_palette_type type:16;
-};
-
 struct pictor_desc {
 	FILE *ifp;
 	struct raster_desc r;
-	unsigned x, y;
+	uint16_t x, y;
+	uint8_t depth;
+	uint8_t planes;
 	char video_mode;
-	bool pal_enabled;
-	enum pictor_palette_type pal_type:16;
+	enum pictor_palette_type pal_type:8;
+	bool has_palette;
 	uint16_t blocks;
 };
+
+const char * pictor_palette_str(enum pictor_palette_type type);
 
 const char * pictor_video_mode(const struct pictor_desc *desc);
 
 void pictor_cleanup(struct pictor_desc *desc);
 
-unsigned char * pictor_decode(struct pictor_desc *desc);
+size_t pictor_decode(const struct pictor_desc *desc, void *restrict dst);
 
 enum lib_fail pictor_read_header(struct pictor_desc *desc);
 

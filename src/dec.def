@@ -60,6 +60,14 @@ WUDEC(tga, NULL)
 WUDEC(tim, NULL)
 #endif
 
+#ifdef WU_ENABLE_TLG
+WUDEC(tlg, NULL)
+#endif
+
+#ifdef WU_ENABLE_WBM
+WUDEC(wbm, NULL)
+#endif
+
 #ifdef WU_ENABLE_WBMP
 WUDEC(wbmp, NULL)
 #endif

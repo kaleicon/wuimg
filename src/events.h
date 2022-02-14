@@ -16,25 +16,22 @@ struct wu_keymap {
 enum window_event {
 	toggle_fullscreen = 1,
 	toggle_alpha,
+	window_write,
 };
 
-enum program_event {
-	close_window = 1,
-	reload_file,
-};
-
-enum remove_event {
-	no_rm = 0,
-	warn_rm,
-	yes_rm,
+enum wu_program_event {
+	wu_program_none = 0,
+	wu_program_exit,
+	wu_program_reload_file,
 };
 
 struct wu_event {
 	int cycle;
 	enum image_event image:8;
 	enum window_event window:8;
-	enum program_event program:8;
-	enum remove_event rm:8;
+	enum wu_program_event program:8;
+	enum trit rm:8;
+//	enum remove_event rm:8;
 };
 
 enum key_action {

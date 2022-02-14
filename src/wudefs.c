@@ -59,22 +59,6 @@ const size_t end) {
 	}
 }
 
-int raw_img_geom_hash(const struct raw_img *img) {
-	int id = img->bitdepth / 2;
-	id = (id << 2) | (img->channels - 1);
-	id = (id << 3) | img->attr;
-	id = (id << 2) | img->mode;
-	if (img->mode == image_mode_planar) {
-		struct image_planes *planes = img->u.planes;
-		for (size_t i = 0; i < ARRAY_LEN(planes->p); ++i) {
-			int x = imax(0, planes->p[i].x.subsamp - 1);
-			int y = imax(0, planes->p[i].y.subsamp - 1);
-			id = (id << 4) | (x << 2) | y;
-		}
-	}
-	return (id << 1) | 1; // Ensure non-zero
-}
-
 size_t raw_img_stride(const struct raw_img *img) {
 	uint8_t align = img->alignment;
 	if (!align) {
@@ -94,6 +78,13 @@ size_t raw_img_addbuf(struct raw_img *img) {
 		return stride;
 	}
 	return 0;
+}
+
+size_t raw_img_nr_frames(const struct raw_img *img) {
+	if (img->frames) {
+		return img->frames->nr;
+	}
+	return 1;
 }
 
 struct image_frames * raw_img_alloc_frames(struct raw_img *img, size_t nr) {
@@ -198,6 +189,7 @@ void raw_img_clear(struct raw_img *img) {
 	raw_img_free(img);
 	memset(img, 0, sizeof(*img));
 }
+
 
 struct raw_img * realloc_sub_images(struct image_file *file, const size_t nr) {
 	if (nr < file->nr) {
@@ -307,7 +299,7 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 	}
 }
 
-static void figure_out_alignment(struct raw_img *img) {
+static void try_better_alignment(struct raw_img *img) {
 	const size_t bytes = (img->w * img->channels * img->bitdepth + 7) / 8;
 	const size_t align = img->alignment - 1;
 	const size_t diff = ((bytes + align) & (~align)) - bytes;
@@ -349,7 +341,7 @@ void image_file_normalize(struct image_file *file) {
 		if (!img->alignment) {
 			img->alignment = 1;
 		} else if (img->mode != image_mode_planar && img->alignment > 8) {
-			figure_out_alignment(img);
+			try_better_alignment(img);
 		}
 
 		if (!img->layout) {
@@ -402,6 +394,11 @@ void image_file_free(struct image_file *file) {
 	}
 }
 
+
+struct raw_img * image_cur_sub_img(const struct image_context *image) {
+	return image->file.sub_img + image->state.idx;
+}
+
 enum image_event image_zoom(struct image_context *image, float new_zoom) {
 	enum image_event ev = 0;
 	if (new_zoom != image->state.zoom) {
@@ -431,6 +428,12 @@ enum image_event image_frame_cycle(struct image_context *image, int steps) {
 		}
 	}
 	return 0;
+}
+
+void image_reset(struct image_context *image) {
+	image->file = (struct image_file){0};
+	image->state.idx = 0;
+	image->state.frame = 0;
 }
 
 

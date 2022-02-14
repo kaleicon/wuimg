@@ -3,7 +3,7 @@
 
 #include "../common.h"
 #include "../raster/raster.h"
-#include "../raster/composite.h"
+#include "../raster/compost.h"
 #include "g00.h"
 
 struct g00_part_loc {
@@ -17,7 +17,7 @@ static const size_t G00_PART_SIZE = 2*2 + 8*4 + 20*4;
 static const size_t LZSS_PAD = 3 * 8;
 
 void g00_cleanup(struct g00_desc *desc) {
-	if (desc->version == 2) {
+	if (desc->version == g00_v2) {
 		struct g00_desc_v2 *v2 = &desc->u.v2;
 		free(v2->dir);
 		free(desc->pix_data);
@@ -83,8 +83,6 @@ static size_t v1_finish(struct g00_desc *desc, size_t written) {
 	}
 
 	if (desc->decomp_size - pal_bytes < raster_size(&desc->r)) {
-		printf("dec size: %zu, pal_bytes: %zu, rast size: %zu\n",
-			desc->decomp_size, pal_bytes, raster_size(&desc->r));
 		return 0;
 	}
 
@@ -175,26 +173,14 @@ static size_t v2_compost(struct g00_desc *desc, const size_t written) {
 			if ((void *)rast >= data_end) {
 				break;
 			}
-			const struct frame fr = {
+			const struct frame_info fr = {
 				.x = v2->dir[i].xstart + buf_endian16(block, little_endian),
 				.y = v2->dir[i].ystart + buf_endian16(block + 2, little_endian),
-/*				.x = endian32(v2->dir[i].xstart, little_endian)
-					+ buf_endian16(block, little_endian),
-				.y = endian32(v2->dir[i].ystart, little_endian)
-					+ buf_endian16(block + 2, little_endian),
-*/				.w = buf_endian16(block + 6, little_endian),
+				.w = buf_endian16(block + 6, little_endian),
 				.h = buf_endian16(block + 8, little_endian),
 			};
 			if (fr.x > desc->r.w || fr.y > desc->r.h
 			|| fr.x + fr.w > desc->r.w || fr.y + fr.h > desc->r.h) {
-				printf("w: %zu, h: %zu\n"
-					"x: %zu, y: %zu\n"
-					"width: %zu, height: %zu\n"
-					"xstart: %u, ystart: %u\n",
-					fr.w, fr.h, fr.x, fr.y,
-					desc->r.w, desc->r.h,
-					v2->dir[i].xstart,
-					v2->dir[i].ystart);
 				continue;
 			}
 
@@ -225,8 +211,8 @@ size_t g00_decode(struct g00_desc *desc) {
 	const size_t read = fread(src, 1, desc->comp_size, desc->ifp);
 	size_t written = 0;
 	if (read) {
-		const size_t elem_size = (desc->version == 0) ? 3 : 1;
-		const size_t min_run = (desc->version == 0) ? 1 : 2;
+		const size_t elem_size = (desc->version == g00_v0) ? 3 : 1;
+		const size_t min_run = (desc->version == g00_v0) ? 1 : 2;
 		written = lzss_decomp(desc->buf, desc->decomp_size, src, read,
 			elem_size, min_run);
 	}
@@ -234,24 +220,24 @@ size_t g00_decode(struct g00_desc *desc) {
 
 	if (written) {
 		switch (desc->version) {
-		case 0: desc->pix_data = desc->buf; break;
-		case 1: return v1_finish(desc, written);
-		case 2: return v2_compost(desc, written);
+		case g00_v0: desc->pix_data = desc->buf; break;
+		case g00_v1: return v1_finish(desc, written);
+		case g00_v2: return v2_compost(desc, written);
 		}
 	}
 	return written;
 }
 
-static enum lib_fail header_set(struct g00_desc *desc, const uint8_t version,
-const uint16_t width, const uint16_t height) {
+static enum lib_fail header_set(struct g00_desc *desc,
+const enum g00_version version, const uint16_t width, const uint16_t height) {
 	if (width < 1 || height < 1) {
 		return lib_invalid_header;
 	}
 	uint8_t ch;
 	switch (version) {
-	case 0: ch = 3; break;
-	case 1: ch = 1; break;
-	case 2: ch = 4; break;
+	case g00_v0: ch = 3; break;
+	case g00_v1: ch = 1; break;
+	case g00_v2: ch = 4; break;
 	default: return lib_unsupported_feature;
 	}
 
@@ -319,7 +305,7 @@ enum lib_fail g00_read_header(struct g00_desc *desc, FILE *ifp) {
 	}
 
 	const size_t dims = desc->r.w * desc->r.h;
-	if (desc->version == 2) {
+	if (desc->version == g00_v2) {
 		if (!fread(header, 4, 1, ifp)) {
 			return lib_unexpected_eof;
 		}
@@ -354,7 +340,7 @@ enum lib_fail g00_read_header(struct g00_desc *desc, FILE *ifp) {
 	}
 	desc->comp_size -= 8;
 
-	if (desc->version != 2) {
+	if (desc->version != g00_v2) {
 		size_t min_size = dims * desc->r.ch;
 		if (desc->version == 1) {
 			//min_size += 2 + 4; // entry count + 1 entry

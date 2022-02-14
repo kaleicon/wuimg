@@ -8,11 +8,11 @@ void raster_free(struct raster_desc *desc) {
 }
 
 size_t raster_stride(const struct raster_desc *desc) {
-	size_t bd = desc->bitdepth;
+	size_t w = desc->w;
 	if (!desc->planar) {
-		bd *= desc->ch;
+		w *= desc->ch;
 	}
-	return scanline_length(desc->w, bd, desc->alignment);
+	return scanline_length(w, desc->bitdepth, desc->alignment);
 }
 
 size_t raster_size(const struct raster_desc *desc) {
@@ -77,7 +77,36 @@ const uint8_t bitdepth, const enum pix_attr attr) {
 	return NULL;
 }
 
-void raster_normalize(struct raster_desc *desc) {
+static bool doesnt_overflow(const struct raster_desc *desc) {
+	size_t h_limit = SIZE_MAX / desc->h;
+	size_t w = desc->w;
+	if (desc->planar) {
+		h_limit /= desc->ch;
+	} else {
+		if (SIZE_MAX / w / desc->ch == 0) {
+			return false;
+		}
+		w *= desc->ch;
+	}
+
+	if (SIZE_MAX / w / desc->bitdepth == 0) {
+		return false;
+	}
+
+	size_t scanline = (w * desc->bitdepth - 1) / 8 + 1;
+	const size_t align = desc->alignment - 1;
+	if (SIZE_MAX - align < scanline) {
+		return false;
+	}
+	scanline = (scanline + align) & (~align);
+	return h_limit / scanline != 0;
+}
+
+bool raster_normalize(struct raster_desc *desc) {
+	if (!desc->w || !desc->h || !desc->ch || !desc->bitdepth) {
+		return false;
+	}
+
 	const char *err_msg = raster_geom_verify(desc->palette, desc->ch,
 		desc->bitdepth, desc->attr);
 	if (err_msg) {
@@ -118,4 +147,5 @@ void raster_normalize(struct raster_desc *desc) {
 			}
 		}
 	}
+	return doesnt_overflow(desc);
 }

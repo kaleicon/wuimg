@@ -38,7 +38,7 @@ struct mac_desc {
 
 unsigned char * mac_decode(const struct mac_desc *desc);
 
-unsigned char * mac_pattern_unpack(const struct mac_desc *desc);
+size_t mac_patterns_load(const struct mac_desc *desc, void *restrict dst);
 
 enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp);
 

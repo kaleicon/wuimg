@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../common.h"
-#include "../raster/lib.h"
 #include "mac.h"
 
 static const size_t RLE_PAD = 129;
@@ -13,15 +11,15 @@ const signed char *restrict rle, const size_t rle_len) {
 	size_t p = 0;
 	size_t i = 0;
 	while (i < rle_len - 1 && p < dims) {
+		const signed char run = rle[i];
+		++i;
 		size_t cnt;
-		if (rle[i] < 0) {
-			cnt = (size_t)(1 - rle[i]);
-			++i;
+		if (run < 0) {
+			cnt = (size_t)(1 - run);
 			memset(out + p, (unsigned char)rle[i], cnt);
 			++i;
 		} else {
-			cnt = 1 + (size_t)rle[i];
-			++i;
+			cnt = 1 + (size_t)run;
 			memcpy(out + p, rle + i, cnt);
 			i += cnt;
 		}
@@ -75,14 +73,12 @@ unsigned char * mac_decode(const struct mac_desc *desc) {
 	return out;
 }
 
-unsigned char * mac_pattern_unpack(const struct mac_desc *desc) {
+size_t mac_patterns_load(const struct mac_desc *desc, void *restrict dst) {
 	fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
-	struct memory mem;
-	lib_load_rast(&mem, &desc->patterns, desc->ifp);
-	return mem.data;
+	return fread(dst, 1, raster_size(&desc->patterns), desc->ifp);
 }
 
-static enum lib_fail read_mac_header(unsigned char *header,
+static enum lib_fail read_mac_header(unsigned char header[static 4],
 struct mac_desc *desc) {
 	/* MacPaint header:
 		0       DWORD   Version         // 0, 2, 3, rarely 1 I'm told
@@ -107,19 +103,20 @@ struct mac_desc *desc) {
 		.h = 8 * 38,
 		.ch = 1,
 		.bitdepth = 1,
+		.attr = pix_inverted,
 	};
 	desc->rast = (struct raster_desc) {
 		.w = 576,
 		.h = 720,
 		.ch = 1,
 		.bitdepth = 1,
+		.attr = pix_inverted,
 	};
-	raster_normalize(&desc->patterns);
-	raster_normalize(&desc->rast);
-	return lib_ok;
+	return (raster_normalize(&desc->patterns)
+		&& raster_normalize(&desc->rast)) ? lib_ok : lib_int_overflow;
 }
 
-static void read_macbin_header(const unsigned char *restrict data,
+static void read_macbin_header(const unsigned char data[static 128],
 struct mac_binary_header *macbin) {
 	macbin->name_len = data[1];
 	memcpy(macbin->name, data + 2, macbin->name_len);
@@ -161,8 +158,7 @@ enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp) {
 	 * zero, but since I don't know anything about the workings of MacOS or
 	 * MacPaint and it's technologically infeasible to test all their
 	 * possible states, I can't verify this advice, making it as useless as
-	 * the rest of the spec. Is it some coincidence that reading files in
-	 * other platforms is made as difficult as possible?
+	 * the rest of the spec.
 
 	 * In conclusion: Even if the first 640 bytes are all zero, it might be
 	 * a valid MacBinary + MacPaint file, and we should accept it. */

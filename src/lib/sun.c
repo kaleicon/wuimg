@@ -7,92 +7,82 @@
 #include "../common.h"
 #include "sun.h"
 
-static const size_t RLE_MAX_RUN = 256;
-static const unsigned char RLE_FLAG = 0x80;
-
 void sun_cleanup(struct sun_desc *desc) {
 	raster_free(&desc->rast);
 }
 
-static size_t run_length_loop(unsigned char *restrict output,
-const unsigned char *restrict rle, const size_t out_limit,
-const size_t rle_limit) {
-	size_t o = 0;
-	size_t r = 0;
-	// We've padded both buffers so we can skip some bound checks
-	do {
-		// This is somehow slightly faster than using memccpy
-		const unsigned char *flag_pos = memchr(rle + r, RLE_FLAG,
-			RLE_MAX_RUN);
-		if (flag_pos) {
-			if (flag_pos != rle + r) {
-				const size_t read = (size_t)(flag_pos - (rle + r));
-				memcpy(output + o, rle + r, read);
-				o += read;
-				r += read;
-			}
+// Strangely faster than memccpy
+__attribute__((unused))
+static size_t memccpy_cur(uint8_t *restrict dst,
+const uint8_t *restrict src, const uint8_t c, size_t dst_len, size_t src_len) {
+	const uint8_t *end = memchr(src, c, src_len);
+	if (end) {
+		src_len = (size_t)(end - src);
+	}
+	if (src_len > dst_len) {
+		src_len = dst_len;
+	}
+	memcpy(dst, src, src_len);
+	return src_len;
+}
 
+static size_t run_length_loop(unsigned char *restrict dst, const size_t dst_len,
+const unsigned char *restrict rle, const size_t rle_len) {
+	const unsigned char RLE_FLAG = 0x80;
+	size_t d = 0;
+	size_t r = 0;
+	while (d < dst_len && rle_len - r >= 2) {
+		while (rle[r] == RLE_FLAG) {
 			const unsigned char run_count = rle[r+1];
 			if (run_count) {
-				const unsigned char run_val = rle[r+2];
-				memset(output + o, run_val, run_count + 1);
-				o += run_count + 1;
+				if (dst_len - d < (size_t)run_count + 1
+				|| rle_len - r < 3) {
+					return d;
+				}
+				memset(dst + d, rle[r+2], run_count + 1);
+				d += run_count + 1;
 				r += 3;
 			} else {
-				output[o] = RLE_FLAG;
-				++o;
+				dst[d] = RLE_FLAG;
+				++d;
 				r += 2;
 			}
-		} else {
-			memcpy(output + o, rle + r, RLE_MAX_RUN);
-			o += RLE_MAX_RUN;
-			r += RLE_MAX_RUN;
+			if (d >= dst_len && rle_len - r < 2) {
+				return d;
+			}
 		}
-	} while (r < rle_limit && o < out_limit);
-	return o;
+
+		const size_t read = memccpy_cur(dst + d, rle + r, RLE_FLAG,
+			dst_len - d, rle_len - r);
+		d += read;
+		r += read;
+	}
+	return d;
 }
 
-static unsigned char * rle_decode(const struct sun_desc *desc) {
-	const size_t raster_len = raster_size(&desc->rast);
-
+static size_t rle_decode(const struct sun_desc *desc,
+unsigned char *restrict dst, const size_t dst_len) {
 	// E.g. 0x80 0x00 0x80 0x00... -> 0x80 0x80...
-	const size_t pathological_rle = raster_len * 2;
+	const size_t pathological_rle = dst_len * 2;
 	const size_t file_size = (size_t)file_get_remaining(desc->ifp);
 
+	size_t written = 0;
 	const size_t rle_len = zumin(file_size, pathological_rle);
-	unsigned char *rle = malloc(rle_len + 2);
-	if (!rle) {
-		return NULL;
-	}
-
-	const size_t read = fread(rle, 1, rle_len, desc->ifp);
-	rle[read] = RLE_FLAG;
-	rle[read+1] = 0;
-
-	unsigned char *output = malloc(raster_len + RLE_MAX_RUN);
-	if (!output) {
+	unsigned char *rle = malloc(rle_len);
+	if (rle) {
+		const size_t read = fread(rle, 1, rle_len, desc->ifp);
+		written = run_length_loop(dst, dst_len, rle, read);
 		free(rle);
-		return NULL;
 	}
-
-	const size_t written = run_length_loop(output, rle, raster_len, read);
-	free(rle);
-	if (written < raster_len - 1) { // - 1 due to alignment
-		puts("SUN warning: Run-length decoding didn't fill the whole "
-			"buffer. Output may contain garbage.");
-	}
-	return output;
+	return written;
 }
 
-unsigned char * sun_decode(const struct sun_desc *desc) {
+size_t sun_decode(const struct sun_desc *desc, void *restrict dst) {
+	const size_t dst_len = raster_size(&desc->rast);
 	if (desc->type == sun_byte_encoded) {
-		return rle_decode(desc);
+		return rle_decode(desc, dst, dst_len);
 	}
-	struct memory mem;
-	if (lib_load_rast(&mem, &desc->rast, desc->ifp)) {
-		return mem.data;
-	}
-	return NULL;
+	return fread(dst, 1, dst_len, desc->ifp);
 }
 
 static enum lib_fail interleave_colormap(struct sun_desc *desc) {
@@ -127,10 +117,6 @@ static enum lib_fail interleave_colormap(struct sun_desc *desc) {
 static enum lib_fail validate_header(struct sun_desc *desc,
 const uint32_t width, const uint32_t height, const uint32_t bitdepth,
 const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
-	if (!width || !height) {
-		return lib_invalid_header;
-	}
-
 	switch (type) {
 	case sun_old:
 	case sun_standard:
@@ -227,8 +213,7 @@ enum lib_fail sun_parse_header(struct sun_desc *desc) {
 			return fail;
 		}
 	}
-	raster_normalize(&desc->rast);
-	return lib_ok;
+	return raster_normalize(&desc->rast) ? lib_ok : lib_int_overflow;
 }
 
 enum lib_fail sun_open_file(struct sun_desc *desc, FILE *ifp) {

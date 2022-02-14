@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include <limits.h>
 
-#include "../common.h"
 #include "../wustr.h"
+#include "../raster/bit.h"
+#include "../raster/mem.h"
 #include "pi.h"
 
 // Define to use slightly slower but clearly correct code.
@@ -83,7 +83,7 @@ const enum pi_repeat_src loc, size_t cnt, size_t diff) {
 		i += 2;
 		--cnt;
 	}
-
+/*
 	while (cnt > diff/2) {
 		output[i] = output[i - diff];
 		output[i+1] = output[i+1 - diff];
@@ -94,26 +94,26 @@ const enum pi_repeat_src loc, size_t cnt, size_t diff) {
 	if (cnt) {
 		memcpy(output + i, output + i - diff, cnt*2);
 		i += cnt*2;
-	}
-	return i;
+	}*/
+	memrepeat(output, i, diff, cnt*2);
+	return i + cnt*2;
 }
 
-static uint32_t read_bits(const uint8_t *restrict bitstream,
-size_t *restrict bitpos, unsigned long n) {
-	uint32_t bits = 0;
-	while (n) {
-		const unsigned byte = bitstream[*bitpos / 8];
-		do {
-			bits <<= 1;
-			bits |= ((byte << (*bitpos % 8)) & 0x80) ? 1 : 0;
-			++(*bitpos);
-			--n;
-		} while (n && *bitpos % 8);
-	}
+static bool read_bit(const uint8_t *restrict bitstream,
+size_t *restrict bitpos) {
+	const bool bits = bit_get(bitstream, *bitpos);
+	++*bitpos;
 	return bits;
 }
 
-#ifndef EXACT_BITS
+#ifdef EXACT_BITS
+static uint32_t read_bits(const uint8_t *restrict bitstream,
+size_t *restrict bitpos, unsigned long n) {
+	const uint_fast32_t bits = bit_getn(bitstream, *bitpos, n);
+	*bitpos += n;
+	return (uint32_t)bits;
+}
+#else // !EXACT_BITS
 static uint32_t current_dword(const uint8_t *restrict bs,
 const size_t bitpos, const bool full_bits) {
 	size_t i = bitpos / 8;
@@ -135,7 +135,7 @@ const size_t bitpos, const bool full_bits) {
 	}
 	return f;
 }
-#endif
+#endif // EXACT_BITS
 
 static uint32_t read_repeat_cnt(const uint8_t *restrict bs,
 size_t *restrict bitpos) {
@@ -153,7 +153,7 @@ size_t *restrict bitpos) {
 	uint_fast32_t seq_len = 0;
 
 #ifdef EXACT_BITS
-	while (read_bits(bs, bitpos, 1) && seq_len < 31) {
+	while (read_bit(bs, bitpos) && seq_len < 31) {
 		++seq_len;
 	}
 	return read_bits(bs, bitpos, seq_len) | (1U << seq_len);
@@ -181,7 +181,7 @@ size_t *restrict bitpos) {
 	case 0: case 1: case 2:
 		return bits;
 	}
-	return (bits << 1) | read_bits(bs, bitpos, 1);
+	return (bits << 1) | read_bit(bs, bitpos);
 #else
 	const uint_fast32_t word = current_word(bs, *bitpos, false) >> 13;
 	uint8_t diff;
@@ -210,22 +210,22 @@ size_t *restrict bitpos) {
 		0111111xxxxxxx  128-255
 	*/
 #ifdef EXACT_BITS
-	if (read_bits(bs, bitpos, 1)) {
-		return read_bits(bs, bitpos, 1);
+	if (read_bit(bs, bitpos)) {
+		return read_bit(bs, bitpos);
 	} else { // 00
 		uint32_t sh = 0;
 		// 010
-		if (read_bits(bs, bitpos, 1)) { // Weee
+		if (read_bit(bs, bitpos)) { // Weee
 			// 0110
-			if (read_bits(bs, bitpos, 1)) { // eeee
+			if (read_bit(bs, bitpos)) { // eeee
 				// 01110
-				if (read_bits(bs, bitpos, 1)) { // eeee
+				if (read_bit(bs, bitpos)) { // eeee
 					// 011110
-					if (read_bits(bs, bitpos, 1)) { // eeee
+					if (read_bit(bs, bitpos)) { // eeee
 						// 0111110
-						if (read_bits(bs, bitpos, 1)) { // eeee
+						if (read_bit(bs, bitpos)) { // eeee
 							// 0111111
-							if (read_bits(bs, bitpos, 1)) {
+							if (read_bit(bs, bitpos)) {
 								++sh;
 							}
 							++sh;
@@ -276,12 +276,12 @@ size_t *restrict bitpos) {
 		011xxx  8-15
 	*/
 #ifdef EXACT_BITS
-	if (read_bits(bs, bitpos, 1)) {
-		return read_bits(bs, bitpos, 1);
+	if (read_bit(bs, bitpos)) {
+		return read_bit(bs, bitpos);
 	} else {
 		unsigned int sh = 0;
-		if (read_bits(bs, bitpos, 1)) {
-			if (read_bits(bs, bitpos, 1)) {
+		if (read_bit(bs, bitpos)) {
+			if (read_bit(bs, bitpos)) {
 				++sh;
 			}
 			++sh;
@@ -331,16 +331,17 @@ const size_t width, uint8_t *restrict table, const unsigned depth) {
 
 		if (i >= dims) {
 			break;
-		} else if (i == 2 || !read_bits(bitstream, &bitpos, 1)) {
+		} else if (i == 2 || !read_bit(bitstream, &bitpos)) {
 			enum pi_repeat_src loc[2];
-			loc[1] = depth; // invalid value
+			loc[1] = depth; // an invalid value
 			for (int cur = 0;; cur = !cur) {
 				loc[cur] = read_repeat_loc(bitstream, &bitpos);
 				if (loc[cur] == loc[!cur]) {
 					break;
 				}
 
-				size_t cnt = read_repeat_cnt(bitstream, &bitpos) - (i == 2);
+				size_t cnt = read_repeat_cnt(bitstream, &bitpos)
+					- (i == 2);
 				if (cnt*2 + i > dims) {
 					break;
 				}
@@ -400,10 +401,6 @@ const uint16_t height) {
 	case 4: case 8:
 		break;
 	default:
-		return lib_invalid_header;
-	}
-
-	if (!width || !height) {
 		return lib_invalid_header;
 	}
 
@@ -522,8 +519,7 @@ enum lib_fail pi_read_header(struct pi_desc *desc) {
 		return status;
 	}
 
-	raster_normalize(&desc->rast);
-	return lib_ok;
+	return raster_normalize(&desc->rast) ? lib_ok : lib_int_overflow;
 }
 
 enum lib_fail pi_open_file(struct pi_desc *desc, FILE *ifp) {

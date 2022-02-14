@@ -8,6 +8,7 @@
 #include "opengl.h"
 #include "events.h"
 #include "window.h"
+#include "write_pam.h"
 
 static volatile sig_atomic_t sig_should_close = 0;
 
@@ -42,7 +43,24 @@ void window_terminate(struct window_context *window) {
 	}
 }
 
-void window_draw(struct window_context *window) {
+static void set_swap(struct window_context *window, const bool sync) {
+	switch (window->backend) {
+	case window_glfw: glfwSwapInterval(sync); break;
+	case window_wayland:
+		eglSwapInterval(window->ctx.wl.egl.display, sync);
+		break;
+	case window_drm:
+		eglSwapInterval(window->ctx.drm.egl.display, sync);
+		break;
+	default:
+		break;
+	}
+}
+
+void window_draw(struct window_context *window, const bool must_sync) {
+	if (must_sync) {
+		set_swap(window, true);
+	}
 	gl_draw();
 	switch (window->backend) {
 	case window_glfw:
@@ -56,6 +74,9 @@ void window_draw(struct window_context *window) {
 		break;
 	case window_egl:
 		break;
+	}
+	if (must_sync) {
+		set_swap(window, false);
 	}
 }
 
@@ -78,6 +99,10 @@ static void handle_window_event(struct window_context *window) {
 	case toggle_alpha:
 		gl_alpha_toggle(&window->pub.gl);
 		break;
+	case window_write:
+		write_current(&window->pub.image, &window->pub.gl);
+		puts("Image written");
+		break;
 	}
 	window->pub.event.window = 0;
 }
@@ -93,7 +118,7 @@ double window_poll(struct window_context *window) {
 	case window_drm:
 		break;
 	case window_wayland:
-		wayland_poll(&window->ctx.wl);
+		wayland_poll(&window->ctx.wl, 0);
 		cursor = &window->ctx.wl.cursor.state;
 		break;
 	case window_egl:
@@ -111,7 +136,7 @@ double window_poll(struct window_context *window) {
 	const double ellapsed = window_exec_events(pub);
 	handle_window_event(window);
 	if (sig_should_close) {
-		window->pub.event.program = close_window;
+		window->pub.event.program = wu_program_exit;
 	}
 	return ellapsed;
 }

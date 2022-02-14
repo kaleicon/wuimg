@@ -30,7 +30,7 @@ struct sgi_desc {
 	char name[80];
 };
 
-unsigned char * sgi_decode(const struct sgi_desc *desc);
+size_t sgi_decode(const struct sgi_desc *desc, void *restrict dst);
 
 enum lib_fail sgi_parse_header(struct sgi_desc *desc);
 

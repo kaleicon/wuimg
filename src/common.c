@@ -82,15 +82,15 @@ void rfc3339_format(time_t t, FILE *out) {
 		years, months, days, hours, minutes, secs);
 }
 
-// Plug sane numbers into a struct and get a time_t back. Wow. So hard.
-time_t utc_to_epoch(const struct utc_time *tm) {
-	int year = tm->year;
-	int mon = tm->mon - 1;
-	if (mon >= 12 || mon < 0) {
-		year += mon / 12;
-		mon = mon % 12;
-		if (mon < 0) {
-			mon += 12;
+// Plug sane numbers into a function and get a time_t back. Wow. So hard.
+time_t utc_to_epoch(int year, int month, int day, int hour, int minute,
+int second) {
+	month -= 1;
+	if (month >= 12 || month < 0) {
+		year += month / 12;
+		month = month % 12;
+		if (month < 0) {
+			month += 12;
 			--year;
 		}
 	}
@@ -117,15 +117,15 @@ time_t utc_to_epoch(const struct utc_time *tm) {
 		31, 28 + is_leap, 31, 30, 31, 30,
 		31, 31,           30, 31, 30, 31
 	};
-	for (int i = 0; i < mon; ++i) {
+	for (int i = 0; i < month; ++i) {
 		days_since_epoch += days_in_this_year[i];
 	}
 
-	days_since_epoch += tm->day;
+	days_since_epoch += day;
 	return (days_since_epoch * 24 * 60 * 60)
-		+ (tm->hour * 60 * 60)
-		+ (tm->min * 60)
-		+ tm->sec;
+		+ (hour * 60 * 60)
+		+ (minute * 60)
+		+ second;
 }
 
 double clock_ellapsed(const clock_t start) {
@@ -134,7 +134,7 @@ double clock_ellapsed(const clock_t start) {
 
 size_t scanline_length(const size_t width, const size_t bitdepth,
 size_t alignment) {
-	const size_t bytes = (width * bitdepth + 7) / 8;
+	const size_t bytes = (width * bitdepth - 1) / 8 + 1;
 	--alignment;
 	return (bytes + alignment) & (~alignment);
 }
@@ -157,6 +157,14 @@ size_t zulog2(size_t x) {
 
 unsigned int ulog2(unsigned int x) {
 	unsigned int acc = 0;
+	while ((x >>= 1)) {
+		++acc;
+	}
+	return acc;
+}
+
+int ilog2(int x) {
+	int acc = 0;
 	while ((x >>= 1)) {
 		++acc;
 	}
@@ -304,35 +312,6 @@ void * memrchr(const void *s, const int c, size_t n) {
 	return NULL;
 }
 #endif
-
-static size_t fread_alloc_common(struct memory *mem, const size_t len,
-FILE *ifp) {
-	mem->len = len;
-	mem->data = malloc(len);
-	if (mem->data) {
-		return fread(mem->data, 1, len, ifp);
-	}
-	return 0;
-}
-
-size_t fread_alloc(struct memory *mem, const size_t len, FILE *ifp) {
-	const size_t read = fread_alloc_common(mem, len, ifp);
-	if (!read) {
-		free(mem->data);
-		mem->data = NULL;
-	}
-	return read;
-}
-
-size_t fread_alloc_strict(struct memory *mem, const size_t len, FILE *ifp) {
-	const size_t read = fread_alloc_common(mem, len, ifp);
-	if (read != len) {
-		free(mem->data);
-		mem->data = NULL;
-		return 0;
-	}
-	return read;
-}
 
 long file_get_remaining(FILE *ifp) {
 	const long cur = ftell(ifp);

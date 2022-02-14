@@ -84,7 +84,7 @@ static bool ok_case(struct extract_iter *iter, struct archive_entry *entry) {
 				return false;
 			}
 
-			char *nname = memdup(name.str, name.len + 1);
+			char *nname = memdup(name.ptr, name.len + 1);
 			if (!nname) {
 				fclose(tmp);
 				return false;

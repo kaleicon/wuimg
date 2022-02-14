@@ -23,14 +23,14 @@ struct xcursor_comment {
 };
 
 enum xcursor_chunk_type {
-	xcursor_chunk_comment = 0xfffe0001,
-	xcursor_chunk_image = 0xfffd0002,
+	xcursor_chunk_comment = 1,
+	xcursor_chunk_image = 2,
 };
 
 struct xcursor_chunk {
-	enum xcursor_chunk_type type;
 	long pos;
 	size_t len;
+	uint32_t type;
 	union {
 		struct xcursor_comment comment;
 		struct xcursor_image image;

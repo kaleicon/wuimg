@@ -2,7 +2,7 @@
 #include <stdbool.h>
 
 #include "../raster/lib.h"
-#include "../raster/text.h"
+#include "../raster/memparser.h"
 
 enum sixel_background_color {
 	sixel_set_to_bg = 0,
@@ -10,7 +10,7 @@ enum sixel_background_color {
 };
 
 struct sixel_desc {
-	struct text_parser tp;
+	struct mem_parser tp;
 	size_t data_end;
 
 	struct raster_desc r;

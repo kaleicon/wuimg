@@ -75,7 +75,7 @@ void wayland_set_title(const struct wayland *wl, const char *title);
 
 bool wayland_swap_buffers(const struct wayland *wl);
 
-void wayland_poll(struct wayland *wl);
+void wayland_poll(struct wayland *wl, int msecs);
 
 void wayland_fullscreen(struct wayland *wl);
 

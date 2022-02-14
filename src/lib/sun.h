@@ -33,7 +33,8 @@ struct sun_desc {
 
 void sun_cleanup(struct sun_desc *desc);
 
-unsigned char * sun_decode(const struct sun_desc *desc);
+//unsigned char * sun_decode(const struct sun_desc *desc);
+size_t sun_decode(const struct sun_desc *desc, void *restrict dst);
 
 enum lib_fail sun_parse_header(struct sun_desc *desc);
 

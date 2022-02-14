@@ -267,6 +267,7 @@ const bool get_markers) {
 	}
 	jpeg_read_header(dinfo, TRUE);
 
+	img->dec_scale = 1.0f;
 	if (use_raw(img, dinfo)) {
 		dinfo->raw_data_out = TRUE;
 		dinfo->out_color_space = dinfo->jpeg_color_space;
@@ -278,7 +279,7 @@ const bool get_markers) {
 			return wu_exceeds_size_limit;
 		}
 		dinfo->scale_denom = 1 << zulog2(f);
-		img->dec_scale = 1.0f / (float)dinfo->scale_denom;
+		img->dec_scale /= (float)dinfo->scale_denom;
 	}
 
 	dinfo->do_block_smoothing = FALSE;

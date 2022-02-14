@@ -18,13 +18,15 @@ struct write_writer {
 	struct write_out {
 		size_t base_len;
 		int dirfd;
-		bool omit_idx;
+		bool with_idx;
 		char name[256];
 	} out;
 };
 
-void write_image(struct image_context *image, struct write_writer *writer,
-const struct write_args *args);
+bool write_current(const struct image_context *image, struct gl_context *gl);
+
+enum wu_error write_image(struct image_context *image,
+struct write_writer *writer, const struct write_args *args);
 
 void write_writer_terminate(struct write_writer *writer);
 

@@ -6,7 +6,6 @@
 
 const char RASTER_EOF[] = "Warning: Got unexpected End Of File while reading "
 	"data. Output may contain garbage.";
-const char RASTER_INV[] = "Error: Invalid data found while decoding.";
 
 const char * lib_fail_string(const enum lib_fail fail) {
 	switch (fail) {
@@ -18,12 +17,10 @@ const char * lib_fail_string(const enum lib_fail fail) {
 		return "Invalid signature";
 	case lib_invalid_header:
 		return "Invalid format header";
-	case lib_unknown_format:
-		return "Unknown format variant";
-	case lib_unsupported_feature:
-		return "Unsupported format feature";
 	case lib_alloc_error:
 		return "Memory allocation error";
+	case lib_unsupported_feature:
+		return "Unsupported format feature";
 	case lib_invalid_data:
 		return "Invalid data in raster";
 	case lib_int_overflow:
@@ -70,11 +67,6 @@ const enum endianness end) {
 	}
 }
 
-size_t lib_load_rast(struct memory *mem, const struct raster_desc *desc,
-FILE *ifp) {
-	return fread_alloc(mem, raster_size(desc), ifp);
-}
-
 enum lib_fail lib_load_pal(FILE *ifp, struct raster_pal **palette,
 const enum lib_pal pal_type, const size_t entries) {
 	*palette = malloc(sizeof(**palette));
@@ -89,7 +81,10 @@ const enum lib_pal pal_type, const size_t entries) {
 		}
 
 		const size_t read = fread(buf, elen, entries, ifp);
-		for (size_t i = 0; i < read; ++i) {
+		if (read != entries) {
+			return lib_unexpected_eof;
+		}
+		for (size_t i = 0; i < entries; ++i) {
 			switch (pal_type) {
 			case lib_pal_rgb:
 				pal->color[i].r = buf[i*elen];
@@ -100,14 +95,14 @@ const enum lib_pal pal_type, const size_t entries) {
 				pal->color[i].a = 0xff;
 			}
 		}
-		return read == entries ? lib_ok : lib_unexpected_eof;
+		return lib_ok;
 	}
 	return lib_alloc_error;
 }
 
 enum lib_fail lib_sigcmp(const unsigned char *restrict sig, const size_t size,
 FILE *ifp) {
-	unsigned char buf[4];
+	unsigned char buf[8];
 	for (size_t off = 0; off < size; off += sizeof(buf)) {
 		const size_t len = zumin(size - off, sizeof(buf));
 		if (!fread(buf, len, 1, ifp)) {

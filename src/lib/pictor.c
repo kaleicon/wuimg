@@ -4,12 +4,22 @@
 #include <stdbool.h>
 #include <limits.h>
 
-#include "../raster/lib.h"
-#include "../raster/unpack.h"
 #include "../raster/graphics_adapters.h"
 #include "../common.h"
 
 #include "pictor.h"
+
+const char * pictor_palette_str(enum pictor_palette_type type) {
+	switch (type) {
+	case pictor_no_palette: break;
+	case pictor_cga_palette: return "CGA";
+	case pictor_pcjr_palette: return "PCJr";
+	case pictor_ega_palette: return "EGA";
+	case pictor_vga_palette:
+	case pictor_vga_too_i_think: return "VGA";
+	}
+	return NULL;
+}
 
 const char * pictor_video_mode(const struct pictor_desc *desc) {
 	switch (desc->video_mode) {
@@ -41,106 +51,72 @@ void pictor_cleanup(struct pictor_desc *desc) {
 	raster_free(&desc->r);
 }
 
-static unsigned char * pictor_interleave(unsigned char *restrict src,
-struct raster_desc *desc) {
-	size_t dims = desc->w * desc->h;
-	if (!desc->palette) {
-		dims *= desc->ch;
-	}
-	unsigned char *dst = malloc(dims);
-	if (!dst) {
-		free(src);
-		return NULL;
-	}
-
-	vga_interleave(dst, src, desc, desc->h,
-		scanline_length(desc->w, desc->bitdepth, 1));
-	free(src);
-
-	if (desc->palette) {
-		desc->ch = 1;
-		desc->bitdepth = 8;
-	}
-	desc->alignment = 1;
-	return dst;
+static void pictor_interleave(const struct pictor_desc *desc,
+unsigned char *restrict dst, const unsigned char *restrict src) {
+	vga_interleave(dst, src, desc->r.w, desc->r.h, desc->planes, 1,
+		desc->has_palette);
 }
 
-static size_t rle_decode(FILE *ifp, unsigned char *restrict out,
-const size_t outlen) {
-	size_t i = 0;
+static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
+const size_t blocks, FILE *ifp) {
+	/* Block format:
+		Offset  Size    Name
+		0       WORD    BlockSize
+		2       WORD    DecodedLength   // Ignored by us
+		4       BYTE    MarkerByte
+		5               Payloads[]
 
-	uint16_t buf;
-	if (!fread(&buf, sizeof(buf), 1, ifp)) {
-		return i;
-	}
+	 * Payload format:
+		Offset  Size    Name
+		0       BYTE    RunByte
 
-	const size_t min_size = 6; /* 5-byte block header plus min payload. */
-	size_t block_size = endian16(buf, little_endian);
-	if (block_size < min_size) {
-		return i;
-	}
-
-	unsigned char *block = malloc(1U << 16);
-	if (!block) {
-		return i;
-	}
-
-	do {
-		/* We read block_size bytes at a time, but the block size
-		 * includes its own size and it was already read, so we get the
-		 * next block size at the end of the buffer. */
-		const size_t read = fread(block, 1, block_size, ifp);
-		bool last_block;
-		size_t rem;
-		if (read < min_size) {
-			break;
-		} else if (read == block_size) {
-			rem = read - 2;
-			last_block = false;
-		} else {
-			rem = read;
-			last_block = true;
-		}
-
-		/* Block format:
-			Offset  Size    Name
-			-2      WORD    BlockSize       // Already read
-			0       WORD    DecodedLength   // Untrusted by us
-			2       BYTE    MarkerByte
-			3               Payloads[]
-
-		 * Payload format:
+		If MarkerByte == RunByte:
 			Offset  Size    Name
 			0       BYTE    RunByte
+			1       BYTE    LittleCount
+			2
 
-			If MarkerByte == RunByte:
+			If LittleCount != 0:
 				Offset  Size    Name
 				0       BYTE    RunByte
 				1       BYTE    LittleCount
-				2
+				2       BYTE    RepeatByte
+			Else:
+				Offset  Size    Name
+				0       BYTE    RunByte
+				1       BYTE    _
+				2       WORD    BigCount
+				3       BYTE    RepeatByte
 
-				If LittleCount != 0:
-					Offset  Size    Name
-					0       BYTE    RunByte
-					1       BYTE    LittleCount
-					2       BYTE    RepeatByte
-				Else:
-					Offset  Size    Name
-					0       BYTE    RunByte
-					1       BYTE    _
-					2       WORD    BigCount
-					3       BYTE    RepeatByte
+		Else, RunByte is copied to output
+	*/
 
-			Else, RunByte is copied to output
-		*/
+	unsigned char *block = malloc((1U << 16) - 5);
+	if (!block) {
+		return 0;
+	}
 
-		const unsigned char run_marker = block[2];
-		size_t k = 3;
+	size_t i = 0;
+	for (size_t b = 0; b < blocks && i < dst_len; ++b) {
+		if (!fread(block, 5, 1, ifp)) {
+			break;
+		}
+		const uint16_t block_size = buf_endian16(block, little_endian);
+		const unsigned char run_marker = block[4];
+		if (block_size <= 5) {
+			break;
+		}
+		const size_t read = fread(block, 1, block_size - 5, ifp);
+		if (!read) {
+			break;
+		}
+
+		size_t k = 0;
 		do {
 			const unsigned char run_val = block[k];
+			++k;
 			if (run_marker == run_val) {
-				++k;
-				if (k + 1 >= rem) {
+				if (k + 1 >= read) {
 					break;
 				}
 
@@ -149,7 +125,7 @@ const size_t outlen) {
 					count = block[k];
 					++k;
 				} else {
-					if (k + 3 >= rem) {
+					if (k + 3 >= read) {
 						break;
 					}
 					count = buf_endian16(block + k + 1,
@@ -157,61 +133,65 @@ const size_t outlen) {
 					k += 3;
 				}
 
-				count = zumin(count, outlen - i);
-				memset(out + i, block[k], count);
+				if (count > dst_len - i) {
+					count = dst_len - i;
+				}
+				memset(dst + i, block[k], count);
 				i += count;
+				++k;
 			} else {
-				out[i] = run_val;
+				dst[i] = run_val;
 				++i;
 			}
-			++k;
-		} while (k < rem && i < outlen);
-
-		if (i >= outlen || last_block) {
-			break;
-		}
-		block_size = buf_endian16(block + k, little_endian);
-	} while (block_size >= min_size);
+		} while (k < read && i < dst_len);
+	}
 	free(block);
 
+	if (i && i < dst_len) {
+		memset(dst + i, dst[i-1], dst_len - i);
+	}
 	return i;
 }
 
-unsigned char * pictor_decode(struct pictor_desc *desc) {
-	const size_t raster_len = scanline_length(desc->r.w, desc->r.bitdepth, 1)
-		* desc->r.ch * desc->r.h;
-	unsigned char *raster = malloc(raster_len);
-	if (!raster) {
-		return NULL;
+size_t pictor_decode(const struct pictor_desc *desc, void *restrict dst) {
+	size_t raster_len;
+	unsigned char *raster;
+	if (desc->planes == 1) {
+		raster_len = raster_size(&desc->r);
+		raster = dst;
+	} else {
+		raster_len = scanline_length(desc->r.w, 1, 1)
+			* desc->planes * desc->r.h;
+		raster = malloc(raster_len);
+		if (!raster) {
+			return 0;
+		}
 	}
 
-	size_t written;
+	size_t written = 0;
 	if (desc->blocks) {
-		written = rle_decode(desc->ifp, raster, raster_len);
+		written = rle_decode(raster, raster_len, desc->blocks, desc->ifp);
 	} else {
 		written = fread(raster, 1, raster_len, desc->ifp);
 	}
-	if (!written) {
-		free(raster);
-		return NULL;
-	} else if (written < raster_len) {
-		puts(RASTER_EOF);
-	}
 
-	if (desc->r.ch > 1) {
-		raster = pictor_interleave(raster, &desc->r);
+	if (desc->planes != 1 && !desc->r.planar) {
+		pictor_interleave(desc, dst, raster);
+		free(raster);
 	}
-	return raster;
+	return written;
 }
 
 static enum lib_fail load_palette(struct pictor_desc *desc,
-const uint16_t size) {
-	const int bpp = desc->r.ch * desc->r.bitdepth;
-
-	switch (desc->pal_type) {
+const enum pictor_palette_type pal_type, const uint16_t size) {
+	desc->pal_type = pal_type;
+	const int bpp = desc->depth * desc->planes;
+	switch (pal_type) {
 	case pictor_no_palette:
 		if (bpp == 1 || bpp == 8) {
 			return lib_ok;
+		} else if (size != 0) {
+			return lib_invalid_header;
 		}
 		break;
 	case pictor_cga_palette:
@@ -240,10 +220,13 @@ const uint16_t size) {
 		return lib_alloc_error;
 	}
 	desc->r.palette = pal;
+	desc->has_palette = true;
 
 	unsigned char *buf = (unsigned char *)(pal + 1) - size;
-	if (fread(buf, 1, size, desc->ifp) != size) {
-		return lib_unexpected_eof;
+	if (desc->pal_type != pictor_no_palette) {
+		if (!fread(buf, size, 1, desc->ifp)) {
+			return lib_unexpected_eof;
+		}
 	}
 
 	const unsigned char cga_modes[][4] = {
@@ -254,25 +237,26 @@ const uint16_t size) {
 		{0, 10, 12, 14},
 		{0, 11, 12, 15},
 	};
-	switch (desc->pal_type) {
+	switch (pal_type) {
 	case pictor_no_palette:
-		if (bpp == 4) {
-			for (size_t i = 0; i < 16; ++i) {
-				pal->color[i] = cga_palette(i);
-			}
-		} else {
+		if (bpp == 2) {
 			for (size_t i = 0; i < 4; ++i) {
 				pal->color[i] = cga_palette(cga_modes[0][i]);
+			}
+		} else {
+			for (size_t i = 0; i < 16; ++i) {
+				pal->color[i] = cga_palette(i);
 			}
 		}
 		break;
 	case pictor_cga_palette:
-		if (buf[0] >= 6 || buf[1] >= 16) {
+		;const unsigned char mode = buf[0];
+		const unsigned char border = buf[1];
+		if (mode >= 6 || border >= 16) {
 			return lib_invalid_header;
 		}
-		const unsigned char mode = buf[0];
 
-		pal->color[0] = cga_palette(buf[1]);
+		pal->color[0] = cga_palette(border);
 		for (size_t i = 1; i < 4; ++i) {
 			pal->color[i] = cga_palette(cga_modes[mode][i]);
 		}
@@ -285,7 +269,7 @@ const uint16_t size) {
 		break;
 	case pictor_vga_palette:
 	case pictor_vga_too_i_think:
-		; const unsigned maxval = (1 << 6) - 1;
+		;const unsigned maxval = (1 << 6) - 1;
 		const unsigned scale = (UCHAR_MAX << 8) / maxval + 1;
 		for (int i = 0; i < size / 3; ++i) {
 			pal->color[i].r = (unsigned char)((buf[i*3] * scale) >> 8);
@@ -300,71 +284,86 @@ const uint16_t size) {
 
 enum lib_fail pictor_read_header(struct pictor_desc *desc) {
 	/* Pictor file header (after id):
-		Offset  Size    Name
-		0       WORD    Width;
-		2       WORD    Height;
-		4       WORD    XOffset;     // X of lower left corner of image
-		6       WORD    YOffset;     // Y of lower left corner of image
-		8       BYTE    PlaneInfo;   // Number of planes and bitdepth
-		9       BYTE    PaletteFlag; // Color palette/video flag
-		10      BYTE    VideoMode;   // Video mode of image
-		11      WORD    PaletteType; // Type of color palette
-		13      WORD    PaletteSize; // Size of color palette
-		15
+		Offset  Type    Name
+		0       u16     Width
+		2       u16     Height
+		4       u16     ScreenX       // X of lower left corner of image
+		6       u16     ScreenY       // Y of lower left corner of image
+		8       u8      PlaneInfo     // [1]
+		|       Bits
+		|       7-4     BitPlanes     // 1 must be added
+		|       3-0     BitDepth
+		|
+		9       u8      PaletteMarker // 0xff
+		10      u8      VideoMode     // Video mode of image
+		11      u16     PaletteType   // Type of color palette
+		13      u16     PaletteSize   // Size of color palette
+		15      u8      Palette[PaletteSize]
+		...
+		+0      u16     NrOfBlocks // If 0, raster is uncompressed
+		+2
+
+	 * [1] Multiple planes are valid only if BitDepth is 1.
+	 *     Planes are stored separated per scanline, and must be joined to
+	 *     get the palette index.
 	*/
 
 	uint8_t buf[15];
-	if (fread(buf, 1, sizeof(buf), desc->ifp) != sizeof(buf)) {
+	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
 		return lib_unexpected_eof;
 	}
 
-	desc->r = (struct raster_desc) {
-		.w = buf_endian16(buf, little_endian),
-		.h = buf_endian16(buf + 2, little_endian),
-		.ch = (buf[8] >> 4) + 1,
-		.bitdepth = buf[8] & 0x0f,
-	};
-	desc->x = buf_endian16(buf + 4, little_endian);
-	desc->y = buf_endian16(buf + 6, little_endian);
-
-	if (!desc->r.w || !desc->r.h) {
-		return lib_invalid_header;
-	}
-
-	switch (desc->r.ch) {
-	case 1: case 2: case 3: case 4:
+	desc->depth = buf[8] & 0x0f;
+	desc->planes = (buf[8] >> 4) + 1;
+	switch (desc->depth) {
+	case 1:
+		if (desc->planes > 4) {
+			return lib_invalid_header;
+		}
 		break;
-	default:
-		return lib_invalid_header;
-	}
-
-	switch (desc->r.bitdepth) {
-	case 1: case 8:
-		break;
-	case 2: case 4:
-		if (desc->r.ch != 1) {
+	case 2: case 4: case 8:
+		if (desc->planes != 1) {
 			return lib_invalid_header;
 		}
 		break;
 	default:
 		return lib_invalid_header;
 	}
+	desc->r = (struct raster_desc) {
+		.w = buf_endian16(buf, little_endian),
+		.h = buf_endian16(buf + 2, little_endian),
+		.ch = 1,
+		.bitdepth = desc->depth,
+	};
 
-	if (buf[9] == 0xff) {
-		desc->video_mode = (char)buf[10];
-		desc->pal_enabled = true;
-		desc->pal_type = buf_endian16(buf + 11, little_endian);
-		const uint16_t size = buf_endian16(buf + 13, little_endian);
-		const enum lib_fail status = load_palette(desc, size);
-		if (status != lib_ok) {
-			return status;
-		}
+	desc->x = buf_endian16(buf + 4, little_endian);
+	desc->y = buf_endian16(buf + 6, little_endian);
+
+	if (buf[9] != 0xff) {
+		return lib_invalid_header;
+	}
+	desc->video_mode = (char)buf[10];
+	const enum lib_fail status = load_palette(desc,
+		buf_endian16(buf + 11, little_endian),
+		buf_endian16(buf + 13, little_endian));
+	if (status != lib_ok) {
+		return status;
 	}
 
-	fread(&desc->blocks, 1, sizeof(desc->blocks), desc->ifp);
-	desc->blocks = endian16(desc->blocks, little_endian);
-	raster_normalize(&desc->r);
-	return lib_ok;
+	if (!fread(buf, 2, 1, desc->ifp)) {
+		return lib_unexpected_eof;
+	}
+	desc->blocks = buf_endian16(buf, little_endian);
+
+	if (desc->planes != 1) {
+		if (desc->r.palette) {
+			desc->r.bitdepth = desc->planes;
+		} else {
+			desc->r.ch = desc->planes;
+			desc->r.planar = true;
+		}
+	}
+	return raster_normalize(&desc->r) ? lib_ok : lib_int_overflow;
 }
 
 enum lib_fail pictor_open_file(struct pictor_desc *desc, FILE *ifp) {
@@ -372,8 +371,7 @@ enum lib_fail pictor_open_file(struct pictor_desc *desc, FILE *ifp) {
 	const enum lib_fail st = lib_sigcmp(magic, sizeof(magic), ifp);
 	if (st == lib_ok) {
 		desc->ifp = ifp;
-		desc->r.palette = NULL;
-		desc->pal_enabled = false;
+		desc->has_palette = false;
 	}
 	return st;
 }

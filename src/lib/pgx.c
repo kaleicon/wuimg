@@ -4,51 +4,63 @@
 #include <stdint.h>
 
 #include "../common.h"
-#include "../raster/lib.h"
+#include "../raster/mem.h"
 #include "pgx.h"
 
+static const size_t LZSS_PAD = 2 * 8 + 1;
+
+static void repeat_or_zero(uint8_t *unpack, size_t upos, const size_t offset,
+size_t count) {
+	if (offset > upos + count) {
+		memset(unpack + upos, 0, count);
+	} else {
+		if (offset > upos) {
+			memset(unpack + upos, 0, offset - upos);
+			upos += offset - upos;
+			count -= offset - upos;
+		}
+		memrepeat(unpack, upos, offset, count);
+/*		while (count > offset) {
+			memcpy(unpack + upos, unpack + upos - offset, offset);
+			upos += offset;
+			count -= offset;
+		}
+		memcpy(unpack + upos, unpack + upos - offset, count);*/
+	}
+}
+
 static size_t lzss_decomp(uint8_t *restrict unpack, const size_t unpack_len,
-const uint8_t *restrict pack, const size_t pack_len, uint8_t *restrict dict) {
+const uint8_t *restrict pack, const size_t pack_len) {
 	/* Not to be confused with the GML_ARC LZSS algorithm, which requires
 	 * negating the input beforehand. */
 	const uint_fast16_t dict_mask = 0xfff;
-	uint_fast16_t dict_pos = 0xfee;
-
 	size_t upos = 0;
 	size_t ppos = 0;
 	while (upos < unpack_len && ppos < pack_len) {
 		uint8_t flags = pack[ppos];
 		++ppos;
-		for (int i = 0; i < 8; ++i, flags >>= 1) {
+		for (size_t i = 0; i < 8; ++i, flags >>= 1) {
 			if (flags & 1) {
-				if (ppos >= pack_len) {
+				if (upos >= unpack_len) {
 					break;
 				}
 				unpack[upos] = pack[ppos];
-				dict[dict_pos] = pack[ppos];
-
-				dict_pos = (dict_pos + 1) & dict_mask;
 				++ppos;
 				++upos;
 			} else {
-				if (ppos >= pack_len - 1) {
-					break;
-				}
 				const uint8_t first = pack[ppos];
-				const uint8_t second = pack[ppos + 1] ^ 0x0f;
+				const uint8_t second = pack[ppos + 1];
 				ppos += 2;
 
-				size_t dict_offset = (second & 0xf0U) << 4 | first;
-				const int count = (second & 0x0fU) + 3;
-				for (int i = 0; i < count && upos < unpack_len; ++i) {
-					const uint8_t byte = dict[dict_offset];
-					dict[dict_pos] = byte;
-					unpack[upos] = byte;
-
-					dict_offset = (dict_offset + 1) & dict_mask;
-					dict_pos = (dict_pos + 1) & dict_mask;
-					++upos;
+				const size_t dict_offset = (second & 0xf0U) << 4 | first;
+				const size_t offset = (upos - 18 - dict_offset)
+					& dict_mask;
+				const size_t count = 18 - (second & 0x0f);
+				if (upos + count >= unpack_len) {
+					return upos;
 				}
+				repeat_or_zero(unpack, upos, offset, count);
+				upos += count;
 			}
 		}
 	}
@@ -58,16 +70,11 @@ const uint8_t *restrict pack, const size_t pack_len, uint8_t *restrict dict) {
 size_t pgx_decode(const struct pgx_desc *desc, void *restrict dst) {
 	fseek(desc->ifp, -(long)(desc->comp_size), SEEK_END);
 	size_t written = 0;
-	uint8_t *comp = malloc(desc->comp_size);
+	uint8_t *comp = malloc(desc->comp_size + LZSS_PAD);
 	if (comp) {
-		uint8_t *dict = calloc(0x1000, 1);
-		if (dict) {
-			const size_t dims = raster_size(&desc->rast);
-			const size_t read = fread(comp, 1, desc->comp_size,
-				desc->ifp);
-			written = lzss_decomp(dst, dims, comp, read, dict);
-			free(dict);
-		}
+		const size_t dims = raster_size(&desc->rast);
+		const size_t read = fread(comp, 1, desc->comp_size, desc->ifp);
+		written = lzss_decomp(dst, dims, comp, read);
 		free(comp);
 	}
 	return written;

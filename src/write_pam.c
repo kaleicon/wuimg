@@ -11,6 +11,8 @@
 #include "filesystem.h"
 #include "write_pam.h"
 
+static const char OUTDIR_FAIL[] = "Failed to open output directory";
+
 static void pam_write_row(void *out, const uint8_t depth, const size_t len,
 FILE *ofp) {
 	if (which_end() != big_endian) {
@@ -53,14 +55,15 @@ struct write_out *out, const bool overwrite, const bool anim) {
 	const size_t rem = sizeof(*out->name) - out->base_len;
 	const char ext[] = "pam";
 
+	const int prec = 4;
 	int chars;
 	if (anim) {
-		chars = snprintf(suffix, rem, "_%d:%d.%s", state->idx,
-			state->frame, ext);
-	} else if (out->omit_idx) {
-		chars = snprintf(suffix, rem, ".%s", ext);
+		chars = snprintf(suffix, rem, "_%.*d:%.*d.%s", prec, state->idx,
+			prec, state->frame, ext);
+	} else if (out->with_idx) {
+		chars = snprintf(suffix, rem, "_%.*d.%s", prec, state->idx, ext);
 	} else {
-		chars = snprintf(suffix, rem, "_%d.%s", state->idx, ext);
+		chars = snprintf(suffix, rem, ".%s", ext);
 	}
 
 	errno = 0;
@@ -93,9 +96,9 @@ struct write_out *out, const char *outdir) {
 	if (out->dirfd >= 0) {
 		out->base_len = path.file.len;
 		if (out->base_len < sizeof(out->name)) {
-			memcpy(out->name, path.file.str, out->base_len);
+			memcpy(out->name, path.file.ptr, out->base_len);
 			fs_path_free(&path);
-			out->omit_idx = image->file.nr == 1;
+			out->with_idx = image->file.nr > 1;
 			return true;
 		}
 		close(out->dirfd);
@@ -104,8 +107,8 @@ struct write_out *out, const char *outdir) {
 	return false;
 }
 
-static bool try_write(struct wu_state *state, struct write_out *out,
-struct gl_context *gl, struct gl_reader *reader, uint8_t *restrict data,
+static bool pam_write(struct wu_state *state, struct write_out *out,
+struct gl_context *gl, const struct gl_reader *reader, uint8_t *restrict data,
 const bool overwrite, const bool frame_nr) {
 	FILE *ofp = get_file(state, out, overwrite, frame_nr);
 	if (!ofp) {
@@ -126,90 +129,89 @@ const bool overwrite, const bool frame_nr) {
 	return true;
 }
 
-/*void write_current(struct image_context *image, struct gl_context *gl) {
-	struct write_out out;
-	if (!set_out_dir(image, &writer->out, NULL)) {
-		perror("Failed to open output directory");
-		return;
-	}
-
-	struct wu_state *state = &image->state;
-	struct raw_img *img = image->file.sub_img + state->idx;
-
+static const char * try_write(struct wu_state *state, struct write_out *out,
+struct gl_context *gl, const struct raw_img *img, const bool overwrite) {
 	struct gl_reader reader;
-	gl_reader_enable(gl, &reader);
-
  	if (gl_reader_set(gl, state, &reader, img)) {
 		uint8_t *data = malloc(reader.len);
 		if (data) {
-			try_write(state, &out, gl, &reader, data, false,
+			pam_write(state, out, gl, &reader, data, overwrite,
 				img->frames);
 			free(data);
 		} else {
-			fputs("Failed to allocate row memory\n", stderr);
+			return "Failed to allocate row memory\n";
 		}
 	} else {
-		fputs("Failed to set framebuffer\n", stderr);
+		return "Failed to set framebuffer\n";
 	}
-	close(out.dirfd);
-	gl_reader_disable(gl, &reader);
-}*/
-
-static void write_sub_img(struct image_context *image,
-struct write_writer *writer, const struct write_args *args) {
-	struct image_file *file = &image->file;
-	struct wu_state *state = &image->state;
-	struct raw_img *img = file->sub_img + state->idx;
-
-	struct gl_reader reader;
- 	if (!gl_reader_set(&writer->gl, state, &reader, img)) {
-		fputs("Failed to set framebuffer\n", stderr);
-		return;
-	}
-
-	uint8_t *data = malloc(reader.len);
-	if (!data) {
-		fputs("Failed to allocate row memory\n", stderr);
-		return;
-	}
-
-	const int frames = (int)(img->frames ? img->frames->nr : 1);
-	for (state->frame = 0; state->frame < frames; ++state->frame) {
-		if (state->frame > 0) {
-			const enum wu_error err = dec_callback_image(image,
-				ev_frame);
-			if (err > wu_ok) {
-				fprintf(stderr, "%s\n", wu_error_message(err));
-				break;
-			}
-		}
-
-		if (gl_texture_upload(&writer->gl, img) == gl_upload_fail) {
-			continue;
-		}
-		try_write(state, &writer->out, &writer->gl, &reader, data,
-			args->overwrite, img->frames);
-	}
-	free(data);
+	return NULL;
 }
 
-void write_image(struct image_context *image, struct write_writer *writer,
-const struct write_args *args) {
+bool write_current(const struct image_context *image, struct gl_context *gl) {
+	struct write_out out;
+	if (!set_out_dir(image, &out, NULL)) {
+		perror(OUTDIR_FAIL);
+		return false;
+	}
+
+	struct wu_state state = image->state;
+	struct raw_img *img = image->file.sub_img + state.idx;
+
+	gl_reader_bind(gl);
+
+	const char *err = try_write(&state, &out, gl, img, false);
+	close(out.dirfd);
+
+	gl_reader_unbind();
+	gl_viewport(gl, &image->conf.fb);
+	if (err) {
+		fputs(err, stderr);
+		return false;
+	}
+	return true;
+}
+
+static void write_sub_img(struct write_writer *writer,
+const struct write_args *args, struct wu_state *state,
+const struct raw_img *img) {
+	const char *err = NULL;
+	if (gl_texture_upload(&writer->gl, img) != gl_upload_fail) {
+		err = try_write(state, &writer->out, &writer->gl, img,
+			args->overwrite);
+	} else {
+		err = "Failed to upload to texture\n";
+	}
+
+	if (err) {
+		fputs(err, stderr);
+	}
+}
+
+enum wu_error write_image(struct image_context *image,
+struct write_writer *writer, const struct write_args *args) {
+	const struct raw_img *img;
+	enum wu_error err = dec_iter_image(image, &img);
+	if (err != wu_ok) {
+		return err;
+	}
+
 	errno = 0;
 	if (!set_out_dir(image, &writer->out, args->outdir)) {
-		perror("Failed to open output directory");
-		return;
+		perror(OUTDIR_FAIL);
+		return wu_open_error;
 	}
 
-	struct wu_state *state = &image->state;
-	*state = (struct wu_state) {
-		.zoom = 1,
-	};
-
-	for (state->idx = 0; state->idx < (int)image->file.nr; ++state->idx) {
-		write_sub_img(image, writer, args);
-	}
+	do {
+		write_sub_img(writer, args, &image->state, img);
+		err = dec_iter_image(image, &img);
+	} while (err == wu_ok);
+	dec_free_image(image);
 	close(writer->out.dirfd);
+
+	if (err == wu_no_change) {
+		return wu_ok;
+	}
+	return err;
 }
 
 void write_writer_terminate(struct write_writer *writer) {
@@ -220,7 +222,7 @@ bool write_writer_init(struct write_writer *writer, struct wu_conf *wuconf) {
 	*writer = (struct write_writer){0};
 	if (window_offscreen_setup(&writer->window)) {
 		if (gl_context_setup(&writer->gl, wuconf)) {
-			gl_reader_enable(&writer->gl, &writer->reader);
+			gl_reader_bind(&writer->gl);
 			return true;
 		}
 		window_offscreen_terminate(&writer->window);
@@ -230,7 +232,7 @@ bool write_writer_init(struct write_writer *writer, struct wu_conf *wuconf) {
 
 int write_args(const int argc, char **argv, struct write_args *args) {
 	int idx = 0;
-	memset(args, 0, sizeof(*args));
+	*args = (struct write_args){0};
 	while (idx < argc) {
 		const char *arg = argv[idx];
 		if (arg[0] == '-' && arg[1] && !arg[2]) {
@@ -238,10 +240,11 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 			case 'f': args->overwrite = true; break;
 			case 'r': args->raw = true; break;
 			case 'o':
-				++idx;
-				if (idx < argc) {
-					args->outdir = argv[idx];
+				if (idx + 1 >= argc) {
+					return idx;
 				}
+				++idx;
+				args->outdir = argv[idx];
 				break;
 			default:
 				return idx;

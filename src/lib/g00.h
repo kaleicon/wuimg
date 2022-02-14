@@ -39,10 +39,16 @@ struct g00_desc_v2 {
 	struct g00_part *part;
 };
 
+enum g00_version {
+	g00_v0 = 0,
+	g00_v1 = 1,
+	g00_v2 = 2,
+};
+
 struct g00_desc {
 	FILE *ifp;
 	struct raster_desc r;
-	uint8_t version;
+	enum g00_version version;
 	uint32_t comp_size;
 	size_t decomp_size;
 

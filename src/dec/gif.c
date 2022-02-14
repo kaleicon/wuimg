@@ -7,7 +7,7 @@
 #include "../wudefs.h"
 #include "../common.h"
 #include "../raster/pal.h"
-#include "../raster/composite.h"
+#include "../raster/compost.h"
 
 enum disposal_mode {
 	first_frame = -1,
@@ -120,7 +120,7 @@ const unsigned char ch, const int alpha_idx) {
 	}
 }
 
-static void composite_gif_frame(struct raw_img *img,
+static void compost_gif_frame(struct raw_img *img,
 const struct frame_info *geom, const GifByteType *restrict raster,
 const struct raster_pal *palette, const int trans) {
 	const unsigned char ch = img->channels;
@@ -187,7 +187,8 @@ static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 		switch (gcb[-1].DisposalMode) {
 		case dispose_background:;
 			int p = ds->idx - 1;
-			composite_clear(img, img->frames->f + p, fill);
+			compost_clear(img->data, img->w, img->channels, fill,
+				img->frames->f + p);
 			break;
 		case dispose_previous:
 			memcpy(img->data, ds->previous.buf, image_size);
@@ -206,7 +207,7 @@ static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 	} else {
 		pal = &ds->global_pal;
 	}
-	composite_gif_frame(img, img->frames->f + ds->idx,
+	compost_gif_frame(img, img->frames->f + ds->idx,
 		gif_image->RasterBits, pal, trans);
 
 	++ds->idx;
@@ -294,9 +295,12 @@ const GifImageDesc *restrict prev) {
 static bool gather_info(struct image_file *infile,
 struct gif_state *ds, bool *uses_local_palette) {
 	GifFileType *gif_file = ds->gif_file;
+	int global_colors = -1;
+	if (gif_file->SColorMap) {
+		global_colors = gif_file->SColorMap->ColorCount;
+	}
 
 	const int count = gif_file->ImageCount;
-
 	struct raw_img *img = infile->sub_img;
 	struct image_frames *frames = raw_img_alloc_frames(img, (size_t)count);
 	if (!frames) {
@@ -306,11 +310,6 @@ struct gif_state *ds, bool *uses_local_palette) {
 	ds->gcb = malloc(sizeof(*ds->gcb) * (size_t)count);
 	if (!ds->gcb) {
 		return false;
-	}
-
-	int global_colors = -1;
-	if (gif_file->SColorMap) {
-		global_colors = gif_file->SColorMap->ColorCount;
 	}
 
 	const int default_delay = 10;
@@ -397,18 +396,12 @@ static int dgif_input_fn(GifFileType *gif_file, GifByteType *out, int len) {
 	return (int)fread(out, 1, (size_t)len, ifp);
 }
 
-enum wu_error gif_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	struct gif_state *ds = calloc(1, sizeof(*ds));
-	if (!ds) {
-		return wu_alloc_error;
-	}
-
+enum wu_error dec_wrap(struct image_file *infile,
+const struct wu_conf *wuconf, struct gif_state *ds) {
 	int error = 0;
 	GifFileType *gif_file = DGifOpen(infile->ifp, dgif_input_fn, &error);
 	if (error) {
 		image_file_error_append(infile, GifErrorString(error));
-		free(ds);
 		return map_error_to_wu(error);
 	}
 	ds->gif_file = gif_file;
@@ -422,7 +415,6 @@ const struct wu_conf *wuconf) {
 	const unsigned int max_dim = (unsigned int)imax(gif_file->SWidth,
 		gif_file->SHeight);
 	if (max_dim > wuconf->max_img_size) {
-		clean_gif_state(infile);
 		return wu_exceeds_size_limit;
 	}
 
@@ -439,7 +431,6 @@ const struct wu_conf *wuconf) {
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
-		clean_gif_state(infile);
 		return wu_alloc_error;
 	}
 
@@ -451,7 +442,6 @@ const struct wu_conf *wuconf) {
 	bool uses_local_palette = false;
 	ds->opaque_first_frame = true;
 	if (!gather_info(infile, ds, &uses_local_palette)) {
-		clean_gif_state(infile);
 		return wu_alloc_error;
 	}
 
@@ -479,9 +469,18 @@ const struct wu_conf *wuconf) {
 			return wu_alloc_error;
 		}
 	}
+	return gif_dec_frame(img, ds);
+}
 
-	const enum wu_error err = gif_dec_frame(img, ds);
-	if (err == wu_ok && img->frames) {
+enum wu_error gif_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	struct gif_state *ds = calloc(1, sizeof(*ds));
+	if (!ds) {
+		return wu_alloc_error;
+	}
+
+	const enum wu_error err = dec_wrap(infile, wuconf, ds);
+	if (err == wu_ok && infile->sub_img->frames->nr > 1) {
 		infile->events = ev_frame;
 	} else {
 		clean_gif_state(infile);

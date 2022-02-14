@@ -20,6 +20,11 @@ void rast_to_raw(struct raw_img *img, struct raster_desc *desc) {
 	}
 }
 
+bool rast_exceeds_size(const struct raster_desc *desc,
+const struct wu_conf *conf) {
+	return zumax(desc->w, desc->h) > conf->max_img_size;
+}
+
 size_t rast_to_raw_img(struct raster_desc *desc, struct raw_img *img) {
 	const size_t size = raster_size(desc);
 	img->data = malloc(size);
@@ -28,11 +33,6 @@ size_t rast_to_raw_img(struct raster_desc *desc, struct raw_img *img) {
 		return size;
 	}
 	return 0;
-}
-
-bool rast_exceeds_size(const struct raster_desc *desc,
-const struct wu_conf *conf) {
-	return zumax(desc->w, desc->h) > conf->max_img_size;
 }
 
 void rast_error(struct image_file *infile, const enum lib_fail error) {
@@ -53,13 +53,9 @@ const struct wu_conf *wuconf, rast_open_t open_fn) {
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
-	if (img) {
-		struct memory mem;
-		if (lib_load_rast(&mem, &desc, infile->ifp)) {
-			img->data = mem.data;
-			rast_to_raw(img, &desc);
-			return wu_ok;
-		}
+	if (img && rast_to_raw_img(&desc, img)) {
+		return fread(img->data, 1, raster_size(&desc), infile->ifp)
+			? wu_ok : wu_unexpected_eof;
 	}
 	return wu_alloc_error;
 }

@@ -12,6 +12,7 @@ enum wu_leaf_type {
 	wu_leaf_signed,
 	wu_leaf_double,
 	wu_leaf_time,
+	wu_leaf_bool,
 };
 
 union wu_leaf_val {
@@ -22,6 +23,7 @@ union wu_leaf_val {
 	long d;
 	double g;
 	time_t time;
+	bool b;
 };
 
 struct wu_leaf {
@@ -32,7 +34,7 @@ struct wu_leaf {
 struct wu_tree_sap {
 	const char *name;
 	enum wu_leaf_type type;
-	union wu_leaf_val value;
+	union wu_leaf_val val;
 };
 
 struct wu_tree {

@@ -10,9 +10,11 @@
 static void read_metadata(struct wu_tree *tree,
 const struct pictor_desc *desc) {
 	const struct wu_tree_sap sap[] = {
+		{"X", wu_leaf_unsigned, {.u = desc->x}},
+		{"Y", wu_leaf_unsigned, {.u = desc->y}},
 		{"Compressed blocks", wu_leaf_unsigned, {.u = desc->blocks}},
-		{"Planes", wu_leaf_unsigned, {.u = desc->r.ch}},
-		{"Bitdepth", wu_leaf_unsigned, {.u = desc->r.bitdepth}},
+		{"Planes", wu_leaf_unsigned, {.u = desc->planes}},
+		{"Depth", wu_leaf_unsigned, {.u = desc->depth}},
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
@@ -21,56 +23,44 @@ const struct pictor_desc *desc) {
 		tree_sprout_leaf(tree, "Video mode", mode);
 	}
 
-	const char *paltype = NULL;
-	switch (desc->pal_type) {
-	case pictor_cga_palette: paltype = "CGA"; break;
-	case pictor_pcjr_palette: paltype = "PCJr"; break;
-	case pictor_ega_palette: paltype = "EGA"; break;
-	case pictor_vga_palette:
-	case pictor_vga_too_i_think: paltype = "VGA"; break;
-	default: break;
-	}
-
+	const char *paltype = pictor_palette_str(desc->pal_type);
 	if (paltype) {
 		tree_sprout_leaf(tree, "Palette type", paltype);
 	}
+}
+
+static enum wu_error dec_wrap(struct image_file *infile,
+const struct wu_conf *conf, struct pictor_desc *desc) {
+	const enum lib_fail status = pictor_read_header(desc);
+	if (status != lib_ok) {
+		rast_error(infile, status);
+		return wu_invalid_header;
+	}
+
+	read_metadata(&infile->metadata, desc);
+
+	if (rast_exceeds_size(&desc->r, conf)) {
+		return wu_exceeds_size_limit;
+	}
+
+	struct raw_img *img = alloc_sub_images(infile, 1);
+	if (!img || !rast_to_raw_img(&desc->r, img)) {
+		return wu_alloc_error;
+	}
+
+	img->mirror = true;
+	return pictor_decode(desc, img->data) ? wu_ok : wu_decoding_error;
 }
 
 enum wu_error pictor_dec(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct pictor_desc desc;
 	enum lib_fail status = pictor_open_file(&desc, infile->ifp);
-	if (status != lib_ok) {
-		rast_error(infile, status);
-		return wu_open_error;
-	}
-
-	status = pictor_read_header(&desc);
-	if (status != lib_ok) {
+	if (status == lib_ok) {
+		const enum wu_error err = dec_wrap(infile, conf, &desc);
 		pictor_cleanup(&desc);
-		rast_error(infile, status);
-		return wu_invalid_header;
+		return err;
 	}
-
-	read_metadata(&infile->metadata, &desc);
-
-	if (rast_exceeds_size(&desc.r, conf)) {
-		pictor_cleanup(&desc);
-		return wu_exceeds_size_limit;
-	}
-
-	struct raw_img *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		pictor_cleanup(&desc);
-		return wu_alloc_error;
-	}
-
-	img->data = pictor_decode(&desc);
-	rast_to_raw(img, &desc.r);
-	pictor_cleanup(&desc);
-	if (img->data) {
-		img->mirror = true;
-		return wu_ok;
-	}
-	return wu_decoding_error;
+	rast_error(infile, status);
+	return wu_open_error;
 }

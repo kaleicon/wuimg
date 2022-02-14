@@ -15,10 +15,6 @@ struct display_dims {
 	unsigned w, h;
 };
 
-struct utc_time { // Also known as patched-up time
-	int year, mon, day, hour, min, sec;
-};
-
 enum trit {
 	trit_false = 0,
 	trit_true = 1,
@@ -35,16 +31,12 @@ struct map_info {
 	const unsigned char *data;
 };
 
-struct memory {
-	size_t len;
-	void *data;
-};
-
 void rfc3339_format(time_t t, FILE *out);
 
-time_t utc_to_epoch(const struct utc_time *tm);
+time_t utc_to_epoch(int year, int month, int day, int hour, int minute,
+int second);
 
-double clock_ellapsed(const clock_t start);
+double clock_ellapsed(clock_t start);
 
 size_t scanline_length(size_t width, size_t bitdepth, size_t alignment);
 
@@ -55,6 +47,8 @@ int imod(int val, int max);
 size_t zulog2(size_t x);
 
 unsigned int ulog2(unsigned int x);
+
+int ilog2(int x);
 
 size_t zumax(size_t x, size_t y);
 
@@ -97,10 +91,6 @@ const void * memchk(const void *s, unsigned char c, size_t n);
 #ifndef _GNU_SOURCE
 void * memrchr(const void *s, int c, size_t n);
 #endif
-
-size_t fread_alloc(struct memory *mem, size_t len, FILE *ifp);
-
-size_t fread_alloc_strict(struct memory *mem, size_t len, FILE *ifp);
 
 long file_get_remaining(FILE *ifp);
 

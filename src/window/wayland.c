@@ -6,13 +6,14 @@
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/mman.h>
 
 #include <linux/input-event-codes.h>
 
 #include "wayland.h"
 #include "../common.h"
-#include "../raster/text.h"
+#include "../raster/memparser.h"
 
 static bool test_mod(struct xkb_state *state, const char *name) {
 	return (1 == xkb_state_mod_name_is_active(state, name,
@@ -50,6 +51,7 @@ static uint8_t convert_by_position(struct xkb_state *state, const uint32_t key) 
 
 	case KEY_F: case KEY_F11: return 'F';
 	case KEY_A: return 'A';
+	case KEY_S: return 'S';
 	case KEY_M: return 'M';
 
 	case KEY_N: return 'N';
@@ -180,9 +182,9 @@ static void prepare_cursor(struct wayland *wl) {
 	const char *env_size = getenv("XCURSOR_SIZE");
 	if (env_size) {
 		const size_t max_digits = 4;
-		struct text_parser tp = text_parser_mem(max_digits, env_size);
-		text_fast_t tmp;
-		if (env_size[text_get_uint_unsafe(&tp, max_digits, &tmp)] == 0 && tmp) {
+		struct mem_parser tp = mem_parser_mem(max_digits, env_size);
+		mem_fast_t tmp;
+		if (env_size[mem_get_uint_unsafe(&tp, max_digits, &tmp)] == 0 && tmp) {
 			size = imin(256, (int32_t)tmp);
 		}
 	}
@@ -232,8 +234,23 @@ bool wayland_swap_buffers(const struct wayland *wl) {
 	return egl_swap(&wl->egl);
 }
 
-void wayland_poll(struct wayland *wl) {
-	wl_display_dispatch_pending(wl->display);
+static bool has_events(struct wl_display *display, const int msecs) {
+	struct pollfd fds = {.fd = wl_display_get_fd(display), .events = POLLIN};
+	return wl_display_flush(display) >= 0
+		&& poll(&fds, 1, msecs) > 0
+		&& fds.revents & POLLIN;
+}
+
+void wayland_poll(struct wayland *wl, const int msecs) {
+	while (wl_display_prepare_read(wl->display)) {
+		wl_display_dispatch_pending(wl->display);
+	}
+	if (has_events(wl->display, msecs)) {
+		wl_display_read_events(wl->display);
+		wl_display_dispatch_pending(wl->display);
+	} else {
+		wl_display_cancel_read(wl->display);
+	}
 }
 
 void wayland_fullscreen(struct wayland *wl) {
@@ -269,7 +286,7 @@ const int32_t width, const int32_t height, struct wl_array *states) {
 static void toplevel_close(void *data, struct xdg_toplevel *toplevel) {
 	(void)toplevel;
 	struct wayland *wl = data;
-	wl->pub->event.window = close_window;
+	wl->pub->event.window = wu_program_exit;
 }
 
 static void surface_configure(void *data, struct xdg_surface *surface,

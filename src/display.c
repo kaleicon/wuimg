@@ -37,7 +37,9 @@ static void set_background_color(const struct image_context *image) {
 	case bg_average:
 	case bg_popular:
 	case bg_vibrant:
-		get_image_color(bg, infile->sub_img, conf->bg_src, 64);
+		;const clock_t start = clock();
+		get_image_color(bg, infile->sub_img, conf->bg_src, 256);
+		printf("Color measured in %f\n", clock_ellapsed(start));
 		for (size_t i = 0; i < 3; ++i) {
 			bg[i] *= bg[3];
 		}
@@ -57,13 +59,11 @@ void display_end(struct window_context *window, const struct term_restore *tr) {
 
 static double poll_events(struct window_context *window) {
 	struct wu_keymap *held_keys = &window->pub.held_keys;
-
 	unsigned char tk[32];
 	const size_t read = term_event_read(tk, sizeof(tk));
 	for (size_t i = 0; i < read; ++i) {
 		event_add(held_keys, key_external, toupper(tk[i]), isupper(tk[i]));
 	}
-
 	return window_poll(window);
 }
 
@@ -83,20 +83,19 @@ const bool reset) {
 		state->fit_zoom = gl_fit_zoom(gl, state->rotate);
 		if (reset) {
 			state->zoom = fminf(1, state->fit_zoom);
-			state->rotate = img->rotate;
-			state->mirror = img->mirror;
+			state->rotate = 0;
+			state->mirror = 0;
 			state->x_offset = 0;
 			state->y_offset = 0;
 		}
 		break;
-	case gl_upload_reused:
-		break; // Keep the texture as it was
+	case gl_upload_same_size:
+		break; // Keep state as it was
 	}
 	if (!state->anim_playing) {
 		printf("Frame %d uploaded in %lu nanoseconds.\n",
 			state->frame, gl_clock_end(gl));
 	}
-
 	gl->update_matrix = true;
 	return true;
 }
@@ -106,13 +105,17 @@ struct window_context *window, double remaining) {
 	struct wu_event *event = &window->pub.event;
 	struct wu_state *state = &window->pub.image.state;
 	struct gl_context *gl = &window->pub.gl;
+	struct raw_img *cur = image->file.sub_img + state->idx;
 
-	for (;;) {
+	for (bool initial = true;;) {
 		if (gl->update_matrix) {
-			gl_matrix_update(gl, state);
+			gl_matrix_update(gl, state, cur->rotate, cur->mirror);
+			window_draw(window, initial);
+			initial = false;
 		}
+		const struct timespec tm = {.tv_nsec = 2000000};
+		nanosleep(&tm, NULL);
 		const double ellapsed = poll_events(window);
-		window_draw(window);
 
 		if (window_has_focus(window) && state->anim_playing) {
 			remaining -= ellapsed;
@@ -121,7 +124,7 @@ struct window_context *window, double remaining) {
 			}
 		}
 
-		if (event->cycle || event->program || event->rm == yes_rm) {
+		if (event->cycle || event->program || event->rm == trit_true) {
 			break;
 		} else if (event->image) {
 			gl->update_matrix = true;
@@ -149,8 +152,6 @@ bool display_loop(struct window_context *window, const bool no_cycle) {
 	struct wu_state *state = &window->pub.image.state;
 	struct wu_event *event = &window->pub.event;
 
-	state->idx = 0;
-	state->frame = 0;
 	*event = (struct wu_event){
 		.image = ev_subcycle, // for init only, not passed to image
 	};
@@ -163,8 +164,8 @@ bool display_loop(struct window_context *window, const bool no_cycle) {
 	for (bool upload = true, reset = true;;) {
 		if (upload) {
 			if (event->image == ev_subcycle) {
-				state->anim_playing =
-					infile->sub_img[state->idx].frames;
+				state->anim_playing = raw_img_nr_frames(
+					infile->sub_img + state->idx) > 1;
 			}
 
 			all_ok = update_texture(image, &window->pub.gl, reset);
@@ -186,7 +187,7 @@ bool display_loop(struct window_context *window, const bool no_cycle) {
 		remaining = idle_display(image, window, remaining);
 
 		if ((no_cycle == false && event->cycle)
-		|| event->program || event->rm == yes_rm) {
+		|| event->program || event->rm == trit_true) {
 			break;
 		} else if (event->image & infile->events) {
 			const enum wu_error err = dec_callback_image(image,

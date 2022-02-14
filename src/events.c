@@ -17,7 +17,7 @@ static unsigned char * get_map(struct wu_keymap *held_keys) {
 }
 
 static bool apply_event(struct image_context *image,
-struct wu_event *event, const int code, const float msecs, const bool shift) {
+struct wu_event *event, const int code, const float dt, const bool shift) {
 	const float MAX_ZOOM = 64.0f;
 	const float MIN_ZOOM = 1.0f / MAX_ZOOM;
 
@@ -27,21 +27,25 @@ struct wu_event *event, const int code, const float msecs, const bool shift) {
 	switch (code) {
 	// Exit
 	case 'Q':
-		event->program = close_window;
+		event->program = wu_program_exit;
 		break;
 	// Reload file
 	case 'R':
-		event->program = reload_file;
+		event->program = wu_program_reload_file;
 		break;
 
 	// Fullscreen
 	case 'F':
 		event->window = toggle_fullscreen;
-		break;
+		return true;
 	// Alpha display
 	case 'A':
 		event->window = toggle_alpha;
 		break;
+	// Save to file
+	case 'S':
+		event->window = window_write;
+		return true;
 	// Metadata
 	case 'M':
 		image_file_print(file, 1 + shift);
@@ -49,21 +53,19 @@ struct wu_event *event, const int code, const float msecs, const bool shift) {
 
 	// Delete
 	case 'D':
-		if (!shift && event->rm == no_rm) {
-			event->rm = warn_rm;
+		if (!shift && event->rm == trit_false) {
+			event->rm = trit_what;
 			term_temp_line("Delete file? (D to confirm, "
 				"u to dismiss)");
-		} else if (shift && event->rm == warn_rm) {
-			event->rm = yes_rm;
+		} else if (shift && event->rm == trit_what) {
+			event->rm = trit_true;
 		}
-		break;
+		return true;
 	// Abort delete
 	case 'U':
-		if (event->rm == warn_rm) {
-			event->rm = no_rm;
-			term_clear_line();
-		}
-		break;
+		event->program = 0;
+		term_clear_line();
+		return true;
 
 	// Cycling
 	case 'N': // Next
@@ -97,25 +99,29 @@ struct wu_event *event, const int code, const float msecs, const bool shift) {
 		state->anim_playing = false;
 		break;
 	case ' ':
-		state->anim_playing = !state->anim_playing;
+		if (raw_img_nr_frames(image_cur_sub_img(image)) > 1) {
+			state->anim_playing = !state->anim_playing;
+		} else {
+			state->anim_playing = false;
+		}
 		break;
 
 	// Image movement
 	case 'H': // Left
 		event->image = ev_move;
-		state->x_offset += msecs / state->zoom;
+		state->x_offset += dt / state->zoom;
 		break;
 	case 'J': // Down
 		event->image = ev_move;
-		state->y_offset -= msecs / state->zoom;
+		state->y_offset -= dt / state->zoom;
 		break;
 	case 'K': // Up
 		event->image = ev_move;
-		state->y_offset += msecs / state->zoom;
+		state->y_offset += dt / state->zoom;
 		break;
 	case 'L': // Right
 		event->image = ev_move;
-		state->x_offset -= msecs / state->zoom;
+		state->x_offset -= dt / state->zoom;
 		break;
 
 	// Rotation.
@@ -132,7 +138,7 @@ struct wu_event *event, const int code, const float msecs, const bool shift) {
 	case 'I': // Horizontal
 		event->image = ev_mirrot;
 		state->mirror = !state->mirror;
-		state->rotate = (state->rotate + 2) & 3;
+		state->rotate = (state->rotate + 2) & 0x03;
 		break;
 	case 'O': // Vertical
 		event->image = ev_mirrot;
@@ -152,13 +158,13 @@ struct wu_event *event, const int code, const float msecs, const bool shift) {
 		state->x_offset = 0;
 		state->y_offset = 0;
 		event->image = image_zoom(image, state->fit_zoom);
-		break;
+		return true;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
-		; const struct raw_img *img = file->sub_img + state->idx;
+		; const struct raw_img *img = image_cur_sub_img(image);
 		event->image = image_zoom(image,
 			(float)(code - '0') * (1/img->dec_scale));
-		break;
+		return true;
 	}
 	return false;
 }
@@ -174,6 +180,7 @@ struct wu_event *event, double secs) {
 	unsigned char *map = get_map(held_keys);
 	for (int key = WU_KEYSTART; key < WU_KEYEND; ++key) {
 		const unsigned char time = map[key];
+		float dt = msecs;
 		switch (time) {
 		case 0:
 			continue;
@@ -184,11 +191,13 @@ struct wu_event *event, double secs) {
 			break;
 		default:
 			map[key] = (unsigned char)imin(0xff, time + inc);
-			if (time != key_press) {
+			if (time == key_press) {
+				dt = 16;
+			} else {
 				continue;
 			}
 		}
-		if (apply_event(image, event, key, msecs, held_keys->shift)) {
+		if (apply_event(image, event, key, dt, held_keys->shift)) {
 			map[key] = 0;
 		}
 	}

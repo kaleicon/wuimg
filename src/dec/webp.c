@@ -9,8 +9,8 @@
 
 #include "../wudefs.h"
 #include "../common.h"
-#include "../raster/composite.h"
 #include "../metadata.h"
+#include "../raster/compost.h"
 
 struct frame_dispose {
 	WebPMuxAnimDispose method;
@@ -107,14 +107,14 @@ static enum wu_error map_status(VP8StatusCode status, const char **msg) {
 	return wu_unknown_error;
 }
 
-static void composite_frame(struct raw_img *img, struct homegrown_anim *hanim,
+static void compost_frame(struct raw_img *img, struct homegrown_anim *hanim,
 struct frame_info *frame) {
 	if (hanim->iter.blend_method == WEBP_MUX_NO_BLEND || !hanim->iter.has_alpha) {
-//		composite_frame_overwrite(img, hanim->dec_buf, frame);
-		compost_overwrite(img->data, img->w, img->channels, hanim->dec_buf, (struct frame *)frame);
+		compost_overwrite(img->data, img->w, img->channels,
+			hanim->dec_buf, frame);
 	} else {
-//		composite_frame_alpha_blend(img, hanim->dec_buf, frame);
-		compost_alpha_blend(img->data, img->w, img->channels, hanim->dec_buf, (struct frame *)frame);
+		compost_alpha_blend(img->data, img->w, img->channels,
+			hanim->dec_buf, frame);
 	}
 }
 
@@ -176,14 +176,15 @@ struct webp_state *ds) {
 	} else {
 		switch (hanim->dispose.method) {
 		case WEBP_MUX_DISPOSE_BACKGROUND:
-			composite_clear(img, hanim->dispose.bg_geom, 0);
+			compost_clear(img->data, img->w, img->channels, 0,
+				hanim->dispose.bg_geom);
 			break;
 		case WEBP_MUX_DISPOSE_NONE:
 			break;
 		}
 	}
 	struct frame_info *frame = img->frames->f + ds->idx;
-	composite_frame(img, hanim, frame);
+	compost_frame(img, hanim, frame);
 
 	hanim->dispose.method = hanim->iter.dispose_method;
 	if (hanim->dispose.method == WEBP_MUX_DISPOSE_BACKGROUND) {

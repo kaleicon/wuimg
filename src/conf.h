@@ -60,10 +60,11 @@ struct wu_conf {
 		  This setting aplies to all images, as there's no simple
 		method to determine the quality level. */
 	bool jpeg_fast_upsamp:1; /* Use a faster chroma upsampling algorithm.
+		Usually, YCbCr and RGB files are decoded to separate planes and
+		joined in the GPU, so this setting rarely has any effect. Even
+		then, this setting may be ignored to prevent strange segfaults.
 		  From libjpeg.txt: "The visual impact of the sloppier
-		[upsampling] method is often very small."
-		  This setting is ignored for certain images to prevent strange
-		segfaults. */
+		[upsampling] method is often very small." */
 
 	// TIFF
 	bool tiff_use_homegrown_unpacker:1; /* Use our own pixel unpacking
@@ -75,15 +76,15 @@ struct wu_conf {
 
 	// RAW
 	bool raw_16bit:1; // Render with 16 bits per component instead of 8.
-	bool raw_half_size:1; // Render raw data at half the original size.
+	bool raw_half_size:1; // Render at half the original size.
 	bool raw_prefer_thumbnail:1; /* If true, display the file's embedded
 		thumbnail instead if it is at least half as big as the
 		original, otherwise do a full and slow render of the raw data.
 		The thumbnail is always decoded at full resolution. If the
 		thumbnail is a JPEG image, the jpeg decoder function will be
 		used and so its settings will also apply to it.
-		  Note that the thumbnail might differ drastically from the
-		interpreted raw data. */
+		  Note that the thumbnail might have camera effects applied,
+		and so might differ drastically from the rendered raw data. */
 
 	// SVG
 	enum svg_redraw_on { // If and when should the vector be redrawn.
@@ -93,8 +94,10 @@ struct wu_conf {
 	} svg_redraw:2;
 
 	// WEBP
-	bool webp_bypass_filtering:1; // Skip the filtering stage for lossy WebP
-	bool webp_fast_upsamp:1; // Use a faster chroma upsampler for lossy WebP
+	bool webp_bypass_filtering:1; // Skip the filtering stage for lossy WebP.
+	bool webp_fast_upsamp:1; /* Use a faster chroma upsampler for lossy WebP.
+		This only applies to lossy animations, as static images are
+		handled natively. */
 	bool webp_use_homegrown_renderer:1; /* Composite animations using our
 		own routines instead of libwebp's. They don't seem to be slower,
 		but I make no guarantees for correctness. */

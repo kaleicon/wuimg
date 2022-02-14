@@ -5,6 +5,7 @@
 #include <limits.h>
 
 #include "../common.h"
+#include "../raster/bit.h"
 #include "../raster/raster.h"
 #include "dib.h"
 
@@ -795,9 +796,25 @@ void ico_cleanup(struct ico_desc *desc) {
 	free(desc->images);
 	dib_cleanup(&desc->dib);
 }
-
-static uint8_t get_bit(const uint8_t *and, const size_t x) {
+__attribute__((unused))
+static bool get_bit(const uint8_t *and, const size_t x) {
 	return (and[x/8] >> (7 - (x % 8))) & 1;
+}
+
+static void ico_buf_sizes(struct ico_buf *buf, const struct dib_desc *dib,
+const unsigned char depth) {
+	buf->stride = scanline_length(dib->r.w, depth, 4);
+	buf->size = buf->stride * dib->r.h;
+}
+
+static bool ico_buf_load(struct ico_buf *buf, const struct dib_desc *dib,
+const unsigned char depth, FILE *ifp) {
+	ico_buf_sizes(buf, dib, depth);
+	buf->buf = malloc(buf->size);
+	if (buf->buf) {
+		return fread(buf->buf, 1, buf->size, ifp);
+	}
+	return false;
 }
 
 static void ico_32bit_dec(const struct dib_desc *dib, struct pix_rgba8 *dst,
@@ -806,8 +823,7 @@ const uint8_t *and, const size_t and_stride) {
 		struct pix_rgba8 *d = dst + dib->r.w * y;
 		const uint8_t *a = and + and_stride * y;
 		for (size_t x = 0; x < dib->r.w; ++x) {
-			const uint8_t bit = get_bit(a, x);
-			if (bit) {
+			if (bit_get(a, x)) {
 				d[x].a = 0;
 			}
 		}
@@ -815,53 +831,40 @@ const uint8_t *and, const size_t and_stride) {
 }
 
 static unsigned char * ico_word_dec(const struct dib_desc *dib) {
-	const size_t xor_stride = raster_stride(&dib->r);
-	struct memory xor;
-	if (!fread_alloc(&xor, xor_stride * dib->r.h, dib->ifp)) {
-		free(xor.data);
+	struct ico_buf dst, and;
+	if (!ico_buf_load(&dst, dib, dib->depth, dib->ifp)) {
 		return NULL;
 	}
-
-	const size_t and_stride = scanline_length(dib->r.w, 1, 4);
-	struct memory and;
-	if (!fread_alloc(&and, and_stride * dib->r.h, dib->ifp)) {
-		free(and.data);
-		free(xor.data);
+	if (!ico_buf_load(&and, dib, 1, dib->ifp)) {
+		free(dst.buf);
 		return NULL;
 	}
 
 	if (dib->depth == 32) {
-		ico_32bit_dec(dib, xor.data, and.data, and_stride);
+		ico_32bit_dec(dib, (struct pix_rgba8 *)dst.buf, and.buf,
+			and.stride);
 	} else {
-		uint8_t *xor_ptr = xor.data;
-		uint8_t *and_ptr = and.data;
 		for (size_t y = 0; y < dib->r.h; ++y) {
-			uint16_t *d = (uint16_t *)(xor_ptr + xor_stride * y);
-			const uint8_t *a = and_ptr + and_stride * y;
+			uint16_t *d = (uint16_t *)(dst.buf + dst.stride * y);
+			const uint8_t *a = and.buf + and.stride * y;
 			for (size_t x = 0; x < dib->r.w; ++x) {
-				const uint8_t bit = get_bit(a, x);
+				const bool bit = get_bit(a, x);
 				int i = (endian16(d[x], little_endian) & 0x7fff)
 					| (!bit << 15);
 				d[x] = (uint16_t)i;
 			}
 		}
 	}
-	free(and.data);
-	return xor.data;
-}
-
-static void ico_buf_sizes(const struct dib_desc *dib, struct ico_buf *buf,
-const unsigned char depth) {
-	buf->stride = scanline_length(dib->r.w, depth, 4);
-	buf->size = buf->stride * dib->r.h;
+	free(and.buf);
+	return dst.buf;
 }
 
 static bool ico_truecolor_expands(const struct dib_desc *dib,
 struct ico_buf *restrict dst, struct ico_buf *restrict xor,
 struct ico_buf *restrict and) {
-	ico_buf_sizes(dib, dst, 32);
-	ico_buf_sizes(dib, xor, dib->depth);
-	ico_buf_sizes(dib, and, 1);
+	ico_buf_sizes(dst, dib, 32);
+	ico_buf_sizes(xor, dib, dib->depth);
+	ico_buf_sizes(and, dib, 1);
 
 	dst->buf = malloc(dst->size);
 	if (!dst->buf) {
@@ -888,11 +891,10 @@ static unsigned char * ico_24bit_dec(const struct dib_desc *dib) {
 		uint8_t *s = xor.buf + xor.stride * y;
 		uint8_t *a = and.buf + and.stride * y;
 		for (size_t x = 0; x < dib->r.w; ++x) {
-			const uint8_t bit = (a[x/8] >> (7 - (x % 8)));
 			d[x*4] = s[x*3];
 			d[x*4 + 1] = s[x*3 + 1];
 			d[x*4 + 2] = s[x*3 + 2];
-			d[x*4 + 3] = (bit ? 0x00 : 0xff);
+			d[x*4 + 3] = (get_bit(a, x) ? 0x00 : 0xff);
 		}
 	}
 	free(xor.buf);
@@ -952,8 +954,7 @@ enum lib_fail ico_set_image(struct ico_desc *desc, const uint16_t i) {
 		dib->r.ch = 4;
 	}
 
-	if (dib->r.w > UCHAR_MAX || dib->r.h > UCHAR_MAX
-	|| dib->type != dib_info_header
+	if (dib->type != dib_info_header
 	|| dib->compression != dib_no_compression) {
 		return lib_invalid_header;
 	}
@@ -983,7 +984,7 @@ enum lib_fail ico_parse_header(struct ico_desc *desc) {
 		/* Each image has a DIB header, so we only save the image
 		 * location and verify the values here are not outrageous. */
 		uint8_t buf[16];
-		if (fread(buf, sizeof(buf), 1, desc->dib.ifp)) {
+		if (!fread(buf, sizeof(buf), 1, desc->dib.ifp)) {
 			return lib_unexpected_eof;
 		}
 
@@ -1019,7 +1020,7 @@ enum lib_fail ico_open_file(struct ico_desc *desc, FILE *ifp) {
 		6
 	*/
 
-	memset(desc, 0, sizeof(*desc));
+	*desc = (struct ico_desc){0};
 
 	uint16_t header[3];
 	if (fread(header, sizeof(header), 1, ifp)) {
