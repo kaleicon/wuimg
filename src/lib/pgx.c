@@ -3,31 +3,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "../common.h"
-#include "../raster/mem.h"
+#include "raster/file.h"
+#include "raster/fmt.h"
+#include "raster/mem.h"
 #include "pgx.h"
 
 static const size_t LZSS_PAD = 2 * 8 + 1;
-
-static void repeat_or_zero(uint8_t *unpack, size_t upos, const size_t offset,
-size_t count) {
-	if (offset > upos + count) {
-		memset(unpack + upos, 0, count);
-	} else {
-		if (offset > upos) {
-			memset(unpack + upos, 0, offset - upos);
-			upos += offset - upos;
-			count -= offset - upos;
-		}
-		memrepeat(unpack, upos, offset, count);
-/*		while (count > offset) {
-			memcpy(unpack + upos, unpack + upos - offset, offset);
-			upos += offset;
-			count -= offset;
-		}
-		memcpy(unpack + upos, unpack + upos - offset, count);*/
-	}
-}
 
 static size_t lzss_decomp(uint8_t *restrict unpack, const size_t unpack_len,
 const uint8_t *restrict pack, const size_t pack_len) {
@@ -59,7 +40,7 @@ const uint8_t *restrict pack, const size_t pack_len) {
 				if (upos + count >= unpack_len) {
 					return upos;
 				}
-				repeat_or_zero(unpack, upos, offset, count);
+				memrepeat_or_zero(unpack, upos, offset, count);
 				upos += count;
 			}
 		}
@@ -67,26 +48,28 @@ const uint8_t *restrict pack, const size_t pack_len) {
 	return upos;
 }
 
-size_t pgx_decode(const struct pgx_desc *desc, void *restrict dst) {
-	fseek(desc->ifp, -(long)(desc->comp_size), SEEK_END);
+size_t pgx_decode(const struct pgx_desc *desc, struct raw_img *img) {
 	size_t written = 0;
-	uint8_t *comp = malloc(desc->comp_size + LZSS_PAD);
-	if (comp) {
-		const size_t dims = raster_size(&desc->rast);
-		const size_t read = fread(comp, 1, desc->comp_size, desc->ifp);
-		written = lzss_decomp(dst, dims, comp, read);
-		free(comp);
+	if (raw_img_alloc_noverify(img)) {
+		uint8_t *comp = malloc(desc->comp_size + LZSS_PAD);
+		if (comp) {
+			const size_t read = fread_tail(comp, 1, desc->comp_size,
+				desc->ifp);
+			written = lzss_decomp(img->data, raw_img_size(img),
+				comp, read);
+			free(comp);
+		}
 	}
 	return written;
 }
 
-enum lib_fail pgx_read_header(struct pgx_desc *desc) {
+enum wu_error pgx_read_header(struct pgx_desc *desc, struct raw_img *img) {
 	/* PGX header (after signature):
 		Offset  Size    Name
 		0       BYTE[4] StartingBytes; // of compressed data
 		4       DWORD   Width;
 		8       DWORD   Height;
-		12      WORD    IsTransparent;
+		12      WORD    HasTransparency;
 		14      BYTE    ???;
 		15      BYTE    ExtraData?;
 		16      DWORD   CompressedSize;
@@ -99,33 +82,24 @@ enum lib_fail pgx_read_header(struct pgx_desc *desc) {
 	 * way is to seek to -CompressedSize bytes from the end of the file.
 	*/
 
-	fseek(desc->ifp, 4, SEEK_CUR);
-	uint8_t buf[16];
+	uint8_t buf[20];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
-	desc->rast = (struct raster_desc) {
-		.w = buf_endian32(buf, little_endian),
-		.h = buf_endian32(buf + 4, little_endian),
-		.ch = 4,
-		.bitdepth = 8,
-		.layout = pix_bgra,
-	};
-	desc->transparent = buf_endian16(buf + 8, little_endian);
-	desc->comp_size = buf_endian32(buf + 12, little_endian);
-	if (!desc->rast.w || !desc->rast.h) {
-		return lib_invalid_header;
-	}
-	raster_normalize(&desc->rast);
-	return lib_ok;
+	img->w = buf_endian32(buf + 4, little_endian);
+	img->h = buf_endian32(buf + 8, little_endian);
+	img->channels = 4;
+	img->bitdepth = 8;
+	img->layout = pix_bgra;
+	img->alpha = buf_endian16(buf + 12, little_endian)
+		? alpha_unassociated : alpha_ignore;
+	desc->comp_size = buf_endian32(buf + 16, little_endian);
+	return raw_img_verify(img);
 }
 
-enum lib_fail pgx_open_file(struct pgx_desc *desc, FILE *ifp) {
+enum wu_error pgx_open_file(struct pgx_desc *desc, FILE *ifp) {
+	desc->ifp = ifp;
 	const unsigned char sig[] = {'P', 'G', 'X', 0};
-	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
-	if (st == lib_ok) {
-		desc->ifp = ifp;
-	}
-	return st;
+	return fmt_sigcmp(sig, sizeof(sig), ifp);
 }

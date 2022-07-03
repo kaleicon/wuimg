@@ -5,7 +5,6 @@
 
 #include "../wudefs.h"
 #include "../common.h"
-#include "../rast_utils.h"
 
 #include "../lib/tga.h"
 
@@ -17,7 +16,7 @@ const struct tga_metadata *meta) {
 		sizeof(meta->author.comment));
 
 	struct wu_leaf leaf;
-	if (meta->has_timestamp) {
+	if (meta->timestamp) {
 		leaf.val.time = meta->timestamp;
 		leaf.type = wu_leaf_time;
 		tree_bud_leaf(tree, "Timestamp", leaf);
@@ -29,7 +28,7 @@ const struct tga_metadata *meta) {
 	if (meta->job.hour || meta->job.minute || meta->job.second) {
 		const char fmt[] = "%.2hu:%.2hu:%.2hu";
 		char buf[sizeof(fmt)];
-		const size_t w =(size_t)sprintf(buf, fmt,
+		const size_t w =(size_t)snprintf(buf, sizeof(buf), fmt,
 			meta->job.hour, meta->job.minute, meta->job.second);
 		tree_sprout_measured_leaf(tree, "Job time", buf, w);
 	}
@@ -51,9 +50,7 @@ const struct tga_metadata *meta) {
 static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
 	struct wu_leaf leaf = {.type = wu_leaf_unsigned, .val.u = desc->depth};
 	tree_bud_leaf(tree, "Depth", leaf);
-	leaf.val.u = desc->attr_bits;
-	tree_bud_leaf(tree, "Attribute bits", leaf);
-	if (desc->r.palette) {
+	if (desc->map.depth) {
 		leaf.val.u = desc->map.depth;
 		tree_bud_leaf(tree, "Map depth", leaf);
 	}
@@ -62,61 +59,66 @@ static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
 
 static enum wu_error dec_wrapper(struct image_file *infile,
 const struct wu_conf *wuconf, struct tga_desc *desc) {
-	enum lib_fail fail = tga_parse_header(desc, infile->ifp);
-	if (fail) {
-		rast_error(infile, fail);
+	struct raw_img *img = alloc_sub_images(infile, 1);
+	if (!img) {
 		return wu_alloc_error;
 	}
 
-	if (rast_exceeds_size(&desc->r, wuconf)) {
-		return wu_exceeds_size_limit;
+	enum wu_error st = tga_parse_header(desc, img, infile->ifp);
+	if (st) {
+		return st;
 	}
 
 	read_tga_info(&infile->metadata, desc);
+	bool extra_pal = (bool)desc->map.extra_pal;
+	bool has_stamp = false;
 	if (tga_parse_footer(desc)) {
 		struct wu_tree *extra = tree_sprout_branch(&infile->metadata,
 			"Extension area");
 		read_extension_area(extra, &desc->meta);
 		infile->bg = desc->meta.key_color;
+		color_space_set_gamma(&img[0].cs,
+			tga_ratio_to_float(desc->meta.gamma));
+		if (desc->meta.stamp_offset) {
+			has_stamp = true;
+		}
 	}
 
-	const bool has_stamp = desc->meta.stamp_offset;
-	struct raw_img *img = alloc_sub_images(infile,
-		1U + (bool)desc->map.pal + has_stamp);
+	img = realloc_sub_images(infile, 1u + extra_pal + has_stamp);
 	if (!img) {
 		return wu_alloc_error;
 	}
 
-	int i = 0;
-	if (!rast_to_raw_img(&desc->r, img + i)) {
-		return wu_alloc_error;
+	size_t i = 1;
+	if (has_stamp) {
+		st = tga_parse_stamp(desc, img, img + i);
+		if (st != wu_ok) {
+			return st;
+		}
+		++i;
 	}
-	img[i].disable_alpha = !desc->attr_bits;
-	img[i].mirror = !(desc->orientation & 0x02);
-	img[i].rotate = (unsigned char)((desc->orientation & 0x01) * 2);
-	if (!tga_decode(desc, img[i].data)) {
+	if (extra_pal) {
+		img[i].data = (uint8_t *)tga_take_extra_palette(desc);
+		img[i].w = 16;
+		img[i].h = 16;
+		img[i].channels = 4;
+		img[i].bitdepth = 8;
+		img[i].id = strdup("extra palette");
+	}
+	for (i = 0; i < infile->nr; ++i) {
+		if (raw_img_exceeds_limit(img + i, wuconf)) {
+			return wu_exceeds_size_limit;
+		}
+	}
+
+	if (!tga_decode(desc, img)) {
 		return wu_decoding_error;
 	}
-
-	if (desc->map.pal) {
-		++i;
-		img[i].data = (unsigned char *)tga_take_extra_palette(desc);
-		img[i].id = strdup("extra_palette");
-		img[i].w = desc->map.len;
-		img[i].h = 1;
-		img[i].bitdepth = 8;
-		img[i].channels = 4;
-		img[i].layout = pix_bgra;
-	}
-
 	if (has_stamp) {
-		++i;
-		if (rast_to_raw_img(&desc->meta.stamp, img + i)
-		&& tga_decode_stamp(desc, img[i].data)) {
-			img[i].id = strdup("stamp");
-		} else {
-			realloc_sub_images(infile, infile->nr - 1);
+		if (!tga_decode_stamp(desc, img + 1)) {
+			return wu_decoding_error;
 		}
+		img[1].id = strdup("stamp");
 	}
 	return wu_ok;
 }

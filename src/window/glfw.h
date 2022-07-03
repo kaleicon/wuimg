@@ -11,13 +11,9 @@ struct glfw_context {
 	struct window_geom {
 		int x, y, w, h;
 	} geom;
-	struct window_cursor cursor;
-
-	bool fullscreen;
-	bool has_focus;
 };
 
-void glfw_toggle_fullscreen(struct glfw_context *glfw);
+void glfw_fullscreen(struct glfw_context *glfw, bool is_fullscreen);
 
 const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub);
 

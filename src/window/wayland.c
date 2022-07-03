@@ -11,9 +11,137 @@
 
 #include <linux/input-event-codes.h>
 
-#include "wayland.h"
-#include "../common.h"
-#include "../raster/memparser.h"
+#include "common.h"
+#include "raster/memparser.h"
+#include "window/wayland.h"
+
+static void reset_xkb(struct wayland_keyboard *k) {
+	if (k->state) {
+		xkb_state_unref(k->state);
+		k->state = NULL;
+	}
+	if (k->keymap) {
+		xkb_keymap_unref(k->keymap);
+		k->keymap = NULL;
+	}
+}
+
+static void destroy_keyboard(struct wayland_keyboard *k) {
+	if (k->keyboard) {
+		wl_keyboard_destroy(k->keyboard);
+	}
+	reset_xkb(k);
+	if (k->ctx) {
+		xkb_context_unref(k->ctx);
+	}
+}
+
+static void destroy_cursor(struct wayland_cursor *c) {
+	if (c->surf) {
+		wl_surface_destroy(c->surf);
+	}
+	if (c->buf) {
+		wl_buffer_destroy(c->buf);
+	}
+	if (c->pointer) {
+		wl_pointer_destroy(c->pointer);
+	}
+}
+
+static void destroy_binds(struct wayland_binds *b) {
+	if (b->xwb) {
+		xdg_wm_base_destroy(b->xwb);
+	}
+	if (b->shm) {
+		wl_shm_destroy(b->shm);
+	}
+	if (b->seat) {
+		wl_seat_destroy(b->seat);
+	}
+	if (b->comp) {
+		wl_compositor_destroy(b->comp);
+	}
+}
+
+void wayland_terminate(struct wayland *wl) {
+	egl_terminate(&wl->pub->win.egl);
+	if (wl->egl_window) {
+		wl_egl_window_destroy(wl->egl_window);
+	}
+
+	if (wl->toplevel) {
+		xdg_toplevel_destroy(wl->toplevel);
+	}
+	if (wl->xdg_surf) {
+		xdg_surface_destroy(wl->xdg_surf);
+	}
+	if (wl->surf) {
+		wl_surface_destroy(wl->surf);
+	}
+
+	destroy_keyboard(&wl->kb);
+	destroy_cursor(&wl->cursor);
+	destroy_binds(&wl->binds);
+
+	if (wl->reg) {
+		wl_registry_destroy(wl->reg);
+	}
+	if (wl->display) {
+		wl_display_disconnect(wl->display);
+	}
+}
+
+void wayland_set_title(const struct wayland *wl, const char *title) {
+	xdg_toplevel_set_title(wl->toplevel, title);
+}
+
+static bool has_events(struct wl_display *display, const int msecs) {
+	while (wl_display_flush(display) == -1) {
+		if (errno != EAGAIN) {
+			return false;
+		}
+		struct pollfd can_write = {.fd = wl_display_get_fd(display),
+			.events = POLLOUT};
+		while (poll(&can_write, 1, -1) == -1) {
+			if (errno != EAGAIN) {
+				return false;
+			}
+		}
+	}
+	struct pollfd has_data = {.fd = wl_display_get_fd(display),
+		.events = POLLIN};
+	return poll(&has_data, 1, msecs) > 0 && has_data.revents & POLLIN;
+}
+
+void wayland_poll(struct wayland *wl, const int msecs) {
+	while (wl_display_prepare_read(wl->display)) {
+		wl_display_dispatch_pending(wl->display);
+	}
+	if (has_events(wl->display, msecs)) {
+		wl_display_read_events(wl->display);
+		wl_display_dispatch_pending(wl->display);
+	} else {
+		wl_display_cancel_read(wl->display);
+	}
+}
+
+void wayland_fullscreen(struct wayland *wl, const bool is_fullscreen) {
+	if (is_fullscreen) {
+		xdg_toplevel_unset_fullscreen(wl->toplevel);
+	} else {
+		xdg_toplevel_set_fullscreen(wl->toplevel, NULL);
+	}
+}
+
+enum trit wayland_resize(struct wayland *wl, const int32_t w, const int32_t h) {
+//	const enum trit st = window_size_update(wl->pub, (unsigned)w,
+//		(unsigned)h);
+	const enum trit st = window_size_update(wl->pub, w, h);
+	if (st == trit_true) {
+		wl_egl_window_resize(wl->egl_window, w, h, 0, 0);
+	}
+	return st;
+}
 
 static bool test_mod(struct xkb_state *state, const char *name) {
 	return (1 == xkb_state_mod_name_is_active(state, name,
@@ -24,10 +152,11 @@ static uint8_t convert_by_codepoint(struct xkb_state *state, const uint32_t key)
 	const uint32_t codepoint = xkb_state_key_get_utf32(state, key + 8);
 	switch (codepoint) {
 	case ' ':
+	case '<': case '>':
 	case ',': case ';':
 	case '.': case ':':
 	case '-': case '+':
-	case '<': case '>':
+	case '*': case '/':
 	case '0': case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
 		return (uint8_t)codepoint;
@@ -51,6 +180,7 @@ static uint8_t convert_by_position(struct xkb_state *state, const uint32_t key) 
 
 	case KEY_F: case KEY_F11: return 'F';
 	case KEY_A: return 'A';
+	case KEY_V: return 'V';
 	case KEY_S: return 'S';
 	case KEY_M: return 'M';
 
@@ -74,8 +204,16 @@ static uint8_t convert_by_position(struct xkb_state *state, const uint32_t key) 
 
 	case KEY_END: return '0';
 	case KEY_HOME: return '1';
-	case KEY_PAGEUP: case KEY_KPPLUS: return '+';
-	case KEY_PAGEDOWN: case KEY_KPMINUS: return '-';
+
+	case KEY_PAGEUP:
+		return test_mod(state, XKB_MOD_NAME_SHIFT) ? '*' : '+';
+	case KEY_PAGEDOWN:
+		return test_mod(state, XKB_MOD_NAME_SHIFT) ? '/' : '-';
+
+	case KEY_KPPLUS: return '+';
+	case KEY_KPMINUS: return '-';
+	case KEY_KPASTERISK: return '*';
+	case KEY_KPSLASH: return '/';
 	}
 	return 0;
 }
@@ -139,13 +277,13 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 	const int32_t dims = height * stride;
 	const int fd = alloc_shm(dims);
 	if (fd < 0) {
-		return false;
+		return NULL;
 	}
 
 	data = mmap(NULL, (size_t)dims, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (data == MAP_FAILED) {
 		close(fd);
-		return false;
+		return NULL;
 	}
 
 	struct wl_shm_pool *pool = wl_shm_create_pool(wl->binds.shm, fd, dims);
@@ -177,23 +315,21 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 	return buf;
 }
 
-static void prepare_cursor(struct wayland *wl) {
+static void set_cursor(struct wayland *wl) {
 	int32_t size = 32; // The don't-care value used by everyone
 	const char *env_size = getenv("XCURSOR_SIZE");
 	if (env_size) {
-		const size_t max_digits = 4;
-		struct mem_parser tp = mem_parser_mem(max_digits, env_size);
-		mem_fast_t tmp;
-		if (env_size[mem_get_uint_unsafe(&tp, max_digits, &tmp)] == 0 && tmp) {
-			size = imin(256, (int32_t)tmp);
+		const size_t max_digits = 3;
+		struct mp_parser tp = mp_parser_mem(max_digits, env_size);
+		long tmp;
+		if (env_size[mp_get_uint(&tp, max_digits, &tmp)] == 0 && tmp) {
+			size = imin((int32_t)tmp, 256);
 		}
 	}
 
-	clock_t start = clock();
 	struct wayland_cursor *c = &wl->cursor;
 	c->buf = gen_cursor(wl, size);
 	if (c->buf) {
-		printf("cursor created in %f\n", clock_ellapsed(start));
 		c->surf = wl_compositor_create_surface(wl->binds.comp);
 		if (c->surf) {
 			wl_surface_attach(c->surf, c->buf, 0, 0);
@@ -202,91 +338,31 @@ static void prepare_cursor(struct wayland *wl) {
 	}
 }
 
-static void reset_xkb(struct xkb *xkb) {
-	if (xkb->state) {
-		xkb_state_unref(xkb->state);
-		xkb->state = NULL;
-	}
-	if (xkb->keymap) {
-		xkb_keymap_unref(xkb->keymap);
-		xkb->keymap = NULL;
-	}
-}
-
-void wayland_terminate(struct wayland *wl) {
-	reset_xkb(&wl->xkb);
-	if (wl->xkb.ctx) {
-		xkb_context_unref(wl->xkb.ctx);
-	}
-	if (wl->egl_window) {
-		wl_egl_window_destroy(wl->egl_window);
-	}
-	if (wl->display) {
-		wl_display_disconnect(wl->display);
-	}
-}
-
-void wayland_set_title(const struct wayland *wl, const char *title) {
-	xdg_toplevel_set_title(wl->toplevel, title);
-}
-
-bool wayland_swap_buffers(const struct wayland *wl) {
-	return egl_swap(&wl->egl);
-}
-
-static bool has_events(struct wl_display *display, const int msecs) {
-	struct pollfd fds = {.fd = wl_display_get_fd(display), .events = POLLIN};
-	return wl_display_flush(display) >= 0
-		&& poll(&fds, 1, msecs) > 0
-		&& fds.revents & POLLIN;
-}
-
-void wayland_poll(struct wayland *wl, const int msecs) {
-	while (wl_display_prepare_read(wl->display)) {
-		wl_display_dispatch_pending(wl->display);
-	}
-	if (has_events(wl->display, msecs)) {
-		wl_display_read_events(wl->display);
-		wl_display_dispatch_pending(wl->display);
-	} else {
-		wl_display_cancel_read(wl->display);
-	}
-}
-
-void wayland_fullscreen(struct wayland *wl) {
-	if (wl->fullscreen) {
-		xdg_toplevel_unset_fullscreen(wl->toplevel);
-	} else {
-		xdg_toplevel_set_fullscreen(wl->toplevel, NULL);
-	}
-	wl->fullscreen = !wl->fullscreen;
-}
-
 static void toplevel_configure(void *data, struct xdg_toplevel *toplevel,
-const int32_t width, const int32_t height, struct wl_array *states) {
+const int32_t w, const int32_t h, struct wl_array *states) {
 	(void)toplevel;
 	struct wayland *wl = data;
-	wl->active = false;
+	wl->pub->win.focused = false;
+	wl->pub->win.fullscreen = false;
 
 	uint32_t *st;
 	wl_array_for_each(st, states) {
 		switch (*st) {
 		case XDG_TOPLEVEL_STATE_ACTIVATED:
-			wl->active = true;
+			wl->pub->win.focused = true;
+			break;
+		case XDG_TOPLEVEL_STATE_FULLSCREEN:
+			wl->pub->win.fullscreen = true;
 			break;
 		}
 	}
-
-	if (window_size_update(wl->pub, (unsigned)width, (unsigned)height)
-	== trit_true) {
-		wl_egl_window_resize(wl->egl_window, width, height, 0, 0);
-	}
+	wayland_resize(wl, w, h);
 }
 
 static void toplevel_close(void *data, struct xdg_toplevel *toplevel) {
 	(void)toplevel;
 	struct wayland *wl = data;
-	wl->pub->event.window = wu_program_exit;
+	wl->pub->event.program = wu_program_exit;
 }
 
 static void surface_configure(void *data, struct xdg_surface *surface,
@@ -300,8 +376,8 @@ const uint32_t serial, const uint32_t depressed, const uint32_t latched,
 const uint32_t locked, const uint32_t group) {
 	(void)keyboard; (void)serial;
 	struct wayland *wl = data;
-	if (wl->xkb.state) {
-		xkb_state_update_mask(wl->xkb.state, depressed, latched,
+	if (wl->kb.state) {
+		xkb_state_update_mask(wl->kb.state, depressed, latched,
 			locked, 0, 0, group);
 	}
 }
@@ -311,19 +387,18 @@ const uint32_t serial, const uint32_t time, const uint32_t key,
 const uint32_t state) {
 	(void)keyboard; (void)serial; (void)time; (void)state;
 	struct wayland *wl = data;
-	if (wl->xkb.state) {
+	if (wl->kb.state) {
 		const enum key_action keyact =
 			(state == WL_KEYBOARD_KEY_STATE_PRESSED)
 				? key_press : key_release;
 
-		const bool shift = test_mod(wl->xkb.state, XKB_MOD_NAME_SHIFT);
-		uint8_t c = convert_by_position(wl->xkb.state, key);
+		const bool shift = test_mod(wl->kb.state, XKB_MOD_NAME_SHIFT);
+		uint8_t c = convert_by_position(wl->kb.state, key);
 		if (!c) {
-			c = convert_by_codepoint(wl->xkb.state, key);
+			c = convert_by_codepoint(wl->kb.state, key);
 		}
 		if (c) {
-			struct wu_keymap *held_keys = &wl->pub->held_keys;
-			event_add(held_keys, keyact, c, shift);
+			window_key_add(&wl->pub->held_keys, keyact, c, shift);
 		}
 	}
 }
@@ -332,28 +407,28 @@ static void keyboard_leave(void *data, struct wl_keyboard *keyboard,
 const uint32_t serial, struct wl_surface *surface) {
 	(void)keyboard; (void)serial; (void)surface;
 	struct wayland *wl = data;
-	event_lift(&wl->pub->held_keys);
+	window_key_lift(&wl->pub->held_keys);
 }
 
 static void keyboard_keymap(void *data, struct wl_keyboard *keyboard,
 const uint32_t format, const int32_t fd, const uint32_t size) {
 	(void)keyboard; (void)format; (void)size;
 	struct wayland *wl = data;
-	reset_xkb(&wl->xkb);
+	reset_xkb(&wl->kb);
 
 	if (format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
 		char *str = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
 		if (str != MAP_FAILED) {
-			if (!wl->xkb.ctx) {
-				wl->xkb.ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+			if (!wl->kb.ctx) {
+				wl->kb.ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 			}
-			if (wl->xkb.ctx) {
-				wl->xkb.keymap = xkb_keymap_new_from_string(
-					wl->xkb.ctx, str,
+			if (wl->kb.ctx) {
+				wl->kb.keymap = xkb_keymap_new_from_string(
+					wl->kb.ctx, str,
 					XKB_KEYMAP_FORMAT_TEXT_V1,
 					XKB_KEYMAP_COMPILE_NO_FLAGS);
-				if (wl->xkb.keymap) {
-					wl->xkb.state = xkb_state_new(wl->xkb.keymap);
+				if (wl->kb.keymap) {
+					wl->kb.state = xkb_state_new(wl->kb.keymap);
 				}
 			}
 			munmap(str, size);
@@ -366,8 +441,9 @@ static void pointer_axis(void *data, struct wl_pointer *pointer,
 const uint32_t time, const uint32_t axis, const wl_fixed_t value) {
 	(void)pointer; (void)time;
 	struct wayland *wl = data;
+	struct window_cursor *cur = &wl->pub->win.cur;
 	struct window_cursor_axis *a = (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-		? &wl->cursor.state.y : &wl->cursor.state.x;
+		? &cur->y : &cur->x;
 	window_scroll_axis(a, wl_fixed_to_double(value));
 }
 
@@ -375,8 +451,8 @@ static void pointer_motion(void *data, struct wl_pointer *pointer,
 const uint32_t time, const wl_fixed_t x, const wl_fixed_t y) {
 	(void)pointer; (void)time;
 	struct wayland *wl = data;
-	window_cursor_apply_diff(&wl->cursor.state, wl->pub,
-		wl_fixed_to_double(x), wl_fixed_to_double(y));
+	window_cursor_move(wl->pub, wl_fixed_to_double(x),
+		wl_fixed_to_double(y));
 }
 
 static void pointer_button(void *data, struct wl_pointer *pointer,
@@ -385,7 +461,8 @@ const uint32_t state) {
 	(void)pointer; (void)serial; (void)time;
 	struct wayland *wl = data;
 	if (button == BTN_LEFT) {
-		wl->cursor.state.pressed = (state == WL_POINTER_BUTTON_STATE_PRESSED);
+		wl->pub->win.pressed =
+			(state == WL_POINTER_BUTTON_STATE_PRESSED);
 	}
 }
 
@@ -394,39 +471,44 @@ const uint32_t serial, struct wl_surface *surface, const wl_fixed_t x,
 const wl_fixed_t y) {
 	(void)surface; (void)x; (void)y;
 	struct wayland *wl = data;
-	struct wayland_cursor *c = &wl->cursor;
-	c->state.x.pos = (float)wl_fixed_to_double(x);
-	c->state.y.pos = (float)wl_fixed_to_double(y);
-	if (c->buf) {
-		wl_pointer_set_cursor(pointer, serial, c->surf, 0, 0);
+	struct window_cursor *c = &wl->pub->win.cur;
+	c->x.pos = (float)wl_fixed_to_double(x);
+	c->y.pos = (float)wl_fixed_to_double(y);
+
+	struct wayland_cursor *wc = &wl->cursor;
+	if (wc->buf) {
+		wl_pointer_set_cursor(pointer, serial, wc->surf, 0, 0);
 	}
 }
 
 static void seat_capabilities(void *data, struct wl_seat *seat,
 const uint32_t caps) {
 	struct wayland *wl = data;
+	struct wayland_cursor *c = &wl->cursor;
+	struct window_common *win = &wl->pub->win;
 	if (caps & WL_SEAT_CAPABILITY_POINTER) {
-		if (!wl->pointer) {
-			wl->cursor.state.pressed = false;
-			wl->pointer = wl_seat_get_pointer(seat);
-			wl_pointer_add_listener(wl->pointer, &wl->listen.pointer, wl);
+		if (!c->pointer) {
+			win->pressed = false;
+			c->pointer = wl_seat_get_pointer(seat);
+			wl_pointer_add_listener(c->pointer, &wl->listen.pointer, wl);
 		}
 	} else {
-		if (wl->pointer) {
-			wl_pointer_release(wl->pointer);
-			wl->pointer = NULL;
+		if (c->pointer) {
+			wl_pointer_release(c->pointer);
+			c->pointer = NULL;
 		}
 	}
+	struct wayland_keyboard *k = &wl->kb;
 	if (caps & WL_SEAT_CAPABILITY_KEYBOARD) {
-		if (!wl->keyboard) {
-			wl->keyboard = wl_seat_get_keyboard(seat);
-			wl_keyboard_add_listener(wl->keyboard, &wl->listen.keyboard, wl);
+		if (!k->keyboard) {
+			k->keyboard = wl_seat_get_keyboard(seat);
+			wl_keyboard_add_listener(k->keyboard, &wl->listen.keyboard, wl);
 		}
 	} else {
-		if (wl->keyboard) {
-			wl_keyboard_release(wl->keyboard);
-			wl->keyboard = NULL;
-			reset_xkb(&wl->xkb);
+		if (k->keyboard) {
+			wl_keyboard_release(k->keyboard);
+			k->keyboard = NULL;
+			reset_xkb(k);
 		}
 	}
 }
@@ -523,12 +605,18 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return "Wayland: Failed to bind to wm_base";
 	}
 	if (wl->binds.shm) {
-		prepare_cursor(wl);
+		set_cursor(wl);
 	}
 
 	wl->surf = wl_compositor_create_surface(wl->binds.comp);
 	if (!wl->surf) {
 		return "Wayland: Failed to create surface";
+	}
+
+	wl->egl_window = wl_egl_window_create(wl->surf,
+		(int)conf->initial_size.w, (int)conf->initial_size.h);
+	if (!wl->egl_window) {
+		return "Wayland: Failed to get EGL window";
 	}
 
 	wl->xdg_surf = xdg_wm_base_get_xdg_surface(wl->binds.xwb, wl->surf);
@@ -541,28 +629,20 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	if (!wl->toplevel) {
 		return "Wayland: Failed to get toplevel";
 	}
-	xdg_toplevel_add_listener(wl->toplevel, &wl->listen.toplevel, wl);
-
-	wl->egl_window = wl_egl_window_create(wl->surf,
-		(int)conf->initial_size.w, (int)conf->initial_size.h);
-	if (!wl->egl_window) {
-		return "Wayland: Failed to get EGL window";
-	}
-	const bool alpha = conf->bg[3] < 0xff;
-	const char *err = egl_init(&wl->egl, (EGLNativeDisplayType)wl->display,
-		wl->egl_window, 0, alpha);
-	if (err) {
-		egl_print_error();
-		return err;
-	}
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
+	xdg_toplevel_add_listener(wl->toplevel, &wl->listen.toplevel, wl);
 
 	wl_surface_commit(wl->surf);
 	wl_display_roundtrip(wl->display);
 
-	// Get window size
-	wayland_swap_buffers(wl);
-//	wl_display_dispatch(wl->display);
+	const char *err = egl_init(&wl->pub->win.egl,
+		(EGLNativeDisplayType)wl->display, wl->egl_window, 0,
+		conf->bg[3] < 0xff);
+	if (err) {
+		egl_print_error();
+		return err;
+	}
+	egl_swap(&wl->pub->win.egl);
 	return NULL;
 }
 

@@ -3,7 +3,6 @@
 
 #include "../wudefs.h"
 #include "../common.h"
-#include "../events.h"
 #include "glfw.h"
 
 static void callback_close(GLFWwindow *wnd) {
@@ -13,26 +12,26 @@ static void callback_close(GLFWwindow *wnd) {
 
 static void callback_focus(GLFWwindow *wnd, const int focused) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	glfw->has_focus = focused;
+	glfw->pub->win.focused = focused;
 }
 
 static void callback_framebuffer(GLFWwindow *wnd, const int w, const int h) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_size_update(glfw->pub, (unsigned)w, (unsigned)h);
+	window_size_update(glfw->pub, w, h);
 }
 
 static void callback_cursor_pos(GLFWwindow *wnd, const double x, const double y) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_cursor_apply_diff(&glfw->cursor, glfw->pub, x, y);
+	window_cursor_move(glfw->pub, x, y);
 }
 
 static void callback_cursor_button(GLFWwindow *wnd, const int button,
 const int action, const int mods) {
 	(void)mods;
 
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
 	if (button == GLFW_MOUSE_BUTTON_LEFT) {
-		glfw->cursor.pressed = (action == GLFW_PRESS);
+		struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
+		glfw->pub->win.pressed = (action == GLFW_PRESS);
 //		glfwSetInputMode(window, GLFW_CURSOR,
 //			pressed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 	}
@@ -40,7 +39,7 @@ const int action, const int mods) {
 
 static void callback_scroll(GLFWwindow *wnd, const double x, const double y) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_scroll(&glfw->cursor, x, y);
+	window_scroll(&glfw->pub->win.cur, x, y);
 }
 
 static void callback_key(GLFWwindow *wnd, const int key, const int scan,
@@ -148,13 +147,13 @@ const int action, const int mode) {
 
 	if (event) {
 		struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-		event_add(&glfw->pub->held_keys, keyact, event, shift);
+		window_key_add(&glfw->pub->held_keys, keyact, event, shift);
 	}
 }
 
-void glfw_toggle_fullscreen(struct glfw_context *glfw) {
+void glfw_fullscreen(struct glfw_context *glfw, const bool is_fullscreen) {
 	struct window_geom *geom = &glfw->geom;
-	if (glfw->fullscreen) {
+	if (is_fullscreen) {
 		glfwSetWindowMonitor(glfw->window, NULL,
 			geom->x, geom->y,
 			geom->w, geom->h, GLFW_DONT_CARE);
@@ -168,7 +167,6 @@ void glfw_toggle_fullscreen(struct glfw_context *glfw) {
 		glfwSetWindowMonitor(glfw->window, monitor, 0, 0,
 			mode->width, mode->height, mode->refreshRate);
 	}
-	glfw->fullscreen = !glfw->fullscreen;
 }
 
 const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
@@ -225,7 +223,6 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 
 	glfw->pub = pub;
 	glfw->window = window;
-	glfw->has_focus = true;
 
 	glfwMakeContextCurrent(window);
 	glfwSetWindowUserPointer(window, glfw);
@@ -237,9 +234,5 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	glfwSetMouseButtonCallback(window, callback_cursor_button);
 	glfwSetScrollCallback(window, callback_scroll);
 	glfwSetKeyCallback(window, callback_key);
-
-	glfwSwapInterval(0);
-//	glfwSwapBuffers(window);
-//	glfwPollEvents();
 	return NULL;
 }

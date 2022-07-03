@@ -1,28 +1,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../rast_utils.h"
-#include "../lib/sixel.h"
+#include "wudefs.h"
+#include "rast_utils.h"
+#include "lib/sixel.h"
 
 static enum wu_error decode(struct image_file *infile,
 const struct wu_conf *conf, const struct map_info *mm) {
 	struct sixel_desc desc;
-	enum lib_fail status = sixel_open_mem(&desc, mm);
-	if (status != lib_ok) {
-		rast_error(infile, status);
-		return wu_open_error;
-	}
-
-	status = sixel_calc_parameters(&desc);
-	if (status != lib_ok) {
-		rast_error(infile, status);
-		return wu_invalid_header;
-	}
-
-	if (rast_exceeds_size(&desc.r, conf)) {
-		return wu_exceeds_size_limit;
+	enum wu_error st = sixel_open_mem(&desc, mm);
+	if (st != wu_ok) {
+		return st;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
@@ -30,23 +18,17 @@ const struct wu_conf *conf, const struct map_info *mm) {
 		return wu_alloc_error;
 	}
 
-	rast_to_raw(img, &desc.r);
-	img->data = calloc(raster_size(&desc.r), 1);
-	if (!img->data) {
-		return wu_alloc_error;
+	st = sixel_calc_parameters(&desc, img);
+	if (st != wu_ok) {
+		return st;
 	}
 
-	return sixel_decode(&desc, (struct pix_rgba8 *)img->data)
-		? wu_ok : wu_decoding_error;
+	if (raw_img_exceeds_limit(img, conf)) {
+		return wu_exceeds_size_limit;
+	}
+	return sixel_decode(&desc, img) ? wu_ok : wu_decoding_error;
 }
 
 enum wu_error sixel_dec(struct image_file *infile, const struct wu_conf *conf) {
-	struct map_info mm;
-	if (!map_file(&mm, infile->ifp)) {
-		return wu_alloc_error;
-	}
-
-	const enum wu_error st = decode(infile, conf, &mm);
-	unmap_file(&mm);
-	return st;
+	return rast_map_wrap(infile, conf, decode);
 }

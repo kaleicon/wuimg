@@ -1,128 +1,157 @@
 /* Enumerate known formats */
-/* WUDEC: base_name, callback_fn */
+/* WUDEC: base_name, has_callback_fn */
 
 #ifdef WU_ENABLE_AVS
-WUDEC(avs, NULL)
+WUDEC(avs, false)
 #endif
 
 #ifdef WU_ENABLE_DIB
-WUDEC(bmp, NULL)
-WUDEC(dib, NULL)
-WUDEC(ico, NULL)
+WUDEC(bmp, false)
+WUDEC(dib, false)
+WUDEC(ico, false)
 #endif
 
 #ifdef WU_ENABLE_G00
-WUDEC(g00, g00_callback)
+WUDEC(g00, true)
+#endif
+
+#ifdef WU_ENABLE_HG3
+WUDEC(hg3, false)
 #endif
 
 #ifdef WU_ENABLE_MAC
-WUDEC(mac, NULL)
+WUDEC(mac, false)
 #endif
 
 #ifdef WU_ENABLE_PCX
-WUDEC(pcx, NULL)
-WUDEC(dcx, NULL)
+WUDEC(pcx, false)
+WUDEC(dcx, false)
+#endif
+
+#ifdef WU_ENABLE_PDT
+WUDEC(pdt, false)
 #endif
 
 #ifdef WU_ENABLE_PGX
-WUDEC(pgx, NULL)
+WUDEC(pgx, false)
 #endif
 
 #ifdef WU_ENABLE_PI
-WUDEC(pi, NULL)
+WUDEC(pi, false)
 #endif
 
 #ifdef WU_ENABLE_PICTOR
-WUDEC(pictor, NULL)
+WUDEC(pictor, false)
 #endif
 
 #ifdef WU_ENABLE_PNM
-WUDEC(pnm, NULL)
+WUDEC(pnm, false)
+#endif
+
+#ifdef WU_ENABLE_PRT
+WUDEC(prt, false)
+#endif
+
+#ifdef WU_ENABLE_QOI
+WUDEC(qoi, false)
 #endif
 
 #ifdef WU_ENABLE_SGI
-WUDEC(sgi, NULL)
+WUDEC(sgi, false)
 #endif
 
 #ifdef WU_ENABLE_SIXEL
-WUDEC(sixel, NULL)
+WUDEC(sixel, false)
 #endif
 
 #ifdef WU_ENABLE_SUN
-WUDEC(sun, NULL)
+WUDEC(sun, false)
 #endif
 
 #ifdef WU_ENABLE_TGA
-WUDEC(tga, NULL)
+WUDEC(tga, false)
 #endif
 
 #ifdef WU_ENABLE_TIM
-WUDEC(tim, NULL)
+WUDEC(tim, false)
 #endif
 
 #ifdef WU_ENABLE_TLG
-WUDEC(tlg, NULL)
-#endif
-
-#ifdef WU_ENABLE_WBM
-WUDEC(wbm, NULL)
+WUDEC(tlg, false)
 #endif
 
 #ifdef WU_ENABLE_WBMP
-WUDEC(wbmp, NULL)
+WUDEC(wbmp, false)
+#endif
+
+#ifdef WU_ENABLE_WPX
+WUDEC(wbm, false)
+WUDEC(wia, false)
 #endif
 
 #ifdef WU_ENABLE_XBM
-WUDEC(xbm, NULL)
+WUDEC(xbm, false)
 #endif
 
 #ifdef WU_ENABLE_XCURSOR
-WUDEC(xcursor, NULL)
+WUDEC(xcursor, false)
+#endif
+
+#ifdef WU_ENABLE_XYZ
+WUDEC(xyz, true)
 #endif
 
 
 #ifdef WU_ENABLE_FLIF
-WUDEC(flif, flif_callback)
+WUDEC(flif, true)
 #endif
 
 #ifdef WU_ENABLE_GIF
-WUDEC(gif, gif_callback)
+WUDEC(gif, true)
 #endif
 
 #ifdef WU_ENABLE_HEIF
-WUDEC(avif, NULL)
-WUDEC(heif, NULL)
+WUDEC(avif, true)
+WUDEC(heif, true)
 #endif
 
 #ifdef WU_ENABLE_JBIG
-WUDEC(jbig, NULL)
+WUDEC(jbig, false)
 #endif
 
 #ifdef WU_ENABLE_JPEG
-WUDEC(jpeg, jpeg_callback)
+WUDEC(jpeg, true)
 #endif
 
 #ifdef WU_ENABLE_JPEG2000
-WUDEC(jp2, jp2_callback)
-WUDEC(j2k, j2k_callback)
+WUDEC(jp2, true)
+WUDEC(j2k, true)
+#endif
+
+#ifdef WU_ENABLE_JPEGXL
+WUDEC(jpegxl, false)
+#endif
+
+#ifdef WU_ENABLE_LERC
+WUDEC(lerc, false)
 #endif
 
 #ifdef WU_ENABLE_PNG
-WUDEC(png, NULL)
+WUDEC(png, false)
 #endif
 
 #ifdef WU_ENABLE_RAW
-WUDEC(raw, raw_callback)
+WUDEC(raw, true)
 #endif
 
 #ifdef WU_ENABLE_SVG
-WUDEC(svg, svg_callback)
+WUDEC(svg, true)
 #endif
 
 #ifdef WU_ENABLE_TIFF
-WUDEC(tiff, NULL)
+WUDEC(tiff, false)
 #endif
 
 #ifdef WU_ENABLE_WEBP
-WUDEC(webp, webp_callback)
+WUDEC(webp, true)
 #endif

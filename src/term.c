@@ -210,7 +210,7 @@ size_t term_event_read(unsigned char *output, const size_t len) {
 	const unsigned char shift_mod[] = {'1', ';', '2'};
 
 	const ssize_t r = read(STDIN_FILENO, output, len);
-	if (r < 0) {
+	if (r < 1) {
 		return 0;
 	}
 

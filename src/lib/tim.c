@@ -4,14 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-//#include "../common.h"
-#include "../raster/unpack.h"
+#include "raster/fmt.h"
+#include "raster/unpack.h"
 
 #include "tim.h"
-
-void tim_cleanup(struct tim_desc *desc) {
-	raster_free(&desc->r);
-}
 
 static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 	const uint16_t stp_bit = 1 << 15;
@@ -25,49 +21,53 @@ static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 	}
 }
 
-size_t tim_decode(const struct tim_desc *desc, void *restrict dst) {
-	const size_t read = fread(dst, 1, raster_size(&desc->r), desc->ifp);
-	if (desc->r.attr == pix_packing_1555) {
-		special_transparency_process(dst, read/2);
+size_t tim_decode(const struct tim_desc *desc, struct raw_img *img) {
+	size_t read = 0;
+	if (raw_img_alloc_noverify(img)) {
+		read = fread(img->data, 1, raw_img_size(img), desc->ifp);
+		if (img->attr == pix_packing_1555) {
+			special_transparency_process((uint16_t *)img->data, read/2);
+		}
 	}
 	return read;
 }
 
-static enum lib_fail read_cluts(struct tim_desc *desc,
+static enum wu_error read_cluts(struct tim_desc *desc, struct raw_img *img,
 unsigned char header[static 12]) {
 	struct tim_clut *clut = &desc->clut;
 	clut->x = buf_endian16(header + 4, little_endian);
 	clut->y = buf_endian16(header + 6, little_endian);
 	clut->nb = buf_endian16(header + 10, little_endian);
 	if (!clut->nb) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
-	const size_t colors = 1 << desc->r.bitdepth;
+	const size_t colors = 1 << img->bitdepth;
 	if (colors != buf_endian16(header + 8, little_endian)) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
-	desc->r.palette = malloc(sizeof(*clut->data) * clut->nb);
-	if (!desc->r.palette) {
-		return lib_alloc_error;
+	struct raster_pal *palette = malloc(sizeof(*palette) * clut->nb);
+	if (!palette) {
+		return wu_alloc_error;
 	}
+	raw_img_set_palette(img, palette);
 
 	for (size_t n = 0; n < clut->nb; ++n) {
-		struct raster_pal *pal = desc->r.palette + n;
+		struct raster_pal *pal = palette + n;
 		uint16_t *buf = (uint16_t *)(pal + 1) - colors;
 		if (fread(buf, sizeof(*buf), colors, desc->ifp) != colors) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 
 		special_transparency_process(buf, colors);
 		unpack_strip(pal, buf, colors, 16, pix_packing_1555,
 			op_expand);
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-enum lib_fail tim_parse_header(struct tim_desc *desc) {
+enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
 	/* TIM header (little-endian) (after id):
 		Offset  Size    Name
 		0       DWORD   Flags:
@@ -115,7 +115,7 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 
 	unsigned char header[16];
 	if (!fread(header, sizeof(header), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
 	const uint32_t flags = buf_endian32(header, little_endian);
@@ -125,33 +125,33 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 	case 1: depth = 8; break;
 	case 2: depth = 16; break;
 	case 3: depth = 24; break;
-	case 4: return lib_tim_mixed_bitdepth;
-	default: return lib_invalid_header;
+	case 4: return wu_unsupported_feature;
+	default: return wu_invalid_header;
 	}
 
 	if (depth == 24) {
-		desc->r.ch = 3;
-		desc->r.bitdepth = 8;
+		img->channels = 3;
+		img->bitdepth = 8;
 	} else {
-		desc->r.ch = 1;
-		desc->r.bitdepth = depth;
+		img->channels = 1;
+		img->bitdepth = depth;
 		if (depth == 16) {
-			desc->r.attr = pix_packing_1555;
+			img->attr = pix_packing_1555;
 		}
 	}
 
 	if (flags & 0x8) {
 		if (depth > 8) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 
-		const enum lib_fail status = read_cluts(desc, header + 4);
-		if (status != lib_ok) {
+		const enum wu_error status = read_cluts(desc, img, header + 4);
+		if (status != wu_ok) {
 			return status;
 		}
 		const size_t image_header = sizeof(header) - 4;
 		if (!fread(header + 4, image_header, 1, desc->ifp)) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 	}
 
@@ -159,19 +159,14 @@ enum lib_fail tim_parse_header(struct tim_desc *desc) {
 	desc->y = buf_endian16(header + 10, little_endian);
 
 	const size_t line_len = buf_endian16(header + 12, little_endian);
-	desc->r.w = line_len * 16 / depth;
-	desc->r.h = buf_endian16(header + 14, little_endian);
-	desc->r.alignment = 2;
-	raster_normalize(&desc->r);
-	return lib_ok;
+	img->w = line_len * 16 / depth;
+	img->h = buf_endian16(header + 14, little_endian);
+	img->alignment = 2;
+	return raw_img_verify(img);
 }
 
-enum lib_fail tim_open_file(struct tim_desc *desc, FILE *ifp) {
+enum wu_error tim_open_file(struct tim_desc *desc, FILE *ifp) {
+	desc->ifp = ifp;
 	const unsigned char sig[] = {0x10, 0, 0, 0};
-	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
-	if (st == lib_ok) {
-		memset(desc, 0, sizeof(*desc));
-		desc->ifp = ifp;
-	}
-	return st;
+	return fmt_sigcmp(sig, sizeof(sig), ifp);
 }

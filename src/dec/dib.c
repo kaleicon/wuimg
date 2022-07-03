@@ -1,11 +1,10 @@
 #include "../wudefs.h"
 #include "../common.h"
-#include "../rast_utils.h"
 
 #include "../lib/dib.h"
 
 static void get_dib_metadata(struct wu_tree *tree, const struct dib_desc *desc) {
-	tree_sprout_leaf(tree, "Header", dib_type_str(desc->type));
+	tree_sprout_leaf(tree, "Header", dib_type_str(desc));
 	tree_sprout_leaf(tree, "Compression", dib_compression_str(desc->compression));
 
 	struct wu_leaf leaf = {.val.u = desc->depth, .type = wu_leaf_unsigned};
@@ -13,97 +12,93 @@ static void get_dib_metadata(struct wu_tree *tree, const struct dib_desc *desc) 
 }
 
 static enum wu_error dib_common(struct image_file *infile,
-const struct wu_conf *wuconf, struct dib_desc *desc) {
-	if (rast_exceeds_size(&desc->r, wuconf)) {
-		dib_cleanup(desc);
+const struct wu_conf *wuconf, struct raw_img *img, struct dib_desc *desc) {
+	if (raw_img_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 
 	get_dib_metadata(&infile->metadata, desc);
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		dib_cleanup(desc);
-		return wu_alloc_error;
-	}
-
-	img->mirror = (desc->order == dib_bottom_up);
 	if (desc->compression == dib_no_compression) {
 		if (desc->depth == 16) {// || desc.depth == 32) {
-			img->disable_alpha = true;
+			img->alpha = alpha_ignore;
 		}
 	}
 
-	img->data = dib_decode(desc);
-	rast_to_raw(img, &desc->r);
-	dib_cleanup(desc);
-	return img->data ? wu_ok : wu_decoding_error;
+	if (dib_decode(desc, img)) {
+		struct wustr name;
+		if (dib_get_linked_profile_name(desc, &name)) {
+			tree_graft_unsafe_leaf(&infile->metadata,
+				"Linked profile", name.str, name.len);
+		}
+		return wu_ok;
+	}
+	return wu_decoding_error;
 }
 
 enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct dib_desc desc;
-	enum lib_fail fail = bmp_open_file(&desc, infile->ifp);
-	if (fail) {
-		return wu_invalid_header;
+	enum wu_error err = bmp_open_file(&desc, infile->ifp);
+	if (err == wu_ok) {
+		struct raw_img *img = alloc_sub_images(infile, 1);
+		if (img) {
+			err = bmp_parse_header(&desc, img);
+			if (err == wu_ok) {
+				return dib_common(infile, wuconf, img, &desc);
+			}
+			return err;
+		}
+		return wu_alloc_error;
 	}
-
-	fail = bmp_parse_header(&desc);
-	if (fail) {
-		dib_cleanup(&desc);
-		return wu_invalid_header;
-	}
-	return dib_common(infile, wuconf, &desc);
+	return err;
 }
 
 enum wu_error dib_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct dib_desc desc;
-	if (dib_open_file(&desc, infile->ifp) != lib_ok) {
-		dib_cleanup(&desc);
-		return wu_invalid_header;
+	struct raw_img *img = alloc_sub_images(infile, 1);
+	if (img) {
+		struct dib_desc desc;
+		const enum wu_error err = dib_open_file(&desc, img, infile->ifp);
+		if (err == wu_ok) {
+			return dib_common(infile, wuconf, img, &desc);
+		}
+		return err;
 	}
-	return dib_common(infile, wuconf, &desc);
+	return wu_alloc_error;
 }
 
-enum wu_error ico_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct ico_desc desc;
-	enum lib_fail status = ico_open_file(&desc, infile->ifp);
-	if (status != lib_ok) {
-		return wu_invalid_header;
+static enum wu_error wrap_ico(struct image_file *infile,
+const struct wu_conf *wuconf, struct ico_desc *desc) {
+	const enum wu_error status = ico_parse_header(desc);
+	if (status != wu_ok) {
+		return status;
 	}
 
-	status = ico_parse_header(&desc);
-	if (status != lib_ok) {
-		ico_cleanup(&desc);
-		return wu_invalid_header;
-	}
+	tree_sprout_leaf(&infile->metadata, "Type", ico_type_str(desc->type));
 
-	tree_sprout_leaf(&infile->metadata, "Type", ico_type_str(desc.type));
-
-	struct raw_img *img = alloc_sub_images(infile, desc.count);
-	if (!img) {
-		ico_cleanup(&desc);
+	if (!alloc_sub_images(infile, desc->count)) {
 		return wu_alloc_error;
 	}
 
 	size_t o = 0;
-	for (uint16_t i = 0; i < desc.count; ++i) {
-		status = ico_set_image(&desc, i);
-		if (status != lib_ok) {
-			continue;
+	for (uint16_t i = 0; i < desc->count; ++i) {
+		struct raw_img *img = infile->sub_img + o;
+		if (ico_set_image(desc, img, i) == wu_ok
+		&& !raw_img_exceeds_limit(img, wuconf)
+		&& ico_decode(desc, img)) {
+			++o;
+		} else {
+			raw_img_clear(img);
 		}
-
-		if (rast_exceeds_size(&desc.dib.r, wuconf)) {
-			continue;
-		}
-
-		img[o].mirror = (desc.dib.order == dib_bottom_up);
-		img[o].data = ico_decode(&desc);
-		rast_to_raw(img + o, &desc.dib.r);
-		if (!img[o].data) {
-			continue;
-		}
-		++o;
 	}
-	ico_cleanup(&desc);
 	return image_file_total_decoded(infile, o);
+}
+
+enum wu_error ico_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	struct ico_desc desc;
+	enum wu_error err = ico_open_file(&desc, infile->ifp);
+	if (err == wu_ok) {
+		err = wrap_ico(infile, wuconf, &desc);
+		ico_cleanup(&desc);
+	}
+	return err;
 }

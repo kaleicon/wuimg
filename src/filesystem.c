@@ -13,7 +13,7 @@
 #include <unicode/uiter.h>
 
 #include "common.h"
-#include "dec_fmtmap.h"
+#include "dec.h"
 #include "wustr.h"
 #include "filesystem.h"
 
@@ -85,7 +85,7 @@ static bool fs_path_set_dir(struct fs_path *path, const struct wuptr dir) {
 	return false;
 }
 
-static bool fs_path_set_file(struct fs_path *path, const struct wuptr name) {
+bool set_path(struct fs_path *path, const struct wuptr name, bool with_dir) {
 	const unsigned char *slash = memrchr(name.ptr, '/', name.len);
 	if (slash) {
 		++slash;
@@ -94,10 +94,24 @@ static bool fs_path_set_file(struct fs_path *path, const struct wuptr name) {
 			.len = name.len - dirlen,
 			.ptr = slash,
 		};
-		return fs_path_set_dir(path, wuptr_mem(name.ptr, dirlen));
+		if (with_dir) {
+			return fs_path_set_dir(path, wuptr_mem(name.ptr, dirlen));
+		}
+		return true;
 	}
 	path->file = name;
-	return fs_path_set_empty_dir(path);
+	if (with_dir) {
+		return fs_path_set_empty_dir(path);
+	}
+	return true;
+}
+
+void fs_path_set_file(struct fs_path *path, const struct wuptr name) {
+	set_path(path, name, false);
+}
+
+static bool fs_path_set_path(struct fs_path *path, const struct wuptr name) {
+	return set_path(path, name, true);
 }
 
 void keypool_free(struct keypool *pool) {
@@ -255,7 +269,7 @@ static int open_dirfd(const char *str) {
 	return open(str, O_RDONLY | O_DIRECTORY);
 }
 
-int fs_get_parent_dir(const char *str, struct fs_path *path) {
+int fs_get_parent_dir(struct fs_path *path, const char *str) {
 	int dfd = -1;
 	const struct wuptr name = wuptr_str(str);
 	if (name.len) {
@@ -265,7 +279,7 @@ int fs_get_parent_dir(const char *str, struct fs_path *path) {
 			fs_path_set_dir(path, name);
 		} else if (errno == ENOTDIR) {
 			errno = 0;
-			if (fs_path_set_file(path, name)) {
+			if (fs_path_set_path(path, name)) {
 				dfd = open_dirfd(path->parent.str[0]
 					? (char *)path->parent.str : ".");
 			}
@@ -277,9 +291,9 @@ int fs_get_parent_dir(const char *str, struct fs_path *path) {
 	return dfd;
 }
 
-static bool get_files(const char *name, struct fs_dir *dir,
+static bool get_files(struct fs_dir *dir, const char *name,
 struct fs_entry *init_key) {
-	const int dfd = fs_get_parent_dir(name, &dir->path);
+	const int dfd = fs_get_parent_dir(&dir->path, name);
 	bool status = false;
 	if (dfd != -1) {
 		DIR *dp = fdopendir(dfd);
@@ -327,7 +341,7 @@ char ** fs_filter_sort(const char *name, size_t *nr, size_t *start_idx) {
 	};
 	struct fs_entry init_key;
 
-	if (get_files(name, &dir, &init_key)) {
+	if (get_files(&dir, name, &init_key)) {
 		*start_idx = sort_dir_entries(&dir, &init_key);
 		*nr = dir.entries_grow.pos;
 		return fs_dir_names(&dir);

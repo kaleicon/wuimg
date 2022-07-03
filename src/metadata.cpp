@@ -4,7 +4,12 @@
 
 extern "C" {
 #include "metadata.h"
+#include "common.h"
 }
+
+static const char EXIF[] = "Exif";
+static const char XMP[] = "XMP";
+static const char IPTC[] = "IPTC";
 
 // Disclaimer: I don't know any C++
 
@@ -55,7 +60,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::XmpData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_sprout_branch(tree, "XMP");
+	struct wu_tree *outtree = tree_sprout_branch(tree, XMP);
 	for (Exiv2::XmpData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -74,7 +79,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::IptcData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_sprout_branch(tree, "IPTC");
+	struct wu_tree *outtree = tree_sprout_branch(tree, IPTC);
 	for (Exiv2::IptcData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -93,7 +98,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::ExifData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_sprout_branch(tree, "Exif");
+	struct wu_tree *outtree = tree_sprout_branch(tree, EXIF);
 	for (Exiv2::ExifData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -101,6 +106,18 @@ struct wu_tree *tree) {
 	}
 	data.clear();
 	return true;
+}
+
+extern "C" unsigned char metadata_orientation(struct wu_tree *tree) {
+	const char *path[] = {EXIF, "Image", "Orientation"};
+	tree = tree_find_path(tree, path, ARRAY_LEN(path));
+	if (tree && tree->leaf.type == wu_leaf_signed) {
+		const long val = tree->leaf.val.d;
+		if (val > 0 && val <= 8) {
+			return (unsigned char)val;
+		}
+	}
+	return 0;
 }
 
 extern "C" bool standard_metadata(const enum metadata_type type,
@@ -120,9 +137,9 @@ const void *metadata, const size_t len, struct wu_tree *tree) {
 		}
 	} catch (...) {
 		switch (type) {
-		case exif_metadata: fputs("Exif", stdout); break;
-		case xmp_metadata: fputs("XMP", stdout); break;
-		case iptc_metadata: fputs("IPTC", stdout); break;
+		case exif_metadata: fputs(EXIF, stdout); break;
+		case xmp_metadata: fputs(XMP, stdout); break;
+		case iptc_metadata: fputs(IPTC, stdout); break;
 		}
 		fputs(" parsing failed.\n", stdout);
 	}

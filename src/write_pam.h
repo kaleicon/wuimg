@@ -7,7 +7,6 @@
 
 struct write_args {
 	const char *outdir;
-	bool raw;
 	bool overwrite;
 };
 
@@ -22,8 +21,6 @@ struct write_writer {
 		char name[256];
 	} out;
 };
-
-bool write_current(const struct image_context *image, struct gl_context *gl);
 
 enum wu_error write_image(struct image_context *image,
 struct write_writer *writer, const struct write_args *args);

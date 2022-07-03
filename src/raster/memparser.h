@@ -5,48 +5,51 @@
 
 #include "../wustr.h"
 
-#define mem_scan_xint_MACRO(mp, ptr) mem_scan_xint( mp , sizeof(*( ptr )) , ptr )
-#define mem_scan_uint_MACRO(mp, ptr) mem_scan_uint( mp , sizeof(*( ptr )) , ptr )
-
-typedef int_fast64_t mem_fast_t;
-
-struct mem_parser {
+struct mp_parser { // ATM machine
 	size_t pos;
 	size_t len;
 	const unsigned char *mem;
 };
 
-unsigned char mem_next_char_unsafe(struct mem_parser *mp);
+unsigned char mp_next_char_unsafe(struct mp_parser *mp);
 
-size_t mem_get_uint_unsafe(struct mem_parser *mp, size_t digits,
-mem_fast_t *val);
+size_t mp_skip_space_unsafe(struct mp_parser *mp);
 
-void mem_skip_blank(struct mem_parser *mp);
+size_t mp_get_uint_unsafe(struct mp_parser *mp, long *val);
 
-void mem_skip_space(struct mem_parser *mp);
 
-void mem_skip_nonspace(struct mem_parser *mp);
+bool mp_set_pos(struct mp_parser *mp, size_t pos);
 
-void mem_skip_line(struct mem_parser *mp);
+void mp_skip_blank(struct mp_parser *mp);
 
-int mem_next_char(struct mem_parser *mp);
+size_t mp_skip_space(struct mp_parser *mp);
 
-int mem_next_nonblank(struct mem_parser *mp);
+void mp_skip_nonspace(struct mp_parser *mp);
 
-int mem_next_nonspace(struct mem_parser *mp);
+void mp_skip_line(struct mp_parser *mp);
 
-struct wuptr mem_next_remaining(struct mem_parser *mp, size_t len);
+int mp_next_char(struct mp_parser *mp);
 
-const uint8_t * mem_next_slice(struct mem_parser *mp, size_t len);
+int mp_next_nonblank(struct mp_parser *mp);
 
-struct wuptr mem_get_word(struct mem_parser *mp);
+int mp_next_nonspace(struct mp_parser *mp);
 
-size_t mem_get_uint(struct mem_parser *mp, size_t digits, mem_fast_t *val);
+struct wuptr mp_next_remaining(struct mp_parser *mp, size_t len);
 
-bool mem_scan_xint(struct mem_parser *mp, size_t size, void *restrict val);
+const uint8_t * mp_next_slice(struct mp_parser *mp, size_t len);
 
-bool mem_scan_uint(struct mem_parser *mp, size_t size, void *restrict val);
+struct wuptr mp_get_word(struct mp_parser *mp);
 
-struct mem_parser mem_parser_mem(size_t size, const void *restrict data);
+size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val);
+
+size_t mp_get_xint(struct mp_parser *mp, size_t digits, long *val);
+
+struct wuptr mp_remaining_at(const struct mp_parser *mp, size_t pos,
+size_t len);
+
+const uint8_t * mp_slice_at(const struct mp_parser *mp, size_t pos,
+size_t len);
+
+struct mp_parser mp_parser_mem(size_t len, const void *restrict mem);
 
 #endif /* COMMON_MEMPARSER */

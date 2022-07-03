@@ -9,6 +9,8 @@ enum metadata_type {
 	iptc_metadata,
 };
 
+unsigned char metadata_orientation(struct wu_tree *tree);
+
 bool standard_metadata(enum metadata_type type, const void *metadata,
 size_t len, struct wu_tree *tree);
 

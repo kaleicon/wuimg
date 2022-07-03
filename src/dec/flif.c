@@ -23,9 +23,6 @@ static void clean_flif_state(struct image_file *infile) {
 	if (ds->map.data) {
 		unmap_file(&ds->map);
 	}
-	free(ds);
-	infile->events = 0;
-	infile->dec_state = NULL;
 }
 
 static enum wu_error decode_frame(struct raw_img *img, FLIF_IMAGE *frame,
@@ -41,22 +38,14 @@ struct flif_state *ds) {
 enum wu_error flif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
 	(void)wuconf;
-	enum wu_error status = wu_no_change;
-	bool clean;
 	if (ev == ev_frame) {
 		struct flif_state *ds = infile->dec_state;
 		FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec,
 			(size_t)state->frame);
-		status = decode_frame(infile->sub_img, frame, ds);
-		clean = (status != wu_ok);
-	} else {
-		clean = true;
+		return decode_frame(infile->sub_img, frame, ds);
 	}
-
-	if (clean) {
-		clean_flif_state(infile);
-	}
-	return status;
+	clean_flif_state(infile);
+	return wu_no_change;
 }
 
 static void read_metadata(struct wu_tree *tree, FLIF_IMAGE *frame) {
@@ -92,36 +81,36 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 	}
 	img->channels = flif_image_get_nb_channels(frame);
 	img->bitdepth = flif_image_get_depth(frame);
+	img->alpha = alpha_unassociated;
 
 	if (img->channels == 1 && flif_image_get_palette_size(frame)) {
 		raw_img_set_palette(img, malloc(sizeof(*img->u.palette)));
 	}
 
-	if (img->u.palette) {
+	if (img->mode == image_mode_palette) {
 		flif_image_get_palette(frame, img->u.palette);
 		ds->read_func = flif_image_read_row_PALETTE8;
 	} else if (img->channels == 1) {
 		ds->read_func = flif_image_read_row_GRAY8;
 	} else {
-		// There are no RGB functions.
 		if (img->channels == 3) {
+			// There are no RGB functions.
 			img->channels = 4;
-			img->disable_alpha = true;
+			img->alpha = alpha_ignore;
 		}
-		if (img->bitdepth == 8) {
-			ds->read_func = flif_image_read_row_RGBA8;
-		} else {
-			ds->read_func = flif_image_read_row_RGBA16;
-		}
+		ds->read_func = (img->bitdepth == 8)
+			? flif_image_read_row_RGBA8
+			: flif_image_read_row_RGBA16;
 	}
 
-	if (!raw_img_addbuf(img)) {
-		return wu_alloc_error;
+	const enum wu_error st = raw_img_alloc(img);
+	if (st != wu_ok) {
+		return st;
 	}
 
 	const size_t nr = flif_decoder_num_images(ds->dec);
 	if (nr > 1) {
-		struct image_frames *f = raw_img_alloc_frames(img, nr);
+		struct image_frames *f = raw_img_frames_init(img, nr);
 		if (!f) {
 			return wu_alloc_error;
 		}
@@ -148,23 +137,14 @@ const struct wu_conf *wuconf) {
 	infile->dec_state = ds;
 
 	if (!map_file(&ds->map, infile->ifp)) {
-		clean_flif_state(infile);
 		return wu_alloc_error;
 	}
 
 	ds->dec = flif_create_decoder();
 	const int32_t success = flif_decoder_decode_memory(ds->dec,
 		ds->map.data, ds->map.len);
-	if (!success) {
-		image_file_error_append(infile,
-			"Decoder failed to read from memory");
-		clean_flif_state(infile);
-		return wu_decoding_error;
+	if (success) {
+		return setup_img(infile, wuconf, ds);
 	}
-
-	const enum wu_error status = setup_img(infile, wuconf, ds);
-	if (status != wu_ok) {
-		clean_flif_state(infile);
-	}
-	return status;
+	return wu_decoding_error;
 }

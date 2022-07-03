@@ -3,9 +3,9 @@
 
 #include <stdbool.h>
 
-#include "../wustr.h"
-#include "../raster/lib.h"
-#include "../raster/memparser.h"
+#include "wudefs.h"
+#include "wustr.h"
+#include "raster/memparser.h"
 
 enum xbm_type {
 	xbm_x11 = 1,
@@ -13,10 +13,9 @@ enum xbm_type {
 };
 
 struct xbm_desc {
-	struct mem_parser tp;
-	struct raster_desc r;
+	struct mp_parser tp;
 
-	unsigned int x_hot, y_hot;
+	size_t x_hot, y_hot;
 	bool has_hotspot;
 	enum xbm_type type;
 
@@ -24,8 +23,9 @@ struct xbm_desc {
 	struct wuptr comment;
 };
 
-size_t xbm_decode(const struct xbm_desc *desc, void *restrict dst);
+size_t xbm_decode(const struct xbm_desc *desc, struct raw_img *img);
 
-enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct map_info *mm);
+enum wu_error xbm_parse_header(struct xbm_desc *desc, struct raw_img *img,
+const struct map_info *mm);
 
 #endif /* LIB_XBM */

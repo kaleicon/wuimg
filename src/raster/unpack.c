@@ -5,13 +5,6 @@
 #include "bit.h"
 #include "unpack.h"
 
-static uint8_t get_unpackdepth(const uint8_t depth) {
-	if (depth && depth < 16) {
-		return (depth > 8) ? 16 : 8;
-	}
-	return 0;
-}
-
 // Unpack 2^n-bits onto u8
 static void unpack4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
 	switch (nr) {
@@ -178,12 +171,11 @@ const size_t n) {
 	strip_common(dst, src, n, 1, op_unpack, pix_normal);
 }
 
-
-// Unpack any bitdepth < 16
+// Unpack any bitdepth < 16 and non-power-of-two
 static inline void strip_small_common(void *restrict dst,
 const void *restrict src, const size_t width, const uint8_t bitdepth,
 const enum unpack_op op, const enum pix_attr attr) {
-	const uint8_t outdepth = get_unpackdepth(bitdepth);
+	const uint8_t outdepth = (bitdepth > 8) ? 16 : 8;
 
 	const uint_fast32_t mask = (1u << bitdepth) - 1;
 	const uint_fast32_t outmask = (1u << outdepth) - 1;
@@ -342,6 +334,7 @@ const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
 const enum unpack_op op) {
 	switch (attr) {
 	case pix_normal:
+	case pix_signed:
 		switch (op) {
 		case op_noop: break;
 		case op_unpack:
@@ -418,10 +411,22 @@ void unpack_or_copy_strip(void *restrict dst, const void *restrict src,
 const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
 const enum unpack_op op) {
 	if (op == op_noop) {
-		memcpy(dst, src, scanline_length(n, bitdepth, 1));
+		const size_t len = scanline_length(n, bitdepth, 1);
+		if (attr == pix_inverted) {
+			strip_invert(dst, src, len);
+		} else {
+			memcpy(dst, src, len);
+		}
 	} else {
 		unpack_strip(dst, src, n, bitdepth, attr, op);
 	}
+}
+
+static uint8_t get_unpackdepth(const uint8_t depth) {
+	if (depth && depth < 16) {
+		return (depth > 8) ? 16 : 8;
+	}
+	return 0;
 }
 
 uint8_t unpack_depth(const uint8_t bitdepth, const enum pix_attr attr,
@@ -429,6 +434,7 @@ const enum unpack_op op) {
 	uint8_t outdepth = 0;
 	switch (attr) {
 	case pix_normal:
+	case pix_signed:
 		switch (op) {
 		case op_noop: break;
 		case op_unpack:
@@ -486,33 +492,4 @@ const enum pix_attr attr, const enum unpack_op op) {
 		return scanline_length(n, outdepth, 1);
 	}
 	return 0;
-}
-
-void strip_spread(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t width, const size_t ch) {
-	for (size_t x = 0; x < width; ++x) {
-		dst[x*ch] = src[x];
-	}
-}
-
-void strip_swizzle(void *data, const size_t w, const uint8_t ch,
-const size_t elem_size, const enum pix_layout dst_layout,
-const enum pix_layout src_layout) {
-	uint8_t dst_swizzle[4];
-	uint8_t src_swizzle[4];
-	pix_swizzle_mask(dst_swizzle, dst_layout);
-	pix_swizzle_mask(src_swizzle, src_layout);
-
-	const size_t pix_size = elem_size * ch;
-	uint8_t *d = data;
-	for (size_t x = 0; x < w; ++x) {
-		uint8_t buf[8*4];
-		for (uint8_t z = 0; z < ch; ++z) {
-			const size_t dst_z = dst_swizzle[z] * elem_size;
-			const size_t src_z = src_swizzle[z] * elem_size;
-			memcpy(buf + dst_z, d + src_z, elem_size);
-		}
-		memcpy(d, buf, pix_size);
-		d += pix_size;
-	}
 }

@@ -3,14 +3,14 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "../common.h"
-#include "../raster/unpack.h"
-#include "../raster/graphics_adapters.h"
-#include "../raster/raster.h"
+#include "raster/file.h"
+#include "raster/fmt.h"
+#include "raster/graphics_adapters.h"
+#include "raster/unpack.h"
 
 #include "pcx.h"
 
-// It's like this format was intelligently designed to be terrible.
+/* It's like this format was intelligently designed to be terrible. */
 
 static const size_t RLE_MAX_RUN = 0x3f;
 static const size_t VGA_PAL_LEN = 256*3;
@@ -30,40 +30,39 @@ const char * pcx_version_string(const enum pcx_version ver) {
 	case pcx_paintbrush: return "Paintbrush for Windows";
 	case pcx_ver30: return "3.0";
 	}
-	return "Unknown version";
+	return "???";
 }
 
-static unsigned char * pcx_unpack_interleave(unsigned char *restrict src,
-struct raster_desc *desc) {
-	size_t comps = 1;
-	if (!desc->palette) {
-		comps = desc->ch;
-	}
+static size_t pcx_unpack_interleave(struct raw_img *img) {
+	const bool has_pal = (img->mode == image_mode_palette);
+	const size_t comps = (has_pal) ? 1 : img->channels;
 
-	const size_t dims = desc->w * desc->h * comps;
-	unsigned char *dst = malloc(dims);
+	const size_t instride = scanline_length(img->w, img->bitdepth,
+		img->alignment) * img->channels;
+	const size_t outstride = img->w * comps;
+	unsigned char *dst = malloc(outstride * img->h);
 	if (!dst) {
-		free(src);
-		return NULL;
+		return 0;
 	}
 
-	const size_t scanline = scanline_length(desc->w, desc->bitdepth,
-		desc->alignment) * desc->ch;
-	for (size_t y = 0; y < desc->h; ++y) {
-		vga_interleave(dst + y*desc->w*comps, src + y*scanline, desc->w,
-			1, desc->ch, desc->bitdepth, desc->palette);
+	for (size_t y = 0; y < img->h; ++y) {
+		vga_interleave(dst + y*outstride, img->data + y*instride,
+			img->w, 1, img->channels, img->bitdepth, img->alignment,
+			has_pal);
 	}
-	free(src);
 
-	if (desc->palette) {
-		desc->ch = 1;
-		desc->bitdepth = 8;
+	free(img->data);
+	img->data = dst;
+	if (has_pal) {
+		img->channels = 1;
+		img->bitdepth = 8;
 	}
-	desc->alignment = 1;
-	return dst;
+	img->alignment = 1;
+	return 1;
 }
 
-static bool check_cga_mode(const struct pcx_desc *desc) {
+static bool check_cga_mode(const struct pcx_desc *desc,
+const struct raw_img *img) {
 	/* Files with bitdepth == 2 can be in CGA mode, meaning bytes in the
 	 * first two entries of the header palette are used to select one of
 	 * CGA palettes, or can be in 'regular' mode, in which the header
@@ -75,19 +74,20 @@ static bool check_cga_mode(const struct pcx_desc *desc) {
 	 * common CGA resolutions or bits/planes combinations, here we opt for
 	 * checking whether the last two entries are zeroed. This makes all
 	 * the images in the FFmpeg samples display OK, as far as one can tell
-	 * with a format that's borderline undecidable to render.
+	 * with a format that's undecidable to render.
 
 	 * Care should be taken NOT to check the whole palette area for
-	 * zeroes, as uncleared memory will be found in there. */
-	return desc->r.bitdepth == 2 && !memchk(desc->file_pal + 6, 0, 6);
+	 * zeroes, as uncleared memory (or perhaps some weird header extension)
+	 * will be found in there. */
+	return img->bitdepth == 2 && !memchk(desc->file_pal + 6, 0, 6);
 }
 
-static struct raster_pal * load_palette(const struct pcx_desc *desc,
-const struct pix_rgb8 *pal_data) {
+static bool load_palette(const struct pcx_desc *desc,
+struct raw_img *img, const struct pix_rgb8 *pal_data) {
 	// Take a deep breath...
-	struct raster_pal *pal = malloc(sizeof(*pal));
+	struct raster_pal *pal = raw_img_set_palette(img, malloc(sizeof(*pal)));
 	if (!pal) {
-		return NULL;
+		return false;
 	}
 
 	const size_t entries = desc->entries;
@@ -104,14 +104,14 @@ const struct pix_rgb8 *pal_data) {
 		 * This seems to work rather well for all samples. */
 		if (pal_data && desc->palette_type
 		&& memcmp(pal_data, pal_data + 1, sizeof(*pal_data))) {
-			pix_rgb8_to_rgba8(pal->color, pal_data, entries);
+			raster_pal_from_rgb8(pal, pal_data, entries);
 		} else {
 			/* Beware when testing: imagemagick renders monochrome
 			 * opposite from ffmpeg. */
 			pal->color[0] = (struct pix_rgba8){0x00, 0x00, 0x00, 0xff};
 			pal->color[1] = (struct pix_rgba8){0xff, 0xff, 0xff, 0xff};
 		}
-	} else if (check_cga_mode(desc)) {
+	} else if (check_cga_mode(desc, img)) {
 		unsigned palnum;
 		bool intensity, colorburst;
 		if (desc->palette_type) {
@@ -144,24 +144,24 @@ const struct pix_rgb8 *pal_data) {
 			}
 		}
 	} else if (pal_data) { // Header or trailing palette
-		pix_rgb8_to_rgba8(pal->color, pal_data, entries);
+		raster_pal_from_rgb8(pal, pal_data, entries);
 	} else { // Standard EGA palette (CGA)
 		for (size_t i = 0; i < entries; ++i) {
 			pal->color[i] = cga_palette(i);
 		}
 	}
-	return pal;
+	return true;
 }
 
-static enum lib_fail looking_for_lost_pauline(struct pcx_desc *desc,
-const unsigned char *restrict rle_end, const size_t rle_remaining) {
-	if (desc->r.bitdepth > 1 && desc->r.ch > 1) {
-		return lib_ok;
+static enum wu_error looking_for_lost_pauline(struct pcx_desc *desc,
+struct raw_img *img, const unsigned char *restrict vga_id,
+const size_t rle_remaining) {
+	if (img->bitdepth * img->channels > 8) {
+		return wu_ok;
 	}
 
 	enum pcx_palette_source pal_src = pcx_no_pal;
-	const unsigned char *vga_id = rle_end - rle_remaining;
-	if (desc->r.bitdepth == 8) {
+	if (img->bitdepth == 8) {
 		if (rle_remaining > VGA_PAL_LEN && *vga_id == 0x0c) {
 			pal_src = pcx_vga;
 		}
@@ -176,10 +176,10 @@ const unsigned char *restrict rle_end, const size_t rle_remaining) {
 		}
 	}
 
-	const unsigned char *pal_data = NULL;
+	const void *pal_data = NULL;
 	switch (pal_src) {
 	case pcx_no_pal:
-		return lib_ok;
+		return wu_ok;
 	case pcx_ega:
 		break;
 	case pcx_file_header:
@@ -190,11 +190,10 @@ const unsigned char *restrict rle_end, const size_t rle_remaining) {
 		break;
 	}
 
-	desc->r.palette = load_palette(desc, (struct pix_rgb8 *)pal_data);
-	if (desc->r.palette == NULL) {
-		return lib_alloc_error;
+	if (!load_palette(desc, img, pal_data)) {
+		return wu_alloc_error;
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
 static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
@@ -206,7 +205,7 @@ const unsigned char *restrict rle, const size_t rle_len) {
 		const unsigned char packet = rle[r];
 		++r;
 		if (packet >= mask) {
-			if (r == rle_len) {
+			if (r >= rle_len) {
 				break;
 			}
 			const size_t run_len = packet - mask;
@@ -218,91 +217,89 @@ const unsigned char *restrict rle, const size_t rle_len) {
 			++d;
 		}
 	}
-	return rle_len - r;
+	return r;
 }
 
-unsigned char * pcx_decode(struct pcx_desc *desc) {
-	const size_t dims = desc->bytes_per_line * desc->r.ch * desc->r.h;
+size_t pcx_decode(struct pcx_desc *desc, struct raw_img *img) {
+	const size_t dims = scanline_length(img->w, img->bitdepth, img->alignment)
+		* img->channels * img->h;
 	// Add padding to save on a range check.
-	unsigned char *data = malloc(dims + RLE_MAX_RUN);
-	if (!data) {
-		return NULL;
+	img->data = malloc(dims + RLE_MAX_RUN);
+	if (!img->data) {
+		return 0;
 	}
 
-	const size_t rle_len = zumin(dims*2 + VGA_PAL_LEN,
-		(size_t)desc->rle_len);
-	unsigned char *rle = malloc(rle_len);
-	if (!rle) {
-		free(data);
-		return NULL;
+	desc->mp.pos = 128;
+	struct wuptr rle = mp_next_remaining(&desc->mp,
+		zumin(dims*2 + VGA_PAL_LEN + 1, desc->rle_len));
+	if (!rle.len) {
+		return 0;
 	}
 
-	const size_t read = fread(rle, 1, rle_len, desc->ifp);
-	if (read < rle_len) {
-		if (!read) {
-			free(data);
-			return NULL;
-		}
-		puts(RASTER_EOF);
+	const size_t r = rle_decode(img->data, dims, rle.ptr, rle.len);
+	const enum wu_error fail = looking_for_lost_pauline(desc, img,
+		rle.ptr + r, rle.len - r);
+	if (fail != wu_ok) {
+		return 0;
 	}
 
-	const size_t remaining = rle_decode(data, dims, rle, read);
-	const enum lib_fail fail = looking_for_lost_pauline(desc, rle + read,
-		remaining);
-	free(rle);
-	if (fail != lib_ok) {
-		free(data);
-		return NULL;
+	bool ok = true;
+	if (img->channels > 1) {
+		ok = pcx_unpack_interleave(img);
 	}
-
-	if (desc->r.ch > 1) {
-		data = pcx_unpack_interleave(data, &desc->r);
-	}
-	raster_normalize(&desc->r);
-	return data;
+	return ok && raw_img_verify(img) == wu_ok;
 }
 
-static enum lib_fail validate_header(struct pcx_desc *desc,
+static enum wu_error validate_header(struct pcx_desc *desc, struct raw_img *img,
 const uint8_t bitdepth, const int width, const int height,
 const uint8_t planes, const uint16_t bytes_per_line,
 const uint16_t palette_type) {
 	switch (bitdepth) {
-	case 1: case 2: case 4: case 8:
+	case 1: case 8:
+		if (planes < 1 || planes > 4) {
+			return wu_invalid_header;
+		}
+		break;
+	case 2: case 4:
+		if (planes != 1) {
+			return wu_invalid_header;
+		}
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
 	if (width < 1 || height < 1) {
-		return lib_invalid_header;
-	}
-	if (planes < 1 || planes > 4) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
-	desc->r = (struct raster_desc) {
-		.w = (unsigned)width,
-		.h = (unsigned)height,
-		.ch = planes,
-		.bitdepth = bitdepth,
-	};
-	const size_t diff = bytes_per_line - scanline_length(desc->r.w,
-		desc->r.bitdepth, 1);
+	img->w = (size_t)width;
+	img->h = (size_t)height;
+	img->channels = planes;
+	img->bitdepth = bitdepth;
+	const size_t base_stride = scanline_length(img->w, img->bitdepth, 1);
+	if (base_stride > bytes_per_line) {
+		return wu_invalid_header;
+	}
+	const size_t diff = bytes_per_line - base_stride;
 	size_t align = 1;
 	if (diff) {
+		// This format sucks everywhere, I swear
 		align = 1 << (zulog2(diff) + 1);
-		if (align > 4) {
-			return lib_invalid_header;
+		//if (align > 4) { // I guess 4 is the maximum we'll encounter
+		if (align > 8) { // Guessed wrong
+			return wu_invalid_header;
 		}
 	}
-	desc->r.alignment = (uint8_t)align;
-	desc->bytes_per_line = bytes_per_line;
+	img->alignment = (uint8_t)align;
+
 	desc->palette_type = palette_type;
-	desc->entries = 1 << (desc->r.bitdepth * desc->r.ch);
-	return lib_ok;
+	desc->bytes_per_line = bytes_per_line;
+	desc->entries = 1 << (img->bitdepth * img->channels);
+	return wu_ok;
 }
 
-enum lib_fail pcx_read_header(struct pcx_desc *desc) {
+enum wu_error pcx_read_header(struct pcx_desc *desc, struct raw_img *img) {
 	/* Header continuation
 		Offset  Size    Name
 		0       BYTE    BitsPerPixel;   // 1, 2, 4, or 8
@@ -326,20 +323,17 @@ enum lib_fail pcx_read_header(struct pcx_desc *desc) {
 		before PC Paintbrush 4.0, and any of the three afterwards.[3]
 		What practical difference 1 or 2 make it's not yet clear to me.
 		Non-CGA files meanwhile can have random values.
-	[2] Fields added after version 4.0, previously part of Reserved2. [3]
+	[2] Fields added after version 4.0, previously part of Reserved2.[3]
 	[3] As befitting this format, version 4 is just when the version field
 		stopped being updated.
 	*/
 
-	uint8_t header1[13]; // Header bytes 0 to 13
-	uint8_t header2[10]; // Header bytes 61 to 71
-	size_t read = fread(header1, 1, sizeof(header1), desc->ifp);
-	read += fread(desc->file_pal, 1, sizeof(desc->file_pal), desc->ifp);
-	read += fread(header2, 1, sizeof(header2), desc->ifp);
-	if (read < sizeof(header1) + sizeof(desc->file_pal) + sizeof(header2)) {
-		return lib_unexpected_eof;
+	const uint8_t *header1 = mp_next_slice(&desc->mp, 13); // Bytes 0 to 13
+	desc->file_pal = mp_next_slice(&desc->mp, 48);
+	const uint8_t *header2 = mp_next_slice(&desc->mp, 10); // Bytes 61 to 71
+	if (!header2) {
+		return wu_unexpected_eof;
 	}
-	fseek(desc->ifp, 125 - 71, SEEK_CUR);
 
 	const int xstart = buf_endian16(header1 + 1, little_endian);
 	const int ystart = buf_endian16(header1 + 3, little_endian);
@@ -352,15 +346,14 @@ enum lib_fail pcx_read_header(struct pcx_desc *desc) {
 	desc->vert_res = buf_endian16(header1 + 11, little_endian);
 	desc->horz_screen = buf_endian16(header2 + 6, little_endian);
 	desc->vert_screen = buf_endian16(header2 + 8, little_endian);
-	return validate_header(desc, header1[0], width, height,
+	return validate_header(desc, img, header1[0], width, height,
 		header2[1],
 		buf_endian16(header2 + 2, little_endian),
 		buf_endian16(header2 + 4, little_endian));
 }
 
-enum lib_fail pcx_open_file(FILE *ifp, struct pcx_desc *desc,
-long file_len) {
-	/* Header bytes for testing:
+enum wu_error pcx_open_file(struct pcx_desc *desc, const struct map_info *mm) {
+	/* PCX header:
 		Offset  Size    Name
 		0	BYTE	IdentifierByte; // Always 0x0A
 		1	BYTE	Version;
@@ -368,13 +361,10 @@ long file_len) {
 		3
 	*/
 
-	if (!file_len) {
-		file_len = file_get_remaining(ifp);
-	}
-	file_len -= 128;
-	if (file_len > 0) {
-		uint8_t sig[3];
-		if (fread(sig, sizeof(sig), 1, ifp)) {
+	desc->mp = mp_parser_mem(mm->len, mm->data);
+	if (desc->mp.len > 128) {
+		const uint8_t *sig = mp_next_slice(&desc->mp, 3);
+		if (sig) {
 			if (sig[0] == 0x0a && sig[2] == 1) {
 				switch (sig[1]) {
 				case pcx_ver25:
@@ -382,55 +372,74 @@ long file_len) {
 				case pcx_ver28_nopal:
 				case pcx_paintbrush:
 				case pcx_ver30:
+					desc->rle_len = desc->mp.len - 128;
 					desc->version = sig[1];
-					desc->ifp = ifp;
-					desc->r.palette = NULL;
-					desc->rle_len = file_len;
-					return lib_ok;
+					return wu_ok;
 				}
 			}
-			return lib_invalid_signature;
+			return wu_invalid_signature;
 		}
 	}
-	return lib_unexpected_eof;
+	return wu_unexpected_eof;
 }
 
-struct dcx_desc * dcx_read_offsets(FILE *ifp) {
-	struct dcx_desc *desc = malloc(sizeof(*desc));
-	if (desc) {
-		fseek(ifp, 0, SEEK_END);
-		const uint32_t endsize = (uint32_t)zumin(UINT32_MAX,
-			(size_t)ftell(ifp));
 
-		fseek(ifp, 4, SEEK_SET);
-		const size_t read = fread(desc->off, sizeof(*desc->off), 1023, ifp);
-		size_t i = 0;
-		if (read && desc->off[i]) {
-			desc->off[i] = endian32(desc->off[i], little_endian);
-			++i;
-			while (i < read && desc->off[i] > desc->off[i-1]
-			&& endsize > desc->off[i]) {
-				desc->off[i] = endian32(desc->off[i], little_endian);
-				desc->len[i-1] = desc->off[i] - desc->off[i-1];
-				++i;
-			}
-			desc->len[i-1] = endsize - desc->off[i-1];
-		}
-		desc->nr = i;
-	}
-	return desc;
+void dcx_free(struct dcx_desc *desc) {
+	free(desc->off);
 }
 
-enum lib_fail dcx_open_file(FILE *ifp) {
+enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
+const uint32_t i) {
+	struct map_info mm = {
+		.len = dcx->off[i + 1] - dcx->off[i],
+		.data = dcx->mp.mem + dcx->off[i],
+	};
+	return pcx_open_file(pcx, &mm);
+}
+
+enum wu_error dcx_open_file(struct dcx_desc *d, const struct map_info *mm) {
 	/* Why would anyone use the most device dependent file format ever for
-	 * sending documents is beyond me. */
+	 * sending documents is beyond me.
 
-	/* DCX header:
+	 * DCX header:
 		Offset  Size    Name
-		0       DWORD   Identifier;  // 0xb1 0x68 0xde 0x3a
-		4       DWORD   PageTable[]; // 0 terminated, max 1024;
+		0       DWORD   Identifier
+		4       DWORD   PageTable[] // PCX offsets. 1024 entries max
+
+	 * PageTable is 0 terminated, so this format manages to be bad despite
+	 * using only two fields. It's amazing.
 	*/
 
+	d->mp = mp_parser_mem(mm->len, mm->data);
+	d->off = NULL;
 	const uint8_t sig[] = {0xb1, 0x68, 0xde, 0x3a};
-	return lib_sigcmp(sig, sizeof(sig), ifp);
+	enum wu_error st = fmt_sigcmp_mem(sig, sizeof(sig), &d->mp);
+	if (st == wu_ok) {
+		const size_t max = 1023;
+		d->off = malloc(sizeof(*d->off) * (max + 1));
+		if (d->off) {
+			const struct wuptr p = mp_next_remaining(&d->mp,
+				SIZE_MAX);
+			for (d->nr = 0; d->nr < max && d->nr*4 < p.len; ++d->nr) {
+				d->off[d->nr] = buf_endian32(p.ptr + d->nr*4,
+					little_endian);
+				if (!d->off[d->nr]
+				|| d->off[d->nr] >= d->mp.len
+				|| (d->nr && d->off[d->nr] <= d->off[d->nr - 1])) {
+					break;
+				}
+			}
+			if (d->nr) {
+				d->off[d->nr] = (uint32_t)d->mp.len;
+			} else {
+				free(d->off);
+				st = wu_unexpected_eof;
+			}
+		} else {
+			st = wu_alloc_error;
+		}
+	}
+	return st;
 }
+
+/* Ok bye */

@@ -49,10 +49,24 @@ const uint8_t bd, FILE *ofp) {
 	fputs("ENDHDR\n", ofp);
 }
 
+static const char * pam_write(struct wu_state *state, struct gl_context *gl,
+const struct gl_reader *reader, FILE *ofp) {
+	uint8_t *buf = malloc(reader->len);
+	if (buf) {
+		pam_write_header(reader->w, reader->h, reader->ch, reader->bd, ofp);
+		for (size_t y = 0; y < reader->h; ++y) {
+			gl_reader_read_row(gl, state, reader, buf, y);
+			pam_write_row(buf, reader->bd, reader->w * reader->ch, ofp);
+		}
+		return NULL;
+	}
+	return "Failed to allocate row memory\n";
+}
+
 static FILE * get_file(const struct wu_state *state,
 struct write_out *out, const bool overwrite, const bool anim) {
 	char *suffix = out->name + out->base_len;
-	const size_t rem = sizeof(*out->name) - out->base_len;
+	const size_t rem = sizeof(out->name) - out->base_len;
 	const char ext[] = "pam";
 
 	const int prec = 4;
@@ -92,8 +106,11 @@ struct write_out *out, const char *outdir) {
 		outdir = image->name;
 	}
 	struct fs_path path;
-	out->dirfd = fs_get_parent_dir(outdir, &path);
+	out->dirfd = fs_get_parent_dir(&path, outdir);
 	if (out->dirfd >= 0) {
+		if (outdir != image->name) {
+			fs_path_set_file(&path, wuptr_str(image->name));
+		}
 		out->base_len = path.file.len;
 		if (out->base_len < sizeof(out->name)) {
 			memcpy(out->name, path.file.ptr, out->base_len);
@@ -107,73 +124,32 @@ struct write_out *out, const char *outdir) {
 	return false;
 }
 
-static bool pam_write(struct wu_state *state, struct write_out *out,
-struct gl_context *gl, const struct gl_reader *reader, uint8_t *restrict data,
-const bool overwrite, const bool frame_nr) {
-	FILE *ofp = get_file(state, out, overwrite, frame_nr);
-	if (!ofp) {
-		if (errno) {
-			perror("Failed to open output file");
-		} else {
-			fputs("Filename too long\n", stderr);
-		}
-		return false;
-	}
-
-	pam_write_header(reader->w, reader->h, reader->ch, reader->bd, ofp);
-	for (size_t y = 0; y < reader->h; ++y) {
-		gl_reader_read_row(gl, state, reader, data, y);
-		pam_write_row(data, reader->bd, reader->w * reader->ch, ofp);
-	}
-	fclose(ofp);
-	return true;
-}
-
 static const char * try_write(struct wu_state *state, struct write_out *out,
 struct gl_context *gl, const struct raw_img *img, const bool overwrite) {
-	struct gl_reader reader;
- 	if (gl_reader_set(gl, state, &reader, img)) {
-		uint8_t *data = malloc(reader.len);
-		if (data) {
-			pam_write(state, out, gl, &reader, data, overwrite,
-				img->frames);
-			free(data);
+	const char *err_msg = NULL;
+	FILE *ofp = get_file(state, out, overwrite, img->frames);
+	if (ofp) {
+		struct gl_reader reader;
+	 	if (gl_reader_set(gl, state, &reader, img)) {
+			err_msg = pam_write(state, gl, &reader, ofp);
 		} else {
-			return "Failed to allocate row memory\n";
+			err_msg = "Failed to set framebuffer\n";
 		}
+		fclose(ofp);
 	} else {
-		return "Failed to set framebuffer\n";
+		if (errno) {
+			err_msg = "Failed to open output file\n";
+			//perror(err_msg);
+		} else {
+			err_msg = "Filename too long\n";
+		}
 	}
-	return NULL;
-}
-
-bool write_current(const struct image_context *image, struct gl_context *gl) {
-	struct write_out out;
-	if (!set_out_dir(image, &out, NULL)) {
-		perror(OUTDIR_FAIL);
-		return false;
-	}
-
-	struct wu_state state = image->state;
-	struct raw_img *img = image->file.sub_img + state.idx;
-
-	gl_reader_bind(gl);
-
-	const char *err = try_write(&state, &out, gl, img, false);
-	close(out.dirfd);
-
-	gl_reader_unbind();
-	gl_viewport(gl, &image->conf.fb);
-	if (err) {
-		fputs(err, stderr);
-		return false;
-	}
-	return true;
+	return err_msg;
 }
 
 static void write_sub_img(struct write_writer *writer,
 const struct write_args *args, struct wu_state *state,
-const struct raw_img *img) {
+struct raw_img *img) {
 	const char *err = NULL;
 	if (gl_texture_upload(&writer->gl, img) != gl_upload_fail) {
 		err = try_write(state, &writer->out, &writer->gl, img,
@@ -189,7 +165,7 @@ const struct raw_img *img) {
 
 enum wu_error write_image(struct image_context *image,
 struct write_writer *writer, const struct write_args *args) {
-	const struct raw_img *img;
+	struct raw_img *img;
 	enum wu_error err = dec_iter_image(image, &img);
 	if (err != wu_ok) {
 		return err;
@@ -238,7 +214,6 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 		if (arg[0] == '-' && arg[1] && !arg[2]) {
 			switch (arg[1]) {
 			case 'f': args->overwrite = true; break;
-			case 'r': args->raw = true; break;
 			case 'o':
 				if (idx + 1 >= argc) {
 					return idx;

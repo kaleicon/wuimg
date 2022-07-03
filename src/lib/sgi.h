@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "../raster/lib.h"
+#include "wudefs.h"
 
 enum sgi_bitmap_type {
 	sgi_raw,
@@ -20,7 +20,6 @@ enum sgi_compression {
 
 struct sgi_desc {
 	FILE *ifp;
-	struct raster_desc rast;
 
 	size_t rle_size;
 	unsigned char bytedepth;
@@ -30,10 +29,10 @@ struct sgi_desc {
 	char name[80];
 };
 
-size_t sgi_decode(const struct sgi_desc *desc, void *restrict dst);
+size_t sgi_decode(const struct sgi_desc *desc, struct raw_img *img);
 
-enum lib_fail sgi_parse_header(struct sgi_desc *desc);
+enum wu_error sgi_parse_header(struct sgi_desc *desc, struct raw_img *img);
 
-enum lib_fail sgi_open_file(struct sgi_desc *desc, FILE *ifp);
+enum wu_error sgi_open_file(struct sgi_desc *desc, FILE *ifp);
 
 #endif /* LIB_SGI */

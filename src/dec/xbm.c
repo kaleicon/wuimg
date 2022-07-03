@@ -1,10 +1,6 @@
-#include <stdio.h>
-
-#include "../wudefs.h"
-#include "../common.h"
-#include "../rast_utils.h"
-
-#include "../lib/xbm.h"
+#include "wudefs.h"
+#include "rast_utils.h"
+#include "lib/xbm.h"
 
 static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 	struct wu_leaf leaf = {
@@ -32,38 +28,26 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 }
 
 static enum wu_error decode(struct image_file *infile,
-const struct wu_conf *wuconf, struct map_info *mm) {
-	struct xbm_desc desc;
-	enum lib_fail fail = xbm_open_mem(&desc, mm);
-	if (fail) {
-		rast_error(infile, fail);
-		return wu_unknown_file_type;
-	}
-
-	get_metadata(&infile->metadata, &desc);
-
-	if (rast_exceeds_size(&desc.r, wuconf)) {
-		return wu_exceeds_size_limit;
-	}
-
+const struct wu_conf *wuconf, const struct map_info *mm) {
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
 
-	if (!rast_to_raw_img(&desc.r, img)) {
-		return wu_alloc_error;
+	struct xbm_desc desc;
+	const enum wu_error st = xbm_parse_header(&desc, img, mm);
+	if (st) {
+		return st;
 	}
-	return xbm_decode(&desc, img->data) ? wu_ok : wu_decoding_error;
+
+	get_metadata(&infile->metadata, &desc);
+
+	if (raw_img_exceeds_limit(img, wuconf)) {
+		return wu_exceeds_size_limit;
+	}
+	return xbm_decode(&desc, img) ? wu_ok : wu_decoding_error;
 }
 
 enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct map_info mm;
-	if (!map_file(&mm, infile->ifp)) {
-		return wu_alloc_error;
-	}
-
-	const enum wu_error st = decode(infile, wuconf, &mm);
-	unmap_file(&mm);
-	return st;
+	return rast_map_wrap(infile, wuconf, decode);
 }

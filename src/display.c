@@ -6,81 +6,54 @@
 #include <math.h>
 #include <limits.h>
 
-#include "wudefs.h"
 #include "common.h"
 #include "display.h"
-#include "window.h"
-#include "opengl.h"
-#include "events.h"
-#include "term.h"
 #include "dec.h"
-#include "colorimetry.h"
+#include "events.h"
 
 static void set_background_color(const struct image_context *image) {
 	const struct image_file *infile = &image->file;
 	const struct wu_conf *conf = &image->conf;
 
-	const float max = (float)UCHAR_MAX;
-	float bg[4];
-	for (size_t i = 0; i < sizeof(conf->bg); ++i) {
-		bg[i] = conf->bg[i] / max;
+	if (conf->bg_src == bg_metadata
+	&& !memchk(&infile->bg, 0, sizeof(infile->bg))) {
+		uint8_t bg[4];
+		memcpy(bg, &infile->bg, 3);
+		bg[3] = conf->bg[3];
+		gl_clear_color(bg);
 	}
-
-	switch (conf->bg_src) {
-	case bg_metadata:
-		if (memchk(&infile->bg, 0, sizeof(infile->bg))) {
-			bg[0] = infile->bg.r / max * bg[3];
-			bg[1] = infile->bg.g / max * bg[3];
-			bg[2] = infile->bg.b / max * bg[3];
-		}
-		break;
-	case bg_average:
-	case bg_popular:
-	case bg_vibrant:
-		;const clock_t start = clock();
-		get_image_color(bg, infile->sub_img, conf->bg_src, 256);
-		printf("Color measured in %f\n", clock_ellapsed(start));
-		for (size_t i = 0; i < 3; ++i) {
-			bg[i] *= bg[3];
-		}
-		break;
-	default:
-		return;
-	}
-	gl_clear_color(bg);
 }
 
 void display_end(struct window_context *window, const struct term_restore *tr) {
 	window_terminate(window);
+	gl_terminate(&window->pub.gl);
 	if (tr) {
 		term_noncanon_end(tr);
 	}
 }
 
 static double poll_events(struct window_context *window) {
-	struct wu_keymap *held_keys = &window->pub.held_keys;
 	unsigned char tk[32];
 	const size_t read = term_event_read(tk, sizeof(tk));
 	for (size_t i = 0; i < read; ++i) {
-		event_add(held_keys, key_external, toupper(tk[i]), isupper(tk[i]));
+		window_key_add(&window->pub.held_keys, key_external,
+			toupper(tk[i]), isupper(tk[i]));
 	}
-	return window_poll(window);
+	window_poll(window);
+	return event_exec(window);
 }
 
 static bool update_texture(struct image_context *image, struct gl_context *gl,
-const bool reset) {
+const bool reset, struct window_context *window) {
 	struct wu_state *state = &image->state;
-	const struct raw_img *img = image->file.sub_img + state->idx;
-	if (!state->anim_playing) {
-		gl_clock_start(gl);
-	}
-
+	struct raw_img *img = image->file.sub_img + state->idx;
 	switch (gl_texture_upload(gl, img)) {
 	case gl_upload_fail:
 		puts("Failed to upload to texture.");
 		return false;
 	case gl_upload_success:
-		state->fit_zoom = gl_fit_zoom(gl, state->rotate);
+		(void)window;
+		state->fit_zoom = gl_fit_zoom(gl, img->rotate);
 		if (reset) {
 			state->zoom = fminf(1, state->fit_zoom);
 			state->rotate = 0;
@@ -92,11 +65,12 @@ const bool reset) {
 	case gl_upload_same_size:
 		break; // Keep state as it was
 	}
-	if (!state->anim_playing) {
-		printf("Frame %d uploaded in %lu nanoseconds.\n",
-			state->frame, gl_clock_end(gl));
-	}
 	gl->update_matrix = true;
+
+	if (!state->anim_playing) {
+		printf("Frame %d uploaded in %lu ns\n",
+			state->frame, gl_clock_query(gl));
+	}
 	return true;
 }
 
@@ -105,15 +79,18 @@ struct window_context *window, double remaining) {
 	struct wu_event *event = &window->pub.event;
 	struct wu_state *state = &window->pub.image.state;
 	struct gl_context *gl = &window->pub.gl;
-	struct raw_img *cur = image->file.sub_img + state->idx;
 
-	for (bool initial = true;;) {
+	for (bool initial = true;; initial = false) {
 		if (gl->update_matrix) {
-			gl_matrix_update(gl, state, cur->rotate, cur->mirror);
-			window_draw(window, initial);
-			initial = false;
+			gl_matrix_update(gl, state);
+			window_draw(window, false);
+			if (!state->anim_playing) {
+				printf("Drawn in %lu ns\n", gl_clock_query(gl));
+			}
 		}
-		const struct timespec tm = {.tv_nsec = 2000000};
+		const struct timespec tm = {
+			.tv_nsec = initial ? 2000000 : 5000000,
+		};
 		nanosleep(&tm, NULL);
 		const double ellapsed = poll_events(window);
 
@@ -146,7 +123,7 @@ static double min_time(const struct raw_img *img, const struct wu_state *state) 
 	return 0;
 }
 
-bool display_loop(struct window_context *window, const bool no_cycle) {
+bool display_loop(struct window_context *window, const bool single_file) {
 	struct image_context *image = &window->pub.image;
 	struct image_file *infile = &image->file;
 	struct wu_state *state = &window->pub.image.state;
@@ -161,14 +138,15 @@ bool display_loop(struct window_context *window, const bool no_cycle) {
 
 	bool all_ok = true;
 	double remaining = 0;
-	for (bool upload = true, reset = true;;) {
+	for (bool upload = true, first_iter = true;;) {
 		if (upload) {
 			if (event->image == ev_subcycle) {
-				state->anim_playing = raw_img_nr_frames(
+				state->anim_playing = raw_img_frames_nr(
 					infile->sub_img + state->idx) > 1;
 			}
 
-			all_ok = update_texture(image, &window->pub.gl, reset);
+			all_ok = update_texture(image, &window->pub.gl,
+				first_iter, window);
 			if (!all_ok) {
 				break;
 			}
@@ -180,13 +158,13 @@ bool display_loop(struct window_context *window, const bool no_cycle) {
 				remaining = fmax(0, remaining + display_time);
 			}
 			upload = false;
-			reset = false;
+			first_iter = false;
 			event->image = 0;
 		}
 
 		remaining = idle_display(image, window, remaining);
 
-		if ((no_cycle == false && event->cycle)
+		if ((!single_file && event->cycle)
 		|| event->program || event->rm == trit_true) {
 			break;
 		} else if (event->image & infile->events) {
@@ -200,8 +178,9 @@ bool display_loop(struct window_context *window, const bool no_cycle) {
 				all_ok = false;
 				break;
 			}
-		} else {
-			upload = (event->image == ev_subcycle);
+		}
+		if (event->image & (ev_subcycle | ev_frame)) {
+			upload = true;
 		}
 	}
 	term_clear_line();
@@ -215,7 +194,7 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 		return false;
 	}
 
-	printf("Window backend: %s\n", window_backend_str(window->backend));
+	printf("Window backend: %s\n", window_backend_name(window->backend));
 
 	if (!gl_context_setup(&window->pub.gl, &window->pub.image.conf)) {
 		window_terminate(window);

@@ -3,39 +3,39 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "../common.h"
-#include "../raster/pix.h"
-#include "../raster/unpack.h"
+#include "common.h"
+#include "raster/file.h"
+#include "raster/fmt.h"
+#include "raster/pix.h"
+#include "raster/unpack.h"
 
 #include "tga.h"
 
 void tga_cleanup(struct tga_desc *desc) {
-	free(desc->r.palette);
-	free(desc->meta.stamp.palette);
+	free(desc->map.extra_pal);
 }
 
-static size_t raw_process(const struct raster_desc *raster, void *restrict data,
-const size_t bytes) {
-	if (raster->bitdepth == 16) {
-		uint16_t *words = data;
-		for (size_t i = 0; i < bytes/2; ++i) {
-			words[i] = endian16(words[i], little_endian);
-			if (raster->ch == 3) {
-				words[i] |= (1 << 15);
-			}
-		}
+double tga_ratio_to_float(const struct tga_ratio ratio) {
+	return (double)ratio.num / ratio.den;
+}
+
+static size_t raw_process(struct raw_img *img, const size_t bytes) {
+	if (img->bitdepth == 16) {
+		loop_endian16((uint16_t *)img->data, little_endian, bytes/2);
 	}
 	return bytes;
 }
 
-static size_t raw_load(FILE *ifp, const struct raster_desc *raster,
-uint8_t *restrict dst) {
-	return raw_process(raster, dst, fread(dst, 1, raster_size(raster), ifp));
+static size_t raw_load(struct raw_img *img, FILE *ifp) {
+	return raw_process(img, fread(img->data, 1, raw_img_size(img), ifp));
 }
 
-size_t tga_decode_stamp(const struct tga_desc *desc, void *restrict dst) {
-	fseek(desc->ifp, desc->meta.stamp_offset + 2, SEEK_SET);
-	return raw_load(desc->ifp, &desc->meta.stamp, dst);
+size_t tga_decode_stamp(const struct tga_desc *desc, struct raw_img *stamp) {
+	if (raw_img_alloc_noverify(stamp)) {
+		fseek(desc->ifp, desc->meta.stamp_offset + 2, SEEK_SET);
+		return raw_load(stamp, desc->ifp);
+	}
+	return 0;
 }
 
 static void rle_decode(unsigned char *restrict output,
@@ -63,56 +63,71 @@ const unsigned char *restrict rle_limit, const size_t pixel_size) {
 	} while (rle + pixel_size < rle_limit);
 }
 
-static size_t rle_load(const struct tga_desc *desc, uint8_t *restrict dst) {
-	const size_t dims = desc->r.w * desc->r.h;
+static size_t rle_load(const struct tga_desc *desc, struct raw_img *img) {
+	const size_t dims = img->w * img->h;
 	const size_t bytedepth = ((size_t)desc->depth + 7) / 8;
 
-	fseek(desc->ifp, 0, SEEK_END);
-	const long end = ftell(desc->ifp);
-	const size_t file_len = (size_t)(end - desc->data_start);
-
+	const size_t file_len = (size_t)file_remaining(desc->ifp);
 	const size_t packet_len = 1 + bytedepth;
 	// E.g. 0x80 0x00, 0x80 0x00 ...
 	const size_t pathological_rle = dims * packet_len;
 
-
 	const size_t rle_len = zumin(pathological_rle, file_len);
 	unsigned char *rle = malloc(rle_len);
 	if (rle) {
-		fseek(desc->ifp, desc->data_start, SEEK_SET);
 		const size_t read = fread(rle, 1, rle_len, desc->ifp);
 
 		const size_t dst_len = dims * bytedepth;
-		rle_decode(dst, dst + dst_len, rle, rle + read,
+		rle_decode(img->data, img->data + dst_len, rle, rle + read,
 			bytedepth);
 		free(rle);
-		return raw_process(&desc->r, dst, dst_len);
+		return raw_process(img, dst_len);
 	}
 	return 0;
 
 }
 
-size_t tga_decode(const struct tga_desc *desc, void *restrict dst) {
-	switch (desc->type) {
-	case tga_no_image_data:
-		break;
-	case tga_colormap_data:
-	case tga_truecolor_data:
-	case tga_monochrome_data:
+size_t tga_decode(const struct tga_desc *desc, struct raw_img *img) {
+	if (raw_img_alloc_noverify(img)) {
 		fseek(desc->ifp, desc->data_start, SEEK_SET);
-		return raw_load(desc->ifp, &desc->r, dst);
-	case tga_colormap_rle:
-	case tga_truecolor_rle:
-	case tga_monochrome_rle:
-		return rle_load(desc, dst);
+		switch (desc->type) {
+		case tga_no_image_data:
+			break;
+		case tga_colormap_data:
+		case tga_truecolor_data:
+		case tga_monochrome_data:
+			return raw_load(img, desc->ifp);
+		case tga_colormap_rle:
+		case tga_truecolor_rle:
+		case tga_monochrome_rle:
+			return rle_load(desc, img);
+		}
 	}
 	return 0;
 }
 
 struct raster_pal * tga_take_extra_palette(struct tga_desc *desc) {
-	struct raster_pal *pal = desc->map.pal;
-	desc->map.pal = NULL;
+	struct raster_pal *pal = desc->map.extra_pal;
+	desc->map.extra_pal = NULL;
 	return pal;
+}
+
+enum wu_error tga_parse_stamp(const struct tga_desc *desc,
+struct raw_img *main, struct raw_img *stamp) {
+	uint8_t buf[2];
+	fseek(desc->ifp, desc->meta.stamp_offset, SEEK_SET);
+	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+		return wu_unexpected_eof;
+	} else if (!buf[0] || !buf[1]) {
+		return wu_int_overflow;
+	}
+
+	if (raw_img_clone(stamp, main)) {
+		stamp->w = buf[0];
+		stamp->h = buf[1];
+		return wu_ok;
+	}
+	return wu_alloc_error;
 }
 
 static bool read_extension_area(struct tga_desc *desc) {
@@ -142,17 +157,14 @@ static bool read_extension_area(struct tga_desc *desc) {
 	if (!fread(buf, len, 1, desc->ifp)) {
 		return false;
 	}
-	meta->has_timestamp = memchk(buf, 0, len);
-	if (meta->has_timestamp) {
-		meta->timestamp = utc_to_epoch(
-			buf_endian16(buf + 4, little_endian),
-			buf_endian16(buf, little_endian),
-			buf_endian16(buf + 2, little_endian),
-			buf_endian16(buf + 6, little_endian),
-			buf_endian16(buf + 8, little_endian),
-			buf_endian16(buf + 10, little_endian)
-		);
-	}
+	meta->timestamp = utc_to_epoch(
+		buf_endian16(buf + 4, little_endian),
+		buf_endian16(buf, little_endian),
+		buf_endian16(buf + 2, little_endian),
+		buf_endian16(buf + 6, little_endian),
+		buf_endian16(buf + 8, little_endian),
+		buf_endian16(buf + 10, little_endian)
+	);
 
 	len = sizeof(meta->job.name);
 	read = fread(meta->job.name, 1, len, desc->ifp);
@@ -179,33 +191,12 @@ static bool read_extension_area(struct tga_desc *desc) {
 	meta->software.version_letter = (char)buf[0];
 	meta->software.version_number = buf_endian16(buf + 1, little_endian);
 	memcpy(&meta->key_color, buf + 3, 4);
-	meta->pixel_numerator = buf_endian16(buf + 7, little_endian);
-	meta->pixel_denominator = buf_endian16(buf + 9, little_endian);
-	meta->gamma_numerator = buf_endian16(buf + 11, little_endian);
-	meta->gamma_denominator = buf_endian16(buf + 13, little_endian);
+	meta->pixel_aspect.num = buf_endian16(buf + 7, little_endian);
+	meta->pixel_aspect.den = buf_endian16(buf + 9, little_endian);
+	meta->gamma.num = buf_endian16(buf + 11, little_endian);
+	meta->gamma.den = buf_endian16(buf + 13, little_endian);
 	//meta->color_offset = buf_endian16(buf + 15, little_endian);
 	meta->stamp_offset = buf_endian16(buf + 19, little_endian);
-
-	if (meta->stamp_offset) {
-		fseek(desc->ifp, meta->stamp_offset, SEEK_SET);
-		len = 2;
-		read = fread(buf, 1, len, desc->ifp);
-		if (read != len || !buf[0] || !buf[1]) {
-			meta->stamp_offset = 0;
-			return false;
-		}
-		meta->stamp = desc->r;
-		meta->stamp.w = buf[0];
-		meta->stamp.h = buf[1];
-		if (desc->r.palette) {
-			meta->stamp.palette = memdup(desc->r.palette,
-				sizeof(*desc->r.palette));
-			if (!meta->stamp.palette) {
-				meta->stamp_offset = 0;
-				return false;
-			}
-		}
-	}
 	return true;
 }
 
@@ -218,33 +209,32 @@ bool tga_parse_footer(struct tga_desc *desc) {
 		EOF
 	*/
 	unsigned char footer[26];
-	fseek(desc->ifp, -(long)(sizeof(footer)), SEEK_END);
-	fread(footer, 1, sizeof(footer), desc->ifp);
-
-	const char signature[] = "TRUEVISION-XFILE."; // null is important
-	if (!memcmp(footer + 8, signature, sizeof(signature))) {
-		const unsigned int extension_off = buf_endian32(footer,
-			little_endian);
-		if (extension_off) {
-			fseek(desc->ifp, (long)extension_off, SEEK_SET);
-			return read_extension_area(desc);
+	if (fread_tail(footer, sizeof(footer), 1, desc->ifp)) {
+		const char sig[] = "TRUEVISION-XFILE."; // null is important
+		if (!memcmp(footer + 8, sig, sizeof(sig))) {
+			const unsigned int extension_off = buf_endian32(footer,
+				little_endian);
+			if (extension_off) {
+				fseek(desc->ifp, (long)extension_off, SEEK_SET);
+				return read_extension_area(desc);
+			}
 		}
 	}
 	return false;
 }
 
-static enum lib_fail load_colormap(struct tga_desc *desc) {
+static enum wu_error load_colormap(struct tga_desc *desc, struct raw_img *img) {
 	struct raster_pal *pal = malloc(sizeof(*pal));
 	if (!pal) {
-		return lib_alloc_error;
+		return wu_alloc_error;
 	}
 	switch (desc->type) {
 	case tga_colormap_data:
 	case tga_colormap_rle:
-		desc->r.palette = pal;
+		raw_img_set_palette(img, pal);
 		break;
 	default:
-		desc->map.pal = pal;
+		desc->map.extra_pal = pal;
 		break;
 	}
 
@@ -260,7 +250,7 @@ static enum lib_fail load_colormap(struct tga_desc *desc) {
 	}
 
 	if (!fread(buf, elem_size * elems, 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 	if (colormap_len > 256) {
 		const long rem = (long)((colormap_len - elems) * elem_size);
@@ -278,23 +268,24 @@ static enum lib_fail load_colormap(struct tga_desc *desc) {
 		break;
 	case 24:
 		raster_pal_from_rgb8(pal, buf, elems);
+		break;
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-static enum lib_fail validate_header(struct tga_desc *desc,
+static enum wu_error validate_header(struct tga_desc *desc, struct raw_img *img,
 const uint8_t cm_type, const uint8_t type, const uint16_t cm_start,
 const uint16_t cm_len, const uint8_t cm_depth, const uint16_t width,
 const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 	switch (type) {
 	case tga_no_image_data:
-		return lib_tga_no_image_data;
+		return wu_no_image_data;
 	case tga_truecolor_data:
 	case tga_monochrome_data:
 	case tga_truecolor_rle:
 	case tga_monochrome_rle:
 		if (cm_type) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case tga_colormap_data:
@@ -304,7 +295,7 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 			case 15: case 16: case 24: case 32:
 				break;
 			default:
-				return lib_invalid_header;
+				return wu_invalid_header;
 			}
 
 			desc->map.offset = cm_start;
@@ -312,66 +303,67 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 			desc->map.depth = cm_depth;
 			break;
 		}
-		return lib_invalid_header;
+		return wu_invalid_header;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
-	if (!width || !height) {
-		return lib_invalid_header;
+	if (width < 1 || height < 1) {
+		return wu_invalid_header;
 	}
 
-	desc->r = (struct raster_desc) {
-		.w = width,
-		.h = height,
-	};
 	desc->type = type;
 	desc->depth = depth;
-	desc->attr_bits = img_desc & 0x07;
-	desc->orientation = (img_desc >> 4) & 0x03;
 
-	if (desc->attr_bits) {
-		switch (depth) {
-		case 16:
-			if (desc->attr_bits != 1) {
-				return lib_invalid_header;
-			}
-			break;
-		case 32:
-			if (desc->attr_bits != 8) {
-				return lib_invalid_header;
-			}
-			break;
-		default:
-			return lib_invalid_header;
+	const uint8_t attr_bits = img_desc & 0x07;
+	switch (attr_bits) {
+	case 0: break;
+	case 1:
+		if (depth != 16) {
+			return wu_invalid_header;
 		}
-	}
-
-	desc->r.ch = 1;
-	desc->r.layout = pix_bgra;
-	desc->r.bitdepth = 8;
-	switch (depth) {
-	case 15:
-	case 16:
-		desc->r.bitdepth = 16;
-		desc->r.attr = pix_packing_1555;
 		break;
 	case 8:
-		if (!desc->map.len) {
-			desc->r.layout = pix_gray;
+		if (depth != 32) {
+			return wu_invalid_header;
 		}
+		break;
+	default:
+		return wu_invalid_header;
+	}
+
+	img->w = width;
+	img->h = height;
+	img->channels = 1;
+	img->bitdepth = 8;
+	img->layout = pix_bgra;
+	img->alpha = attr_bits ? alpha_unassociated : alpha_ignore;
+	img->rotate = (img_desc >> 3) & 0x02;
+	img->mirror = !(img_desc >> 5);
+
+	switch (depth) {
+	case 8:
+		if (!desc->map.len) {
+			img->layout = pix_gray;
+		}
+		break;
+	case 15:
+	case 16:
+		img->bitdepth = 16;
+		img->attr = pix_packing_1555;
 		break;
 	case 24:
 	case 32:
-		desc->r.ch = depth / 8;
+		img->channels = depth / 8;
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
-	return lib_ok;
+	return raw_img_verify(img);
 }
 
-enum lib_fail tga_parse_header(struct tga_desc *desc, FILE *ifp) {
+enum wu_error tga_parse_header(struct tga_desc *desc, struct raw_img *img,
+FILE *ifp) {
 	/* TGA header
 		Offset  Size    Name
 		0       BYTE    IDLength        // Size of Image ID field
@@ -389,7 +381,7 @@ enum lib_fail tga_parse_header(struct tga_desc *desc, FILE *ifp) {
 		|
 		|       Bits
 		|       0-3     Number of alpha bits // [3]
-		|       4       Horizontal flip      // [4]
+		|       4       Horizontal flip      //
 		|       5       Vertical flip        // [4]
 		|       6-7     Reserved
 		|
@@ -405,19 +397,18 @@ enum lib_fail tga_parse_header(struct tga_desc *desc, FILE *ifp) {
 	 *     nothing about them. Should be 0 or 1 for 15/16-bit images and
 	 *     0 or 8 for 32-bit images. Plenty of software seems to ignore
 	 *     the value, though.
-	 * [4] Remember that the raster is stored bottom-up, left to right.
+	 * [4] Relative to the raster being stored bottom-up.
 	*/
 
 	desc->ifp = ifp;
 	desc->map = (struct tga_colormap){0};
-	desc->meta.stamp.palette = NULL;
 
 	uint8_t header[18];
 	if (!fread(header, sizeof(header), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
-	enum lib_fail fail = validate_header(desc,
+	enum wu_error fail = validate_header(desc, img,
 		header[1], header[2],
 		buf_endian16(header + 3, little_endian),
 		buf_endian16(header + 5, little_endian),
@@ -432,18 +423,17 @@ enum lib_fail tga_parse_header(struct tga_desc *desc, FILE *ifp) {
 	desc->meta.id_len = header[0];
 	if (desc->meta.id_len) {
 		if (!fread(desc->meta.id, desc->meta.id_len, 1, desc->ifp)) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 	}
 
 	if (desc->map.len) {
-		fail = load_colormap(desc);
-		if (fail != lib_ok) {
+		fail = load_colormap(desc, img);
+		if (fail != wu_ok) {
 			return fail;
 		}
 	}
 
-	raster_normalize(&desc->r);
 	desc->data_start = ftell(desc->ifp);
-	return lib_ok;
+	return wu_ok;
 }

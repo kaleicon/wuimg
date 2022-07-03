@@ -1,11 +1,11 @@
 #include "common.h"
 
-#include "unpack.h"
+#include "strip.h"
 #include "graphics_adapters.h"
 
 static void interleave_pal1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const size_t h, const uint8_t planes) {
-	const size_t row_len = scanline_length(w, 1, 1);
+const size_t w, const size_t h, const uint8_t planes, const uint8_t align) {
+	const size_t row_len = scanline_length(w, 1, align);
 	for (size_t y = 0; y < h; ++y) {
 		const uint8_t *s = src + row_len*y;
 		for (size_t x = 0; x < w; ++x) {
@@ -20,8 +20,8 @@ const size_t w, const size_t h, const uint8_t planes) {
 }
 
 static void interleave_nopal1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const size_t h, const uint8_t planes) {
-	const size_t row_len = scanline_length(w, 1, 1);
+const size_t w, const size_t h, const uint8_t planes, const uint8_t align) {
+	const size_t row_len = scanline_length(w, 1, align);
 	for (uint8_t y = 0; y < h; ++y) {
 		const uint8_t *s = src + row_len*y;
 		uint8_t *d = dst + w*planes*y;
@@ -42,18 +42,21 @@ const size_t w, const uint8_t ch) {
 	}
 }
 
+/* Interleaves bitplanes, each 'h' rows in size. For row-interleaving,
+ * must be called with h = 1 on a loop. */
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t w, const size_t h, const uint8_t ch, const uint8_t bitdepth,
-const bool paletted) {
+const uint8_t align, const bool paletted) {
 	switch (bitdepth) {
 	case 1:
 		if (paletted) {
-			interleave_pal1(dst, src, w, h, ch);
+			interleave_pal1(dst, src, w, h, ch, align);
 		} else {
-			interleave_nopal1(dst, src, w, h, ch);
+			interleave_nopal1(dst, src, w, h, ch, align);
 		}
 		break;
 	case 8:
+		// Only used by PCX.
 		interleave8(dst, src, w, ch);
 		break;
 	}

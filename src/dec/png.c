@@ -7,6 +7,7 @@
 #include "../wudefs.h"
 #include "../common.h"
 #include "../metadata.h"
+#include "../raster/unpack.h"
 
 struct png_state {
 	png_struct *png;
@@ -29,7 +30,22 @@ static void big_trouble_fn(png_struct *png, const char *msg) {
 }
 
 static void read_png_info(const png_struct *png, png_info *info,
-struct wu_tree *tree) {
+struct image_file *infile) {
+	struct wu_tree *tree = &infile->metadata;
+	struct raw_img *img = infile->sub_img;
+
+#ifdef PNG_bKGD_SUPPORTED
+	png_color_16 *bg = NULL;
+	png_get_bKGD(png, info, &bg);
+	if (bg) {
+		infile->bg.r = (unsigned char)(bg->red >> 8);
+		infile->bg.g = (unsigned char)(bg->green >> 8);
+		infile->bg.b = (unsigned char)(bg->blue >> 8);
+		infile->bg.a = 0xff;
+	}
+#endif /* bKGD */
+
+#ifdef PNG_TEXT_SUPPORTED
 	png_text *text = NULL;
 	const int num_comm = png_get_text(png, info, &text, NULL);
 	if (text) {
@@ -49,7 +65,9 @@ struct wu_tree *tree) {
 			}
 		}
 	}
+#endif /* TEXT */
 
+#ifdef PNG_tIME_SUPPORTED
 	png_time *time = NULL;
 	png_get_tIME(png, info, &time);
 	if (time) {
@@ -61,32 +79,61 @@ struct wu_tree *tree) {
 		};
 		tree_bud_leaf(tree, "Time", leaf);
 	}
+#endif /* tIME */
 
+#ifdef PNG_eXIf_SUPPORTED
 	png_byte *exif = NULL;
-	uint32_t len;
+	png_uint_32 len;
 	png_get_eXIf_1(png, info, &len, &exif);
-	if (exif) {
-		standard_metadata(exif_metadata, exif, len, tree);
+	if (exif && standard_metadata(exif_metadata, exif, len, tree)) {
+		raw_img_exif_orientation(img, metadata_orientation(tree));
 	}
+#endif
 }
 
 static void read_png_metadata(const struct png_state *png,
 struct image_file *infile) {
 	png_info *infos[] = {png->info, png->end};
 	for (size_t i = 0; i < ARRAY_LEN(infos); ++i) {
-		png_color_16 *bg = NULL;
-		png_get_bKGD(png->png, infos[i], &bg);
-		if (bg) {
-			infile->bg.r = (unsigned char)(bg->red >> 8);
-			infile->bg.g = (unsigned char)(bg->green >> 8);
-			infile->bg.b = (unsigned char)(bg->blue >> 8);
-			infile->bg.a = 0xff;
-			break;
+		read_png_info(png->png, infos[i], infile);
+	}
+}
+
+static void get_color_profile(const png_struct *png, png_info *info,
+struct color_space *cs) {
+#ifdef PNG_iCCP_SUPPORTED
+	if (cs->type != color_profile_icc) {
+		char *name;
+		unsigned char *icc = NULL;
+		png_uint_32 len;
+		png_get_iCCP(png, info, &name, NULL, &icc, &len);
+		if (icc && color_space_set_icc_copy(cs, icc, len)) {
+			return;
 		}
+	} else {
+		return;
 	}
-	for (size_t i = 0; i < ARRAY_LEN(infos); ++i) {
-		read_png_info(png->png, infos[i], &infile->metadata);
+#endif
+
+	if (png_get_valid(png, info, PNG_INFO_sRGB)) {
+		return;
 	}
+
+#ifdef PNG_cHRM_SUPPORTED
+	double p[8];
+	if (png_get_cHRM(png, info, p, p+1, p+2, p+3, p+4, p+5, p+6, p+7)) {
+		color_space_set_primaries(cs, p[0], p[1], p[2], p[3],
+			p[4], p[5], p[6], p[7]);
+	}
+#endif
+
+#ifdef PNG_gAMA_SUPPORTED
+	double gamma;
+	if (png_get_gAMA(png, info, &gamma)) {
+		color_space_set_gamma(cs, 1/gamma);
+	}
+#endif
+	(void)png; (void)info; (void)cs;
 }
 
 static struct raster_pal * read_palette(const struct png_state *png) {
@@ -112,49 +159,49 @@ static struct raster_pal * read_palette(const struct png_state *png) {
 
 static enum wu_error decode_image(struct image_file *infile,
 const struct wu_conf *wuconf, struct png_state *png) {
-//#ifdef PNG_APNG_SUPPORTED
-//	infile->nr = png_get_num_frames(png->png, png->info);
-//#else
-	infile->nr = 1;
-//#endif
-	struct raw_img *img = alloc_sub_images(infile, infile->nr);
+	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
-
-	const png_byte bit_depth = png_get_bit_depth(png->png, png->info);
-	const png_byte color_type = png_get_color_type(png->png, png->info);
-	if (color_type == PNG_COLOR_TYPE_PALETTE) {
-		if (!raw_img_set_palette(img, read_palette(png))) {
-			png_set_expand(png->png);
-		}
-	} else if (bit_depth >= 16 && which_end() != big_endian) {
-		png_set_swap(png->png);
-	}
-	int passes = 1;
-#ifdef PNG_READ_INTERLACING_SUPPORTED
-	passes = png_set_interlace_handling(png->png);
-#endif
-	png_read_update_info(png->png, png->info);
 
 	img->w = png_get_image_width(png->png, png->info);
 	img->h = png_get_image_height(png->png, png->info);
 	img->channels = png_get_channels(png->png, png->info);
 	img->bitdepth = png_get_bit_depth(png->png, png->info);
-	if (zumax(img->w, img->h) > wuconf->max_img_size) {
+	img->alpha = alpha_unassociated;
+	if (raw_img_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
-
-	const size_t row_size = raw_img_addbuf(img);
-	if (!row_size) {
-		return wu_alloc_error;
-	}
-
-	for (int p = 0; p < passes; ++p) {
-		for (size_t y = 0; y < img->h; ++y) {
-			png_read_row(png->png, img->data + row_size*y, NULL);
+	if (png_get_color_type(png->png, png->info) == PNG_COLOR_TYPE_PALETTE) {
+		if (!raw_img_set_palette(img, read_palette(png))) {
+			return wu_alloc_error;
 		}
 	}
+
+	const enum wu_error st = raw_img_alloc(img);
+	if (st != wu_ok) {
+		return st;
+	}
+
+	const size_t stride = raw_img_stride(img);
+	int passes = 1;
+#ifdef PNG_READ_INTERLACING_SUPPORTED
+	passes = png_set_interlace_handling(png->png);
+#endif
+
+	/* We swap bytes ourselves as it's slightly faster for some reason.
+	 * Perhaps not enabling any transforms at all speeds things up. */
+	const bool swap = (which_end() != big_endian) && img->bitdepth > 8;
+	for (int p = 0; p < passes; ++p) {
+		for (size_t y = 0; y < img->h; ++y) {
+			void *row = img->data + stride*y;
+			png_read_row(png->png, row, NULL);
+			if (swap && p == passes - 1) {
+				loop_endian16(row, big_endian, stride/2);
+			}
+		}
+	}
+	get_color_profile(png->png, png->info, &img->cs);
 	return wu_ok;
 }
 
@@ -171,7 +218,9 @@ const struct wu_conf *wuconf, struct png_state *png) {
 
 	// We've already checked the signature for this stream
 	png_init_io(png->png, infile->ifp);
+#ifdef PNG_SET_USER_LIMITS_SUPPORTED
 	png_set_user_limits(png->png, wuconf->max_img_size, wuconf->max_img_size);
+#endif
 	png_set_crc_action(png->png, PNG_CRC_WARN_USE, PNG_CRC_WARN_DISCARD);
 	png_read_info(png->png, png->info);
 

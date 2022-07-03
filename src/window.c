@@ -3,12 +3,8 @@
 #include <limits.h>
 #include <signal.h>
 
-#include "wudefs.h"
 #include "common.h"
-#include "opengl.h"
-#include "events.h"
 #include "window.h"
-#include "write_pam.h"
 
 static volatile sig_atomic_t sig_should_close = 0;
 
@@ -17,7 +13,7 @@ static void signal_handler(int _signum) {
 	sig_should_close = 1;
 }
 
-const char * window_backend_str(const enum window_backend backend) {
+const char * window_backend_name(const enum window_backend backend) {
 	switch (backend) {
 	case window_glfw: return "GLFW";
 	case window_drm: return "DRM";
@@ -45,14 +41,14 @@ void window_terminate(struct window_context *window) {
 
 static void set_swap(struct window_context *window, const bool sync) {
 	switch (window->backend) {
-	case window_glfw: glfwSwapInterval(sync); break;
+	case window_glfw:
+		glfwSwapInterval(sync);
+		break;
 	case window_wayland:
-		eglSwapInterval(window->ctx.wl.egl.display, sync);
-		break;
 	case window_drm:
-		eglSwapInterval(window->ctx.drm.egl.display, sync);
+		eglSwapInterval(window->pub.win.egl.display, sync);
 		break;
-	default:
+	case window_egl:
 		break;
 	}
 }
@@ -61,98 +57,71 @@ void window_draw(struct window_context *window, const bool must_sync) {
 	if (must_sync) {
 		set_swap(window, true);
 	}
-	gl_draw();
+	gl_draw(&window->pub.gl);
 	switch (window->backend) {
-	case window_glfw:
-		glfwSwapBuffers(window->ctx.glfw.window);
-		break;
-	case window_drm:
-		drm_swap_buffers(&window->ctx.drm);
-		break;
-	case window_wayland:
-		wayland_swap_buffers(&window->ctx.wl);
-		break;
-	case window_egl:
-		break;
+	case window_glfw: glfwSwapBuffers(window->ctx.glfw.window); break;
+	case window_drm: drm_swap_buffers(&window->ctx.drm); break;
+	case window_wayland: egl_swap(&window->pub.win.egl); break;
+	case window_egl: break;
 	}
 	if (must_sync) {
 		set_swap(window, false);
 	}
 }
 
-static void handle_window_event(struct window_context *window) {
-	switch (window->pub.event.window) {
-	case toggle_fullscreen:
-		switch (window->backend) {
-		case window_glfw:
-			glfw_toggle_fullscreen(&window->ctx.glfw);
-			break;
-		case window_drm:
-			break;
-		case window_wayland:
-			wayland_fullscreen(&window->ctx.wl);
-			break;
-		case window_egl:
-			break;
-		}
+void window_fullscreen(struct window_context *window) {
+	const bool fs = window->pub.win.fullscreen;
+	switch (window->backend) {
+	case window_glfw:
+		glfw_fullscreen(&window->ctx.glfw, fs);
 		break;
-	case toggle_alpha:
-		gl_alpha_toggle(&window->pub.gl);
+	case window_wayland:
+		wayland_fullscreen(&window->ctx.wl, fs);
 		break;
-	case window_write:
-		write_current(&window->pub.image, &window->pub.gl);
-		puts("Image written");
+	case window_drm:
+	case window_egl:
 		break;
 	}
-	window->pub.event.window = 0;
+	window->pub.win.fullscreen = !fs;
 }
 
-double window_poll(struct window_context *window) {
-	struct window_public *pub = &window->pub;
-	struct window_cursor *cursor = NULL;
+void window_poll(struct window_context *window) {
 	switch (window->backend) {
 	case window_glfw:
 		glfwPollEvents();
-		cursor = &window->ctx.glfw.cursor;
-		break;
-	case window_drm:
 		break;
 	case window_wayland:
 		wayland_poll(&window->ctx.wl, 0);
-		cursor = &window->ctx.wl.cursor.state;
 		break;
+	case window_drm:
 	case window_egl:
 		break;
 	}
 
-	if (cursor) {
-		pub->event.image = image_sub_cycle(&pub->image,
-			iclamp((int)cursor->x.scroll, -1, 1));
-		pub->event.cycle = iclamp((int)cursor->y.scroll, -1, 1);
-		cursor->x.scroll = 0;
-		cursor->y.scroll = 0;
-	}
-
-	const double ellapsed = window_exec_events(pub);
-	handle_window_event(window);
 	if (sig_should_close) {
 		window->pub.event.program = wu_program_exit;
 	}
-	return ellapsed;
 }
 
-bool window_has_focus(const struct window_context *window) {
+void window_adapt(struct window_context *window) {
+	const struct gl_image_info *tex = &window->pub.gl.tex;
+	int w = (int)tex->w;
+	int h = (int)tex->h;
 	switch (window->backend) {
 	case window_glfw:
-		return window->ctx.glfw.has_focus;
-	case window_drm:
+		glfwSetWindowSize(window->ctx.glfw.window, w, h);
 		break;
 	case window_wayland:
-		return window->ctx.wl.active;
+		wayland_resize(&window->ctx.wl, w, h);
+		break;
+	case window_drm:
 	case window_egl:
 		break;
 	}
-	return true;
+}
+
+bool window_has_focus(const struct window_context *window) {
+	return window->pub.win.focused;
 }
 
 void window_set_title(const struct window_context *window, const char *title) {
@@ -160,11 +129,10 @@ void window_set_title(const struct window_context *window, const char *title) {
 	case window_glfw:
 		glfwSetWindowTitle(window->ctx.glfw.window, title);
 		break;
-	case window_drm:
-		break;
 	case window_wayland:
 		wayland_set_title(&window->ctx.wl, title);
 		break;
+	case window_drm:
 	case window_egl:
 		break;
 	}
@@ -173,18 +141,15 @@ void window_set_title(const struct window_context *window, const char *title) {
 void window_postgl_setup(struct window_context *window) {
 	switch (window->backend) {
 	case window_glfw:
-		glfwPollEvents();
+	case window_wayland:
+		// Get window size
+		window_poll(window);
 		break;
 	case window_drm:
-		break;
-	case window_wayland:
-		wl_display_dispatch(window->ctx.wl.display);
-		break;
 	case window_egl:
 		break;
 	}
-	window->pub.image.state.zoom = 1;
-	window->pub.image.state.fit_zoom = 1;
+	window->pub.win.focused = true;
 
 	const struct sigaction act = {
 		.sa_handler = signal_handler,
@@ -200,12 +165,18 @@ void window_postgl_setup(struct window_context *window) {
 	sigaction(SIGPIPE, &ign, NULL);
 }
 
-static void init_error_handle(struct window_context *window, const char *err) {
+static void error_cleanup(struct window_context *window, const char *err) {
 	window_terminate(window);
-	fprintf(stderr, "%s: %s\n", window_backend_str(window->backend), err);
+	fprintf(stderr, "%s: %s\n", window_backend_name(window->backend), err);
 }
 
 bool window_setup(struct window_context *window) {
+	struct wu_conf *conf = &window->pub.image.conf;
+	if (!conf->initial_size.w || !conf->initial_size.h) {
+		conf->initial_size.w = 640;
+		conf->initial_size.h = 480;
+	}
+
 	const char *err = NULL;
 	const bool wayland = (bool)getenv("WAYLAND_DISPLAY");
 	if (wayland && !getenv("WU_GLFW")) {
@@ -214,7 +185,7 @@ bool window_setup(struct window_context *window) {
 		if (!err) {
 			return true;
 		}
-		init_error_handle(window, err);
+		error_cleanup(window, err);
 	}
 
 	if (wayland || getenv("DISPLAY") /* Xorg */) {
@@ -226,7 +197,7 @@ bool window_setup(struct window_context *window) {
 	}
 
 	if (err) {
-		init_error_handle(window, err);
+		error_cleanup(window, err);
 		return false;
 	}
 	return true;

@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "../raster/lib.h"
-#include "../raster/pal.h"
+#include "wudefs.h"
+#include "raster/memparser.h"
 
 enum pcx_version {
 	pcx_ver25 = 0,
@@ -16,38 +16,40 @@ enum pcx_version {
 };
 
 struct pcx_desc {
-	FILE *ifp;
-	long rle_len;
+	struct mp_parser mp;
+	size_t rle_len;
 
-	struct raster_desc r;
-	bool palette_type;
 	enum pcx_version version:8;
+	bool palette_type;
 
 	uint16_t bytes_per_line;
 	uint16_t horz_res, vert_res;
 	uint16_t horz_screen, vert_screen;
 
 	unsigned entries;
-	unsigned char file_pal[48];
+	const unsigned char *file_pal;
 };
 
 const char * pcx_version_string(enum pcx_version ver);
 
-unsigned char * pcx_decode(struct pcx_desc *desc);
+size_t pcx_decode(struct pcx_desc *desc, struct raw_img *img);
 
-enum lib_fail pcx_read_header(struct pcx_desc *desc);
+enum wu_error pcx_read_header(struct pcx_desc *desc, struct raw_img *img);
 
-enum lib_fail pcx_open_file(FILE *ifp, struct pcx_desc *desc, long file_len);
+enum wu_error pcx_open_file(struct pcx_desc *desc, const struct map_info *mm);
 
 
 struct dcx_desc {
+	struct mp_parser mp;
 	size_t nr;
-	uint32_t off[1024];
-	uint32_t len[1024];
+	uint32_t *off;
 };
 
-struct dcx_desc * dcx_read_offsets(FILE *ifp);
+void dcx_free(struct dcx_desc *desc);
 
-enum lib_fail dcx_open_file(FILE *ifp);
+enum wu_error dcx_set_file(const struct dcx_desc *dcx,
+struct pcx_desc *pcx, uint32_t i);
+
+enum wu_error dcx_open_file(struct dcx_desc *desc, const struct map_info *mm);
 
 #endif /* LIB_PCX */

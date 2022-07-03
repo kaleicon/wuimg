@@ -32,7 +32,6 @@ struct wu_conf conf_default(void) {
 
 		// JPEG
 		.jpeg_fast_dct = true,
-		.jpeg_fast_upsamp = true,
 
 		// TIFF
 		.tiff_use_homegrown_unpacker = true,
@@ -47,8 +46,28 @@ struct wu_conf conf_default(void) {
 	};
 }
 
-static bool read_bool(struct mem_parser *tp, bool *ok) {
-	struct wuptr val = mem_get_word(tp);
+static bool read_xint(struct mp_parser *tp, unsigned char *cval) {
+	long val;
+	const unsigned char limit = UCHAR_MAX;
+	if (mp_get_xint(tp, sizeof(*cval) * 3, &val) && val <= limit) {
+		*cval = (unsigned char)val;
+		return true;
+	}
+	return false;
+}
+
+static bool read_uint(struct mp_parser *tp, void *ival) {
+	long val;
+	const int limit = INT_MAX;
+	if (mp_get_uint(tp, sizeof(limit) * 3, &val) && val <= limit) {
+		*(int *)ival = (int)val;
+		return true;
+	}
+	return false;
+}
+
+static bool read_bool(struct mp_parser *tp, bool *ok) {
+	struct wuptr val = mp_get_word(tp);
 	if (wuptr_eq_str(val, "true")) {
 		return true;
 	} else if (wuptr_eq_str(val, "false")) {
@@ -58,48 +77,42 @@ static bool read_bool(struct mem_parser *tp, bool *ok) {
 	return false;
 }
 
-static bool parse_config_file(struct wu_conf *conf, struct mem_parser *tp) {
+static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 	while (tp->pos < tp->len) {
-		mem_skip_space(tp);
-		struct wuptr key = mem_get_word(tp);
+		mp_skip_space(tp);
+		struct wuptr key = mp_get_word(tp);
 		if (key.len == 0 || key.ptr[0] == '#') {
-			mem_skip_line(tp);
+			mp_skip_line(tp);
 			continue;
 		}
-		if (mem_next_nonblank(tp) != '=') {
+		if (mp_next_nonblank(tp) != '=') {
 			return false;
 		}
 
-		mem_skip_blank(tp);
+		mp_skip_blank(tp);
 		bool ok = true;
 		if (wuptr_eq_str(key, "max_img_size")) {
-			ok = mem_scan_uint_MACRO(tp, &conf->max_img_size);
+			ok = read_uint(tp, &conf->max_img_size);
 		} else if (wuptr_eq_str(key, "initial_size")) {
 			struct display_dims *i = &conf->initial_size;
-			ok = mem_scan_uint_MACRO(tp, &i->w);
+			ok = read_uint(tp, &i->w);
 			if (ok) {
-				mem_skip_blank(tp);
-				ok = mem_scan_uint_MACRO(tp, &i->h);
+				mp_skip_blank(tp);
+				ok = read_uint(tp, &i->h);
 			}
 		} else if (wuptr_eq_str(key, "bg")) {
 			unsigned char *bg = conf->bg;
 			for (size_t i = 0; ok && i < ARRAY_LEN(conf->bg); ++i) {
-				mem_skip_blank(tp);
-				ok = mem_scan_xint_MACRO(tp, bg + i);
+				mp_skip_blank(tp);
+				ok = read_xint(tp, bg + i);
 			}
 		} else if (wuptr_eq_str(key, "bg_src")) {
-			struct wuptr val = mem_get_word(tp);
-			mem_skip_blank(tp);
+			struct wuptr val = mp_get_word(tp);
+			mp_skip_blank(tp);
 			if (wuptr_eq_str(val, "default")) {
 				conf->bg_src = bg_default;
 			} else if (wuptr_eq_str(val, "metadata")) {
 				conf->bg_src = bg_metadata;
-			} else if (wuptr_eq_str(val, "average")) {
-				conf->bg_src = bg_average;
-			} else if (wuptr_eq_str(val, "popular")) {
-				conf->bg_src = bg_popular;
-			} else if (wuptr_eq_str(val, "vibrant")) {
-				conf->bg_src = bg_vibrant;
 			} else {
 				ok = false;
 			}
@@ -114,8 +127,6 @@ static bool parse_config_file(struct wu_conf *conf, struct mem_parser *tp) {
 
 		} else if (wuptr_eq_str(key, "jpeg_fast_dct")) {
 			conf->jpeg_fast_dct = read_bool(tp, &ok);
-		} else if (wuptr_eq_str(key, "jpeg_fast_upsamp")) {
-			conf->jpeg_fast_upsamp = read_bool(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "tiff_use_homegrown_unpacker")) {
 			conf->tiff_use_homegrown_unpacker = read_bool(tp, &ok);
@@ -128,8 +139,8 @@ static bool parse_config_file(struct wu_conf *conf, struct mem_parser *tp) {
 			conf->raw_prefer_thumbnail = read_bool(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "svg_redraw")) {
-			struct wuptr val = mem_get_word(tp);
-			mem_skip_blank(tp);
+			struct wuptr val = mp_get_word(tp);
+			mp_skip_blank(tp);
 			if (wuptr_eq_str(val, "never")) {
 				conf->svg_redraw = svg_never;
 			} else if (wuptr_eq_str(val, "upscale")) {
@@ -154,14 +165,14 @@ static bool parse_config_file(struct wu_conf *conf, struct mem_parser *tp) {
 			return false;
 		}
 
-		mem_skip_blank(tp);
-		switch (mem_next_char(tp)) {
+		mp_skip_blank(tp);
+		switch (mp_next_char(tp)) {
 		case EOF:
 			return true;
 		case '\n':
 			break;
 		case '#':
-			mem_skip_line(tp);
+			mp_skip_line(tp);
 			break;
 		default:
 			return false;
@@ -215,7 +226,7 @@ struct wu_conf conf_load(void) {
 		return conf;
 	}
 
-	struct mem_parser tp = mem_parser_mem(mm.len, mm.data);
+	struct mp_parser tp = mp_parser_mem(mm.len, mm.data);
 
 	ok = parse_config_file(&conf, &tp);
 	unmap_file(&mm);

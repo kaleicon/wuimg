@@ -1,10 +1,8 @@
 #ifndef LIB_WBMP
 #define LIB_WBMP
 
-#include <stdio.h>
+#include "wudefs.h"
 
-#include "../raster/lib.h"
-
-enum lib_fail wbmp_open_file(struct raster_desc *desc, FILE *ifp);
+enum wu_error wbmp_open_file(struct raw_img *img, FILE *ifp);
 
 #endif /* LIB_WBMP */

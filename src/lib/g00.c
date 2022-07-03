@@ -1,9 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../common.h"
-#include "../raster/raster.h"
-#include "../raster/compost.h"
+#include "raster/compost.h"
 #include "g00.h"
 
 struct g00_part_loc {
@@ -16,11 +14,19 @@ static const size_t G00_PART_SIZE = 2*2 + 8*4 + 20*4;
 //static const size_t G00_PART_LOC_SIZE = sizeof(struct g00_part_loc);
 static const size_t LZSS_PAD = 3 * 8;
 
-void g00_cleanup(struct g00_desc *desc) {
-	if (desc->version == g00_v2) {
-		struct g00_desc_v2 *v2 = &desc->u.v2;
+void g00_cleanup(struct g00_desc *desc, struct raw_img *img) {
+	switch (desc->version) {
+	case g00_v0:
+		return;
+	case g00_v1:
+		if (img) {
+			img->data = NULL;
+		}
+		break;
+	case g00_v2:
+		;struct g00_desc_v2 *v2 = &desc->u.v2;
 		free(v2->dir);
-		free(desc->pix_data);
+		break;
 	}
 	free(desc->buf);
 }
@@ -47,7 +53,7 @@ const size_t min_run) {
 
 				const size_t len = ((dt & 0x0f) + min_run) * elem_size;
 				const size_t off = (dt >> 4) * elem_size;
-				if (off > d || len + d > dst_len) {
+				if (off > d || dst_len - d < len) {
 					return d;
 				}
 				for (size_t j = 0; j < len; ++j) {
@@ -60,7 +66,8 @@ const size_t min_run) {
 	return d;
 }
 
-static size_t v1_finish(struct g00_desc *desc, size_t written) {
+static size_t v1_finish(struct g00_desc *desc, struct raw_img *img,
+const size_t written) {
 	/* V1 decoded data format:
 		Offset  Size    Name
 		0       WORD    NrEntries
@@ -82,21 +89,23 @@ static size_t v1_finish(struct g00_desc *desc, size_t written) {
 		return 0;
 	}
 
-	if (desc->decomp_size - pal_bytes < raster_size(&desc->r)) {
+	if (desc->decomp_size - pal_bytes < raw_img_size(img)) {
 		return 0;
 	}
 
-	desc->r.palette = malloc(sizeof(*desc->r.palette));
-	if (!desc->r.palette) {
+	struct raster_pal *pal = raw_img_set_palette(img,
+		malloc(sizeof(*img->u.palette)));
+	if (!pal) {
 		return 0;
 	}
-	memcpy(desc->r.palette, desc->buf + 2, v1->pal_entries * 4);
+	memcpy(pal, desc->buf + 2, v1->pal_entries * 4);
 
-	desc->pix_data = desc->buf + pal_bytes;
+	img->data = desc->buf + pal_bytes;
 	return written - pal_bytes;
 }
 
-static size_t v2_compost(struct g00_desc *desc, const size_t written) {
+static size_t v2_compost(struct g00_desc *desc, struct raw_img *img,
+const size_t written) {
 	/* V2 decoded data format:
 		Offset  Type    Name
 		0       u32     NrParts
@@ -138,8 +147,8 @@ static size_t v2_compost(struct g00_desc *desc, const size_t written) {
 	 * [2] I have no idea what most of the fields are used for, actually.
 	*/
 
-	desc->pix_data = calloc(1, raster_size(&desc->r));
-	if (!desc->pix_data) {
+	img->data = calloc(1, raw_img_size(img));
+	if (!img->data) {
 		return 0;
 	}
 
@@ -179,8 +188,7 @@ static size_t v2_compost(struct g00_desc *desc, const size_t written) {
 				.w = buf_endian16(block + 6, little_endian),
 				.h = buf_endian16(block + 8, little_endian),
 			};
-			if (fr.x > desc->r.w || fr.y > desc->r.h
-			|| fr.x + fr.w > desc->r.w || fr.y + fr.h > desc->r.h) {
+			if (!compost_bounds_check(img->w, img->h, &fr)) {
 				continue;
 			}
 
@@ -189,15 +197,14 @@ static size_t v2_compost(struct g00_desc *desc, const size_t written) {
 				break;
 			}
 
-			compost_overwrite(desc->pix_data, desc->r.w, 4,
-				rast, &fr);
+			compost_overwrite(img->data, img->w, 4, rast, &fr);
 			++composted;
 		}
 	}
 	return composted;
 }
 
-size_t g00_decode(struct g00_desc *desc) {
+size_t g00_decode(struct g00_desc *desc, struct raw_img *img) {
 	desc->buf = malloc(desc->decomp_size);
 	if (!desc->buf) {
 		return 0;
@@ -220,40 +227,38 @@ size_t g00_decode(struct g00_desc *desc) {
 
 	if (written) {
 		switch (desc->version) {
-		case g00_v0: desc->pix_data = desc->buf; break;
-		case g00_v1: return v1_finish(desc, written);
-		case g00_v2: return v2_compost(desc, written);
+		case g00_v0:
+			img->data = desc->buf;
+			desc->buf = NULL;
+			break;
+		case g00_v1: return v1_finish(desc, img, written);
+		case g00_v2: return v2_compost(desc, img, written);
 		}
 	}
 	return written;
 }
 
-static enum lib_fail header_set(struct g00_desc *desc,
+static enum wu_error header_set(struct g00_desc *desc, struct raw_img *img,
 const enum g00_version version, const uint16_t width, const uint16_t height) {
-	if (width < 1 || height < 1) {
-		return lib_invalid_header;
-	}
 	uint8_t ch;
 	switch (version) {
 	case g00_v0: ch = 3; break;
 	case g00_v1: ch = 1; break;
 	case g00_v2: ch = 4; break;
-	default: return lib_unsupported_feature;
+	default: return wu_unsupported_feature;
 	}
 
 	desc->version = version;
-	desc->r = (struct raster_desc) {
-		.w = width,
-		.h = height,
-		.ch = ch,
-		.bitdepth = 8,
-		.layout = pix_bgra,
-	};
-	raster_normalize(&desc->r);
-	return lib_ok;
+	img->w = width;
+	img->h = height;
+	img->channels = ch;
+	img->bitdepth = 8;
+	img->layout = pix_bgra;
+	return raw_img_verify(img);
 }
 
-enum lib_fail g00_read_header(struct g00_desc *desc, FILE *ifp) {
+enum wu_error g00_read_header(struct g00_desc *desc, struct raw_img *img,
+FILE *ifp) {
 	/* Base header:
 		Offset  Type    Name
 		0       u8      Version // 0, 1, or 2
@@ -261,13 +266,7 @@ enum lib_fail g00_read_header(struct g00_desc *desc, FILE *ifp) {
 		3       u16     Height
 		5
 
-	 * v0 and v1 header, after base:
-		Offset  Type    Name
-		0       u32     CompressedSize   // Includes these fields
-		4       u32     DecompressedSize
-		8
-
-	 * v2 header, after base:
+	 * Extra fields for v2, after base:
 		Offset  Type    Name
 		0       u32     Count
 		4       struct  Regions[Count]
@@ -279,9 +278,11 @@ enum lib_fail g00_read_header(struct g00_desc *desc, FILE *ifp) {
 			16      u32     Reserved[2]
 			24
 
-		+0      u32     CompressedSize
-		+4      u32     DecompressedSize
-		+8
+	 * Compressed data header, after all previous fields::
+		Offset  Type    Name
+		0       u32     CompressedSize   // Includes itself
+		4       u32     DecompressedSize
+		8
 
 	 * Afterwards comes the compressed data.
 	 * For version 0, this is 8-bit BGR pixel data.
@@ -294,61 +295,58 @@ enum lib_fail g00_read_header(struct g00_desc *desc, FILE *ifp) {
 	desc->ifp = ifp;
 	unsigned char header[8];
 	if (!fread(header, 5, 1, ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
-	enum lib_fail st = header_set(desc, header[0],
+	enum wu_error st = header_set(desc, img, header[0],
 		buf_endian16(header + 1, little_endian),
 		buf_endian16(header + 3, little_endian));
-	if (st != lib_ok) {
+	if (st != wu_ok) {
 		return st;
 	}
 
-	const size_t dims = desc->r.w * desc->r.h;
+	const size_t dims = img->w * img->h;
 	if (desc->version == g00_v2) {
 		if (!fread(header, 4, 1, ifp)) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 
 		struct g00_desc_v2 *v2 = &desc->u.v2;
 		v2->dir_count = buf_endian32(header, little_endian);
 		const size_t overflow = SIZE_MAX / dims;
 		if (!v2->dir_count || v2->dir_count >= zumin(dims, overflow)) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 
 		const size_t table_len = v2->dir_count * sizeof(*v2->dir);
 		v2->dir = malloc(table_len);
 		if (!v2->dir) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 
 		if (!fread(v2->dir, table_len, 1, desc->ifp)) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 		loop_endian32((uint32_t *)v2->dir, little_endian,
 			v2->dir_count * sizeof(*v2->dir) / 4);
 	}
 
 	if (!fread(header, 8, 1, ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 	desc->comp_size = buf_endian32(header, little_endian);
-	desc->decomp_size = buf_endian32(header + 4, little_endian);
 	if (desc->comp_size <= 8) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 	desc->comp_size -= 8;
 
-	if (desc->version != g00_v2) {
-		size_t min_size = dims * desc->r.ch;
-		if (desc->version == 1) {
-			//min_size += 2 + 4; // entry count + 1 entry
-			min_size += 2 + 4*256;
-		}
-		if (desc->decomp_size < min_size) {
-			desc->decomp_size = min_size;//return lib_invalid_header;
+	if (desc->version == g00_v2) {
+		desc->decomp_size = buf_endian32(header + 4, little_endian);
+	} else {
+		desc->decomp_size = dims * img->channels;
+		if (desc->version == g00_v1) {
+			desc->decomp_size += 2 + 4*256;
 		}
 	}
-	return lib_ok;
+	return wu_ok;
 }

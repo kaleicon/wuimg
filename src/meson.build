@@ -1,13 +1,14 @@
-internal_fmts = ['avs', 'dib', 'g00', 'mac', 'pcx', 'pgx', 'pi', 'pictor',
-	'pnm', 'sgi', 'sixel', 'sun', 'tga', 'tim', 'tlg', 'wbm', 'wbmp', 'xbm',
-	'xcursor']
-external_fmts = ['flif', 'gif', 'heif', 'jbig', 'jpeg', 'jpeg2000', 'png',
-	'raw', 'svg', 'tiff', 'webp']
+internal_fmts = ['avs', 'dib', 'g00', 'hg3', 'mac', 'pcx', 'pdt', 'pgx', 'pi',
+	'pictor', 'pnm', 'prt', 'qoi', 'sgi', 'sixel', 'sun', 'tga', 'tim',
+	'tlg', 'wbmp', 'wpx', 'xbm', 'xcursor', 'xyz']
+external_fmts = ['flif', 'gif', 'heif', 'jbig', 'jpeg', 'jpeg2000', 'jpegxl',
+	'Lerc', 'png', 'raw', 'svg', 'tiff', 'webp']
+
 
 fmt_deps = []
 dec_files = []
-dec_headers = []
-pkg_deps = {'jpeg2000': 'libopenjp2', 'svg': 'librsvg-2.0', 'webp': 'libwebpdemux'}
+pkg_deps = {'jpeg2000': 'libopenjp2', 'jpegxl': 'libjxl', 'svg': 'librsvg-2.0',
+	'webp': 'libwebpdemux'}
 conf_data = configuration_data()
 
 foreach f : external_fmts
@@ -20,53 +21,57 @@ foreach f : external_fmts
 
 	if dep.found()
 		fmt_deps += dep
-		dec_files += ''.join(['dec/', f, '.c'])
-		dec_headers += ''.join(['dec/', f, '.h'])
+		dec_files += ''.join(['dec/', f.to_lower(), '.c'])
 		conf_data.set('WU_ENABLE_' + f.to_upper(), true)
 	endif
 endforeach
 
+internal_deps = {'xyz': 'zlib'}
 internal_libs = []
 foreach f : internal_fmts
 	if not get_option(f).disabled()
 		internal_libs += ''.join(['lib/', f, '.c'])
 		dec_files += ''.join(['dec/', f, '.c'])
-		dec_headers += ''.join(['dec/', f, '.h'])
 		conf_data.set('WU_ENABLE_' + f.to_upper(), true)
+		if f in internal_deps
+			fmt_deps += dependency(internal_deps[f])
+		endif
 	endif
 endforeach
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : conf_data)
 dec_comptime = executable('dec_comptime', 'dec_comptime.c')
-dec_all = [custom_target('dec_fmtmap',
-		output : ['dec_fmtmap_map.c'],
+dec_all = [custom_target('dec_maps',
+		output : ['dec_maps.c'],
 		capture : true,
-		depend_files : [dec_enable, 'dec_fmtmap.c'],
-		command : [dec_comptime, '-f']),
-	custom_target('dec_include',
-		output : ['dec_include.def'],
+		depend_files : [dec_enable, 'dec.c'],
+		command : [dec_comptime, '-m']),
+	custom_target('dec_fn',
+		output : ['dec_fn.h'],
 		capture : true,
 		depend_files : dec_enable,
-		command : [dec_comptime, '-h'] + dec_headers),
-	'dec.c',
+		command : [dec_comptime, '-h']),
 	'rast_utils.c',
 	'metadata.cpp'] \
 	+ internal_libs + dec_files
 rast = ['raster/bit.c',
+	'raster/cicp.c',
 	'raster/color.c',
 	'raster/compost.c',
+	'raster/file.c',
+	'raster/fmt.c',
 	'raster/graphics_adapters.c',
-	'raster/lib.c',
+	'raster/icc.c',
 	'raster/mem.c',
 	'raster/memparser.c',
 	'raster/pal.c',
 	'raster/pix.c',
 	'raster/raster.c',
-	'raster/other.c',
+	'raster/strip.c',
 	'raster/unpack.c']
 
 base = ['common.c', 'conf.c', 'term.c', 'wudefs.c', 'wustr.c', 'wutree.c']
-util = ['colorimetry.c', 'extract.c', 'filesystem.c', 'write_pam.c']
+util = ['extract.c', 'filesystem.c', 'write_pam.c']
 
 wayland_scanner = find_program('wayland-scanner')
 xdg_shell_xml = '/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml'
@@ -95,6 +100,7 @@ base_deps = fmt_deps + [
 ]
 all_deps = base_deps + [
 	dependency('libarchive'),
+	dependency('lcms2'),
 	dependency('epoxy'),
 	dependency('glfw3'),
 	dependency('gbm'),

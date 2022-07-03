@@ -3,10 +3,8 @@
 
 #include <stddef.h>
 
-#include "raster.h"
-
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
-size_t w, size_t h, uint8_t ch, uint8_t bitdepth, bool paletted);
+size_t w, size_t h, uint8_t ch, uint8_t bitdepth, uint8_t align, bool paletted);
 
 struct pix_rgba8 ega_palette(size_t idx);
 

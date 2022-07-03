@@ -15,6 +15,7 @@ enum marker_type {
 	unknown_marker = 0,
 	exif_marker = exif_metadata,
 	xmp_marker = xmp_metadata,
+	icc_marker,
 	mpo_marker,
 };
 
@@ -23,10 +24,21 @@ struct marker_info {
 	size_t data_start;
 };
 
+struct icc_assembler {
+	unsigned char total;
+	unsigned char seen;
+	unsigned int acc;
+	struct icc_shard {
+		unsigned char *ptr; // library mem
+		unsigned short len;
+	} *shards;
+};
+
 struct jpeg_state {
 	struct jpeg_decompress_struct dinfo;
 	struct jpeg_error_mgr jerr;
 	long *soi_offsets;
+
 	jmp_buf jmp;
 };
 
@@ -49,9 +61,6 @@ static void clean_jpeg_state(struct image_file *infile) {
 	struct jpeg_state *js = infile->dec_state;
 	jpeg_destroy_decompress(&js->dinfo);
 	free(js->soi_offsets);
-	free(js);
-	infile->dec_state = NULL;
-	infile->events = 0;
 }
 
 static long marker_len(FILE *f, int first_byte) {
@@ -108,9 +117,60 @@ static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
 	return grow.pos + 1;
 }
 
+static void assemble_icc(struct raw_img *img, struct icc_assembler *icc) {
+	if (icc->total == icc->seen) {
+		unsigned char *data = malloc(icc->acc);
+		if (data) {
+			unsigned int pos = 0;
+			for (unsigned char i = 0; i < icc->total; ++i) {
+				const struct icc_shard *sh = icc->shards + i;
+				memcpy(data + pos, sh->ptr, sh->len);
+				pos += sh->len;
+			}
+			color_space_set_icc_owned(&img->cs, data, pos);
+		}
+	}
+}
+
+static bool add_icc_shard(struct icc_assembler *icc,
+const struct jpeg_marker_struct *mk) {
+	if (mk->data_length < 14) {
+		return false;
+	}
+
+	const unsigned char seq = mk->data[12];
+	const unsigned char total = mk->data[13];
+	if (icc->shards) {
+		if (icc->total != total) {
+			return false;
+		}
+	} else {
+		if (!total) {
+			return false;
+		}
+		icc->shards = calloc(total, sizeof(*icc->shards));
+		if (!icc->shards) {
+			return false;
+		}
+		icc->total = total;
+	}
+	if (seq == 0 || seq > total) {
+		return false;
+	}
+	struct icc_shard *sh = icc->shards + seq - 1;
+	if (sh->ptr) {
+		return false;
+	}
+	sh->ptr = mk->data + 14;
+	sh->len = (unsigned short)(mk->data_length - 14);
+	icc->acc += sh->len;
+	icc->seen += 1;
+	return true;
+}
+
 static bool markercmp(const struct jpeg_marker_struct *mk,
 const unsigned char *ch, const size_t len) {
-	if (len < mk->data_length) {
+	if (len + 2 < mk->data_length) {
 		return !memcmp(mk->data, ch, len);
 	}
 	return false;
@@ -121,6 +181,7 @@ static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
 	const unsigned char exif[] = "Exif\0";
 	const unsigned char xmp[] = "http://ns.adobe.com/xap/1.0/";
 	const unsigned char mpo[] = "MPF";
+	const unsigned char icc[] = "ICC_PROFILE";
 
 	struct marker_info info = {0, 0};
 	if ( markercmp(mk, exif, sizeof(exif)) ) {
@@ -129,6 +190,9 @@ static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
 	} else if ( markercmp(mk, xmp, sizeof(xmp)) ) {
 		info.type = xmp_marker;
 		info.data_start = sizeof(xmp);
+	} else if ( markercmp(mk, icc, sizeof(icc)) ) {
+		info.type = icc_marker;
+		info.data_start = sizeof(icc);
 	} else if ( markercmp(mk, mpo, sizeof(mpo)) ) {
 		info.type = mpo_marker;
 	}
@@ -136,7 +200,7 @@ static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
 }
 
 static enum wu_error parse_markers(const struct jpeg_marker_struct *mk,
-struct image_file *infile, struct jpeg_state *js) {
+struct image_file *infile, struct jpeg_state *js, struct icc_assembler *icc) {
 	const struct marker_info info = identify_marker(mk);
 	struct wu_tree *metadata = &infile->metadata;
 	switch (info.type) {
@@ -146,6 +210,11 @@ struct image_file *infile, struct jpeg_state *js) {
 			mk->data + info.data_start,
 			mk->data_length - info.data_start, metadata);
 		if (ok) {
+			return wu_ok;
+		}
+		break;
+	case icc_marker:
+		if (add_icc_shard(icc, mk)) {
 			return wu_ok;
 		}
 		break;
@@ -163,8 +232,7 @@ struct image_file *infile, struct jpeg_state *js) {
 		break;
 	}
 
-	struct wu_tree *branch = tree_sprout_branch(metadata,
-		"Marker");
+	struct wu_tree *branch = tree_sprout_branch(metadata, "Marker");
 	if (branch) {
 		char app[] = "APPXXX";
 		sprintf(app + 3, "%hhu", mk->marker - JPEG_APP0);
@@ -181,6 +249,31 @@ struct image_file *infile, struct jpeg_state *js) {
 	return wu_ok;
 }
 
+static enum wu_error iter_markers(const struct jpeg_marker_struct *mk,
+struct image_file *infile, struct raw_img *img, struct jpeg_state *js) {
+	struct icc_assembler icc = {0};
+	enum wu_error status = wu_ok;
+	while (mk) {
+		if (mk->marker == JPEG_COM) {
+			tree_sprout_unsafe_leaf(&infile->metadata,
+				"Comment", mk->data, mk->data_length);
+		} else {
+			status = parse_markers(mk, infile, js, &icc);
+			if (status != wu_ok) {
+				break;
+			}
+		}
+		mk = mk->next;
+	}
+	if (icc.shards) {
+		if (status == wu_ok) {
+			assemble_icc(img, &icc);
+		}
+		free(icc.shards);
+	}
+	return status;
+}
+
 static void decode_raw(struct raw_img *img,
 struct jpeg_decompress_struct *dinfo) {
 	const unsigned dct_h = (unsigned)dinfo->max_v_samp_factor * DCTSIZE;
@@ -189,7 +282,8 @@ struct jpeg_decompress_struct *dinfo) {
 	unsigned char *lum[DCTSIZE*MAX_SAMP_FACTOR];
 	unsigned char *cb[DCTSIZE*MAX_SAMP_FACTOR];
 	unsigned char *cr[DCTSIZE*MAX_SAMP_FACTOR];
-	unsigned char **comps[3] = {lum, cb, cr};
+	unsigned char *key[DCTSIZE*MAX_SAMP_FACTOR];
+	unsigned char **comps[4] = {lum, cb, cr, key};
 
 	for (size_t lines = 0; lines < img->h;) {
 		for (size_t z = 0; z < img->channels; ++z) {
@@ -204,43 +298,42 @@ struct jpeg_decompress_struct *dinfo) {
 	}
 }
 
-static bool use_raw(struct raw_img *img,
+static bool set_colorspace(struct raw_img *img,
 const struct jpeg_decompress_struct *dinfo) {
+	img->alpha = alpha_key;
 	switch (dinfo->jpeg_color_space) {
+	case JCS_CMYK:
+		break;
+	case JCS_YCCK:
+	case JCS_YCbCr:
+		img->cs.matrix = cicp_matrix_bt601_7;
+		break;
+	case JCS_UNKNOWN:
 	case JCS_GRAYSCALE:
 	case JCS_RGB:
-	case JCS_YCbCr:
-		switch (dinfo->num_components) {
-		case 1:
-		case 3:
-		case 4:
-			;const jpeg_component_info *nfo = dinfo->comp_info;
-			struct image_planes *planes = raw_img_plane_init(img);
-			if (!planes) {
-				return false;
-			}
-			for (int i = 0; i < dinfo->num_components; ++i) {
-				const int xsamp = dinfo->max_h_samp_factor
-					/ nfo[i].h_samp_factor;
-				const int ysamp = dinfo->max_v_samp_factor
-					/ nfo[i].v_samp_factor;
-				planes->p[i].x.subsamp = (uint8_t)xsamp;
-				planes->p[i].y.subsamp = (uint8_t)ysamp;
-			}
-			planes->cs = (dinfo->jpeg_color_space == JCS_YCbCr)
-				? color_space_ycbcr : color_space_rgb;
-			return true;
-		}
-		break;
 	default:
 		break;
 	}
-	return false;
+
+	struct image_planes *planes = raw_img_plane_init(img);
+	if (!planes) {
+		return false;
+	}
+	planes->v_pad = DCTSIZE;
+	const jpeg_component_info *nfo = dinfo->comp_info;
+	for (uint8_t i = 0; i < img->channels; ++i) {
+		const int xsamp = dinfo->max_h_samp_factor
+			/ nfo[i].h_samp_factor;
+		const int ysamp = dinfo->max_v_samp_factor
+			/ nfo[i].v_samp_factor;
+		planes->p[i].x.subsamp = (uint8_t)xsamp;
+		planes->p[i].y.subsamp = (uint8_t)ysamp;
+	}
+	return true;
 }
 
 static enum wu_error decode_img(struct image_file *infile,
-const struct wu_conf *wuconf, const int i, const bool partial_decode,
-const bool get_markers) {
+const struct wu_conf *wuconf, const int i, const bool get_markers) {
 	struct jpeg_state *js = infile->dec_state;
 	const int val = setjmp(js->jmp);
 	if (val) {
@@ -256,7 +349,7 @@ const bool get_markers) {
 	struct raw_img *img = infile->sub_img + i;
 	if (get_markers) {
 		jpeg_save_markers(dinfo, JPEG_COM, 0xFFFF);
-		for (int m = 0xE1; m <= 0xEF; ++m) {
+		for (int m = 0xE0; m <= 0xEF; ++m) {
 			switch (m) {
 			case 0xE0: case 0xE8: case 0xEE:
 				continue;
@@ -267,116 +360,55 @@ const bool get_markers) {
 	}
 	jpeg_read_header(dinfo, TRUE);
 
-	img->dec_scale = 1.0f;
-	if (use_raw(img, dinfo)) {
-		dinfo->raw_data_out = TRUE;
-		dinfo->out_color_space = dinfo->jpeg_color_space;
-	} else if (partial_decode) {
-		const unsigned jw = dinfo->image_width;
-		const unsigned jh = dinfo->image_height;
-		size_t f = image_fit_factor(wuconf, jw, jh, 8, true);
-		if (!f) {
-			return wu_exceeds_size_limit;
-		}
-		dinfo->scale_denom = 1 << zulog2(f);
-		img->dec_scale /= (float)dinfo->scale_denom;
-	}
-
+	dinfo->raw_data_out = TRUE;
+	dinfo->out_color_space = dinfo->jpeg_color_space;
 	dinfo->do_block_smoothing = FALSE;
 	if (wuconf->jpeg_fast_dct) {
 		dinfo->dct_method = JDCT_FASTEST;
 	}
-	// segfault when max_v_samp_factor != 1
-	if (wuconf->jpeg_fast_upsamp && dinfo->max_v_samp_factor == 1) {
-		dinfo->do_fancy_upsampling = FALSE;
-	}
 
 	jpeg_start_decompress(dinfo);
 
-	if (img->u.planes) {
-		img->w = dinfo->comp_info->width_in_blocks * DCTSIZE;
-		img->h = dinfo->comp_info->height_in_blocks * DCTSIZE;
-		img->alignment = DCTSIZE;
-		img->u.planes->v_pad = DCTSIZE;
-	} else {
-		img->w = dinfo->output_width;
-		img->h = dinfo->output_height;
-		img->alignment = 1;
-	}
-
-	if (zumax(img->w, img->h) > wuconf->max_img_size) {
-		return wu_exceeds_size_limit;
-	}
+	img->w = dinfo->output_width;
+	img->h = dinfo->output_height;
 	img->channels = (unsigned char)dinfo->output_components;
 	img->bitdepth = 8;
-
-	if (img->u.planes) {
-		if (!raw_img_plane_alloc(img)) {
-			return wu_alloc_error;
-		}
-		decode_raw(img, dinfo);
-	} else {
-		free(img->data);
-		const size_t stride = raw_img_addbuf(img);
-		if (!stride) {
-			return wu_alloc_error;
-		}
-		unsigned char *row_ptr = img->data;
-		while (dinfo->output_scanline < dinfo->output_height) {
-			row_ptr += stride * jpeg_read_scanlines(dinfo, &row_ptr,
-				(unsigned int)dinfo->rec_outbuf_height);
-		}
+	img->alignment = DCTSIZE;
+	if (!set_colorspace(img, dinfo)) {
+		return wu_alloc_error;
+	}
+	if (raw_img_exceeds_limit(img, wuconf)) {
+		return wu_exceeds_size_limit;
 	}
 
-	enum wu_error status = wu_ok;
-	jpeg_saved_marker_ptr mk = dinfo->marker_list;
-	while (mk) {
-		if (mk->marker == JPEG_COM) {
-			tree_sprout_unsafe_leaf(&infile->metadata,
-				"Comment", mk->data, mk->data_length);
-		} else {
-			status = parse_markers(mk, infile, js);
-			if (status != wu_ok) {
-				break;
-			}
-		}
-		mk = mk->next;
+	enum wu_error status = raw_img_alloc(img);
+	if (status != wu_ok) {
+		return status;
 	}
+	decode_raw(img, dinfo);
+
+	status = iter_markers(dinfo->marker_list, infile, img, js);
 	jpeg_finish_decompress(dinfo);
-	return status;
-}
-
-static bool file_done(struct image_file *infile) {
-	const struct raw_img *img = infile->sub_img;
-	for (size_t i = 0; i < infile->nr; ++i) {
-		if (!img[i].data || img[i].dec_scale < 1) {
-			return false;
+	if (status == wu_ok) {
+		if (get_markers) {
+			raw_img_exif_orientation(img,
+				metadata_orientation(&infile->metadata));
 		}
 	}
-	return true;
+	return status;
 }
 
 enum wu_error jpeg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
-	enum wu_error status = wu_no_change;
 	if (ev) {
-		const int idx = state->idx;
-		bool partial_decode = false;
-		if (ev & ev_upscale) {
-			if (state->zoom > 1) {
-				state->zoom *= infile->sub_img[idx].dec_scale;
-			} else if (!(ev & ev_subcycle)) {
-				return wu_no_change;
-			}
+		if (!infile->sub_img[state->idx].data) {
+			return decode_img(infile, wuconf, state->idx, false);
 		}
-		status = decode_img(infile, wuconf, idx, partial_decode, false);
-	}
-
-	if (status > wu_ok || !ev || (status == wu_ok && file_done(infile))) {
+	} else {
 		clean_jpeg_state(infile);
 	}
-	return status;
+	return wu_no_change;
 }
 
 enum wu_error jpeg_dec(struct image_file *infile,
@@ -389,7 +421,6 @@ const struct wu_conf *wuconf) {
 	if (!js) {
 		return wu_alloc_error;
 	}
-
 	infile->dec_state = js;
 
 	js->dinfo.client_data = infile;
@@ -400,12 +431,11 @@ const struct wu_conf *wuconf) {
 
 	jpeg_create_decompress(&js->dinfo);
 
-	const enum wu_error status = decode_img(infile, wuconf, 0,
-		wuconf->partial_decode, true);
-	if (status == wu_ok && !file_done(infile)) {
-		infile->events = ev_subcycle | ev_upscale;
-		return status;
+	const enum wu_error status = decode_img(infile, wuconf, 0, true);
+	if (status == wu_ok && infile->nr > 1) {
+		infile->events = ev_subcycle;
+	} else {
+		clean_jpeg_state(infile);
 	}
-	clean_jpeg_state(infile);
 	return status;
 }

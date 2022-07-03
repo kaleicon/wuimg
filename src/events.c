@@ -7,22 +7,19 @@
 #include "common.h"
 #include "events.h"
 #include "term.h"
+#include "write_pam.h"
 
-void event_lift(struct wu_keymap *held_keys) {
-	memset(held_keys, 0, sizeof(*held_keys));
+static unsigned char * get_map(struct window_keymap *held_keys) {
+	return held_keys->map - WINDOW_KEYSTART;
 }
 
-static unsigned char * get_map(struct wu_keymap *held_keys) {
-	return held_keys->map - WU_KEYSTART;
-}
-
-static bool apply_event(struct image_context *image,
-struct wu_event *event, const int code, const float dt, const bool shift) {
-	const float MAX_ZOOM = 64.0f;
-	const float MIN_ZOOM = 1.0f / MAX_ZOOM;
-
+static bool apply_event(struct window_context *window, const int code,
+const float dt, const bool shift) {
+	struct window_public *pub = &window->pub;
+	struct image_context *image = &pub->image;
 	const struct image_file *file = &image->file;
 	struct wu_state *state = &image->state;
+	struct wu_event *event = &pub->event;
 
 	switch (code) {
 	// Exit
@@ -36,16 +33,12 @@ struct wu_event *event, const int code, const float dt, const bool shift) {
 
 	// Fullscreen
 	case 'F':
-		event->window = toggle_fullscreen;
+		window_fullscreen(window);
 		return true;
 	// Alpha display
 	case 'A':
-		event->window = toggle_alpha;
+		gl_alpha_toggle(&pub->gl, shift ? -1 : 1);
 		break;
-	// Save to file
-	case 'S':
-		event->window = window_write;
-		return true;
 	// Metadata
 	case 'M':
 		image_file_print(file, 1 + shift);
@@ -99,7 +92,7 @@ struct wu_event *event, const int code, const float dt, const bool shift) {
 		state->anim_playing = false;
 		break;
 	case ' ':
-		if (raw_img_nr_frames(image_cur_sub_img(image)) > 1) {
+		if (raw_img_frames_nr(image_cur_sub_img(image)) > 1) {
 			state->anim_playing = !state->anim_playing;
 		} else {
 			state->anim_playing = false;
@@ -127,11 +120,11 @@ struct wu_event *event, const int code, const float dt, const bool shift) {
 	// Rotation.
 	case 'Z': // Counterclockwise
 		event->image = ev_mirrot;
-		state->rotate = (state->rotate + 1) & 3;
+		state->rotate = (state->rotate - 1) & 3;
 		break;
 	case 'X': // Clockwise
 		event->image = ev_mirrot;
-		state->rotate = (state->rotate - 1) & 3;
+		state->rotate = (state->rotate + 1) & 3;
 		break;
 
 	// Mirror
@@ -147,12 +140,16 @@ struct wu_event *event, const int code, const float dt, const bool shift) {
 
 	// Zoom
 	case '+':
-		event->image = image_zoom(image,
-			fclampf(state->zoom * cbrtf(2.0f), MIN_ZOOM, MAX_ZOOM));
+		event->image = image_zoom(image, state->zoom * powf(2, 1.0f/3.0f));
 		break;
 	case '-':
-		event->image = image_zoom(image,
-			fclampf(state->zoom * cbrtf(0.5f), MIN_ZOOM, MAX_ZOOM));
+		event->image = image_zoom(image, state->zoom * powf(2, -1.0f/3.0f));
+		break;
+	case '*':
+		event->image = image_zoom(image, state->zoom * powf(2, 1.0f/6.0f));
+		break;
+	case '/':
+		event->image = image_zoom(image, state->zoom * powf(2, -1.0f/6.0f));
 		break;
 	case '0':
 		state->x_offset = 0;
@@ -161,7 +158,7 @@ struct wu_event *event, const int code, const float dt, const bool shift) {
 		return true;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
-		; const struct raw_img *img = image_cur_sub_img(image);
+		;const struct raw_img *img = image_cur_sub_img(image);
 		event->image = image_zoom(image,
 			(float)(code - '0') * (1/img->dec_scale));
 		return true;
@@ -169,8 +166,9 @@ struct wu_event *event, const int code, const float dt, const bool shift) {
 	return false;
 }
 
-double event_exec(struct wu_keymap *held_keys, struct image_context *image,
-struct wu_event *event, double secs) {
+static double key_events(struct window_context *window, const double secs) {
+	struct window_keymap *held_keys = &window->pub.held_keys;
+
 	float msecs = (float)(secs * 1000);
 	const int inc = (int)msecs;
 	if (held_keys->shift) {
@@ -178,7 +176,7 @@ struct wu_event *event, double secs) {
 	}
 
 	unsigned char *map = get_map(held_keys);
-	for (int key = WU_KEYSTART; key < WU_KEYEND; ++key) {
+	for (int key = WINDOW_KEYSTART; key < WINDOW_KEYEND; ++key) {
 		const unsigned char time = map[key];
 		float dt = msecs;
 		switch (time) {
@@ -197,27 +195,36 @@ struct wu_event *event, double secs) {
 				continue;
 			}
 		}
-		if (apply_event(image, event, key, dt, held_keys->shift)) {
+		if (apply_event(window, key, dt, held_keys->shift)) {
 			map[key] = 0;
 		}
 	}
 	return secs;
 }
 
-void event_add(struct wu_keymap *held_keys, const enum key_action action,
-int code, const bool shift) {
-	held_keys->shift = shift;
-	code = toupper(code);
-	if (code >= WU_KEYSTART && code < WU_KEYEND) {
-		unsigned char *map = get_map(held_keys);
-		if (!map[code] || action == key_release) {
-			map[code] = action;
-		}
-	}
+static double monoclock_diff(const struct timespec start,
+const struct timespec end) {
+	const double nanos_per_sec = 1000000000;
+	return (double)(end.tv_sec - start.tv_sec)
+		+ (double)(end.tv_nsec - start.tv_nsec) / nanos_per_sec;
+}
+
+double event_exec(struct window_context *window) {
+	struct window_public *pub = &window->pub;
+	struct window_cursor *cursor = &pub->win.cur;
+	pub->event.image = image_sub_cycle(&pub->image,
+		iclamp((int)cursor->x.scroll, -1, 1));
+	pub->event.cycle = iclamp((int)cursor->y.scroll, -1, 1);
+	cursor->x.scroll = 0;
+	cursor->y.scroll = 0;
+
+	const struct timespec start = pub->timer;
+	clock_gettime(CLOCK_MONOTONIC, &pub->timer);
+	return key_events(window, monoclock_diff(start, pub->timer));
 }
 
 void print_keys(void) {
-	fputs("Keybinds (case insensitive unless specified):\n"
+	fputs("Keybinds (case insensitive except where noted):\n"
 
 		"\tq | Alt+F4 | Ctrl+w\n"
 		"\t\tQuit.\n"
@@ -225,9 +232,8 @@ void print_keys(void) {
 		"\tf | F11\n"
 		"\t\tToggle fullscreen.\n"
 
-		"\ta\n"
-		"\t\tCycle between alpha blending enabled, as checkerboard\n"
-		"\t\tpattern, or opaque.\n"
+		"\ta | A\n"
+		"\t\tCycle forwards or backwards between alpha blending modes.\n"
 
 		"\tm | M\n"
 		"\t\tPrint unabreviatted metadata. For 'm', display the full\n"
@@ -248,8 +254,8 @@ void print_keys(void) {
 		"\t< | >\n"
 		"\t\tGo to the previous or next sub-image, respectively.\n"
 
-		"\t. | , | : | ;\n"
-		"\t\tFor period and comma, go to the next or previous frame\n"
+		"\t, | . | ; | :\n"
+		"\t\tFor comma and period, go to the previous or next frame\n"
 		"\t\twithin an animated sub-image. For colons, skip 5 frames\n"
 		"\t\tat a time.\n"
 
@@ -265,7 +271,12 @@ void print_keys(void) {
 		"\t\tMirror horizontally or vertically.\n"
 
 		"\t+ | - | PageUp | PageDown\n"
-		"\t\tZoom in or out.\n"
+		"\t\tZoom in or out. Every three presses will double or halve\n"
+		"\t\tthe image size.\n"
+
+		"\t* | / | (PageUp+Shift) | (PageDown+Shift)\n"
+		"\t\tLike + and -, but the size is doubled or halved every\n"
+		"\t\tsix presses.\n"
 
 		"\t0 | End\n"
 		"\t\tFit to window and center.\n"

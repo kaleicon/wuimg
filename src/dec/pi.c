@@ -2,7 +2,6 @@
 
 #include "../wudefs.h"
 #include "../common.h"
-#include "../rast_utils.h"
 #include "../lib/pi.h"
 
 static void read_metadata(struct wu_tree *tree, const struct pi_desc *desc) {
@@ -25,39 +24,32 @@ static void read_metadata(struct wu_tree *tree, const struct pi_desc *desc) {
 		(struct wu_leaf){.val.u = desc->depth, .type = wu_leaf_unsigned});
 }
 
-enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct pi_desc desc;
-	enum lib_fail fail = pi_open_file(&desc, infile->ifp);
-	if (fail) {
-		rast_error(infile, fail);
-		return wu_invalid_signature;
-	}
-
-	fail = pi_read_header(&desc);
-	if (fail) {
-		pi_cleanup(&desc);
-		rast_error(infile, fail);
-		return wu_invalid_header;
-	}
-
-	read_metadata(&infile->metadata, &desc);
-
-	if (rast_exceeds_size(&desc.rast, wuconf)) {
-		pi_cleanup(&desc);
-		return wu_exceeds_size_limit;
-	}
-
+static enum wu_error dec_wrap(struct image_file *infile,
+const struct wu_conf *wuconf, struct pi_desc *desc) {
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
-		pi_cleanup(&desc);
 		return wu_alloc_error;
 	}
 
-	img->data = pi_decode(&desc);
-	rast_to_raw(img, &desc.rast);
-	pi_cleanup(&desc);
-	if (!img->data) {
-		return wu_alloc_error;
+	const enum wu_error status = pi_read_header(desc, img);
+	if (status != wu_ok) {
+		return status;
 	}
-	return wu_ok;
+
+	read_metadata(&infile->metadata, desc);
+
+	if (raw_img_exceeds_limit(img, wuconf)) {
+		return wu_exceeds_size_limit;
+	}
+	return pi_decode(desc, img) ? wu_ok : wu_decoding_error;
+}
+
+enum wu_error pi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	struct pi_desc desc;
+	enum wu_error err = pi_open_file(&desc, infile->ifp);
+	if (err == wu_ok) {
+		err = dec_wrap(infile, wuconf, &desc);
+		pi_cleanup(&desc);
+	}
+	return err;
 }

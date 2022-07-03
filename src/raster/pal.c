@@ -2,8 +2,8 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "../common.h"
-#include "pal.h"
+#include "common.h"
+#include "raster/pal.h"
 
 void raster_pal_print(const struct raster_pal *cm) {
 	for (size_t i = 0; i < ARRAY_LEN(cm->color); ++i) {
@@ -14,15 +14,15 @@ void raster_pal_print(const struct raster_pal *cm) {
 }
 
 static uint8_t * expand_palette(const uint_fast8_t byte, uint8_t *restrict dst,
-const struct raster_pal *cm, const size_t items, const uint8_t ch,
-const uint8_t bitdepth, const bool rgb_careful) {
+const struct raster_pal *cm, const size_t items, const uint8_t bitdepth) {
+	const uint8_t ch = 4;
 	const int mask = (1 << bitdepth) - 1;
 	size_t i = 8;
 	const size_t lower_bound = i - items * bitdepth;
 	while (i > lower_bound) {
 		i -= bitdepth;
 		const int idx = (byte >> i) & mask;
-		memcpy(dst, cm->color + idx, (rgb_careful) ? 3 : 4);
+		memcpy(dst, cm->color + idx, ch);
 		dst += ch;
 	}
 	return dst;
@@ -30,8 +30,7 @@ const uint8_t bitdepth, const bool rgb_careful) {
 
 static inline void palette_common(uint8_t *restrict dst,
 const uint8_t *restrict src, const struct raster_pal *cm, size_t width,
-const size_t height, const size_t alignment, const uint8_t ch,
-const uint8_t bitdepth) {
+const size_t height, const size_t alignment, const uint8_t bitdepth) {
 	const size_t biab = 8 / bitdepth;
 
 	const size_t bytes = width / biab;
@@ -39,76 +38,60 @@ const uint8_t bitdepth) {
 	const size_t scan = scanline_length(width, bitdepth, alignment);
 	const size_t rowpad = scan - bytes;
 
-	const bool is_rgb = (ch == 3);
-	for (size_t y = 0; y < height - is_rgb; ++y) {
+	for (size_t y = 0; y < height; ++y) {
 		for (size_t x = 0; x < bytes; ++x) {
-			dst = expand_palette(*src, dst, cm, biab, ch, bitdepth,
-				false);
+			dst = expand_palette(*src, dst, cm, biab, bitdepth);
 			++src;
 		}
-		dst = expand_palette(*src, dst, cm, remainer, ch, bitdepth, false);
+		dst = expand_palette(*src, dst, cm, remainer, bitdepth);
 		src += rowpad;
-	}
-
-	if (is_rgb) {
-		for (size_t x = 0; x < bytes; ++x) {
-			dst = expand_palette(*src, dst, cm, biab, ch, bitdepth,
-				x == bytes - 1);
-			++src;
-		}
-		expand_palette(*src, dst, cm, remainer, ch, bitdepth, true);
 	}
 }
 
 static void strip_palette_rgba8(uint8_t *restrict dst,
 const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
 const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 4, 8);
+	palette_common(dst, src, cm, width, height, alignment, 8);
 }
 
 static void strip_palette_rgba4(uint8_t *restrict dst,
 const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
 const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 4, 4);
+	palette_common(dst, src, cm, width, height, alignment, 4);
 }
 
 static void strip_palette_rgba2(uint8_t *restrict dst,
 const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
 const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 4, 2);
+	palette_common(dst, src, cm, width, height, alignment, 2);
 }
 
 static void strip_palette_rgba1(uint8_t *restrict dst,
 const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
 const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 4, 1);
-}
-
-static void strip_palette_rgb8(uint8_t *restrict dst,
-const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
-const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 3, 8);
+	palette_common(dst, src, cm, width, height, alignment, 1);
 }
 
 void raster_pal_expand(void *restrict dst, const uint8_t *restrict src,
 const struct raster_pal *cm, const size_t width, const size_t height,
-const uint8_t alignment, const uint8_t channels, const uint8_t bitdepth) {
-	switch (channels) {
-	case 3:
-		strip_palette_rgb8(dst, src, cm, width, height, alignment);
-		break;
-	case 4:
-		switch (bitdepth) {
-		case 1: strip_palette_rgba1(dst, src, cm, width, height, alignment); break;
-		case 2: strip_palette_rgba2(dst, src, cm, width, height, alignment); break;
-		case 4: strip_palette_rgba4(dst, src, cm, width, height, alignment); break;
-		case 8: strip_palette_rgba8(dst, src, cm, width, height, alignment); break;
-		}
-		break;
+const uint8_t alignment, const uint8_t bitdepth) {
+	switch (bitdepth) {
+	case 1: strip_palette_rgba1(dst, src, cm, width, height, alignment); break;
+	case 2: strip_palette_rgba2(dst, src, cm, width, height, alignment); break;
+	case 4: strip_palette_rgba4(dst, src, cm, width, height, alignment); break;
+	case 8: strip_palette_rgba8(dst, src, cm, width, height, alignment); break;
 	}
 }
 
-void raster_pal_from_rgb8(struct raster_pal *pal, const void *restrict rgb,
+void raster_pal_from_rgb8(struct raster_pal *dst, const void *src,
 const size_t nmemb) {
-	pix_rgb8_to_rgba8(pal->color, rgb, nmemb);
+	const struct pix_rgb8 *s = src;
+	size_t i = 0;
+	while (i < nmemb - 1) {
+		memcpy(dst->color + i, s + i, 4);
+		dst->color[i].a = 0xff;
+		++i;
+	}
+	memcpy(dst->color + i, s + i, sizeof(*s));
+	dst->color[i].a = 0xff;
 }

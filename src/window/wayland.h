@@ -28,15 +28,16 @@ struct wayland_binds {
 };
 
 struct wayland_cursor {
+	struct wl_pointer *pointer;
 	struct wl_surface *surf;
 	struct wl_buffer *buf;
-	struct window_cursor state;
 };
 
-struct xkb {
+struct wayland_keyboard {
 	struct xkb_context *ctx;
 	struct xkb_keymap *keymap;
 	struct xkb_state *state;
+	struct wl_keyboard *keyboard;
 };
 
 struct wayland {
@@ -48,20 +49,13 @@ struct wayland {
 	struct wayland_listeners listen;
 	struct wayland_binds binds;
 
-	struct wl_pointer *pointer;
 	struct wayland_cursor cursor;
-	struct xkb xkb;
-	struct wl_keyboard *keyboard;
+	struct wayland_keyboard kb;
 
 	struct wl_surface *surf;
+	struct wl_egl_window *egl_window;
 	struct xdg_surface *xdg_surf;
 	struct xdg_toplevel *toplevel;
-
-	struct wl_egl_window *egl_window;
-	struct egl egl;
-
-	bool active;
-	bool fullscreen;
 };
 
 struct wayland_offscreen {
@@ -73,11 +67,11 @@ void wayland_terminate(struct wayland *wl);
 
 void wayland_set_title(const struct wayland *wl, const char *title);
 
-bool wayland_swap_buffers(const struct wayland *wl);
-
 void wayland_poll(struct wayland *wl, int msecs);
 
-void wayland_fullscreen(struct wayland *wl);
+void wayland_fullscreen(struct wayland *wl, bool is_fullscreen);
+
+enum trit wayland_resize(struct wayland *wl, int32_t w, int32_t h);
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub);
 

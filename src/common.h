@@ -12,7 +12,7 @@
 //#define STRING_MACRO(arg) #arg
 
 struct display_dims {
-	unsigned w, h;
+	int w, h;
 };
 
 enum trit {
@@ -92,15 +92,11 @@ const void * memchk(const void *s, unsigned char c, size_t n);
 void * memrchr(const void *s, int c, size_t n);
 #endif
 
-long file_get_remaining(FILE *ifp);
-
 int unmap_file(struct map_info *mm);
 
 bool map_file(struct map_info *mm, FILE *ifp);
 
 bool map_file_fd(struct map_info *mm, int fd);
-
-char * id_template(const char *prefix, size_t num);
 
 void fatal_bug(const char *name, const char *msg);
 

@@ -1,10 +1,6 @@
 #ifndef WU_WINDOW
 #define WU_WINDOW
 
-#include "wudefs.h"
-#include "opengl.h"
-#include "events.h"
-
 #include "window/glfw.h"
 #include "window/drm.h"
 #include "window/wayland.h"
@@ -19,7 +15,7 @@ enum window_backend {
 
 struct window_context {
 	struct window_public pub;
-	enum window_backend backend:8;
+	enum window_backend backend;
 	union {
 		struct glfw_context glfw;
 		struct drm_context drm;
@@ -28,7 +24,7 @@ struct window_context {
 };
 
 struct window_offscreen {
-	enum window_backend backend:8;
+	enum window_backend backend;
 	union {
 		struct drm_offscreen drm;
 		struct wayland_offscreen wl;
@@ -36,13 +32,17 @@ struct window_offscreen {
 	} ctx;
 };
 
-const char * window_backend_str(enum window_backend backend);
+const char * window_backend_name(enum window_backend backend);
 
 void window_terminate(struct window_context *window);
 
 void window_draw(struct window_context *window, bool must_sync);
 
-double window_poll(struct window_context *window);
+void window_fullscreen(struct window_context *window);
+
+void window_poll(struct window_context *window);
+
+void window_adapt(struct window_context *window);
 
 bool window_has_focus(const struct window_context *window);
 

@@ -21,13 +21,7 @@ struct wu_conf {
 		bg_metadata,     /* If the image format includes a non-black
 			background metadata field, use its RGB components with
 			the user-defined Alpha, otherwise the default. */
-		bg_average,      /* Samples some pixels and gets the average
-			color, or, for paletted images, the most used entry. */
-		bg_popular,      /* Splits colors in bands and picks the most
-			popular. */
-		bg_vibrant,      /* Like 'popular', but picks the band with
-			the most difference between components instead. */
-	} bg_src:3;
+	} bg_src:1;
 	bool no_window_decorations:1; /* Request no decorations or widgets
 		around the window. */
 
@@ -35,11 +29,11 @@ struct wu_conf {
 	bool partial_decode:1; /* Decode at the smallest available resolution
 		that's bigger than the window when the format allows so. This
 		speeds up the time to first display and can make flipping
-		through big images more bearable. A full decode is
-		triggered when zooming in.
-		  As an aside, this technique is used unconditionally when the
-		image dimensions would exceed the maximum image size.
-		  Currently applies to JP2, JPEG, and SVG. */
+		through big images more bearable. A full decode is performed
+		when zooming in.
+		  This technique is used unconditionally when the image
+		dimensions would exceed the maximum image size.
+		  Currently applies only to JP2. */
 
 	// Animations
 	bool anim_space_over_speed:1; /* Render animations as RGB if no alpha
@@ -56,23 +50,25 @@ struct wu_conf {
 		decoding.
 		  From libjpeg.txt: "If the JPEG image was compressed using a
 		quality level of 85 or below, then there should be little or no
-		perceptible difference between the two algorithms."
+		perceptible difference between the two algorithms. When
+		decompressing images that were compressed using quality levels
+		above 85, however, the difference between JDCT_IFAST and
+		JDCT_ISLOW becomes more pronounced. With images compressed
+		using quality=97, for instance, JDCT_IFAST incurs generally
+		about a 4-6 dB loss (in PSNR) relative to JDCT_ISLOW, but this
+		can be larger for some images. If you can avoid it, do not use
+		JDCT_IFAST when decompressing images that were compressed using
+		quality levels above 97."
 		  This setting aplies to all images, as there's no simple
 		method to determine the quality level. */
-	bool jpeg_fast_upsamp:1; /* Use a faster chroma upsampling algorithm.
-		Usually, YCbCr and RGB files are decoded to separate planes and
-		joined in the GPU, so this setting rarely has any effect. Even
-		then, this setting may be ignored to prevent strange segfaults.
-		  From libjpeg.txt: "The visual impact of the sloppier
-		[upsampling] method is often very small." */
 
 	// TIFF
 	bool tiff_use_homegrown_unpacker:1; /* Use our own pixel unpacking
 		routines instead of libtiff's high-level interface if the image
-		fits certain criteria. If applicable, this usually results
+		fits certain criteria. Where applicable, this usually results
 		in lower memory usage and faster decoding and display. This
-		also allows decoding some exotic bitdepths (32-bit color,
-		rgb(a) < 8-bit, etc.) that libtiff doesn't render on its own. */
+		also allows decoding some exotic bitdepths that libtiff doesn't
+		render on its own. */
 
 	// RAW
 	bool raw_16bit:1; // Render with 16 bits per component instead of 8.
@@ -84,7 +80,8 @@ struct wu_conf {
 		thumbnail is a JPEG image, the jpeg decoder function will be
 		used and so its settings will also apply to it.
 		  Note that the thumbnail might have camera effects applied,
-		and so might differ drastically from the rendered raw data. */
+		and so might differ drastically from a straight render of the
+		raw data. */
 
 	// SVG
 	enum svg_redraw_on { // If and when should the vector be redrawn.
@@ -96,11 +93,11 @@ struct wu_conf {
 	// WEBP
 	bool webp_bypass_filtering:1; // Skip the filtering stage for lossy WebP.
 	bool webp_fast_upsamp:1; /* Use a faster chroma upsampler for lossy WebP.
-		This only applies to lossy animations, as static images are
-		handled natively. */
+		This only affects lossy animations, as static images are
+		handled in the GPU. */
 	bool webp_use_homegrown_renderer:1; /* Composite animations using our
-		own routines instead of libwebp's. They don't seem to be slower,
-		but I make no guarantees for correctness. */
+		own routines instead of libwebp's. They seem to be correct and
+		maybe slightly faster, but I wouldn't bet on it. */
 };
 
 struct wu_conf conf_default(void);

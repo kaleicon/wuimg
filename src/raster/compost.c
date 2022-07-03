@@ -6,10 +6,10 @@ static void blend_rgba_on_rgba_pixel(unsigned char *restrict d,
 const unsigned char *restrict s) {
 	const unsigned int ch = 4;
 	switch (s[3]) {
-	case 0xff: // Only case where (1 - src.A / 255) == 0
+	case 0xff: // (1 - src.A / 255) == 0
 		memcpy(d, s, ch);
 		return;
-	case 0x00: // With these and the above, only case where blend.A == 0
+	case 0x00: // blend.A == 0
 		return;
 	}
 
@@ -26,7 +26,7 @@ static void blend_rgba_on_rgb_pixel(unsigned char *restrict d,
 const unsigned char *restrict s) {
 	const unsigned int ch = 3;
 	switch (s[3]) {
-	case 0xff: // Only case where (1 - src.A / 255) == 0
+	case 0xff: // (1 - src.A / 255) == 0
 		memcpy(d, s, ch);
 		return;
 	case 0x00:
@@ -44,7 +44,7 @@ const unsigned char *restrict s) {
 
 static void blend_row(unsigned char *restrict dst,
 const unsigned char *restrict src, const size_t len, const size_t ch) {
-	/* Premultiplied alpha blending, as given by the WebP docs:
+	/* Unassociated alpha blending, as given by the WebP docs:
 
 		blend.A = src.A + dst.A * (1 - src.A / 255)
 		if blend.A = 0 then
@@ -81,7 +81,7 @@ const void *restrict src, const struct frame_info *fr) {
 }
 
 void compost_overwrite(void *restrict dst, const size_t w, const uint8_t ch,
-const void *restrict src, const struct frame_info*fr) {
+const void *restrict src, const struct frame_info *fr) {
 	size_t dst_pos = (fr->y * w + fr->x) * ch;
 	size_t src_pos = 0;
 	for (size_t i = 0; i < fr->h; ++i) {
@@ -93,10 +93,15 @@ const void *restrict src, const struct frame_info*fr) {
 }
 
 void compost_clear(void *restrict dst, const size_t w, const uint8_t ch,
-const int c, const struct frame_info*fr) {
+const int c, const struct frame_info *fr) {
 	size_t dst_pos = (fr->y * w + fr->x) * ch;
 	for (size_t i = 0; i < fr->h; ++i) {
 		memset((uint8_t *)dst + dst_pos, c, fr->w * ch);
 		dst_pos += w * ch;
 	}
+}
+
+bool compost_bounds_check(const size_t w, const size_t h,
+const struct frame_info *fr) {
+	return (fr->x + fr->w <= w) && (fr->y + fr->h <= h);
 }

@@ -6,7 +6,7 @@
 
 #include "dec_enable.def"
 #ifdef WU_ENABLE_JPEG
-#include "jpeg.h"
+#include "dec_fn.h"
 #endif
 
 enum raw_thumbnail {
@@ -64,9 +64,6 @@ static void raw_state_free(struct image_file *infile) {
 
 	libraw_close(rs->data);
 	unmap_file(&rs->map);
-	free(rs);
-	infile->dec_state = NULL;
-	infile->events = 0;
 }
 
 static enum wu_error copy_jpeg(struct image_file *infile,
@@ -117,6 +114,7 @@ const struct wu_conf *wuconf, const size_t i) {
 		img->h = proc->height;
 		img->channels = (unsigned char)proc->colors;
 		img->bitdepth = (unsigned char)proc->bits;
+		return raw_img_verify(img);
 	} else {
 		const libraw_thumbnail_t *thumb = &rs->data->thumbnail;
 		if (thumb->tformat == LIBRAW_THUMBNAIL_JPEG) {
@@ -166,9 +164,7 @@ const enum image_event ev) {
 		} else if (!img[state->idx].data) {
 			status = raw_decode(infile, wuconf, (size_t)state->idx);
 		}
-	}
-
-	if (!ev || status > wu_ok) {
+	} else {
 		raw_state_free(infile);
 	}
 	return status;
@@ -177,8 +173,8 @@ const enum image_event ev) {
 static unsigned char convert_rotate(const int flip) {
 	switch (flip) {
 	case 3: return 2;
-	case 5: return 1;
-	case 6: return 3;
+	case 5: return 3;
+	case 6: return 1;
 	default: return 0;
 	}
 }
@@ -222,28 +218,27 @@ const char *restrict field, const size_t field_len) {
 	}
 }
 
-static void read_metadata(struct wu_tree *tree, const libraw_data_t *data) {
-	const libraw_imgother_t *other = &data->other;
+static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
+	const libraw_imgother_t *other = libraw_get_imgother(data);
 	measure_and_add(tree, "Artist", other->artist, sizeof(other->artist));
 	measure_and_add(tree, "Description", other->desc, sizeof(other->desc));
 	const struct wu_tree_sap sap[] = {
-		{"ISO speed", wu_leaf_double, {.g = other->iso_speed}},
-		{"Shutter speed", wu_leaf_double, {.g = other->shutter}},
-		{"Aperture", wu_leaf_double, {.g = other->aperture}},
-		{"Focal length", wu_leaf_double, {.g = other->focal_len}},
-		{"Timestamp", wu_leaf_time, {.time = other->timestamp}},
-		{"Shot order", wu_leaf_unsigned, {.u = other->shot_order}},
+		{"ISO speed", {wu_leaf_double, {.g = other->iso_speed}}},
+		{"Shutter speed", {wu_leaf_double, {.g = other->shutter}}},
+		{"Aperture", {wu_leaf_double, {.g = other->aperture}}},
+		{"Focal length", {wu_leaf_double, {.g = other->focal_len}}},
+		{"Timestamp", {wu_leaf_time, {.time = other->timestamp}}},
+		{"Shot order", {wu_leaf_unsigned, {.u = other->shot_order}}},
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
-	const libraw_iparams_t *idata = &data->idata;
+	const libraw_iparams_t *idata = libraw_get_iparams(data);
 	measure_and_add(tree, "Make", idata->make, sizeof(idata->make));
 	measure_and_add(tree, "Model", idata->model, sizeof(idata->model));
 	measure_and_add(tree, "Software", idata->software, sizeof(idata->software));
 	if (idata->dng_version) {
 		const struct wu_leaf leaf = {
-			.val.u = idata->dng_version,
-			.type = wu_leaf_unsigned
+			wu_leaf_unsigned, {.u = idata->dng_version},
 		};
 		tree_bud_leaf(tree, "DNG version", leaf);
 	}
@@ -257,35 +252,39 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 		return wu_alloc_error;
 	}
 
-	rs->data = libraw_init(0);
-	if (!rs->data) {
+	libraw_data_t *data = libraw_init(0);
+	if (!data) {
 		return wu_alloc_error;
 	}
+	rs->data = data;
 
-	unsigned char *why_isnt_it_const = (unsigned char *)rs->map.data;
-	int err = libraw_open_buffer(rs->data, why_isnt_it_const, rs->map.len);
+	unsigned char *will_crash_if_written_to = (unsigned char *)rs->map.data;
+	int err = libraw_open_buffer(data, will_crash_if_written_to, rs->map.len);
 	if (err != LIBRAW_SUCCESS) {
 		return raw_error_to_wu(infile, err);
 	}
 
-	read_metadata(&infile->metadata, rs->data);
+	read_metadata(&infile->metadata, data);
 
-	rs->thumb_type = unpack_thumb(wuconf, rs->data);
+	rs->thumb_type = unpack_thumb(wuconf, data);
 	size_t nr = (size_t)(rs->thumb_type != raw_thumb_none);
-	if (!wuconf->raw_prefer_thumbnail || !big_enough_thumb(rs->data)) {
-		rs->data->params.half_size = wuconf->raw_half_size;
-		rs->data->params.output_bps = wuconf->raw_16bit ? 16 : 8;
-		rs->data->params.user_flip = 0;
-		rs->data->params.user_qual = 0;
-		rs->data->params.fbdd_noiserd = 0;
-		rs->data->params.use_rawspeed = true;
+	if (!wuconf->raw_prefer_thumbnail || !big_enough_thumb(data)) {
+		data->params.half_size = wuconf->raw_half_size;
+		data->params.use_camera_wb = 1;
+		data->params.user_flip = 0;
+		data->params.user_qual = 0;
+		data->params.user_sat = 0;
+		data->params.use_rawspeed = 1;
+		data->params.med_passes = 0;
+		libraw_set_output_bps(data, wuconf->raw_16bit ? 16 : 8);
+		libraw_set_fbdd_noiserd(data, 0);
 
-		err = libraw_unpack(rs->data);
+		err = libraw_unpack(data);
 		if (err != LIBRAW_SUCCESS) {
 			return raw_error_to_wu(infile, err);
 		}
 
-		rs->raw.count = rs->data->idata.raw_count;
+		rs->raw.count = data->idata.raw_count;
 		rs->raw.proc = calloc(rs->raw.count, sizeof(*rs->raw.proc));
 		if (!rs->raw.proc) {
 			return wu_alloc_error;
@@ -299,24 +298,21 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 		return wu_alloc_error;
 	}
 
-	const unsigned char rotate = convert_rotate(rs->data->sizes.flip);
+	const unsigned char rotate = convert_rotate(data->sizes.flip);
 	for (size_t i = 0; i < infile->nr; ++i) {
 		img[i].rotate = rotate;
 	}
 
 	if (rs->thumb_type == raw_thumb_bitmap) {
-		const libraw_thumbnail_t *thumb = &rs->data->thumbnail;
+		const libraw_thumbnail_t *thumb = &data->thumbnail;
 		img += rs->raw.count;
 
 		img->data = (unsigned char *)thumb->thumb;
 		img->w = thumb->twidth;
 		img->h = thumb->theight;
 		img->channels = 3;
-		if (thumb->tformat == LIBRAW_THUMBNAIL_BITMAP16) {
-			img->bitdepth = 16;
-		} else {
-			img->bitdepth = 8;
-		}
+		img->bitdepth = (thumb->tformat == LIBRAW_THUMBNAIL_BITMAP16)
+			? 16 : 8;
 		img->id = strdup("thumbnail_bitmap");
 	}
 

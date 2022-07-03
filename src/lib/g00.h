@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#include "../raster/lib.h"
+#include "wudefs.h"
 
 struct g00_block {
 	uint16_t x, y;
@@ -47,13 +47,11 @@ enum g00_version {
 
 struct g00_desc {
 	FILE *ifp;
-	struct raster_desc r;
 	enum g00_version version;
 	uint32_t comp_size;
 	size_t decomp_size;
 
 	uint8_t *buf;
-	uint8_t *pix_data;
 
 	union {
 		struct g00_desc_v1 v1;
@@ -61,10 +59,11 @@ struct g00_desc {
 	} u;
 };
 
-void g00_cleanup(struct g00_desc *desc);
+void g00_cleanup(struct g00_desc *desc, struct raw_img *img);
 
-size_t g00_decode(struct g00_desc *desc);
+size_t g00_decode(struct g00_desc *desc, struct raw_img *img);
 
-enum lib_fail g00_read_header(struct g00_desc *desc, FILE *ifp);
+enum wu_error g00_read_header(struct g00_desc *desc, struct raw_img *img,
+FILE *ifp);
 
 #endif /* LIB_G00 */

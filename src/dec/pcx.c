@@ -3,9 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "../common.h"
 #include "../wudefs.h"
-#include "../rast_utils.h"
 #include "../lib/pcx.h"
 
 static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
@@ -22,7 +20,7 @@ static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 }
 
 static void add_metadata(struct wu_tree *metadata,
-const struct pcx_desc *desc) {
+const struct pcx_desc *desc, struct raw_img *img) {
 	const char ver_fmt[] = "%hhu (%s)";
 	char buf[sizeof(ver_fmt) + 20];
 	const size_t w = (size_t)sprintf(buf, ver_fmt, desc->version,
@@ -30,12 +28,12 @@ const struct pcx_desc *desc) {
 	tree_sprout_measured_leaf(metadata, "Format version", buf, w);
 
 	struct wu_leaf leaf = {
-		.val.u = desc->r.ch,
+		.val.u = img->channels,
 		.type = wu_leaf_unsigned
 	};
 	tree_bud_leaf(metadata, "Planes", leaf);
 
-	leaf.val.u = desc->r.bitdepth;
+	leaf.val.u = img->bitdepth;
 	tree_bud_leaf(metadata, "Bitdepth", leaf);
 
 	leaf.val.u = desc->palette_type;
@@ -52,68 +50,72 @@ const struct pcx_desc *desc) {
 	}
 }
 
-static enum wu_error common_pcx(FILE *ifp, struct raw_img *img,
-struct wu_tree *metadata, const struct wu_conf *wuconf, const long file_len) {
-	struct pcx_desc desc;
-	enum lib_fail status = pcx_open_file(ifp, &desc, file_len);
-	if (status != lib_ok) {
-		return wu_unknown_file_type;
+static enum wu_error common_pcx(struct pcx_desc *desc, struct raw_img *img,
+const struct wu_conf *wuconf, struct wu_tree *metadata) {
+	const enum wu_error st = pcx_read_header(desc, img);
+	if (st == wu_ok) {
+		if (metadata) {
+			add_metadata(metadata, desc, img);
+		}
+		if (raw_img_exceeds_limit(img, wuconf)) {
+			return wu_exceeds_size_limit;
+		}
+		return pcx_decode(desc, img) ? wu_ok : wu_decoding_error;
 	}
-
-	status = pcx_read_header(&desc);
-	if (status != lib_ok) {
-		return wu_invalid_header;
-	}
-
-	if (metadata) {
-		add_metadata(metadata, &desc);
-	}
-
-	if (rast_exceeds_size(&desc.r, wuconf)) {
-		return wu_exceeds_size_limit;
-	}
-
-	img->data = pcx_decode(&desc);
-	rast_to_raw(img, &desc.r);
-	return img->data ? wu_ok : wu_alloc_error;
+	return st;
 }
 
 enum wu_error pcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	enum wu_error err = wu_open_error;
+	struct map_info mm;
+	if (map_file(&mm, infile->ifp)) {
+		struct pcx_desc desc;
+		err = pcx_open_file(&desc, &mm);
+		if (err == wu_ok) {
+			struct raw_img *img = alloc_sub_images(infile, 1);
+			if (img) {
+				err = common_pcx(&desc, img, wuconf,
+					&infile->metadata);
+			} else {
+				err = wu_alloc_error;
+			}
+		}
+		unmap_file(&mm);
+	}
+	return err;
+}
+
+static enum wu_error wrap_dcx(struct image_file *infile,
+const struct wu_conf *wuconf, const struct dcx_desc *dcx) {
+	struct raw_img *img = alloc_sub_images(infile, dcx->nr);
 	if (!img) {
 		return wu_alloc_error;
 	}
-	return common_pcx(infile->ifp, img, &infile->metadata, wuconf, 0);
+
+	size_t dec = 0;
+	for (uint32_t i = 0; i < dcx->nr; ++i) {
+		struct pcx_desc pcx;
+		if (dcx_set_file(dcx, &pcx, i) == wu_ok
+		&& common_pcx(&pcx, img + dec, wuconf, &infile->metadata) == wu_ok) {
+			++dec;
+		} else {
+			raw_img_clear(img + dec);
+		}
+	}
+	return image_file_total_decoded(infile, dec);
 }
 
 enum wu_error dcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	const enum lib_fail status = dcx_open_file(infile->ifp);
-	if (status != lib_ok) {
-		return wu_unknown_file_type;
-	}
-
-	struct dcx_desc *desc = dcx_read_offsets(infile->ifp);
-	if (!desc) {
-		return wu_alloc_error;
-	} else if (!desc->nr) {
-		return wu_unexpected_eof;
-	}
-
-	struct raw_img *img = alloc_sub_images(infile, desc->nr);
-	if (!img) {
-		free(desc);
-		return wu_alloc_error;
-	}
-
-	size_t decoded = 0;
-	for (size_t i = 0; i < desc->nr; ++i) {
-		fseek(infile->ifp, (long)desc->off[i], SEEK_SET);
-		const enum wu_error res = common_pcx(infile->ifp,
-			img + decoded, NULL, wuconf, (long)desc->len[i]);
-		if (res == wu_ok) {
-			++decoded;
+	struct map_info mm;
+	if (map_file(&mm, infile->ifp)) {
+		struct dcx_desc desc;
+		enum wu_error st = dcx_open_file(&desc, &mm);
+		if (st == wu_ok) {
+			st = wrap_dcx(infile, wuconf, &desc);
+			dcx_free(&desc);
 		}
+		unmap_file(&mm);
+		return st;
 	}
-	free(desc);
-	return image_file_total_decoded(infile, decoded);
+	return wu_open_error;
 }

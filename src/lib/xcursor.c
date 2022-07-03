@@ -2,15 +2,15 @@
 #include <string.h>
 #include <errno.h>
 
-#include "../common.h"
 #include "xcursor.h"
+#include "raster/fmt.h"
 
-/* Though this format is simple enough, its only written spec is the quite
+/* Though this format is simple enough, its only written spec is the mildly
  * unhelpful Xcursor(3) man page, so some reading of the libXcursor code is
  * required.
    https://gitlab.freedesktop.org/xorg/lib/libxcursor
 
- * Some general points:
+ * Important points:
  *  · The format is little endian
  *  · All fields are unsigned
  *  · libXcursor has limits for the image size, comment length, and TOC length.
@@ -18,7 +18,6 @@
  *    of them here for a lack of better options.
 */
 
-// Limits are inclusive
 static const uint32_t XCURSOR_TOC_LIMIT = 0x10000;
 static const uint32_t XCURSOR_STR_LIMIT = 0x1000000;
 static const uint32_t XCURSOR_DIM_LIMIT = 0x7fff;
@@ -44,14 +43,15 @@ void xcursor_free(struct xcursor_desc *desc) {
 	free(desc->toc);
 }
 
-size_t xcursor_get_chunk_data(struct xcursor_desc *desc,
-struct xcursor_chunk *chunk, void *restrict dst) {
+size_t xcursor_get_chunk_data(const struct xcursor_desc *desc,
+const struct xcursor_chunk *chunk, void *restrict dst) {
 	fseek(desc->ifp, chunk->pos, SEEK_SET);
 	return fread(dst, 1, chunk->len, desc->ifp);
 }
 
-enum lib_fail xcursor_get_chunk(struct xcursor_desc *desc,
-struct xcursor_chunk *chunk, const uint32_t i) {
+static enum wu_error common_chunk(const struct xcursor_desc *desc,
+const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
+const size_t elems, uint32_t *buf) {
 	/* Common chunk structure:
 		Offset  Size    Name
 		0       DWORD   HeaderSize
@@ -82,20 +82,11 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 			32      DWORD   Delay      // In milliseconds
 			36      DWORD[] ARGBPixels
 	*/
-	struct xcursor_toc *entry = desc->toc + i;
-	uint32_t buf[9];
 
-	size_t elems;
-	switch (entry->type) {
-	case xcursor_chunk_comment: elems = 5; break;
-	case xcursor_chunk_image: elems = 9; break;
-	default: return lib_invalid_header;
-	}
 	const size_t size = elems * sizeof(*buf);
-
 	fseek(desc->ifp, entry->pos, SEEK_SET);
 	if (!fread(buf, size, 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
 	const uint32_t header_size = endian32(buf[0], little_endian);
@@ -105,55 +96,66 @@ struct xcursor_chunk *chunk, const uint32_t i) {
 
 	if (header_size != size || chunk->type != entry->type
 	|| subtype != entry->subtype || version != 1) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
-
 	chunk->pos = ftell(desc->ifp);
-	switch (chunk->type) {
-	case xcursor_chunk_comment:
-		switch (subtype) {
+	return wu_ok;
+}
+
+enum wu_error xcursor_get_image_info(const struct xcursor_desc *desc,
+const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
+struct raw_img *img) {
+	uint32_t buf[9];
+	enum wu_error st = common_chunk(desc, entry, chunk, ARRAY_LEN(buf), buf);
+	if (st == wu_ok) {
+		img->w = endian32(buf[4], little_endian);
+		img->h = endian32(buf[5], little_endian);
+		img->channels = 4;
+		img->bitdepth = 8;
+		img->layout = pix_bgra;
+		chunk->u.image = (struct xcursor_image) {
+			.xhot = endian32(buf[6], little_endian),
+			.yhot = endian32(buf[7], little_endian),
+			.delay = endian32(buf[8], little_endian),
+		};
+		const size_t max = zumax(img->w, img->h);
+		if (!max || max > XCURSOR_DIM_LIMIT) {// || max != subtype) {
+			return wu_invalid_header;
+		}
+		st = raw_img_verify(img);
+		if (st == wu_ok) {
+			chunk->len = raw_img_size(img);
+		}
+	}
+	return st;
+}
+
+enum wu_error xcursor_get_comment_info(const struct xcursor_desc *desc,
+const struct xcursor_toc *entry, struct xcursor_chunk *chunk) {
+	uint32_t buf[5];
+	enum wu_error st = common_chunk(desc, entry, chunk, ARRAY_LEN(buf), buf);
+	if (st == wu_ok) {
+		switch (entry->subtype) {
 		case xcursor_comment_copyright:
 		case xcursor_comment_license:
 		case xcursor_comment_other:
 			break;
 		default:
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 
 		chunk->u.comment = (struct xcursor_comment) {
-			.type = subtype,
+			.type = entry->subtype,
 		};
 		chunk->len = endian32(buf[4], little_endian);
 		if (chunk->len > XCURSOR_STR_LIMIT) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
-		break;
-	case xcursor_chunk_image:
-		;struct xcursor_image *image = &chunk->u.image;
-		*image = (struct xcursor_image) {
-			.r = {
-				.w = endian32(buf[4], little_endian),
-				.h = endian32(buf[5], little_endian),
-				.ch = 4,
-				.bitdepth = 8,
-				.layout = pix_bgra,
-			},
-			.xhot = endian32(buf[6], little_endian),
-			.yhot = endian32(buf[7], little_endian),
-			.delay = endian32(buf[8], little_endian),
-		};
-		const size_t max = zumax(image->r.w, image->r.h);
-		if (!max || max > XCURSOR_DIM_LIMIT) {// || max != subtype) {
-			return lib_invalid_header;
-		}
-		raster_normalize(&image->r);
-		chunk->len = raster_size(&image->r);
-		break;
 	}
-	return lib_ok;
+	return st;
 }
 
-static enum lib_fail load_toc(struct xcursor_desc *desc) {
+static enum wu_error load_toc(struct xcursor_desc *desc) {
 	/* TOC structure:
 		Offset  Size    Name
 		0       DWORD   ChunkType
@@ -162,21 +164,19 @@ static enum lib_fail load_toc(struct xcursor_desc *desc) {
 		12
 	*/
 
-	errno = 0;
 	const size_t size = sizeof(*desc->toc) * desc->ntoc;
 	desc->toc = malloc(size);
 	if (!desc->toc) {
-		return lib_alloc_error;
+		return wu_alloc_error;
 	}
 
 	if (!fread(desc->toc, size, 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
 	for (uint32_t i = 0; i < desc->ntoc; ++i) {
 		struct xcursor_toc *entry = desc->toc + i;
-		loop_endian32((uint32_t *)entry, little_endian,
-			3);
+		loop_endian32((uint32_t *)entry, little_endian, 3);
 		entry->type = type_to_enum(entry->type);
 		switch (entry->type) {
 		case xcursor_chunk_comment:
@@ -187,11 +187,10 @@ static enum lib_fail load_toc(struct xcursor_desc *desc) {
 			break;
 		}
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-enum lib_fail xcursor_parse_header(struct xcursor_desc *desc,
-uint32_t max_entries) {
+enum wu_error xcursor_parse_header(struct xcursor_desc *desc, uint32_t limit) {
 	/* File header (after magic bytes)
 		Offset  Size    Name
 		0       DWORD   HeaderBytes     // 16
@@ -201,31 +200,26 @@ uint32_t max_entries) {
 	*/
 	uint32_t header[3];
 	if (!fread(header, sizeof(header), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
-	if (endian32(header[0], little_endian) != 16) {
-		return lib_invalid_header;
-	}
+	const uint32_t size = endian32(header[0], little_endian);
 	const uint32_t version = endian32(header[1], little_endian);
-	if (version != 0x00010000) {
-		return lib_invalid_header;
-	}
-
-	if (!max_entries) {
-		max_entries = XCURSOR_TOC_LIMIT;
-	}
 	desc->ntoc = endian32(header[2], little_endian);
-	if (desc->ntoc && desc->ntoc <= max_entries) {
+
+	if (!limit) {
+		limit = XCURSOR_TOC_LIMIT;
+	}
+	if (size == 16 && version == 0x00010000 && desc->ntoc && desc->ntoc <= limit) {
 		return load_toc(desc);
 	}
-	return lib_invalid_header;
+	return wu_invalid_header;
 }
 
-enum lib_fail xcursor_open_file(struct xcursor_desc *desc, FILE *ifp) {
+enum wu_error xcursor_open_file(struct xcursor_desc *desc, FILE *ifp) {
 	const uint8_t sig[] = {'X', 'c', 'u', 'r'};
-	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
-	if (st == lib_ok) {
+	const enum wu_error st = fmt_sigcmp(sig, sizeof(sig), ifp);
+	if (st == wu_ok) {
 		*desc = (struct xcursor_desc) {
 			.ifp = ifp,
 		};

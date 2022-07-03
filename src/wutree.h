@@ -17,7 +17,7 @@ enum wu_leaf_type {
 
 union wu_leaf_val {
 	struct wu_tree *branch;
-	char array[sizeof(char *)];
+	char array[sizeof(void *)];
 	char *string;
 	unsigned long u;
 	long d;
@@ -27,14 +27,13 @@ union wu_leaf_val {
 };
 
 struct wu_leaf {
-	union wu_leaf_val val;
 	enum wu_leaf_type type;
+	union wu_leaf_val val;
 };
 
 struct wu_tree_sap {
 	const char *name;
-	enum wu_leaf_type type;
-	union wu_leaf_val val;
+	struct wu_leaf leaf;
 };
 
 struct wu_tree {
@@ -45,8 +44,7 @@ struct wu_tree {
 	} name;
 	size_t alloc;
 	size_t len;
-	union wu_leaf_val pick;
-	enum wu_leaf_type is_leaf;
+	struct wu_leaf leaf;
 };
 
 void tree_unroot(struct wu_tree *root);
@@ -77,8 +75,12 @@ size_t len);
 
 struct wu_tree * tree_sprout_branch(struct wu_tree *par, const char *name);
 
+struct wu_tree * tree_find_branch(struct wu_tree *par, const char *name);
+
 struct wu_tree * tree_findadd_branch(struct wu_tree *par, const char *name);
 
-bool tree_sow(struct wu_tree *node, const char *name);
+struct wu_tree * tree_find_path(struct wu_tree *par, const char *path[], size_t len);
+
+bool tree_sow(struct wu_tree *root, const char *name);
 
 #endif /* WU_TREE */

@@ -9,6 +9,7 @@
 #include "wudefs.h"
 #include "dec.h"
 #include "display.h"
+#include "events.h"
 #include "extract.h"
 #include "write_pam.h"
 #include "filesystem.h"
@@ -21,7 +22,7 @@ enum work_mode {
 	directory = 'd',
 	sole = 's',
 	archive = 'a',
-	benchmark = 'b',
+	test = 't',
 	writeout = 'w',
 };
 
@@ -31,10 +32,15 @@ struct file_list {
 	char **name;
 };
 
+struct test_mode_args {
+	unsigned int iters;
+	unsigned int warmup;
+};
+
 struct program_mode {
 	enum work_mode type;
 	union mode_args {
-		unsigned int iters;
+		struct test_mode_args test;
 		struct write_args write;
 	} arg;
 };
@@ -110,7 +116,7 @@ static enum wu_error test_iter(struct image_context *image, double *spent) {
 	const clock_t start = clock();
 	enum wu_error err;
 	do {
-		const struct raw_img *img;
+		struct raw_img *img;
 		err = dec_iter_image(image, &img);
 	} while (err == wu_ok);
 	*spent = clock_ellapsed(start);
@@ -122,10 +128,9 @@ static enum wu_error test_iter(struct image_context *image, double *spent) {
 }
 
 static enum wu_error test_with(const struct file_list *entries,
-const unsigned iters) {
-	unsigned int warmup = 3;
-	printf("Benchmarking %u times with %u extra tries for warmup.\n\n",
-		iters, warmup);
+const struct test_mode_args args) {
+	printf("Testing %u times with %u extra tries for warmup.\n\n",
+		args.iters, args.warmup);
 
 	struct image_context image = {
 		.conf = conf_load(),
@@ -138,8 +143,8 @@ const unsigned iters) {
 		double sum = 0;
 		image.name = entries->name[i];
 		pos_print(i, entries);
-		for (unsigned int j = 0; j < warmup + iters; ++j) {
-			const bool counting = (j >= warmup);
+		for (unsigned int j = 0; j < args.warmup + args.iters; ++j) {
+			const bool counting = (j >= args.warmup);
 			double spent;
 			image_reset(&image);
 			result = test_iter(&image, &spent);
@@ -151,15 +156,16 @@ const unsigned iters) {
 		}
 
 		if (result == wu_ok) {
-			printf("avg %f\n", sum / iters);
+			printf("Average: %f\n", sum / args.iters);
 		} else {
+			printf("Error: %s\n", wu_error_message(result));
 			++failures;
 		}
 
 		grand_total += sum;
 	}
 	putchar('\n');
-	if (entries->nr * iters > 1) {
+	if (entries->nr * args.iters > 1) {
 		printf("total: %f\n", grand_total);
 	}
 	printf("%zu successful, %zu failed\n", entries->nr - failures,
@@ -306,7 +312,7 @@ const struct program_mode *mode) {
 	};
 
 	switch (mode->type) {
-	case benchmark: return test_with(&entries, mode->arg.iters);
+	case test: return test_with(&entries, mode->arg.test);
 	case writeout: return write_list(&entries, &mode->arg.write);
 	default: break;
 	}
@@ -314,7 +320,6 @@ const struct program_mode *mode) {
 }
 
 static enum wu_error from_path(const char *name) {
-	const clock_t start = clock();
 	setlocale(LC_COLLATE, "");
 
 	size_t start_idx;
@@ -326,7 +331,6 @@ static enum wu_error from_path(const char *name) {
 
 	enum wu_error result;
 	if (entries.name) {
-		printf("dir processed in %f\n", clock_ellapsed(start));
 		result = run_with_list(&entries, (long)start_idx);
 		list_free(&entries);
 	} else {
@@ -350,10 +354,9 @@ static enum wu_error from_path(const char *name) {
 #define FMTS_LONG "--fmts"
 #define DIRECTORY_MODE "directory"
 #define SOLE_MODE "sole"
-#define RECURSIVE_MODE "recursive"
 #define ARCHIVE_MODE "archive"
 #define WRITE_MODE "write"
-#define BENCHMARK_MODE "benchmark"
+#define TEST_MODE "test"
 
 static void print_help() {
 	puts("Usage:\n"
@@ -362,8 +365,8 @@ static void print_help() {
 		"\t" WU_CANON_NAME " FILE\t(read from the parent of FILE, starting with FILE)\n"
 		"\t" WU_CANON_NAME " FILE FILE...\t(read only FILEs)\n"
 		"\t" WU_CANON_NAME " MODE [OPTIONS]... [--] [PATH]...\t(explicit mode)\n"
-		"\n"
 
+		"\n"
 		"Program info:\n"
 		"\t" HELP_SHORT " | " HELP_LONG "\n"
 		"\t\tYou are here.\n"
@@ -373,9 +376,9 @@ static void print_help() {
 
 		"\t" FMTS_SHORT " | " FMTS_LONG "\n"
 		"\t\tPrint supported formats.\n"
-		"\n"
 
-		"Work mode (all exclusive, may be abbreviated):\n"
+		"\n"
+		"Work modes (all exclusive, may be abbreviated):\n"
 		"\t" DIRECTORY_MODE "\n"
 		"\t\tDisplay images from PATH if it is a directory, from its\n"
 		"\t\tparent if it is a file, or from the current directory if\n"
@@ -386,19 +389,18 @@ static void print_help() {
 		"\t\tRead only the file(s) given, in the order given.\n"
 		"\t\tAssumed when more than one path is given.\n"
 
-		"\t" WRITE_MODE " [switches]\n"
-		"\t\tDecode FILE to FILE(_#).pam. See below for switches.\n"
-
-		"\t" BENCHMARK_MODE " [n]\n"
-		"\t\tBenchmark decoding time for each FILE n times, or 1 if\n"
-		"\t\tunspecified.\n"
-
 		"\t" ARCHIVE_MODE "\n"
 		"\t\tExtract and display images from FILE, which must be an\n"
 		"\t\tarchive file supported by libarchive.\n"
-		"\n"
 
-		"Write switches:\n"
+		"\t" WRITE_MODE " [...]\n"
+		"\t\tDecode FILE to FILE(_#).pam.\n"
+
+		"\t" TEST_MODE " [...]\n"
+		"\t\tMeasure decoding time for each FILE.\n"
+
+		"\n"
+		WRITE_MODE " switches:\n"
 		"\t-f\n"
 		"\t\tOverwrite output file(s).\n"
 
@@ -406,10 +408,45 @@ static void print_help() {
 		"\t\tWrite all files to OUTDIR instead of each file's\n"
 		"\t\tdirectory.\n"
 
-		"\t-r\n"
-		"\t\tSkip the conversion to 8/16 bits; write the data \"raw\"\n"
-		"\t\tinstead and tweak the PAM header to make it eyeable.\n"
-		"\t\tIt is what's sent to the card sans alignment.");
+		"\n"
+		TEST_MODE " switches:\n"
+		"\t-t N\n"
+		"\t\tDecode each file N times. Default is 1.\n"
+
+		"\t-w N\n"
+		"\t\tBefore measuring, decode each file N times for warmup.\n"
+		"\t\tDefault is 0.\n");
+}
+
+static int test_args(const int argc, char **argv, struct test_mode_args *args) {
+	*args = (struct test_mode_args) {
+		.iters = 1,
+		.warmup = 0,
+	};
+	int read = 0;
+	while (read < argc - 1) {
+		const char *arg = argv[read];
+		if (arg[0] == '-' && arg[1] && !arg[2]) {
+			unsigned int *ptr;
+			switch (arg[1]) {
+			case 't': ptr = &args->iters; break;
+			case 'w': ptr = &args->warmup; break;
+			default: return read;
+			}
+			// %c doesn't match null bytes
+			const unsigned int val = *ptr;
+			char last;
+			if (sscanf(argv[read+1], "%u%c", ptr, &last) == 1) {
+				read += 2;
+			} else {
+				*ptr = val;
+				break;
+			}
+		} else {
+			break;
+		}
+	}
+	return read;
 }
 
 static int get_mode(const int argc, char **argv, struct program_mode *mode) {
@@ -419,7 +456,7 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 	if (arglen && read < argc) {
 		const bool mode_match = !strncmp(arg, ARCHIVE_MODE, arglen)
 			|| !strncmp(arg, WRITE_MODE, arglen)
-			|| !strncmp(arg, BENCHMARK_MODE, arglen)
+			|| !strncmp(arg, TEST_MODE, arglen)
 			|| !strncmp(arg, SOLE_MODE, arglen)
 			|| !strncmp(arg, DIRECTORY_MODE, arglen);
 
@@ -440,30 +477,17 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 		}
 
 		++read;
-		if (read < argc) {
-			arg = argv[read];
-			switch (mode->type) {
-			case benchmark:
-				/* sscanf will match a filename starting with
-				 * a number, so we'll ask for an extra
-				 * character which won't be matched if it is
-				 * null. */
-				;char last;
-				const int matched = sscanf(arg, "%u%c",
-					&mode->arg.iters, &last);
-				if (matched == 1) {
-					++read;
-				} else {
-					mode->arg.iters = 1;
-				}
-				break;
-			case writeout:
-				read += write_args(argc - read, argv + read,
-					&mode->arg.write);
-				break;
-			default:
-				break;
-			}
+		switch (mode->type) {
+		case test:
+			read += test_args(argc - read, argv + read,
+				&mode->arg.test);
+			break;
+		case writeout:
+			read += write_args(argc - read, argv + read,
+				&mode->arg.write);
+			break;
+		default:
+			break;
 		}
 	}
 	return read;
@@ -502,7 +526,7 @@ int main(const int argc, char *argv[]) {
 		print_known_formats();
 		return 0;
 	case sole:
-	case benchmark:
+	case test:
 	case writeout:
 		if (!remaining) {
 			break;

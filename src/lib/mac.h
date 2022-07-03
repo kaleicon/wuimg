@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "../raster/lib.h"
+#include "wudefs.h"
+
+typedef uint32_t mac_time_t;
 
 struct mac_binary_header {
 	uint8_t name_len;
@@ -20,26 +22,27 @@ struct mac_binary_header {
 		uint16_t y, x;
 	} window;
 	struct timestamp {
-		uint32_t created, modified;
+		mac_time_t created, modified;
 	} time;
 };
 
 struct mac_desc {
 	FILE *ifp;
 
-	struct raster_desc patterns;
-	struct raster_desc rast;
-
-	uint32_t version;
+	uint8_t version;
+	bool has_patterns;
 	bool has_macbin_header;
-
 	struct mac_binary_header macbin;
 };
 
-unsigned char * mac_decode(const struct mac_desc *desc);
+time_t mac_time_to_unix(mac_time_t time);
 
-size_t mac_patterns_load(const struct mac_desc *desc, void *restrict dst);
+size_t mac_decode(const struct mac_desc *desc, struct raw_img *main);
 
-enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp);
+size_t mac_patterns_load(const struct mac_desc *desc, struct raw_img *pats);
+
+void mac_get_sizes(struct raw_img *main, struct raw_img *pats);
+
+enum wu_error mac_open_file(struct mac_desc *desc, FILE *ifp);
 
 #endif /* LIB_MAC */

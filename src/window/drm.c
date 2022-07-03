@@ -5,9 +5,7 @@
 #include <fcntl.h>
 #include <sys/select.h>
 
-#include <epoxy/egl.h>
 #include <xf86drm.h>
-#include <xf86drmMode.h>
 #include <gbm.h>
 
 #include "../common.h"
@@ -17,7 +15,7 @@
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 
 void drm_terminate(struct drm_context *ctx) {
-	eglTerminate(ctx->egl.display);
+	eglTerminate(ctx->pub->win.egl.display);
 
 	if (ctx->drm.fd != -1) {
 		drmModeRmFB(ctx->drm.fd, ctx->drm.fb_id[0]);
@@ -52,7 +50,7 @@ static void fb_destroy_fn(struct gbm_bo *bo, void *data) {
 	*fb_ptr = 0;
 }
 
-static uint32_t get_framebuffer(struct drm *drm, struct gbm_bo *bo,
+static uint32_t get_framebuffer(struct drm_drm *drm, struct gbm_bo *bo,
 struct window_public *pub) {
 	uint32_t *fb_ptr = gbm_bo_get_user_data(bo);
 	if (fb_ptr) {
@@ -86,7 +84,7 @@ struct window_public *pub) {
 		*fb_ptr = 0;
 	} else {
 		gbm_bo_set_user_data(bo, fb_ptr, fb_destroy_fn);
-		window_size_update(pub, width, height);
+		window_size_update(pub, (int)width, (int)height);
 	}
 	return *fb_ptr;
 }
@@ -102,11 +100,15 @@ unsigned int _usec, void *data) {
 	*flipped = true;
 }
 
+static void drm_egl_swap(struct drm_context *ctx) {
+	egl_swap(&ctx->pub->win.egl);
+}
+
 void drm_swap_buffers(struct drm_context *ctx) {
-	egl_swap(&ctx->egl);
+	drm_egl_swap(ctx);
 
 	struct gbm_bo *next_bo = gbm_surface_lock_front_buffer(ctx->gbm.surface);
-	struct drm *drm = &ctx->drm;
+	struct drm_drm *drm = &ctx->drm;
 	const uint32_t fb_id = get_framebuffer(drm, next_bo, ctx->pub);
 	if (!fb_id) {
 		fputs("failed to get framebuffer\n", stderr);
@@ -150,10 +152,10 @@ void drm_swap_buffers(struct drm_context *ctx) {
 }
 
 static bool mode_set(struct drm_context *ctx, drmModeModeInfo *mode_info) {
-	egl_swap(&ctx->egl);
+	drm_egl_swap(ctx);
 
 	ctx->gbm.bo = gbm_surface_lock_front_buffer(ctx->gbm.surface);
-	struct drm *drm = &ctx->drm;
+	struct drm_drm *drm = &ctx->drm;
 	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.bo, ctx->pub);
 	if (!fb_id) {
 		return false;
@@ -174,7 +176,7 @@ static bool mode_set(struct drm_context *ctx, drmModeModeInfo *mode_info) {
 	return true;
 }
 
-static bool gbm_setup(struct gbm *gbm, const int drm_fd,
+static bool gbm_setup(struct drm_gbm *gbm, const int drm_fd,
 drmModeModeInfo *mode_info) {
 	gbm->device = gbm_create_device(drm_fd);
 	gbm->surface = gbm_surface_create(gbm->device,
@@ -279,7 +281,7 @@ static int get_device_fd(void) {
 	return fd;
 }
 
-static drmModeRes * find_primary_device(struct drm *drm) {
+static drmModeRes * find_primary_device(struct drm_drm *drm) {
 	drmDevice *devices[64];
 	const int dev_len = drmGetDevices2(0, devices, ARRAY_LEN(devices));
 	drmModeRes *res = NULL;
@@ -298,7 +300,7 @@ static drmModeRes * find_primary_device(struct drm *drm) {
 	return res;
 }
 
-static bool drm_setup(struct drm *drm, drmModeConnector **connector,
+static bool drm_setup(struct drm_drm *drm, drmModeConnector **connector,
 drmModeModeInfo **mode_info) {
 	drmModeRes *res = find_primary_device(drm);
 	if (res) {
@@ -327,7 +329,7 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 	const char *err = "DRM: This string shouldn't be seen";
 	if (drm_setup(&ctx->drm, &connector, &mode_info)) {
 		if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
-			err = egl_init(&ctx->egl,
+			err = egl_init(&ctx->pub->win.egl,
 				(EGLNativeDisplayType)ctx->gbm.device,
 				ctx->gbm.surface, WU_GBM_FORMAT, false);
 			if (!err) {

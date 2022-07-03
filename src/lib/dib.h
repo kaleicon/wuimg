@@ -4,8 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "../raster/lib.h"
-#include "../raster/pal.h"
+#include "wudefs.h"
+#include "wustr.h"
+#include "raster/color.h"
+#include "raster/pal.h"
 
 enum dib_os2_compression {
 	os2_no_compression = 0,
@@ -29,9 +31,11 @@ enum dib_order {
 
 enum dib_type {
 	dib_core_header = 12,
+	dib_os2_2x_bitmap_header_min = 16,
 	dib_info_header = 40,
 	dib_v2_info_header = 52,
 	dib_v3_info_header = 56,
+	dib_os2_2x_bitmap_header = 64,
 	dib_v4_header = 108,
 	dib_v5_header = 124,
 };
@@ -42,10 +46,44 @@ struct dib_bitfield {
 	uint32_t scale;
 };
 
+typedef uint32_t dib_cie_t;
+typedef uint32_t dib_gamma_t;
+
+struct dib_ciexyz {
+	dib_cie_t x, y, z;
+};
+
+struct dib_gamma {
+	dib_gamma_t r, g, b;
+};
+
+enum dib_rendering_intent {
+	dib_gm_unset = 0,
+	dib_gm_abs_colorimetric = 1,
+	dib_gm_business = 1 << 1,
+	dib_gm_graphics = 1 << 2,
+	dib_gm_images = 1 << 3,
+};
+
+#define FOURCC(a, b, c, d) ((a << 24) | (b << 16) | (c << 8) | (d))
+enum dib_lcs_type {
+	dib_lcs_calibrated_rgb = 0,
+	dib_lcs_srgb = FOURCC('s', 'R', 'G', 'B'),
+	dib_lcs_windows_color_space = FOURCC('W', 'i', 'n', ' '),
+	dib_profile_linked = FOURCC('L', 'I', 'N', 'K'),
+	dib_profile_embedded = FOURCC('M', 'B', 'E', 'D'),
+};
+
+struct dib_lcs {
+	enum dib_lcs_type type;
+	struct dib_ciexyz r, g, b;
+	struct dib_gamma gamma;
+	uint32_t profile_off;
+	enum dib_rendering_intent intent;
+};
+
 struct dib_desc {
 	FILE *ifp;
-	struct raster_desc r;
-
 	enum trit is_os2:8;
 
 	unsigned char depth;
@@ -54,23 +92,27 @@ struct dib_desc {
 	enum dib_compression compression:8;
 	uint32_t pal_entries;
 	struct dib_bitfield bf[4];
+	struct dib_lcs lcs;
 
 	size_t size;
 };
 
 const char * dib_compression_str(enum dib_compression comp);
 
-const char * dib_type_str(enum dib_type type);
+const char * dib_type_str(const struct dib_desc *desc);
 
-void dib_cleanup(struct dib_desc *desc);
+bool dib_get_linked_profile_name(const struct dib_desc *desc,
+struct wustr *name);
 
-unsigned char * dib_decode(const struct dib_desc *desc);
+bool dib_decode(const struct dib_desc *desc, struct raw_img *img);
 
-enum lib_fail dib_open_file(struct dib_desc *desc, FILE *ifp);
+enum wu_error dib_open_file(struct dib_desc *desc, struct raw_img *img,
+FILE *ifp);
 
-enum lib_fail bmp_parse_header(struct dib_desc *desc);
 
-enum lib_fail bmp_open_file(struct dib_desc *desc, FILE *ifp);
+enum wu_error bmp_parse_header(struct dib_desc *desc, struct raw_img *img);
+
+enum wu_error bmp_open_file(struct dib_desc *desc, FILE *ifp);
 
 /* ICO functions */
 enum ico_type {
@@ -86,20 +128,20 @@ struct ico_image {
 struct ico_desc {
 	struct dib_desc dib;
 	struct ico_image *images;
-	enum ico_type type:16;
 	uint16_t count;
+	enum ico_type type:16;
 };
 
 const char * ico_type_str(enum ico_type);
 
 void ico_cleanup(struct ico_desc *desc);
 
-unsigned char * ico_decode(struct ico_desc *desc);
+bool ico_decode(struct ico_desc *desc, struct raw_img *img);
 
-enum lib_fail ico_set_image(struct ico_desc *desc, uint16_t i);
+enum wu_error ico_set_image(struct ico_desc *desc, struct raw_img *img, uint16_t i);
 
-enum lib_fail ico_parse_header(struct ico_desc *desc);
+enum wu_error ico_parse_header(struct ico_desc *desc);
 
-enum lib_fail ico_open_file(struct ico_desc *desc, FILE *ifp);
+enum wu_error ico_open_file(struct ico_desc *desc, FILE *ifp);
 
 #endif /* LIB_BMP */

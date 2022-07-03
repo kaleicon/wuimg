@@ -4,9 +4,11 @@
 #include <stdbool.h>
 #include <limits.h>
 
-#include "../common.h"
-#include "../raster/bit.h"
-#include "../raster/raster.h"
+#include "raster/bit.h"
+#include "raster/file.h"
+#include "raster/fmt.h"
+#include "raster/mem.h"
+#include "raster/unpack.h"
 #include "dib.h"
 
 enum dib_rle_marker {
@@ -22,6 +24,13 @@ struct ico_buf {
 
 static const uint32_t BITFIELD_SHIFT = 16;
 
+static bool valid_os2_2x(const uint32_t size) {
+	if (size >= dib_os2_2x_bitmap_header_min && size <= dib_os2_2x_bitmap_header) {
+		return size % 4 == 0 || size == 42 || size == 46;
+	}
+	return false;
+}
+
 const char * dib_compression_str(const enum dib_compression comp) {
 	switch (comp) {
 	case dib_no_compression: return "None";
@@ -32,26 +41,82 @@ const char * dib_compression_str(const enum dib_compression comp) {
 	return "???";
 }
 
-const char * dib_type_str(const enum dib_type type) {
-	switch (type) {
+const char * dib_type_str(const struct dib_desc *desc) {
+	switch (desc->type) {
 	case dib_core_header: return "BITMAPCOREHEADER";
 	case dib_info_header: return "BITMAPINFOHEADER";
 	case dib_v2_info_header: return "BITMAPV2INFOHEADER";
 	case dib_v3_info_header: return "BITMAPV3INFOHEADER";
 	case dib_v4_header: return "BITMAPV4HEADER";
 	case dib_v5_header: return "BITMAPV5HEADER";
+	case dib_os2_2x_bitmap_header_min: return "OS22XBITMAPHEADER (Minimal)";
+	case dib_os2_2x_bitmap_header: return "OS22XBITMAPHEADER";
+	}
+	if (valid_os2_2x(desc->type)) {
+		return "OS22XBITMAPHEADER (Trimmed)";
 	}
 	return "???";
 }
 
-void dib_cleanup(struct dib_desc *desc) {
-	raster_free(&desc->r);
+double dib_cie_to_double(const dib_cie_t f) {
+	return (double)f / (1 << 30);
 }
 
-static void check_decode(const size_t end, const size_t expected_end) {
-	if ( ((end + 3) & ~0x3U) < expected_end) {
-		puts(RASTER_EOF);
+double dib_gamma_to_double(const dib_gamma_t f) {
+	return (double)f / (1 << 16);
+}
+
+static bool load_profile_data(const struct dib_desc *desc, struct wustr *name) {
+	fseek(desc->ifp, desc->lcs.profile_off, SEEK_SET);
+	if (wustr_malloc(name, (size_t)file_remaining(desc->ifp))) {
+		name->len = fread(name->str, 1, name->len, desc->ifp);
+		if (name->len) {
+			return true;
+		}
+		wustr_free(name);
 	}
+	return false;
+}
+
+bool dib_get_linked_profile_name(const struct dib_desc *desc,
+struct wustr *name) {
+	if (desc->type >= dib_v4_header && desc->lcs.type == dib_profile_linked) {
+		return load_profile_data(desc, name);
+	}
+	return false;
+}
+
+static bool dib_get_colorspace(const struct dib_desc *desc, struct color_space *cs) {
+	if (desc->type >= dib_v4_header) {
+		const struct dib_lcs *lcs = &desc->lcs;
+		switch (lcs->type) {
+		case dib_lcs_calibrated_rgb:
+			return color_space_set_primaries_rgb(cs,
+				dib_cie_to_double(lcs->r.x),
+				dib_cie_to_double(lcs->r.y),
+				dib_cie_to_double(lcs->g.x),
+				dib_cie_to_double(lcs->g.y),
+				dib_cie_to_double(lcs->b.x),
+				dib_cie_to_double(lcs->b.y))
+			&& color_space_set_gamma_rgb(cs,
+				dib_gamma_to_double(lcs->gamma.r),
+				dib_gamma_to_double(lcs->gamma.g),
+				dib_gamma_to_double(lcs->gamma.b));
+		case dib_profile_embedded:
+			;struct wustr name;
+			if (load_profile_data(desc, &name)) {
+				return color_space_set_icc_owned(cs, name.str,
+					name.len);
+			}
+			break;
+		case dib_profile_linked:
+		case dib_lcs_srgb:
+		case dib_lcs_windows_color_space:
+			return true;
+		}
+		return false;
+	}
+	return true;
 }
 
 static size_t rle_loop4(unsigned char *restrict raster, const size_t raster_len,
@@ -60,225 +125,298 @@ const unsigned char *restrict rle, const size_t rle_len, const size_t scan_len) 
 	size_t o = 0;
 	do {
 		const unsigned char repeat = rle[i];
+		const unsigned char marker = rle[i+1];
+		i += 2;
 		if (repeat) {
 			if (o + repeat > raster_len) {
 				return o;
 			}
-			const unsigned char val = rle[i + 1];
-			for (int m = 0; m < repeat; ++m) {
-				if ((m & 1) == 0) {
-					raster[o] = val >> 4;
-				} else {
-					raster[o] = val & 0x0f;
-				}
-				++o;
-			}
-			i += 2;
+			const unsigned char val[] = {
+				marker >> 4,
+				marker & 0x0f,
+			};
+			memtessel(raster + o, val, sizeof(val), repeat);
+			o += repeat;
 		} else {
-			const enum dib_rle_marker marker = rle[i + 1];
 			switch (marker) {
 			case dib_end_of_scan_line:
 				o += (raster_len - o) % scan_len;
-				i += 2;
 				break;
 			case dib_end_of_rle:
 				return o;
 			case dib_delta:
-				if (i + 3 > rle_len) {
+				if (i >= rle_len) {
 					return o;
 				}
-				const size_t x_diff = rle[i + 2];
-				const size_t y_diff = rle[i + 3];
-				o += x_diff + y_diff * scan_len;
-				i += 4;
+				const unsigned char x_diff = rle[i];
+				const unsigned char y_diff = rle[i+1];
+				o += scan_len * y_diff + x_diff;
+				i += 2;
 				break;
 			default:
-				i += 2;
-				const size_t lone_nibble = marker % 2;
-				const size_t rle_bytes = (marker + 1) / 2;
-				const size_t pad = rle_bytes % 2 + lone_nibble;
+				;const size_t run_bytes = scanline_length(
+					marker, 4, 2);
 				if (o + marker > raster_len
-				|| i + rle_bytes + pad > rle_len) {
+				|| i + run_bytes > rle_len) {
 					return o;
 				}
-				for (unsigned m = 0; m < marker; ++m) {
-					if ((m & 1) == 0) {
-						raster[o] = rle[i] >> 4;
-					} else {
-						raster[o] = rle[i] & 0x0f;
-						++i;
-					}
-					++o;
-				}
-				i += pad;
+				unpack_strip(raster + o, rle + i, marker, 4,
+					pix_normal, op_unpack);
+				o += marker;
+				i += run_bytes;
 			}
 		}
-	} while (o < raster_len && i + 1 < rle_len);
+	} while (o < raster_len && i < rle_len);
 	return o;
 }
 
-static size_t rle_loop8(unsigned char *restrict raster, const size_t raster_len,
-unsigned char *restrict rle, const size_t rle_len, const size_t scan_len) {
+static size_t rle_loop(unsigned char *restrict raster,
+const size_t raster_len, unsigned char *restrict rle, const size_t rle_len,
+const size_t scan_len, const unsigned char pix_size) {
 	size_t i = 0;
 	size_t o = 0;
 	do {
 		const unsigned char repeat = rle[i];
+		++i;
 		if (repeat) {
-			if (o + repeat > raster_len) {
+			const size_t len = repeat * pix_size;
+			if (o + len > raster_len) {
 				return o;
 			}
-			const unsigned char val = rle[i + 1];
-			memset(raster + o, val, repeat);
-			o += repeat;
-			i += 2;
+			pix_set(raster + o, rle + i, pix_size, repeat);
+			o += len;
+			i += pix_size;
 		} else {
-			const enum dib_rle_marker marker = rle[i + 1];
+			const unsigned char marker = rle[i];
+			++i;
 			switch (marker) {
 			case dib_end_of_scan_line:
 				o += (raster_len - o) % scan_len;
-				i += 2;
 				break;
 			case dib_end_of_rle:
 				return o;
 			case dib_delta:
-				if (i + 3 > rle_len) {
+				if (i >= rle_len) {
 					return o;
 				}
-				;
-				const unsigned char x_diff = rle[i + 2];
-				const unsigned char y_diff = rle[i + 3];
-				o += x_diff + y_diff * scan_len;
-				i += 4;
+				const unsigned char x_diff = rle[i];
+				const unsigned char y_diff = rle[i+1];
+				o += scan_len * y_diff + x_diff*pix_size;
+				i += 2;
 				break;
 			default:
-				i += 2;
-				if (o + marker > raster_len
-				|| i + marker > rle_len) {
+				;const size_t run = marker*pix_size;
+				const size_t run_bytes = scanline_length(
+					run, 8, 2);
+				if (o + run > raster_len
+				|| i + run_bytes > rle_len) {
 					return o;
 				}
-				memcpy(raster + o, rle + i, marker);
-				o += marker;
-				i += marker + marker % 2;
+				memcpy(raster + o, rle + i, run);
+				o += run;
+				i += run_bytes;
 			}
 		}
-	} while (o < raster_len && i + 1 < rle_len);
+	} while (o < raster_len && i + pix_size < rle_len);
 	return o;
 }
 
-static unsigned char * rle_decode(const struct dib_desc *desc,
-unsigned char *restrict rle) {
-	const size_t row = scanline_length(desc->r.w, 8, 4);
-	const size_t raster_len = row * desc->r.h;
-	unsigned char *raster = malloc(raster_len);
-	if (!raster) {
-		free(rle);
-		return NULL;
+static bool rle_decode(const struct dib_desc *desc, struct raw_img *img,
+unsigned char *restrict rle, const size_t read) {
+	const size_t rle_len = read & (~1u);
+	if (rle_len && raw_img_alloc_noverify(img)) {
+		const size_t row = raw_img_stride(img);
+		const size_t dst_len = row * img->h;
+		if (desc->compression == dib_4bit_rle) {
+			return rle_loop4(img->data, dst_len, rle, rle_len, row);
+		}
+		return rle_loop(img->data, dst_len, rle, rle_len, row,
+			img->channels);
 	}
-
-	const size_t written = (desc->compression == dib_8bit_rle)
-		? rle_loop8(raster, raster_len, rle, desc->size, row)
-		: rle_loop4(raster, raster_len, rle, desc->size, row);
-
-	free(rle);
-	check_decode(written, raster_len);
-	return raster;
+	return false;
 }
 
 static uint32_t expand_bits(const uint32_t word, const struct dib_bitfield *p) {
 	return (((word >> p->shift) & p->mask) * p->scale) >> BITFIELD_SHIFT;
 }
 
-static unsigned char * bitfield_decode(const struct dib_desc *desc,
-uint8_t *restrict data) {
-	const size_t bytes = (desc->r.bitdepth > 8) ? 2 : 1;
-	const size_t ch = (desc->r.ch == 4) ? 4 : 3; // putting both helps perf.
-	void *out = malloc(desc->r.w * desc->r.h * ch * bytes);
-	if (!out) {
-		free(data);
-		return NULL;
+static bool bitfield_decode(const struct dib_desc *desc, struct raw_img *img,
+uint8_t *restrict src) {
+	if (!raw_img_alloc_noverify(img)) {
+		return false;
 	}
+	const uint8_t bytes = (img->bitdepth > 8) ? 2 : 1;
+	const uint8_t ch = (img->channels == 4) ? 4 : 3; // putting both helps perf.
 
-	const size_t stride = scanline_length(desc->r.w, desc->depth, 4);
-	for (size_t y = 0; y < desc->r.h; ++y) {
-		const uint8_t *d = data + y*stride;
-		for (size_t x = 0; x < desc->r.w; ++x) {
+	const size_t stride = scanline_length(img->w, desc->depth, 4);
+	for (size_t y = 0; y < img->h; ++y) {
+		const uint8_t *s = src + y*stride;
+		for (size_t x = 0; x < img->w; ++x) {
 			const uint32_t word = (desc->depth == 32)
-				? endian32(((uint32_t *)d)[x], little_endian)
-				: endian16(((uint16_t *)d)[x], little_endian);
+				? endian32(((uint32_t *)s)[x], little_endian)
+				: endian16(((uint16_t *)s)[x], little_endian);
 
-			const size_t o = y * desc->r.w + x;
+			const size_t o = y * img->w + x;
 			for (size_t k = 0; k < ch; ++k) {
-				const uint32_t val = expand_bits(word, desc->bf + k);
+				const uint32_t v = expand_bits(word, desc->bf + k);
 				if (bytes == 2) {
-					((uint16_t *)out)[o*ch + k] = (uint16_t)val;
+					((uint16_t *)img->data)[o*ch + k] = (uint16_t)v;
 				} else {
-					((uint8_t *)out)[o*ch + k] = (uint8_t)val;
+					img->data[o*ch + k] = (uint8_t)v;
 				}
 			}
 		}
 	}
-	free(data);
-	return out;
+	return true;
 }
 
-unsigned char * dib_decode(const struct dib_desc *desc) {
-	void *data = malloc(desc->size);
-	if (!data) {
-		return NULL;
+bool dib_decode(const struct dib_desc *desc, struct raw_img *img) {
+	bool ok = false;
+	void *src = malloc(desc->size);
+	if (src) {
+		const size_t read = fread(src, 1, desc->size, desc->ifp);
+		switch ((int)desc->compression) {
+		case dib_no_compression:
+			img->data = src;
+			src = NULL;
+			if (desc->depth == 16) {
+				loop_endian16(src, little_endian, read/2);
+			}
+			ok = true;
+			break;
+		case dib_8bit_rle:
+		case dib_4bit_rle:
+		case os2_24bit_rle:
+			ok = rle_decode(desc, img, src, read);
+			break;
+		case dib_bitfield:
+			ok = bitfield_decode(desc, img, src);
+			break;
+		}
+		free(src);
+		if (ok) {
+			return dib_get_colorspace(desc, &img->cs);
+		}
 	}
+	return ok;
+}
 
-	const size_t read = fread(data, 1, desc->size, desc->ifp);
-	if (read != desc->size) {
-		puts(RASTER_EOF);
+static enum wu_error load_pal(struct dib_desc *desc, struct raw_img *img,
+const enum fmt_pal_type type) {
+	img->alpha = alpha_ignore;
+	struct raster_pal *pal;
+	const enum wu_error st = fmt_load_pal(desc->ifp, &pal, type,
+		desc->pal_entries);
+	if (st == wu_ok) {
+		raw_img_set_palette(img, pal);
 	}
+	return st;
+}
 
-	switch (desc->compression) {
-	case dib_no_compression:
-		if (desc->depth == 16) {
-			lib_raster_endian(data, &desc->r, little_endian);
+static struct dib_ciexyz load_xyz(uint8_t *buf) {
+	return (struct dib_ciexyz) {
+		.x = buf_endian32(buf, little_endian),
+		.y = buf_endian32(buf+4, little_endian),
+		.z = buf_endian32(buf+8, little_endian),
+	};
+}
+
+static enum wu_error load_colorspace(struct dib_desc *desc, uint8_t *buf) {
+	/* BITMAPV4HEADER (after previous fields):
+		Offset  Type    Name
+		0       u32     ColorSpaceType
+		4       CIEXYZ  RedCoords
+		16      CIEXYZ  GreenCoords
+		28      CIEXYZ  BlueCoords
+		40      u32     GammaRed
+		44      u32     GammaGreen
+		48      u32     GammaBlue
+		52
+
+	 * BITMAPV5HEADER additional fields:
+		Offset  Type    Name
+		52      u32     RenderingIntent
+		56      u32     ProfileData
+		60      u32     ProfileSize
+		64      u32     Reserved
+		68
+
+	 * CIEXYZ struct:
+		Offset  Type    Name
+		0       u32     XCoord
+		4       u32     YCoord
+		8       u32     ZCoord
+	*/
+
+	uint32_t type;
+	memcpy(&type, buf, 4);
+	switch (type) {
+	case dib_lcs_calibrated_rgb:
+		desc->lcs = (struct dib_lcs) {
+			.r = load_xyz(buf + 4),
+			.g = load_xyz(buf + 16),
+			.b = load_xyz(buf + 28),
+			.gamma = {
+				.r = buf_endian32(buf + 40, little_endian),
+				.g = buf_endian32(buf + 44, little_endian),
+				.b = buf_endian32(buf + 48, little_endian),
+			},
+		};
+		break;
+	case dib_profile_linked:
+	case dib_profile_embedded:
+		desc->lcs.profile_off = buf_endian32(buf + 60, little_endian);
+		// fallthrough
+	case dib_lcs_srgb:
+	case dib_lcs_windows_color_space:
+		if (desc->type < dib_v5_header) {
+			return wu_invalid_header;
+		}
+		const uint32_t intent = buf_endian32(buf + 52, little_endian);
+		switch (intent) {
+		case dib_gm_abs_colorimetric:
+		case dib_gm_business:
+		case dib_gm_graphics:
+		case dib_gm_images:
+			desc->lcs.intent = intent;
+			break;
+		default:
+			return wu_invalid_header;
 		}
 		break;
-	case dib_8bit_rle:
-	case dib_4bit_rle:
-		return rle_decode(desc, data);
-	case dib_bitfield:
-		return bitfield_decode(desc, data);
+	default:
+		return wu_invalid_header;
 	}
-	return data;
+	desc->lcs.type = type;
+	return wu_ok;
 }
 
-static enum lib_fail load_mask(struct dib_desc *desc) {
+static enum wu_error load_mask(struct dib_desc *desc, struct raw_img *img,
+uint8_t *buf) {
 	uint8_t ch = desc->type < dib_v3_info_header ? 3 : 4;
-	uint32_t buf[4];
-	if (fread(buf, sizeof(*buf), ch, desc->ifp) != ch) {
-		return lib_unexpected_eof;
-	}
-	if (desc->type > dib_v3_info_header) {
-		fseek(desc->ifp, desc->type - dib_v3_info_header, SEEK_CUR);
-	}
-
-	if (ch == 4 && !buf[3]) {
+	const uint32_t mask[4] = {
+		// Switch mask to BGRA order for consistency
+		buf_endian32(buf + 2*4, little_endian),
+		buf_endian32(buf + 1*4, little_endian),
+		buf_endian32(buf, little_endian),
+		buf_endian32(buf + 3*4, little_endian)
+	};
+	if (!buf[3]) {
 		ch = 3;
 	}
-
-	loop_endian32(buf, little_endian, ch);
-	// Swizzling is free, so switch mask to BGRA order for consistency
-	const uint32_t t = buf[0];
-	buf[0] = buf[2];
-	buf[2] = t;
 
 	struct dib_bitfield *bf = desc->bf;
 	uint32_t xor_acc = 0;
 	unsigned maxdepth = 0;
 	for (int i = 0; i < ch; ++i) {
-		uint32_t rem = buf[i];
+		uint32_t rem = mask[i];
 		if (!rem) {
 			bf[i] = (struct dib_bitfield){0};
 			continue;
 		}
 
 		unsigned zeroes = 0;
-		while ((rem & 1) == 0) {
+		while (!(rem & 1)) {
 			rem >>= 1;
 			++zeroes;
 		}
@@ -287,23 +425,23 @@ static enum lib_fail load_mask(struct dib_desc *desc) {
 		bf[i].mask = rem;
 
 		unsigned ones = 0;
-		while ((rem & 1) != 0) {
+		while ((rem & 1)) {
 			rem >>= 1;
 			++ones;
 		}
 
 		// Mask bits must be continous and non-overlapping
-		if (rem || (xor_acc & buf[i]) != 0) {
-			return lib_invalid_header;
+		if (rem || (xor_acc & mask[i])) {
+			return wu_invalid_header;
 		}
-		xor_acc ^= buf[i];
+		xor_acc ^= mask[i];
 
 		if (ones > maxdepth) {
 			maxdepth = ones;
 		}
 	}
 	if (maxdepth > desc->depth / 2) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
 	const bool high_depth = maxdepth > 8;
@@ -314,170 +452,169 @@ static enum lib_fail load_mask(struct dib_desc *desc) {
 		}
 	}
 
-	desc->r.ch = ch;
-	desc->r.bitdepth = high_depth ? 16 : 8;
-	desc->r.alignment = 1;
-	return lib_ok;
+	img->channels = ch;
+	img->bitdepth = high_depth ? 16 : 8;
+	img->alignment = 1;
+	return wu_ok;
 }
 
-static enum lib_fail load_pal(struct dib_desc *desc, const enum lib_pal pal_type) {
-	return lib_load_pal(desc->ifp, &desc->r.palette, pal_type,
-		desc->pal_entries);
-}
-
-static enum lib_fail validate_common(struct dib_desc *desc,
+static enum wu_error validate_common(struct dib_desc *desc,
 const uint16_t planes, const uint32_t colors) {
 	if (planes > 1) { // Some files set it to 0
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 	if (desc->depth <= 8) {
 		if (colors > 256) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		} else if (colors) {
 			desc->pal_entries = colors;
 		} else {
 			desc->pal_entries = 1 << desc->depth;
 		}
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-static enum lib_fail validate_os2_header(struct dib_desc *desc,
-const uint32_t width, const uint32_t height, const uint16_t depth,
-const uint32_t compression, const uint32_t size, const uint16_t storage,
-const uint32_t color_encoding) {
-	if (!width || !height) {
-		return lib_invalid_header;
+static enum wu_error validate_os2_header(struct dib_desc *desc,
+struct raw_img *img, const uint32_t width, const uint32_t height,
+const uint16_t depth, const uint32_t compression, const uint32_t size,
+const uint16_t storage, const uint32_t color_encoding) {
+	if (width < 1 || height < 1) {
+		return wu_invalid_header;
 	}
-	desc->r.w = width;
-	desc->r.h = height;
+	img->w = width;
+	img->h = height;
+	img->mirror = true;
 
 	switch (depth) {
 	case 1: case 4: case 8:
-		desc->r.ch = 1;
-		desc->r.bitdepth = (unsigned char)depth;
+		img->channels = 1;
+		img->bitdepth = (unsigned char)depth;
 		break;
 	case 24:
-		desc->r.ch = 3;
-		desc->r.bitdepth = 8;
+		img->channels = 3;
+		img->bitdepth = 8;
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
 	switch (compression) {
 	case os2_no_compression: break;
 	case os2_8bit_rle:
 		if (depth != 8 || size == 0) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case os2_4bit_rle:
 		if (depth != 4 || size == 0) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case os2_1d_huffman:
-		return lib_unsupported_feature;
+		return wu_unsupported_feature;
 	case os2_24bit_rle:
 		if (depth != 24 || size == 0) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	}
-
 	if (storage != 0) {
-		return lib_invalid_header;
+		(void)storage;
+//		return wu_invalid_header;
 	}
 	if (color_encoding != 0) {
-		return lib_invalid_header;
+		(void)color_encoding;
+//		return wu_invalid_header;
 	}
 	desc->depth = (unsigned char)depth;
 	desc->order = dib_bottom_up;
 	desc->compression = (unsigned char)compression;
 	desc->size = size;
-	return lib_ok;
+	return wu_ok;
 }
 
-static enum lib_fail validate_dib_header(struct dib_desc *desc,
-const int32_t width, const int32_t height, const uint16_t depth,
-const uint32_t compression, const uint32_t size) {
+static enum wu_error validate_dib_header(struct dib_desc *desc,
+struct raw_img *img, const int32_t width, const int32_t height,
+const uint16_t depth, const uint32_t compression, const uint32_t size) {
 	if (width < 1) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 	if (!height) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
-	desc->r.w = (unsigned)width;
-	desc->r.h = (unsigned)(height > 0 ? height : -height);
 	desc->order = (height > 0) ? dib_bottom_up : dib_top_down;
+	img->w = (unsigned)width;
+	img->h = (unsigned)(height > 0 ? height : -height);
+	img->mirror = desc->order == dib_bottom_up;
 
 	switch (depth) {
 	case 2: /* Windows CE */
 	case 1: case 4: case 8:
-		desc->r.ch = 1;
-		desc->r.bitdepth = (unsigned char)depth;
+		img->channels = 1;
+		img->bitdepth = (unsigned char)depth;
 		break;
 	case 16: case 24: case 32:
-		desc->r.ch = (unsigned char)(depth / 8);
-		desc->r.bitdepth = 8;
+		img->channels = (unsigned char)(depth / 8);
+		img->bitdepth = 8;
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
 	switch (compression) {
 	case dib_no_compression:
 		if (depth == 16) {
-			desc->r.attr = pix_packing_1555;
+			img->attr = pix_packing_1555;
 		}
 		break;
 	case dib_8bit_rle:
 		if (depth != 8 || desc->order == dib_top_down || size == 0) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case dib_4bit_rle:
 		if (depth != 4 || desc->order == dib_top_down || size == 0) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
-		desc->r.bitdepth = 8; // Our algorithm decodes to 8bit
+		img->bitdepth = 8; // Our algorithm decodes to 8bit
 		break;
 	case dib_bitfield:
 		if (depth != 16 && depth != 32) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 	desc->depth = (unsigned char)depth;
 	desc->compression = (unsigned char)compression;
 	desc->size = size;
-	return lib_ok;
+	return wu_ok;
 }
 
-static enum lib_fail dib_parse_os2_v2_header(struct dib_desc *desc) {
+static enum wu_error dib_parse_os2_2x_header(struct dib_desc *desc,
+struct raw_img *img) {
 	/* OS/2 v2 header (after header size field)
 		Offset  Size    Name
-		0       DWORD   Width           // Width in pixels
-		4       DWORD   Height          // Height in pixels
-		8       WORD    Planes          // Nr of color planes (always 1)
-		10      WORD    BitsPerPixel
-		12      DWORD   Compression     // Compression method
-		16      DWORD   RLEBitmapSize
-		20      DWORD   HorzResolution  // In 'Units'
-		24      DWORD   VertResolution  // In 'Units'
-		28      DWORD   ColorsUsed      // Nr of palette colors, or 0
-		32      DWORD   ColorsImportant // Nr of important colors
-		36      WORD    Units           // Always 0 (pixels per meter)
-		38      WORD    Padding
-		40      WORD    ScanlineStorage // Always 0 (left-to-right, bottom-up)
-		42      WORD    HalftoneAlgorithm
-		44      DWORD   HalftoneVar1
-		48      DWORD   HalftoneVar2
-		52      DWORD   ColorEncoding   // Always 0 (RGB)
-		56      DWORD   Identifier      // Reserved for application use
+		0       u32     Width           // Width in pixels
+		4       u32     Height          // Height in pixels
+		8       i16     Planes          // Nr of color planes (always 1)
+		10      i16     BitsPerPixel
+		12      u32     Compression     // Compression method
+		16      u32     RLEBitmapSize
+		20      u32     HorzResolution  // In 'Units'
+		24      u32     VertResolution  // In 'Units'
+		28      u32     ColorsUsed      // Nr of palette colors, or 0
+		32      u32     ColorsImportant // Nr of important colors
+		36      i16     Units           // Always 0 (pixels per meter)
+		38      i16     Padding
+		40      i16     ScanlineStorage // Always 0 (left-to-right, bottom-up)
+		42      i16     HalftoneAlgorithm
+		44      u32     HalftoneVar1
+		48      u32     HalftoneVar2
+		52      u32     ColorEncoding   // Always 0 (RGB)
+		56      u32     Identifier      // Reserved for application use
 		60
 
 	 * If the header size value is less than 64, the missing values are
@@ -485,12 +622,11 @@ static enum lib_fail dib_parse_os2_v2_header(struct dib_desc *desc) {
 	*/
 
 	uint8_t buf[60] = {0};
-	const uint32_t rem = desc->type - 4;
-	if (fread(buf, 1, rem, desc->ifp) != rem) {
-		return lib_unexpected_eof;
+	if (!fread(buf, desc->type - 4, 1, desc->ifp)) {
+		return wu_unexpected_eof;
 	}
 
-	enum lib_fail status = validate_os2_header(desc,
+	enum wu_error status = validate_os2_header(desc, img,
 		buf_endian32(buf, little_endian),
 		buf_endian32(buf + 4, little_endian),
 		buf_endian16(buf + 10, little_endian),
@@ -498,127 +634,104 @@ static enum lib_fail dib_parse_os2_v2_header(struct dib_desc *desc) {
 		buf_endian32(buf + 16, little_endian),
 		buf_endian16(buf + 40, little_endian),
 		buf_endian32(buf + 52, little_endian));
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 	status = validate_common(desc,
 		buf_endian16(buf + 8, little_endian),
 		buf_endian32(buf + 28, little_endian));
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 	if (desc->depth <= 8) {
-		return load_pal(desc, lib_pal_rgbx);
+		return load_pal(desc, img, fmt_pal_rgbx);
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-static bool valid_os2_v2(const uint32_t size) {
-	if (size >= 16 && size <= 64) {
-		return size % 4 == 0 || size == 14 || size == 42 || size == 46;
-	}
-	return false;
-}
-
-static enum lib_fail dib_parse_type3_header(struct dib_desc *desc) {
+static enum wu_error dib_parse_type3_header(struct dib_desc *desc,
+struct raw_img *img) {
 	/* Type 3 and up DIB header (after header size field)
 
 	 * BITMAPINFOHEADER:
 		Offset  Size    Name
-		0       LONG    Width           // Width in pixels
-		4       LONG    Height          // Height in pixels
-		8       WORD    Planes          // Nr of color planes (always 1)
-		10      WORD    BitsPerPixel
-		12      DWORD   Compression     // Compression method
-		16      DWORD   RLEBitmapSize
-		20      LONG    HorzResolution  // In pixels per meter
-		24      LONG    VertResolution  // In pixels per meter
-		28      DWORD   ColorsUsed      // Nr of palette colors, or 0
-		32      DWORD   ColorsImportant // Nr of important colors
+		0       i32     Width           // Width in pixels
+		4       i32     Height          // Height in pixels
+		8       i16     Planes          // Nr of color planes (always 1)
+		10      i16     BitsPerPixel
+		12      u32     Compression     // Compression method
+		16      u32     RLEBitmapSize
+		20      i32     HorzResolution  // In pixels per meter
+		24      i32     VertResolution  // In pixels per meter
+		28      u32     ColorsUsed      // Nr of palette colors, or 0
+		32      u32     ColorsImportant // Nr of important colors
 		36
 
 	 * Additional fields when Compression == 3 or when BITMAPV2INFOHEADER
 	 * is used:
 		Offset  Size    Name
-		36      DWORD   RedMask
-		40      DWORD   GreenMask
-		44      DWORD   BlueMask
+		36      u32     RedMask
+		40      u32     GreenMask
+		44      u32     BlueMask
 		48
 
 	 * BITMAPV3INFOHEADER additional field:
 		Offset  Size    Name
-		48      DWORD   AlphaMask
+		48      u32     AlphaMask
 		52
 
-	 * BITMAPV4HEADER additional fields:
-		Offset  Size    Name
-		52      DWORD   ColorSpaceType
-		56      LONG    RedX            // X coord of red endpoint
-		60      LONG    RedY
-		64      LONG    RedZ
-		68      LONG    GreenX
-		72      LONG    GreenY
-		76      LONG    GreenZ
-		80      LONG    BlueX
-		84      LONG    BlueY
-		88      LONG    BlueZ
-		92      DWORD   GammaRed        // Gamma red coord scale value
-		96      DWORD   GammaGreen
-		100     DWORD   GammaBlue
-		104
-
-	 * BITMAPV5HEADER additional fields:
-		Offset  Size    Name
-		104     DWORD   RenderingIntent
-		108     DWORD   ProfileData
-		112     DWORD   ProfileSize
-		116     DWORD   Reserved
-		120
-
-	 * Afterwards comes the palette.
+	 * For BITMAPV4HEADER and BITMAPV5HEADER, see load_colorspace().
+	 * Afterwards comes the palette if Depth <= 8.
 	*/
 
-	uint8_t buf[32];
-	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+	uint8_t buf[dib_v5_header - 4];
+	if (!fread(buf, desc->type - 4, 1, desc->ifp)) {
+		return wu_unexpected_eof;
 	}
 
-	enum lib_fail status = validate_dib_header(desc,
+	enum wu_error status = validate_dib_header(desc, img,
 		(int32_t)buf_endian32(buf, little_endian),
 		(int32_t)buf_endian32(buf + 4, little_endian),
 		buf_endian16(buf + 10, little_endian),
 		buf_endian32(buf + 12, little_endian),
 		buf_endian32(buf + 16, little_endian));
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 	status = validate_common(desc,
 		buf_endian16(buf + 8, little_endian),
 		buf_endian32(buf + 28, little_endian));
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 
-	const long header_pos = (long)sizeof(buf) + 4 /* Size field */;
 	if (desc->compression == dib_bitfield) {
-		fseek(desc->ifp, dib_info_header - header_pos, SEEK_CUR);
-		return load_mask(desc);
-	} else {
-		fseek(desc->ifp, desc->type - header_pos, SEEK_CUR);
-		if (desc->depth <= 8) {
-			return load_pal(desc, lib_pal_rgbx);
+		status = load_mask(desc, img, buf + 36);
+		if (status != wu_ok) {
+			return status;
 		}
 	}
-	return lib_ok;
+
+	if (desc->type >= dib_v4_header) {
+		status = load_colorspace(desc, buf + 52);
+		if (status != wu_ok) {
+			return status;
+		}
+	}
+	if (desc->depth <= 8) {
+		return load_pal(desc, img, fmt_pal_rgbx);
+	}
+	return wu_ok;
 }
 
-static enum lib_fail dib_parse_core_header(struct dib_desc *desc) {
+static enum wu_error dib_parse_core_header(struct dib_desc *desc,
+struct raw_img *img) {
 	/* Type 2 DIB header (after header size)
 		Offset  Size    Name
-		0       SHORT   Width           // Image width in pixels
-		2       SHORT   Height          // Image height in pixels
-		4       WORD    Planes          // Nr of color planes. Always 1
-		6       WORD    BitsPerPixel    // Nr of bits per pixel
+		0       u16     Width           // Image width in pixels
+		2       u16     Height          // Image height in pixels
+		4       i16     Planes          // Nr of color planes. Always 1
+		6       i16     BitsPerPixel    // Nr of bits per pixel
 		8
 
 	 * For OS/2, width and height are unsigned. There's no reliable way of
@@ -627,39 +740,40 @@ static enum lib_fail dib_parse_core_header(struct dib_desc *desc) {
 
 	uint16_t buf[4];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
-	enum lib_fail status = validate_dib_header(desc,
+	enum wu_error status = validate_dib_header(desc, img,
 		(int16_t)endian16(buf[0], little_endian),
 		(int16_t)endian16(buf[1], little_endian),
 		endian16(buf[3], little_endian),
 		dib_no_compression, 0);
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 	status = validate_common(desc, endian16(buf[2], little_endian), 0);
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 
 	if (desc->depth <= 8) {
-		return load_pal(desc, lib_pal_rgb);
+		return load_pal(desc, img, fmt_pal_rgb);
 	} else if (desc->depth != 24) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-static enum lib_fail dib_parse_header(struct dib_desc *desc) {
+static enum wu_error dib_parse_header(struct dib_desc *desc,
+struct raw_img *img) {
 	/* Common DIB header:
 		Offset  Size    Name
-		0       DWORD   Size         // Size of DIB header in bytes
+		0       u32     Size         // Size of DIB header in bytes
 		4
 	*/
 	uint32_t hsize;
 	if (!fread(&hsize, sizeof(hsize), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 	hsize = endian32(hsize, little_endian);
 
@@ -674,35 +788,39 @@ static enum lib_fail dib_parse_header(struct dib_desc *desc) {
 	case dib_v4_header:
 	case dib_v5_header:
 		break;
+	case dib_os2_2x_bitmap_header:
+	case dib_os2_2x_bitmap_header_min:
+		desc->is_os2 = trit_true;
+		break;
 	default:
-		if (desc->is_os2 == trit_false || !valid_os2_v2(hsize)) {
-			return lib_invalid_header;
+		if (desc->is_os2 == trit_false || !valid_os2_2x(hsize)) {
+			return wu_invalid_header;
 		}
 		desc->is_os2 = trit_true;
 		break;
 	}
 
 	desc->type = (enum dib_type)hsize;
-	desc->r = (struct raster_desc){
-		.alignment = 4,
-		.layout = pix_bgra,
-	};
+	img->alignment = 4;
+	img->layout = pix_bgra;
 
-	enum lib_fail status;
+	enum wu_error status;
 	if (core_header) {
-		status = dib_parse_core_header(desc);
+		status = dib_parse_core_header(desc, img);
 	} else if (desc->is_os2 == trit_true) {
-		status = dib_parse_os2_v2_header(desc);
+		status = dib_parse_os2_2x_header(desc, img);
 	} else {
-		status = dib_parse_type3_header(desc);
+		status = dib_parse_type3_header(desc, img);
 	}
-	if (status != lib_ok) {
+
+	if (status == wu_ok) {
+		status = raw_img_verify(img);
+	}
+	if (status != wu_ok) {
 		return status;
 	}
 
-	raster_normalize(&desc->r);
-	const size_t size = scanline_length(desc->r.w, desc->depth, 4)
-		* desc->r.h;
+	const size_t size = scanline_length(img->w, desc->depth, 4) * img->h;
 	switch ((int)desc->compression) {
 	case 3: // dib_bitfield, os2_1d_huffman
 		if (desc->is_os2 == trit_true) {
@@ -723,22 +841,23 @@ static enum lib_fail dib_parse_header(struct dib_desc *desc) {
 		}
 		break;
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-enum lib_fail dib_open_file(struct dib_desc *desc, FILE *ifp) {
+enum wu_error dib_open_file(struct dib_desc *desc, struct raw_img *img,
+FILE *ifp) {
 	desc->ifp = ifp;
-	return dib_parse_header(desc);
+	return dib_parse_header(desc, img);
 }
 
-enum lib_fail bmp_parse_header(struct dib_desc *desc) {
+enum wu_error bmp_parse_header(struct dib_desc *desc, struct raw_img *img) {
 	/* Minimum non-type-1 BMP header (after magic bytes)
 
 		Offset	Size    Name
-		0       DWORD   FileSize     // In bytes. Usually 0
-		4       WORD    XHotSpot     // Valid only for OS/2 icons and
-		6       WORD    YHotSpot     //  pointers. Reserved for Windows
-		8       DWORD   BitmapOffset // Start offset of bitmap in bytes
+		0       u32     FileSize     // In bytes. Usually 0
+		4       i16     XHotSpot     // Valid only for OS/2 icons and
+		6       i16     YHotSpot     //   pointers. Reserved in Windows
+		8       u32     BitmapOffset // Start offset of bitmap in bytes
 		12
 
 	 * DIB header follows afterwards.
@@ -746,11 +865,11 @@ enum lib_fail bmp_parse_header(struct dib_desc *desc) {
 
 	uint32_t buf[3];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
-	enum lib_fail status = dib_parse_header(desc);
-	if (status != lib_ok) {
+	enum wu_error status = dib_parse_header(desc, img);
+	if (status != wu_ok) {
 		return status;
 	}
 
@@ -759,10 +878,8 @@ enum lib_fail bmp_parse_header(struct dib_desc *desc) {
 	return status;
 }
 
-enum lib_fail bmp_open_file(struct dib_desc *desc, FILE *ifp) {
-	memset(desc, 0, sizeof(*desc));
-
-	enum lib_fail fail;
+enum wu_error bmp_open_file(struct dib_desc *desc, FILE *ifp) {
+	enum wu_error fail;
 	const unsigned char magic[][2] = {
 		{'B', 'M'}, // BMP
 		{0, 0}, // DDB
@@ -770,15 +887,18 @@ enum lib_fail bmp_open_file(struct dib_desc *desc, FILE *ifp) {
 	unsigned char sig[2];
 	if (fread(sig, sizeof(sig), 1, ifp)) {
 		if (!memcmp(magic[0], sig, sizeof(sig))) {
-			desc->ifp = ifp;
-			return lib_ok;
+			*desc = (struct dib_desc) {
+				.ifp = ifp,
+				.is_os2 = trit_what,
+			};
+			return wu_ok;
 		} else if (!memcmp(magic[1], sig, sizeof(sig))) {
-			fail = lib_unsupported_feature;
+			fail = wu_unsupported_feature;
 		} else {
-			fail = lib_invalid_signature;
+			fail = wu_invalid_signature;
 		}
 	} else {
-		fail = lib_unexpected_eof;
+		fail = wu_unexpected_eof;
 	}
 	return fail;
 }
@@ -794,22 +914,17 @@ const char * ico_type_str(enum ico_type type) {
 
 void ico_cleanup(struct ico_desc *desc) {
 	free(desc->images);
-	dib_cleanup(&desc->dib);
-}
-__attribute__((unused))
-static bool get_bit(const uint8_t *and, const size_t x) {
-	return (and[x/8] >> (7 - (x % 8))) & 1;
 }
 
-static void ico_buf_sizes(struct ico_buf *buf, const struct dib_desc *dib,
+static void ico_buf_sizes(struct ico_buf *buf, const struct raw_img *img,
 const unsigned char depth) {
-	buf->stride = scanline_length(dib->r.w, depth, 4);
-	buf->size = buf->stride * dib->r.h;
+	buf->stride = scanline_length(img->w, depth, 4);
+	buf->size = buf->stride * img->h;
 }
 
-static bool ico_buf_load(struct ico_buf *buf, const struct dib_desc *dib,
+static bool ico_buf_load(struct ico_buf *buf, const struct raw_img *img,
 const unsigned char depth, FILE *ifp) {
-	ico_buf_sizes(buf, dib, depth);
+	ico_buf_sizes(buf, img, depth);
 	buf->buf = malloc(buf->size);
 	if (buf->buf) {
 		return fread(buf->buf, 1, buf->size, ifp);
@@ -817,12 +932,12 @@ const unsigned char depth, FILE *ifp) {
 	return false;
 }
 
-static void ico_32bit_dec(const struct dib_desc *dib, struct pix_rgba8 *dst,
+static void ico_32bit_dec(const struct raw_img *img, struct pix_rgba8 *dst,
 const uint8_t *and, const size_t and_stride) {
-	for (size_t y = 0; y < dib->r.h; ++y) {
-		struct pix_rgba8 *d = dst + dib->r.w * y;
+	for (size_t y = 0; y < img->h; ++y) {
+		struct pix_rgba8 *d = dst + img->w * y;
 		const uint8_t *a = and + and_stride * y;
-		for (size_t x = 0; x < dib->r.w; ++x) {
+		for (size_t x = 0; x < img->w; ++x) {
 			if (bit_get(a, x)) {
 				d[x].a = 0;
 			}
@@ -830,25 +945,26 @@ const uint8_t *and, const size_t and_stride) {
 	}
 }
 
-static unsigned char * ico_word_dec(const struct dib_desc *dib) {
+static bool ico_word_dec(const struct dib_desc *dib, struct raw_img *img) {
 	struct ico_buf dst, and;
-	if (!ico_buf_load(&dst, dib, dib->depth, dib->ifp)) {
-		return NULL;
+	if (!ico_buf_load(&dst, img, dib->depth, dib->ifp)) {
+		return false;
 	}
-	if (!ico_buf_load(&and, dib, 1, dib->ifp)) {
-		free(dst.buf);
-		return NULL;
+	img->data = dst.buf;
+
+	if (!ico_buf_load(&and, img, 1, dib->ifp)) {
+		return false;
 	}
 
 	if (dib->depth == 32) {
-		ico_32bit_dec(dib, (struct pix_rgba8 *)dst.buf, and.buf,
+		ico_32bit_dec(img, (struct pix_rgba8 *)dst.buf, and.buf,
 			and.stride);
 	} else {
-		for (size_t y = 0; y < dib->r.h; ++y) {
+		for (size_t y = 0; y < img->h; ++y) {
 			uint16_t *d = (uint16_t *)(dst.buf + dst.stride * y);
 			const uint8_t *a = and.buf + and.stride * y;
-			for (size_t x = 0; x < dib->r.w; ++x) {
-				const bool bit = get_bit(a, x);
+			for (size_t x = 0; x < img->w; ++x) {
+				const bool bit = bit_get(a, x);
 				int i = (endian16(d[x], little_endian) & 0x7fff)
 					| (!bit << 15);
 				d[x] = (uint16_t)i;
@@ -856,15 +972,15 @@ static unsigned char * ico_word_dec(const struct dib_desc *dib) {
 		}
 	}
 	free(and.buf);
-	return dst.buf;
+	return true;
 }
 
 static bool ico_truecolor_expands(const struct dib_desc *dib,
-struct ico_buf *restrict dst, struct ico_buf *restrict xor,
+struct raw_img *img, struct ico_buf *restrict dst, struct ico_buf *restrict xor,
 struct ico_buf *restrict and) {
-	ico_buf_sizes(dst, dib, 32);
-	ico_buf_sizes(xor, dib, dib->depth);
-	ico_buf_sizes(and, dib, 1);
+	ico_buf_sizes(dst, img, 32);
+	ico_buf_sizes(xor, img, dib->depth);
+	ico_buf_sizes(and, img, 1);
 
 	dst->buf = malloc(dst->size);
 	if (!dst->buf) {
@@ -880,53 +996,56 @@ struct ico_buf *restrict and) {
 	return fread(xor->buf, 1, xor->size + and->size, dib->ifp) != 0;
 }
 
-static unsigned char * ico_24bit_dec(const struct dib_desc *dib) {
+static bool ico_24bit_dec(const struct dib_desc *dib, struct raw_img *img) {
 	struct ico_buf dst, xor, and;
-	if (!ico_truecolor_expands(dib, &dst, &xor, &and)) {
-		return NULL;
+	if (!ico_truecolor_expands(dib, img, &dst, &xor, &and)) {
+		return false;
 	}
 
-	for (size_t y = 0; y < dib->r.h; ++y) {
+	for (size_t y = 0; y < img->h; ++y) {
 		uint8_t *d = dst.buf + dst.stride * y;
 		uint8_t *s = xor.buf + xor.stride * y;
 		uint8_t *a = and.buf + and.stride * y;
-		for (size_t x = 0; x < dib->r.w; ++x) {
-			d[x*4] = s[x*3];
-			d[x*4 + 1] = s[x*3 + 1];
-			d[x*4 + 2] = s[x*3 + 2];
-			d[x*4 + 3] = (get_bit(a, x) ? 0x00 : 0xff);
+		for (size_t x = 0; x < img->w; ++x) {
+			memcpy(d + x*4, s + x*3, 4);
+			d[x*4 + 3] = (bit_get(a, x) ? 0x00 : 0xff);
 		}
 	}
 	free(xor.buf);
-	return dst.buf;
+	img->data = dst.buf;
+	return true;
 }
 
-static unsigned char *ico_palette_dec(struct dib_desc *dib) {
+static bool ico_palette_dec(struct dib_desc *dib, struct raw_img *img) {
 	struct ico_buf dst, xor, and;
-	if (!ico_truecolor_expands(dib, &dst, &xor, &and)) {
-		return NULL;
+	if (!ico_truecolor_expands(dib, img, &dst, &xor, &and)) {
+		return false;
 	}
 
-	raster_pal_expand(dst.buf, xor.buf, dib->r.palette, dib->r.w, dib->r.h,
-		4, 4, dib->depth);
-	ico_32bit_dec(dib, (struct pix_rgba8 *)dst.buf, and.buf, and.stride);
+	raster_pal_expand(dst.buf, xor.buf, img->u.palette, img->w, img->h,
+		4, dib->depth);
+	ico_32bit_dec(img, (struct pix_rgba8 *)dst.buf, and.buf, and.stride);
 
 	free(xor.buf);
-	free(lib_raster_take_palette(&dib->r));
-	return dst.buf;
+	free(img->u.palette);
+	img->u.palette = NULL;
+	img->mode = image_mode_raw;
+	img->data = dst.buf;
+	return true;
 }
 
-unsigned char * ico_decode(struct ico_desc *desc) {
+bool ico_decode(struct ico_desc *desc, struct raw_img *img) {
 	struct dib_desc *dib = &desc->dib;
 	switch (dib->depth) {
 	case 16: case 32:
-		return ico_word_dec(dib);
-	case 24: return ico_24bit_dec(dib);
+		return ico_word_dec(dib, img);
+	case 24: return ico_24bit_dec(dib, img);
 	}
-	return ico_palette_dec(dib);
+	return ico_palette_dec(dib, img);
 }
 
-enum lib_fail ico_set_image(struct ico_desc *desc, const uint16_t i) {
+enum wu_error ico_set_image(struct ico_desc *desc, struct raw_img *img,
+const uint16_t i) {
 	/* ICO image components:
 		BITMAPINFOHEADER
 		Palette
@@ -934,58 +1053,58 @@ enum lib_fail ico_set_image(struct ico_desc *desc, const uint16_t i) {
 		ANDMask
 	 * The image data is meant to be composited over a background, hence
 	 * the Mask names. The AND mask sets whether the background is cleared
-	 * first as in a AND operation (hence, it is the opposite of Alpha)
+	 * first as in a AND operation (so it is the opposite of Alpha)
 	 * while the XOR mask contains the normal image data. */
 	struct dib_desc *dib = &desc->dib;
 	fseek(dib->ifp, desc->images[i].offset, SEEK_SET);
+	dib->is_os2 = trit_false;
 	// dib_parse_header() will drop us at the start of the XOR bitmap.
-	enum lib_fail status = dib_parse_header(dib);
-	if (status != lib_ok) {
+	enum wu_error status = dib_parse_header(dib, img);
+	if (status != wu_ok) {
 		return status;
 	}
 
 	// For bizarre reasons the XOR and AND bitmaps are counted together.
-	if (dib->r.h % 2 != 0) {
-		return lib_invalid_header;
+	if (img->h % 2 != 0) {
+		return wu_invalid_header;
 	}
-	dib->r.h /= 2;
+	img->h /= 2;
 	if (dib->depth != 16) {
-		dib->r.bitdepth = 8;
-		dib->r.ch = 4;
+		img->bitdepth = 8;
+		img->channels = 4;
 	}
 
-	if (dib->type != dib_info_header
-	|| dib->compression != dib_no_compression) {
-		return lib_invalid_header;
+	if (dib->type == dib_info_header && dib->compression == dib_no_compression) {
+		return wu_ok;
 	}
-	return lib_ok;
+	return wu_invalid_header;
 }
 
-enum lib_fail ico_parse_header(struct ico_desc *desc) {
+enum wu_error ico_parse_header(struct ico_desc *desc) {
 	/* ICO dir entry (one for each image, stored continuously):
 		Offset  Size    Name
 		0       BYTE    Width
 		1       BYTE    Height
 		2       BYTE    ColorCount
 		3       BYTE    Reserved     // Should be 0, but Windows ignores it
-		4       WORD    Planes       // XHotspot for cursors
-		6       WORD    BitsPerPixel // YHotspot for cursors
-		8       DWORD   ImageSize
-		12      DWORD   ImageOffset
+		4       i16     Planes       // XHotspot for cursors
+		6       i16     BitsPerPixel // YHotspot for cursors
+		8       u32     ImageSize
+		12      u32     ImageOffset
 		16
 	*/
 
 	desc->images = malloc(sizeof(*desc->images) * desc->count);
 	if (!desc->images) {
-		return lib_alloc_error;
+		return wu_alloc_error;
 	}
 
 	for (uint16_t i = 0; i < desc->count; ++i) {
-		/* Each image has a DIB header, so we only save the image
-		 * location and verify the values here are not outrageous. */
+		/* Each image includes its own DIB header, so we only save the
+		 * image location and verify the values here are not outrageous. */
 		uint8_t buf[16];
 		if (!fread(buf, sizeof(buf), 1, desc->dib.ifp)) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 
 		const uint16_t x = buf_endian16(buf + 4, little_endian);
@@ -995,28 +1114,28 @@ enum lib_fail ico_parse_header(struct ico_desc *desc) {
 			desc->images[i].y = y;
 		} else {
 			if (x > 1) {
-				return lib_invalid_header;
+				return wu_invalid_header;
 			}
 			switch (y) {
 			case 0: case 1: case 2: case 4: case 8:
 			case 16: case 24: case 32:
 				break;
 			default:
-				return lib_invalid_header;
+				return wu_invalid_header;
 			}
 		}
 		desc->images[i].size = buf_endian32(buf + 8, little_endian);
 		desc->images[i].offset = buf_endian32(buf + 12, little_endian);
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-enum lib_fail ico_open_file(struct ico_desc *desc, FILE *ifp) {
+enum wu_error ico_open_file(struct ico_desc *desc, FILE *ifp) {
 	/* ICO header:
 		Offset  Size    Name
-		0       WORD    Reserved   // 0
-		2       WORD    Type       // 1 for icons, 2 for cursors
-		4       WORD    ImageCount
+		0       i16     Reserved   // 0
+		2       i16     Type       // 1 for icons, 2 for cursors
+		4       i16     ImageCount
 		6
 	*/
 
@@ -1024,19 +1143,19 @@ enum lib_fail ico_open_file(struct ico_desc *desc, FILE *ifp) {
 
 	uint16_t header[3];
 	if (fread(header, sizeof(header), 1, ifp)) {
+		const uint16_t type = endian16(header[1], little_endian);
 		const uint16_t count = endian16(header[2], little_endian);
 		if (header[0] == 0 && count != 0) {
-			uint16_t type = endian16(header[1], little_endian);
 			switch (type) {
 			case ico_icon:
 			case ico_cursor:
 				desc->dib.ifp = ifp;
 				desc->type = type;
 				desc->count = count;
-				return lib_ok;
+				return wu_ok;
 			}
 		}
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
-	return lib_unexpected_eof;
+	return wu_unexpected_eof;
 }

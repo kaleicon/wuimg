@@ -1,9 +1,8 @@
 #ifndef LIB_TLG
 #define LIB_TLG
 
-#include "../common.h"
-#include "../raster/lib.h"
-#include "../raster/memparser.h"
+#include "wudefs.h"
+#include "raster/memparser.h"
 
 enum tlg_version {
 	tlg_v5 = '5',
@@ -11,8 +10,7 @@ enum tlg_version {
 };
 
 struct tlg_desc {
-	struct mem_parser mp;
-	struct raster_desc r;
+	struct mp_parser mp;
 	bool tagged_data;
 	enum tlg_version version:8;
 	uint32_t block_height;
@@ -20,10 +18,10 @@ struct tlg_desc {
 
 const char * tlg_version_str(enum tlg_version ver);
 
-size_t tlg_decode(struct tlg_desc *desc, void *restrict dst);
+size_t tlg_decode(const struct tlg_desc *desc, struct raw_img *img);
 
-enum lib_fail tlg_read_header(struct tlg_desc *desc);
+enum wu_error tlg_read_header(struct tlg_desc *desc, struct raw_img *img);
 
-enum lib_fail tlg_open_mem(struct tlg_desc *desc, const struct map_info *map);
+enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct map_info *map);
 
 #endif /* LIB_TLG */

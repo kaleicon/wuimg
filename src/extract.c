@@ -11,7 +11,7 @@
 #include "extract.h"
 #include "common.h"
 #include "wustr.h"
-#include "dec_fmtmap.h"
+#include "dec.h"
 
 void extract_iter_free(struct extract_iter *iter) {
 	for (size_t i = 0; i < iter->grow.pos; ++i) {

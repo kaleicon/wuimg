@@ -12,7 +12,7 @@
 struct drm_context {
 	struct window_public *pub;
 
-	struct drm {
+	struct drm_drm {
 		drmModeCrtc *crtc_restore;
 		uint32_t connector_id;
 		uint32_t crtc_id;
@@ -20,13 +20,11 @@ struct drm_context {
 		int fd;
 	} drm;
 
-	struct gbm {
+	struct drm_gbm {
 		struct gbm_device *device;
 		struct gbm_surface *surface;
 		struct gbm_bo *bo;
 	} gbm;
-
-	struct egl egl;
 };
 
 struct drm_offscreen {

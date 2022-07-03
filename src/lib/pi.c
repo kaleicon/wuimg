@@ -6,10 +6,12 @@
 
 #include "../wustr.h"
 #include "../raster/bit.h"
+#include "../raster/file.h"
+#include "../raster/fmt.h"
 #include "../raster/mem.h"
 #include "pi.h"
 
-// Define to use slightly slower but clearly correct code.
+// Enable to use slightly slower but clearly correct code.
 //#define EXACT_BITS
 
 enum pi_repeat_src {
@@ -21,18 +23,13 @@ enum pi_repeat_src {
 };
 
 void pi_cleanup(struct pi_desc *desc) {
-	raster_free(&desc->rast);
 	free(desc->comment.data);
 	free(desc->saver.data);
 }
 
-static uint8_t table_lookup(uint8_t *table, const unsigned depth, const size_t x,
-const size_t y) {
-	table += x * depth;
-	const uint8_t val = table[y];
-	memmove(table + 1, table, y);
-	*table = val;
-	return val;
+static uint8_t table_lookup(uint8_t *table, const unsigned depth,
+const size_t x, const size_t y) {
+	return memcycle(table + x*depth, y);
 }
 
 static void init_delta_table(uint8_t *table, const size_t colors) {
@@ -50,19 +47,12 @@ static size_t exec_repeat(uint8_t *restrict output, size_t i,
 const enum pi_repeat_src loc, size_t cnt, size_t diff) {
 	switch (loc) {
 	case pi_last4:
-		if (output[i-2] == output[i-1]) {
-			memset(output + i, output[i-1], cnt*2);
-			i += cnt*2;
+		if (output[i-2] == output[i-1] || i == 2) {
+			diff = 2;
 		} else {
-			diff = (i == 2) ? 2 : 4;
-			while (cnt) {
-				output[i] = output[i - diff];
-				output[i+1] = output[i+1 - diff];
-				i += 2;
-				--cnt;
-			}
+			diff = 4;
 		}
-		return i;
+		goto end_repeat;
 	case pi_1row:
 		break;
 	case pi_2row:
@@ -76,25 +66,18 @@ const enum pi_repeat_src loc, size_t cnt, size_t diff) {
 		break;
 	}
 
-	const size_t oddness = diff & 1;
-	while (i < diff && cnt) {
-		output[i] = output[oddness];
-		output[i+1] = output[oddness ^ 1];
-		i += 2;
-		--cnt;
+	if (i < diff && cnt) {
+		const uint8_t pair[2] = {
+			output[diff & 1],
+			output[(diff & 1) ^ 1],
+		};
+		do {
+			memcpy(output + i, pair, sizeof(pair));
+			i += 2;
+			--cnt;
+		} while (i < diff && cnt);
 	}
-/*
-	while (cnt > diff/2) {
-		output[i] = output[i - diff];
-		output[i+1] = output[i+1 - diff];
-		i += 2;
-		--cnt;
-	}
-
-	if (cnt) {
-		memcpy(output + i, output + i - diff, cnt*2);
-		i += cnt*2;
-	}*/
+end_repeat:
 	memrepeat(output, i, diff, cnt*2);
 	return i + cnt*2;
 }
@@ -109,9 +92,7 @@ size_t *restrict bitpos) {
 #ifdef EXACT_BITS
 static uint32_t read_bits(const uint8_t *restrict bitstream,
 size_t *restrict bitpos, unsigned long n) {
-	const uint_fast32_t bits = bit_getn(bitstream, *bitpos, n);
-	*bitpos += n;
-	return (uint32_t)bits;
+	return (uint32_t)bit_advn(bitstream, bitpos, n);
 }
 #else // !EXACT_BITS
 static uint32_t current_dword(const uint8_t *restrict bs,
@@ -139,25 +120,18 @@ const size_t bitpos, const bool full_bits) {
 
 static uint32_t read_repeat_cnt(const uint8_t *restrict bs,
 size_t *restrict bitpos) {
-	/* Repeat count encoding:
+#ifdef EXACT_BITS
+	return (uint32_t)bit_adv_gamma(bs, bitpos, 0);
+#else
+	/* Gamma bit encoding:
 		Coding  Range
 		0       1
 		10x     2-3
 		110xx   4-7
 		1110xxx 8-15
-	 * and so on and so on. The length is unbounded, but since the image
-	 * dimensions are defined in 16 bits no valid code can span more than
-	 * 32 bits. Add to this that one bit is implied and that the count is
-	 * for pairs of pixels, thus the max length to check is 30 bits. */
+	 * and so on and so on. */
 
 	uint_fast32_t seq_len = 0;
-
-#ifdef EXACT_BITS
-	while (read_bit(bs, bitpos) && seq_len < 31) {
-		++seq_len;
-	}
-	return read_bits(bs, bitpos, seq_len) | (1U << seq_len);
-#else
 	const uint32_t mask = 1U << 31;
 	const uint32_t repeat = current_dword(bs, *bitpos, true);
 	while ((repeat << seq_len) & mask && seq_len < 31) {
@@ -333,7 +307,7 @@ const size_t width, uint8_t *restrict table, const unsigned depth) {
 			break;
 		} else if (i == 2 || !read_bit(bitstream, &bitpos)) {
 			enum pi_repeat_src loc[2];
-			loc[1] = depth; // an invalid value
+			loc[1] = depth; // sentinel value
 			for (int cur = 0;; cur = !cur) {
 				loc[cur] = read_repeat_loc(bitstream, &bitpos);
 				if (loc[cur] == loc[!cur]) {
@@ -354,54 +328,45 @@ const size_t width, uint8_t *restrict table, const unsigned depth) {
 }
 
 static size_t max_bitstream_size(FILE *ifp, const size_t dims) {
-	return zumin(dims * 2, (size_t)file_get_remaining(ifp));
+	return zumin(dims * 2, (size_t)file_remaining(ifp));
 }
 
-uint8_t * pi_decode(const struct pi_desc *desc) {
-	const size_t dims = raster_size(&desc->rast);
-	uint8_t *output = malloc(dims);
-	if (!output) {
-		return NULL;
+size_t pi_decode(const struct pi_desc *desc, struct raw_img *img) {
+	size_t written = 0;
+	if (raw_img_alloc_noverify(img)) {
+		const size_t dims = raw_img_size(img);
+		const unsigned colors = (1 << desc->depth);
+		const unsigned table_size = colors*colors;
+		const size_t bslen = max_bitstream_size(desc->ifp, dims);
+		/* The spec recommends that the last 32 bits be zero, and we'll
+		 * enforce this to do away with some bounds checks in the
+		 * middle of decoding. */
+		void *buf = malloc(table_size + bslen + 4);
+		if (buf) {
+			uint8_t *restrict delta_table = buf;
+			uint8_t *restrict bitstream = delta_table + table_size;
+
+			init_delta_table(delta_table, colors);
+			const size_t read = fread(bitstream, 1, bslen, desc->ifp);
+			memset(bitstream + read, 0, 4);
+
+			const size_t bitlen = read * 8;
+			written = bt_decode_loop(img->data, dims,
+				bitstream, bitlen, img->w, buf, colors);
+			free(buf);
+		}
 	}
-
-	const unsigned colors = (1 << desc->depth);
-	const unsigned table_size = colors*colors;
-	const size_t bslen = max_bitstream_size(desc->ifp, dims);
-	/* The spec recommends that the last 32 bits be zero, and we'll
-	 * enforce this to do away with some bounds checks in the middle
-	 * of decoding. */
-	void *buf = malloc(table_size + bslen + 4);
-	if (!buf) {
-		free(output);
-		return NULL;
-	}
-
-	uint8_t *restrict delta_table = buf;
-	uint8_t *restrict bitstream = delta_table + table_size;
-
-	init_delta_table(delta_table, colors);
-	const size_t read = fread(bitstream, 1, bslen, desc->ifp);
-	memset(bitstream + read, 0, 4);
-
-	const size_t bitlen = read * 8;
-	const size_t written = bt_decode_loop(output, dims, bitstream, bitlen,
-		desc->rast.w, buf, colors);//desc->depth);
-	free(buf);
-
-	if (written < dims) {
-		puts(RASTER_EOF);
-	}
-	return output;
+	return written;
 }
 
-static enum lib_fail validate_header(struct pi_desc *desc, uint8_t pixel_x,
-uint8_t pixel_y, const uint8_t bitdepth, const uint16_t width,
+static enum wu_error validate_header(struct pi_desc *desc, struct raw_img *img,
+uint8_t pixel_x, uint8_t pixel_y, const uint8_t bitdepth, const uint16_t width,
 const uint16_t height) {
 	switch (bitdepth) {
 	case 4: case 8:
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
 	if (!pixel_x || !pixel_y) {
@@ -409,46 +374,45 @@ const uint16_t height) {
 		pixel_y = 1;
 	}
 
-	desc->rast = (struct raster_desc) {
-		.w = width,
-		.h = height,
-		.ch = 1,
-		.bitdepth = 8,
-	};
+	img->w = width;
+	img->h = height;
+	img->channels = 1;
+	img->bitdepth = 8;
+
 	desc->depth = bitdepth;
 	desc->pixel_x = pixel_x;
 	desc->pixel_y = pixel_y;
-	return lib_ok;
+	return wu_ok;
 }
 
-static enum lib_fail read_comment(struct pi_desc *desc) {
+static enum wu_error read_comment(struct pi_desc *desc) {
 	unsigned char buf[2];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 	if (!buf[0] || (buf[0] == 0x1a && !buf[1])) {
-		return lib_ok;
+		return wu_ok;
 	}
 
 	struct pi_comment *comm = &desc->comment;
 	struct wugrow grow = wugrow_init(1);
 	grow.pos = sizeof(buf);
 	if (!wugrow_recheck(&comm->data, &grow)) {
-		return lib_alloc_error;
+		return wu_alloc_error;
 	}
 	memcpy(comm->data, buf, sizeof(buf));
 	comm->text_len = (buf[1] == 0x1a);
 
-	while (!comm->area_len && grow.pos < USHRT_MAX) {
+	while (!comm->area_len && grow.pos < 4096) {
 		const int c = getc(desc->ifp);
 		if (!wugrow_recheck(&comm->data, &grow)) {
-			return lib_alloc_error;
+			return wu_alloc_error;
 		}
 
 		comm->data[grow.pos] = (unsigned char)c;
 		switch (c) {
 		case EOF:
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		case 0:
 			comm->area_len = (unsigned short)grow.pos;
 			// fallthrough
@@ -460,12 +424,12 @@ static enum lib_fail read_comment(struct pi_desc *desc) {
 		}
 		++grow.pos;
 	}
-	return comm->area_len ? lib_ok : lib_pi_comment_too_long;
+	return comm->area_len ? wu_ok : wu_alloc_error /* comment too long */;
 }
 
-enum lib_fail pi_read_header(struct pi_desc *desc) {
-	enum lib_fail status = read_comment(desc);
-	if (status != lib_ok) {
+enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img) {
+	enum wu_error status = read_comment(desc);
+	if (status != wu_ok) {
 		return status;
 	}
 
@@ -486,7 +450,7 @@ enum lib_fail pi_read_header(struct pi_desc *desc) {
 
 	uint8_t buf[10];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
 	memcpy(desc->saver.sig, buf + 4, sizeof(desc->saver.sig));
@@ -495,39 +459,40 @@ enum lib_fail pi_read_header(struct pi_desc *desc) {
 		desc->saver.len = saver_len;
 		desc->saver.data = malloc(saver_len);
 		if (!desc->saver.data) {
-			return lib_alloc_error;
+			return wu_alloc_error;
 		}
 		if (!fread(desc->saver.data, saver_len, 1, desc->ifp)) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 	}
 
 	if (!fread(buf + 4, 4, 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
-	status = validate_header(desc, buf[1], buf[2], buf[3],
+	status = validate_header(desc, img, buf[1], buf[2], buf[3],
 		buf_endian16(buf + 4, big_endian),
 		buf_endian16(buf + 6, big_endian));
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 
-	status = lib_load_pal(desc->ifp, &desc->rast.palette, lib_pal_rgb,
-		1 << desc->depth);
-	if (status != lib_ok) {
-		return status;
+	struct raster_pal *pal;
+	status = fmt_load_pal(desc->ifp, &pal, fmt_pal_rgb, 1 << desc->depth);
+	if (status == wu_ok) {
+		raw_img_set_palette(img, pal);
+		return raw_img_verify(img);
 	}
-
-	return raster_normalize(&desc->rast) ? lib_ok : lib_int_overflow;
+	return status;
 }
 
-enum lib_fail pi_open_file(struct pi_desc *desc, FILE *ifp) {
+enum wu_error pi_open_file(struct pi_desc *desc, FILE *ifp) {
 	const unsigned char sig[] = {'P', 'i'};
-	const enum lib_fail st = lib_sigcmp(sig, sizeof(sig), ifp);
-	if (st == lib_ok) {
-		memset(desc, 0, sizeof(*desc));
-		desc->ifp = ifp;
+	const enum wu_error st = fmt_sigcmp(sig, sizeof(sig), ifp);
+	if (st == wu_ok) {
+		*desc = (struct pi_desc) {
+			.ifp = ifp,
+		};
 	}
 	return st;
 }

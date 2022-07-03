@@ -5,9 +5,13 @@
 #include <stdbool.h>
 #include <time.h>
 
-#include "../common.h"
-#include "../raster/lib.h"
-#include "../raster/pix.h"
+#include "wudefs.h"
+#include "raster/pix.h"
+
+struct tga_ratio {
+	unsigned short num;
+	unsigned short den;
+};
 
 struct tga_metadata {
 	unsigned char id_len;
@@ -18,7 +22,6 @@ struct tga_metadata {
 		char comment[324];
 	} author;
 
-	bool has_timestamp;
 	time_t timestamp;
 
 	struct tga_job {
@@ -33,11 +36,10 @@ struct tga_metadata {
 	} software;
 
 	struct pix_rgba8 key_color;
-	unsigned short pixel_numerator, pixel_denominator;
-	unsigned short gamma_numerator, gamma_denominator;
+	struct tga_ratio pixel_aspect;
+	struct tga_ratio gamma;
 
 	unsigned int stamp_offset;
-	struct raster_desc stamp;
 };
 
 enum tga_image_type {
@@ -51,17 +53,15 @@ enum tga_image_type {
 };
 
 struct tga_colormap {
-	struct raster_pal *pal;
+	struct raster_pal *extra_pal;
 	unsigned int offset, len;
 	unsigned char depth;
 };
 
 struct tga_desc {
 	FILE *ifp;
-	struct raster_desc r;
 	enum tga_image_type type:8;
 	unsigned char depth;
-	unsigned char attr_bits, orientation;
 
 	long data_start;
 	struct tga_colormap map;
@@ -70,14 +70,20 @@ struct tga_desc {
 
 void tga_cleanup(struct tga_desc *desc);
 
-size_t tga_decode_stamp(const struct tga_desc *desc, void *restrict dst);
+double tga_ratio_to_float(const struct tga_ratio ratio);
 
-size_t tga_decode(const struct tga_desc *desc, void *restrict dst);
+size_t tga_decode_stamp(const struct tga_desc *desc, struct raw_img *stamp);
+
+size_t tga_decode(const struct tga_desc *desc, struct raw_img *img);
 
 struct raster_pal * tga_take_extra_palette(struct tga_desc *desc);
 
+enum wu_error tga_parse_stamp(const struct tga_desc *desc,
+struct raw_img *main, struct raw_img *stamp);
+
 bool tga_parse_footer(struct tga_desc *desc);
 
-enum lib_fail tga_parse_header(struct tga_desc *desc, FILE *ifp);
+enum wu_error tga_parse_header(struct tga_desc *desc, struct raw_img *img,
+FILE *ifp);
 
 #endif /* LIB_TGA */

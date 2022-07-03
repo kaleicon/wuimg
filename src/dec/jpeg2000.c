@@ -5,8 +5,7 @@
 
 #include <openjpeg-2.1/openjpeg.h>
 
-#include "../wudefs.h"
-#include "../common.h"
+#include "wudefs.h"
 
 static void monkey_trouble_handler(const char *msg, void *userdata) {
 	image_file_error_append(userdata, msg);
@@ -67,44 +66,59 @@ const opj_image_t *jp2) {
 	img->h = comps[0].h;
 	img->channels = (unsigned char)ch;
 	img->bitdepth = (prec > 8) ? 16 : 8;
+	img->attr = (comps[0].sgnd) ? pix_signed : pix_normal;
 
-	struct image_planes *planes = img->u.planes;
 	switch (jp2->color_space) {
+	case OPJ_CLRSPC_CMYK:
+		img->alpha = alpha_key;
+		// fallthrough
+	case OPJ_CLRSPC_UNKNOWN:
+	case OPJ_CLRSPC_UNSPECIFIED:
 	case OPJ_CLRSPC_SRGB:
 	case OPJ_CLRSPC_GRAY:
-		planes->cs = color_space_rgb;
+		img->cs.matrix = cicp_matrix_rgb;
 		break;
 	case OPJ_CLRSPC_SYCC:
-		planes->cs = color_space_ycbcr_limited;
+		img->cs.matrix = cicp_matrix_bt601_7;
+		img->cs.limited = true;
 		break;
 	default:
 		return wu_unsupported_feature;
 	}
 
-	struct plane_info *p = planes->p;
+	struct plane_info *p;
+	if (img->data) {
+		free(img->data);
+		p = img->u.planes->p;
+	} else {
+		struct image_planes *planes = raw_img_plane_init(img);
+		if (!planes) {
+			return wu_alloc_error;
+		}
+		p = planes->p;
+	}
+
 	for (OPJ_UINT32 j = 0; j < ch; ++j) {
 		p[j].x.subsamp = (unsigned char)comps[j].dx;
 		p[j].y.subsamp = (unsigned char)comps[j].dy;
 	}
 
-	if (img->data) {
-		free(img->data);
-	}
-	if (!raw_img_plane_alloc(img)) {
-		return wu_alloc_error;
+	const enum wu_error st = raw_img_alloc(img);
+	if (st != wu_ok) {
+		return st;
 	}
 
 	const OPJ_INT32 scale = (((1 << img->bitdepth) - 1) << img->bitdepth)
 		/ ((1 << prec) - 1) + 1;
 	for (OPJ_UINT32 j = 0; j < ch; ++j) {
 		void *ptr = p[j].ptr;
-		for (size_t i = 0; i < p[j].size; ++i) {
-			const OPJ_INT32 p = (comps[j].data[i] * scale)
+		for (size_t i = 0; i < comps[j].w * comps[j].h; ++i) {
+			const OPJ_INT32 pix = (comps[j].data[i] * scale)
 				>> img->bitdepth;
-			if (prec > 16) {
-				((uint16_t *)ptr)[i] = (uint16_t)p;
+			if (prec > 8) {
+				((uint16_t *)ptr)[i] = (uint16_t)pix;
 			} else {
-				((uint8_t *)ptr)[i] = (uint8_t)p;
+				((uint8_t *)ptr)[i] = (uint8_t)pix;
 			}
 		}
 	}
@@ -155,7 +169,8 @@ const bool callback) {
 				"the max image size. Output will be downscaled.");
 		}
 	} else {
-		screen_fit = log_fit_factor(wuconf->fb.w, wuconf->fb.h,
+		screen_fit = log_fit_factor((unsigned)wuconf->fb.w,
+			(unsigned)wuconf->fb.h,
 			jp2->comps[0].w, jp2->comps[0].h);
 	}
 
@@ -172,12 +187,10 @@ const bool callback) {
 	}
 
 	enum wu_error status = wu_ok;
-	struct raw_img *img;
-	if (infile->sub_img) {
-		img = infile->sub_img;
-	} else {
+	struct raw_img *img = infile->sub_img;
+	if (!img) {
 		img = alloc_sub_images(infile, 1);
-		if (!img || !raw_img_plane_init(img)) {
+		if (!img) {
 			status = wu_alloc_error;
 		}
 	}
@@ -204,12 +217,9 @@ const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev, const OPJ_CODEC_FORMAT format) {
 	if (ev == ev_upscale) {
 		if (state->zoom >= 1) {
-			struct raw_img *img = infile->sub_img;
-			state->zoom *= img->dec_scale;
+			state->zoom *= infile->sub_img->dec_scale;
 			return jpeg2000_dec(infile, wuconf, format, true);
 		}
-	} else {
-		infile->events = 0;
 	}
 	return wu_no_change;
 }

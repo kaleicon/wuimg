@@ -2,12 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "raster/file.h"
 #include "mac.h"
 
 static const size_t RLE_PAD = 129;
 
+time_t mac_time_to_unix(const mac_time_t time) {
+	return (time_t)time - 2082844800;
+}
+
 static size_t rle_decode(uint8_t *restrict out, const size_t dims,
-const signed char *restrict rle, const size_t rle_len) {
+const int8_t *restrict rle, const size_t rle_len) {
 	size_t p = 0;
 	size_t i = 0;
 	while (i < rle_len - 1 && p < dims) {
@@ -28,92 +33,68 @@ const signed char *restrict rle, const size_t rle_len) {
 	return p;
 }
 
-static size_t get_rle_len(const struct mac_desc *desc,
-const size_t pathological_rle) {
+static size_t get_rle_len(const struct mac_desc *desc, const size_t dims) {
 	const long start = 512 + 128 * desc->has_macbin_header;
-	fseek(desc->ifp, 0, SEEK_END);
-	const long end = ftell(desc->ifp);
+	const size_t size = file_size_from(desc->ifp, start);
 	fseek(desc->ifp, start, SEEK_SET);
-
-	const size_t diff = (size_t)(end - start);
 	// E.g. 0x00 0x?? 0x00 0x?? ...
-	return zumin(diff, pathological_rle);
+	return zumin(size, dims*2);
 }
 
-unsigned char * mac_decode(const struct mac_desc *desc) {
-	const size_t dims = desc->rast.w * desc->rast.h / 8;
-	const size_t rle_len = get_rle_len(desc, dims * 2);
-	if (!rle_len) {
-		return NULL;
+size_t mac_decode(const struct mac_desc *desc, struct raw_img *main) {
+	size_t written = 0;
+	const size_t dst_len = raw_img_size(main);
+	const size_t rle_len = get_rle_len(desc, dst_len);
+	if (rle_len && raw_img_alloc_noverify(main)) {
+		int8_t *rle = malloc(rle_len + RLE_PAD);
+		if (rle) {
+			written = rle_decode(main->data, dst_len, rle,
+				fread(rle, 1, rle_len, desc->ifp));
+			free(rle);
+		}
 	}
-
-	unsigned char *out = malloc(dims + RLE_PAD);
-	if (!out) {
-		return NULL;
-	}
-
-	signed char *rle = malloc(rle_len + RLE_PAD);
-	if (!rle) {
-		free(out);
-		return NULL;
-	}
-
-	const size_t read = fread(rle, 1, rle_len, desc->ifp);
-	if (!read) {
-		free(out);
-		free(rle);
-		return NULL;
-	}
-
-	const size_t written = rle_decode(out, dims, rle, read);
-	free(rle);
-	if (written < dims) {
-		puts(RASTER_EOF);
-	}
-	return out;
+	return written;
 }
 
-size_t mac_patterns_load(const struct mac_desc *desc, void *restrict dst) {
-	fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
-	return fread(dst, 1, raster_size(&desc->patterns), desc->ifp);
+size_t mac_patterns_load(const struct mac_desc *desc, struct raw_img *pats) {
+	if (raw_img_alloc_noverify(pats)) {
+		fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
+		return fread(pats->data, 1, raw_img_size(pats), desc->ifp);
+	}
+	return 0;
 }
 
-static enum lib_fail read_mac_header(unsigned char header[static 4],
+void mac_get_sizes(struct raw_img *main, struct raw_img *pats) {
+	main->w = 576;
+	main->h = 720;
+	main->channels = 1;
+	main->bitdepth = 1;
+	main->attr = pix_inverted;
+	if (pats) {
+		pats->w = 8;
+		pats->h = 8*38;
+		pats->channels = 1;
+		pats->bitdepth = 1;
+		pats->attr = pix_inverted;
+	}
+}
+
+static enum wu_error read_mac_header(unsigned char header[static 4],
 struct mac_desc *desc) {
 	/* MacPaint header:
-		0       DWORD   Version         // 0, 2, 3, rarely 1 I'm told
-		4       QWORD   Patterns[38]    // Used by MacPaint
+		0       DWORD   Version      // 0, 2, 3, rarely 1 I'm told
+		4       QWORD   Patterns[38] // Used by MacPaint for Version > 0
 		308     BYTE    Pad[204]
 		512
 	*/
 
-	desc->version = buf_endian32(header, big_endian);
-	if (desc->version > 3) {
-		return lib_invalid_header;
+	const uint32_t version = buf_endian32(header, big_endian);
+	if (version > 3) {
+		return wu_invalid_header;
 	}
-
-	const long offset = 512 + 128 * desc->has_macbin_header;
-	fseek(desc->ifp, offset, SEEK_SET);
-	if (ftell(desc->ifp) != offset) {
-		return lib_unexpected_eof;
-	}
-
-	desc->patterns = (struct raster_desc) {
-		.w = 8,
-		.h = 8 * 38,
-		.ch = 1,
-		.bitdepth = 1,
-		.attr = pix_inverted,
-	};
-	desc->rast = (struct raster_desc) {
-		.w = 576,
-		.h = 720,
-		.ch = 1,
-		.bitdepth = 1,
-		.attr = pix_inverted,
-	};
-	return (raster_normalize(&desc->patterns)
-		&& raster_normalize(&desc->rast)) ? lib_ok : lib_int_overflow;
+	desc->version = (uint8_t)version;
+	desc->has_patterns = (bool)version;
+	return wu_ok;
 }
 
 static void read_macbin_header(const unsigned char data[static 128],
@@ -131,13 +112,13 @@ struct mac_binary_header *macbin) {
 	macbin->time.modified = buf_endian32(data + 95, big_endian);
 }
 
-enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp) {
+enum wu_error mac_open_file(struct mac_desc *desc, FILE *ifp) {
 	/* The thing with identifying MacPaint files is that they come in two
 	 * equivalent varieties, that are each harder to identify than the
 	 * other. One is the file as created by the MacPaint software, whose
 	 * sole identifying feature is that it starts with a DWORD version
-	 * number that is either 0 or 2, with a value of 0 indicating that the
-	 * next 304 bytes are unimportant, and a value of 2 indicating that
+	 * number ranging from 0 to 3, with a value of 0 indicating that the
+	 * next 304 bytes are unimportant, and any other value indicating that
 	 * they contain pattern data, also unimportant for decoding. Following
 	 * this are 204 bytes of padding, this always being unimportant. In
 	 * other words you have to know it is a MacPaint file to know it is a
@@ -161,7 +142,7 @@ enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp) {
 	 * the rest of the spec.
 
 	 * In conclusion: Even if the first 640 bytes are all zero, it might be
-	 * a valid MacBinary + MacPaint file, and we should accept it. */
+	 * a valid MacBinary + MacPaint file. */
 
 	/* MacBinary header:
 		Offset  Size    Name
@@ -195,9 +176,10 @@ enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp) {
 		128
 	*/
 
+	desc->ifp = ifp;
 	unsigned char header[128 + 4];
-	if (!fread(header, sizeof(header), 1, ifp)) {
-		return lib_unexpected_eof;
+	if (!fread(header, sizeof(header), 1, desc->ifp)) {
+		return wu_unexpected_eof;
 	}
 
 	const uint32_t data_fork_size = buf_endian32(header + 83, big_endian);
@@ -217,6 +199,5 @@ enum lib_fail mac_open_file(struct mac_desc *desc, FILE *ifp) {
 		read_macbin_header(header, &desc->macbin);
 		offset = 128;
 	}
-	desc->ifp = ifp;
 	return read_mac_header(header + offset, desc);
 }

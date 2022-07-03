@@ -1,24 +1,32 @@
+#include <string.h>
+#include <ctype.h>
 #include <math.h>
 
 #include "base.h"
 
-static double monoclock_diff(const struct timespec start,
-const struct timespec end) {
-	const double nanos_per_sec = 1000000000;
-	return (double)(end.tv_sec - start.tv_sec)
-		+ (double)(end.tv_nsec - start.tv_nsec) / nanos_per_sec;
+static unsigned char * window_key_get_map(struct window_keymap *held_keys) {
+	return held_keys->map - WINDOW_KEYSTART;
 }
 
-double window_exec_events(struct window_public *pub) {
-	const struct timespec start = pub->timer;
-	clock_gettime(CLOCK_MONOTONIC, &pub->timer);
-	return event_exec(&pub->held_keys, &pub->image, &pub->event,
-		monoclock_diff(start, pub->timer));
+void window_key_lift(struct window_keymap *held_keys) {
+	memset(held_keys, 0, sizeof(*held_keys));
 }
 
-enum trit window_size_update(struct window_public *pub, const unsigned w,
-const unsigned h) {
-	if (w && h) {
+void window_key_add(struct window_keymap *held_keys,
+const enum key_action action, int code, const bool shift) {
+	held_keys->shift = shift;
+	code = toupper(code);
+	if (code >= WINDOW_KEYSTART && code < WINDOW_KEYEND) {
+		unsigned char *map = window_key_get_map(held_keys);
+		if (!map[code] || action == key_release) {
+			map[code] = action;
+		}
+	}
+}
+
+enum trit window_size_update(struct window_public *pub, const int w,
+const int h) {
+	if (w > 0 && h > 0) {
 		struct display_dims *fb = &pub->image.conf.fb;
 		if (fb->w != w || fb->h != h) {
 			fb->w = w;
@@ -42,15 +50,16 @@ void window_scroll(struct window_cursor *cursor, const double x, const double y)
 	window_scroll_axis(&cursor->y, y);
 }
 
-void window_cursor_apply_diff(struct window_cursor *cur,
-struct window_public *pub, const double x, const double y) {
+void window_cursor_move(struct window_public *pub, const double x,
+const double y) {
+	struct window_common *win = &pub->win;
 	struct wu_state *state = &pub->image.state;
-	if (cur->pressed) {
-		const double zoom = fmax(1 / state->zoom, 1);
-		state->x_offset += (float)((x - cur->x.pos) * zoom);
-		state->y_offset += (float)((y - cur->y.pos) * zoom);
+	if (win->pressed) {
+		const double zoom = 1 / state->zoom;
+		state->x_offset += (float)((x - win->cur.x.pos) * zoom);
+		state->y_offset += (float)((y - win->cur.y.pos) * zoom);
 		pub->gl.update_matrix = true;
 	}
-	cur->x.pos = (float)x;
-	cur->y.pos = (float)y;
+	win->cur.x.pos = (float)x;
+	win->cur.y.pos = (float)y;
 }

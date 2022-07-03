@@ -4,13 +4,11 @@
 #include <limits.h>
 #include <ctype.h>
 
-#include "../common.h"
-
 #include "xbm.h"
 
 struct xbm_define {
 	const struct wuptr name;
-	unsigned int d;
+	size_t d;
 	bool found;
 };
 
@@ -64,60 +62,62 @@ const size_t size) {
 	return i;
 }
 
-size_t xbm_decode(const struct xbm_desc *desc, void *restrict dst) {
-	const size_t size = desc->type;
-	const size_t dims = raster_size(&desc->r) / size;
-
-	const unsigned char *text = desc->tp.mem;
-	const size_t end = desc->tp.len;
-	size_t pos = desc->tp.pos;
+size_t xbm_decode(const struct xbm_desc *desc, struct raw_img *img) {
 	size_t cnt = 0;
-	while (pos < end && cnt < dims) {
-		int val;
-		pos += read_rev_hex_num(text + pos, &val, size);
-		if (val == -1) {
-			break;
-		}
-		if (desc->type == xbm_x10) {
-			uint16_t *wout = dst;
-			wout[cnt] = (uint16_t)val;
-		} else {
-			uint8_t *out = dst;
-			out[cnt] = (uint8_t)val;
-		}
-		++cnt;
+	if (raw_img_alloc_noverify(img)) {
+		const size_t size = desc->type;
+		const size_t dims = raw_img_size(img) / size;
 
-		do {
-			const unsigned char c = text[pos];
-			if (c == ',') {
+		const unsigned char *text = desc->tp.mem;
+		const size_t end = desc->tp.len;
+		size_t pos = desc->tp.pos;
+		while (pos < end && cnt < dims) {
+			int val;
+			pos += read_rev_hex_num(text + pos, &val, size);
+			if (val == -1) {
 				break;
-			} else if (!isspace(c)) {
-				return cnt;
 			}
+			if (desc->type == xbm_x10) {
+				uint16_t *wout = (uint16_t *)img->data;
+				wout[cnt] = (uint16_t)val;
+			} else {
+				uint8_t *out = img->data;
+				out[cnt] = (uint8_t)val;
+			}
+			++cnt;
+
+			do {
+				const unsigned char c = text[pos];
+				if (c == ',') {
+					break;
+				} else if (!isspace(c)) {
+					return cnt;
+				}
+				++pos;
+			} while (pos < end);
 			++pos;
-		} while (pos < end);
-		++pos;
+		}
 	}
 	return cnt;
 }
 
-static bool read_type(struct xbm_desc *desc, struct mem_parser *tp,
-const struct xbm_define *define) {
+static bool read_type(struct xbm_desc *desc, struct raw_img *img,
+struct mp_parser *tp, const struct xbm_define *define) {
 	if (!define[0].found || !define[1].found
 	|| define[0].d < 1 || define[1].d < 1) {
 		return false;
 	}
 
-	struct wuptr word = mem_get_word(tp);
+	struct wuptr word = mp_get_word(tp);
 	if (!wuptr_eq_str(word, "static")) {
 		return false;
 	}
 
-	mem_skip_space(tp);
-	word = mem_get_word(tp);
+	mp_skip_space(tp);
+	word = mp_get_word(tp);
 	if (wuptr_eq_str(word, "unsigned")) {
-		mem_skip_space(tp);
-		word = mem_get_word(tp);
+		mp_skip_space(tp);
+		word = mp_get_word(tp);
 	}
 
 	if (wuptr_eq_str(word, "char")) {
@@ -128,23 +128,19 @@ const struct xbm_define *define) {
 		return false;
 	}
 
-	mem_skip_space(tp);
-	word = mem_get_word(tp);
+	mp_skip_space(tp);
+	word = mp_get_word(tp);
 	if (wuptr_suffix_str(word, "_bits[]")) {
-		int c = mem_next_nonspace(tp);
+		int c = mp_next_nonspace(tp);
 		if (c == '=') {
-			c = mem_next_nonspace(tp);
+			c = mp_next_nonspace(tp);
 			if (c == '{') {
-				desc->r = (struct raster_desc) {
-					.w = (size_t)define[0].d,
-					.h = (size_t)define[1].d,
-					.ch = 1,
-					.bitdepth = 1,
-					.alignment = (desc->type == xbm_x10)
-						? 2 : 1,
-					.attr = pix_inverted,
-				};
-				raster_normalize(&desc->r);
+				img->w = (size_t)define[0].d;
+				img->h = (size_t)define[1].d;
+				img->channels = 1;
+				img->bitdepth = 1;
+				img->alignment = (desc->type == xbm_x10) ? 2 : 1;
+				img->attr = pix_inverted;
 
 				desc->has_hotspot = define[2].found
 					&& define[3].found;
@@ -159,9 +155,9 @@ const struct xbm_define *define) {
 	return false;
 }
 
-static bool match_num(struct mem_parser *tp, struct xbm_define *define) {
-	mem_skip_blank(tp);
-	const struct wuptr word = mem_get_word(tp);
+static bool match_num(struct mp_parser *tp, struct xbm_define *define) {
+	mp_skip_blank(tp);
+	const struct wuptr word = mp_get_word(tp);
 	for (size_t i = 0; i < word.len; ++i) {
 		const unsigned char c = (unsigned char)word.ptr[i];
 		if (!isdigit(c)) {
@@ -177,16 +173,16 @@ static bool match_num(struct mem_parser *tp, struct xbm_define *define) {
 	return define->found;
 }
 
-static bool parse_define(struct xbm_desc *desc, struct mem_parser *tp,
+static bool parse_define(struct xbm_desc *desc, struct mp_parser *tp,
 struct xbm_define *define) {
-	struct wuptr word = mem_get_word(tp);
-	if (!isblank(mem_next_char(tp)) || !wuptr_eq_str(word, "define")) {
+	struct wuptr word = mp_get_word(tp);
+	if (!isblank(mp_next_char(tp)) || !wuptr_eq_str(word, "define")) {
 		return false;
 	}
 
-	mem_skip_blank(tp);
-	word = mem_get_word(tp);
-	if (!isblank(mem_next_char(tp))) {
+	mp_skip_blank(tp);
+	word = mp_get_word(tp);
+	if (!isblank(mp_next_char(tp))) {
 		return false;
 	}
 
@@ -204,11 +200,11 @@ struct xbm_define *define) {
 			break;
 		}
 	}
-	mem_skip_line(tp);
+	mp_skip_line(tp);
 	return ok;
 }
 
-static const unsigned char *comment_end(const unsigned char *comm,
+static const unsigned char * comment_end(const unsigned char *comm,
 const unsigned char end, size_t len) {
 	const unsigned char *ch = NULL;
 	while ( (ch = memchr(comm, end, len)) ) {
@@ -223,16 +219,16 @@ const unsigned char end, size_t len) {
 	return ch;
 }
 
-static bool skip_comment(struct xbm_desc *desc, struct mem_parser *tp) {
+static bool skip_comment(struct xbm_desc *desc, struct mp_parser *tp) {
 	unsigned char end;
-	switch (mem_next_char(tp)) {
+	switch (mp_next_char(tp)) {
 	case '*': end = '/'; break;
 	case '/': end = '\n'; break;
 	default: return false;
 	}
 	const bool multiline = (end == '/');
 
-	mem_skip_space(tp);
+	mp_skip_space(tp);
 	const unsigned char *base = tp->mem + tp->pos;
 	const unsigned char *comm = comment_end(base, end, tp->len - tp->pos);
 	if (comm) {
@@ -240,7 +236,7 @@ static bool skip_comment(struct xbm_desc *desc, struct mem_parser *tp) {
 		tp->pos += len;
 
 		if (multiline) {
-			mem_skip_line(tp);
+			mp_skip_line(tp);
 			--len;
 		}
 		if (!desc->comment.len) {
@@ -255,9 +251,10 @@ static bool skip_comment(struct xbm_desc *desc, struct mem_parser *tp) {
 	return false;
 }
 
-enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct map_info *mm) {
-	struct mem_parser *tp = &desc->tp;
-	*tp = mem_parser_mem(mm->len, mm->data);
+enum wu_error xbm_parse_header(struct xbm_desc *desc, struct raw_img *img,
+const struct map_info *mm) {
+	struct mp_parser *tp = &desc->tp;
+	*tp = mp_parser_mem(mm->len, mm->data);
 
 	desc->comment.len = 0;
 	desc->name.len = 0;
@@ -271,23 +268,22 @@ enum lib_fail xbm_open_mem(struct xbm_desc *desc, const struct map_info *mm) {
 
 	bool ok = false;
 	do {
-		const int c = mem_next_nonspace(tp);
+		const int c = mp_next_nonspace(tp);
 		if (c == '/') {
 			ok = skip_comment(desc, tp);
 		} else if (c == '#') {
 			ok = parse_define(desc, tp, define);
 		} else if (c == 's') { // static
 			--tp->pos;
-			ok = read_type(desc, tp, define);
+			ok = read_type(desc, img, tp, define);
+			if (ok) {
+				return raw_img_verify(img);
+			}
 			break;
 		} else {
 			ok = false;
 		}
 	} while (ok && tp->pos < tp->len);
-
-	if (ok) {
-		return lib_ok;
-	}
 	return (tp->pos >= tp->len)
-		? lib_unexpected_eof : lib_invalid_header;
+		? wu_unexpected_eof : wu_invalid_header;
 }

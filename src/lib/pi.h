@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include "../raster/lib.h"
+#include "wudefs.h"
 
 struct pi_saver {
 	unsigned char *data;
@@ -19,7 +19,6 @@ struct pi_comment {
 
 struct pi_desc {
 	FILE *ifp;
-	struct raster_desc rast;
 	unsigned char depth;
 	unsigned char pixel_x, pixel_y;
 
@@ -29,10 +28,10 @@ struct pi_desc {
 
 void pi_cleanup(struct pi_desc *desc);
 
-unsigned char * pi_decode(const struct pi_desc *desc);
+size_t pi_decode(const struct pi_desc *desc, struct raw_img *img);
 
-enum lib_fail pi_read_header(struct pi_desc *desc);
+enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img);
 
-enum lib_fail pi_open_file(struct pi_desc *desc, FILE *ifp);
+enum wu_error pi_open_file(struct pi_desc *desc, FILE *ifp);
 
 #endif /* LIB_PI */

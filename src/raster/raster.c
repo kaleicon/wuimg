@@ -3,29 +3,23 @@
 #include "../common.h"
 #include "raster.h"
 
-void raster_free(struct raster_desc *desc) {
-	free(desc->palette);
-}
-
 size_t raster_stride(const struct raster_desc *desc) {
-	size_t w = desc->w;
-	if (!desc->planar) {
-		w *= desc->ch;
-	}
-	return scanline_length(w, desc->bitdepth, desc->alignment);
+	return scanline_length(desc->w * desc->ch, desc->bitdepth, desc->alignment);
 }
 
 size_t raster_size(const struct raster_desc *desc) {
-	size_t size = raster_stride(desc) * desc->h;
-	if (desc->planar) {
-		size *= desc->ch;
-	}
-	return size;
+	return raster_stride(desc) * desc->h;
 }
 
-const char * raster_geom_verify(const bool has_palette, const uint8_t ch,
-const uint8_t bitdepth, const enum pix_attr attr) {
-	if (has_palette) {
+const char * raster_geom_verify(const uint8_t ch, const uint8_t bitdepth,
+const enum pix_attr attr, const bool paletted) {
+	if (!ch) {
+		return "Channel number must not be zero";
+	} else if (!bitdepth) {
+		return "Bitdepth must not be zero";
+	}
+
+	if (paletted) {
 		if (ch != 1) {
 			return "Paletted images must use 1 channel";
 		} else if (bitdepth > 8) {
@@ -35,6 +29,8 @@ const uint8_t bitdepth, const enum pix_attr attr) {
 			case pix_normal:
 			case pix_inverted:
 				break;
+			case pix_signed:
+				return "Paletted images can't use signed indices";
 			case pix_float:
 				return "Paletted images can't use floats";
 			case pix_packing_332:
@@ -46,15 +42,10 @@ const uint8_t bitdepth, const enum pix_attr attr) {
 			}
 		}
 	} else {
-		if (ch == 0) {
-			return "Channel number must not be zero";
-		} else if (bitdepth == 0) {
-			return "Bitdepth must not be zero";
-		}
-
 		const int depth = ch * bitdepth;
 		switch (attr) {
 		case pix_normal:
+		case pix_signed:
 		case pix_inverted:
 		case pix_float:
 			break;
@@ -77,44 +68,39 @@ const uint8_t bitdepth, const enum pix_attr attr) {
 	return NULL;
 }
 
-static bool doesnt_overflow(const struct raster_desc *desc) {
-	size_t h_limit = SIZE_MAX / desc->h;
-	size_t w = desc->w;
-	if (desc->planar) {
-		h_limit /= desc->ch;
-	} else {
-		if (SIZE_MAX / w / desc->ch == 0) {
-			return false;
-		}
-		w *= desc->ch;
+bool raster_test_overflow(size_t w, const size_t h, const uint8_t ch,
+const uint8_t bitdepth, const uint8_t alignment) {
+	if (w < 1 || h < 1) {
+		return false;
 	}
+	if (SIZE_MAX / w / ch == 0) {
+		return false;
+	}
+	w *= ch;
 
-	if (SIZE_MAX / w / desc->bitdepth == 0) {
+	if (SIZE_MAX / w / bitdepth == 0) {
 		return false;
 	}
 
-	size_t scanline = (w * desc->bitdepth - 1) / 8 + 1;
-	const size_t align = desc->alignment - 1;
+	size_t scanline = scanline_length(w, bitdepth, 1);
+	const size_t align = alignment - 1;
 	if (SIZE_MAX - align < scanline) {
 		return false;
 	}
-	scanline = (scanline + align) & (~align);
-	return h_limit / scanline != 0;
+	scanline = (scanline + align) & ~align;
+	return SIZE_MAX / h / scanline != 0;
 }
 
 bool raster_normalize(struct raster_desc *desc) {
-	if (!desc->w || !desc->h || !desc->ch || !desc->bitdepth) {
-		return false;
-	}
-
-	const char *err_msg = raster_geom_verify(desc->palette, desc->ch,
-		desc->bitdepth, desc->attr);
+	const char *err_msg = raster_geom_verify(desc->ch, desc->bitdepth,
+		desc->attr, false);
 	if (err_msg) {
 		fatal_bug("Bad raster", err_msg);
 	}
 
 	switch (desc->attr) {
 	case pix_normal:
+	case pix_signed:
 	case pix_inverted:
 	case pix_float:
 		break;
@@ -128,24 +114,17 @@ bool raster_normalize(struct raster_desc *desc) {
 		break;
 	}
 
-	if (desc->ch == 1) {
-		desc->planar = false;
-	}
-
 	if (!desc->alignment) {
 		desc->alignment = 1;
 	}
 
 	if (!desc->layout) {
-		if (desc->palette || desc->attr == pix_packing_332) {
+		if (desc->attr == pix_packing_332 || desc->ch >= 3) {
 			desc->layout = pix_rgba;
 		} else {
-			if (desc->ch >= 3) {
-				desc->layout = pix_rgba;
-			} else {
-				desc->layout = pix_gray;
-			}
+			desc->layout = pix_gray;
 		}
 	}
-	return doesnt_overflow(desc);
+	return raster_test_overflow(desc->w, desc->h, desc->ch, desc->bitdepth,
+		desc->alignment);
 }

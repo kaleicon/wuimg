@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "../common.h"
-#include "../raster/lib.h"
+#include "wudefs.h"
+#include "raster/raster.h"
 
 enum pnm_type {
 	pnm_plain_pbm = '1',
@@ -17,9 +17,14 @@ enum pnm_type {
 
 	pnm_pam = '\n',
 	pnm_xv_thumb = ' ',
-	pnm_mtv = 1,
 	pnm_color_pfm = 'F',
 	pnm_gray_pfm = 'f',
+	pnm_mtv = 1,
+
+	/* PGX format, defined in JPEG2000 Part 4 for conformance testing.
+	 * Though not explicitly related to other PNM formats, it's similar
+	 * enough it's easier to lump it together with them. */
+	pnm_pgx = 'G',
 };
 
 struct pnm_desc {
@@ -29,20 +34,20 @@ struct pnm_desc {
 	size_t nr;
 	long data_start;
 	union {
-		unsigned short pnm;
+		uint32_t pnm;
 		float pfm;
 	} scale;
 	unsigned char bytedepth;
 	enum pnm_type type:8;
-	enum endianness pfm_endian:8;
+	enum endianness endian:8;
 };
 
 const char * pnm_type_str(enum pnm_type type);
 
 size_t pnm_decode(const struct pnm_desc *desc, void *restrict dst, size_t i);
 
-enum lib_fail pnm_parse_header(struct pnm_desc *desc);
+enum wu_error pnm_parse_header(struct pnm_desc *desc);
 
-enum lib_fail pnm_open_file(struct pnm_desc *desc, FILE *ifp, bool maybe_mtv);
+enum wu_error pnm_open_file(struct pnm_desc *desc, FILE *ifp, bool maybe_mtv);
 
 #endif /* LIB_PNM */

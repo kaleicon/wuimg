@@ -8,23 +8,26 @@
 #include "conf.h"
 #include "wustr.h"
 #include "wutree.h"
+#include "raster/alpha.h"
 #include "raster/color.h"
+#include "raster/compost.h"
 #include "raster/pix.h"
 #include "raster/pal.h"
-#include "raster/compost.h"
 
 enum wu_error {
 	wu_no_change = -1, // For callbacks
 	wu_ok = 0,
 	wu_alloc_error,
-	wu_unknown_file_type,
-	wu_invalid_params,
 	wu_open_error,
+	wu_unknown_file_type,
 	wu_unexpected_eof,
 	wu_invalid_signature,
 	wu_invalid_header,
-	wu_exceeds_size_limit,
+	wu_invalid_params,
 	wu_unsupported_feature,
+	wu_no_image_data,
+	wu_exceeds_size_limit,
+	wu_int_overflow,
 	wu_decoding_error,
 	wu_display_error,
 	wu_unknown_error,
@@ -68,9 +71,8 @@ struct plane_info {
 };
 
 struct image_planes {
-	enum color_space cs;
 	uint8_t v_pad;
-	struct plane_info p[4];
+	struct plane_info p[];
 };
 
 enum image_mode {
@@ -97,14 +99,15 @@ struct raw_img {
 	unsigned char alignment;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
+	enum alpha_interpretation alpha:8;
 	enum image_mode mode:8;
 
 	unsigned char rotate;
-	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate
-	bool disable_alpha:1;
+	bool mirror; // Vertical mirror. Horizontal is mirror + 2rotate
 
-	struct image_frames *frames;
 	float dec_scale;
+	struct image_frames *frames;
+	struct color_space cs;
 
 	char *id;
 };
@@ -117,7 +120,7 @@ struct image_file {
 
 	struct pix_rgba8 bg;
 
-	enum image_event events:8;
+	enum image_event events;
 	void *restrict dec_state; // Used by decoder for callbacks
 
 	struct wustr errors;
@@ -134,28 +137,35 @@ struct image_context {
 const char * wu_error_message(enum wu_error err);
 
 
+void raw_img_exif_orientation(struct raw_img *img, int orientation);
+
+enum wu_error raw_img_verify(struct raw_img *img);
+
+bool raw_img_exceeds_limit(const struct raw_img *img,
+const struct wu_conf *wuconf);
+
 size_t raw_img_stride(const struct raw_img *img);
 
 size_t raw_img_size(const struct raw_img *img);
 
-size_t raw_img_addbuf(struct raw_img *img);
+bool raw_img_alloc_noverify(struct raw_img *img);
 
-size_t raw_img_nr_frames(const struct raw_img *img);
+enum wu_error raw_img_alloc(struct raw_img *img);
 
-struct image_frames * raw_img_alloc_frames(struct raw_img *img, size_t nr);
+size_t raw_img_plane_resolve(struct raw_img *img);
 
-void raw_img_plane_resolve(struct raw_img *img);
-
-bool raw_img_plane_alloc(struct raw_img *img);
-
-void raw_img_plane_subsamp(struct raw_img *img, const enum pix_subsampling s);
+void raw_img_plane_subsamp(struct raw_img *img, uint8_t horz, uint8_t vert);
 
 struct image_planes * raw_img_plane_init(struct raw_img *img);
 
-bool raw_img_plane_from_params(struct raw_img *img);
-
 struct raster_pal * raw_img_set_palette(struct raw_img *img,
 struct raster_pal *pal);
+
+size_t raw_img_frames_nr(const struct raw_img *img);
+
+struct image_frames * raw_img_frames_init(struct raw_img *img, size_t nr);
+
+bool raw_img_clone(struct raw_img *dst, struct raw_img *src);
 
 void raw_img_clear(struct raw_img *img);
 
@@ -163,7 +173,6 @@ void raw_img_clear(struct raw_img *img);
 struct raw_img * realloc_sub_images(struct image_file *file, size_t nr);
 
 struct raw_img * alloc_sub_images(struct image_file *file, size_t nr);
-
 
 void image_file_free_if_single(struct image_file *file);
 

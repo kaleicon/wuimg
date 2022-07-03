@@ -6,18 +6,12 @@
 #include "../common.h"
 #include "memparser.h"
 
-static int toxnum(const int c) {
+static long tonum(const long c) {
+	return c - '0';
+}
+
+static long toxnum(const long c) {
 	switch (c) {
-	case '0': return 0;
-	case '1': return 1;
-	case '2': return 2;
-	case '3': return 3;
-	case '4': return 4;
-	case '5': return 5;
-	case '6': return 6;
-	case '7': return 7;
-	case '8': return 8;
-	case '9': return 9;
 	case 'A': case 'a': return 0xa;
 	case 'B': case 'b': return 0xb;
 	case 'C': case 'c': return 0xc;
@@ -25,55 +19,73 @@ static int toxnum(const int c) {
 	case 'E': case 'e': return 0xe;
 	case 'F': case 'f': return 0xf;
 	}
-	return -1;
+	return tonum(c);
 }
 
-static bool bndchk(const struct mem_parser *mp) {
+static bool bndchk(const struct mp_parser *mp) {
 	return mp->pos < mp->len;
 }
 
-static unsigned char curc(const struct mem_parser *mp) {
+static unsigned char curc(const struct mp_parser *mp) {
 	return mp->mem[mp->pos];
 }
 
 
-unsigned char mem_next_char_unsafe(struct mem_parser *mp) {
-	const unsigned char c = curc(mp);
-	++mp->pos;
-	return c;
-}
-
-size_t mem_get_uint_unsafe(struct mem_parser *mp, size_t digits,
-mem_fast_t *val) {
-	*val = 0;
+size_t mp_skip_space_unsafe(struct mp_parser *mp) {
 	size_t k = 0;
-	while (k < digits && isdigit(curc(mp))) {
-		*val = *val * 10 - '0' + curc(mp);
+	while (isspace(curc(mp))) {
 		++mp->pos;
 		++k;
 	}
 	return k;
 }
 
-void mem_skip_blank(struct mem_parser *mp) {
+unsigned char mp_next_char_unsafe(struct mp_parser *mp) {
+	const unsigned char c = curc(mp);
+	++mp->pos;
+	return c;
+}
+
+size_t mp_get_uint_unsafe(struct mp_parser *mp, long *val) {
+	*val = 0;
+	const size_t start = mp->pos;
+	while (isdigit(curc(mp))) {
+		*val = *val * 10 + tonum(mp_next_char_unsafe(mp));
+	}
+	return mp->pos - start;
+}
+
+
+bool mp_set_pos(struct mp_parser *mp, const size_t pos) {
+	if (pos < mp->len) {
+		mp->pos = pos;
+		return true;
+	}
+	return false;
+}
+
+void mp_skip_blank(struct mp_parser *mp) {
 	while (bndchk(mp) && isblank(curc(mp))) {
 		++mp->pos;
 	}
 }
 
-void mem_skip_space(struct mem_parser *mp) {
+size_t mp_skip_space(struct mp_parser *mp) {
+	size_t k = 0;
 	while (bndchk(mp) && isspace(curc(mp))) {
 		++mp->pos;
+		++k;
 	}
+	return k;
 }
 
-void mem_skip_nonspace(struct mem_parser *mp) {
+void mp_skip_nonspace(struct mp_parser *mp) {
 	while (bndchk(mp) && !isspace(curc(mp))) {
 		++mp->pos;
 	}
 }
 
-void mem_skip_line(struct mem_parser *mp) {
+void mp_skip_line(struct mp_parser *mp) {
 	const unsigned char *newline = memchr(mp->mem + mp->pos, '\n',
 		mp->len - mp->pos);
 	if (newline) {
@@ -83,31 +95,31 @@ void mem_skip_line(struct mem_parser *mp) {
 	}
 }
 
-int mem_next_char(struct mem_parser *mp) {
+int mp_next_char(struct mp_parser *mp) {
 	if (bndchk(mp)) {
-		return mem_next_char_unsafe(mp);
+		return mp_next_char_unsafe(mp);
 	}
 	return EOF;
 }
 
-int mem_next_nonblank(struct mem_parser *mp) {
-	mem_skip_blank(mp);
-	return mem_next_char(mp);
+int mp_next_nonblank(struct mp_parser *mp) {
+	mp_skip_blank(mp);
+	return mp_next_char(mp);
 }
 
-int mem_next_nonspace(struct mem_parser *mp) {
-	mem_skip_space(mp);
-	return mem_next_char(mp);
+int mp_next_nonspace(struct mp_parser *mp) {
+	mp_skip_space(mp);
+	return mp_next_char(mp);
 }
 
-struct wuptr mem_next_remaining(struct mem_parser *mp, const size_t len) {
+struct wuptr mp_next_remaining(struct mp_parser *mp, const size_t len) {
 	const size_t rem = zumin(mp->len - mp->pos, len);
 	const struct wuptr wp = wuptr_mem(mp->mem + mp->pos, rem);
 	mp->pos += rem;
 	return wp;
 }
 
-const uint8_t * mem_next_slice(struct mem_parser *mp, const size_t len) {
+const uint8_t * mp_next_slice(struct mp_parser *mp, const size_t len) {
 	if (mp->len - mp->pos >= len) {
 		const uint8_t *slice = mp->mem + mp->pos;
 		mp->pos += len;
@@ -116,85 +128,68 @@ const uint8_t * mem_next_slice(struct mem_parser *mp, const size_t len) {
 	return NULL;
 }
 
-struct wuptr mem_get_word(struct mem_parser *mp) {
+struct wuptr mp_get_word(struct mp_parser *mp) {
 	const size_t start = mp->pos;
-	mem_skip_nonspace(mp);
+	mp_skip_nonspace(mp);
 	return wuptr_mem(mp->mem + start, mp->pos - start);
 }
 
-size_t mem_get_uint(struct mem_parser *mp, size_t digits, mem_fast_t *val) {
-	const size_t rem = mp->len - mp->pos;
-	if (rem < digits) {
-		digits = rem;
-	}
-	return mem_get_uint_unsafe(mp, digits, val);
-}
-
-static bool scan_end(struct mem_parser *mp, const size_t start,
-const size_t size, const bool read, const uint_fast64_t num, void *restrict val) {
-	uint_fast64_t max;
-	switch (size) {
-	case 1: max = UINT8_MAX; break;
-	case 2: max = UINT16_MAX; break;
-	case 4: max = UINT32_MAX; break;
-	case 8: max = UINT64_MAX; break;
-	default:
-		mp->pos = start;
-		return false;
-	}
-
-	if (read && num <= max) {
-		switch (size) {
-		case 1: *(uint8_t *)val = (uint8_t)num; break;
-		case 2: *(uint16_t *)val = (uint16_t)num; break;
-		case 4: *(uint32_t *)val = (uint32_t)num; break;
-		case 8: *(uint64_t *)val = (uint64_t)num; break;
+size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val) {
+	digits = zumin(digits, mp->len - mp->pos);
+	*val = 0;
+	size_t k = 0;
+	while (k < digits) {
+		const uint8_t c = curc(mp);
+		if (!isdigit(c)) {
+			break;
 		}
-		return true;
+		*val = *val * 10 + tonum(c);
+		++k;
+		++mp->pos;
 	}
-	mp->pos = start;
-	return false;
+	return k;
 }
 
-bool mem_scan_xint(struct mem_parser *mp, const size_t size, void *restrict val) {
-	const size_t start = mp->pos;
-	if (mem_next_char(mp) != '0' || toupper(mem_next_char(mp)) != 'X') {
-		mp->pos = start;
-		return false;
-	}
-
-	bool read = false;
-	uint_fast64_t num = 0;
-	while (bndchk(mp) && isxdigit(curc(mp))) {
-		const uint_fast64_t before = num;
-		num = num * 16 + (uint_fast64_t)toxnum(mem_next_char_unsafe(mp));
-		if (num < before) {
-			mp->pos = start;
-			return false;
+size_t mp_get_xint(struct mp_parser *mp, size_t digits, long *val) {
+	const uint8_t *pre = mp_next_slice(mp, 2);
+	if (pre) {
+		if (pre[0] != '0' || (pre[1] != 'x' && pre[1] != 'X')) {
+			mp->pos -= 2;
 		}
-		read = true;
 	}
-	return scan_end(mp, start, size, read, num, val);
-}
-
-bool mem_scan_uint(struct mem_parser *mp, const size_t size, void *restrict val) {
-	const size_t start = mp->pos;
-	bool read = false;
-	uint_fast64_t num = 0;
-	while (bndchk(mp) && isdigit(curc(mp))) {
-		const uint_fast64_t before = num;
-		num = num * 10 - '0' + mem_next_char_unsafe(mp);
-		if (num < before) {
-			mp->pos = start;
-			return false;
+	digits = zumin(digits, mp->len - mp->pos);
+	*val = 0;
+	size_t k = 0;
+	while (k < digits) {
+		const uint8_t c = curc(mp);
+		if (!isxdigit(c)) {
+			break;
 		}
-		read = true;
+		*val = *val * 16 + toxnum(c);
+		++k;
+		++mp->pos;
 	}
-	return scan_end(mp, start, size, read, num, val);
+	return k;
 }
 
-struct mem_parser mem_parser_mem(const size_t len, const void *mem) {
-	return (struct mem_parser) {
+struct wuptr mp_remaining_at(const struct mp_parser *mp, const size_t pos,
+const size_t len) {
+	return (struct wuptr) {
+		.ptr = mp->mem + pos,
+		.len = (pos <= mp->len) ? zumin(mp->len - mp->pos, len) : 0,
+	};
+}
+
+const uint8_t * mp_slice_at(const struct mp_parser *mp, const size_t pos,
+const size_t len) {
+	if (pos <= mp->len && mp->len - pos >= len) {
+		return mp->mem + pos;
+	}
+	return NULL;
+}
+
+struct mp_parser mp_parser_mem(const size_t len, const void *mem) {
+	return (struct mp_parser) {
 		.len = len,
 		.mem = mem,
 	};

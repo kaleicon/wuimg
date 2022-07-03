@@ -3,10 +3,9 @@
 
 #include <stdint.h>
 
-#include "../raster/lib.h"
+#include "wudefs.h"
 
 struct xcursor_image {
-	struct raster_desc r;
 	uint32_t xhot;
 	uint32_t yhot;
 	uint32_t delay;
@@ -55,15 +54,19 @@ const char * xcursor_comment_type_str(enum xcursor_comment_type type);
 
 void xcursor_free(struct xcursor_desc *desc);
 
-size_t xcursor_get_chunk_data(struct xcursor_desc *desc,
-struct xcursor_chunk *chunk, void *restrict dst);
+size_t xcursor_get_chunk_data(const struct xcursor_desc *desc,
+const struct xcursor_chunk *chunk, void *restrict dst);
 
-enum lib_fail xcursor_get_chunk(struct xcursor_desc *desc,
-struct xcursor_chunk *chunk, const uint32_t i);
+enum wu_error xcursor_get_image_info(const struct xcursor_desc *desc,
+const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
+struct raw_img *img);
 
-enum lib_fail xcursor_parse_header(struct xcursor_desc *desc,
+enum wu_error xcursor_get_comment_info(const struct xcursor_desc *desc,
+const struct xcursor_toc *entry, struct xcursor_chunk *chunk);
+
+enum wu_error xcursor_parse_header(struct xcursor_desc *desc,
 uint32_t max_entries);
 
-enum lib_fail xcursor_open_file(struct xcursor_desc *desc, FILE *ifp);
+enum wu_error xcursor_open_file(struct xcursor_desc *desc, FILE *ifp);
 
 #endif /* LIB_XCURSOR */

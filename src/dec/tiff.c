@@ -14,6 +14,11 @@ struct tiff_info {
 	uint16_t planar;
 	bool is_tiled;
 	uint32_t planes;
+	struct tiff_ycbcr {
+		float coef[3];
+		uint16_t sampx, sampy;
+		uint16_t pos;
+	} ycbcr;
 };
 
 struct tile_info {
@@ -72,23 +77,24 @@ struct raw_img *img) {
 		return wu_unsupported_feature;
 	}
 
-	puts("Using libtiff high-level interface.");
+	image_file_error_append(infile, "Using libtiff high-level interface");
 	tifimg.req_orientation = tifimg.orientation;
 	img->w = tifimg.width;
 	img->h = tifimg.height;
 	img->channels = 4;
 	img->bitdepth = 8;
-	img->disable_alpha = !tifimg.alpha;
-
-	if (!raw_img_addbuf(img)) {
-		TIFFRGBAImageEnd(&tifimg);
-		return wu_alloc_error;
+	if (!tifimg.alpha) {
+		img->alpha = alpha_ignore;
 	}
 
-	const int result = TIFFRGBAImageGet(&tifimg, (uint32_t *)img->data,
-		tifimg.width, tifimg.height);
+	enum wu_error st = raw_img_alloc(img);
+	if (st == wu_ok) {
+		st = TIFFRGBAImageGet(&tifimg, (uint32_t *)img->data,
+			tifimg.width, tifimg.height)
+			? wu_ok : wu_decoding_error;
+	}
 	TIFFRGBAImageEnd(&tifimg);
-	return (result) ? wu_ok : wu_decoding_error;
+	return st;
 }
 
 static void single_tile(unsigned char *restrict dst,
@@ -143,9 +149,9 @@ const struct tiff_info *info, const enum unpack_op op) {
 				}
 
 				TIFFReadEncodedTile(tif, ts, tiles.buf, tiles.len);
-				single_tile(dst, &tiles, src_width * comps,
-					height, dst_stride, img->attr, op,
-					info->bps);
+				single_tile(dst + x*tiles.stride, &tiles,
+					src_width * comps, height, dst_stride,
+					img->attr, op, info->bps);
 				++ts;
 			}
 			dst += dst_stride * height;
@@ -167,19 +173,19 @@ const struct tiff_info *info) {
 	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &strip_height);
 	const size_t end_height = img->h - strip_height * (strips - 1);
 
-	const size_t width = img->w * img->channels / info->planes;
-	const size_t stride = scanline_length(width, img->bitdepth, 1);
-	size_t offset = 0;
+	unsigned char *data = img->data;
 	for (uint32_t p = 0; p < info->planes; ++p) {
+		const size_t width = (info->planes > 1)
+			? img->u.planes->p[p].w
+			: img->w * img->channels;
+		const size_t stride = scanline_length(width, img->bitdepth, 1);
 		for (uint32_t st = 0; st < strips; ++st) {
 			const size_t height = (st == strips - 1)
 				? end_height
 				: strip_height;
 			const uint32_t n = strips * p + st;
-			/* This function returns -1 in case of errors,
-			 * but even libtiff interface seems to ignore it */
-			TIFFReadEncodedStrip(tif, n, img->data + offset, buflen);
-			offset += stride * height;
+			TIFFReadEncodedStrip(tif, n, data, buflen);
+			data += stride * height;
 		}
 	}
 	return wu_ok;
@@ -195,7 +201,6 @@ static struct raster_pal * load_palette(TIFF *tif, uint16_t bps) {
 				pal->color[i].r = (unsigned char)(red[i] >> 8);
 				pal->color[i].g = (unsigned char)(green[i] >> 8);
 				pal->color[i].b = (unsigned char)(blue[i] >> 8);
-				pal->color[i].a = 0xff;
 			}
 		}
 		return pal;
@@ -205,14 +210,7 @@ static struct raster_pal * load_palette(TIFF *tif, uint16_t bps) {
 
 static enum wu_error nih_decode(TIFF *tif, struct raw_img *img,
 struct tiff_info *info) {
-	if (info->photometric == PHOTOMETRIC_PALETTE) {
-		if (!raw_img_set_palette(img, load_palette(tif, info->bps))) {
-			return wu_alloc_error;
-		}
-	}
 	img->channels = (unsigned char)info->spp;
-
-	info->planes = (info->planar == PLANARCONFIG_CONTIG) ? 1 : info->spp;
 	enum unpack_op op;
 	if (info->is_tiled && info->bps % 8) {
 		op = op_expand;
@@ -221,35 +219,78 @@ struct tiff_info *info) {
 		op = op_noop;
 		img->bitdepth = (unsigned char)info->bps;
 	}
-	if (info->photometric == PHOTOMETRIC_MINISWHITE) {
+
+	if (info->planes > 1) {
+		if (!raw_img_plane_init(img)) {
+			return wu_alloc_error;
+		}
+	}
+
+	switch (info->photometric) {
+	case PHOTOMETRIC_MINISWHITE:
 		img->attr = pix_inverted;
+		break;
+	case PHOTOMETRIC_PALETTE:
+		if (!raw_img_set_palette(img, load_palette(tif, info->bps))) {
+			return wu_alloc_error;
+		}
+		img->alpha = alpha_ignore;
+		break;
+	case PHOTOMETRIC_YCBCR:
+		raw_img_plane_subsamp(img, (uint8_t)info->ycbcr.sampx,
+			(uint8_t)info->ycbcr.sampy);
+		img->cs.matrix = cicp_matrix_bt601_7;
+		break;
 	}
 	if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
 		// What about float + miniswhite?
 		img->attr = pix_float;
+	} else if (info->sfmt == SAMPLEFORMAT_INT) {
+		img->attr = pix_signed;
+	}
+	uint16_t cnt;
+	uint16_t *types;
+	if (TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &cnt, &types) && cnt == 1) {
+		switch (types[0]) {
+		case EXTRASAMPLE_UNASSALPHA:
+			img->alpha = alpha_unassociated;
+			break;
+		case EXTRASAMPLE_ASSOCALPHA:
+			img->alpha = alpha_associated;
+			break;
+		}
 	}
 
-	const bool alloc_ok = (info->planes > 1)
-		? raw_img_plane_from_params(img)
-		: raw_img_addbuf(img);
-	if (alloc_ok) {
+	const enum wu_error st = raw_img_alloc(img);
+	if (st == wu_ok) {
 		return (info->is_tiled)
 			? read_tiles(tif, img, info, op)
 			: read_strips(tif, img, info);
 	}
-	return wu_alloc_error;
+	return st;
 }
 
 static bool check_support(const struct tiff_info *info) {
+	if (!info->spp || !info->bps || info->bps > 64) {
+		return false;
+	}
+
 	switch (info->photometric) {
 	case PHOTOMETRIC_MINISWHITE:
 	case PHOTOMETRIC_MINISBLACK:
-		if (info->spp < 1 && info->spp > 2) {
+		if (info->spp > 2) {
 			return false;
 		}
 		break;
+	case PHOTOMETRIC_YCBCR:
+		if (info->planar != PLANARCONFIG_SEPARATE || info->is_tiled
+		|| info->ycbcr.pos != YCBCRPOSITION_CENTERED) {
+			return false;
+		}
+		// fallthrough
 	case PHOTOMETRIC_RGB:
-		if (info->spp < 3 || info->spp > 4) {
+	case PHOTOMETRIC_MASK:
+		if (info->spp > 4) {
 			return false;
 		}
 		break;
@@ -259,10 +300,6 @@ static bool check_support(const struct tiff_info *info) {
 		}
 		break;
 	default:
-		return false;
-	}
-
-	if (!info->bps || info->bps > UCHAR_MAX) {
 		return false;
 	}
 
@@ -285,6 +322,28 @@ static bool check_support(const struct tiff_info *info) {
 	return true;
 }
 
+static bool get_tiff_info(TIFF *tif, struct tiff_info *info) {
+	if (TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &info->photometric) != 1) {
+		puts("Image lacks photometric info.");
+		return false;
+	}
+	TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &info->spp);
+	TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &info->bps);
+	TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &info->sfmt);
+	TIFFGetFieldDefaulted(tif, TIFFTAG_PLANARCONFIG, &info->planar);
+	info->is_tiled = TIFFIsTiled(tif);
+	info->planes = (info->planar == PLANARCONFIG_CONTIG) ? 1 : info->spp;
+	if (info->photometric == PHOTOMETRIC_YCBCR) {
+		TIFFGetFieldDefaulted(tif, TIFFTAG_YCBCRCOEFFICIENTS,
+			info->ycbcr.coef);
+		TIFFGetFieldDefaulted(tif, TIFFTAG_YCBCRSUBSAMPLING,
+			&info->ycbcr.sampx, &info->ycbcr.sampy);
+		TIFFGetFieldDefaulted(tif, TIFFTAG_YCBCRPOSITIONING,
+			&info->ycbcr.pos);
+	}
+	return true;
+}
+
 enum wu_error tiff_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	const int fd = fileno(infile->ifp);
@@ -295,10 +354,11 @@ const struct wu_conf *wuconf) {
 	}
 
 	get_metadata_tags(tif, &infile->metadata);
-	struct raw_img *img = alloc_sub_images(infile,
-		TIFFNumberOfDirectories(tif));
+	if (!alloc_sub_images(infile, TIFFNumberOfDirectories(tif))) {
+		TIFFCleanup(tif);
+		return wu_alloc_error;
+	}
 
-	enum wu_error status;
 	size_t i = 0;
 	do {
 		uint32_t w, h;
@@ -306,29 +366,20 @@ const struct wu_conf *wuconf) {
 			&& TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h) == 1;
 		if (!ok) {
 			puts("Failed to get image dimensions");
-			status = wu_invalid_header;
 			continue;
 		}
 
-		img[i].w = w;
-		img[i].h = h;
-		if (zumax(img[i].w, img[i].h) > wuconf->max_img_size) {
-			status = wu_exceeds_size_limit;
+		struct raw_img *img = infile->sub_img + i;
+		img->w = w;
+		img->h = h;
+		if (raw_img_exceeds_limit(img, wuconf)) {
 			continue;
 		}
 
 		struct tiff_info info;
-		if (TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &info.photometric) != 1) {
-			puts("Image lacks photometric info.");
-			status = wu_invalid_header;
+		if (!get_tiff_info(tif, &info)) {
 			continue;
 		}
-		TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &info.spp);
-		TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &info.bps);
-		TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &info.sfmt);
-		TIFFGetFieldDefaulted(tif, TIFFTAG_PLANARCONFIG, &info.planar);
-		info.is_tiled = TIFFIsTiled(tif);
-
 		bool do_it_ourselves;
 		if (wuconf->tiff_use_homegrown_unpacker) {
 			do_it_ourselves = check_support(&info);
@@ -336,20 +387,21 @@ const struct wu_conf *wuconf) {
 			do_it_ourselves = false;
 		}
 
+		enum wu_error status;
 		switch ((int)do_it_ourselves) {
 		case true:
-			status = nih_decode(tif, img + i, &info);
+			status = nih_decode(tif, img, &info);
 			if (status == wu_ok) {
 				break;
 			}
-			raw_img_clear(img + i);
+			raw_img_clear(img);
 			puts("Native unpacking routine failed, falling back "
 				"on libtiff.");
 			// fallthrough
 		default:
-			status = libtiff_decode(tif, infile, img + i);
+			status = libtiff_decode(tif, infile, img);
 			if (status != wu_ok) {
-				raw_img_clear(img + i);
+				raw_img_clear(img);
 				continue;
 			}
 		}
@@ -358,8 +410,5 @@ const struct wu_conf *wuconf) {
 	} while (TIFFReadDirectory(tif) && i < infile->nr);
 
 	TIFFCleanup(tif);
-	if (status == wu_ok && i < infile->nr) {
-		realloc_sub_images(infile, i);
-	}
-	return status;
+	return image_file_total_decoded(infile, i);
 }

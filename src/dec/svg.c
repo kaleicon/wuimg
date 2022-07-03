@@ -4,22 +4,18 @@
 
 #include <librsvg-2.0/librsvg/rsvg.h>
 
-#include "../wudefs.h"
-#include "../common.h"
+#include "wudefs.h"
+#include "common.h"
 
 struct svg_state {
-	RsvgRectangle viewport;
 	RsvgHandle *handle;
+	RsvgRectangle viewport;
 	float dec_scale;
 };
 
 static void clean_svg_state(struct image_file *infile) {
 	struct svg_state *ds = infile->dec_state;
 	g_object_unref(ds->handle);
-	free(ds);
-
-	infile->dec_state = NULL;
-	infile->events = 0;
 }
 
 static float limit_zoom(const float zoom, const RsvgRectangle *viewport,
@@ -35,37 +31,36 @@ unsigned int limit, bool *reached_limit) {
 	return zoom;
 }
 
-static enum wu_error svg_render(struct image_file *infile,
-struct svg_state *ds) {
-	struct raw_img *img = infile->sub_img;
-
+static enum wu_error svg_render(struct raw_img *img, struct svg_state *ds) {
 	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
-	const int width = (int)(ds->viewport.width * ds->dec_scale);
-	const int height = (int)(ds->viewport.height * ds->dec_scale);
+	const int width = (int)ceil((ds->viewport.width * ds->dec_scale));
+	const int height = (int)ceil((ds->viewport.height * ds->dec_scale));
 	const int stride = cairo_format_stride_for_width(format, width);
 
 	free(img->data);
 	img->data = calloc((size_t)(stride * height), 1);
 	if (!img->data) {
-		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 	cairo_surface_t *surf = cairo_image_surface_create_for_data(img->data,
 		format, width, height, stride);
 	if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
 		cairo_surface_destroy(surf);
-		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 
 	img->w = (size_t)cairo_image_surface_get_width(surf);
 	img->h = (size_t)cairo_image_surface_get_height(surf);
+	const enum wu_error st = raw_img_verify(img);
+	if (st != wu_ok) {
+		cairo_surface_destroy(surf);
+		return st;
+	}
 
 	cairo_t *canvas = cairo_create(surf);
 	cairo_surface_destroy(surf);
 	if (cairo_status(canvas) != CAIRO_STATUS_SUCCESS) {
 		cairo_destroy(canvas);
-		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 
@@ -73,19 +68,18 @@ struct svg_state *ds) {
 	const bool success = rsvg_handle_render_document(ds->handle, canvas,
 		&ds->viewport, NULL);
 	cairo_destroy(canvas);
-	if (!success) {
-		clean_svg_state(infile);
-		return wu_decoding_error;
+	if (success) {
+		printf("Rendered @ %zu x %zu (%zu bytes), %.2fx original\n",
+			img->w, img->h, img->w * img->h * img->channels,
+			ds->dec_scale);
+		return wu_ok;
 	}
-
-	printf("Rendered @ %zu x %zu (%zu bytes), %.2fx original\n", img->w,
-		img->h, img->w * img->h * img->channels, ds->dec_scale);
-	return wu_ok;
+	return wu_decoding_error;
 }
 
 static enum wu_error svg_rescale(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state) {
-	const float eps = 1.0f / (float)umin(wuconf->fb.w, wuconf->fb.h);
+	const float eps = 1.0f / (float)imin(wuconf->fb.w, wuconf->fb.h);
 	if (state->zoom <= 1 + eps) {
 		if (wuconf->svg_redraw == svg_upscale || state->zoom >= 1 - eps) {
 			return wu_no_change;
@@ -103,11 +97,11 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 
 	if (new_zoom > ds->dec_scale
 	|| (wuconf->svg_redraw == svg_anyscale && new_zoom != ds->dec_scale)) {
+		state->zoom = 1;
 		state->x_offset *= new_zoom / ds->dec_scale;
 		state->y_offset *= new_zoom / ds->dec_scale;
 		ds->dec_scale = new_zoom;
-		state->zoom = 1;
-		return svg_render(infile, ds);
+		return svg_render(infile->sub_img, ds);
 	}
 	return wu_no_change;
 }
@@ -115,19 +109,16 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 enum wu_error svg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	enum wu_error status = wu_ok;
 	if (event & ev_scale) {
-		status = svg_rescale(infile, wuconf, state);
+		return svg_rescale(infile, wuconf, state);
 	}
-	if (event == 0 || infile->events == 0) {
-		clean_svg_state(infile);
-	}
-	return status;
+	clean_svg_state(infile);
+	return wu_ok;
 }
 
 enum wu_error svg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct svg_state *ds = malloc(sizeof(*ds));
+	struct svg_state *ds = calloc(sizeof(*ds), 1);
 	if (!ds) {
 		return wu_alloc_error;
 	}
@@ -141,7 +132,6 @@ const struct wu_conf *wuconf) {
 	ds->handle = rsvg_handle_new_from_data(map.data, map.len, NULL);
 	unmap_file(&map);
 	if (!ds->handle) {
-		clean_svg_state(infile);
 		return wu_open_error;
 	}
 
@@ -155,7 +145,6 @@ const struct wu_conf *wuconf) {
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
-		clean_svg_state(infile);
 		return wu_alloc_error;
 	}
 	img->channels = 4;
@@ -165,24 +154,19 @@ const struct wu_conf *wuconf) {
 	case little_endian: img->layout = pix_bgra; break;
 	case big_endian: img->layout = pix_argb; break;
 	}
+	img->alpha = alpha_associated;
 
 	bool reached_limit = false;
 	ds->dec_scale = limit_zoom(1, &ds->viewport, wuconf->max_img_size,
 		&reached_limit);
 
-	enum wu_error err = svg_render(infile, ds);
-	if (err == wu_ok) {
-		if (reached_limit || wuconf->svg_redraw == svg_never) {
-			clean_svg_state(infile);
-		} else {
-			switch (wuconf->svg_redraw) {
-			case svg_upscale: infile->events = ev_upscale; break;
-			case svg_anyscale: infile->events = ev_scale; break;
-			default: break;
-			}
+	const enum wu_error err = svg_render(img, ds);
+	if (err == wu_ok && !reached_limit) {
+		switch (wuconf->svg_redraw) {
+		case svg_upscale: infile->events = ev_upscale; break;
+		case svg_anyscale: infile->events = ev_scale; break;
+		default: break;
 		}
-	} else {
-		clean_svg_state(infile);
 	}
 	return err;
 }

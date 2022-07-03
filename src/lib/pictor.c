@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <limits.h>
 
-#include "../raster/graphics_adapters.h"
-#include "../common.h"
+#include "raster/fmt.h"
+#include "raster/graphics_adapters.h"
 
 #include "pictor.h"
 
@@ -47,14 +47,10 @@ const char * pictor_video_mode(const struct pictor_desc *desc) {
 	return NULL;
 }
 
-void pictor_cleanup(struct pictor_desc *desc) {
-	raster_free(&desc->r);
-}
-
 static void pictor_interleave(const struct pictor_desc *desc,
-unsigned char *restrict dst, const unsigned char *restrict src) {
-	vga_interleave(dst, src, desc->r.w, desc->r.h, desc->planes, 1,
-		desc->has_palette);
+struct raw_img *img, const unsigned char *restrict src) {
+	vga_interleave(img->data, src, img->w, img->h, desc->planes, 1,
+		img->alignment, img->mode == image_mode_palette);
 }
 
 static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
@@ -153,19 +149,23 @@ const size_t blocks, FILE *ifp) {
 	return i;
 }
 
-size_t pictor_decode(const struct pictor_desc *desc, void *restrict dst) {
+size_t pictor_decode(const struct pictor_desc *desc, struct raw_img *img) {
+	if (!raw_img_alloc_noverify(img)) {
+		return 0;
+	}
+
 	size_t raster_len;
 	unsigned char *raster;
-	if (desc->planes == 1) {
-		raster_len = raster_size(&desc->r);
-		raster = dst;
-	} else {
-		raster_len = scanline_length(desc->r.w, 1, 1)
-			* desc->planes * desc->r.h;
+	if (desc->interleave) {
+		raster_len = scanline_length(img->w, 1, 1) * desc->planes
+			* img->h;
 		raster = malloc(raster_len);
 		if (!raster) {
 			return 0;
 		}
+	} else {
+		raster_len = raw_img_size(img);
+		raster = img->data;
 	}
 
 	size_t written = 0;
@@ -175,57 +175,55 @@ size_t pictor_decode(const struct pictor_desc *desc, void *restrict dst) {
 		written = fread(raster, 1, raster_len, desc->ifp);
 	}
 
-	if (desc->planes != 1 && !desc->r.planar) {
-		pictor_interleave(desc, dst, raster);
+	if (desc->interleave) {
+		pictor_interleave(desc, img, raster);
 		free(raster);
 	}
 	return written;
 }
 
-static enum lib_fail load_palette(struct pictor_desc *desc,
+static enum wu_error load_palette(struct pictor_desc *desc, struct raw_img *img,
 const enum pictor_palette_type pal_type, const uint16_t size) {
 	desc->pal_type = pal_type;
 	const int bpp = desc->depth * desc->planes;
 	switch (pal_type) {
 	case pictor_no_palette:
 		if (bpp == 1 || bpp == 8) {
-			return lib_ok;
+			return wu_ok;
 		} else if (size != 0) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case pictor_cga_palette:
 		if (size != 2) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case pictor_pcjr_palette:
 	case pictor_ega_palette:
 		if (size != 16) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case pictor_vga_palette:
 	case pictor_vga_too_i_think:
 		if (size > 768) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 
-	struct raster_pal *pal = malloc(sizeof(*pal));
+	struct raster_pal *pal = raw_img_set_palette(img, malloc(sizeof(*pal)));
 	if (!pal) {
-		return lib_alloc_error;
+		return wu_alloc_error;
 	}
-	desc->r.palette = pal;
-	desc->has_palette = true;
 
 	unsigned char *buf = (unsigned char *)(pal + 1) - size;
 	if (desc->pal_type != pictor_no_palette) {
 		if (!fread(buf, size, 1, desc->ifp)) {
-			return lib_unexpected_eof;
+			return wu_unexpected_eof;
 		}
 	}
 
@@ -253,7 +251,7 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 		;const unsigned char mode = buf[0];
 		const unsigned char border = buf[1];
 		if (mode >= 6 || border >= 16) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 
 		pal->color[0] = cga_palette(border);
@@ -279,10 +277,10 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 		}
 		break;
 	}
-	return lib_ok;
+	return wu_ok;
 }
 
-enum lib_fail pictor_read_header(struct pictor_desc *desc) {
+enum wu_error pictor_read_header(struct pictor_desc *desc, struct raw_img *img) {
 	/* Pictor file header (after id):
 		Offset  Type    Name
 		0       u16     Width
@@ -310,7 +308,7 @@ enum lib_fail pictor_read_header(struct pictor_desc *desc) {
 
 	uint8_t buf[15];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 
 	desc->depth = buf[8] & 0x0f;
@@ -318,60 +316,62 @@ enum lib_fail pictor_read_header(struct pictor_desc *desc) {
 	switch (desc->depth) {
 	case 1:
 		if (desc->planes > 4) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	case 2: case 4: case 8:
 		if (desc->planes != 1) {
-			return lib_invalid_header;
+			return wu_invalid_header;
 		}
 		break;
 	default:
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
-	desc->r = (struct raster_desc) {
-		.w = buf_endian16(buf, little_endian),
-		.h = buf_endian16(buf + 2, little_endian),
-		.ch = 1,
-		.bitdepth = desc->depth,
-	};
+
+	img->w = buf_endian16(buf, little_endian);
+	img->h = buf_endian16(buf + 2, little_endian);
+	img->channels = 1;
+	img->bitdepth = desc->depth;
+	img->mirror = true;
 
 	desc->x = buf_endian16(buf + 4, little_endian);
 	desc->y = buf_endian16(buf + 6, little_endian);
 
 	if (buf[9] != 0xff) {
-		return lib_invalid_header;
+		return wu_invalid_header;
 	}
 	desc->video_mode = (char)buf[10];
-	const enum lib_fail status = load_palette(desc,
+	const enum wu_error status = load_palette(desc, img,
 		buf_endian16(buf + 11, little_endian),
 		buf_endian16(buf + 13, little_endian));
-	if (status != lib_ok) {
+	if (status != wu_ok) {
 		return status;
 	}
 
 	if (!fread(buf, 2, 1, desc->ifp)) {
-		return lib_unexpected_eof;
+		return wu_unexpected_eof;
 	}
 	desc->blocks = buf_endian16(buf, little_endian);
 
 	if (desc->planes != 1) {
-		if (desc->r.palette) {
-			desc->r.bitdepth = desc->planes;
+		if (img->mode == image_mode_palette) {
+			img->bitdepth = 8;
+			desc->interleave = true;
 		} else {
-			desc->r.ch = desc->planes;
-			desc->r.planar = true;
+			img->channels = desc->planes;
+			raw_img_plane_init(img);
 		}
 	}
-	return raster_normalize(&desc->r) ? lib_ok : lib_int_overflow;
+	return raw_img_verify(img);
 }
 
-enum lib_fail pictor_open_file(struct pictor_desc *desc, FILE *ifp) {
+enum wu_error pictor_open_file(struct pictor_desc *desc, FILE *ifp) {
 	const uint8_t magic[] = {0x34, 0x12};
-	const enum lib_fail st = lib_sigcmp(magic, sizeof(magic), ifp);
-	if (st == lib_ok) {
-		desc->ifp = ifp;
-		desc->has_palette = false;
+	const enum wu_error st = fmt_sigcmp(magic, sizeof(magic), ifp);
+	if (st == wu_ok) {
+		*desc = (struct pictor_desc) {
+			.ifp = ifp,
+		};
 	}
 	return st;
 }

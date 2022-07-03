@@ -136,7 +136,7 @@ size_t scanline_length(const size_t width, const size_t bitdepth,
 size_t alignment) {
 	const size_t bytes = (width * bitdepth - 1) / 8 + 1;
 	--alignment;
-	return (bytes + alignment) & (~alignment);
+	return (bytes + alignment) & ~alignment;
 }
 
 long lmod(const long val, const long max) {
@@ -313,14 +313,6 @@ void * memrchr(const void *s, const int c, size_t n) {
 }
 #endif
 
-long file_get_remaining(FILE *ifp) {
-	const long cur = ftell(ifp);
-	fseek(ifp, 0, SEEK_END);
-	const long end = ftell(ifp);
-	fseek(ifp, cur, SEEK_SET);
-	return end - cur;
-}
-
 int unmap_file(struct map_info *mm) {
 	return munmap((void *)mm->data, mm->len);
 }
@@ -345,20 +337,6 @@ bool map_file(struct map_info *mm, FILE *ifp) {
 
 bool map_file_fd(struct map_info *mm, const int fd) {
 	return map_common(mm, fd, lseek(fd, 0, SEEK_END));
-}
-
-char * id_template(const char *prefix, const size_t num) {
-	const size_t len = strlen(prefix);
-	size_t numlen = 1;
-	for (size_t bound = 10; bound < num; bound *= 10) {
-		++numlen;
-	}
-
-	char *id = malloc(len + numlen + 1);
-	if (id) {
-		sprintf(id, "%s%zu", prefix, num);
-	}
-	return id;
 }
 
 void fatal_bug(const char *name, const char *msg) {

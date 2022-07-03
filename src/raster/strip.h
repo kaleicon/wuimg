@@ -1,0 +1,42 @@
+#ifndef COMMON_UNPACK
+#define COMMON_UNPACK
+
+#include <stdint.h>
+
+#include "raster/pix.h"
+#include "wudefs.h"
+
+struct sewing_clothe {
+	uint8_t *ptr;
+	size_t stride;
+	size_t len;
+};
+
+struct sewing_machine {
+	uint8_t out_ch;
+	uint8_t ch;
+	bool compact;
+	const struct raster_pal *pal;
+	size_t w, h;
+	struct sewing_clothe dst, color, alpha;
+};
+
+void strip_spread(uint8_t *restrict dst, const uint8_t *restrict src,
+size_t width, size_t ch);
+
+
+void strip_handsew_alpha(void *restrict dst, const void *restrict color,
+const void *restrict alpha, const size_t w, const void *restrict pal,
+const uint8_t ch);
+
+void strip_sew_alpha(struct sewing_machine *sew);
+
+void strip_sew_free_alpha(struct sewing_machine *sew);
+
+bool strip_sew_alloc_alpha(struct sewing_machine *sew);
+
+void strip_sew_init(struct sewing_machine *sew, void *restrict dst,
+const struct raster_pal *pal, size_t w, size_t h, uint8_t ch, uint8_t align,
+bool will_sew);
+
+#endif // COMMON_UNPACK
