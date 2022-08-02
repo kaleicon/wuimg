@@ -232,18 +232,18 @@ struct image_file *infile, struct jpeg_state *js, struct icc_assembler *icc) {
 		break;
 	}
 
-	struct wu_tree *branch = tree_sprout_branch(metadata, "Marker");
+	struct wu_tree *branch = tree_add_branch(metadata, "Marker");
 	if (branch) {
 		char app[] = "APPXXX";
 		sprintf(app + 3, "%hhu", mk->marker - JPEG_APP0);
 
-		tree_sprout_leaf(branch, "Type", app);
+		tree_add_leaf(branch, "Type", app);
 		tree_bud_leaf(branch, "Size",
 			(struct wu_leaf){
 				.val.u = mk->data_length,
 				.type = wu_leaf_unsigned
 			});
-		tree_sprout_unsafe_leaf(branch, "Data start", mk->data,
+		tree_add_measured_leaf(branch, "Data start", mk->data,
 			zumin(12, mk->data_length));
 	}
 	return wu_ok;
@@ -255,7 +255,7 @@ struct image_file *infile, struct raw_img *img, struct jpeg_state *js) {
 	enum wu_error status = wu_ok;
 	while (mk) {
 		if (mk->marker == JPEG_COM) {
-			tree_sprout_unsafe_leaf(&infile->metadata,
+			tree_add_measured_leaf(&infile->metadata,
 				"Comment", mk->data, mk->data_length);
 		} else {
 			status = parse_markers(mk, infile, js, &icc);
@@ -302,15 +302,15 @@ static bool set_colorspace(struct raw_img *img,
 const struct jpeg_decompress_struct *dinfo) {
 	img->alpha = alpha_key;
 	switch (dinfo->jpeg_color_space) {
-	case JCS_CMYK:
-		break;
 	case JCS_YCCK:
 	case JCS_YCbCr:
+	case JCS_GRAYSCALE:
 		img->cs.matrix = cicp_matrix_bt601_7;
 		break;
 	case JCS_UNKNOWN:
-	case JCS_GRAYSCALE:
 	case JCS_RGB:
+	case JCS_CMYK:
+		break;
 	default:
 		break;
 	}

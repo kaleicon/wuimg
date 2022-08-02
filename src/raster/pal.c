@@ -8,7 +8,7 @@
 void raster_pal_print(const struct raster_pal *cm) {
 	for (size_t i = 0; i < ARRAY_LEN(cm->color); ++i) {
 		const struct pix_rgba8 *pix = cm->color + i;
-		printf("%zu: %hhx, %hhx, %hhx, %hhx\n",
+		fprintf(stderr, "%zu: %hhx, %hhx, %hhx, %hhx\n",
 			i, pix->r, pix->g, pix->b, pix->a);
 	}
 }
@@ -30,7 +30,7 @@ const struct raster_pal *cm, const size_t items, const uint8_t bitdepth) {
 
 static inline void palette_common(uint8_t *restrict dst,
 const uint8_t *restrict src, const struct raster_pal *cm, size_t width,
-const size_t height, const size_t alignment, const uint8_t bitdepth) {
+const size_t height, const uint8_t alignment, const uint8_t bitdepth) {
 	const size_t biab = 8 / bitdepth;
 
 	const size_t bytes = width / biab;
@@ -86,12 +86,8 @@ const uint8_t alignment, const uint8_t bitdepth) {
 void raster_pal_from_rgb8(struct raster_pal *dst, const void *src,
 const size_t nmemb) {
 	const struct pix_rgb8 *s = src;
-	size_t i = 0;
-	while (i < nmemb - 1) {
-		memcpy(dst->color + i, s + i, 4);
+	for (size_t i = 0; i < nmemb; ++i) {
+		memcpy(dst->color + i, s + i, (i + 1 < nmemb) ? 4 : 3);
 		dst->color[i].a = 0xff;
-		++i;
 	}
-	memcpy(dst->color + i, s + i, sizeof(*s));
-	dst->color[i].a = 0xff;
 }

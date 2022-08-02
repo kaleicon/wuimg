@@ -4,12 +4,12 @@
 #include "common.h"
 
 struct wu_conf {
-	// Variable variables. These may be modified at runtime.
-	struct display_dims fb; // Framebuffer dimensions.
 	unsigned max_img_size; /* Max image size in either dimension. The
 		starting value will be capped to the texture size limit. */
+	unsigned magnify_under; /* Auto-magnify images under this size to an
+		integer multiple over it. */
+	struct display_dims fb; // Framebuffer dimensions. Not seteable.
 
-	// Const variables
 	// Window
 	struct display_dims initial_size; // Window size hint on startup.
 	unsigned char bg[4]; /* Default window background in RGBA order. If
@@ -24,26 +24,6 @@ struct wu_conf {
 	} bg_src:1;
 	bool no_window_decorations:1; /* Request no decorations or widgets
 		around the window. */
-
-	// Image decoding
-	bool partial_decode:1; /* Decode at the smallest available resolution
-		that's bigger than the window when the format allows so. This
-		speeds up the time to first display and can make flipping
-		through big images more bearable. A full decode is performed
-		when zooming in.
-		  This technique is used unconditionally when the image
-		dimensions would exceed the maximum image size.
-		  Currently applies only to JP2. */
-
-	// Animations
-	bool anim_space_over_speed:1; /* Render animations as RGB if no alpha
-		is needed for any composited frame. This is quick to check and
-		will save some memory, but could actually increase the time to
-		first display and give lower performance, as CPUs and GPUs work
-		better on 4-byte words.
-		  Single-frame files are always rendered as RGB if possible.
-		Files using a single palette throughout are always rendered in
-		paletted mode. */
 
 	// JPEG
 	bool jpeg_fast_dct:1; /* Use a faster but less exact DCT algorithm for

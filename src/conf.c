@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 
 #include "conf.h"
+#include "term.h"
 #include "common.h"
 #include "raster/memparser.h"
 
@@ -26,9 +27,6 @@ struct wu_conf conf_default(void) {
 		.bg[3] = 0x66,
 
 		.bg_src = bg_metadata,
-
-		// Decoding
-		.partial_decode = true,
 
 		// JPEG
 		.jpeg_fast_dct = true,
@@ -93,6 +91,8 @@ static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 		bool ok = true;
 		if (wuptr_eq_str(key, "max_img_size")) {
 			ok = read_uint(tp, &conf->max_img_size);
+		} else if (wuptr_eq_str(key, "magnify_under")) {
+			ok = read_uint(tp, &conf->magnify_under);
 		} else if (wuptr_eq_str(key, "initial_size")) {
 			struct display_dims *i = &conf->initial_size;
 			ok = read_uint(tp, &i->w);
@@ -118,12 +118,6 @@ static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 			}
 		} else if (wuptr_eq_str(key, "no_window_decorations")) {
 			conf->no_window_decorations = read_bool(tp, &ok);
-
-		} else if (wuptr_eq_str(key, "partial_decode")) {
-			conf->partial_decode = read_bool(tp, &ok);
-
-		} else if (wuptr_eq_str(key, "anim_space_over_speed")) {
-			conf->anim_space_over_speed = read_bool(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "jpeg_fast_dct")) {
 			conf->jpeg_fast_dct = read_bool(tp, &ok);
@@ -233,6 +227,6 @@ struct wu_conf conf_load(void) {
 	if (ok) {
 		return conf;
 	}
-	puts("Failed to parse config file. Using defaults.");
+	term_line_put("Failed to parse config file. Using defaults.", stderr);
 	return conf_default();
 }

@@ -6,6 +6,7 @@
 
 #include "wudefs.h"
 #include "raster/raster.h"
+#include "raster/strip.h"
 
 enum pnm_type {
 	pnm_plain_pbm = '1',
@@ -21,9 +22,10 @@ enum pnm_type {
 	pnm_gray_pfm = 'f',
 	pnm_mtv = 1,
 
-	/* PGX format, defined in JPEG2000 Part 4 for conformance testing.
-	 * Though not explicitly related to other PNM formats, it's similar
-	 * enough it's easier to lump it together with them. */
+	/* PGX format, defined in JPEG2000 Part 4 Annex B.2.6 for conformance
+	 * testing.
+	 * Though not explicitly related to other PNM formats, it's so similar
+	 * it's easier to lump it here. */
 	pnm_pgx = 'G',
 };
 
@@ -34,12 +36,13 @@ struct pnm_desc {
 	size_t nr;
 	long data_start;
 	union {
-		uint32_t pnm;
+		unsigned pnm;
 		float pfm;
 	} scale;
 	unsigned char bytedepth;
 	enum pnm_type type:8;
 	enum endianness endian:8;
+	bool sign;
 };
 
 const char * pnm_type_str(enum pnm_type type);

@@ -11,13 +11,13 @@ struct wu_tree *tree) {
 		return;
 	}
 
-	struct wu_tree *file_branch = tree_sprout_branch(tree, "File");
+	struct wu_tree *file_branch = tree_add_branch(tree, "File");
 	if (file_branch) {
-		tree_sprout_unsafe_leaf(file_branch, "Name", macbin->name,
+		tree_add_measured_leaf(file_branch, "Name", macbin->name,
 			macbin->name_len);
-		tree_sprout_unsafe_leaf(file_branch, "Type", macbin->type,
+		tree_add_measured_leaf(file_branch, "Type", macbin->type,
 			sizeof(macbin->type));
-		tree_sprout_unsafe_leaf(file_branch, "Creator",
+		tree_add_measured_leaf(file_branch, "Creator",
 			macbin->creator, sizeof(macbin->creator));
 
 		const struct wu_tree_sap sap[] = {
@@ -33,7 +33,7 @@ struct wu_tree *tree) {
 		tree_bud_leaves(file_branch, sap, ARRAY_LEN(sap));
 	}
 
-	struct wu_tree *window_branch = tree_sprout_branch(tree, "Window");
+	struct wu_tree *window_branch = tree_add_branch(tree, "Window");
 	if (window_branch) {
 		const struct wu_tree_sap sap[] = {
 			{"y", {wu_leaf_unsigned, {.u = macbin->window.y}}},
@@ -57,7 +57,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 
 	if (desc.has_macbin_header) {
 		read_macbin_metadata(&desc.macbin,
-			tree_sprout_branch(&infile->metadata, "MacBinary"));
+			tree_add_branch(&infile->metadata, "MacBinary"));
 	}
 	tree_bud_leaf(&infile->metadata, "Version",
 		(struct wu_leaf){.val.u = desc.version, .type = wu_leaf_unsigned});

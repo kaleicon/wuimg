@@ -4,10 +4,10 @@
 #include <Lerc_c_api.h>
 
 static enum wu_error map_lerc_to_wu(const lerc_status status,
-const enum wu_error what_failed) {
+const enum wu_error fallback_fail) {
 	switch (status) {
 	case 0: return wu_ok;
-	case 1: return what_failed;
+	case 1: return fallback_fail;
 	case 2: return wu_invalid_params;
 	}
 	return wu_unknown_error;

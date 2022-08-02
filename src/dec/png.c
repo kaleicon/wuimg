@@ -59,7 +59,7 @@ struct image_file *infile) {
 					branch = tree_findadd_branch(tree, "Text");
 				}
 				if (branch) {
-					tree_sprout_leaf(branch, text[i].key,
+					tree_add_leaf(branch, text[i].key,
 						text[i].text);
 				}
 			}
@@ -136,8 +136,8 @@ struct color_space *cs) {
 	(void)png; (void)info; (void)cs;
 }
 
-static struct raster_pal * read_palette(const struct png_state *png) {
-	struct raster_pal *palette = malloc(sizeof(*palette));
+static bool read_palette(const struct png_state *png, struct raw_img *img) {
+	struct raster_pal *palette = raw_img_palette_init(img);
 	if (palette) {
 		png_color *plte;
 		int plte_num;
@@ -173,10 +173,11 @@ const struct wu_conf *wuconf, struct png_state *png) {
 		return wu_exceeds_size_limit;
 	}
 	if (png_get_color_type(png->png, png->info) == PNG_COLOR_TYPE_PALETTE) {
-		if (!raw_img_set_palette(img, read_palette(png))) {
+		if (!read_palette(png, img)) {
 			return wu_alloc_error;
 		}
 	}
+	img->ratio = png_get_pixel_aspect_ratio(png->png, png->info);
 
 	const enum wu_error st = raw_img_alloc(img);
 	if (st != wu_ok) {

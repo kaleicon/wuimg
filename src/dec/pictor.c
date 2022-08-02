@@ -2,12 +2,12 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../lib/pictor.h"
+#include "wudefs.h"
+#include "rast_utils.h"
+#include "lib/pictor.h"
 
-static void read_metadata(struct wu_tree *tree,
-const struct pictor_desc *desc) {
+static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+	const struct pictor_desc *desc = ptr;
 	const struct wu_tree_sap sap[] = {
 		{"X", {wu_leaf_unsigned, {.u = desc->x}}},
 		{"Y", {wu_leaf_unsigned, {.u = desc->y}}},
@@ -19,35 +19,28 @@ const struct pictor_desc *desc) {
 
 	const char *mode = pictor_video_mode(desc);
 	if (mode) {
-		tree_sprout_leaf(tree, "Video mode", mode);
+		tree_add_leaf(tree, "Video mode", mode);
 	}
 
 	const char *paltype = pictor_palette_str(desc->pal_type);
 	if (paltype) {
-		tree_sprout_leaf(tree, "Palette type", paltype);
+		tree_add_leaf(tree, "Palette type", paltype);
 	}
+}
+
+static size_t dec(const void *restrict ptr, struct raw_img *img) {
+	return pictor_decode(ptr, img);
+}
+static enum wu_error parse(void *restrict ptr, struct raw_img *img) {
+	return pictor_read_header(ptr, img);
+}
+static enum wu_error open(void *restrict ptr, FILE *ifp) {
+	return pictor_open_file(ptr, ifp);
 }
 
 enum wu_error pictor_dec(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct pictor_desc desc;
-	enum wu_error st = pictor_open_file(&desc, infile->ifp);
-	if (st == wu_ok) {
-		struct raw_img *img = alloc_sub_images(infile, 1);
-		if (img) {
-			st = pictor_read_header(&desc, img);
-			if (st == wu_ok) {
-				read_metadata(&infile->metadata, &desc);
-				if (!raw_img_exceeds_limit(img, conf)) {
-					return pictor_decode(&desc, img)
-						? wu_ok : wu_decoding_error;
-				}
-				return wu_exceeds_size_limit;
-			}
-			return st;
-		}
-		return wu_alloc_error;
-	}
-	return st;
-
+	return rast_trivial_dec(infile, conf, &desc, open, parse, metadata,
+		dec, NULL);
 }

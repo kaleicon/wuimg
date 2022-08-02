@@ -4,7 +4,6 @@
 
 #include "raster/file.h"
 #include "raster/fmt.h"
-#include "raster/pix.h"
 #include "raster/unpack.h"
 #include "sgi.h"
 

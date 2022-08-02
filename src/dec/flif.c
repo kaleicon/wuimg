@@ -29,8 +29,7 @@ static enum wu_error decode_frame(struct raw_img *img, FLIF_IMAGE *frame,
 struct flif_state *ds) {
 	const size_t stride = raw_img_stride(img);
 	for (uint32_t y = 0; y < img->h; ++y) {
-		unsigned char *data = img->data + y * stride;
-		ds->read_func(frame, y, data, stride);
+		ds->read_func(frame, y, img->data + y*stride, stride);
 	}
 	return wu_ok;
 }
@@ -84,7 +83,7 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 	img->alpha = alpha_unassociated;
 
 	if (img->channels == 1 && flif_image_get_palette_size(frame)) {
-		raw_img_set_palette(img, malloc(sizeof(*img->u.palette)));
+		raw_img_palette_init(img);
 	}
 
 	if (img->mode == image_mode_palette) {

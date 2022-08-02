@@ -1,5 +1,28 @@
+#include <stdlib.h>
+
 #include "common.h"
 #include "raster/file.h"
+
+uint8_t * fileccpy(struct wugrow *grow, const uint8_t ch, const size_t max,
+FILE *ifp) {
+	uint8_t *buf = NULL;
+	*grow = wugrow_init(sizeof(*buf));
+	while (grow->pos < max) {
+		const int c = getc(ifp);
+		if (c == EOF) {
+			break;
+		} else if (c == ch) {
+			return buf;
+		}
+		if (!wugrow_recheck(&buf, grow)) {
+			break;
+		}
+		buf[grow->pos] = (uint8_t)c;
+		++grow->pos;
+	}
+	free(buf);
+	return NULL;
+}
 
 size_t fread_tail(void *buf, const size_t size, const size_t nmemb,
 FILE *ifp) {

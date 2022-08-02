@@ -51,7 +51,7 @@ unsigned char header[static 12]) {
 	if (!palette) {
 		return wu_alloc_error;
 	}
-	raw_img_set_palette(img, palette);
+	raw_img_palette_set(img, palette);
 
 	for (size_t n = 0; n < clut->nb; ++n) {
 		struct raster_pal *pal = palette + n;
@@ -140,6 +140,7 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
 		}
 	}
 
+	desc->clut.nb = 0;
 	if (flags & 0x8) {
 		if (depth > 8) {
 			return wu_invalid_header;

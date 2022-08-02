@@ -10,7 +10,7 @@
 #include "raster/pix.h"
 #include "raster/unpack.h"
 
-//#define WU_GL_DEBUG
+//define WU_DEBUG_GL
 
 /* GLSL variables */
 #define ATTR_POS "pos"
@@ -18,14 +18,13 @@
 #define UNI_IMG "img"
 #define UNI_PAL "pal"
 #define UNI_PLANE3 "plane3"
-#define UNI_PLANE4 "plane4"
+#define UNI_PLANE_ALPHA "plane4"
 #define UNI_CMS_LUT "cms_lut"
 
 #define UNI_POS_MATRIX "pos_matrix"
 #define UNI_COLOR_MODE "color_mode"
 #define UNI_ALPHA_OP "alpha_op"
 #define UNI_CMS_MODE "cms_mode"
-#define UNI_PLANE_OFFSETS "plane_offsets"
 #define UNI_TO_RGBA "to_rgba"
 #define UNI_CMS_MAT "cms_mat"
 #define UNI_TRANSFER "transfer"
@@ -44,24 +43,27 @@
 #define TRANSFER_PQ "2"
 #define TRANSFER_HLG "3"
 
+#define ALPHA_MULTIPLY "0"
+#define ALPHA_NO_MULTIPLY "1"
+#define ALPHA_UNMULTIPLY "2"
+
 static const GLint WU_MIPMAP_MAX = 6;
 
 enum gl_mag_filter {
-	gl_mag_best = GL_LINEAR,
-	gl_mag_fast = GL_NEAREST,
+	gl_mag_linear = GL_LINEAR,
+	gl_mag_nearest = GL_NEAREST,
 };
 
 enum gl_min_filter {
-//	gl_min_linear = GL_LINEAR,
 	gl_min_linear = GL_LINEAR_MIPMAP_LINEAR,
 	gl_min_nearest = GL_NEAREST,
 };
 
 enum gl_tex_unit {
-	gl_tex_img,
+	gl_tex_img = 0,
 	gl_tex_pal,
 	gl_tex_plane3,
-	gl_tex_plane4,
+	gl_tex_plane_alpha,
 	gl_tex_cms,
 	gl_tex_reader,
 };
@@ -117,33 +119,69 @@ void gl_terminate(struct gl_context *context) {
 }
 
 static void set_alpha_ops(const struct gl_context *context) {
-	const int alpha = (context->user_alpha + context->alpha) % 6;
-	const GLint ops[] = {
-		!(alpha & alpha_no_multiply),
-		alpha >> 1,
-	};
+	const int alpha = (context->user_alpha + context->tex.alpha) % 6;
+	GLint ops[2];
+	if (context->unmultiply) {
+		ops[0] = (alpha == alpha_associated) ? 2 : alpha_no_multiply;
+	} else {
+		ops[0] = alpha & alpha_no_multiply;
+	}
+	ops[1] = alpha >> 1;
 	glUniform1iv(context->uni.alpha_op, ARRAY_LEN(ops), ops);
 }
 
 void gl_alpha_toggle(struct gl_context *context, const int cycle) {
 	context->user_alpha = (uint8_t)imod(context->user_alpha + cycle, 6);
-	context->update_matrix = true;
+	context->update = gl_update_redraw;
 	set_alpha_ops(context);
 }
 
-static float fix_aspect_ratio(GLfloat *mat, const struct gl_context *context,
+static void tex_active(const enum gl_tex_unit unit) {
+	glActiveTexture(GL_TEXTURE0 + (GLenum)unit);
+}
+
+static void tex_2d_parameteri(const GLenum name, const GLint param) {
+	glTexParameteri(GL_TEXTURE_2D, name, param);
+}
+
+static void tex_2d_mag(const enum gl_mag_filter filter) {
+	tex_2d_parameteri(GL_TEXTURE_MAG_FILTER, filter);
+}
+
+static void set_mag_filter(const unsigned subsamp, const bool good) {
+	for (enum gl_tex_unit i = gl_tex_img; i <= gl_tex_plane_alpha; ++i) {
+		if ((subsamp >> i) & 1) {
+			tex_active(i);
+			tex_2d_mag(good ? gl_mag_linear : gl_mag_nearest);
+		}
+	}
+	tex_active(gl_tex_img);
+}
+
+static void fix_aspect_ratio(struct mat3f *mat, struct gl_context *context,
 const int rotate) {
-	// Scale the image to its natural size, taking rotation into account.
-	const int r1 = rotate & 1;
-	const float ratio_w = context->tex.w * context->fb_wh[r1];
-	const float ratio_h = context->tex.h * context->fb_wh[r1^1];
+	/* Scale the image to its natural size and aspect ratio, taking
+	 * rotation into account. */
+	float horz = context->tex.ratio;
+	float vert = 1;
+	if (horz < 1) { // Ensure all pixels are visible.
+		vert = 1/horz;
+		horz = 1;
+	}
+	const int r1 = (context->tex.rotate + rotate) & 1;
+	const float w = context->tex.w * context->pix_size[r1] * horz;
+	const float h = context->tex.h * context->pix_size[r1^1] * vert;
 
 	if (mat) {
-		const int r2 = 5 - r1;
-		mat[r1] *= ratio_w;
-		mat[r2] *= ratio_h;
+		const int r2 = 4 - r1;
+		mat->m[r1] *= w;
+		mat->m[r2] *= h;
 	}
-	return 1 / fmaxf(ratio_w, ratio_h);
+	context->tex.fit_zoom = 1 / fmaxf(w, h);
+}
+
+static void calc_fit_zoom(struct gl_context *context) {
+	fix_aspect_ratio(NULL, context, 0);
 }
 
 static int bool_to_sign(const bool val) {
@@ -154,60 +192,77 @@ static GLfloat hard_math(const int rotate) {
 	return (GLfloat)( (rotate & 1) * bool_to_sign(rotate & 2) );
 }
 
-static void set_mirrot(GLfloat *mat, const int rotate, const bool mirror) {
+static void set_mirrot(struct mat3f *mat, const int rotate, const bool mirror) {
 	// Do some hard math to apply both rotation and mirroring
 	const GLfloat cosy = hard_math(rotate - 1);
 	const GLfloat sinner = hard_math(rotate);
-	const GLfloat mirror_mult = (GLfloat)bool_to_sign(mirror);
+	/* GL textures are bottom-up, so we negate mirror_mult to flip to
+	 * top-down without anyone knowing. */
+	const GLfloat mirror_mult = (GLfloat)-bool_to_sign(mirror);
 
-	/* GL textures are bottom-up. We switch the signs of mirror_mult to
-	 * flip to top-down without anyone knowing. */
-	mat[0] = cosy;
-	mat[1] = sinner;
-	mat[4] = sinner * -mirror_mult;
-	mat[5] = cosy * mirror_mult;
+	mat->m[0] = cosy;
+	mat->m[1] = sinner;
+	mat->m[3] = sinner * mirror_mult;
+	mat->m[4] = cosy * -mirror_mult;
 }
 
-void gl_matrix_update(struct gl_context *context, struct wu_state *state) {
-	GLfloat mat[16] = {
-		1, 0, 0, 0,
-		0, 1, 0, 0,
-		0, 0, 1, 0,
-		0, 0, 0, 1,
-	};
-
+static void matrix_update(struct gl_context *context,
+const struct wu_state *state) {
+	struct mat3f mat = {0};
 	const int rot = context->tex.rotate + state->rotate;
-	set_mirrot(mat, rot, context->tex.mirror ^ state->mirror);
-	state->fit_zoom = fix_aspect_ratio(mat, context, rot);
+	set_mirrot(&mat, rot, context->tex.mirror ^ state->mirror);
+	fix_aspect_ratio(&mat, context, rot);
 
-	/* We receive input measured in pixels from the top left corner, which
-	 * is sort of like the interval 0..1, but GL renders from the center
-	 * between -1..1, so we scale offsets by 2 to keep things working. */
+	/* Offsets are measured in pixels, but for the matrix a doubling is
+	 * needed for some reason. */
 	const float scale = 2;
 	/* Using exact integer offsets causes ugly artifacts when rendering.
-	 * We add a fraction of a pixel to remedy this. */
+	 * We add a fraction of a pixel to fix this. */
 	const float fix = 1.0f / 17.0f;
-	mat[12] += (floorf( state->x_offset*scale) + fix) * context->fb_wh[0];
-	mat[13] += (floorf(-state->y_offset*scale) + fix) * context->fb_wh[1];
-	mat[15] = 1 / state->zoom;
-	glUniformMatrix4fv(context->uni.pos_matrix, 1, GL_FALSE, mat);
+	mat.m[6] = (floorf( state->x_offset*scale) + fix) * context->pix_size[0];
+	mat.m[7] = (floorf(-state->y_offset*scale) + fix) * context->pix_size[1];
+	mat.m[8] = 1 / state->zoom;
+	glUniformMatrix3fv(context->uni.pos_matrix, 1, GL_FALSE, mat.m);
 
-	context->update_matrix = false;
+	if (context->tex.mode == image_mode_planar && context->tex.subsamp) {
+		set_mag_filter(context->tex.subsamp, mat.m[8] >= 0.99);
+	}
 }
 
-float gl_fit_zoom(const struct gl_context *context, const uint8_t rotation) {
-	return fix_aspect_ratio(NULL, context, rotation);
+bool gl_draw(struct gl_context *context, const struct wu_state *state) {
+	switch (context->update) {
+	case gl_update_matrix:
+		matrix_update(context, state);
+		// fallthrough
+	case gl_update_redraw:
+		gl_clock_start(context);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		gl_clock_end();
+		context->update = gl_update_none;
+		return true;
+	case gl_update_none:
+		break;
+	}
+	return false;
+}
+
+void gl_clear_color(const uint8_t bg[static 4]) {
+	const float scale = 1.0f / UCHAR_MAX;
+	const float alpha = (float)bg[3] * scale;
+	float rgb[3];
+	for (size_t i = 0; i < ARRAY_LEN(rgb); ++i) {
+		rgb[i] = bg[i] * scale * alpha;
+	}
+	glClearColor(rgb[0], rgb[1], rgb[2], alpha);
 }
 
 void gl_viewport(struct gl_context *context, const struct display_dims *dims) {
-	context->fb_wh[0] = 1.0f/(float)dims->w;
-	context->fb_wh[1] = 1.0f/(float)dims->h;
-	context->update_matrix = true;
+	context->pix_size[0] = (float)(1.0/dims->w);
+	context->pix_size[1] = (float)(1.0/dims->h);
+	calc_fit_zoom(context);
+	context->update = gl_update_matrix;
 	glViewport(0, 0, (int)dims->w, (int)dims->h);
-}
-
-static void tex_active(const enum gl_tex_unit unit) {
-	glActiveTexture(GL_TEXTURE0 + unit);
 }
 
 static void tex_filter(const GLenum target, const GLint level,
@@ -217,13 +272,9 @@ const enum gl_min_filter min, const enum gl_mag_filter mag) {
 	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, mag);
 }
 
-static void tex_2d_parameteri(const GLenum name, const GLint param) {
-	glTexParameteri(GL_TEXTURE_2D, name, param);
-}
-
 static void tex_2d_swizzle(const enum pix_layout layout) {
-	GLint swz[pix_color_total] = {GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA};
-	pix_layout_swizzle(swz, pix_color_total, sizeof(*swz), layout);
+	GLint swz[] = {GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA};
+	pix_layout_swizzle(swz, sizeof(*swz), ARRAY_LEN(swz), layout);
 	glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swz);
 }
 
@@ -294,30 +345,31 @@ static void palette_parameters(const bool enable) {
 	if (enable) {
 		level = 0;
 		min = gl_min_nearest;
+		// Set size so that bitdepths < 8 work correctly
 		tex_2d(GL_RGBA, 256, 1, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	} else {
 		level = WU_MIPMAP_MAX;
 		min = gl_min_linear;
 		tex_2d_null();
 	}
-	tex_2d_parameteri(GL_TEXTURE_MAX_LEVEL, level);
-	tex_2d_parameteri(GL_TEXTURE_MIN_FILTER, min);
+	tex_filter(GL_TEXTURE_2D, level, min, gl_mag_nearest);
 	tex_active(gl_tex_img);
-	tex_2d_parameteri(GL_TEXTURE_MIN_FILTER, min);
+	tex_filter(GL_TEXTURE_2D, WU_MIPMAP_MAX, min, gl_mag_nearest);
 }
 
 static void planar_disable(const enum gl_tex_unit start) {
-	for (enum gl_tex_unit i = start; i <= gl_tex_plane4; ++i) {
+	for (enum gl_tex_unit i = start; i <= gl_tex_plane_alpha; ++i) {
 		tex_active(i);
 		tex_2d_null();
+		tex_2d_mag(gl_mag_nearest);
 	}
 	tex_active(gl_tex_img);
 }
 
 static void switch_color_mode(struct gl_context *context,
 const enum image_mode new_mode) {
-	if (new_mode != context->mode) {
-		switch (context->mode) {
+	if (new_mode != context->tex.mode) {
+		switch (context->tex.mode) {
 		case image_mode_raw: break;
 		case image_mode_palette:
 			palette_parameters(false);
@@ -332,7 +384,7 @@ const enum image_mode new_mode) {
 			palette_parameters(true);
 		}
 
-		context->mode = new_mode;
+		context->tex.mode = new_mode;
 		glUniform1i(context->uni.color_mode, new_mode);
 	}
 }
@@ -363,7 +415,7 @@ const unsigned char *data) {
 		unpack_or_copy_strip(map + outstride*y, data + instride*y,
 			w, img->bitdepth, img->attr, op);
 	}
-	printf("unpacked in %f\n", clock_ellapsed(start));
+	clock_print("Unpacked", start);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
@@ -397,12 +449,17 @@ const void *data) {
 
 static bool planar_upload(struct gl_context *context,
 const struct raw_img *img, const struct gl_upload_params *params) {
+	uint8_t map[4];
+	pix_layout_invert(map, img->layout);
+	context->tex.subsamp = 0;
 	for (uint8_t i = 0; i < 4; ++i) {
-		const struct plane_info *p = img->u.planes->p;
-		tex_active(i);
+		tex_active(map[i]);
 		if (i < img->channels) {
-			tex_upload(context, img, params, p[i].w, p[i].h,
-				p[i].ptr);
+			const struct plane_info *p = img->u.planes->p + i;
+			tex_upload(context, img, params, p->w, p->h, p->ptr);
+			if (p->x.subsamp > 1 || p->y.subsamp > 1) {
+				context->tex.subsamp |= 1 << map[i];
+			}
 		} else {
 			tex_2d_solid();
 		}
@@ -435,29 +492,26 @@ const struct gl_upload_params *params) {
 	return false;
 }
 
+static GLint in_fmt_lut(const int depth_log, const uint8_t ch) {
+	const GLint lut[][4] = {
+		{GL_R8, GL_RG8, GL_RGB8, GL_RGBA8},
+		{GL_R16, GL_RG16, GL_RGB16, GL_RGBA16},
+		{GL_R32F, GL_RG32F, GL_RGB32F, GL_RGBA32F},
+	};
+	return lut[depth_log][ch - 1];
+}
+
 static GLenum type_lut(const int depth_log, const enum pix_attr attr) {
 	switch (depth_log) {
-	case 0: switch (attr) {
-		case pix_normal: case pix_inverted: return GL_UNSIGNED_BYTE;
-		case pix_signed: return GL_BYTE;
-		default: break;
-		}
-		break;
-	case 1: switch (attr) {
-		case pix_normal: case pix_inverted: return GL_UNSIGNED_SHORT;
-		case pix_signed: return GL_SHORT;
-		case pix_float: return GL_HALF_FLOAT;
-		default: break;
-		}
-		break;
-	case 2: switch (attr) {
-		case pix_normal: case pix_inverted: return GL_UNSIGNED_INT;
-		case pix_signed: return GL_INT;
-		case pix_float: return GL_FLOAT;
-		default: break;
-		}
+	case 0: return GL_UNSIGNED_BYTE;
+	case 1: return (attr == pix_float) ? GL_HALF_FLOAT : GL_UNSIGNED_SHORT;
+	case 2: return (attr == pix_float) ? GL_FLOAT : GL_UNSIGNED_INT;
 	}
 	return 0;
+}
+
+static int bitdepth_log(const uint8_t bd) {
+	return imin(ilog2(bd+7) - 3, 2);
 }
 
 static const char * set_upload_params(struct gl_upload_params *params,
@@ -517,15 +571,9 @@ const struct raw_img *img) {
 		return "Invalid pix attribute";
 	}
 
-	const GLint in_fmt_lut[][4] = {
-		{GL_R8, GL_RG8, GL_RGB8, GL_RGBA8},
-		{GL_R16, GL_RG16, GL_RGB16, GL_RGBA16},
-		{GL_R32F, GL_RG32F, GL_RGB32F, GL_RGBA32F},
-	};
 	const GLenum fmt_lut[] = {GL_RED, GL_RG, GL_BGR, GL_BGRA};
-
-	const int depth = imin(ilog2(bd+7) - 3, 2);
-	params->in_fmt = in_fmt_lut[depth][ch - 1];
+	const int depth = bitdepth_log(bd);
+	params->in_fmt = in_fmt_lut(depth, ch);
 	params->fmt = fmt_lut[ch - 1];
 	params->type = type_lut(depth, img->attr);
 	if (ch >= 3) {
@@ -571,20 +619,18 @@ cmsHPROFILE out) {
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	tex_cms(size);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-	printf("created in %f\n", clock_ellapsed(start));
+	clock_print("icc lut created", start);
 	return true;
 }
 
 static void set_cms(struct gl_context *context, struct raw_img *img) {
 	struct color_space *cs = &img->cs;
 	const struct gl_uni *uni = &context->uni;
-	if (img->mode == image_mode_planar) {
-		struct color_mat cm;
-		color_mat_gen(&cm, cs, img->layout);
 
-		glUniform4fv(uni->plane_offsets, 1, cm.off);
-		glUniformMatrix4fv(uni->to_rgba, 1, GL_FALSE, cm.mat);
-	}
+	struct color_convert conv;
+	const bool spacewalk = color_space_to_linear_sRGB(cs, &conv,
+		(img->mode == image_mode_planar) ? img->layout : pix_rgba);
+	glUniformMatrix4x3fv(uni->to_rgba, 1, GL_FALSE, conv.nonlinear.m);
 
 	enum gl_cms_mode {
 		gl_cms_none,
@@ -595,23 +641,22 @@ static void set_cms(struct gl_context *context, struct raw_img *img) {
 		if (!context->icc) {
 			context->icc = color_icc_linear_sRGB();
 		}
-		if (context->icc) {
-			if (set_icc_lut(context->pixel_unpack_buf, cs,
-			context->icc)) {
-				mode = gl_cms_lut;
-			}
+		if (context->icc
+		&& set_icc_lut(context->pixel_unpack_buf, cs, context->icc)) {
+			mode = gl_cms_lut;
 		}
 	}
 
 	if (mode != gl_cms_lut) {
 		tex_cms(0);
-		struct color_convert conv;
-		if (color_space_to_linear_sRGB(cs, &conv)) {
-			glUniformMatrix3fv(uni->cms_mat, 1, GL_FALSE, conv.mat);
+		glUniform1i(uni->transfer, conv.eotf.fn);
+		glUniform1fv(uni->args, ARRAY_LEN(conv.eotf.args),
+			conv.eotf.args);
+		if (spacewalk) {
 			mode = gl_cms_spacewalk;
+			glUniformMatrix3fv(uni->cms_mat, 1, GL_FALSE,
+				conv.linear.m);
 		}
-		glUniform1i(uni->transfer, conv.eotf);
-		glUniform1fv(uni->args, ARRAY_LEN(conv.args), conv.args);
 	}
 	glUniform1i(uni->cms_mode, mode);
 }
@@ -619,7 +664,7 @@ static void set_cms(struct gl_context *context, struct raw_img *img) {
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 struct raw_img *img) {
 	if (img->channels > 4) {
-		printf("Number of color channels unsupported (%d given)\n",
+		fprintf(stderr, "Number of color channels unsupported (%d given)\n",
 			img->channels);
 		return gl_upload_fail;
 	}
@@ -639,50 +684,35 @@ struct raw_img *img) {
 
 	const char *errmsg = set_upload_params(&params, img);
 	if (errmsg) {
-		puts(errmsg);
+		fputs(errmsg, stderr);
 		return gl_upload_fail;
 	}
 
 	if (!mode_upload(context, img, &params)) {
 		return gl_upload_fail;
 	}
-
-	context->alpha = img->alpha;
-	set_alpha_ops(context);
-
 	gl_clock_end();
+
 	context->tex.rotate = img->rotate;
 	context->tex.mirror = img->mirror;
-	if (context->tex.w != (int)img->w || context->tex.h != (int)img->h) {
+	context->tex.alpha = img->alpha;
+	context->tex.ratio = img->ratio;
+	context->update = gl_update_matrix;
+	set_alpha_ops(context);
+	if (context->tex.w != (float)img->w || context->tex.h != (float)img->h) {
 		context->tex.w = (float)img->w;
 		context->tex.h = (float)img->h;
+		calc_fit_zoom(context);
 		return gl_upload_success;
 	}
 	return gl_upload_same_size;
 }
 
-void gl_draw(const struct gl_context *context) {
-	gl_clock_start(context);
-	glClear(GL_COLOR_BUFFER_BIT);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	gl_clock_end();
-}
-
-void gl_clear_color(const uint8_t bg[static 4]) {
-	const float scale = 1.0f / UCHAR_MAX;
-	const float alpha = bg[3] * scale;
-	float sRGB[3];
-	for (size_t i = 0; i < ARRAY_LEN(sRGB); ++i) {
-		sRGB[i] = powf(bg[i] * scale, 0.454545f) * alpha;
-	}
-	glClearColor(sRGB[0], sRGB[1], sRGB[2], alpha);
-}
-
 void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
 const struct gl_reader *reader, void *restrict dst, const size_t row) {
 	state->y_offset = (float)row;
-	gl_matrix_update(context, state);
-	gl_draw(context);
+	context->update = gl_update_matrix;
+	gl_draw(context, state);
 	glReadPixels(0, 0, (GLsizei)reader->w, 1, reader->fmt, reader->type,
 		dst);
 }
@@ -705,24 +735,23 @@ static unsigned char get_render_channels(const struct raw_img *img) {
 	return ch;
 }
 
-bool gl_reader_set(struct gl_context *context, struct wu_state *state,
-struct gl_reader *r, const struct raw_img *img) {
-	const GLint in_fmts[][4] = {
-		{GL_R8, GL_RG8, GL_RGB8, GL_RGBA8},
-		{GL_R16, GL_RG16, GL_RGB16, GL_RGBA16},
-	};
-	const GLenum fmts[] = {GL_RED, GL_RG, GL_RGB, GL_RGBA};
+bool gl_reader_set(struct gl_context *context, struct gl_reader *r,
+struct wu_state *state, const struct raw_img *img) {
+	context->tex.ratio = 1;
 
 	const bool swap = img->rotate & 1;
 	r->w = (swap) ? img->h : img->w;
 	r->h = (swap) ? img->w : img->h;
 	r->ch = get_render_channels(img);
 	r->bd = (img->bitdepth > 8) ? 16 : 8;
-	r->fmt = fmts[r->ch - 1];
-	r->type = (img->bitdepth > 8) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE;
-	r->len = r->w * r->ch * (r->bd / 8);
 
-	const GLint in_fmt = in_fmts[img->bitdepth > 8][r->ch - 1];
+	const GLenum fmts[] = {GL_RED, GL_RG, GL_RGB, GL_RGBA};
+	const int depth_log = bitdepth_log(r->bd);
+	r->fmt = fmts[r->ch - 1];
+	r->type = type_lut(depth_log, pix_normal);
+	r->len = scanline_length(r->w * r->ch, r->bd, 1);
+
+	const GLint in_fmt = in_fmt_lut(depth_log, r->ch);
 
 	tex_active(gl_tex_reader);
 	tex_2d(in_fmt, (GLsizei)r->w, 1, r->fmt, r->type, NULL);
@@ -733,10 +762,8 @@ struct gl_reader *r, const struct raw_img *img) {
 	}
 
 	state->zoom = 1;
-	state->rotate = img->rotate;
-	state->mirror = !img->mirror; /* At this point I don't know why this
-		extra flip is needed. */
-
+	state->rotate = 0;
+	state->mirror = true;
 	struct display_dims dims = {
 		.w = (int)r->w,
 		.h = (int)r->h,
@@ -751,6 +778,7 @@ struct gl_reader *r, const struct raw_img *img) {
 
 void gl_reader_unbind(void) {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glEnable(GL_BLEND);
 }
 
 void gl_reader_bind(struct gl_context *context) {
@@ -764,12 +792,14 @@ void gl_reader_bind(struct gl_context *context) {
 		glGenTextures(1, &tex);
 		tex_active(gl_tex_reader);
 		glBindTexture(GL_TEXTURE_2D, tex);
-		tex_filter(GL_TEXTURE_2D, 0, gl_min_nearest, gl_mag_fast);
+		tex_filter(GL_TEXTURE_2D, 0, gl_min_nearest, gl_mag_nearest);
 
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 			GL_TEXTURE_2D, tex, 0);
 		tex_active(gl_tex_img);
 	}
+	glDisable(GL_BLEND);
+	context->unmultiply = true;
 }
 
 static void enable_bind_tex(const GLint idx, const GLuint *texs,
@@ -779,9 +809,7 @@ const GLint *samps, const GLenum target) {
 	glUniform1i(samps[idx], idx);
 
 	const GLint wrap = GL_CLAMP_TO_EDGE;
-	if (target == GL_TEXTURE_3D) {
-		glTexParameteri(target, GL_TEXTURE_WRAP_R, wrap);
-	}
+	glTexParameteri(target, GL_TEXTURE_WRAP_R, wrap);
 	glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap);
 	glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap);
 }
@@ -789,13 +817,13 @@ const GLint *samps, const GLenum target) {
 static void setup_texture_cms(const GLint idx, const GLuint *texs,
 const GLint *samps) {
 	enable_bind_tex(idx, texs, samps, GL_TEXTURE_3D);
-	tex_filter(GL_TEXTURE_3D, 0, gl_min_nearest, gl_mag_best);
+	tex_filter(GL_TEXTURE_3D, 0, gl_min_nearest, gl_mag_linear);
 }
 
 static void setup_texture2d(const GLint idx, const GLuint *texs,
 const GLint *samps) {
 	enable_bind_tex(idx, texs, samps, GL_TEXTURE_2D);
-	tex_filter(GL_TEXTURE_2D, WU_MIPMAP_MAX, gl_min_linear, gl_mag_fast);
+	tex_filter(GL_TEXTURE_2D, WU_MIPMAP_MAX, gl_min_linear, gl_mag_nearest);
 }
 
 static bool check_uniforms(const GLint *uniforms, const size_t len) {
@@ -850,7 +878,7 @@ static GLuint setup_shader(const char *shader_code, const GLenum type) {
 		GL_COMPILE_STATUS);
 }
 
-#ifdef WU_GL_DEBUG
+#ifdef WU_DEBUG_GL
 static void debug_print(GLenum source, GLenum type, GLuint id, GLenum severity,
 GLsizei len, const GLchar *message, const void *user_data) {
 	(void)source;
@@ -860,10 +888,10 @@ GLsizei len, const GLchar *message, const void *user_data) {
 	(void)user_data;
 	print_gl_message(message, len);
 }
-#endif /* WU_GL_DEBUG */
+#endif /* WU_DEBUG_GL */
 
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
-#ifdef WU_GL_DEBUG
+#ifdef WU_DEBUG_GL
 	fprintf(stderr, "vendor: %s\n"
 		"renderer: %s\n"
 		"version: %s\n"
@@ -872,43 +900,52 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
 	glDebugMessageCallback(debug_print, NULL);
 	glEnable(GL_DEBUG_OUTPUT);
-#endif /* WU_GL_DEBUG */
+#endif /* WU_DEBUG_GL */
 
 	const char vs[] =
 		"#version 330 core\n"
 		"in vec2 " ATTR_POS ";"
 		"out vec2 texcoord;"
-		"uniform mat4 " UNI_POS_MATRIX ";"
+		"uniform mat3 " UNI_POS_MATRIX ";"
 		"void main() {"
-			"texcoord = " ATTR_POS " * vec2(0.5) + vec2(0.5);"
-			"gl_Position = " UNI_POS_MATRIX " * vec4(" ATTR_POS ", 0, 1);"
+			"texcoord =" ATTR_POS " * vec2(.5) + vec2(.5);"
+			"gl_Position = vec4(" ATTR_POS ", 0.0, 1.0);"
+			"gl_Position.xyw =" UNI_POS_MATRIX " * gl_Position.xyw;"
 		"}";
 	const char fs[] =
 		"#version 330 core\n"
 		"in vec2 texcoord;"
-		"in float zoom;"
 		"out vec4 color;"
 
 		"uniform sampler2D " UNI_IMG ";"
 		"uniform sampler2D " UNI_PAL ";"
 		"uniform sampler2D " UNI_PLANE3 ";"
-		"uniform sampler2D " UNI_PLANE4 ";"
+		"uniform sampler2D " UNI_PLANE_ALPHA ";"
 		"uniform sampler3D " UNI_CMS_LUT ";"
 
 		"uniform int " UNI_COLOR_MODE ";"
 		"uniform int " UNI_CMS_MODE ";"
 		"uniform int[2] " UNI_ALPHA_OP ";"
-		"uniform vec4 " UNI_PLANE_OFFSETS ";"
-		"uniform mat4 " UNI_TO_RGBA ";"
+		"uniform mat4x3 " UNI_TO_RGBA ";"
 		"uniform mat3 " UNI_CMS_MAT ";"
 		"uniform int " UNI_TRANSFER ";"
 		"uniform float[5] " UNI_ARGS ";"
 
 		"void gen_check_pattern() {"
-			"vec2 d = floor(texcoord / fwidth(texcoord) * vec2(1./16.));"
-			"float s = (d.x + d.y) * .5;"
-			"float bg = (s - floor(s)) * .5 + .5;"
+			"vec2 d = floor(texcoord * textureSize(" UNI_IMG ", 0) * vec2(1./32.));"
+			"float bg = fract(dot(d, vec2(.5))) * .5 + .5;"
 			"color.rgb += vec3(bg - bg * color.a);"
+		"}"
+
+		"float srgb_oetf(float c) {"
+			"if (c > 0.0031308) {"
+				"return pow(c, 1.0/2.4) * 1.055 - 0.055;"
+			"}"
+			"return c * 12.92;"
+		"}"
+
+		"float setsign(float x, float y) {"
+			"return y >= 0.0 ? x : -x;"
 		"}"
 		"float linear_gamma(float c, float[5] arg) {"
 			"if (c > arg[0]) {"
@@ -916,35 +953,26 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"}"
 			"return c * arg[4];"
 		"}"
-		"float log_transfer(float c, float[5] arg) {"
-			"if (c > arg[0]) {"
-				"return exp2(c * arg[1] - arg[1]);"
-			"}"
-			"return c;"
-		"}"
 		"vec3 perceptual_quantization(vec3 c, float[5] arg) {"
-			"vec3 nc = pow(c, vec3(arg[1]));"
+			"vec3 nc = pow(c, vec3(arg[0]));"
 			"return pow("
-				"max(nc - vec3(arg[2]), 0)"
-					"/ (vec3(arg[3]) - vec3(arg[4])*nc),"
-				"vec3(arg[0]));"
+				"max(nc - vec3(arg[1]), vec3(0.0))"
+					"/ (vec3(arg[2]) - vec3(arg[3])*nc),"
+				"vec3(arg[4]));"
 		"}"
 		"float hybrid_log_gamma(float c, float[5] arg) {"
-			"if (c > 0.5) {"
-				"return exp2(c * arg[0] + arg[1]) + arg[2];"
+			"if (c > arg[0]) {"
+				"return exp2(c * arg[1] + arg[2]) + arg[3];"
 			"}"
-			"return c * c * (1.0 / 3.0);"
+			"return c * c * arg[4];"
 		"}"
 		"vec3 eotf(vec3 c) {"
 			"switch (" UNI_TRANSFER ") {"
 			"case " TRANSFER_LINEAR_GAMMA ":"
 				"for (int i = 0; i < 3; ++i) {"
-					"c[i] = linear_gamma(c[i]," UNI_ARGS ");"
-				"}"
-				"break;"
-			"case " TRANSFER_LOG ":"
-				"for (int i = 0; i < 3; ++i) {"
-					"c[i] = log_transfer(c[i]," UNI_ARGS ");"
+					"c[i] = setsign("
+						"linear_gamma(abs(c[i])," UNI_ARGS "),"
+						"c[i]);"
 				"}"
 				"break;"
 			"case " TRANSFER_PQ ":"
@@ -960,12 +988,12 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"}"
 		"void main() {"
 			"if (" UNI_COLOR_MODE "==" COLOR_PLANAR ") {"
-				"color = (vec4("
+				"color = vec4("
 					"texture(" UNI_IMG ", texcoord).r,"
 					"texture(" UNI_PAL ", texcoord).r,"
 					"texture(" UNI_PLANE3 ", texcoord).r,"
-					"texture(" UNI_PLANE4 ", texcoord).r"
-				") +" UNI_PLANE_OFFSETS ") *" UNI_TO_RGBA ";"
+					"texture(" UNI_PLANE_ALPHA ", texcoord).r"
+				");"
 			"} else {"
 				"color = texture(" UNI_IMG ", texcoord);"
 				"if (" UNI_COLOR_MODE "==" COLOR_PALETTE ") {"
@@ -974,6 +1002,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 				"}"
 			"}"
 
+			"color.rgb = (" UNI_TO_RGBA "* vec4(color.rgb, 1.0)).rgb;"
 			"if (" UNI_CMS_MODE "==" CMS_LUT ") {"
 				"color.rgb = texture("
 					UNI_CMS_LUT ", color.rgb).rgb;"
@@ -984,15 +1013,22 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 				"}"
 			"}"
 
-//			"color.rgb = pow(color.rgb, vec3(0.454545));"
-			"if (bool(" UNI_ALPHA_OP "[0])) {"
-				"color.rgb *= color.aaa;"
+			"switch (" UNI_ALPHA_OP "[0]) {"
+			"case " ALPHA_MULTIPLY ": color.rgb *= color.aaa; break;"
+			"case " ALPHA_NO_MULTIPLY ": break;"
+			"case " ALPHA_UNMULTIPLY ":"
+				"if (color.a != 0.0) {"
+					"color.rgb /= color.aaa; break;"
+				"}"
+				"break;"
 			"}"
 			"switch (" UNI_ALPHA_OP "[1]) {"
-			"case 2:"
-				"gen_check_pattern();" // fallthrough
-			"case 1:"
-				"color.a = 1.0;"
+			"case 2: gen_check_pattern();" // fallthrough
+			"case 1: color.a = 1.0;"
+			"}"
+
+			"for (int i = 0; i < 3; ++i) {"
+				"color[i] = srgb_oetf(color[i]);"
 			"}"
 		"}";
 	const GLuint vshader = setup_shader(vs, GL_VERTEX_SHADER);
@@ -1010,15 +1046,15 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 	glUseProgram(program);
 	glDeleteProgram(program);
 
-	GLint al = glGetAttribLocation(program, ATTR_POS);
-	if (al < 0) {
+	const GLint attr_loc = glGetAttribLocation(program, ATTR_POS);
+	if (attr_loc < 0) {
 		return false;
 	}
 	const GLint samps[] = {
 		glGetUniformLocation(program, UNI_IMG),
 		glGetUniformLocation(program, UNI_PAL),
 		glGetUniformLocation(program, UNI_PLANE3),
-		glGetUniformLocation(program, UNI_PLANE4),
+		glGetUniformLocation(program, UNI_PLANE_ALPHA),
 		glGetUniformLocation(program, UNI_CMS_LUT),
 	};
 	const GLint uni[] = {
@@ -1026,7 +1062,6 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		glGetUniformLocation(program, UNI_COLOR_MODE),
 		glGetUniformLocation(program, UNI_ALPHA_OP),
 		glGetUniformLocation(program, UNI_CMS_MODE),
-		glGetUniformLocation(program, UNI_PLANE_OFFSETS),
 		glGetUniformLocation(program, UNI_TO_RGBA),
 		glGetUniformLocation(program, UNI_CMS_MAT),
 		glGetUniformLocation(program, UNI_TRANSFER),
@@ -1042,11 +1077,10 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		.color_mode = uni[1],
 		.alpha_op = uni[2],
 		.cms_mode = uni[3],
-		.plane_offsets = uni[4],
-		.to_rgba = uni[5],
-		.cms_mat = uni[6],
-		.transfer = uni[7],
-		.args = uni[8],
+		.to_rgba = uni[4],
+		.cms_mat = uni[5],
+		.transfer = uni[6],
+		.args = uni[7],
 	};
 
 	GLuint vertex_array;
@@ -1055,17 +1089,16 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 
 	GLuint array_buf[2];
 	glGenBuffers(ARRAY_LEN(array_buf), array_buf);
-	context->pixel_unpack_buf = array_buf[0];
 
 	const GLbyte vertices[] = {
 		-1,-1,  1,-1,
 		-1, 1,  1, 1,
 	};
-	bind_buffer_data(GL_ARRAY_BUFFER, array_buf[1], sizeof(vertices),
+	bind_buffer_data(GL_ARRAY_BUFFER, array_buf[0], sizeof(vertices),
 		vertices, GL_STATIC_DRAW);
-	GLuint attrib = (GLuint)al;
-	glVertexAttribPointer(attrib, 2, GL_BYTE, GL_FALSE, 0, 0);
-	glEnableVertexAttribArray(attrib);
+	glVertexAttribPointer((GLuint)attr_loc, 2, GL_BYTE, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray((GLuint)attr_loc);
+	context->pixel_unpack_buf = array_buf[1];
 
 
 	GLuint texs[ARRAY_LEN(samps)];
@@ -1078,17 +1111,16 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		setup_texture2d(s, texs, samps);
 	}
 
+	glHint(GL_FRAGMENT_SHADER_DERIVATIVE_HINT, GL_FASTEST);
+	glDisable(GL_POLYGON_SMOOTH);
 	glEnable(GL_BLEND);
-	glEnable(GL_FRAMEBUFFER_SRGB);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	if (wuconf->bg_src == bg_default) {
-		gl_clear_color(wuconf->bg);
-	}
+	gl_clear_color(wuconf->bg);
 
 	GLuint mts;
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint *)&mts);
-#ifdef WU_GL_DEBUG
-	printf("Texture size limit: %u\n", mts);
+#ifdef WU_DEBUG_GL
+	fprintf(stderr, "Texture size limit: %u\n", mts);
 #endif
 	if (wuconf->max_img_size) {
 		wuconf->max_img_size = umin(wuconf->max_img_size, mts);

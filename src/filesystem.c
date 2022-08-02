@@ -29,18 +29,13 @@ static const size_t POOL_SIZE = 1 << 14;
 struct keypool {
 	/* We use memory pools to store sorting keys quickly and compactly.
 	 * Since it's not possible to know the key size before-hand, using
-	 * malloc on each would be wasteful.
+	 * malloc on each would be wasteful and slow.
 	 * Since we store pointers to the keys, using a single memory area
 	 * would invalidate them on realloc. */
 	struct wugrow grow;
 	size_t used; // Space used on the last buffer
 	unsigned char **buf;
 };
-/*
-struct fs_path {
-	struct wustr parent;
-	struct wuptr file;
-};*/
 
 struct fs_dir {
 	struct fs_path path;
@@ -269,7 +264,7 @@ static int open_dirfd(const char *str) {
 	return open(str, O_RDONLY | O_DIRECTORY);
 }
 
-int fs_get_parent_dir(struct fs_path *path, const char *str) {
+int fs_get_parent_dir(struct fs_path *path, const char *str, bool must_exist) {
 	int dfd = -1;
 	const struct wuptr name = wuptr_str(str);
 	if (name.len) {
@@ -277,7 +272,7 @@ int fs_get_parent_dir(struct fs_path *path, const char *str) {
 		dfd = open_dirfd(str);
 		if (dfd != -1) {
 			fs_path_set_dir(path, name);
-		} else if (errno == ENOTDIR) {
+		} else if (errno == ENOTDIR || !must_exist) {
 			errno = 0;
 			if (fs_path_set_path(path, name)) {
 				dfd = open_dirfd(path->parent.str[0]
@@ -293,7 +288,7 @@ int fs_get_parent_dir(struct fs_path *path, const char *str) {
 
 static bool get_files(struct fs_dir *dir, const char *name,
 struct fs_entry *init_key) {
-	const int dfd = fs_get_parent_dir(&dir->path, name);
+	const int dfd = fs_get_parent_dir(&dir->path, name, true);
 	bool status = false;
 	if (dfd != -1) {
 		DIR *dp = fdopendir(dfd);

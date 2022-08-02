@@ -152,7 +152,8 @@ bool extract_iter_init(struct extract_iter *iter, const char *filename) {
 	if (iter->ra) {
 		archive_read_support_filter_all(iter->ra);
 		archive_read_support_format_all(iter->ra);
-		if (archive_read_open_filename(iter->ra, filename, BUFSIZ) == ARCHIVE_OK) {
+		if (archive_read_open_filename(iter->ra, filename, BUFSIZ)
+		== ARCHIVE_OK) {
 			return true;
 		}
 		archive_read_free(iter->ra);

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 struct wugrow {
 	size_t elem_size;
@@ -48,6 +49,8 @@ bool wustr_malloc(struct wustr *w, size_t len);
 
 bool wustr_memdup(struct wustr *w, const char *str, size_t len);
 
-bool wustr_append_line(struct wustr *w, const char *str);
+bool wustr_append_line(struct wustr *w, const char *str, bool strip_trailing_spaces);
+
+size_t wustr_print(const struct wustr *w, FILE *out);
 
 #endif /* WU_STR */

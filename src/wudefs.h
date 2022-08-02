@@ -14,6 +14,8 @@
 #include "raster/pix.h"
 #include "raster/pal.h"
 
+#define IMG_DATA_BORROWED ((void *)-1)
+
 enum wu_error {
 	wu_no_change = -1, // For callbacks
 	wu_ok = 0,
@@ -41,7 +43,6 @@ struct wu_state {
 	unsigned char rotate;
 	bool mirror;
 
-	float fit_zoom;
 	float zoom;
 	float x_offset;
 	float y_offset;
@@ -88,27 +89,29 @@ struct image_frames {
 
 struct raw_img {
 	unsigned char *restrict data;
-	union {
-		struct raster_pal *palette;
-		struct image_planes *planes;
-	} u;
-
 	size_t w, h;
 	unsigned char channels;
 	unsigned char bitdepth;
 	unsigned char alignment;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
-	enum alpha_interpretation alpha:8;
-	enum image_mode mode:8;
+	enum alpha_interpretation alpha:2;
 
+	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate
 	unsigned char rotate;
-	bool mirror; // Vertical mirror. Horizontal is mirror + 2rotate
 
+	enum image_mode mode:8;
+	float ratio; // Horizontal/Vertical ratio
 	float dec_scale;
-	struct image_frames *frames;
-	struct color_space cs;
 
+	union {
+		struct raster_pal *palette;
+		struct image_planes *planes;
+	} u;
+	struct color_space cs;
+	struct image_frames *frames;
+
+	struct wu_tree *metadata;
 	char *id;
 };
 
@@ -137,6 +140,8 @@ struct image_context {
 const char * wu_error_message(enum wu_error err);
 
 
+void raw_img_aspect_ratio(struct raw_img *img, int num, int den);
+
 void raw_img_exif_orientation(struct raw_img *img, int orientation);
 
 enum wu_error raw_img_verify(struct raw_img *img);
@@ -158,8 +163,15 @@ void raw_img_plane_subsamp(struct raw_img *img, uint8_t horz, uint8_t vert);
 
 struct image_planes * raw_img_plane_init(struct raw_img *img);
 
-struct raster_pal * raw_img_set_palette(struct raw_img *img,
+struct raster_pal * raw_img_palette_set(struct raw_img *img,
 struct raster_pal *pal);
+
+struct raster_pal * raw_img_palette_init(struct raw_img *img);
+
+int raw_img_frame_prev_keyframe(struct raw_img *img, int i);
+
+void raw_img_frame_set(struct raw_img *img, size_t i, size_t x, size_t y,
+size_t w, size_t h, int msec, bool opaque);
 
 size_t raw_img_frames_nr(const struct raw_img *img);
 
@@ -180,9 +192,11 @@ void image_file_print(const struct image_file *file, int verbosity);
 
 void image_file_normalize(struct image_file *file);
 
-enum wu_error image_file_total_decoded(struct image_file *file, const size_t o);
+enum wu_error image_file_total_decoded(struct image_file *file, size_t o);
 
 void image_file_error_append(struct image_file *file, const char *str);
+
+void image_file_status_append(struct image_file *file, enum wu_error status);
 
 void image_file_free(struct image_file *file);
 
@@ -196,9 +210,5 @@ enum image_event image_sub_cycle(struct image_context *image, int steps);
 enum image_event image_frame_cycle(struct image_context *image, int steps);
 
 void image_reset(struct image_context *image);
-
-
-size_t image_fit_factor(const struct wu_conf *conf, size_t w, size_t h,
-size_t max, bool partial_decode);
 
 #endif /* WUDEFS */

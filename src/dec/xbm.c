@@ -9,15 +9,15 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 	};
 	tree_bud_leaf(tree, "Version", leaf);
 	if (desc->name.len) {
-		tree_sprout_unsafe_leaf(tree, "Source name", desc->name.ptr,
+		tree_add_measured_leaf(tree, "Source name", desc->name.ptr,
 			desc->name.len);
 	}
 	if (desc->comment.len) {
-		tree_sprout_unsafe_leaf(tree, "Comment", desc->comment.ptr,
+		tree_add_measured_leaf(tree, "Comment", desc->comment.ptr,
 			desc->comment.len);
 	}
 	if (desc->has_hotspot) {
-		struct wu_tree *hot = tree_sprout_branch(tree, "Hot spot");
+		struct wu_tree *hot = tree_add_branch(tree, "Hot spot");
 
 		leaf.type = wu_leaf_unsigned;
 		leaf.val.u = desc->x_hot;

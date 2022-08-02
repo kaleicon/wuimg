@@ -6,17 +6,30 @@
 #include "common.h"
 #include "raster/file.h"
 #include "raster/fmt.h"
-#include "raster/pix.h"
+#include "raster/mem.h"
 #include "raster/unpack.h"
 
 #include "tga.h"
 
-void tga_cleanup(struct tga_desc *desc) {
-	free(desc->map.extra_pal);
+struct tga_ratio {
+	uint16_t num, den;
+};
+
+const char * tga_type_str(const enum tga_image_type type) {
+	switch (type) {
+	case tga_no_image_data: return "No data";
+	case tga_colormap_data: return "Colormap, uncompressed";
+	case tga_truecolor_data: return "True color, uncompressed";
+	case tga_monochrome_data: return "Monochrome, uncompressed";
+	case tga_colormap_rle: return "Colormap, compressed";
+	case tga_truecolor_rle: return "True color, compressed";
+	case tga_monochrome_rle: return "Monochrome, compressed";
+	}
+	return "???";
 }
 
-double tga_ratio_to_float(const struct tga_ratio ratio) {
-	return (double)ratio.num / ratio.den;
+void tga_cleanup(struct tga_desc *desc) {
+	free(desc->map.extra_pal);
 }
 
 static size_t raw_process(struct raw_img *img, const size_t bytes) {
@@ -44,22 +57,23 @@ const unsigned char *restrict rle_limit, const size_t pixel_size) {
 	do {
 		const unsigned char packet = *rle;
 		const size_t len = (packet & 0x7f) + 1U;
-		if (output + len * pixel_size > output_limit) {
+		const size_t bytes = len*pixel_size;
+		if (output + bytes > output_limit) {
 			break;
 		}
 
 		++rle;
 		if (packet & 0x80) {
-			pix_set(output, rle, pixel_size, len);
+			memwordset(output, rle, pixel_size, len);
 			rle += pixel_size;
 		} else {
-			if (rle + len * pixel_size > rle_limit) {
+			if (rle + bytes > rle_limit) {
 				break;
 			}
-			memcpy(output, rle, len * pixel_size);
-			rle += len * pixel_size;
+			memcpy(output, rle, bytes);
+			rle += bytes;
 		}
-		output += pixel_size * len;
+		output += bytes;
 	} while (rle + pixel_size < rle_limit);
 }
 
@@ -118,19 +132,17 @@ struct raw_img *main, struct raw_img *stamp) {
 	fseek(desc->ifp, desc->meta.stamp_offset, SEEK_SET);
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
 		return wu_unexpected_eof;
-	} else if (!buf[0] || !buf[1]) {
-		return wu_int_overflow;
 	}
 
 	if (raw_img_clone(stamp, main)) {
 		stamp->w = buf[0];
 		stamp->h = buf[1];
-		return wu_ok;
+		return raw_img_verify(stamp);
 	}
 	return wu_alloc_error;
 }
 
-static bool read_extension_area(struct tga_desc *desc) {
+static bool read_extension_area(struct tga_desc *desc, struct raw_img *img) {
 	struct tga_metadata *meta = &desc->meta;
 	unsigned char buf[24];
 
@@ -190,17 +202,24 @@ static bool read_extension_area(struct tga_desc *desc) {
 	}
 	meta->software.version_letter = (char)buf[0];
 	meta->software.version_number = buf_endian16(buf + 1, little_endian);
-	memcpy(&meta->key_color, buf + 3, 4);
-	meta->pixel_aspect.num = buf_endian16(buf + 7, little_endian);
-	meta->pixel_aspect.den = buf_endian16(buf + 9, little_endian);
-	meta->gamma.num = buf_endian16(buf + 11, little_endian);
-	meta->gamma.den = buf_endian16(buf + 13, little_endian);
+	memcpy(&meta->key_color, buf + 3, sizeof(meta->key_color));
+
+	raw_img_aspect_ratio(img, buf_endian16(buf + 7, little_endian),
+		buf_endian16(buf + 9, little_endian));
+
+	const struct tga_ratio gamma = {
+		.num = buf_endian16(buf + 11, little_endian),
+		.den = buf_endian16(buf + 13, little_endian),
+	};
+	if (gamma.num && gamma.den) {
+		color_space_set_gamma(&img->cs, (double)gamma.num / gamma.den);
+	}
 	//meta->color_offset = buf_endian16(buf + 15, little_endian);
 	meta->stamp_offset = buf_endian16(buf + 19, little_endian);
 	return true;
 }
 
-bool tga_parse_footer(struct tga_desc *desc) {
+bool tga_parse_footer(struct tga_desc *desc, struct raw_img *img) {
 	/* TGA footer
 		Offset  Size    Name
 		-26     DWORD   ExtensionOffset;
@@ -216,7 +235,7 @@ bool tga_parse_footer(struct tga_desc *desc) {
 				little_endian);
 			if (extension_off) {
 				fseek(desc->ifp, (long)extension_off, SEEK_SET);
-				return read_extension_area(desc);
+				return read_extension_area(desc, img);
 			}
 		}
 	}
@@ -231,7 +250,7 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct raw_img *img) {
 	switch (desc->type) {
 	case tga_colormap_data:
 	case tga_colormap_rle:
-		raw_img_set_palette(img, pal);
+		raw_img_palette_set(img, pal);
 		break;
 	default:
 		desc->map.extra_pal = pal;

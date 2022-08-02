@@ -69,16 +69,18 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 	const double diff = clock_ellapsed(start);
 
 	const struct image_file *infile = &image->file;
+	const char *what = "Failed";
 	if (result == wu_ok) {
 		image_file_print(infile, 0);
-		printf("Decoded in %f seconds\n", diff);
+		what = "Decoded";
 	} else {
 		printf("Decoding error: %s\n", wu_error_message(result));
 		if (infile->errors.str) {
-			printf("Library message: %s", infile->errors.str);
+			fputs("Library message: ", stdout);
+			wustr_print(&infile->errors, stdout);
 		}
-		printf("Failed in %f seconds\n", diff);
 	}
+	fprintf(stderr, "%s in %f seconds\n", what, diff);
 	return result;
 }
 
@@ -86,7 +88,20 @@ static void pos_print(const size_t i, const struct file_list *entries) {
 	printf("%zu/%zu, %s\n", i+1, entries->nr, entries->name[i]);
 }
 
-static enum wu_error write_list(const struct file_list *entries,
+static FILE * save_stdin(void) {
+	FILE *tmp = tmpfile();
+	if (tmp) {
+		unsigned char buf[BUFSIZ];
+		size_t read;
+		while ( (read = fread(buf, 1, sizeof(buf), stdin)) ) {
+			fwrite(buf, 1, read, tmp);
+		}
+		rewind(tmp);
+	}
+	return tmp;
+}
+
+static enum wu_error convert_files(const struct file_list *entries,
 const struct write_args *args) {
 	struct image_context image = {
 		.conf = conf_load(),
@@ -98,15 +113,22 @@ const struct write_args *args) {
 	}
 
 	enum wu_error status = wu_ok;
-	for (size_t i = 0; i < entries->nr; ++i) {
-		image_reset(&image);
-		image.name = entries->name[i];
-		pos_print(i, entries);
-		status = write_image(&image, &writer, args);
-		if (status != wu_ok) {
-			printf("Failed to write image: %s\n",
-				wu_error_message(status));
+	image.name = entries->name[0];
+	if (!strcmp("-", image.name)) {
+		image.name = "stdin"; // Save the user some trouble
+		image.file.ifp = save_stdin();
+		if (!image.file.ifp) {
+			term_line_put("Failed to save stdin", stderr);
+			status = wu_open_error;
 		}
+	}
+
+	if (status == wu_ok) {
+		status = write_image(&image, &writer, args);
+	}
+	if (status != wu_ok) {
+		fprintf(stderr, "Failed to write %s: %s\n",
+			image.name, wu_error_message(status));
 	}
 	write_writer_terminate(&writer);
 	return status;
@@ -129,7 +151,7 @@ static enum wu_error test_iter(struct image_context *image, double *spent) {
 
 static enum wu_error test_with(const struct file_list *entries,
 const struct test_mode_args args) {
-	printf("Testing %u times with %u extra tries for warmup.\n\n",
+	printf("Testing %u times with %u extra runs for warmup.\n\n",
 		args.iters, args.warmup);
 
 	struct image_context image = {
@@ -142,7 +164,6 @@ const struct test_mode_args args) {
 	for (size_t i = 0; i < entries->nr; ++i) {
 		double sum = 0;
 		image.name = entries->name[i];
-		pos_print(i, entries);
 		for (unsigned int j = 0; j < args.warmup + args.iters; ++j) {
 			const bool counting = (j >= args.warmup);
 			double spent;
@@ -156,17 +177,18 @@ const struct test_mode_args args) {
 		}
 
 		if (result == wu_ok) {
-			printf("Average: %f\n", sum / args.iters);
+			printf("Average: %f ", sum / args.iters);
 		} else {
-			printf("Error: %s\n", wu_error_message(result));
+			printf("Error: %s ", wu_error_message(result));
 			++failures;
 		}
+		puts(image.name);
 
 		grand_total += sum;
 	}
 	putchar('\n');
 	if (entries->nr * args.iters > 1) {
-		printf("total: %f\n", grand_total);
+		printf("Total: %f\n", grand_total);
 	}
 	printf("%zu successful, %zu failed\n", entries->nr - failures,
 		failures);
@@ -249,7 +271,8 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	return result;
 }
 
-static enum wu_error run_with_list(struct file_list *entries, long idx) {
+static enum wu_error run_with_list(struct file_list *entries, long idx,
+const bool interpret_stdin) {
 	struct window_context window = {
 		.pub.image.conf = conf_load(),
 	};
@@ -259,6 +282,7 @@ static enum wu_error run_with_list(struct file_list *entries, long idx) {
 		return wu_display_error;
 	}
 
+	FILE *stdin_tmp = NULL;
 	struct image_context *image = &window.pub.image;
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
@@ -268,26 +292,43 @@ static enum wu_error run_with_list(struct file_list *entries, long idx) {
 		while (!entries->name[idx]) {
 			idx = lmod(idx + direction, (long)entries->nr);
 		}
+		pos_print((size_t)idx, entries);
 		image_reset(image);
 		image->name = entries->name[idx];
-		pos_print((size_t)idx, entries);
 
 		bool free_entry = false;
-		result = decode_with_stats(image);
-		if (result == wu_ok) {
-			const bool ok = display_loop(&window, remaining == 1);
-			if (!ok) {
-				free_entry = true;
-			} else if (event->rm == trit_true) {
-				unlink(image->name);
-				puts("File deleted.");
+		if (interpret_stdin && !strcmp("-", image->name)) {
+			if (!stdin_tmp) {
+				stdin_tmp = save_stdin();
+			}
+			if (stdin_tmp) {
+				rewind(stdin_tmp);
+				image->file.ifp = stdin_tmp;
+			} else {
 				free_entry = true;
 			}
-		} else {
-			free_entry = true;
 		}
 
-		dec_free_image(image);
+		if (!free_entry) {
+			result = decode_with_stats(image);
+			if (result == wu_ok) {
+				const bool ok = display_loop(&window, remaining == 1);
+				if (!ok) {
+					free_entry = true;
+				} else if (event->rm == trit_true) {
+					unlink(image->name);
+					puts("File deleted.");
+					free_entry = true;
+				}
+			} else {
+				free_entry = true;
+			}
+			if (image->file.ifp == stdin_tmp) {
+				image->file.ifp = NULL;
+			}
+			dec_free_image(image);
+		}
+
 		if (free_entry) {
 			list_remove_entry(entries, idx);
 			--remaining;
@@ -300,6 +341,9 @@ static enum wu_error run_with_list(struct file_list *entries, long idx) {
 	} while (event->program != wu_program_exit && remaining);
 
 	display_end(&window, &tr);
+	if (stdin_tmp) {
+		fclose(stdin_tmp);
+	}
 	return result;
 }
 
@@ -313,10 +357,10 @@ const struct program_mode *mode) {
 
 	switch (mode->type) {
 	case test: return test_with(&entries, mode->arg.test);
-	case writeout: return write_list(&entries, &mode->arg.write);
+	case writeout: return convert_files(&entries, &mode->arg.write);
 	default: break;
 	}
-	return run_with_list(&entries, 0);
+	return run_with_list(&entries, 0, true);
 }
 
 static enum wu_error from_path(const char *name) {
@@ -331,7 +375,7 @@ static enum wu_error from_path(const char *name) {
 
 	enum wu_error result;
 	if (entries.name) {
-		result = run_with_list(&entries, (long)start_idx);
+		result = run_with_list(&entries, (long)start_idx, false);
 		list_free(&entries);
 	} else {
 		if (errno) {
@@ -357,13 +401,15 @@ static enum wu_error from_path(const char *name) {
 #define ARCHIVE_MODE "archive"
 #define WRITE_MODE "write"
 #define TEST_MODE "test"
+#define STDIN_MODE "-"
 
 static void print_help() {
 	puts("Usage:\n"
 		"\t" WU_CANON_NAME "\t(read images from \".\")\n"
 		"\t" WU_CANON_NAME " DIR\t(read from DIR)\n"
 		"\t" WU_CANON_NAME " FILE\t(read from the parent of FILE, starting with FILE)\n"
-		"\t" WU_CANON_NAME " FILE FILE...\t(read only FILEs)\n"
+		"\t" WU_CANON_NAME " FILE FILE...\t(read only the files given)\n"
+		"\t" WU_CANON_NAME " -\t(read image from stdin)\n"
 		"\t" WU_CANON_NAME " MODE [OPTIONS]... [--] [PATH]...\t(explicit mode)\n"
 
 		"\n"
@@ -386,27 +432,34 @@ static void print_help() {
 		"\t\tafter the first are ignored.\n"
 
 		"\t" SOLE_MODE "\n"
-		"\t\tRead only the file(s) given, in the order given.\n"
-		"\t\tAssumed when more than one path is given.\n"
+		"\t\tRead only the file(s) given, in the order given. Assumed\n"
+		"\t\twhen more than one path, or \"-\" (stdin), is given.\n"
 
 		"\t" ARCHIVE_MODE "\n"
 		"\t\tExtract and display images from FILE, which must be an\n"
 		"\t\tarchive file supported by libarchive.\n"
 
-		"\t" WRITE_MODE " [...]\n"
-		"\t\tDecode FILE to FILE(_#).pam.\n"
+		"\t" WRITE_MODE " [switches]\n"
+		"\t\tDecode FILE to FILE(_sub#:frame#).pam, with each sub-image\n"
+		"\t\tand animation frame on separate files. Names are written\n"
+		"\t\tto stdout one per line.\n"
 
-		"\t" TEST_MODE " [...]\n"
+		"\t" TEST_MODE " [switches]\n"
 		"\t\tMeasure decoding time for each FILE.\n"
 
 		"\n"
 		WRITE_MODE " switches:\n"
 		"\t-f\n"
-		"\t\tOverwrite output file(s).\n"
+		"\t\tForce overwriting output file(s).\n"
 
 		"\t-o OUTDIR\n"
-		"\t\tWrite all files to OUTDIR instead of each file's\n"
-		"\t\tdirectory.\n"
+		"\t\tWrite files onto OUTDIR instead of the file's parent.\n"
+
+		"\t-s\n"
+		"\t\tWrite only the initial sub-image to stdout.\n"
+
+		"\t-z\n"
+		"\t\tUse null as line terminator.\n"
 
 		"\n"
 		TEST_MODE " switches:\n"
@@ -502,7 +555,7 @@ int main(const int argc, char *argv[]) {
 	int read = 1;
 	read += get_mode(argc - read, argv + read, &mode);
 	if (read > argc) {
-		fputs("BUG: Excess arguments read.\n", stderr);
+		term_line_put("BUG: Excess arguments read.", stderr);
 		return 1;
 	}
 
@@ -512,7 +565,15 @@ int main(const int argc, char *argv[]) {
 
 	const size_t remaining = (size_t)(argc - read);
 	if (mode.type == guess) {
-		mode.type = (remaining > 1) ? sole : directory;
+		if (remaining) {
+			if (remaining > 1 || !strcmp("-", argv[read])) {
+				mode.type = sole;
+			} else {
+				mode.type = directory;
+			}
+		} else {
+			mode.type = directory;
+		}
 	}
 
 	switch (mode.type) {
@@ -528,9 +589,6 @@ int main(const int argc, char *argv[]) {
 	case sole:
 	case test:
 	case writeout:
-		if (!remaining) {
-			break;
-		}
 		return from_argv(remaining, argv + read, &mode);
 	case directory:
 		if (!remaining) {
@@ -543,9 +601,9 @@ int main(const int argc, char *argv[]) {
 		}
 		return run_with_archive(argv[read]);
 	case guess:
-		fputs("BUG: Unreachable case reached. Well done.\n", stderr);
+		term_line_put("BUG: Unreachable case reached. Well done.", stderr);
 		return 1;
 	}
-	fputs("ERROR: Expected at least one path.\n", stderr);
+	term_line_put("ERROR: Expected at least one path.", stderr);
 	return 1;
 }

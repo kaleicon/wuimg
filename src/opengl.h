@@ -9,6 +9,12 @@
 #define WU_GL_MAJOR 3
 #define WU_GL_MINOR 3
 
+enum gl_update {
+	gl_update_none = 0,
+	gl_update_redraw,
+	gl_update_matrix,
+};
+
 enum gl_upload_status {
 	gl_upload_fail = 0,
 	gl_upload_success,
@@ -16,7 +22,6 @@ enum gl_upload_status {
 };
 
 struct gl_reader {
-	struct display_dims prev;
 	size_t len;
 	size_t w, h;
 	GLenum fmt;
@@ -31,7 +36,6 @@ struct gl_context {
 		GLint color_mode;
 		GLint alpha_op;
 		GLint cms_mode;
-		GLint plane_offsets;
 		GLint to_rgba;
 		GLint cms_mat;
 		GLint transfer;
@@ -41,16 +45,20 @@ struct gl_context {
 	GLuint timer;
 	GLuint framebuffer;
 
-	float fb_wh[2];
+	float pix_size[2];
 
-	enum image_mode mode:8;
-	bool update_matrix;
-	uint8_t alpha;
+	enum gl_update update:8;
 	uint8_t user_alpha;
+	bool unmultiply;
 
 	struct gl_image_info {
+		enum alpha_interpretation alpha:8;
+		enum image_mode mode:8;
+		unsigned subsamp:4;
+		bool mirror:1;
 		uint8_t rotate;
-		uint8_t mirror;
+		float fit_zoom;
+		float ratio;
 		float w, h;
 	} tex;
 	cmsHPROFILE icc;
@@ -64,24 +72,20 @@ GLuint64 gl_clock_query(const struct gl_context *context);
 
 void gl_alpha_toggle(struct gl_context *context, int cycle);
 
-void gl_matrix_update(struct gl_context *context, struct wu_state *state);
-
-float gl_fit_zoom(const struct gl_context *context, uint8_t rotation);
-
 void gl_viewport(struct gl_context *context, const struct display_dims *dims);
+
+bool gl_draw(struct gl_context *context, const struct wu_state *state);
+
+void gl_clear_color(const uint8_t bg[static 4]);
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 struct raw_img *img);
 
-void gl_draw(const struct gl_context *context);
-
-void gl_clear_color(const uint8_t bg[static 4]);
-
 void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
 const struct gl_reader *reader, void *restrict dst, size_t row);
 
-bool gl_reader_set(struct gl_context *context, struct wu_state *state,
-struct gl_reader *r, const struct raw_img *img);
+bool gl_reader_set(struct gl_context *context, struct gl_reader *r,
+struct wu_state *state, const struct raw_img *img);
 
 void gl_reader_unbind(void);
 

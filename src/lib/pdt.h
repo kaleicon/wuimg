@@ -16,10 +16,12 @@ struct pdt_desc {
 	const uint8_t *pal;
 };
 
+const char * pdt_version_str(enum pdt_version version);
+
 size_t pdt_decode(const struct pdt_desc *desc, struct raw_img *img);
 
 enum wu_error pdt_parse_header(struct pdt_desc *desc, struct raw_img *img);
 
-enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *mm);
+enum wu_error pdt_open_mem(struct pdt_desc *desc, struct mp_parser mp);
 
 #endif /* LIB_PDT */

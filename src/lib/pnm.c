@@ -8,13 +8,11 @@
 
 #include "common.h"
 #include "raster/file.h"
+#include "raster/fmt.h"
+#include "raster/mem.h"
 #include "raster/memparser.h"
+#include "raster/strip.h"
 #include "lib/pnm.h"
-
-union int_real {
-	uint32_t bytes;
-	float real;
-};
 
 const char * pnm_type_str(const enum pnm_type type) {
 	switch (type) {
@@ -34,68 +32,67 @@ const char * pnm_type_str(const enum pnm_type type) {
 	return "???";
 }
 
-static void scale_32(uint32_t *dst, const size_t dims,
-const unsigned int maxval, const unsigned int mask, const enum endianness endian) {
-	if (maxval == UINT_MAX) {
-		loop_endian32(dst, endian, dims);
+static void scale_32(const struct pnm_desc *desc, uint32_t *dst,
+const size_t dims) {
+	const unsigned maxval = desc->scale.pnm;
+	if (maxval == UINT_MAX && !desc->sign) {
+		loop_endian32(dst, desc->endian, dims);
 	} else {
-		const uint_fast64_t scale = ((uint64_t)UINT_MAX << 32)
-			/ maxval + 1;
+		const uint64_t mul = ((uint64_t)UINT_MAX << 32) / maxval + 1;
+		const uint64_t add = (desc->sign) ? maxval/2 + 1 : 0;
 		for (size_t i = 0; i < dims; ++i) {
-			uint_fast32_t val = endian32(dst[i], endian) & mask;
-			dst[i] = (uint32_t)((val * scale) >> 32);
+			const uint64_t val = (endian32(dst[i], desc->endian) + add) * mul;
+			dst[i] = (uint32_t)(val >> 32);
 		}
 	}
 }
 
-static void scale_16(uint16_t *dst, const size_t dims,
-const unsigned int maxval, const unsigned int mask, const enum endianness endian) {
-	if (maxval == USHRT_MAX) {
-		loop_endian16(dst, endian, dims);
+static void scale_16(const struct pnm_desc *desc, uint16_t *dst,
+const size_t dims) {
+	const unsigned maxval = desc->scale.pnm;
+	if (maxval == USHRT_MAX && !desc->sign) {
+		loop_endian16(dst, desc->endian, dims);
 	} else {
-		const uint_fast32_t scale = ((unsigned)USHRT_MAX << 16)
-			/ maxval + 1;
+		const uint32_t mul = ((uint32_t)USHRT_MAX << 16) / maxval + 1;
+		const uint32_t add = (desc->sign) ? maxval/2 + 1 : 0;
 		for (size_t i = 0; i < dims; ++i) {
-			uint_fast32_t val = endian16(dst[i], endian) & mask;
-			dst[i] = (uint16_t)((val * scale) >> 16);
+			const uint32_t val = (endian16(dst[i], desc->endian) + add) * mul;
+			dst[i] = (uint16_t)(val >> 16);
 		}
 	}
 }
 
-static void scale_8(uint8_t *dst, const size_t dims,
-const unsigned int maxval, const unsigned int mask) {
-	if (maxval != UCHAR_MAX) {
-		const uint_fast16_t scale = ((unsigned)UCHAR_MAX << 8) / maxval + 1;
+static void pfm_decode(const struct pnm_desc *desc, union int_real *out,
+const size_t dims) {
+	if (desc->scale.pfm == 1.0f) {
+		loop_endian32(&out->bytes, desc->endian, dims);
+	} else {
 		for (size_t i = 0; i < dims; ++i) {
-			dst[i] = (uint8_t)(((dst[i] & mask) * scale) >> 8);
+			out[i].real = endianf32(out[i].bytes, desc->endian)
+				* desc->scale.pfm;
 		}
 	}
 }
 
 static size_t scale_raster(const struct pnm_desc *desc, void *restrict dst,
 const size_t dims) {
-	const unsigned int mask = (desc->type == pnm_pgx) ? desc->scale.pnm : ~0u;
-	switch (desc->bytedepth) {
-	case 1: scale_8(dst, dims, desc->scale.pnm, mask); break;
-	case 2: scale_16(dst, dims, desc->scale.pnm, mask, desc->endian); break;
-	case 4: scale_32(dst, dims, desc->scale.pnm, mask, desc->endian); break;
+	switch (desc->type) {
+	case pnm_color_pfm:
+	case pnm_gray_pfm:
+		pfm_decode(desc, dst, dims);
+		break;
+	default:
+		switch (desc->bytedepth) {
+		case 1:
+			strip_scale(dst, dims,
+				strip_scale_info(desc->scale.pnm, 8), desc->sign);
+			break;
+		case 2: scale_16(desc, dst, dims); break;
+		case 4: scale_32(desc, dst, dims); break;
+		}
+		break;
 	}
 	return dims;
-}
-
-static size_t pfm_decode(const struct pnm_desc *desc,
-union int_real *out, const size_t dims) {
-	const size_t read = fread(out, sizeof(*out), dims, desc->ifp);
-	if (desc->scale.pfm == 1.0f) {
-		loop_endian32(&out->bytes, desc->endian, read);
-	} else {
-		for (size_t i = 0; i < read; ++i) {
-			const union int_real val =
-				{.bytes = endian32(out[i].bytes, desc->endian)};
-			out[i].real = val.real * desc->scale.pfm;
-		}
-	}
-	return read;
 }
 
 static size_t plain_ppm_decode(const struct pnm_desc *restrict desc,
@@ -104,9 +101,9 @@ void *restrict dst, const size_t dims) {
 	size_t len = (size_t)file_remaining(desc->ifp);
 	uint8_t *src = malloc(len + 2);
 	if (src) {
-		src[0] = ' ';
-		len = fread_tail(src + 1, 1, len, desc->ifp);
-		src[len+1] = 'd'; // Sentinel
+		src[0] = ' '; // Ensure skip_space returns 1 on first iter
+		len = fread_tail(src + 1, 1, len, desc->ifp) + 1;
+		src[len] = 'd'; // Sentinel
 		struct mp_parser mp = mp_parser_mem(len, src);
 
 		const long range = (desc->scale.pnm > UCHAR_MAX)
@@ -181,16 +178,16 @@ const size_t i) {
 	case pnm_plain_pgm:
 	case pnm_plain_ppm:
 		return plain_ppm_decode(desc, dst, elems);
-	case pnm_color_pfm:
-	case pnm_gray_pfm:
-		return pfm_decode(desc, dst, elems);
+	case pnm_xv_thumb:
+	case pnm_raw_pbm:
+	case pnm_mtv:
+		return fread(dst, 1, size, desc->ifp);
 	case pnm_raw_pgm:
 	case pnm_raw_ppm:
 	case pnm_pam:
+	case pnm_color_pfm:
+	case pnm_gray_pfm:
 	case pnm_pgx:
-	case pnm_raw_pbm:
-	case pnm_xv_thumb:
-	case pnm_mtv:
 		break;
 	}
 	return scale_raster(desc, dst,
@@ -216,6 +213,7 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		break;
 	case pnm_plain_pbm:
 	case pnm_mtv:
+		desc->scale.pnm = 0xff;
 		desc->rast.bitdepth = 8;
 		break;
 	case pnm_xv_thumb:
@@ -282,55 +280,62 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 }
 
 static enum wu_error parse_pgx(struct pnm_desc *desc) {
+	/* PGX data may have any bitdepth between 1 and 32, and are stored
+	 * in the smallest word unit that can fit them. So 5-bit data is stored
+	 * in 8-bit bytes, 9-bit data in 16-bit words, and 24-bit data in
+	 * 32-bit words. They are stored as normal numbers in the containing
+	 * word, with signed numbers in two's complement.
+	 *   5-bit unsigned: 0x00 to 0x1f (0 to 32)
+	 *   5-bit signed:   0xf0 to 0x0f (-16 to 15)
+	*/
 	char order[2];
-	char sign;
-	int match = fscanf(desc->ifp, "%2c%*1[ ]%c", order, &sign);
-	if (match != 2) {
+	char sign[4];
+	unsigned depth;
+	char spaces[2];
+	char newline[3];
+	const int match = fscanf(desc->ifp,
+		"%2c" "%3[ +-]" "%u"
+		"%c" "%zu" "%c" "%zu" "%2[\r\n]",
+		order, sign, &depth,
+		spaces, &desc->rast.w, spaces + 1, &desc->rast.h, newline);
+	if (match == EOF) {
+		return wu_unexpected_eof;
+	} else if (match != 8 || !depth || memchk(spaces, ' ', sizeof(spaces))
+	|| (strcmp(newline, "\n") && strcmp(newline, "\r\n")) ) {
 		return wu_invalid_header;
 	}
-	if (!memcmp(order, "ML", ARRAY_LEN(order))) {
+
+	if (!memcmp(order, "ML", sizeof(order))) {
 		desc->endian = big_endian;
-	} else if (!memcmp(order, "LM", ARRAY_LEN(order))) {
+	} else if (!memcmp(order, "LM", sizeof(order))) {
 		desc->endian = little_endian;
 	} else {
 		return wu_invalid_header;
 	}
 
-	int c = sign;
-	if (sign == '+' || sign == '-') {
-		c = getc(desc->ifp);
-		switch (c) {
-		case EOF: return wu_unexpected_eof;
-		case ' ': break;
-		default: ungetc(c, desc->ifp);
+	if (sign[0] == ' ') {
+		switch (sign[1]) {
+		case 0: break;
+		case ' ':
+			if (sign[2] != 0) {
+				return wu_invalid_header;
+			}
+			break;
+		case '+': case '-':
+			switch (sign[2]) {
+			case 0: case ' ': break;
+			default: return wu_invalid_header;
+			}
+			break;
+		default: return wu_invalid_header;
 		}
 	} else {
-		if (isdigit(c)) {
-			ungetc(c, desc->ifp);
-		} else if (c != ' ') {
-			return wu_invalid_header;
-		}
-	}
-
-	char newline[3];
-	unsigned depth;
-	match = fscanf(desc->ifp, "%u%*1[ ]%zu%*1[ ]%zu%2[\r\n]",
-		&depth, &desc->rast.w, &desc->rast.h, newline);
-	if (match != 4 || (strcmp(newline, "\n") && strcmp(newline, "\r\n")) ) {
 		return wu_invalid_header;
 	}
 
+	desc->sign = (sign[1] == '-');
 	desc->scale.pnm = ~0u >> (32 - depth);
-	depth = (depth - 1) / 8 + 1;
-	switch (depth) {
-	case 1: case 2: case 4: break;
-	default: return wu_invalid_header;
-	}
-	desc->rast.bitdepth = (unsigned char)(depth * 8);
-	desc->bytedepth = (unsigned char)depth;
-	if (sign == '-') {
-		desc->rast.attr = pix_signed;
-	}
+	desc->rast.bitdepth = (unsigned char)(2 << ulog2(umax(depth, 8) - 1));
 	return setup_desc(desc);
 }
 
@@ -345,8 +350,8 @@ static enum wu_error skip_line(FILE *ifp) {
 }
 
 static enum wu_error read_pam_token(FILE *ifp, const char *fmt,
-void *where, const bool cur_val) {
-	if (!cur_val) {
+void *where, const bool is_set) {
+	if (!is_set) {
 		unsigned char newline;
 		switch (fscanf(ifp, fmt, where, &newline)) {
 		case 2:
@@ -388,11 +393,11 @@ bool *finished) {
 }
 
 static enum wu_error parse_arbitrary_map(struct pnm_desc *desc) {
-	char token[9];
+	char token[10];
 	bool finished = false;
 	enum wu_error status;
 	while (!finished) {
-		switch(fscanf(desc->ifp, "%8s", token)) {
+		switch (fscanf(desc->ifp, "%9s", token)) {
 		case 1:
 			status = match_pam_token(desc, token, &finished);
 			if (status != wu_ok) {
@@ -436,16 +441,20 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 	enum wu_error status;
 	while ((status = skip_any_junk(desc)) == wu_ok) {
 		int result;
-		if (seen == 0) {
+		switch (seen) {
+		case 0:
 			result = fscanf(desc->ifp, "%zu", &desc->rast.w);
-		} else if (seen == 1) {
+			break;
+		case 1:
 			result = fscanf(desc->ifp, "%zu", &desc->rast.h);
-		} else {
+			break;
+		case 2:
 			if (desc->type == pnm_color_pfm || desc->type == pnm_gray_pfm) {
 				result = fscanf(desc->ifp, "%f", &desc->scale.pfm);
 			} else {
 				result = fscanf(desc->ifp, "%u", &desc->scale.pnm);
 			}
+			break;
 		}
 
 		if (result == 0) {
@@ -494,19 +503,14 @@ enum wu_error pnm_parse_header(struct pnm_desc *desc) {
 }
 
 static enum wu_error disambiguate(struct pnm_desc *desc,
-const char next_char) {
+const unsigned char next_char) {
 	if (next_char == '\n') {
 		desc->type = pnm_pam;
 		return wu_ok;
 	} else if (next_char == ' ') {
-		char newline;
-		const int read = fscanf(desc->ifp, "332%c", &newline);
-		if (read == 1 && newline == '\n') {
-			desc->type = pnm_xv_thumb;
-			return wu_ok;
-		} else if (read == EOF) {
-			return wu_unexpected_eof;
-		}
+		desc->type = pnm_xv_thumb;
+		const unsigned char more_magic[4] = "332\n";
+		return fmt_sigcmp(more_magic, sizeof(more_magic), desc->ifp);
 	}
 	return wu_invalid_signature;
 }
@@ -515,45 +519,45 @@ enum wu_error pnm_open_file(struct pnm_desc *desc, FILE *ifp,
 const bool maybe_mtv) {
 	*desc = (struct pnm_desc) {.ifp = ifp};
 
-	char magic[2];
-	const long pos = ftell(ifp);
-	const int matches = fscanf(ifp, "P%2c", magic);
-	if (matches == 1) {
-		if (magic[0] == '7') {
-			const enum wu_error st = disambiguate(desc, magic[1]);
-			if (st != wu_ok) {
-				return st;
+	unsigned char magic[3];
+	if (fread(magic, sizeof(magic), 1, ifp)) {
+		if (magic[0] == 'P') {
+			if (magic[1] == '7') {
+				const enum wu_error st = disambiguate(desc,
+					magic[2]);
+				if (st != wu_ok) {
+					return st;
+				}
+			} else {
+				if (!isspace(magic[2])
+				|| (magic[1] == pnm_pgx && magic[2] != ' ')) {
+					return wu_invalid_signature;
+				}
+				desc->type = (enum pnm_type)magic[1];
 			}
-		} else {
-			if ( (magic[0] == pnm_pgx && magic[1] != ' ')
-			|| !isspace(magic[1])) {
-				return wu_invalid_signature;
-			}
-			desc->type = (enum pnm_type)magic[0];
-		}
 
-		switch (desc->type) {
-		case pnm_plain_pbm:
-		case pnm_plain_pgm:
-		case pnm_plain_ppm:
-		case pnm_raw_pbm:
-		case pnm_raw_pgm:
-		case pnm_raw_ppm:
-		case pnm_pam:
-		case pnm_xv_thumb:
-		case pnm_color_pfm:
-		case pnm_gray_pfm:
-		case pnm_pgx:
+			switch (desc->type) {
+			case pnm_plain_pbm:
+			case pnm_plain_pgm:
+			case pnm_plain_ppm:
+			case pnm_raw_pbm:
+			case pnm_raw_pgm:
+			case pnm_raw_ppm:
+			case pnm_pam:
+			case pnm_xv_thumb:
+			case pnm_color_pfm:
+			case pnm_gray_pfm:
+			case pnm_pgx:
+				return wu_ok;
+			case pnm_mtv: // Invalid here
+				break;
+			}
+		} else if (maybe_mtv) {
+			fseek(desc->ifp, -(long)sizeof(magic), SEEK_CUR);
+			desc->type = pnm_mtv;
 			return wu_ok;
-		case pnm_mtv: // Invalid here
-			break;
 		}
-	} else if (matches == EOF) {
-		return wu_unexpected_eof;
-	} else if (maybe_mtv) {
-		fseek(desc->ifp, pos, SEEK_SET);
-		desc->type = pnm_mtv;
-		return wu_ok;
+		return wu_invalid_signature;
 	}
-	return wu_invalid_signature;
+	return wu_unexpected_eof;
 }

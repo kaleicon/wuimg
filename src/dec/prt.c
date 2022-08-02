@@ -1,6 +1,8 @@
+#include "rast_utils.h"
 #include "lib/prt.h"
 
-void read_metadata(const struct prt_desc *desc, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+	const struct prt_desc *desc = ptr;
 	const struct wu_tree_sap sap[] = {
 		{"Version", {wu_leaf_unsigned, {.u = desc->version}}},
 		{"Depth", {wu_leaf_unsigned, {.u = desc->depth}}},
@@ -12,28 +14,21 @@ void read_metadata(const struct prt_desc *desc, struct wu_tree *tree) {
 	tree_bud_leaves(tree, sap, len);
 }
 
+static void cleanup(void *ptr) {
+	prt_cleanup(ptr);
+}
+static size_t dec(const void *restrict ptr, struct raw_img *img) {
+	return prt_decode(ptr, img);
+}
+static enum wu_error parse(void *restrict ptr, struct raw_img *img) {
+	return prt_parse(ptr, img);
+}
+static enum wu_error open(void *restrict ptr, FILE *ifp) {
+	return prt_open(ptr, ifp);
+}
+
 enum wu_error prt_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct prt_desc desc;
-	enum wu_error st = prt_open(&desc, infile->ifp);
-	if (st == wu_ok) {
-		struct raw_img *img = alloc_sub_images(infile, 1);
-		if (img) {
-			st = prt_parse(&desc, img);
-			if (st == wu_ok) {
-				if (!raw_img_exceeds_limit(img, wuconf)) {
-					read_metadata(&desc, &infile->metadata);
-					const size_t w = prt_decode(&desc, img);
-					if (!w) {
-						st = wu_decoding_error;
-					}
-				} else {
-					st = wu_exceeds_size_limit;
-				}
-			}
-			prt_cleanup(&desc);
-		} else {
-			return wu_alloc_error;
-		}
-	}
-	return st;
+	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
+		dec, cleanup);
 }

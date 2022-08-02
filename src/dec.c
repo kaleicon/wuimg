@@ -119,7 +119,7 @@ static void stat_metadata(struct wu_tree *tree, const int fd) {
 		return;
 	}
 
-	struct wu_tree *meta = tree_sprout_branch(tree, "Stats");
+	struct wu_tree *meta = tree_add_branch(tree, "Stats");
 	if (!meta) {
 		return;
 	}
@@ -134,21 +134,26 @@ static void stat_metadata(struct wu_tree *tree, const int fd) {
 	tree_bud_leaves(meta, sap, ARRAY_LEN(sap));
 }
 
+static FILE * get_file(struct image_file *infile, const char *name) {
+	if (!infile->ifp) {
+		infile->ifp = fopen(name, "rb");
+	}
+	return infile->ifp;
+}
+
 enum wu_error dec_decode_image(struct image_context *image) {
 	struct image_file *infile = &image->file;
-	if (!infile->ifp) {
-		errno = 0;
-		infile->ifp = fopen(image->name, "rb");
-		if (!infile->ifp) {
-			if (errno) {
-				image_file_error_append(infile, strerror(errno));
-			}
-			return wu_open_error;
+	errno = 0;
+	FILE *ifp = get_file(infile, image->name);
+	if (!ifp) {
+		if (errno) {
+			image_file_error_append(infile, strerror(errno));
 		}
+		return wu_open_error;
 	}
 
 	errno = 0;
-	image->fmt_id = fmtmap_identify_file(infile->ifp, image->name);
+	image->fmt_id = fmtmap_identify_file(ifp, image->name);
 	if (image->fmt_id == -1) {
 		if (errno) {
 			image_file_error_append(infile, strerror(errno));
@@ -161,8 +166,8 @@ enum wu_error dec_decode_image(struct image_context *image) {
 	if (!tree_sow(metadata, "Metadata")) {
 		return wu_alloc_error;
 	}
-	tree_sprout_leaf(metadata, "Format", fn_map[image->fmt_id].name);
-	stat_metadata(metadata, fileno(infile->ifp));
+	tree_add_leaf(metadata, "Format", fn_map[image->fmt_id].name);
+	stat_metadata(metadata, fileno(ifp));
 
 	const enum wu_error result = fn_map[image->fmt_id].dec(infile,
 		&image->conf);
@@ -184,7 +189,7 @@ struct raw_img **cur_img) {
 
 	enum image_event ev = 0;
 	const struct raw_img *img = image->file.sub_img + state->idx;
-	const int frames = img->frames ? (int)img->frames->nr : 1;
+	const int frames = (int)raw_img_frames_nr(img);
 	if (state->frame + 1 < frames) {
 		ev = ev_frame;
 		++state->frame;

@@ -8,11 +8,6 @@
 #include "wudefs.h"
 #include "raster/pix.h"
 
-struct tga_ratio {
-	unsigned short num;
-	unsigned short den;
-};
-
 struct tga_metadata {
 	unsigned char id_len;
 	unsigned char id[255];
@@ -36,8 +31,6 @@ struct tga_metadata {
 	} software;
 
 	struct pix_rgba8 key_color;
-	struct tga_ratio pixel_aspect;
-	struct tga_ratio gamma;
 
 	unsigned int stamp_offset;
 };
@@ -68,9 +61,9 @@ struct tga_desc {
 	struct tga_metadata meta;
 };
 
-void tga_cleanup(struct tga_desc *desc);
+const char * tga_type_str(enum tga_image_type type);
 
-double tga_ratio_to_float(const struct tga_ratio ratio);
+void tga_cleanup(struct tga_desc *desc);
 
 size_t tga_decode_stamp(const struct tga_desc *desc, struct raw_img *stamp);
 
@@ -81,7 +74,7 @@ struct raster_pal * tga_take_extra_palette(struct tga_desc *desc);
 enum wu_error tga_parse_stamp(const struct tga_desc *desc,
 struct raw_img *main, struct raw_img *stamp);
 
-bool tga_parse_footer(struct tga_desc *desc);
+bool tga_parse_footer(struct tga_desc *desc, struct raw_img *img);
 
 enum wu_error tga_parse_header(struct tga_desc *desc, struct raw_img *img,
 FILE *ifp);

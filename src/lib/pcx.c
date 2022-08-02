@@ -6,6 +6,7 @@
 #include "raster/file.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
+#include "raster/mem.h"
 #include "raster/unpack.h"
 
 #include "pcx.h"
@@ -85,7 +86,7 @@ const struct raw_img *img) {
 static bool load_palette(const struct pcx_desc *desc,
 struct raw_img *img, const struct pix_rgb8 *pal_data) {
 	// Take a deep breath...
-	struct raster_pal *pal = raw_img_set_palette(img, malloc(sizeof(*pal)));
+	struct raster_pal *pal = raw_img_palette_init(img);
 	if (!pal) {
 		return false;
 	}
@@ -277,21 +278,10 @@ const uint16_t palette_type) {
 	img->h = (size_t)height;
 	img->channels = planes;
 	img->bitdepth = bitdepth;
-	const size_t base_stride = scanline_length(img->w, img->bitdepth, 1);
-	if (base_stride > bytes_per_line) {
+	img->alignment = scanline_alignment(bytes_per_line, img->w, img->bitdepth);
+	if (!img->alignment || img->alignment > 8) {
 		return wu_invalid_header;
 	}
-	const size_t diff = bytes_per_line - base_stride;
-	size_t align = 1;
-	if (diff) {
-		// This format sucks everywhere, I swear
-		align = 1 << (zulog2(diff) + 1);
-		//if (align > 4) { // I guess 4 is the maximum we'll encounter
-		if (align > 8) { // Guessed wrong
-			return wu_invalid_header;
-		}
-	}
-	img->alignment = (uint8_t)align;
 
 	desc->palette_type = palette_type;
 	desc->bytes_per_line = bytes_per_line;

@@ -6,6 +6,9 @@
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
 size_t w, size_t h, uint8_t ch, uint8_t bitdepth, uint8_t align, bool paletted);
 
+void v9958_ykj_to_grb(uint8_t *restrict dst, const uint8_t *restrict src,
+size_t dwords, const struct raster_pal *yae);
+
 struct pix_rgba8 ega_palette(size_t idx);
 
 struct pix_rgba8 cga_palette(size_t idx);

@@ -8,6 +8,8 @@
 struct write_args {
 	const char *outdir;
 	bool overwrite;
+	bool stdout;
+	bool null;
 };
 
 struct write_writer {

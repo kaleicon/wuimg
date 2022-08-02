@@ -23,7 +23,7 @@ const char * cicp_primaries_str(const enum cicp_primaries primaries) {
 	case cicp_primaries_smpte_st_428_1: return ST428;
 	case cicp_primaries_smpte_rp_431_2: return "SMPTE RP 431-2";
 	case cicp_primaries_smpte_eg_432_1: return "SMPTE EG 432-1";
-	case cicp_primaries_nightmare_inducing: return "Nightmare-inducing";
+	case cicp_primaries_the_unidentified: return "Migraine inducing";
 	}
 	return DEFAULT;
 }
@@ -60,7 +60,7 @@ const enum cicp_matrix matrix) {
 
 const char * cicp_matrix_str(const enum cicp_matrix matrix) {
 	switch (matrix) {
-	case cicp_matrix_rgb: return "RGB";
+	case cicp_matrix_rgb: return "Identity";
 	case cicp_matrix_bt709_6: return BT709;
 	case cicp_matrix_unspecified: return UNSPEC;
 	case cicp_matrix_fcc_title_47: return "FCC Title 47";

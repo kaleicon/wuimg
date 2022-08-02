@@ -210,32 +210,29 @@ libraw_data_t *data) {
 	return raw_thumb_none;
 }
 
-static void measure_and_add(struct wu_tree *tree, const char *restrict name,
-const char *restrict field, const size_t field_len) {
-	const size_t len = strnlen(field, field_len);
-	if (len) {
-		tree_sprout_unsafe_leaf(tree, name, field, len);
-	}
-}
-
 static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 	const libraw_imgother_t *other = libraw_get_imgother(data);
-	measure_and_add(tree, "Artist", other->artist, sizeof(other->artist));
-	measure_and_add(tree, "Description", other->desc, sizeof(other->desc));
+	tree_add_limited_leaf(tree, "Artist", other->artist,
+		sizeof(other->artist));
+	tree_add_limited_leaf(tree, "Description", other->desc,
+		sizeof(other->desc));
 	const struct wu_tree_sap sap[] = {
-		{"ISO speed", {wu_leaf_double, {.g = other->iso_speed}}},
-		{"Shutter speed", {wu_leaf_double, {.g = other->shutter}}},
-		{"Aperture", {wu_leaf_double, {.g = other->aperture}}},
-		{"Focal length", {wu_leaf_double, {.g = other->focal_len}}},
+		{"ISO speed", {wu_leaf_float, {.f = other->iso_speed}}},
+		{"Shutter speed", {wu_leaf_float, {.f = other->shutter}}},
+		{"Aperture", {wu_leaf_float, {.f = other->aperture}}},
+		{"Focal length", {wu_leaf_float, {.f = other->focal_len}}},
 		{"Timestamp", {wu_leaf_time, {.time = other->timestamp}}},
 		{"Shot order", {wu_leaf_unsigned, {.u = other->shot_order}}},
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
 	const libraw_iparams_t *idata = libraw_get_iparams(data);
-	measure_and_add(tree, "Make", idata->make, sizeof(idata->make));
-	measure_and_add(tree, "Model", idata->model, sizeof(idata->model));
-	measure_and_add(tree, "Software", idata->software, sizeof(idata->software));
+	tree_add_limited_leaf(tree, "Make", idata->make,
+		sizeof(idata->make));
+	tree_add_limited_leaf(tree, "Model", idata->model,
+		sizeof(idata->model));
+	tree_add_limited_leaf(tree, "Software", idata->software,
+		sizeof(idata->software));
 	if (idata->dng_version) {
 		const struct wu_leaf leaf = {
 			wu_leaf_unsigned, {.u = idata->dng_version},

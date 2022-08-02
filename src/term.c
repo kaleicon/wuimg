@@ -6,17 +6,17 @@
 #include <unistd.h>
 
 #include <termios.h>
-#include <iconv.h>
 
 #include <uchardet/uchardet.h>
+#include <unicode/ucnv.h>
 
 #include "common.h"
 #include "term.h"
 #include "wustr.h"
 
-size_t term_printable_len(const char *str, size_t len) {
+static size_t graph_len(const unsigned char *str, size_t len) {
 	while (len) {
-		const unsigned char c = (unsigned char)str[len - 1];
+		const unsigned char c = str[len - 1];
 		if (c && isgraph(c)) {
 			break;
 		}
@@ -25,184 +25,112 @@ size_t term_printable_len(const char *str, size_t len) {
 	return len;
 }
 
-static char * escape_data(const unsigned char *restrict data,
-const size_t len, size_t *outlen) {
-	char *out = NULL;
-	struct wugrow grow = wugrow_init(1);
-	if (!wugrow_reserve(&out, &grow, len)) {
-		return NULL;
-	}
+static void print_escaped(const unsigned char *restrict data, size_t len,
+FILE *stream, const bool utf8) {
+	len = graph_len(data, len);
+	const unsigned char hex[16] = "0123456789ABCDEF";
+	const unsigned char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
+	const unsigned char RESET[] = {0x1b, '[', 'm'};
 
 	bool escaping = false;
-	const char hex[16] = "0123456789ABCDEF";
-	const char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
-	const char RESET[] = {0x1b, '[', 'm'};
+	size_t region_start = 0;
 	for (size_t i = 0; i < len; ++i) {
 		const unsigned char c = data[i];
-		size_t extra = 0;
-		if (isgraph(c) || isspace(c)) {
+		if (isprint(c) || c == '\n' || c == '\t' || (!isascii(c) && utf8)
+		|| (c == '\r' && i + 1 < len && data[i+1] == '\n')) {
 			if (escaping) {
-				extra += sizeof(RESET);
-			}
-			if (!wugrow_reserve(&out, &grow, extra)) {
-				free(out);
-				return NULL;
-			}
-			if (escaping) {
-				memcpy(out + grow.pos, RESET, sizeof(RESET));
-				grow.pos += sizeof(RESET);
+				fwrite(RESET, 1, sizeof(RESET), stream);
+				region_start = i;
 				escaping = false;
 			}
-			out[grow.pos] = (char)c;
-			++grow.pos;
 		} else {
-			char byte[] = {'x', hex[c >> 4], hex[c & 0x0f]};
-			extra += sizeof(byte);
 			if (!escaping) {
-				extra += sizeof(HIGHLIGHT);
-			}
-			if (!wugrow_reserve(&out, &grow, extra)) {
-				free(out);
-				return NULL;
-			}
-			if (!escaping) {
-				memcpy(out + grow.pos, HIGHLIGHT, sizeof(HIGHLIGHT));
-				grow.pos += sizeof(HIGHLIGHT);
+				fwrite(data + region_start, 1, i - region_start,
+					stream);
+				fwrite(HIGHLIGHT, 1, sizeof(HIGHLIGHT), stream);
 				escaping = true;
 			}
-			memcpy(out + grow.pos, byte, sizeof(byte));
-			grow.pos += sizeof(byte);
+			unsigned char byte[] = {'x', hex[c >> 4], hex[c & 0x0f]};
+			fwrite(byte, 1, sizeof(byte), stream);
 		}
 	}
 	if (escaping) {
-		if (!wugrow_reserve(&out, &grow, sizeof(RESET))) {
+		fwrite(RESET, 1, sizeof(RESET), stream);
+	} else {
+		fwrite(data + region_start, 1, len - region_start, stream);
+	}
+}
+
+static char * convert_str(UConverter *from, UConverter *to, const char *data,
+const size_t len, size_t *outlen, UErrorCode *err) {
+	*outlen = (size_t)UCNV_GET_MAX_BYTES_FOR_STRING(len, ucnv_getMaxCharSize(to));
+	char *out = malloc(*outlen);
+	if (out) {
+		char *pos = out;
+		ucnv_convertEx(to, from, &pos, pos + *outlen, &data, data + len,
+			NULL, NULL, NULL, NULL, false, true, err);
+		*outlen = (size_t)(pos - out);
+		if (U_FAILURE(*err)) {
 			free(out);
 			return NULL;
 		}
-		memcpy(out + grow.pos, RESET, sizeof(RESET));
-		grow.pos += sizeof(RESET);
 	}
-	out[grow.pos] = 0;
-	*outlen = grow.pos;
 	return out;
 }
 
-static char * conv_iconv(const iconv_t cd, const void *restrict data,
-const size_t len, size_t *outlen) {
-	size_t alloc = len;
-	char *out = malloc(alloc);
-	if (!out) {
+static char * detect_and_convert(const char *restrict data, const size_t len,
+size_t *outlen, bool *is_utf8) {
+	if (!len) {
 		return NULL;
 	}
 
-	size_t inleft = len;
-	size_t outleft = len;
-	char *inpos = (char *)data; // iconv insists on the input not being const
-	char *outpos = out;
-	errno = 0;
-	for (;;) {
-		size_t n = iconv(cd, &inpos, &inleft, &outpos, &outleft);
-		if (n == (size_t)-1) {
-			if (errno == E2BIG) {
-				const size_t add = alloc / 4 + 1;
-				outleft += add;
-				alloc += add;
-
-				char *hold = realloc(out, alloc);
-				if (hold) {
-					out = hold;
-					outpos = out + alloc - outleft;
-					errno = 0;
-					continue;
+	UErrorCode err;
+	UConverter *from = NULL;
+	uchardet_t ud = uchardet_new();
+	if (ud) {
+		const int error = uchardet_handle_data(ud, data, len);
+		if (!error) {
+			uchardet_data_end(ud);
+			const char *enc = uchardet_get_charset(ud);
+			/* No one mentions that deleting the context also
+			 * invalidates the charset string. */
+			if (enc[0]) {
+				if (!strcmp(enc, "ASCII") || !strcmp(enc, "UTF-8")) {
+					*is_utf8 = true;
+				} else {
+					from = ucnv_open(enc, &err);
 				}
 			}
-			free(out);
-			return NULL;
-		} else if (inleft == 0) {
-			if (inpos) { // Additional iter to flush output
-				inpos = NULL;
-			} else {
-				break;
+		}
+		uchardet_delete(ud);
+	}
+
+	char *result = NULL;
+	if (from) {
+		UConverter *to = ucnv_open("UTF-8", &err);
+		if (to) {
+			result = convert_str(from, to, data, len, outlen, &err);
+			if (result) {
+				*is_utf8 = true;
 			}
+			ucnv_close(to);
 		}
+		ucnv_close(from);
 	}
-	*outlen = alloc - outleft;
-	out[*outlen] = 0;
-	return out;
+	return result;
 }
 
-static char * format_unsafe(const void *restrict data, const size_t len,
-size_t *outlen) {
-	*outlen = len;
-	if (len == 0) {
-		return NULL;
+void term_print_unsafe(const void *restrict data, size_t len, FILE *stream) {
+	bool is_utf8 = false;
+	const void *out;
+	char *conv = detect_and_convert(data, len, &len, &is_utf8);
+	if (conv) {
+		out = conv;
+	} else {
+		out = data;
 	}
-
-	const char *enc = "";
-	uchardet_t ud = uchardet_new();
-	const int error = uchardet_handle_data(ud, data, len);
-	if (!error) {
-		uchardet_data_end(ud);
-		enc = uchardet_get_charset(ud);
-	}
-
-	/* What no one mentions is that deleting the context also invalidates
-	 * the charset string. */
-	if (!enc[0]) {
-		uchardet_delete(ud);
-		return escape_data(data, len, outlen);
-	} else if (!strcmp(enc, "ASCII") || !strcmp(enc, "UTF-8")) {
-		uchardet_delete(ud);
-		return (char *)data;
-	}
-
-	const iconv_t cd = iconv_open("UTF-8", enc);
-	uchardet_delete(ud);
-	if (cd != (iconv_t)-1) {
-		char *result = conv_iconv(cd, data, len, outlen);
-		iconv_close(cd);
-		if (result) {
-			return result;
-		}
-	}
-	return escape_data(data, len, outlen);
-}
-
-char * term_format_unsafe(const void *restrict data, const size_t len,
-size_t *outlen) {
-	char *val = format_unsafe(data, len, outlen);
-	if (val == data) {
-		return memdup(data, len);
-	}
-	return val;
-}
-
-char * term_format_unsafe_or_same(void *restrict data, const size_t len,
-size_t *outlen) {
-	char *val = format_unsafe(data, len, outlen);
-	if (val) {
-		if (val == data) {
-			return data;
-		}
-		free(data);
-	}
-	return val;
-}
-
-void term_print_unsafe(const char *name, const void *restrict data,
-size_t len) {
-	char *out = term_format_unsafe(data, len, &len);
-	if (out) {
-		len = term_printable_len(out, len);
-
-		if (name) {
-			fputs(name, stdout);
-			fputs(": ", stdout);
-		}
-		fwrite(out, 1, len, stdout);
-		fputc('\n', stdout);
-		free(out);
-	}
+	print_escaped(out, len, stream, is_utf8);
+	free(conv);
 }
 
 size_t term_event_read(unsigned char *output, const size_t len) {
@@ -235,12 +163,12 @@ size_t term_event_read(unsigned char *output, const size_t len) {
 
 			unsigned char c;
 			switch (output[i]) {
-			case 'A': c = (shift ? 'K' : 'k'); break;
-			case 'B': c = (shift ? 'J' : 'j'); break;
-			case 'C': c = (shift ? 'L' : 'l'); break;
-			case 'D': c = (shift ? 'H' : 'h'); break;
-			case 'F': c = '1'; break;
-			case 'H': c = '0'; break;
+			case 'A': c = shift ? 'K' : 'k'; break;
+			case 'B': c = shift ? 'J' : 'j'; break;
+			case 'C': c = shift ? 'L' : 'l'; break;
+			case 'D': c = shift ? 'H' : 'h'; break;
+			case 'F': c = '='; break;
+			case 'H': c = shift ? '1' : '0'; break;
 			default: return written;
 			}
 			output[written] = c;
@@ -255,40 +183,64 @@ size_t term_event_read(unsigned char *output, const size_t len) {
 	return written;
 }
 
+void term_indent(size_t indent, FILE *out) {
+	const unsigned char spaces[] = {' ', ' ', ' ', ' '};
+	if (indent > sizeof(spaces)) {
+		if (isatty(fileno(out))) {
+			fprintf(out, "\x1b[%zuC", indent);
+			return;
+		}
+		do {
+			fwrite(spaces, 1, sizeof(spaces), out);
+			indent -= sizeof(spaces);
+		} while (indent > sizeof(spaces));
+	}
+	fwrite(spaces, 1, indent, out);
+}
+
+void term_line_put(const char *text, FILE *out) {
+	fputs(text, out);
+	fputc('\n', out);
+}
+
 const char CLEAR_LINE[] = "\x1b[K";
-void term_temp_line(const char *text) {
+void term_line_temp(const char *text) {
 	fputs(CLEAR_LINE, stdout);
 	fputs(text, stdout);
 	fputc('\r', stdout);
 	fflush(stdout);
 }
 
-void term_clear_line(void) {
+void term_line_clear(void) {
 	fputs(CLEAR_LINE, stdout);
 	fflush(stdout);
 }
 
 void term_noncanon_end(const struct term_restore *tr) {
-	struct termios term;
-	tcgetattr(STDIN_FILENO, &term);
+	if (isatty(STDIN_FILENO)) {
+		struct termios term;
+		tcgetattr(STDIN_FILENO, &term);
 
-	term.c_lflag = tr->lflag;
-	term.c_cc[VMIN] = tr->vmin;
-	term.c_cc[VTIME] = tr->vtime;
-	tcsetattr(STDIN_FILENO, TCSANOW, &term);
+		term.c_lflag = tr->lflag;
+		term.c_cc[VMIN] = tr->vmin;
+		term.c_cc[VTIME] = tr->vtime;
+		tcsetattr(STDIN_FILENO, TCSANOW, &term);
+	}
 }
 
 void term_noncanon_start(struct term_restore *tr) {
-	struct termios term;
-	tcgetattr(STDIN_FILENO, &term);
-	*tr = (struct term_restore) {
-		.lflag = term.c_lflag,
-		.vmin = term.c_cc[VMIN],
-		.vtime = term.c_cc[VTIME],
-	};
+	if (isatty(STDIN_FILENO)) {
+		struct termios term;
+		tcgetattr(STDIN_FILENO, &term);
+		*tr = (struct term_restore) {
+			.lflag = term.c_lflag,
+			.vmin = term.c_cc[VMIN],
+			.vtime = term.c_cc[VTIME],
+		};
 
-	term.c_lflag &= (tcflag_t)~(ECHO | ICANON);
-	term.c_cc[VMIN] = 0;
-	term.c_cc[VTIME] = 0;
-	tcsetattr(STDIN_FILENO, TCSANOW, &term);
+		term.c_lflag &= (tcflag_t)~(ECHO | ICANON);
+		term.c_cc[VMIN] = 0;
+		term.c_cc[VTIME] = 0;
+		tcsetattr(STDIN_FILENO, TCSANOW, &term);
+	}
 }

@@ -2,33 +2,23 @@
 #include "rast_utils.h"
 #include "lib/pdt.h"
 
-static enum wu_error decode(struct image_file *infile,
-const struct wu_conf *wuconf, const struct map_info *mm) {
-	struct pdt_desc desc;
-	enum wu_error st = pdt_open_mem(&desc, mm);
-	if (st != wu_ok) {
-		return st;
-	}
+static void metadata(const void *ptr, struct wu_tree *tree) {
+	const struct pdt_desc *desc = ptr;
+	tree_add_leaf(tree, "Version", pdt_version_str(desc->version));
+}
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
-	st = pdt_parse_header(&desc, img);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	tree_bud_leaf(&infile->metadata, "Version",
-		(struct wu_leaf){.val.u = desc.version - '0' + 10, .type = wu_leaf_unsigned});
-
-	if (raw_img_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
-	}
-	return pdt_decode(&desc, img) ? wu_ok : wu_decoding_error;
+static size_t dec(const void *ptr, struct raw_img *img) {
+	return pdt_decode(ptr, img);
+}
+static enum wu_error parse(void *ptr, struct raw_img *img) {
+	return pdt_parse_header(ptr, img);
+}
+static enum wu_error mopen(void *ptr, const struct mp_parser mp) {
+	return pdt_open_mem(ptr, mp);
 }
 
 enum wu_error pdt_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	return rast_map_wrap(infile, wuconf, decode);
+	struct pdt_desc desc;
+	return rast_trivial_map(infile, wuconf, &desc, mopen, parse, metadata,
+		dec, NULL);
 }

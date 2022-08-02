@@ -52,12 +52,12 @@ enum wu_error wbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 static void add_list(struct wu_tree *tree, const char *branch_name,
 const struct wpx_ia2_list *list) {
 	if (list->idx.nr) {
-		struct wu_tree *br = tree_sprout_branch(tree, branch_name);
+		struct wu_tree *br = tree_add_branch(tree, branch_name);
 		if (br) {
 			for (uint32_t i = 0; i < list->idx.nr; ++i) {
 				char num[13];
 				snprintf(num, sizeof(num), "%u", i);
-				tree_sprout_leaf(br, num,
+				tree_add_leaf(br, num,
 					(char *)list->str + list->idx.val[i]);
 			}
 		}
@@ -67,14 +67,15 @@ __attribute__((unused))
 static void array_print(const char *name, const struct wpx_ia2_array *arr,
 const uint32_t space) {
 	if (arr->nr) {
-		fputs(name, stdout);
+		FILE *out = stderr;
+		fputs(name, out);
 		for (uint32_t i = 0; i < arr->nr; ++i) {
 			if (i % space == 0) {
-				putchar('\n');
+				fputc('\n', out);
 			}
-			printf(" %u", arr->val[i]);
+			fprintf(out, " %u", arr->val[i]);
 		}
-		putchar('\n');
+		fputc('\n', out);
 	}
 }
 

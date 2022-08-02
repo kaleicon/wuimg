@@ -11,6 +11,10 @@ WUDEC(dib, false)
 WUDEC(ico, false)
 #endif
 
+#ifdef WU_ENABLE_DPX
+WUDEC(dpx, false)
+#endif
+
 #ifdef WU_ENABLE_G00
 WUDEC(g00, true)
 #endif
@@ -21,6 +25,26 @@ WUDEC(hg3, false)
 
 #ifdef WU_ENABLE_MAC
 WUDEC(mac, false)
+#endif
+
+#ifdef WU_ENABLE_MAG
+WUDEC(mag, false)
+#endif
+
+#ifdef WU_ENABLE_MAKI
+WUDEC(maki, false)
+#endif
+
+#ifdef WU_ENABLE_MSX
+WUDEC(scr2, false)
+WUDEC(scr3, false)
+WUDEC(scr4, false)
+WUDEC(scr5, false)
+WUDEC(scr6, false)
+WUDEC(scr7, false)
+WUDEC(scr8, false)
+WUDEC(scr10, false)
+WUDEC(scr12, false)
 #endif
 
 #ifdef WU_ENABLE_PCX
@@ -126,6 +150,10 @@ WUDEC(jpeg, true)
 #ifdef WU_ENABLE_JPEG2000
 WUDEC(jp2, true)
 WUDEC(j2k, true)
+#endif
+
+#ifdef WU_ENABLE_JPEGLS
+WUDEC(jpegls, false)
 #endif
 
 #ifdef WU_ENABLE_JPEGXL

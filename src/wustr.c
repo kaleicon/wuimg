@@ -1,6 +1,5 @@
+#include <ctype.h>
 #include <stdlib.h>
-#include <stddef.h>
-#include <stdbool.h>
 #include <string.h>
 
 #include "wustr.h"
@@ -94,8 +93,14 @@ bool wustr_memdup(struct wustr *w, const char *str, const size_t len) {
 	return (bool)w->str;
 }
 
-bool wustr_append_line(struct wustr *w, const char *str) {
-	const size_t len = strlen(str);
+bool wustr_append_line(struct wustr *w, const char *str,
+const bool strip_trailing_spaces) {
+	size_t len = strlen(str);
+	if (strip_trailing_spaces) {
+		while (len && isspace(str[len-1])) {
+			--len;
+		}
+	}
 	const size_t oldlen = w->len;
 	const size_t newlen = len + oldlen + 1 /* newline */;
 	if (wustr_realloc(w, newlen)) {
@@ -105,4 +110,8 @@ bool wustr_append_line(struct wustr *w, const char *str) {
 		return true;
 	}
 	return false;
+}
+
+size_t wustr_print(const struct wustr *w, FILE *out) {
+	return fwrite(w->str, 1, w->len, out);
 }

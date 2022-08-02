@@ -35,8 +35,8 @@ static void read_any(Datum meta, struct wu_tree *tree) {
 				return;
 			case Exiv2::TypeId::tiffFloat:
 			case Exiv2::TypeId::tiffDouble:
-				leaf.val.g = meta->toFloat();
-				leaf.type = wu_leaf_double;
+				leaf.val.f = meta->toFloat();
+				leaf.type = wu_leaf_float;
 				tree_bud_leaf(branch, tag.c_str(), leaf);
 				return;
 			default:
@@ -44,7 +44,7 @@ static void read_any(Datum meta, struct wu_tree *tree) {
 			}
 		}
 		std::string val = meta->toString();
-		tree_sprout_measured_leaf(branch, tag.c_str(), val.data(),
+		tree_add_measured_leaf(branch, tag.c_str(), val.data(),
 			val.size());
 	}
 }
@@ -60,7 +60,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::XmpData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_sprout_branch(tree, XMP);
+	struct wu_tree *outtree = tree_add_branch(tree, XMP);
 	for (Exiv2::XmpData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -79,7 +79,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::IptcData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_sprout_branch(tree, IPTC);
+	struct wu_tree *outtree = tree_add_branch(tree, IPTC);
 	for (Exiv2::IptcData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -98,7 +98,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::ExifData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_sprout_branch(tree, EXIF);
+	struct wu_tree *outtree = tree_add_branch(tree, EXIF);
 	for (Exiv2::ExifData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -137,11 +137,11 @@ const void *metadata, const size_t len, struct wu_tree *tree) {
 		}
 	} catch (...) {
 		switch (type) {
-		case exif_metadata: fputs(EXIF, stdout); break;
-		case xmp_metadata: fputs(XMP, stdout); break;
-		case iptc_metadata: fputs(IPTC, stdout); break;
+		case exif_metadata: fputs(EXIF, stderr); break;
+		case xmp_metadata: fputs(XMP, stderr); break;
+		case iptc_metadata: fputs(IPTC, stderr); break;
 		}
-		fputs(" parsing failed.\n", stdout);
+		fputs(" parsing failed.\n", stderr);
 	}
 	return st;
 }

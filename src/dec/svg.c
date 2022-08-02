@@ -69,7 +69,7 @@ static enum wu_error svg_render(struct raw_img *img, struct svg_state *ds) {
 		&ds->viewport, NULL);
 	cairo_destroy(canvas);
 	if (success) {
-		printf("Rendered @ %zu x %zu (%zu bytes), %.2fx original\n",
+		fprintf(stderr, "Rendered @ %zu x %zu (%zu bytes), %.2fx original\n",
 			img->w, img->h, img->w * img->h * img->channels,
 			ds->dec_scale);
 		return wu_ok;

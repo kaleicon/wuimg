@@ -36,7 +36,7 @@ const char * window_backend_name(enum window_backend backend);
 
 void window_terminate(struct window_context *window);
 
-void window_draw(struct window_context *window, bool must_sync);
+bool window_draw(struct window_context *window);
 
 void window_fullscreen(struct window_context *window);
 

@@ -1,24 +1,57 @@
 #include <stdlib.h>
 
 #include "rast_utils.h"
-#include "common.h"
 
-bool rast_exceeds_size(const struct raster_desc *desc,
-const struct wu_conf *conf) {
-	return zumax(desc->w, desc->h) > conf->max_img_size;
+static enum wu_error common_trivial(struct image_file *infile,
+const struct wu_conf *wuconf, void *desc, rast_vparse_t parse,
+rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
+	struct raw_img *img = alloc_sub_images(infile, 1);
+	enum wu_error st = wu_alloc_error;
+	if (img) {
+		st = (*parse)(desc, img);
+		if (st == wu_ok) {
+			if (meta) {
+				(*meta)(desc, &infile->metadata);
+			}
+			if (raw_img_exceeds_limit(img, wuconf)) {
+				st = wu_exceeds_size_limit;
+			} else {
+				st = (*dec)(desc, img)
+					? wu_ok : wu_decoding_error;
+			}
+		}
+		if (cleanup) {
+			(*cleanup)(desc);
+		}
+	}
+	return st;
 }
 
-enum wu_error rast_to_raw_img(struct raster_desc *desc, struct raw_img *img) {
-	img->w = desc->w;
-	img->h = desc->h;
-	img->channels = desc->ch;
-	img->bitdepth = desc->bitdepth;
-	img->alignment = desc->alignment;
-	img->layout = desc->layout;
-	img->attr = desc->attr;
-	img->rotate = desc->rotate;
-	img->mirror = desc->mirror;
-	return raw_img_alloc(img);
+enum wu_error rast_trivial_map(struct image_file *infile,
+const struct wu_conf *wuconf, void *desc, rast_vmopen_t mopen,
+rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
+	struct map_info mm;
+	enum wu_error st = wu_open_error;
+	if (map_file(&mm, infile->ifp)) {
+		st = (*mopen)(desc, mp_parser_mem(mm.len, mm.data));
+		if (st == wu_ok) {
+			st = common_trivial(infile, wuconf, desc, parse, meta,
+				dec, cleanup);
+		}
+		unmap_file(&mm);
+	}
+	return st;
+}
+
+enum wu_error rast_trivial_dec(struct image_file *infile,
+const struct wu_conf *wuconf, void *desc, rast_vopen_t open,
+rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
+	enum wu_error st = (*open)(desc, infile->ifp);
+	if (st == wu_ok) {
+		st = common_trivial(infile, wuconf, desc, parse, meta, dec,
+			cleanup);
+	}
+	return st;
 }
 
 enum wu_error rast_map_wrap(struct image_file *infile,

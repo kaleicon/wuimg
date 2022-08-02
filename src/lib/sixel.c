@@ -6,6 +6,7 @@
 #include <limits.h>
 
 #include "sixel.h"
+#include "term.h"
 #include "raster/fmt.h"
 
 #define MACRO_CASE_SPACE case ' ': case '\f': case '\n': case '\r': case '\t': case '\v':
@@ -263,19 +264,20 @@ struct raw_img *img) {
 	/* We must do a pass over the whole stream to know the image
 	 * dimensions. No other way around it. */
 	size_t row_width = 0;
-	size_t height = LINE_HEIGHT;
+	size_t height = 0;
 	struct mp_parser tp = desc->tp; // Local copy
 	for (bool end = false; !end;) {
 		const int c = mp_next_char(&tp);
 		switch (c) {
 		case EOF:
-			puts("SIXEL error: Ending escape byte not found.");
+			term_line_put("SIXEL error: Ending escape byte not found.",
+				stderr);
 			return wu_decoding_error;
 		case ansi_escape:
 			end = true;
 			break;
 		case graphics_new_line:
-			height += LINE_HEIGHT;
+			++height;
 			// fallthrough
 		case graphics_carriage_return:
 			if (row_width > img->w) {
@@ -286,22 +288,22 @@ struct raw_img *img) {
 		case graphics_repeat_introducer:
 			;long repeat;
 			if (!mp_get_uint(&tp, 5, &repeat)) {
-				puts("SIXEL error: Repeat introducer "
-					"lacks digits.\n");
+				term_line_put("SIXEL error: Repeat introducer "
+					"lacks digits.", stderr);
 				return wu_decoding_error;
 			}
 
 			if (!issixel(mp_next_char(&tp))) {
-				puts("SIXEL error: Found non-sixel graphics "
-					"repeat.");
+				term_line_put("SIXEL error: Found non-sixel "
+					"graphics repeat.", stderr);
 				return wu_decoding_error;
 			}
 			row_width += (size_t)repeat;
 			break;
 		case color_introducer:
 			if (!validate_color(&tp)) {
-				puts("SIXEL error: Failed to parse color "
-					"introducer.");
+				term_line_put("SIXEL error: Failed to parse "
+					"color introducer.", stderr);
 				return wu_decoding_error;
 			}
 			break;
@@ -313,20 +315,25 @@ struct raw_img *img) {
 			} else if (c >= 0x80) {
 				end = true;
 			} else {
-				printf("SIXEL error: Found invalid character at %#zx: %d\n",
+				fprintf(stderr, "SIXEL error: "
+					"Found invalid character at %#zx: %d\n",
 					tp.pos, c);
 				return wu_decoding_error;
 			}
 		}
 	}
 
-	if (height > img->h) {
-		img->h = height;
-	}
 	if (row_width > img->w) {
 		img->w = row_width;
 	}
 	if (img->w) {
+		if (row_width) {
+			++height;
+		}
+		height *= LINE_HEIGHT;
+		if (height > img->h) {
+			img->h = height;
+		}
 		desc->data_end = tp.pos - 1;
 		return raw_img_verify(img);
 	}
@@ -412,23 +419,24 @@ struct raw_img *img) {
 		return status;
 	}
 
+	unsigned pan = 0;
+	unsigned pad = 1;
 	switch (macro[0]) {
 	case 2:
-		desc->pan = 5;
+		pan = 5;
 		break;
 	case 3: case 4:
-		desc->pan = 3;
+		pan = 3;
 		break;
 	case 7: case 8: case 9:
-		desc->pan = 1;
+		pan = 1;
 		break;
 	case 0: case 1: case 5: case 6:
-		desc->pan = 2;
+		pan = 2;
 		break;
 	default:
 		return wu_invalid_header;
 	}
-	desc->pad = 1;
 	switch (macro[1]) {
 	case 0: case 2:
 		desc->p2 = sixel_set_to_bg;
@@ -441,8 +449,6 @@ struct raw_img *img) {
 	}
 	desc->horizontal_grid_size = macro[2];
 
-	img->channels = 4;
-	img->bitdepth = 8;
 	const int c = mp_next_nonspace(tp);
 	if (c == raster_attributes) {
 		unsigned int raster[4] = {0};
@@ -452,8 +458,8 @@ struct raw_img *img) {
 		} else if (raster[0] == 0 || raster[1] == 0) {
 			return wu_invalid_header;
 		}
-		desc->pan = raster[0];
-		desc->pad = raster[1];
+		pan = raster[0];
+		pad = raster[1];
 		img->w = raster[2];
 		img->h = raster[3];
 	} else if (c == EOF) {
@@ -461,6 +467,9 @@ struct raw_img *img) {
 	} else {
 		--tp->pos;
 	}
+	img->channels = 4;
+	img->bitdepth = 8;
+	raw_img_aspect_ratio(img, (int)pan, (int)pad);
 	return calc_dimensions(desc, img);
 }
 
@@ -483,9 +492,9 @@ static int skip_csi(struct mp_parser *tp) {
 }
 
 enum wu_error sixel_open_mem(struct sixel_desc *desc,
-const struct map_info *mm) {
+const struct mp_parser mp) {
+	desc->tp = mp;
 	struct mp_parser *tp = &desc->tp;
-	*tp = mp_parser_mem(mm->len, mm->data);
 
 	/* The sixel format begins with the Device Control String, which might
 	 * come in single-byte and two-byte form. And since it is basically a

@@ -49,6 +49,12 @@ const char * wu_error_message(const enum wu_error err) {
 		"Pray for my soul.";
 }
 
+void raw_img_aspect_ratio(struct raw_img *img, const int num, const int den) {
+	if (num && den) {
+		img->ratio = (float)num / (float)den;
+	}
+}
+
 void raw_img_exif_orientation(struct raw_img *img, const int orientation) {
 	int m;
 	int r;
@@ -161,6 +167,9 @@ enum wu_error raw_img_verify(struct raw_img *img) {
 			img->alpha = alpha_ignore;
 		}
 	}
+	if (!img->ratio) {
+		img->ratio = 1;
+	}
 	if (!img->dec_scale) {
 		img->dec_scale = 1;
 	}
@@ -178,6 +187,13 @@ size_t raw_img_stride(const struct raw_img *img) {
 }
 
 size_t raw_img_size(const struct raw_img *img) {
+	if (img->mode == image_mode_planar) {
+		size_t total = 0;
+		for (uint8_t z = 0; z < img->channels; ++z) {
+			total += img->u.planes->p[z].size;
+		}
+		return total;
+	}
 	return raw_img_stride(img) * img->h;
 }
 
@@ -253,13 +269,34 @@ struct image_planes * raw_img_plane_init(struct raw_img *img) {
 	return planes;
 }
 
-struct raster_pal * raw_img_set_palette(struct raw_img *img,
+struct raster_pal * raw_img_palette_set(struct raw_img *img,
 struct raster_pal *pal) {
 	if (pal) {
 		set_img_mode(img, image_mode_palette);
 		img->u.palette = pal;
 	}
 	return pal;
+}
+
+struct raster_pal * raw_img_palette_init(struct raw_img *img) {
+	return raw_img_palette_set(img,  malloc(sizeof(struct raster_pal)));
+}
+
+int raw_img_frame_prev_keyframe(struct raw_img *img, int i) {
+	while (i && !img->frames->f[i].keyframe) {
+		--i;
+	}
+	return i;
+}
+
+void raw_img_frame_set(struct raw_img *img, const size_t i, const size_t x,
+const size_t y, const size_t w, const size_t h, const int msec,
+const bool opaque) {
+	img->frames->f[i] = (struct frame_info) {
+		.x = x, .y = y, .w = w, .h = h,
+		.msec = msec,
+		.keyframe = (opaque && !x && !y && w == img->w && h == img->h),
+	};
 }
 
 size_t raw_img_frames_nr(const struct raw_img *img) {
@@ -278,12 +315,13 @@ bool raw_img_clone(struct raw_img *dst, struct raw_img *src) {
 	*dst = *src;
 	dst->data = NULL;
 	dst->frames = NULL;
+	dst->id = NULL;
 	dst->mode = image_mode_raw;
 	dst->cs = color_space_ref(&src->cs);
 	switch (src->mode) {
 	case image_mode_raw: break;
 	case image_mode_palette:
-		return raw_img_set_palette(dst,
+		return raw_img_palette_set(dst,
 			memdup(src->u.palette, sizeof(*src->u.palette)));
 	case image_mode_planar:
 		return raw_img_plane_init(dst);
@@ -292,7 +330,9 @@ bool raw_img_clone(struct raw_img *dst, struct raw_img *src) {
 }
 
 static void raw_img_free(struct raw_img *img) {
-	free(img->data);
+	if (img->data != IMG_DATA_BORROWED) {
+		free(img->data);
+	}
 	switch (img->mode) {
 	case image_mode_planar:
 		free(img->u.planes);
@@ -368,27 +408,36 @@ static void print_colorspace_data(const struct color_space *cs) {
 		break;
 	case color_profile_custom:
 		;const struct color_profile *prof = &cs->desc->u.prof;
-		printf("   Gamma: %f %f %f\n", prof->xfer.r, prof->xfer.g,
-			prof->xfer.b);
-		const char *n[4] = {"White", "Red", "Green", "Blue"};
-		const struct color_xy *p = (struct color_xy *)&prof->pri;
+		printf("   Gamma: %f %f %f\n", prof->gamma.r, prof->gamma.g,
+			prof->gamma.b);
 		puts("   Primaries:");
+		const struct color_xy *p = (struct color_xy *)&prof->pri;
+		const char *n[4] = {"White", "Red", "Green", "Blue"};
 		for (size_t i = 0; i < 4; ++i) {
 			printf("    %s: %f, %f\n", n[i], p[i].x, p[i].y);
 		}
 		break;
 	case color_profile_icc:
-		break;
+		return;
 	}
 }
 
 static void print_more_data(const struct raw_img *img) {
-	printf("  Alignment: %d\n", img->alignment);
-	printf("  Rotation: %d\n", img->rotate);
-	printf("  Mirror: %s\n", img->mirror ? "yes" : "no");
-	char layout[5] = "rgba";
-	pix_layout_swizzle(layout, sizeof(layout) - 1, 1, img->layout);
-	printf("  Pixel layout: %s\n", layout);
+	if (img->alignment > 1) {
+		printf("  Alignment: %d\n", img->alignment);
+	}
+	if (img->rotate) {
+		printf("  Rotation: %d\n", img->rotate);
+	}
+	if (img->mirror) {
+		puts("  Mirror: yes");
+	}
+	printf("  Alpha: %d\n", img->alpha);
+	fputs("  Pixel layout: ", stdout);
+	pix_layout_print(img->layout, stdout);
+	if (img->ratio != 1) {
+		printf("  Ratio: %g\n", img->ratio);
+	}
 
 	print_colorspace_data(&img->cs);
 	if (img->mode == image_mode_planar) {
@@ -447,7 +496,7 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 
 	if (file->errors.str) {
 		fputs("Found warning: ", stdout);
-		fwrite(file->errors.str, 1, file->errors.len, stdout);
+		wustr_print(&file->errors, stdout);
 	}
 	printf("Contained sub-images: %zu\n", file->nr);
 
@@ -481,14 +530,7 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 void image_file_normalize(struct image_file *file) {
 	if (!file->nr) {
 		fatal_bug("Bad image", "No sub-images contained!");
-	}/*
-	for (size_t i = 0; i < file->nr; ++i) {
-		struct raw_img *img = file->sub_img + i;
-		if (!img->data) {
-			continue;
-		}
-		raw_img_verify(img);
-	}*/
+	}
 }
 
 enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) {
@@ -502,7 +544,11 @@ enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) 
 }
 
 void image_file_error_append(struct image_file *file, const char *str) {
-	wustr_append_line(&file->errors, str);
+	wustr_append_line(&file->errors, str, true);
+}
+
+void image_file_status_append(struct image_file *file, const enum wu_error st) {
+	image_file_error_append(file, wu_error_message(st));
 }
 
 void image_file_free(struct image_file *file) {
@@ -522,7 +568,7 @@ struct raw_img * image_cur_sub_img(const struct image_context *image) {
 }
 
 enum image_event image_zoom(struct image_context *image, float new_zoom) {
-	const float max = 64.0f;
+	const float max = 32.0f;
 	const float min = 1.0f/max;
 
 	enum image_event ev = 0;
@@ -560,22 +606,4 @@ void image_reset(struct image_context *image) {
 	image->file = (struct image_file){0};
 	image->state.idx = 0;
 	image->state.frame = 0;
-}
-
-
-static size_t fit(const size_t w, const size_t h, const size_t dw,
-const size_t dh, const size_t m) {
-	return zumax(1, zumin(m, zumax(w / dw, h / dh)));
-}
-
-size_t image_fit_factor(const struct wu_conf *conf, const size_t w,
-const size_t h, size_t max, const bool partial_decode) {
-	if (!max) {
-		max = SIZE_MAX;
-	}
-	if (partial_decode) {
-		return fit(w, h, (size_t)conf->fb.w, (size_t)conf->fb.h, max);
-	}
-	const size_t m = conf->max_img_size;
-	return fit(w, h, m, m, max);
 }

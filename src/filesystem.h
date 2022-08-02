@@ -12,7 +12,7 @@ void fs_path_free(struct fs_path *path);
 
 void fs_path_set_file(struct fs_path *path, const struct wuptr name);
 
-int fs_get_parent_dir(struct fs_path *path, const char *str);
+int fs_get_parent_dir(struct fs_path *path, const char *str, bool must_exist);
 
 char ** fs_filter_sort(const char *name, size_t *nr, size_t *start_idx);
 

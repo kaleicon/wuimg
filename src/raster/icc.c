@@ -1,4 +1,5 @@
 #include "icc.h"
+#include "term.h"
 #include "memparser.h"
 
 void icc_profile_free(struct icc_profile *icc) {
@@ -43,7 +44,7 @@ static cmsUInt32Number tell_fn(struct _cms_io_handler *io) {
 
 static void err_fn(cmsContext id, cmsUInt32Number err, const char *text) {
 	(void)id; (void)err;
-	puts(text);
+	term_line_put(text, stderr);
 }
 
 static void init_profile(void) {

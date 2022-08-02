@@ -4,8 +4,7 @@
 #include "graphics_adapters.h"
 
 static void interleave_pal1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const size_t h, const uint8_t planes, const uint8_t align) {
-	const size_t row_len = scanline_length(w, 1, align);
+const size_t w, const size_t h, const uint8_t planes, const size_t row_len) {
 	for (size_t y = 0; y < h; ++y) {
 		const uint8_t *s = src + row_len*y;
 		for (size_t x = 0; x < w; ++x) {
@@ -20,8 +19,7 @@ const size_t w, const size_t h, const uint8_t planes, const uint8_t align) {
 }
 
 static void interleave_nopal1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const size_t h, const uint8_t planes, const uint8_t align) {
-	const size_t row_len = scanline_length(w, 1, align);
+const size_t w, const size_t h, const uint8_t planes, const size_t row_len) {
 	for (uint8_t y = 0; y < h; ++y) {
 		const uint8_t *s = src + row_len*y;
 		uint8_t *d = dst + w*planes*y;
@@ -36,9 +34,9 @@ const size_t w, const size_t h, const uint8_t planes, const uint8_t align) {
 }
 
 static void interleave8(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const uint8_t ch) {
+const size_t w, const uint8_t ch, const size_t row_len) {
 	for (size_t z = 0; z < ch; ++z) {
-		strip_spread(dst + z, src + w*z, w, ch);
+		strip_spread(dst + z, src + row_len*z, w, ch);
 	}
 }
 
@@ -47,18 +45,52 @@ const size_t w, const uint8_t ch) {
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t w, const size_t h, const uint8_t ch, const uint8_t bitdepth,
 const uint8_t align, const bool paletted) {
+	const size_t row_len = scanline_length(w, bitdepth, align);
 	switch (bitdepth) {
 	case 1:
 		if (paletted) {
-			interleave_pal1(dst, src, w, h, ch, align);
+			interleave_pal1(dst, src, w, h, ch, row_len);
 		} else {
-			interleave_nopal1(dst, src, w, h, ch, align);
+			interleave_nopal1(dst, src, w, h, ch, row_len);
 		}
 		break;
 	case 8:
 		// Only used by PCX.
-		interleave8(dst, src, w, ch);
+		interleave8(dst, src, w, ch, row_len);
 		break;
+	}
+}
+
+static int unpack_ykj_chroma(const uint8_t *src) {
+	const unsigned n = (src[0] & 0x07) | ((src[1] & 0x07) << 3);
+	return (int)((n ^ 0x20) - 0x20);
+}
+
+void v9958_ykj_to_grb(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t dwords, const struct raster_pal *yae) {
+	/*
+		G = Y + K
+		R = Y + J
+		B = 5*Y/4 - J/2 - K/4
+	*/
+	for (size_t i = 0; i < dwords; ++i) {
+		const int k = unpack_ykj_chroma(src + i*4) * 8;
+		const int j = unpack_ykj_chroma(src + i*4 + 2) * 8;
+		for (size_t p = 0; p < 4; ++p) {
+			const size_t pos = i*4 + p;
+			const int y = src[pos] & 0xf8;
+			if (yae && (y & 0x08)) {
+				memcpy(dst + pos*3, yae->color + y/(8*2),
+					(i + 1 == dwords) ? 3 : 4);
+			} else {
+				const int g = iclamp(y + k, 0, 0xff);
+				const int r = iclamp(y + j, 0, 0xff);
+				const int b = iclamp(y*5/4 - j/2 - k/4, 0, 0xff);
+				dst[pos*3] = (uint8_t)g;
+				dst[pos*3+1] = (uint8_t)r;
+				dst[pos*3+2] = (uint8_t)b;
+			}
+		}
 	}
 }
 

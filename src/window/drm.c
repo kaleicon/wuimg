@@ -8,9 +8,10 @@
 #include <xf86drm.h>
 #include <gbm.h>
 
-#include "../common.h"
-#include "../opengl.h"
-#include "drm.h"
+#include "common.h"
+#include "opengl.h"
+#include "term.h"
+#include "window/drm.h"
 
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 
@@ -65,7 +66,7 @@ struct window_public *pub) {
 			}
 		}
 		if (!fb_ptr) {
-			fputs("no free framebuffers :o\n", stderr);
+			term_line_put("no free framebuffers :o", stderr);
 			return 0;
 		}
 	}
@@ -111,7 +112,7 @@ void drm_swap_buffers(struct drm_context *ctx) {
 	struct drm_drm *drm = &ctx->drm;
 	const uint32_t fb_id = get_framebuffer(drm, next_bo, ctx->pub);
 	if (!fb_id) {
-		fputs("failed to get framebuffer\n", stderr);
+		term_line_put("failed to get framebuffer\n", stderr);
 		return;
 	}
 
@@ -119,7 +120,7 @@ void drm_swap_buffers(struct drm_context *ctx) {
 	int status = drmModePageFlip(drm->fd, drm->crtc_id, fb_id,
 		DRM_MODE_PAGE_FLIP_EVENT, &flipped);
 	if (status) {
-		fputs("page flip failed\n", stderr);
+		term_line_put("page flip failed\n", stderr);
 		return;
 	}
 
@@ -139,7 +140,7 @@ void drm_swap_buffers(struct drm_context *ctx) {
 			perror("Failed to poll DRM descriptor");
 			break;
 		} else if (status == 0) {
-			fputs("DRM descriptor poll timed out after 1 second\n",
+			term_line_put("DRM descriptor poll timed out after 1 second\n",
 				stderr);
 			break;
 		}

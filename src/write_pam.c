@@ -8,10 +8,9 @@
 #include <unistd.h>
 
 #include "dec.h"
+#include "term.h"
 #include "filesystem.h"
 #include "write_pam.h"
-
-static const char OUTDIR_FAIL[] = "Failed to open output directory";
 
 static void pam_write_row(void *out, const uint8_t depth, const size_t len,
 FILE *ofp) {
@@ -49,8 +48,8 @@ const uint8_t bd, FILE *ofp) {
 	fputs("ENDHDR\n", ofp);
 }
 
-static const char * pam_write(struct wu_state *state, struct gl_context *gl,
-const struct gl_reader *reader, FILE *ofp) {
+static const char * pam_write(struct gl_context *gl,
+const struct gl_reader *reader, struct wu_state *state, FILE *ofp) {
 	uint8_t *buf = malloc(reader->len);
 	if (buf) {
 		pam_write_header(reader->w, reader->h, reader->ch, reader->bd, ofp);
@@ -60,16 +59,15 @@ const struct gl_reader *reader, FILE *ofp) {
 		}
 		return NULL;
 	}
-	return "Failed to allocate row memory\n";
+	return "Failed to allocate row memory";
 }
 
 static FILE * get_file(const struct wu_state *state,
-struct write_out *out, const bool overwrite, const bool anim) {
+struct write_out *out, const bool overwrite, const bool anim, const char *ext) {
 	char *suffix = out->name + out->base_len;
 	const size_t rem = sizeof(out->name) - out->base_len;
-	const char ext[] = "pam";
 
-	const int prec = 4;
+	const int prec = 5;
 	int chars;
 	if (anim) {
 		chars = snprintf(suffix, rem, "_%.*d:%.*d.%s", prec, state->idx,
@@ -101,88 +99,92 @@ struct write_out *out, const bool overwrite, const bool anim) {
 }
 
 static bool set_out_dir(const struct image_context *image,
-struct write_out *out, const char *outdir) {
+struct write_out *out, const char *outdir, struct fs_path *path) {
 	if (!outdir) {
 		outdir = image->name;
 	}
-	struct fs_path path;
-	out->dirfd = fs_get_parent_dir(&path, outdir);
+	out->dirfd = fs_get_parent_dir(path, outdir, false);
 	if (out->dirfd >= 0) {
 		if (outdir != image->name) {
-			fs_path_set_file(&path, wuptr_str(image->name));
+			fs_path_set_file(path, wuptr_str(image->name));
 		}
-		out->base_len = path.file.len;
+		out->base_len = path->file.len;
 		if (out->base_len < sizeof(out->name)) {
-			memcpy(out->name, path.file.ptr, out->base_len);
-			fs_path_free(&path);
+			memcpy(out->name, path->file.ptr, out->base_len);
 			out->with_idx = image->file.nr > 1;
 			return true;
 		}
 		close(out->dirfd);
-		fs_path_free(&path);
+		fs_path_free(path);
 	}
 	return false;
 }
 
-static const char * try_write(struct wu_state *state, struct write_out *out,
-struct gl_context *gl, const struct raw_img *img, const bool overwrite) {
-	const char *err_msg = NULL;
-	FILE *ofp = get_file(state, out, overwrite, img->frames);
-	if (ofp) {
-		struct gl_reader reader;
-	 	if (gl_reader_set(gl, state, &reader, img)) {
-			err_msg = pam_write(state, gl, &reader, ofp);
-		} else {
-			err_msg = "Failed to set framebuffer\n";
-		}
-		fclose(ofp);
-	} else {
-		if (errno) {
-			err_msg = "Failed to open output file\n";
-			//perror(err_msg);
-		} else {
-			err_msg = "Filename too long\n";
-		}
-	}
-	return err_msg;
-}
-
-static void write_sub_img(struct write_writer *writer,
+static const char * write_sub_img(struct write_writer *writer,
 const struct write_args *args, struct wu_state *state,
 struct raw_img *img) {
-	const char *err = NULL;
-	if (gl_texture_upload(&writer->gl, img) != gl_upload_fail) {
-		err = try_write(state, &writer->out, &writer->gl, img,
-			args->overwrite);
+	FILE *ofp;
+	if (args->stdout) {
+		ofp = stdout;
 	} else {
-		err = "Failed to upload to texture\n";
+		ofp = get_file(state, &writer->out, args->overwrite,
+			img->frames, "pam");
 	}
 
-	if (err) {
-		fputs(err, stderr);
+	const char *err_msg = NULL;
+	if (ofp) {
+		struct gl_context *gl = &writer->gl;
+		if (gl_texture_upload(gl, img) != gl_upload_fail) {
+			struct gl_reader reader;
+		 	if (gl_reader_set(gl, &reader, state, img)) {
+				err_msg = pam_write(gl, &reader, state, ofp);
+			} else {
+				err_msg = "Failed to set framebuffer";
+			}
+		} else {
+			err_msg = "Failed to upload to texture";
+		}
+		fclose(ofp);
+	} else if (errno) {
+		err_msg = "Failed to open output file";
+	} else {
+		err_msg = "Filename too long";
 	}
+	return err_msg;
 }
 
 enum wu_error write_image(struct image_context *image,
 struct write_writer *writer, const struct write_args *args) {
 	struct raw_img *img;
 	enum wu_error err = dec_iter_image(image, &img);
-	if (err != wu_ok) {
-		return err;
-	}
+	if (err == wu_ok) {
+		struct fs_path path;
+		errno = 0;
+		if (set_out_dir(image, &writer->out, args->outdir, &path)) {
+			do {
+				const char *msg = write_sub_img(writer, args,
+					&image->state, img);
+				if (msg) {
+					term_line_put(msg, stderr);
+				}
+				if (args->stdout) {
+					break;
+				} else if (!msg) {
+					wustr_print(&path.parent, stdout);
+					fputs(writer->out.name, stdout);
+					fputc(args->null ? 0 : '\n', stdout);
+				}
+				err = dec_iter_image(image, &img);
+			} while (err == wu_ok);
 
-	errno = 0;
-	if (!set_out_dir(image, &writer->out, args->outdir)) {
-		perror(OUTDIR_FAIL);
-		return wu_open_error;
+			fs_path_free(&path);
+			close(writer->out.dirfd);
+		} else {
+			perror("Failed to open output directory");
+			err = wu_open_error;
+		}
 	}
-
-	do {
-		write_sub_img(writer, args, &image->state, img);
-		err = dec_iter_image(image, &img);
-	} while (err == wu_ok);
 	dec_free_image(image);
-	close(writer->out.dirfd);
 
 	if (err == wu_no_change) {
 		return wu_ok;
@@ -201,7 +203,7 @@ bool write_writer_init(struct write_writer *writer, struct wu_conf *wuconf) {
 			gl_reader_bind(&writer->gl);
 			return true;
 		}
-		window_offscreen_terminate(&writer->window);
+		write_writer_terminate(writer);
 	}
 	return false;
 }
@@ -221,6 +223,8 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 				++idx;
 				args->outdir = argv[idx];
 				break;
+			case 's': args->stdout = true; break;
+			case 'z': args->null = true; break;
 			default:
 				return idx;
 			}

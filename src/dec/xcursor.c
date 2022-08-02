@@ -6,7 +6,7 @@
 
 static void add_metadata(struct wu_tree *tree,
 const enum xcursor_comment_type type, uint8_t *restrict data, const size_t len) {
-	tree_graft_unsafe_leaf(tree, xcursor_comment_type_str(type),
+	tree_graft_measured_leaf(tree, xcursor_comment_type_str(type),
 		data, len);
 }
 

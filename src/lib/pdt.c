@@ -6,6 +6,14 @@
 #include "raster/strip.h"
 #include "pdt.h"
 
+const char * pdt_version_str(const enum pdt_version version) {
+	switch (version) {
+	case pdt10: return "PDT10";
+	case pdt11: return "PDT11";
+	}
+	return "???";
+}
+
 static inline size_t base_decode(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len, const uint8_t ch,
 const uint32_t off_table[static 0x10]) {
@@ -153,13 +161,12 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct raw_img *img) {
 			desc->pal = buf;
 		} else {
 			img->channels = 1;
-			struct raster_pal *pal = malloc(sizeof(*pal));
+			struct raster_pal *pal = raw_img_palette_init(img);
 			if (!pal) {
 				return wu_alloc_error;
 			}
 			memcpy(pal, buf, pal_size);
 			img->alpha = alpha_ignore;
-			raw_img_set_palette(img, pal);
 		}
 	} else {
 		img->channels = (desc->mask_offset) ? 4 : 3;
@@ -167,9 +174,9 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct raw_img *img) {
 	return raw_img_verify(img);
 }
 
-enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *mm) {
+enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct mp_parser mp) {
 	*desc = (struct pdt_desc) {
-		.mp = mp_parser_mem(mm->len, mm->data),
+		.mp = mp,
 	};
 	const uint8_t *buf = mp_next_slice(&desc->mp, 8);
 	if (buf) {

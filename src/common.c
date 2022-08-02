@@ -132,11 +132,35 @@ double clock_ellapsed(const clock_t start) {
 	return (double)(clock() - start) / CLOCKS_PER_SEC;
 }
 
-size_t scanline_length(const size_t width, const size_t bitdepth,
-size_t alignment) {
-	const size_t bytes = (width * bitdepth - 1) / 8 + 1;
+void clock_print(const char *ocurrence, const clock_t start) {
+	fprintf(stderr, "%s in %f seconds\n", ocurrence, clock_ellapsed(start));
+}
+
+size_t scanline_length(const size_t width, const uint8_t bitdepth,
+uint8_t alignment) {
+	const size_t bytes = (width * bitdepth + 7) / 8;
 	--alignment;
 	return (bytes + alignment) & ~alignment;
+}
+
+uint8_t scanline_alignment(const size_t stride, const size_t width,
+const uint8_t bitdepth) {
+	const size_t base = scanline_length(width, bitdepth, 1);
+	if (stride >= base) {
+		const size_t diff = stride - base;
+		if (diff) {
+			return 2 << zulog2(diff);
+		}
+		return 1;
+	}
+	return 0;
+}
+
+size_t subsamp(const size_t dim, const uint8_t sub) {
+	if (sub > 1) {
+		return (dim + 1) / sub;
+	}
+	return dim;
 }
 
 long lmod(const long val, const long max) {
@@ -231,6 +255,14 @@ enum endianness which_end(void) {
 	return (enum endianness)test.uc[0];
 }
 
+uint16_t endian16(const uint16_t val, const enum endianness e) {
+	const enum endianness native = which_end();
+	if (native != e) {
+		return (uint16_t)(val << 8 | val >> 8);
+	}
+	return val;
+}
+
 uint32_t endian32(const uint32_t val, const enum endianness e) {
 	const enum endianness native = which_end();
 	if (native != e) {
@@ -242,43 +274,63 @@ uint32_t endian32(const uint32_t val, const enum endianness e) {
 	return val;
 }
 
-uint16_t endian16(const uint16_t val, const enum endianness e) {
+static uint64_t endian64(const uint64_t val, const enum endianness e) {
 	const enum endianness native = which_end();
 	if (native != e) {
-		return (uint16_t)(val << 8 | val >> 8);
+		uint64_t ret = 0;
+		for (size_t i = 0; i < sizeof(ret); ++i) {
+			ret |= ((val >> i*8) & 0xff) << (56 - i*8);
+		}
+		return ret;
 	}
 	return val;
 }
 
-uint32_t buf_endian32(const void *restrict data, const enum endianness e) {
-	const uint8_t *restrict d = data;
-	switch (e) {
-	case big_endian:
-		return (uint32_t)(d[0]<<24 | d[1]<<16 | d[2]<<8 | d[3]);
-	default:
-		return (uint32_t)(d[3]<<24 | d[2]<<16 | d[1]<<8 | d[0]);
-	}
+float endianf32(const uint32_t val, const enum endianness e) {
+	const union int_real f = {.bytes = endian32(val, e)};
+	return f.real;
 }
 
-uint16_t buf_endian16(const void *restrict data, const enum endianness e) {
-	const uint8_t *restrict d = data;
-	switch (e) {
-	case big_endian:
-		return (uint16_t)(d[0] << 8 | d[1]);
-	default:
-		return (uint16_t)(d[1] << 8 | d[0]);
+uint16_t buf_endian16(const void *data, const enum endianness e) {
+	const uint8_t *d = data;
+	return (uint16_t)(e == big_endian
+		? d[0] << 8 | d[1]
+		: d[1] << 8 | d[0]);
+}
+
+uint32_t buf_endian32(const void *data, const enum endianness e) {
+	const uint8_t *d = data;
+	return (uint32_t)(e == big_endian
+		? d[0] << 24 | d[1] << 16 | d[2] << 8 | d[3]
+		: d[3] << 24 | d[2] << 16 | d[1] << 8 | d[0]);
+}
+
+float buf_endianf32(const void *data, const enum endianness e) {
+	const union int_real f = {.bytes = buf_endian32(data, e)};
+	return f.real;
+}
+
+void loop_endian16(uint16_t *data, const enum endianness e, const size_t cnt) {
+	if (e != which_end()) {
+		for (size_t i = 0; i < cnt; ++i) {
+			data[i] = endian16(data[i], e);
+		}
 	}
 }
 
 void loop_endian32(uint32_t *data, const enum endianness e, const size_t cnt) {
-	for (size_t i = 0; i < cnt; ++i) {
-		data[i] = endian32(data[i], e);
+	if (e != which_end()) {
+		for (size_t i = 0; i < cnt; ++i) {
+			data[i] = endian32(data[i], e);
+		}
 	}
 }
 
-void loop_endian16(uint16_t *data, const enum endianness e, const size_t cnt) {
-	for (size_t i = 0; i < cnt; ++i) {
-		data[i] = endian16(data[i], e);
+void loop_endian64(uint64_t *data, const enum endianness e, const size_t cnt) {
+	if (e != which_end()) {
+		for (size_t i = 0; i < cnt; ++i) {
+			data[i] = endian64(data[i], e);
+		}
 	}
 }
 
@@ -288,16 +340,6 @@ void * memdup(const void *s, size_t n) {
 		memcpy(d, s, n);
 	}
 	return d;
-}
-
-const void * memchk(const void *s, const unsigned char c, const size_t n) {
-	const unsigned char *b = s;
-	for (size_t m = 0; m < n; ++m) {
-		if (b[m] != c) {
-			return b + m;
-		}
-	}
-	return NULL;
 }
 
 #ifndef _GNU_SOURCE
@@ -340,9 +382,6 @@ bool map_file_fd(struct map_info *mm, const int fd) {
 }
 
 void fatal_bug(const char *name, const char *msg) {
-	printf("%s: %s\n", name, msg);
-	fflush(stdout);
+	fprintf(stderr, "Fatal bug!\n%s: %s\n", name, msg);
 	abort();
 }
-
-void null_function() {}

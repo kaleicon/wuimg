@@ -10,30 +10,33 @@
 #include "display.h"
 #include "dec.h"
 #include "events.h"
+#include "raster/mem.h"
 
 static void set_background_color(const struct image_context *image) {
 	const struct image_file *infile = &image->file;
 	const struct wu_conf *conf = &image->conf;
 
+	uint8_t bg[4];
 	if (conf->bg_src == bg_metadata
-	&& !memchk(&infile->bg, 0, sizeof(infile->bg))) {
-		uint8_t bg[4];
-		memcpy(bg, &infile->bg, 3);
+	&& memchk(&infile->bg, 0, sizeof(infile->bg))) {
+		memcpy(bg, &infile->bg, sizeof(bg));
 		bg[3] = conf->bg[3];
-		gl_clear_color(bg);
+	} else {
+		memcpy(bg, conf->bg, sizeof(bg));
 	}
+	gl_clear_color(bg);
 }
 
 void display_end(struct window_context *window, const struct term_restore *tr) {
-	window_terminate(window);
 	gl_terminate(&window->pub.gl);
+	window_terminate(window);
 	if (tr) {
 		term_noncanon_end(tr);
 	}
 }
 
 static double poll_events(struct window_context *window) {
-	unsigned char tk[32];
+	unsigned char tk[8];
 	const size_t read = term_event_read(tk, sizeof(tk));
 	for (size_t i = 0; i < read; ++i) {
 		window_key_add(&window->pub.held_keys, key_external,
@@ -44,18 +47,18 @@ static double poll_events(struct window_context *window) {
 }
 
 static bool update_texture(struct image_context *image, struct gl_context *gl,
-const bool reset, struct window_context *window) {
+const bool reset) {
 	struct wu_state *state = &image->state;
 	struct raw_img *img = image->file.sub_img + state->idx;
 	switch (gl_texture_upload(gl, img)) {
 	case gl_upload_fail:
-		puts("Failed to upload to texture.");
+		term_line_put("Failed to upload to texture.", stderr);
 		return false;
 	case gl_upload_success:
-		(void)window;
-		state->fit_zoom = gl_fit_zoom(gl, img->rotate);
 		if (reset) {
-			state->zoom = fminf(1, state->fit_zoom);
+			const float min = (float)(image->conf.magnify_under /
+				(zumin(img->w, img->h) + 1) + 1);
+			state->zoom = fminf(min, gl->tex.fit_zoom);
 			state->rotate = 0;
 			state->mirror = 0;
 			state->x_offset = 0;
@@ -65,10 +68,9 @@ const bool reset, struct window_context *window) {
 	case gl_upload_same_size:
 		break; // Keep state as it was
 	}
-	gl->update_matrix = true;
 
 	if (!state->anim_playing) {
-		printf("Frame %d uploaded in %lu ns\n",
+		fprintf(stderr, "Frame %d uploaded in %lu ns\n",
 			state->frame, gl_clock_query(gl));
 	}
 	return true;
@@ -80,21 +82,20 @@ struct window_context *window, double remaining) {
 	struct wu_state *state = &window->pub.image.state;
 	struct gl_context *gl = &window->pub.gl;
 
-	for (bool initial = true;; initial = false) {
-		if (gl->update_matrix) {
-			gl_matrix_update(gl, state);
-			window_draw(window, false);
-			if (!state->anim_playing) {
-				printf("Drawn in %lu ns\n", gl_clock_query(gl));
+	for (bool first = true;; first = false) {
+		if (window_draw(window)) {
+			if (!state->anim_playing && first) {
+				fprintf(stderr, "Drawn in %lu ns\n",
+					gl_clock_query(gl));
 			}
 		}
 		const struct timespec tm = {
-			.tv_nsec = initial ? 2000000 : 5000000,
+			.tv_nsec = 2000000,
 		};
 		nanosleep(&tm, NULL);
 		const double ellapsed = poll_events(window);
 
-		if (window_has_focus(window) && state->anim_playing) {
+		if (state->anim_playing && window_has_focus(window)) {
 			remaining -= ellapsed;
 			if (remaining <= ellapsed) {
 				event->image = image_frame_cycle(image, 1);
@@ -104,11 +105,11 @@ struct window_context *window, double remaining) {
 		if (event->cycle || event->program || event->rm == trit_true) {
 			break;
 		} else if (event->image) {
-			gl->update_matrix = true;
 			if (event->image & image->file.events
 			|| event->image == ev_subcycle) {
 				break;
 			}
+			gl->update = gl_update_matrix;
 			event->image = 0;
 		}
 	}
@@ -116,7 +117,7 @@ struct window_context *window, double remaining) {
 }
 
 static double min_time(const struct raw_img *img, const struct wu_state *state) {
-	struct image_frames *frames = img[state->idx].frames;
+	struct image_frames *frames = img->frames;
 	if (frames) {
 		return fmax(frames->f[state->frame].msec / 1000.0, 1.0 / 30);
 	}
@@ -140,21 +141,20 @@ bool display_loop(struct window_context *window, const bool single_file) {
 	double remaining = 0;
 	for (bool upload = true, first_iter = true;;) {
 		if (upload) {
+			const struct raw_img *img = infile->sub_img + state->idx;
 			if (event->image == ev_subcycle) {
-				state->anim_playing = raw_img_frames_nr(
-					infile->sub_img + state->idx) > 1;
+				state->anim_playing = raw_img_frames_nr(img) > 1;
 			}
 
 			all_ok = update_texture(image, &window->pub.gl,
-				first_iter, window);
+				first_iter);
 			if (!all_ok) {
 				break;
 			}
 			image_file_free_if_single(infile);
 
 			if (state->anim_playing) {
-				const double display_time = min_time(
-					infile->sub_img, state);
+				const double display_time = min_time(img, state);
 				remaining = fmax(0, remaining + display_time);
 			}
 			upload = false;
@@ -183,22 +183,22 @@ bool display_loop(struct window_context *window, const bool single_file) {
 			upload = true;
 		}
 	}
-	term_clear_line();
+	term_line_clear();
 	return all_ok;
 }
 
 bool display_setup(struct window_context *window, struct term_restore *tr) {
 	const clock_t start = clock();
 	if (!window_setup(window)) {
-		fputs("Failed to create window\n", stderr);
+		term_line_put("Failed to create window", stderr);
 		return false;
 	}
 
-	printf("Window backend: %s\n", window_backend_name(window->backend));
+	fprintf(stderr, "Window backend: %s\n", window_backend_name(window->backend));
 
 	if (!gl_context_setup(&window->pub.gl, &window->pub.image.conf)) {
 		window_terminate(window);
-		fputs("Failed to configure OpenGL context\n", stderr);
+		term_line_put("Failed to configure OpenGL context", stderr);
 		return false;
 	}
 
@@ -207,6 +207,6 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 	if (tr) {
 		term_noncanon_start(tr);
 	}
-	printf("Display set in %f seconds\n", clock_ellapsed(start));
+	clock_print("Display set", start);
 	return true;
 }

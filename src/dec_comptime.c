@@ -19,14 +19,14 @@ static const char fmt_structs[] = EXP_STRING(
 	};
 
 	struct fmt_ext {
-		const char ext[8];
-		const int id;
+		const char ext[6];
+		const short id;
 	};
 
 	struct fmt_magic {
 		const unsigned char and_mask[12];
 		const unsigned char bytes[12];
-		const int id;
+		const short id;
 	};
 ) /* EXP_STRING fmt_structs end */
 
@@ -54,9 +54,30 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff", "BM", fmt_bmp},
 #endif // WU_ENABLE_DIB
 
+#ifdef WU_ENABLE_DPX
+	{"\xff\xff\xff\xff" "\0\0\0\0" "\xff\x00\xff\xff",
+		"XPDS\0\0\0\0V\0.0", fmt_dpx},
+	{"\xff\xff\xff\xff" "\0\0\0\0" "\xff\x00\xff\xff",
+		"SDPX\0\0\0\0V\0.0", fmt_dpx},
+#endif // WU_ENABLE_DPX
+
 #ifdef WU_ENABLE_HG3
 	{"\xff\xff\xff\xff", "HG-3", fmt_hg3},
 #endif //WU_ENABLE_HG3
+
+#ifdef WU_ENABLE_MAG
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "MAKI02  ", fmt_mag},
+#endif //WU_ENABLE_MAG
+
+#ifdef WU_ENABLE_MAKI
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "MAKI01A ", fmt_maki},
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "MAKI01B ", fmt_maki},
+#endif //WU_ENABLE_MAKI
+
+#ifdef WU_ENABLE_MSX
+	// Maybe this is too general.
+	//{"\xff\xff\xff\x00\x00\xff\xff", "\xfe\x00\x00\x00\x00\x00\x00", fmt_scr2},
+#endif // WU_ENABLE_MSX
 
 #ifdef WU_ENABLE_PCX
 	// Second byte is version. Valid values are 0,2,3,4,5
@@ -68,7 +89,7 @@ static struct fmt_magic magic_map[] = {
 #endif // WU_ENABLE_PCX
 
 #ifdef WU_ENABLE_PDT
-	{"\xff\xff\xff\xff\xfe\xff\xff\xff", "PDT10\x00\x00\x00", fmt_pdt},
+	{"\xff\xff\xff\xff\xfe\xff\xff\xff", "PDT10\x00\x00\x00", fmt_pdt}, // 10, 11
 #endif // WU_ENABLE_PDT
 
 #ifdef WU_ENABLE_PGX
@@ -95,7 +116,7 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff", "PF", fmt_pnm}, // Color PFM
 	{"\xff\xff", "Pf", fmt_pnm}, // Gray PFM
 
-	{"\xff\xff\xff\xff\xff\xff", "PG ML ", fmt_pnm},
+	{"\xff\xff\xff\xff\xff\xff", "PG ML ", fmt_pnm}, // PGX
 	{"\xff\xff\xff\xff\xff\xff", "PG LM ", fmt_pnm},
 #endif // WU_ENABLE_PNM
 
@@ -147,7 +168,6 @@ static struct fmt_magic magic_map[] = {
 #ifdef WU_ENABLE_XCURSOR
 	{"\xff\xff\xff\xff", "Xcur", fmt_xcursor},
 #endif // WU_ENABLE_XCURSOR
-
 
 #ifdef WU_ENABLE_XYZ
 	{"\xff\xff\xff\xff", "XYZ1", fmt_xyz},
@@ -215,7 +235,9 @@ static struct fmt_magic magic_map[] = {
 #endif // WU_ENABLE_HEIF
 
 #ifdef WU_ENABLE_JPEG
-	{"\xff\xff\xff", "\xff\xd8\xff", fmt_jpeg},
+	/* In a well written JPEG, the third byte would be 0xff. Not all JPEG
+	 * files are well written. */
+	{"\xff\xff", "\xff\xd8", fmt_jpeg},
 #endif // WU_ENABLE_JPEG
 
 #ifdef WU_ENABLE_JPEG2000
@@ -224,6 +246,11 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff", "\r\n\x87\n", fmt_jp2},
 	{"\xff\xff\xff\xff", "\xff\x4f\xff\x51", fmt_j2k},
 #endif // WU_ENABLE_JPEG2000
+
+#ifdef WU_ENABLE_JPEGLS
+	/* JPEG-LS and JPEG share the same structure, so it's not possible to
+	 * tell them apart. */
+#endif // WU_ENABLE_JPEGLS
 
 #ifdef WU_ENABLE_JPEGXL
 	{"\xff\xff\xff\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
@@ -281,12 +308,25 @@ static struct fmt_ext ext_map[] = {
 	{"ico", fmt_ico},
 #endif
 
+#ifdef WU_ENABLE_DPX
+	{"dpx", -1},
+#endif
+
 #ifdef WU_ENABLE_G00
 	{"g00", fmt_g00},
 #endif
 
 #ifdef WU_ENABLE_HG3
 	{"hg3", fmt_hg3},
+#endif
+
+#ifdef WU_ENABLE_MAG
+	{"mag", fmt_mag},
+	{"max", fmt_mag},
+#endif
+
+#ifdef WU_ENABLE_MAKI
+	{"mki", fmt_maki},
 #endif
 
 #ifdef WU_ENABLE_MAC
@@ -334,6 +374,39 @@ static struct fmt_ext ext_map[] = {
 
 #ifdef WU_ENABLE_QOI
 	{"qoi", -1},
+#endif
+
+#ifdef WU_ENABLE_MSX
+	{"sc2", fmt_scr2},
+	{"grp", fmt_scr2},
+
+	{"sc3", fmt_scr3},
+	{"sc4", fmt_scr4},
+
+	{"sc5", fmt_scr5},
+	{"sr5", fmt_scr5}, // Graph Saurus raw
+	{"ge5", fmt_scr5},
+
+	{"sc6", fmt_scr6},
+	{"s16", fmt_scr6}, // Alternate field of an SC7 file
+	{"sr6", fmt_scr6}, // Graph Saurus raw
+
+	{"sc7", fmt_scr7},
+	{"s17", fmt_scr7}, // Alternate field of an SC7 file
+	{"sr7", fmt_scr7},
+	{"ge7", fmt_scr7},
+	{"gl7", fmt_scr7},
+
+	{"sc8", fmt_scr8},
+	{"sr8", fmt_scr8},
+	{"ge8", fmt_scr8},
+	{"gl8", fmt_scr8},
+
+	{"sca", fmt_scr10},
+
+	{"scc", fmt_scr12},
+	{"srs", fmt_scr12},
+	{"yjk", fmt_scr12},
 #endif
 
 #ifdef WU_ENABLE_SGI
@@ -428,9 +501,17 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_JPEG2000
+	{"j2c", -1},
 	{"j2k", -1},
 	{"jp2", -1},
 	{"jpc", -1},
+	// High throughput
+	{"jph", -1},
+	{"jhc", -1},
+#endif
+
+#ifdef WU_ENABLE_JPEGLS
+	{"jls", fmt_jpegls},
 #endif
 
 #ifdef WU_ENABLE_JPEGXL
@@ -481,7 +562,7 @@ static struct fmt_ext ext_map[] = {
 
 /* Mime types. Useful for .desktop files. */
 static const char *mime_image_map[] = {
-#ifdef WU_ENABLE_BMP
+#ifdef WU_ENABLE_DIB
 	"bmp", "x-bmp",
 	"x-ms-bmp", // DIB
 	"vnd.microsoft.icon", "x-icon",
@@ -566,6 +647,8 @@ static const char *mime_image_map[] = {
 #ifdef WU_ENABLE_WEBP
 	"webp",
 #endif
+
+	NULL, // Silence pedantic warnings
 };
 
 static const char *mime_application_map[] = {
@@ -576,6 +659,7 @@ static const char *mime_application_map[] = {
 	"x-rar",
 	"x-tar",
 	"zip",
+	NULL, // Silence pedantic warnings
 };
 
 /* These are different from the ones in dec_fmtmap_base.c */
@@ -724,18 +808,16 @@ static int dec_headers(void) {
 	return 0;
 }
 
-static void print_mimes(const char *type, const char **subtypes,
-const size_t len) {
-	for (size_t i = 0; i < len; ++i) {
+static void print_mimes(const char *type, const char **subtypes) {
+	for (size_t i = 0; subtypes[i]; ++i) {
 		printf("%s/%s\n", type, subtypes[i]);
 	}
 }
 
 static int mimes(void) {
-	print_mimes("image", mime_image_map, ARRAY_LEN(mime_image_map));
-	print_mimes("application", mime_application_map,
-		ARRAY_LEN(mime_application_map));
-	puts("inode/directory");
+	print_mimes("image", mime_image_map);
+	print_mimes("application", mime_application_map);
+	fputs("inode/directory", stdout);
 	return 0;
 }
 

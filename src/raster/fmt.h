@@ -12,10 +12,10 @@ enum fmt_pal_type {
 	fmt_pal_rgbx = 4,
 };
 
-enum wu_error fmt_load_pal_planar(FILE *ifp, struct raster_pal **palette,
+enum wu_error fmt_load_pal_planar(FILE *ifp, struct raster_pal *pal,
 enum fmt_pal_type type, size_t entries);
 
-enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal **palette,
+enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,
 enum fmt_pal_type type, size_t entries);
 
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig, size_t size,

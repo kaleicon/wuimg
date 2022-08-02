@@ -6,6 +6,13 @@
 #include "raster/pix.h"
 #include "wudefs.h"
 
+struct scale_info {
+	uint8_t bitdepth;
+	bool scale;
+	uint8_t size_shift;
+	uint64_t mul, add;
+};
+
 struct sewing_clothe {
 	uint8_t *ptr;
 	size_t stride;
@@ -21,6 +28,11 @@ struct sewing_machine {
 	struct sewing_clothe dst, color, alpha;
 };
 
+void strip_scale(void *buf, size_t width, struct scale_info scaler, bool design);
+
+struct scale_info strip_scale_info(uint64_t maxval, uint8_t bitdepth);
+
+/* Copies 'width' bytes from 'src' to 'dst', with 'ch' bytes of spacing. */
 void strip_spread(uint8_t *restrict dst, const uint8_t *restrict src,
 size_t width, size_t ch);
 

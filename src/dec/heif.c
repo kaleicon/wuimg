@@ -5,9 +5,10 @@
 
 #include <libheif/heif.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../metadata.h"
+#include "raster/strip.h"
+#include "wudefs.h"
+#include "common.h"
+#include "metadata.h"
 
 struct heif_state {
 	struct map_info mm;
@@ -26,7 +27,6 @@ static void clean_heif_state(struct image_file *infile) {
 			if (ds->himgs[i]) {
 				heif_image_release(ds->himgs[i]);
 			}
-			infile->sub_img[i].data = NULL;
 		}
 		free(ds->himgs);
 	}
@@ -56,7 +56,7 @@ const size_t len) {
 		} else if (!strcmp(type, "mime")) {
 			standard_metadata(xmp_metadata, buf, len, tree);
 		} else {
-			tree_sprout_leaf(tree, "Found metadata block", type);
+			tree_add_leaf(tree, "Found metadata block", type);
 		}
 	}
 }
@@ -129,19 +129,10 @@ const struct heif_image *himg) {
 }
 
 static void scale_depth(void *restrict ptr, const size_t w, const size_t h,
-const int bit_range, const int bytes_per_line) {
-	const size_t stride = (size_t)bytes_per_line / 2;
-
-	const uint_fast32_t maxval = (1U << bit_range) - 1;
-	const uint_fast32_t scale = ((unsigned)USHRT_MAX << 16) / maxval + 1;
-
-	uint16_t *data = ptr;
-	for (size_t y = 0; y < h; ++y) {
-		for (size_t x = 0; x < w; ++x) {
-			const size_t pos = y * stride + x;
-			data[pos] = (uint16_t)((data[pos] * scale) >> 16);
-		}
-	}
+const int bit_range) {
+	const struct scale_info scaler = strip_scale_info(
+		(1u << bit_range) - 1, 16);
+	strip_scale(ptr, w * h, scaler, false);
 }
 
 static enum wu_error get_planar_image(struct raw_img *img,
@@ -163,7 +154,7 @@ int *bpl) {
 		return wu_invalid_params;
 	}
 
-	img->data = (void *)-1;
+	img->data = IMG_DATA_BORROWED;
 	img->channels = (uint8_t)((chroma == heif_chroma_monochrome ? 1 : 3)
 		+ alpha);
 	img->bitdepth = (depth > 8) ? 16 : 8;
@@ -201,8 +192,7 @@ int *bpl) {
 				*bpl = bytes_per_line;
 			}
 			if (depth != img->bitdepth) {
-				scale_depth(p->ptr, p->w, p->h, depth,
-					bytes_per_line);
+				scale_depth(p->ptr, p->w, p->h, depth);
 			}
 		}
 	}
@@ -221,7 +211,7 @@ struct heif_image *himg, const bool alpha, int *bpl) {
 		img->data = heif_image_get_plane(himg, hch, bpl);
 		if (depth != img->bitdepth) {
 			scale_depth(img->data, img->w * img->channels, img->h,
-				depth, *bpl);
+				depth);
 		}
 	}
 	return st;
@@ -239,15 +229,9 @@ const struct wu_conf *wuconf, const size_t i) {
 		image_file_error_append(infile, herr.message);
 		return wu_decoding_error;
 	}
-	img->w = (size_t)heif_image_handle_get_ispe_width(handle);
-	img->h = (size_t)heif_image_handle_get_ispe_height(handle);
-	if (raw_img_exceeds_limit(img, wuconf)) {
-		heif_image_handle_release(handle);
-		return wu_exceeds_size_limit;
-	}
+
 	img->alpha = heif_image_handle_is_premultiplied_alpha(handle)
 		? alpha_associated : alpha_unassociated;
-
 	if (i == 0) {
 		read_metadata(handle, &infile->metadata);
 	}
@@ -262,16 +246,16 @@ const struct wu_conf *wuconf, const size_t i) {
 	}
 
 	struct heif_image *himg = ds->himgs[i];
+	img->w = (size_t)heif_image_get_primary_width(himg);
+	img->h = (size_t)heif_image_get_primary_height(himg);
+	if (raw_img_exceeds_limit(img, wuconf)) {
+		return wu_exceeds_size_limit;
+	}
+
 	get_color_profile(&img->cs, himg);
 	if (ds->hids[i] == ds->primary_id) {
 		img->id = strdup("primary");
 	}
-
-	/* Even though we request no transformations, it seems libheif crops
-	 * the image anyway. No idea if that's intended, but in the meanwhile,
-	 * get the image dimensions again. */
-	img->w = (size_t)heif_image_get_primary_width(himg);
-	img->h = (size_t)heif_image_get_primary_height(himg);
 
 	const enum heif_chroma chroma = heif_image_get_chroma_format(himg);
 	enum wu_error st = wu_invalid_params;
@@ -279,7 +263,7 @@ const struct wu_conf *wuconf, const size_t i) {
 	size_t scanline;
 	switch (chroma) {
 	case heif_chroma_undefined:
-		break;
+		return wu_invalid_params;
 	case heif_chroma_monochrome:
 	case heif_chroma_420:
 	case heif_chroma_422:
@@ -295,13 +279,13 @@ const struct wu_conf *wuconf, const size_t i) {
 	}
 	// HEIF and AVIF use different alignments.
 	if (st == wu_ok) {
-		const size_t diff = (size_t)bytes_per_line
-			- scanline_length(scanline, img->bitdepth, 1);
-		if (diff) {
-			img->alignment = (uint8_t)(2 << zulog2(diff));
-			if (img->mode == image_mode_planar) {
-				raw_img_plane_resolve(img);
-			}
+		img->alignment = scanline_alignment((size_t)bytes_per_line,
+			scanline, img->bitdepth);
+		if (!img->alignment) {
+			return wu_invalid_header;
+		}
+		if (img->mode == image_mode_planar) {
+			raw_img_plane_resolve(img);
 		}
 		++ds->decoded;
 		if (ds->decoded == infile->nr) {

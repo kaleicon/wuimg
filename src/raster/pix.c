@@ -1,7 +1,4 @@
-#include <stdio.h>
 #include <string.h>
-#include <stddef.h>
-#include <limits.h>
 
 #include "common.h"
 #include "raster/pix.h"
@@ -23,9 +20,9 @@ const enum pix_color color) {
 	return (layout >> (color*2)) & 0x03;
 }
 
-void pix_layout_swizzle(void *buf, const size_t nmemb, const size_t size,
+void pix_layout_swizzle(void *buf, const size_t size, const size_t nmemb,
 const enum pix_layout layout) {
-	uint8_t tmp[8*4];
+	uint8_t tmp[16*4];
 	if (nmemb * size < sizeof(tmp)) {
 		for (uint8_t z = 0; z < nmemb; ++z) {
 			const size_t src_z = pix_layout_offset(layout, z);
@@ -35,45 +32,31 @@ const enum pix_layout layout) {
 	}
 }
 
-static inline void pix_set_common(uint8_t *restrict dst,
-const void *restrict src, const size_t nmemb, const size_t size) {
-	for (size_t i = 0; i < nmemb; ++i) {
-		memcpy(dst + i*size, src, size);
+void pix_layout_print(const enum pix_layout layout, FILE *out) {
+	uint8_t rgba[] = {'r', 'g', 'b', 'a', '\n'};
+	pix_layout_swizzle(rgba, 1, sizeof(rgba) - 1, layout);
+	fwrite(rgba, 1, sizeof(rgba), out);
+}
+
+uint8_t pix_layout_invert(uint8_t map[static 4], const enum pix_layout layout) {
+	const uint8_t len = pix_color_total;
+	uint8_t seen[4] = {0};
+	uint8_t pos = 0;
+	for (enum pix_color color = 0; color < len; ++color) {
+		const uint8_t ch = pix_layout_offset(layout, color);
+		if (!(seen[ch] & 1)) {
+			seen[ch] |= 1;
+			seen[color] |= 2;
+			map[pos] = color;
+			++pos;
+		}
 	}
-}
-
-static void pix_set4(void *restrict dst, const void *restrict src,
-const size_t nmemb) {
-	pix_set_common(dst, src, nmemb, 4);
-}
-
-static void pix_set3(uint8_t *restrict dst, const void *restrict src,
-const size_t nmemb) {
-	const size_t size = 3;
-	uint32_t triple;
-	memcpy(&triple, src, size);
-	size_t i = 0;
-	while (i < nmemb - 1) {
-		memcpy(dst + i*size, &triple, sizeof(triple));
-		++i;
+	uint8_t i = pos;
+	for (uint8_t ch = 0; ch < len; ++ch) {
+		if (!(seen[ch] & 2)) {
+			map[i] = ch;
+			++i;
+		}
 	}
-	memcpy(dst + i*size, &triple, size);
-}
-
-static void pix_set2(void *restrict dst, const void *restrict src,
-const size_t nmemb) {
-	pix_set_common(dst, src, nmemb, 2);
-}
-
-void pix_set(void *restrict dst, const void *restrict pix,
-const size_t pix_size, const size_t nmemb) {
-	switch (pix_size) {
-	case 1: memset(dst, *((uint8_t *)pix), nmemb); break;
-	case 2: pix_set2(dst, pix, nmemb); break;
-	case 3: pix_set3(dst, pix, nmemb); break;
-	case 4: pix_set4(dst, pix, nmemb); break;
-	default:
-		pix_set_common(dst, pix, nmemb, pix_size);
-		break;
-	}
+	return pos;
 }

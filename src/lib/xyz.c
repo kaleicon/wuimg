@@ -22,7 +22,7 @@ bool xyz_decode(struct xyz_desc *desc, struct raw_img *img) {
 			uLong uncmp_len = (uLong)(dst_len - pal_items);
 			uncompress(uncmp, &uncmp_len, src.ptr, (uLong)src.len);
 			if (uncmp_len > pal_items*3) {
-				raw_img_set_palette(img, (struct raster_pal *)dst);
+				raw_img_palette_set(img, (struct raster_pal *)dst);
 				img->data = dst + sizeof(*img->u.palette);
 				raster_pal_from_rgb8(img->u.palette, uncmp,
 					pal_items);

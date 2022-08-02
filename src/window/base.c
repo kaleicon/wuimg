@@ -58,7 +58,7 @@ const double y) {
 		const double zoom = 1 / state->zoom;
 		state->x_offset += (float)((x - win->cur.x.pos) * zoom);
 		state->y_offset += (float)((y - win->cur.y.pos) * zoom);
-		pub->gl.update_matrix = true;
+		pub->gl.update = gl_update_matrix;
 	}
 	win->cur.x.pos = (float)x;
 	win->cur.y.pos = (float)y;

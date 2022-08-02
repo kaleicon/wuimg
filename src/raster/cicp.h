@@ -15,7 +15,7 @@ enum cicp_primaries {
 	cicp_primaries_smpte_st_428_1 = 10,
 	cicp_primaries_smpte_rp_431_2 = 11,
 	cicp_primaries_smpte_eg_432_1 = 12,
-	cicp_primaries_nightmare_inducing = 22,
+	cicp_primaries_the_unidentified = 22,
 };
 
 enum cicp_transfer {

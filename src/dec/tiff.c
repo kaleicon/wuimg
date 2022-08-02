@@ -13,6 +13,7 @@ struct tiff_info {
 	uint16_t photometric, spp, bps, sfmt;
 	uint16_t planar;
 	bool is_tiled;
+	bool is_subsampled;
 	uint32_t planes;
 	struct tiff_ycbcr {
 		float coef[3];
@@ -52,7 +53,7 @@ static void get_metadata_tags(TIFF *tif, struct wu_tree *tree) {
 	for (size_t i = 0; i < ARRAY_LEN(tag); ++i){
 		char *field;
 		if (TIFFGetField(tif, tag[i].tag, &field)) {
-			tree_sprout_unsafe_leaf(tree, tag[i].name, field,
+			tree_add_measured_leaf(tree, tag[i].name, field,
 				strlen(field));
 	 	}
 	}
@@ -127,31 +128,28 @@ const struct tiff_info *info, const enum unpack_op op) {
 	tiles.per_row = ((uint32_t)img->w + tiles.width - 1) / tiles.width;
 	tiles.per_col = ((uint32_t)img->h + tiles.height - 1) / tiles.height;
 	tiles.end_width = (uint32_t)img->w - tiles.width * (tiles.per_row - 1);
-	tiles.stride = scanline_length(tiles.width * comps, info->bps, 1);
+	tiles.stride = scanline_length(tiles.width * comps, (uint8_t)info->bps, 1);
 	tiles.end_stride = scanline_length(tiles.end_width * comps,
-		info->bps, 1);
+		(uint8_t)info->bps, 1);
 
 	const size_t dst_stride = scanline_length(img->w * comps,
 		img->bitdepth, 1);
 	unsigned char *restrict dst = img->data;
 	uint32_t ts = 0;
 	for (uint32_t p = 0; p < info->planes; ++p) {
-		size_t height = tiles.height;
 		for (uint32_t y = 0; y < tiles.per_col; ++y) {
-			if (y == tiles.per_col - 1) {
-				height = img->h - tiles.height*y;
-			}
+			const size_t height = (y == tiles.per_col - 1)
+				? img->h - tiles.height*y
+				: tiles.height;
 
-			size_t src_width = tiles.width;
 			for (uint32_t x = 0; x < tiles.per_row; ++x) {
-				if (x == tiles.per_row - 1) {
-					src_width = tiles.end_width;
-				}
+				const size_t width = comps * ((x + 1 == tiles.per_row)
+					? tiles.end_width : tiles.width);
 
 				TIFFReadEncodedTile(tif, ts, tiles.buf, tiles.len);
 				single_tile(dst + x*tiles.stride, &tiles,
-					src_width * comps, height, dst_stride,
-					img->attr, op, info->bps);
+					width, height, dst_stride, img->attr,
+					op, info->bps);
 				++ts;
 			}
 			dst += dst_stride * height;
@@ -168,33 +166,51 @@ static enum wu_error read_strips(TIFF *tif, struct raw_img *img,
 const struct tiff_info *info) {
 	const tsize_t buflen = TIFFStripSize(tif);
 
-	const uint32_t strips = TIFFNumberOfStrips(tif) / info->planes;
-	uint32_t strip_height;
-	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &strip_height);
-	const size_t end_height = img->h - strip_height * (strips - 1);
+	const uint32_t total_strips = TIFFNumberOfStrips(tif);
+	uint32_t rows_per_strip;
+	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip);
 
+	const uint32_t strips = total_strips / info->planes;
+	const size_t stride = scanline_length(img->w * img->channels / info->planes,
+		img->bitdepth, 1);
 	unsigned char *data = img->data;
 	for (uint32_t p = 0; p < info->planes; ++p) {
-		const size_t width = (info->planes > 1)
-			? img->u.planes->p[p].w
-			: img->w * img->channels;
-		const size_t stride = scanline_length(width, img->bitdepth, 1);
 		for (uint32_t st = 0; st < strips; ++st) {
-			const size_t height = (st == strips - 1)
-				? end_height
-				: strip_height;
+			const size_t h = (st + 1 == strips)
+				? img->h - rows_per_strip * st
+				: rows_per_strip;
 			const uint32_t n = strips * p + st;
 			TIFFReadEncodedStrip(tif, n, data, buflen);
-			data += stride * height;
+			data += stride * h;
 		}
 	}
 	return wu_ok;
 }
 
-static struct raster_pal * load_palette(TIFF *tif, uint16_t bps) {
+static void get_colorspace(TIFF *tif, struct raw_img *img) {
+	uint32_t len;
+	void *data;
+	if (TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &data) == 1) {
+		color_space_set_icc_copy(&img->cs, data, len);
+		return;
+	}
+
+	float *w;
+	if (TIFFGetField(tif, TIFFTAG_WHITEPOINT, &w) == 1) {
+		color_space_set_primaries_whitepoint(&img->cs, w[0], w[1]);
+	}
+	float *rgb;
+	if (TIFFGetField(tif, TIFFTAG_PRIMARYCHROMATICITIES, &rgb) == 1) {
+		color_space_set_primaries_rgb(&img->cs,
+			rgb[0], rgb[1], rgb[2], rgb[3], rgb[4], rgb[5]);
+	}
+}
+
+static struct raster_pal * load_palette(TIFF *tif, struct raw_img *img,
+uint16_t bps) {
 	uint16_t *red, *green, *blue;
 	if (TIFFGetField(tif, TIFFTAG_COLORMAP, &red, &green, &blue) == 1) {
-		struct raster_pal *pal = malloc(sizeof(*pal));
+		struct raster_pal *pal = raw_img_palette_init(img);
 		if (pal) {
 			const size_t len = 1U << bps;
 			for (size_t i = 0; i < len; ++i) {
@@ -220,10 +236,8 @@ struct tiff_info *info) {
 		img->bitdepth = (unsigned char)info->bps;
 	}
 
-	if (info->planes > 1) {
-		if (!raw_img_plane_init(img)) {
-			return wu_alloc_error;
-		}
+	if (info->planes > 1 && !raw_img_plane_init(img)) {
+		return wu_alloc_error;
 	}
 
 	switch (info->photometric) {
@@ -231,26 +245,26 @@ struct tiff_info *info) {
 		img->attr = pix_inverted;
 		break;
 	case PHOTOMETRIC_PALETTE:
-		if (!raw_img_set_palette(img, load_palette(tif, info->bps))) {
+		if (!load_palette(tif, img, info->bps)) {
 			return wu_alloc_error;
 		}
 		img->alpha = alpha_ignore;
 		break;
 	case PHOTOMETRIC_YCBCR:
-		raw_img_plane_subsamp(img, (uint8_t)info->ycbcr.sampx,
-			(uint8_t)info->ycbcr.sampy);
 		img->cs.matrix = cicp_matrix_bt601_7;
+		img->cs.limited = true;
 		break;
 	}
+	get_colorspace(tif, img);
 	if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
-		// What about float + miniswhite?
 		img->attr = pix_float;
 	} else if (info->sfmt == SAMPLEFORMAT_INT) {
 		img->attr = pix_signed;
 	}
+
 	uint16_t cnt;
 	uint16_t *types;
-	if (TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &cnt, &types) && cnt == 1) {
+	if (TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &cnt, &types) == 1 && cnt == 1) {
 		switch (types[0]) {
 		case EXTRASAMPLE_UNASSALPHA:
 			img->alpha = alpha_unassociated;
@@ -271,25 +285,26 @@ struct tiff_info *info) {
 }
 
 static bool check_support(const struct tiff_info *info) {
-	if (!info->spp || !info->bps || info->bps > 64) {
+	/* Subsampled data is stored interleaved, and that's too much trouble
+	 * for a somewhat rare case. */
+	if (!info->spp || !info->bps || info->bps > 64 || info->is_subsampled) {
 		return false;
 	}
 
 	switch (info->photometric) {
 	case PHOTOMETRIC_MINISWHITE:
 	case PHOTOMETRIC_MINISBLACK:
+	case PHOTOMETRIC_MASK:
 		if (info->spp > 2) {
 			return false;
 		}
 		break;
 	case PHOTOMETRIC_YCBCR:
-		if (info->planar != PLANARCONFIG_SEPARATE || info->is_tiled
-		|| info->ycbcr.pos != YCBCRPOSITION_CENTERED) {
+		if (info->is_tiled) {
 			return false;
 		}
 		// fallthrough
 	case PHOTOMETRIC_RGB:
-	case PHOTOMETRIC_MASK:
 		if (info->spp > 4) {
 			return false;
 		}
@@ -322,10 +337,9 @@ static bool check_support(const struct tiff_info *info) {
 	return true;
 }
 
-static bool get_tiff_info(TIFF *tif, struct tiff_info *info) {
+static const char * get_tiff_info(TIFF *tif, struct tiff_info *info) {
 	if (TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &info->photometric) != 1) {
-		puts("Image lacks photometric info.");
-		return false;
+		return "Image lacks photometric info.";
 	}
 	TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &info->spp);
 	TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &info->bps);
@@ -340,8 +354,12 @@ static bool get_tiff_info(TIFF *tif, struct tiff_info *info) {
 			&info->ycbcr.sampx, &info->ycbcr.sampy);
 		TIFFGetFieldDefaulted(tif, TIFFTAG_YCBCRPOSITIONING,
 			&info->ycbcr.pos);
+		info->is_subsampled = info->ycbcr.sampx > 1
+			|| info->ycbcr.sampy > 1;
+	} else {
+		info->is_subsampled = false;
 	}
-	return true;
+	return NULL;
 }
 
 enum wu_error tiff_dec(struct image_file *infile,
@@ -365,7 +383,8 @@ const struct wu_conf *wuconf) {
 		const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w) == 1
 			&& TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h) == 1;
 		if (!ok) {
-			puts("Failed to get image dimensions");
+			image_file_error_append(infile,
+				"Failed to get image dimensions");
 			continue;
 		}
 
@@ -377,7 +396,9 @@ const struct wu_conf *wuconf) {
 		}
 
 		struct tiff_info info;
-		if (!get_tiff_info(tif, &info)) {
+		const char *err = get_tiff_info(tif, &info);
+		if (err) {
+			image_file_error_append(infile, err);
 			continue;
 		}
 		bool do_it_ourselves;
@@ -388,25 +409,24 @@ const struct wu_conf *wuconf) {
 		}
 
 		enum wu_error status;
-		switch ((int)do_it_ourselves) {
-		case true:
+		if (do_it_ourselves) {
 			status = nih_decode(tif, img, &info);
 			if (status == wu_ok) {
-				break;
-			}
-			raw_img_clear(img);
-			puts("Native unpacking routine failed, falling back "
-				"on libtiff.");
-			// fallthrough
-		default:
-			status = libtiff_decode(tif, infile, img);
-			if (status != wu_ok) {
-				raw_img_clear(img);
+				++i;
 				continue;
 			}
+			raw_img_clear(img);
+			image_file_error_append(infile,
+				"Native unpacking failed, falling back on "
+				"libtiff.");
 		}
 
-		++i;
+		status = libtiff_decode(tif, infile, img);
+		if (status == wu_ok) {
+			++i;
+		} else {
+			raw_img_clear(img);
+		}
 	} while (TIFFReadDirectory(tif) && i < infile->nr);
 
 	TIFFCleanup(tif);

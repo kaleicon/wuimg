@@ -4,12 +4,15 @@
 #include <string.h>
 #include <limits.h>
 
-#include "../wustr.h"
-#include "../raster/bit.h"
-#include "../raster/file.h"
-#include "../raster/fmt.h"
-#include "../raster/mem.h"
+#include "raster/bit.h"
+#include "raster/file.h"
+#include "raster/fmt.h"
+#include "raster/mem.h"
 #include "pi.h"
+
+/* Documented in
+https://mooncore.eu/bunny/txt/pi-pic.htm
+*/
 
 // Enable to use slightly slower but clearly correct code.
 //#define EXACT_BITS
@@ -338,7 +341,7 @@ size_t pi_decode(const struct pi_desc *desc, struct raw_img *img) {
 		const unsigned colors = (1 << desc->depth);
 		const unsigned table_size = colors*colors;
 		const size_t bslen = max_bitstream_size(desc->ifp, dims);
-		/* The spec recommends that the last 32 bits be zero, and we'll
+		/* The spec recommends that the last 32 bits be zero. We'll
 		 * enforce this to do away with some bounds checks in the
 		 * middle of decoding. */
 		void *buf = malloc(table_size + bslen + 4);
@@ -369,84 +372,51 @@ const uint16_t height) {
 		return wu_invalid_header;
 	}
 
-	if (!pixel_x || !pixel_y) {
-		pixel_x = 1;
-		pixel_y = 1;
-	}
-
 	img->w = width;
 	img->h = height;
 	img->channels = 1;
 	img->bitdepth = 8;
+	raw_img_aspect_ratio(img, pixel_x, pixel_y);
 
 	desc->depth = bitdepth;
-	desc->pixel_x = pixel_x;
-	desc->pixel_y = pixel_y;
 	return wu_ok;
 }
 
 static enum wu_error read_comment(struct pi_desc *desc) {
-	unsigned char buf[2];
-	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
-	if (!buf[0] || (buf[0] == 0x1a && !buf[1])) {
+	struct pi_comment *comm = &desc->comment;
+	struct wugrow grow;
+	comm->data = fileccpy(&grow, '\0', 0x4000, desc->ifp);
+	if (comm->data) {
+		uint8_t *p = memrchr(comm->data, 0x1a, grow.pos);
+		comm->text_len = p ? (size_t)(p - comm->data) : grow.pos;
+		comm->area_len = grow.pos;
 		return wu_ok;
 	}
-
-	struct pi_comment *comm = &desc->comment;
-	struct wugrow grow = wugrow_init(1);
-	grow.pos = sizeof(buf);
-	if (!wugrow_recheck(&comm->data, &grow)) {
-		return wu_alloc_error;
-	}
-	memcpy(comm->data, buf, sizeof(buf));
-	comm->text_len = (buf[1] == 0x1a);
-
-	while (!comm->area_len && grow.pos < 4096) {
-		const int c = getc(desc->ifp);
-		if (!wugrow_recheck(&comm->data, &grow)) {
-			return wu_alloc_error;
-		}
-
-		comm->data[grow.pos] = (unsigned char)c;
-		switch (c) {
-		case EOF:
-			return wu_unexpected_eof;
-		case 0:
-			comm->area_len = (unsigned short)grow.pos;
-			// fallthrough
-		case 0x1a:
-			if (!comm->text_len) {
-				comm->text_len = (unsigned short)grow.pos;
-			}
-			break;
-		}
-		++grow.pos;
-	}
-	return comm->area_len ? wu_ok : wu_alloc_error /* comment too long */;
+	return wu_invalid_header;
 }
 
 enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img) {
-	enum wu_error status = read_comment(desc);
-	if (status != wu_ok) {
-		return status;
-	}
-
-	/* Pi header (after magic bytes and comment):
+	/* Pi header (after magic bytes):
 		Offset  Size    Name
-		0       BYTE    ModeByte;       // Unreliable palette indicator
-		1       BYTE    PixelX;         // Aspect ratio numerator
-		2       BYTE    PixelY;
-		3       BYTE    BitDepth;       // 4 or 8
-		4       BYTE[4] SaverModelSig;  // Compressor model
-		8       WORD    SaverDataSize;
-		10      VAR     SaverData;      // Non-essential private data
+		0       VAR     Comment[];      // 0x1a then 0x00 terminated
+
+		--      BYTE    ModeByte;       // Unreliable palette indicator
+		+1      BYTE    PixelX;         // Aspect ratio numerator
+		+2      BYTE    PixelY;
+		+3      BYTE    BitDepth;       // 4 or 8
+		+4      BYTE[4] SaverModelSig;  // Compressor model
+		+8      WORD    SaverDataSize;
+		+10     VAR     SaverData;      // Non-essential private data
 
 		--      WORD    ImageWidth;
 		+2      WORD    ImageHeight;
 		+4      VAR     Palette;        // Length of 1 << BitDepth
 	*/
+
+	enum wu_error status = read_comment(desc);
+	if (status != wu_ok) {
+		return status;
+	}
 
 	uint8_t buf[10];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
@@ -477,10 +447,12 @@ enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img) {
 		return status;
 	}
 
-	struct raster_pal *pal;
-	status = fmt_load_pal(desc->ifp, &pal, fmt_pal_rgb, 1 << desc->depth);
+	struct raster_pal *pal = raw_img_palette_init(img);
+	if (!pal) {
+		return wu_alloc_error;
+	}
+	status = fmt_load_pal(desc->ifp, pal, fmt_pal_rgb, 1 << desc->depth);
 	if (status == wu_ok) {
-		raw_img_set_palette(img, pal);
 		return raw_img_verify(img);
 	}
 	return status;

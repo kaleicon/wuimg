@@ -25,7 +25,8 @@ static void set_colorspace(struct raw_img *img, JxlDecoder *jd) {
 				img->cs.transfer = enc.transfer_function;
 			}
 			return;
-		default:
+		case JXL_COLOR_SPACE_XYB:
+		case JXL_COLOR_SPACE_UNKNOWN:
 			break;
 		}
 	}

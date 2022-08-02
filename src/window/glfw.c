@@ -126,8 +126,8 @@ const int action, const int mode) {
 	case GLFW_KEY_I: event = 'I'; break;
 	case GLFW_KEY_O: event = 'O'; break;
 
-	case GLFW_KEY_END: event = '0'; break;
-	case GLFW_KEY_HOME: event = '1'; break;
+	case GLFW_KEY_END: event = '='; break;
+	case GLFW_KEY_HOME: event = (shift) ? '1' : '0'; break;
 	case GLFW_KEY_PAGE_UP:
 	case GLFW_KEY_KP_ADD: event = '+'; break;
 	case GLFW_KEY_PAGE_DOWN:

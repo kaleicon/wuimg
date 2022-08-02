@@ -20,6 +20,7 @@ const float dt, const bool shift) {
 	const struct image_file *file = &image->file;
 	struct wu_state *state = &image->state;
 	struct wu_event *event = &pub->event;
+	struct gl_context *gl = &pub->gl;
 
 	switch (code) {
 	// Exit
@@ -37,7 +38,7 @@ const float dt, const bool shift) {
 		return true;
 	// Alpha display
 	case 'A':
-		gl_alpha_toggle(&pub->gl, shift ? -1 : 1);
+		gl_alpha_toggle(gl, shift ? -1 : 1);
 		break;
 	// Metadata
 	case 'M':
@@ -48,7 +49,7 @@ const float dt, const bool shift) {
 	case 'D':
 		if (!shift && event->rm == trit_false) {
 			event->rm = trit_what;
-			term_temp_line("Delete file? (D to confirm, "
+			term_line_temp("Delete file? (D to confirm, "
 				"u to dismiss)");
 		} else if (shift && event->rm == trit_what) {
 			event->rm = trit_true;
@@ -57,7 +58,7 @@ const float dt, const bool shift) {
 	// Abort delete
 	case 'U':
 		event->program = 0;
-		term_clear_line();
+		term_line_clear();
 		return true;
 
 	// Cycling
@@ -117,7 +118,7 @@ const float dt, const bool shift) {
 		state->x_offset -= dt / state->zoom;
 		break;
 
-	// Rotation.
+	// Rotation
 	case 'Z': // Counterclockwise
 		event->image = ev_mirrot;
 		state->rotate = (state->rotate - 1) & 3;
@@ -151,10 +152,14 @@ const float dt, const bool shift) {
 	case '/':
 		event->image = image_zoom(image, state->zoom * powf(2, -1.0f/6.0f));
 		break;
+	case '=':
 	case '0':
 		state->x_offset = 0;
 		state->y_offset = 0;
-		event->image = image_zoom(image, state->fit_zoom);
+		const float fit = gl->tex.fit_zoom;
+		event->image = image_zoom(image,
+			(code == '0') ? fminf(1.0, fit) : fit);
+		event->image |= ev_move;
 		return true;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
@@ -168,10 +173,11 @@ const float dt, const bool shift) {
 
 static double key_events(struct window_context *window, const double secs) {
 	struct window_keymap *held_keys = &window->pub.held_keys;
+	const bool shift = held_keys->shift;
 
 	float msecs = (float)(secs * 1000);
 	const int inc = (int)msecs;
-	if (held_keys->shift) {
+	if (shift) {
 		msecs *= 2;
 	}
 
@@ -190,12 +196,12 @@ static double key_events(struct window_context *window, const double secs) {
 		default:
 			map[key] = (unsigned char)imin(0xff, time + inc);
 			if (time == key_press) {
-				dt = 16;
+				dt = 16 * (shift ? 2 : 1);
 			} else {
 				continue;
 			}
 		}
-		if (apply_event(window, key, dt, held_keys->shift)) {
+		if (apply_event(window, key, dt, shift)) {
 			map[key] = 0;
 		}
 	}
@@ -220,12 +226,11 @@ double event_exec(struct window_context *window) {
 
 	const struct timespec start = pub->timer;
 	clock_gettime(CLOCK_MONOTONIC, &pub->timer);
-	return key_events(window, monoclock_diff(start, pub->timer));
+	return key_events(window, fmax(1.0/1000, monoclock_diff(start, pub->timer)));
 }
 
 void print_keys(void) {
-	fputs("Keybinds (case insensitive except where noted):\n"
-
+	puts("Keybinds (case insensitive except where noted):\n"
 		"\tq | Alt+F4 | Ctrl+w\n"
 		"\t\tQuit.\n"
 
@@ -252,16 +257,16 @@ void print_keys(void) {
 		"\t\timages at a time.\n"
 
 		"\t< | >\n"
-		"\t\tGo to the previous or next sub-image, respectively.\n"
+		"\t\tGo to the previous or next sub-image.\n"
 
 		"\t, | . | ; | :\n"
 		"\t\tFor comma and period, go to the previous or next frame\n"
 		"\t\twithin an animated sub-image. For colons, skip 5 frames\n"
-		"\t\tat a time.\n"
+		"\t\tat a time. Note that seeking backwards can be slow.\n"
 
 		"\th | j | k | l | H | J | K | L | Arrow keys\n"
 		"\t\tMove viewport to the left, down, up, and right,\n"
-		"\t\trespectively. If shift is pressed (uppercase), move\n"
+		"\t\trespectively. If uppercase (or shift is held), move\n"
 		"\t\ttwice as much.\n"
 
 		"\tz | x\n"
@@ -271,20 +276,23 @@ void print_keys(void) {
 		"\t\tMirror horizontally or vertically.\n"
 
 		"\t+ | - | PageUp | PageDown\n"
-		"\t\tZoom in or out. Every three presses will double or halve\n"
-		"\t\tthe image size.\n"
+		"\t\tZoom in or out. The image size is doubled or halved every\n"
+		"\t\tthree presses.\n"
 
-		"\t* | / | (PageUp+Shift) | (PageDown+Shift)\n"
+		"\t* | / | PageUp+Shift | PageDown+Shift\n"
 		"\t\tLike + and -, but the size is doubled or halved every\n"
 		"\t\tsix presses.\n"
 
-		"\t0 | End\n"
-		"\t\tFit to window and center.\n"
+		"\t0 | Home\n"
+		"\t\tCenter image, and fit to window or scale to 1x, whichever\n"
+		"\t\tis smaller.\n"
 
-		"\t1 | Home\n"
+		"\t= | End\n"
+		"\t\tCenter and fit to window.\n"
+
+		"\t1 | Home+Shift\n"
 		"\t\t1x zoom.\n"
 
 		"\t2 .. 9\n"
-		"\t\t[n]x zoom.\n",
-		stdout);
+		"\t\t[n]x zoom.");
 }

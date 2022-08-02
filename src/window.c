@@ -39,34 +39,17 @@ void window_terminate(struct window_context *window) {
 	}
 }
 
-static void set_swap(struct window_context *window, const bool sync) {
-	switch (window->backend) {
-	case window_glfw:
-		glfwSwapInterval(sync);
-		break;
-	case window_wayland:
-	case window_drm:
-		eglSwapInterval(window->pub.win.egl.display, sync);
-		break;
-	case window_egl:
-		break;
+bool window_draw(struct window_context *window) {
+	if (gl_draw(&window->pub.gl, &window->pub.image.state)) {
+		switch (window->backend) {
+		case window_glfw: glfwSwapBuffers(window->ctx.glfw.window); break;
+		case window_drm: drm_swap_buffers(&window->ctx.drm); break;
+		case window_wayland: egl_swap(&window->pub.win.egl); break;
+		case window_egl: break;
+		}
+		return true;
 	}
-}
-
-void window_draw(struct window_context *window, const bool must_sync) {
-	if (must_sync) {
-		set_swap(window, true);
-	}
-	gl_draw(&window->pub.gl);
-	switch (window->backend) {
-	case window_glfw: glfwSwapBuffers(window->ctx.glfw.window); break;
-	case window_drm: drm_swap_buffers(&window->ctx.drm); break;
-	case window_wayland: egl_swap(&window->pub.win.egl); break;
-	case window_egl: break;
-	}
-	if (must_sync) {
-		set_swap(window, false);
-	}
+	return false;
 }
 
 void window_fullscreen(struct window_context *window) {

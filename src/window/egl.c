@@ -128,12 +128,6 @@ EGLNativeDisplayType native_display) {
 	return egl_make_current(*display, EGL_NO_SURFACE, context);
 }
 
-static bool sRGB_supported(EGLDisplay display) {
-	const char sRGB[] = "EGL_KHR_gl_colorspace";
-	const char *ext = eglQueryString(display, EGL_EXTENSIONS);
-	return ext && strstr(ext, sRGB);
-}
-
 const char * egl_init(struct egl *egl, EGLNativeDisplayType native_display,
 void *native_window, const uint32_t native_visual, const bool transparent) {
 	const EGLint cfg_attr[] = {
@@ -152,11 +146,6 @@ void *native_window, const uint32_t native_visual, const bool transparent) {
 		cfg_attr, cfg, &cfg_cnt, &attr);
 	if (err) {
 		return err;
-	}
-
-	if (!sRGB_supported(egl->display)) {
-		// TODO: I suppose this could be fixed in the shader
-		return "EGL: sRGB surfaces not supported";
 	}
 
 	EGLContext context = EGL_NO_CONTEXT;
@@ -184,7 +173,6 @@ void *native_window, const uint32_t native_visual, const bool transparent) {
 
 	const EGLint surf_attr[5] = {
 		EGL_RENDER_BUFFER, EGL_SINGLE_BUFFER,
-		EGL_GL_COLORSPACE_KHR, EGL_GL_COLORSPACE_SRGB_KHR,
 		EGL_NONE,
 	};
 

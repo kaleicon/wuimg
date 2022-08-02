@@ -93,8 +93,7 @@ const size_t written) {
 		return 0;
 	}
 
-	struct raster_pal *pal = raw_img_set_palette(img,
-		malloc(sizeof(*img->u.palette)));
+	struct raster_pal *pal = raw_img_palette_init(img);
 	if (!pal) {
 		return 0;
 	}

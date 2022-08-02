@@ -1,6 +1,6 @@
 #include "qoi.h"
 #include "raster/fmt.h"
-#include "raster/pix.h"
+#include "raster/mem.h"
 
 enum qoi_ops {
 	qoi_op_index = 0,
@@ -23,6 +23,7 @@ const struct pix_rgba8 cur) {
 
 size_t qoi_decode(struct mp_parser *mp, struct raw_img *img) {
 	const size_t dst_len = raw_img_size(img);
+	// Add 1 byte of padding so we can use a faster 4-byte memcpy
 	img->data = malloc(dst_len + (bool)(img->channels == 3));
 	if (!img->data) {
 		return 0;
@@ -83,7 +84,7 @@ size_t qoi_decode(struct mp_parser *mp, struct raw_img *img) {
 				if (d + run*img->channels > dst_len) {
 					return d;
 				}
-				pix_set(img->data + d, &cur, img->channels, run);
+				memwordset(img->data + d, &cur, img->channels, run);
 				d += run * img->channels;
 				continue;
 			}

@@ -122,15 +122,19 @@ enum wu_error prt_parse(struct prt_desc *desc, struct raw_img *img) {
 
 	if (desc->depth == 8) {
 		fseek(desc->ifp, pal_offset, SEEK_SET);
-		struct raster_pal *pal;
-		st = fmt_load_pal(desc->ifp, &pal, fmt_pal_rgbx, 256);
+		struct raster_pal *pal = malloc(sizeof(*pal));
+		if (!pal) {
+			return wu_alloc_error;
+		}
+
+		st = fmt_load_pal(desc->ifp, pal, fmt_pal_rgbx, 256);
 		if (st != wu_ok) {
 			return st;
 		}
 		if (desc->mask) {
 			desc->pal = pal;
 		} else {
-			raw_img_set_palette(img, pal);
+			raw_img_palette_set(img, pal);
 		}
 	}
 	fseek(desc->ifp, data_offset, SEEK_SET);

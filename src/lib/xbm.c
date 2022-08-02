@@ -206,7 +206,7 @@ struct xbm_define *define) {
 
 static const unsigned char * comment_end(const unsigned char *comm,
 const unsigned char end, size_t len) {
-	const unsigned char *ch = NULL;
+	const unsigned char *ch;
 	while ( (ch = memchr(comm, end, len)) ) {
 		if (ch[0] == '/' && ch[-1] != '*') {
 			++ch;
@@ -220,29 +220,19 @@ const unsigned char end, size_t len) {
 }
 
 static bool skip_comment(struct xbm_desc *desc, struct mp_parser *tp) {
+	const unsigned char *base = tp->mem + tp->pos - 1;
 	unsigned char end;
 	switch (mp_next_char(tp)) {
 	case '*': end = '/'; break;
 	case '/': end = '\n'; break;
 	default: return false;
 	}
-	const bool multiline = (end == '/');
-
-	mp_skip_space(tp);
-	const unsigned char *base = tp->mem + tp->pos;
-	const unsigned char *comm = comment_end(base, end, tp->len - tp->pos);
+	const unsigned char *comm = comment_end(tp->mem + tp->pos, end,
+		tp->len - tp->pos);
 	if (comm) {
-		size_t len = (size_t)comm - (size_t)base;
+		size_t len = (size_t)comm - (size_t)base - (end == '\n');
 		tp->pos += len;
-
-		if (multiline) {
-			mp_skip_line(tp);
-			--len;
-		}
 		if (!desc->comment.len) {
-			while (len && isspace(base[len - 1])) {
-				--len;
-			}
 			desc->comment.ptr = base;
 			desc->comment.len = len;
 		}

@@ -10,9 +10,9 @@
 
 static void read_extension_area(struct wu_tree *tree,
 const struct tga_metadata *meta) {
-	tree_sprout_unsafe_leaf(tree, "Author name", meta->author.name,
+	tree_add_measured_leaf(tree, "Author name", meta->author.name,
 		sizeof(meta->author.name));
-	tree_sprout_unsafe_leaf(tree, "Author comment", meta->author.comment,
+	tree_add_measured_leaf(tree, "Author comment", meta->author.comment,
 		sizeof(meta->author.comment));
 
 	struct wu_leaf leaf;
@@ -22,7 +22,7 @@ const struct tga_metadata *meta) {
 		tree_bud_leaf(tree, "Timestamp", leaf);
 	}
 
-	tree_sprout_unsafe_leaf(tree, "Job ID", meta->job.name,
+	tree_add_measured_leaf(tree, "Job ID", meta->job.name,
 		sizeof(meta->job.name));
 
 	if (meta->job.hour || meta->job.minute || meta->job.second) {
@@ -30,14 +30,14 @@ const struct tga_metadata *meta) {
 		char buf[sizeof(fmt)];
 		const size_t w =(size_t)snprintf(buf, sizeof(buf), fmt,
 			meta->job.hour, meta->job.minute, meta->job.second);
-		tree_sprout_measured_leaf(tree, "Job time", buf, w);
+		tree_add_measured_leaf(tree, "Job time", buf, w);
 	}
 
-	tree_sprout_unsafe_leaf(tree, "Software ID", meta->software.id,
+	tree_add_measured_leaf(tree, "Software ID", meta->software.id,
 		sizeof(meta->software.id));
 
 	if (isgraph(meta->software.version_letter)) {
-		tree_sprout_measured_leaf(tree, "Software version letter",
+		tree_add_measured_leaf(tree, "Software version letter",
 			&meta->software.version_letter, 1);
 	}
 	if (meta->software.version_number) {
@@ -48,13 +48,14 @@ const struct tga_metadata *meta) {
 }
 
 static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
+	tree_add_leaf(tree, "Type", tga_type_str(desc->type));
 	struct wu_leaf leaf = {.type = wu_leaf_unsigned, .val.u = desc->depth};
 	tree_bud_leaf(tree, "Depth", leaf);
 	if (desc->map.depth) {
 		leaf.val.u = desc->map.depth;
 		tree_bud_leaf(tree, "Map depth", leaf);
 	}
-	tree_sprout_unsafe_leaf(tree, "ID", desc->meta.id, desc->meta.id_len);
+	tree_add_measured_leaf(tree, "ID", desc->meta.id, desc->meta.id_len);
 }
 
 static enum wu_error dec_wrapper(struct image_file *infile,
@@ -72,13 +73,11 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 	read_tga_info(&infile->metadata, desc);
 	bool extra_pal = (bool)desc->map.extra_pal;
 	bool has_stamp = false;
-	if (tga_parse_footer(desc)) {
-		struct wu_tree *extra = tree_sprout_branch(&infile->metadata,
+	if (tga_parse_footer(desc, img)) {
+		struct wu_tree *extra = tree_add_branch(&infile->metadata,
 			"Extension area");
 		read_extension_area(extra, &desc->meta);
 		infile->bg = desc->meta.key_color;
-		color_space_set_gamma(&img[0].cs,
-			tga_ratio_to_float(desc->meta.gamma));
 		if (desc->meta.stamp_offset) {
 			has_stamp = true;
 		}
@@ -95,6 +94,7 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 		if (st != wu_ok) {
 			return st;
 		}
+		img[i].id = strdup("stamp");
 		++i;
 	}
 	if (extra_pal) {
@@ -118,7 +118,6 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 		if (!tga_decode_stamp(desc, img + 1)) {
 			return wu_decoding_error;
 		}
-		img[1].id = strdup("stamp");
 	}
 	return wu_ok;
 }

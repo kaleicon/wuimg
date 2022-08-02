@@ -3,24 +3,24 @@
 
 #include "cicp.h"
 #include "icc.h"
+#include "mat.h"
 #include "pix.h"
-
-struct color_mat {
-	float off[4];
-	float mat[4*4];
-};
 
 enum color_transfer_fn {
 	color_transfer_linear_gamma,
-	color_transfer_log,
 	color_transfer_pq,
 	color_transfer_hlg,
 };
 
-struct color_convert {
-	enum color_transfer_fn eotf;
+struct color_transfer {
+	enum color_transfer_fn fn;
 	float args[5];
-	float mat[3*3];
+};
+
+struct color_convert {
+	struct mat43f nonlinear;
+	struct color_transfer eotf;
+	struct mat3f linear;
 };
 
 struct color_xy {
@@ -31,12 +31,12 @@ struct color_primaries {
 	struct color_xy w, r, g, b;
 };
 
-struct color_transfer {
+struct color_gamma {
 	double r, g, b;
 };
 
 struct color_profile {
-	struct color_transfer xfer;
+	struct color_gamma gamma;
 	struct color_primaries pri;
 };
 
@@ -66,11 +66,8 @@ struct color_space {
 
 const char * color_space_type_str(const struct color_space *cs);
 
-void color_mat_gen(struct color_mat *out, const struct color_space *space,
-enum pix_layout swizzle);
-
 bool color_space_to_linear_sRGB(const struct color_space *cs,
-struct color_convert *conv);
+struct color_convert *conv, enum pix_layout layout);
 
 cmsHTRANSFORM color_icc_transform(struct color_space *cs, cmsHPROFILE out);
 
@@ -89,6 +86,9 @@ bool color_space_set_gamma(struct color_space *cs, double gamma);
 
 bool color_space_set_primaries_rgb(struct color_space *cs, double rx, double ry,
 double gx, double gy, double bx, double by);
+
+bool color_space_set_primaries_whitepoint(struct color_space *cs,
+double wx, double wy);
 
 bool color_space_set_primaries(struct color_space *cs, double wx, double wy,
 double rx, double ry, double gx, double gy, double bx, double by);

@@ -13,14 +13,13 @@ struct pi_saver {
 
 struct pi_comment {
 	unsigned char *data;
-	unsigned short text_len;
-	unsigned short area_len;
+	size_t text_len;
+	size_t area_len;
 };
 
 struct pi_desc {
 	FILE *ifp;
 	unsigned char depth;
-	unsigned char pixel_x, pixel_y;
 
 	struct pi_comment comment;
 	struct pi_saver saver;

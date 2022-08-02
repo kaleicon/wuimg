@@ -4,10 +4,10 @@
 
 #include <gif_lib.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../raster/pal.h"
-#include "../raster/compost.h"
+#include "wudefs.h"
+#include "common.h"
+#include "raster/pal.h"
+#include "raster/compost.h"
 
 enum disposal_mode {
 	dispose_first_frame = -1,
@@ -199,8 +199,9 @@ static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 static enum wu_error gif_frame_iter(struct image_file *infile,
 const struct wu_state *state) {
 	struct gif_state *ds = infile->dec_state;
-	if (state->frame < ds->idx) {
-		ds->idx = 0;
+	struct raw_img *img = infile->sub_img;
+	if (ds->idx > state->frame) {
+		ds->idx = raw_img_frame_prev_keyframe(img, state->frame);
 	}
 	while (ds->idx <= state->frame) {
 		const enum wu_error err = gif_dec_frame(infile->sub_img, ds);
@@ -222,17 +223,6 @@ const enum image_event event) {
 	return wu_no_change;
 }
 
-static struct frame_info gif_desc_to_frame(const GifImageDesc *desc,
-const GraphicsControlBlock *gcb) {
-	return (struct frame_info) {
-		.x = (size_t)desc->Left,
-		.y = (size_t)desc->Top,
-		.w = (size_t)desc->Width,
-		.h = (size_t)desc->Height,
-		.msec = gcb->DelayTime * 10,
-	};
-}
-
 static int read_extensions(const int count, ExtensionBlock *ext,
 GraphicsControlBlock *gcb, struct wu_tree *tree) {
 	int status = GIF_ERROR;
@@ -241,7 +231,7 @@ GraphicsControlBlock *gcb, struct wu_tree *tree) {
 		const size_t len = (size_t)ext[j].ByteCount;
 		switch (func) {
 		case COMMENT_EXT_FUNC_CODE:
-			tree_sprout_unsafe_leaf(tree, "Comment", ext[j].Bytes,
+			tree_add_measured_leaf(tree, "Comment", ext[j].Bytes,
 				len);
 			break;
 		case GRAPHICS_EXT_FUNC_CODE:
@@ -258,23 +248,22 @@ static bool gather_info(struct image_file *infile,
 struct gif_state *ds, bool *uses_local_palette) {
 	GifFileType *gif_file = ds->gif_file;
 
-	const int count = gif_file->ImageCount;
+	const size_t count = (size_t)gif_file->ImageCount;
 	struct raw_img *img = infile->sub_img;
-	struct image_frames *frames = raw_img_frames_init(img, (size_t)count);
-	if (!frames) {
+	if (!raw_img_frames_init(img, count)) {
 		return false;
 	}
 	if (count > 1) {
 		infile->events = ev_frame;
 	}
 
-	ds->gcb = malloc(sizeof(*ds->gcb) * (size_t)count);
+	ds->gcb = malloc(sizeof(*ds->gcb) * count);
 	if (!ds->gcb) {
 		return false;
 	}
 
 	const int default_delay = 10;
-	for (int i = 0; i < count; ++i) {
+	for (size_t i = 0; i < count; ++i) {
 		GraphicsControlBlock *gcb = ds->gcb + i;
 		SavedImage *image = gif_file->SavedImages + i;
 
@@ -291,7 +280,11 @@ struct gif_state *ds, bool *uses_local_palette) {
 		}
 
 		const GifImageDesc *desc = &image->ImageDesc;
-		frames->f[i] = gif_desc_to_frame(desc, gcb);
+		raw_img_frame_set(img, i,
+			(size_t)desc->Left, (size_t)desc->Top,
+			(size_t)desc->Width, (size_t)desc->Height,
+			gcb->DelayTime * 10,
+			gcb->TransparentColor == NO_TRANSPARENT_COLOR);
 		if (desc->ColorMap) {
 			*uses_local_palette = true;
 		}
@@ -301,11 +294,7 @@ struct gif_state *ds, bool *uses_local_palette) {
 		}
 
 		if (i == 0) {
-			const int canvas = gif_file->SWidth * gif_file->SHeight;
-			const int frame = desc->Width * desc->Height;
-			if (frame < canvas || gcb->TransparentColor != -1) {
-				ds->opaque_first_frame = false;
-			}
+			ds->opaque_first_frame = img->frames->f[0].keyframe;
 		}
 	}
 	return true;
@@ -342,17 +331,6 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_exceeds_size_limit;
 	}
 
-	if (gif_file->AspectByte) {
-		const char fmt[] = "%g (byte = %hhu)";
-		char buf[sizeof(fmt)*2];
-
-		const double ratio = (gif_file->AspectByte + 15.0f)/64.0f;
-		const size_t w = (size_t)sprintf(buf, fmt, ratio,
-			gif_file->AspectByte);
-		tree_sprout_measured_leaf(&infile->metadata,
-			"Pixel aspect ratio", buf, w);
-	}
-
 	struct raw_img *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
@@ -369,12 +347,15 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
+	if (gif_file->AspectByte) {
+		img->ratio = (gif_file->AspectByte + 15.0f)/64.0f;
+	}
 	if (gif_file->SColorMap) {
 		struct raster_pal *loc = &ds->global_pal;
 		if (!uses_local_palette) {
 			void *hold = malloc(sizeof(*loc));
 			if (hold) {
-				loc = raw_img_set_palette(img, hold);
+				loc = raw_img_palette_set(img, hold);
 				img->channels = 1;
 			}
 		}

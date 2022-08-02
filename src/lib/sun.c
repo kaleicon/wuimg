@@ -66,8 +66,8 @@ unsigned char *restrict dst, const size_t dst_len) {
 	const size_t rle_len = zumin(file_size, pathological_rle);
 	unsigned char *rle = malloc(rle_len);
 	if (rle) {
-		const size_t read = fread(rle, 1, rle_len, desc->ifp);
-		written = run_length_loop(dst, dst_len, rle, read);
+		written = run_length_loop(dst, dst_len, rle,
+			fread(rle, 1, rle_len, desc->ifp));
 		free(rle);
 	}
 	return written;
@@ -86,14 +86,13 @@ size_t sun_decode(const struct sun_desc *desc, struct raw_img *img) {
 
 static enum wu_error interleave_colormap(struct sun_desc *desc,
 struct raw_img *img) {
-	struct raster_pal *map;
-	const size_t entries = 1 << img->bitdepth;
-	const enum wu_error st = fmt_load_pal_planar(desc->ifp, &map,
-		fmt_pal_rgb, entries);
-	if (st == wu_ok) {
-		raw_img_set_palette(img, map);
+	struct raster_pal *map = raw_img_palette_init(img);
+	if (map) {
+		const size_t entries = 1 << img->bitdepth;
+		return fmt_load_pal_planar(desc->ifp, map, fmt_pal_rgb,
+			entries);
 	}
-	return st;
+	return wu_alloc_error;
 }
 
 static enum wu_error validate_header(struct sun_desc *desc, struct raw_img *img,
@@ -156,7 +155,10 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 
 	desc->type = type;
 	desc->colormap_type = cm_type;
-	return raw_img_verify(img);
+	if (cm_type != sun_no_colormap) {
+		return interleave_colormap(desc, img);
+	}
+	return wu_ok;
 }
 
 enum wu_error sun_parse_header(struct sun_desc *desc, struct raw_img *img) {
@@ -185,8 +187,8 @@ enum wu_error sun_parse_header(struct sun_desc *desc, struct raw_img *img) {
 		endian32(header[4], big_endian),
 		endian32(header[5], big_endian),
 		endian32(header[6], big_endian));
-	if (st == wu_ok && desc->colormap_type != sun_no_colormap) {
-		return interleave_colormap(desc, img);
+	if (st == wu_ok) {
+		st = raw_img_verify(img);
 	}
 	return st;
 }

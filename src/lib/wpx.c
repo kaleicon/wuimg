@@ -494,7 +494,7 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct raw_img *img) {
 		}
 		img->channels = 4;
 	} else if (desc->pal) {
-		raw_img_set_palette(img, desc->pal);
+		raw_img_palette_set(img, desc->pal);
 		desc->pal = NULL;
 	}
 	return raw_img_verify(img);

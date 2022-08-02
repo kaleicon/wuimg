@@ -15,6 +15,8 @@
 #include "raster/memparser.h"
 #include "window/wayland.h"
 
+static void null_function() {}
+
 static void reset_xkb(struct wayland_keyboard *k) {
 	if (k->state) {
 		xkb_state_unref(k->state);
@@ -134,8 +136,6 @@ void wayland_fullscreen(struct wayland *wl, const bool is_fullscreen) {
 }
 
 enum trit wayland_resize(struct wayland *wl, const int32_t w, const int32_t h) {
-//	const enum trit st = window_size_update(wl->pub, (unsigned)w,
-//		(unsigned)h);
 	const enum trit st = window_size_update(wl->pub, w, h);
 	if (st == trit_true) {
 		wl_egl_window_resize(wl->egl_window, w, h, 0, 0);
@@ -151,7 +151,7 @@ static bool test_mod(struct xkb_state *state, const char *name) {
 static uint8_t convert_by_codepoint(struct xkb_state *state, const uint32_t key) {
 	const uint32_t codepoint = xkb_state_key_get_utf32(state, key + 8);
 	switch (codepoint) {
-	case ' ':
+	case ' ': case '=':
 	case '<': case '>':
 	case ',': case ';':
 	case '.': case ':':
@@ -202,9 +202,9 @@ static uint8_t convert_by_position(struct xkb_state *state, const uint32_t key) 
 	case KEY_I: return 'I';
 	case KEY_O: return 'O';
 
-	case KEY_END: return '0';
-	case KEY_HOME: return '1';
-
+	case KEY_END: return '=';
+	case KEY_HOME:
+		return test_mod(state, XKB_MOD_NAME_SHIFT) ? '1' : '0';
 	case KEY_PAGEUP:
 		return test_mod(state, XKB_MOD_NAME_SHIFT) ? '*' : '+';
 	case KEY_PAGEDOWN:
@@ -259,19 +259,32 @@ static int alloc_shm(const int32_t dims) {
 	return fd;
 }
 
-static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
-	/* We've decided to generate an image instead of using wayland-cursor,
-	 * as loading even a 24px pointer takes about 20ms.
-	 * That's about 80% of the time it takes to set up the window alone. */
-
-	// Where these come from is left as an exercise for the maintainer.
+static void draw_cursor(uint32_t *data, const int32_t w, const int32_t h) {
 	const uint32_t five_shades_of_gray = 0x333333;
-	const uint32_t uheight = (uint32_t)height;
-	const uint32_t uwidth = uheight * 2372656 / five_shades_of_gray;
+	for (int32_t y = 0; y < h; ++y) {
+		for (int32_t x = 0; x <= y; ++x) {
+			const int32_t yx = y + x;
+			if (yx < h || y < w) {
+				uint32_t pix = 0xff000000;
+				const bool triangle = (x > 0) && (x < y);
+				const bool a = (yx < h - 1);
+				const bool b = (y < w - 1);
+				if (triangle && (a + b)) {
+					pix |= five_shades_of_gray * (2u + a + b);
+				}
+				data[y*w + x] = pix;
+			}
+		}
+	}
+}
 
-	const int32_t width = (int32_t)uwidth;
+static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
+	/* We generate an image instead of using wayland-cursor, as loading
+	 * even a 24px pointer takes about 20ms. That's almost on par with the
+	 * window creation time itself. */
 
 	uint32_t *data;
+	const int32_t width = (height * 46341) >> 16;
 	const int32_t pix_size = (int32_t)sizeof(*data);
 	const int32_t stride = width * pix_size;
 	const int32_t dims = height * stride;
@@ -292,25 +305,9 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
-	for (uint32_t y = 0; y < uheight; ++y) {
-		for (uint32_t x = 0; x < uwidth; ++x) {
-			const uint32_t pos = y*uwidth + x;
-			const bool alpha = x <= y
-				&& (y + x <= uheight - 1 || y <= uwidth - 1);
-			if (alpha) {
-				const uint32_t triangle = (x > 0) && (x < y);
-				uint32_t gray = triangle
-					&& ((y + x < uheight - 1) || (y < uwidth - 1));
-				if (gray) {
-					gray = five_shades_of_gray * (triangle * 2u
-						+ (y + x < uheight - 1)
-						+ (y < uwidth - 1)
-					);
-				}
-				data[pos] = 0xff000000 + gray;
-			}
-		}
-	}
+	const clock_t start = clock();
+	draw_cursor(data, width, height);
+	clock_print("Cursor generated", start);
 	munmap(data, (size_t)dims);
 	return buf;
 }

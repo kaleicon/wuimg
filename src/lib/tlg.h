@@ -22,6 +22,6 @@ size_t tlg_decode(const struct tlg_desc *desc, struct raw_img *img);
 
 enum wu_error tlg_read_header(struct tlg_desc *desc, struct raw_img *img);
 
-enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct map_info *map);
+enum wu_error tlg_open_mem(struct tlg_desc *desc, struct mp_parser mp);
 
 #endif /* LIB_TLG */

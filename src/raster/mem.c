@@ -1,11 +1,10 @@
 #include <string.h>
 #include <stdint.h>
 
-uint8_t memcycle(void *dst, const size_t len) {
-	uint8_t *d = dst;
-	const uint8_t val = d[len];
-	memmove(d + 1, d, len);
-	d[0] = val;
+uint8_t memcycle(uint8_t *dst, const size_t pos) {
+	const uint8_t val = dst[pos];
+	memmove(dst + 1, dst, pos);
+	dst[0] = val;
 	return val;
 }
 
@@ -13,12 +12,55 @@ void memtessel(void *restrict dst, const void *restrict src, const size_t size,
 size_t bytes) {
 	uint8_t *d = dst;
 	const uint8_t *s = src;
-	while (bytes > size) {
-		memcpy(d, s, size);
-		d += size;
-		bytes -= size;
+	size_t i = 0;
+	const size_t items = bytes/size;
+	while (i < items) {
+		memcpy(d + i*size, s, size);
+		++i;
 	}
-	memcpy(d, s, bytes);
+	memcpy(d + i*size, s, bytes % size);
+}
+
+static void u32_set(uint32_t *restrict dst, const void *restrict src,
+const size_t nmemb) {
+	uint32_t word;
+	memcpy(&word, src, sizeof(word));
+	for (size_t i = 0; i < nmemb; ++i) {
+		dst[i] = word;
+	}
+}
+
+static void u24_set(uint8_t *restrict dst, const void *restrict src,
+const size_t nmemb) {
+	const size_t size = 3;
+	uint32_t triple;
+	memcpy(&triple, src, size);
+	size_t i = 0;
+	while (i < nmemb - 1) {
+		memcpy(dst + i*size, &triple, sizeof(triple));
+		++i;
+	}
+	memcpy(dst + i*size, &triple, size);
+}
+
+static void u16_set(uint16_t *dst, const void *restrict src,
+const size_t nmemb) {
+	uint16_t word;
+	memcpy(&word, src, sizeof(word));
+	for (size_t i = 0; i < nmemb; ++i) {
+		dst[i] = word;
+	}
+}
+
+void memwordset(void *restrict dst, const void *restrict src,
+const size_t size, const size_t nmemb) {
+	switch (size) {
+	case 1: memset(dst, *((uint8_t *)src), nmemb); break;
+	case 2: u16_set(dst, src, nmemb); break;
+	case 3: u24_set(dst, src, nmemb); break;
+	case 4: u32_set(dst, src, nmemb); break;
+	default: memtessel(dst, src, size, size*nmemb); break;
+	}
 }
 
 void memrepeat(void *dst, size_t pos, size_t offset, size_t count) {
@@ -39,4 +81,14 @@ void memrepeat_or_zero(void *dst, size_t pos, size_t offset, size_t count) {
 		}
 		memrepeat(dst, pos, offset, count);
 	}
+}
+
+const void * memchk(const void *s, const unsigned char c, const size_t n) {
+	const unsigned char *b = s;
+	for (size_t m = 0; m < n; ++m) {
+		if (b[m] != c) {
+			return b + m;
+		}
+	}
+	return NULL;
 }
