@@ -363,7 +363,7 @@ const enum msx_screen mode) {
 		img->w = 256;
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 8;
-		img->attr = pix_packing_332;
+		img->attr = pix_pack_332;
 		pal_depth = 0;
 		break;
 	case msx_screen10:
@@ -373,6 +373,7 @@ const enum msx_screen mode) {
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 8;
 		img->channels = 3;
+		img->used_bits = 5;
 		pal_depth = 0; // Will load at decode time
 		break;
 	default:

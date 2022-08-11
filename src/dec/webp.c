@@ -74,7 +74,7 @@ const int frame) {
 		ds->idx = 0;
 		ds->anim.l.prev_msec = 0;
 	} else {
-		ds->idx = raw_img_frame_prev_keyframe(img, frame);
+		ds->idx = raw_img_frame_prev_keyframe(img, ds->idx, frame);
 	}
 }
 
@@ -388,7 +388,7 @@ bool use_homegrown) {
 	case 2: fmt = "Lossless"; break;
 	default: return;
 	}
-	tree_add_leaf(tree, "Compression", fmt);
+	tree_add_leaf_utf8(tree, "Compression", fmt);
 }
 
 enum wu_error webp_dec(struct image_file *infile,

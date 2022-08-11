@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "raster/endian.h"
 #include "raster/fmt.h"
 #include "raster/mem.h"
 #include "raster/strip.h"
@@ -16,7 +17,7 @@ const char * pdt_version_str(const enum pdt_version version) {
 
 static inline size_t base_decode(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len, const uint8_t ch,
-const uint32_t off_table[static 0x10]) {
+const uint32_t *off_table) {
 	size_t d = 0;
 	size_t s = 0;
 	while (d < dst_len && s < src_len) {
@@ -82,7 +83,7 @@ const uint8_t *restrict src, const size_t src_len) {
 	uint32_t offs[0x10];
 	if (src_len > sizeof(offs)) {
 		memcpy(offs, src, sizeof(offs));
-		loop_endian32(offs, little_endian, ARRAY_LEN(offs));
+		endian_loop32(offs, little_endian, ARRAY_LEN(offs));
 		return base_decode(dst, dst_len, src + sizeof(offs),
 			src_len - sizeof(offs), 1, offs);
 	}
@@ -107,7 +108,7 @@ size_t pdt_decode(const struct pdt_desc *desc, struct raw_img *img) {
 
 	struct sewing_machine sew;
 	strip_sew_init(&sew, img->data, (struct raster_pal *)desc->pal, img->w,
-		img->h, color_ch, img->alignment, desc->mask_offset);
+		img->h, color_ch, img->align_sh, desc->mask_offset);
 
 	size_t written = pick_decode(sew.color.ptr, sew.color.len,
 		desc->mp.mem + desc->mp.pos, desc->mp.len - desc->mp.pos,

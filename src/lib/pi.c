@@ -331,7 +331,7 @@ const size_t width, uint8_t *restrict table, const unsigned depth) {
 }
 
 static size_t max_bitstream_size(FILE *ifp, const size_t dims) {
-	return zumin(dims * 2, (size_t)file_remaining(ifp));
+	return zumin(dims * 2, file_remaining(ifp));
 }
 
 size_t pi_decode(const struct pi_desc *desc, struct raw_img *img) {

@@ -19,15 +19,6 @@ struct rle_info {
 	void *rle;
 };
 
-static size_t uncompressed_decode(const struct sgi_desc *desc,
-struct raw_img *img, const size_t size) {
-	const size_t w = fread(img->data, 1, size, desc->ifp);
-	if (desc->bytedepth == 2) {
-		loop_endian16((uint16_t *)img->data, big_endian, w/2);
-	}
-	return w;
-}
-
 static void rle_loop16(uint16_t *restrict output, const size_t out_limit,
 const uint16_t *restrict rle, const uint32_t rle_limit) {
 	size_t o = 0;
@@ -120,7 +111,7 @@ static bool resolve_offsets(struct rle_info *rle, const uint8_t bytedepth) {
 
 static size_t get_filesize(const struct sgi_desc *desc,
 const size_t table_size, const size_t dims) {
-	const size_t size = (size_t)file_remaining(desc->ifp);
+	const size_t size = file_remaining(desc->ifp);
 	if (size > table_size) {
 		// E.g. (bytedepth == 1) 01 ff  01 ff ...
 		// E.g. (bytedepth == 2) 00 01 ff ff  00 01 ff ff ...
@@ -173,7 +164,7 @@ size_t sgi_decode(const struct sgi_desc *desc, struct raw_img *img) {
 		if (desc->compression == sgi_rle) {
 			return rle_decode(desc, img, size);
 		}
-		return uncompressed_decode(desc, img, size);
+		return fmt_load_raster(img, desc->ifp, big_endian);
 	}
 	return 0;
 }

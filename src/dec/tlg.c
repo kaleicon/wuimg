@@ -4,7 +4,7 @@
 
 static void metadata(const void *ptr, struct wu_tree *tree) {
 	const struct tlg_desc *desc = ptr;
-	tree_add_leaf(tree, "Version", tlg_version_str(desc->version));
+	tree_add_leaf_utf8(tree, "Version", tlg_version_str(desc->version));
 }
 
 static size_t dec(const void *ptr, struct raw_img *img) {

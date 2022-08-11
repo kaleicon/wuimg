@@ -11,12 +11,17 @@
 #include "term.h"
 #include "filesystem.h"
 #include "write_pam.h"
+#include "raster/endian.h"
+
+void write_writer_terminate(struct write_writer *writer) {
+	window_offscreen_terminate(&writer->window);
+}
 
 static void pam_write_row(void *out, const uint8_t depth, const size_t len,
 FILE *ofp) {
 	if (which_end() != big_endian) {
 		if (depth == 16) {
-			loop_endian16(out, big_endian, len);
+			endian_loop16(out, big_endian, len);
 		}
 	}
 	fwrite(out, depth/8, len, ofp);
@@ -190,10 +195,6 @@ struct write_writer *writer, const struct write_args *args) {
 		return wu_ok;
 	}
 	return err;
-}
-
-void write_writer_terminate(struct write_writer *writer) {
-	window_offscreen_terminate(&writer->window);
 }
 
 bool write_writer_init(struct write_writer *writer, struct wu_conf *wuconf) {

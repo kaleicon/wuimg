@@ -9,10 +9,8 @@ static bool rast_to_raw_img(struct raster_desc *desc, struct raw_img *img) {
 	img->h = desc->h;
 	img->channels = desc->ch;
 	img->bitdepth = desc->bitdepth;
-	img->alignment = desc->alignment;
 	img->layout = desc->layout;
 	img->attr = desc->attr;
-	img->rotate = desc->rotate;
 	img->mirror = desc->mirror;
 	return raw_img_alloc(img);
 }
@@ -34,7 +32,7 @@ const struct wu_conf *wuconf) {
 		return wu_exceeds_size_limit;
 	}
 
-	tree_add_leaf(&infile->metadata, "Type", pnm_type_str(desc.type));
+	tree_add_leaf_utf8(&infile->metadata, "Type", pnm_type_str(desc.type));
 
 	if (!alloc_sub_images(infile, zumin(desc.nr, UCHAR_MAX))) {
 		return wu_alloc_error;

@@ -3,6 +3,16 @@
 
 #include "raster/fmt.h"
 
+size_t fmt_load_raster(struct raw_img *img, FILE *ifp, const enum endianness e) {
+	const size_t read = fread(img->data, 1, raw_img_size(img), ifp);
+	switch (img->bitdepth) {
+	case 16: endian_loop16((uint16_t *)img->data, e, read/2); break;
+	case 32: endian_loop32((uint32_t *)img->data, e, read/4); break;
+	case 64: endian_loop64((uint64_t *)img->data, e, read/8); break;
+	}
+	return read;
+}
+
 enum wu_error fmt_load_pal_planar(FILE *ifp, struct raster_pal *pal,
 const enum fmt_pal_type type, const size_t entries) {
 	enum wu_error err = wu_alloc_error;

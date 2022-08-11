@@ -26,10 +26,10 @@ size_t prt_decode(const struct prt_desc *desc, struct raw_img *img) {
 	const uint8_t ch = (uint8_t)(desc->depth / 8);
 	struct sewing_machine sew;
 	strip_sew_init(&sew, img->data, desc->pal, img->w, img->h, ch,
-		img->alignment, desc->mask);
+		img->align_sh, desc->mask);
 	size_t w = fread(sew.color.ptr, 1, sew.color.len, desc->ifp);
 	if (w && desc->mask) {
-		/* But why */
+		/* Modify alpha to have an alignment of 1 */
 		sew.alpha.stride = img->w;
 		sew.alpha.len = img->w * img->h;
 		if (!strip_sew_alloc_alpha(&sew)) {
@@ -57,7 +57,7 @@ const bool mask) {
 	img->h = height;
 	img->channels = mask ? 4 : (uint8_t)(desc->depth / 8);
 	img->bitdepth = 8;
-	img->alignment = 4;
+	raw_img_align(img, 4);
 	img->layout = pix_bgra;
 	img->alpha = (img->channels == 1) ? alpha_ignore : alpha_unassociated;
 	img->mirror = true;

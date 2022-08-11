@@ -8,7 +8,7 @@
 
 struct xbm_define {
 	const struct wuptr name;
-	size_t d;
+	long d;
 	bool found;
 };
 
@@ -102,7 +102,7 @@ size_t xbm_decode(const struct xbm_desc *desc, struct raw_img *img) {
 }
 
 static bool read_type(struct xbm_desc *desc, struct raw_img *img,
-struct mp_parser *tp, const struct xbm_define *define) {
+struct mp_parser *tp, const struct xbm_define define[static 4]) {
 	if (!define[0].found || !define[1].found
 	|| define[0].d < 1 || define[1].d < 1) {
 		return false;
@@ -139,7 +139,7 @@ struct mp_parser *tp, const struct xbm_define *define) {
 				img->h = (size_t)define[1].d;
 				img->channels = 1;
 				img->bitdepth = 1;
-				img->alignment = (desc->type == xbm_x10) ? 2 : 1;
+				img->align_sh = (desc->type == xbm_x10) ? 1 : 0;
 				img->attr = pix_inverted;
 
 				desc->has_hotspot = define[2].found
@@ -157,24 +157,20 @@ struct mp_parser *tp, const struct xbm_define *define) {
 
 static bool match_num(struct mp_parser *tp, struct xbm_define *define) {
 	mp_skip_blank(tp);
-	const struct wuptr word = mp_get_word(tp);
-	for (size_t i = 0; i < word.len; ++i) {
-		const unsigned char c = (unsigned char)word.ptr[i];
-		if (!isdigit(c)) {
-			return false;
-		}
-		const unsigned int d = c - '0';
-		if (define->d + d > UINT_MAX/10) {
-			return false;
-		}
-		define->d = define->d*10 + d;
+	long val;
+	if (!mp_get_int(tp, sizeof(val) * 2, &val)) {
+		return false;
 	}
+	if (mp_next_char(tp) != '\n') {
+		return false;
+	}
+	define->d = val;
 	define->found = true;
-	return define->found;
+	return true;
 }
 
 static bool parse_define(struct xbm_desc *desc, struct mp_parser *tp,
-struct xbm_define *define) {
+struct xbm_define define[static 4]) {
 	struct wuptr word = mp_get_word(tp);
 	if (!isblank(mp_next_char(tp)) || !wuptr_eq_str(word, "define")) {
 		return false;
@@ -242,9 +238,9 @@ static bool skip_comment(struct xbm_desc *desc, struct mp_parser *tp) {
 }
 
 enum wu_error xbm_parse_header(struct xbm_desc *desc, struct raw_img *img,
-const struct map_info *mm) {
+const struct mp_parser mp) {
+	desc->tp = mp;
 	struct mp_parser *tp = &desc->tp;
-	*tp = mp_parser_mem(mm->len, mm->data);
 
 	desc->comment.len = 0;
 	desc->name.len = 0;

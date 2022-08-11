@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "wudefs.h"
+#include "raster/endian.h"
 #include "raster/memparser.h"
 #include "raster/pal.h"
 
@@ -11,6 +12,8 @@ enum fmt_pal_type {
 	fmt_pal_rgb = 3,
 	fmt_pal_rgbx = 4,
 };
+
+size_t fmt_load_raster(struct raw_img *img, FILE *ifp, enum endianness e);
 
 enum wu_error fmt_load_pal_planar(FILE *ifp, struct raster_pal *pal,
 enum fmt_pal_type type, size_t entries);

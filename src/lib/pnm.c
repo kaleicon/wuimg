@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <math.h>
 
-#include "common.h"
 #include "raster/file.h"
 #include "raster/fmt.h"
 #include "raster/mem.h"
@@ -36,7 +35,7 @@ static void scale_32(const struct pnm_desc *desc, uint32_t *dst,
 const size_t dims) {
 	const unsigned maxval = desc->scale.pnm;
 	if (maxval == UINT_MAX && !desc->sign) {
-		loop_endian32(dst, desc->endian, dims);
+		endian_loop32(dst, desc->endian, dims);
 	} else {
 		const uint64_t mul = ((uint64_t)UINT_MAX << 32) / maxval + 1;
 		const uint64_t add = (desc->sign) ? maxval/2 + 1 : 0;
@@ -51,7 +50,7 @@ static void scale_16(const struct pnm_desc *desc, uint16_t *dst,
 const size_t dims) {
 	const unsigned maxval = desc->scale.pnm;
 	if (maxval == USHRT_MAX && !desc->sign) {
-		loop_endian16(dst, desc->endian, dims);
+		endian_loop16(dst, desc->endian, dims);
 	} else {
 		const uint32_t mul = ((uint32_t)USHRT_MAX << 16) / maxval + 1;
 		const uint32_t add = (desc->sign) ? maxval/2 + 1 : 0;
@@ -65,7 +64,7 @@ const size_t dims) {
 static void pfm_decode(const struct pnm_desc *desc, union int_real *out,
 const size_t dims) {
 	if (desc->scale.pfm == 1.0f) {
-		loop_endian32(&out->bytes, desc->endian, dims);
+		endian_loop32(&out->bytes, desc->endian, dims);
 	} else {
 		for (size_t i = 0; i < dims; ++i) {
 			out[i].real = endianf32(out[i].bytes, desc->endian)
@@ -84,7 +83,7 @@ const size_t dims) {
 	default:
 		switch (desc->bytedepth) {
 		case 1:
-			strip_scale(dst, dims,
+			strip_scale(dst, dst, dims,
 				strip_scale_info(desc->scale.pnm, 8), desc->sign);
 			break;
 		case 2: scale_16(desc, dst, dims); break;
@@ -98,11 +97,11 @@ const size_t dims) {
 static size_t plain_ppm_decode(const struct pnm_desc *restrict desc,
 void *restrict dst, const size_t dims) {
 	size_t cnt = 0;
-	size_t len = (size_t)file_remaining(desc->ifp);
+	size_t len = file_remaining(desc->ifp);
 	uint8_t *src = malloc(len + 2);
 	if (src) {
 		src[0] = ' '; // Ensure skip_space returns 1 on first iter
-		len = fread_tail(src + 1, 1, len, desc->ifp) + 1;
+		len = file_tail(src + 1, 1, len, desc->ifp) + 1;
 		src[len] = 'd'; // Sentinel
 		struct mp_parser mp = mp_parser_mem(len, src);
 
@@ -197,7 +196,7 @@ const size_t i) {
 /* Header parsing */
 
 static size_t count_images(struct pnm_desc *desc) {
-	const size_t len = file_size_from(desc->ifp, desc->data_start);
+	const size_t len = file_remaining(desc->ifp);
 	return len ? zumax(1, len / raster_size(&desc->rast)) : 0;
 }
 
@@ -221,7 +220,7 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 			return wu_invalid_header;
 		}
 		desc->rast.bitdepth = 8;
-		desc->rast.attr = pix_packing_332;
+		desc->rast.attr = pix_pack_332;
 		break;
 	case pnm_color_pfm: case pnm_gray_pfm:
 		if (fpclassify(desc->scale.pfm) != FP_NORMAL) {

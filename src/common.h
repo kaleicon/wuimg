@@ -19,20 +19,12 @@ enum trit {
 	trit_what = 2,
 };
 
-union int_real {
-	uint32_t bytes;
-	float real;
-};
-
-enum endianness {
-	big_endian = 0,
-	little_endian = 1,
-};
-
 struct map_info {
 	size_t len;
 	const unsigned char *data;
 };
+
+typedef int8_t align_t;
 
 void rfc3339_format(time_t t, FILE *out);
 
@@ -41,23 +33,13 @@ int second);
 
 double clock_ellapsed(clock_t start);
 
-void clock_print(const char *ocurrence, clock_t start);
-
-size_t scanline_length(size_t width, uint8_t bitdepth, uint8_t alignment);
-
-uint8_t scanline_alignment(size_t stride, size_t width, uint8_t bitdepth);
-
-size_t subsamp(size_t dim, uint8_t sub);
+clock_t clock_print(const char *ocurrence, clock_t start);
 
 long lmod(long val, long max);
 
 int imod(int val, int max);
 
-size_t zulog2(size_t x);
-
 unsigned int ulog2(unsigned int x);
-
-int ilog2(int x);
 
 size_t zumax(size_t x, size_t y);
 
@@ -77,27 +59,11 @@ int imin(int x, int y);
 
 int iclamp(int n, int min, int max);
 
-float fclampf(float n, float min, float max);
+align_t align_from_int(const size_t alignment);
 
-enum endianness which_end(void);
+size_t scanline_length(size_t width, uint8_t bitdepth, align_t alignment);
 
-uint16_t endian16(uint16_t val, enum endianness e);
-
-uint32_t endian32(uint32_t val, enum endianness e);
-
-float endianf32(uint32_t val, enum endianness e);
-
-uint16_t buf_endian16(const void *data, enum endianness e);
-
-uint32_t buf_endian32(const void *data, enum endianness e);
-
-float buf_endianf32(const void *data, enum endianness e);
-
-void loop_endian16(uint16_t *data, enum endianness e, size_t cnt);
-
-void loop_endian32(uint32_t *data, enum endianness e, size_t cnt);
-
-void loop_endian64(uint64_t *data, enum endianness e, size_t cnt);
+align_t scanline_alignment(size_t stride, size_t width, uint8_t bitdepth);
 
 void * memdup(const void *s, size_t n);
 

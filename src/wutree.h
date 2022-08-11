@@ -7,6 +7,7 @@
 enum wu_leaf_type {
 	not_a_leaf = 0,
 	wu_leaf_string,
+	wu_leaf_bin,
 	wu_leaf_unsigned,
 	wu_leaf_signed,
 	wu_leaf_float,
@@ -23,8 +24,8 @@ struct wu_branch {
 struct wu_emb_str {
 	size_t len;
 	union {
-		char arr[sizeof(char *)];
-		char *str;
+		uint8_t arr[sizeof(uint8_t *)];
+		uint8_t *str;
 	} s;
 };
 
@@ -55,19 +56,26 @@ struct wu_tree {
 
 void tree_unroot(struct wu_tree *root);
 
-void tree_print(const struct wu_tree *node, size_t max_x, size_t max_y);
+void tree_print(const struct wu_tree *node, size_t max_x, size_t max_y,
+size_t indent, FILE *out);
 
-bool tree_graft_measured_leaf(struct wu_tree *par, const char *name,
-void *value, size_t len);
-
-bool tree_add_measured_leaf(struct wu_tree *par, const char *name,
+bool tree_add_leaf_utf8_len(struct wu_tree *par, const char *name,
 const void *value, size_t len);
 
-bool tree_add_limited_leaf(struct wu_tree *par, const char *name,
-const void *value, size_t len);
+bool tree_add_leaf_utf8_limit(struct wu_tree *par, const char *name,
+const char *value, size_t len);
+
+bool tree_add_leaf_utf8(struct wu_tree *par, const char *name,
+const char *value);
+
+bool tree_add_leaf_len(struct wu_tree *par, const char *name,
+const void *value, size_t len, const char *encoding);
+
+bool tree_add_leaf_limit(struct wu_tree *par, const char *name,
+const void *value, size_t len, const char *encoding);
 
 bool tree_add_leaf(struct wu_tree *par, const char *name,
-const char *value);
+const char *value, const char *encoding);
 
 bool tree_bud_leaf(struct wu_tree *par, const char *name, struct wu_leaf leaf);
 

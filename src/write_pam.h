@@ -24,10 +24,10 @@ struct write_writer {
 	} out;
 };
 
+void write_writer_terminate(struct write_writer *writer);
+
 enum wu_error write_image(struct image_context *image,
 struct write_writer *writer, const struct write_args *args);
-
-void write_writer_terminate(struct write_writer *writer);
 
 bool write_writer_init(struct write_writer *writer, struct wu_conf *wuconf);
 

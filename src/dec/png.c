@@ -4,10 +4,9 @@
 
 #include <png.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../metadata.h"
-#include "../raster/unpack.h"
+#include "wudefs.h"
+#include "metadata.h"
+#include "raster/endian.h"
 
 struct png_state {
 	png_struct *png;
@@ -60,7 +59,7 @@ struct image_file *infile) {
 				}
 				if (branch) {
 					tree_add_leaf(branch, text[i].key,
-						text[i].text);
+						text[i].text, NULL);
 				}
 			}
 		}
@@ -198,7 +197,7 @@ const struct wu_conf *wuconf, struct png_state *png) {
 			void *row = img->data + stride*y;
 			png_read_row(png->png, row, NULL);
 			if (swap && p == passes - 1) {
-				loop_endian16(row, big_endian, stride/2);
+				endian_loop16(row, big_endian, stride/2);
 			}
 		}
 	}

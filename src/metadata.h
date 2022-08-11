@@ -4,7 +4,7 @@
 #include "wutree.h"
 
 enum metadata_type {
-	exif_metadata = 1,
+	exif_metadata,
 	xmp_metadata,
 	iptc_metadata,
 };

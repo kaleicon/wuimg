@@ -5,6 +5,7 @@
 #include <limits.h>
 
 #include "raster/bit.h"
+#include "raster/endian.h"
 #include "raster/file.h"
 #include "raster/fmt.h"
 #include "raster/mem.h"
@@ -68,7 +69,7 @@ double dib_gamma_to_double(const dib_gamma_t f) {
 
 static bool load_profile_data(const struct dib_desc *desc, struct wustr *name) {
 	fseek(desc->ifp, desc->lcs.profile_off, SEEK_SET);
-	if (wustr_malloc(name, (size_t)file_remaining(desc->ifp))) {
+	if (wustr_malloc(name, file_remaining(desc->ifp))) {
 		name->len = fread(name->str, 1, name->len, desc->ifp);
 		if (name->len) {
 			return true;
@@ -280,7 +281,7 @@ bool dib_decode(const struct dib_desc *desc, struct raw_img *img) {
 			img->data = src;
 			src = NULL;
 			if (desc->depth == 16) {
-				loop_endian16(src, little_endian, read/2);
+				endian_loop16(src, little_endian, read/2);
 			}
 			ok = true;
 			break;
@@ -452,7 +453,7 @@ uint8_t *buf) {
 
 	img->channels = ch;
 	img->bitdepth = high_depth ? 16 : 8;
-	img->alignment = 1;
+	img->align_sh = 0;
 	return wu_ok;
 }
 
@@ -565,7 +566,7 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 	switch (compression) {
 	case dib_no_compression:
 		if (depth == 16) {
-			img->attr = pix_packing_1555;
+			img->attr = pix_pack_1555;
 		}
 		break;
 	case dib_8bit_rle:
@@ -813,7 +814,7 @@ struct raw_img *img) {
 	}
 
 	desc->type = (enum dib_type)hsize;
-	img->alignment = 4;
+	raw_img_align(img, 4);
 	img->layout = pix_bgra;
 
 	enum wu_error status;
@@ -1034,8 +1035,12 @@ static bool ico_palette_dec(struct dib_desc *dib, struct raw_img *img) {
 		return false;
 	}
 
-	raster_pal_expand(dst.buf, xor.buf, img->u.palette, img->w, img->h,
-		4, dib->depth);
+	const size_t instride = scanline_length(img->w, dib->depth, 4);
+	const size_t outstride = scanline_length(img->w, 32, 4);
+	for (size_t y = 0; y < img->h; ++y) {
+		raster_pal_expand(dst.buf + outstride*y, xor.buf + instride*y,
+			img->u.palette, img->w, dib->depth);
+	}
 	ico_32bit_dec(img, (struct pix_rgba8 *)dst.buf, and.buf, and.stride);
 
 	free(xor.buf);

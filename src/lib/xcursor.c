@@ -3,6 +3,7 @@
 #include <errno.h>
 
 #include "xcursor.h"
+#include "raster/endian.h"
 #include "raster/fmt.h"
 
 /* Though this format is simple enough, its only written spec is the mildly
@@ -176,7 +177,7 @@ static enum wu_error load_toc(struct xcursor_desc *desc) {
 
 	for (uint32_t i = 0; i < desc->ntoc; ++i) {
 		struct xcursor_toc *entry = desc->toc + i;
-		loop_endian32((uint32_t *)entry, little_endian, 3);
+		endian_loop32((uint32_t *)entry, little_endian, 3);
 		entry->type = type_to_enum(entry->type);
 		switch (entry->type) {
 		case xcursor_chunk_comment:

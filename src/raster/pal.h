@@ -10,8 +10,7 @@ struct raster_pal {
 void raster_pal_print(const struct raster_pal *cm);
 
 void raster_pal_expand(void *restrict dst, const uint8_t *restrict src,
-const struct raster_pal *cm, size_t width, size_t height, uint8_t alignment,
-uint8_t bitdepth);
+const struct raster_pal *cm, size_t width, uint8_t bitdepth);
 
 void raster_pal_from_rgb8(struct raster_pal *dst, const void *src, size_t nmemb);
 

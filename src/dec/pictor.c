@@ -19,12 +19,12 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 
 	const char *mode = pictor_video_mode(desc);
 	if (mode) {
-		tree_add_leaf(tree, "Video mode", mode);
+		tree_add_leaf_utf8(tree, "Video mode", mode);
 	}
 
 	const char *paltype = pictor_palette_str(desc->pal_type);
 	if (paltype) {
-		tree_add_leaf(tree, "Palette type", paltype);
+		tree_add_leaf_utf8(tree, "Palette type", paltype);
 	}
 }
 

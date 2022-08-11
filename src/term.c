@@ -7,9 +7,6 @@
 
 #include <termios.h>
 
-#include <uchardet/uchardet.h>
-#include <unicode/ucnv.h>
-
 #include "common.h"
 #include "term.h"
 #include "wustr.h"
@@ -25,8 +22,8 @@ static size_t graph_len(const unsigned char *str, size_t len) {
 	return len;
 }
 
-static void print_escaped(const unsigned char *restrict data, size_t len,
-FILE *stream, const bool utf8) {
+void term_print_escaped(const uint8_t *restrict data, size_t len,
+const bool is_utf8, FILE *stream) {
 	len = graph_len(data, len);
 	const unsigned char hex[16] = "0123456789ABCDEF";
 	const unsigned char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
@@ -36,7 +33,7 @@ FILE *stream, const bool utf8) {
 	size_t region_start = 0;
 	for (size_t i = 0; i < len; ++i) {
 		const unsigned char c = data[i];
-		if (isprint(c) || c == '\n' || c == '\t' || (!isascii(c) && utf8)
+		if (isprint(c) || c == '\n' || c == '\t' || (!isascii(c) && is_utf8)
 		|| (c == '\r' && i + 1 < len && data[i+1] == '\n')) {
 			if (escaping) {
 				fwrite(RESET, 1, sizeof(RESET), stream);
@@ -59,78 +56,6 @@ FILE *stream, const bool utf8) {
 	} else {
 		fwrite(data + region_start, 1, len - region_start, stream);
 	}
-}
-
-static char * convert_str(UConverter *from, UConverter *to, const char *data,
-const size_t len, size_t *outlen, UErrorCode *err) {
-	*outlen = (size_t)UCNV_GET_MAX_BYTES_FOR_STRING(len, ucnv_getMaxCharSize(to));
-	char *out = malloc(*outlen);
-	if (out) {
-		char *pos = out;
-		ucnv_convertEx(to, from, &pos, pos + *outlen, &data, data + len,
-			NULL, NULL, NULL, NULL, false, true, err);
-		*outlen = (size_t)(pos - out);
-		if (U_FAILURE(*err)) {
-			free(out);
-			return NULL;
-		}
-	}
-	return out;
-}
-
-static char * detect_and_convert(const char *restrict data, const size_t len,
-size_t *outlen, bool *is_utf8) {
-	if (!len) {
-		return NULL;
-	}
-
-	UErrorCode err;
-	UConverter *from = NULL;
-	uchardet_t ud = uchardet_new();
-	if (ud) {
-		const int error = uchardet_handle_data(ud, data, len);
-		if (!error) {
-			uchardet_data_end(ud);
-			const char *enc = uchardet_get_charset(ud);
-			/* No one mentions that deleting the context also
-			 * invalidates the charset string. */
-			if (enc[0]) {
-				if (!strcmp(enc, "ASCII") || !strcmp(enc, "UTF-8")) {
-					*is_utf8 = true;
-				} else {
-					from = ucnv_open(enc, &err);
-				}
-			}
-		}
-		uchardet_delete(ud);
-	}
-
-	char *result = NULL;
-	if (from) {
-		UConverter *to = ucnv_open("UTF-8", &err);
-		if (to) {
-			result = convert_str(from, to, data, len, outlen, &err);
-			if (result) {
-				*is_utf8 = true;
-			}
-			ucnv_close(to);
-		}
-		ucnv_close(from);
-	}
-	return result;
-}
-
-void term_print_unsafe(const void *restrict data, size_t len, FILE *stream) {
-	bool is_utf8 = false;
-	const void *out;
-	char *conv = detect_and_convert(data, len, &len, &is_utf8);
-	if (conv) {
-		out = conv;
-	} else {
-		out = data;
-	}
-	print_escaped(out, len, stream, is_utf8);
-	free(conv);
 }
 
 size_t term_event_read(unsigned char *output, const size_t len) {
@@ -200,6 +125,13 @@ void term_indent(size_t indent, FILE *out) {
 
 void term_line_put(const char *text, FILE *out) {
 	fputs(text, out);
+	fputc('\n', out);
+}
+
+void term_line_key_val(const char *key, const char *val, FILE *out) {
+	fputs(key, out);
+	fputs(": ", out);
+	fputs(val, out);
 	fputc('\n', out);
 }
 

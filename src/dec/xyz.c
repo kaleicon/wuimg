@@ -15,7 +15,7 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 	struct xyz_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		infile->dec_state = desc;
-		enum wu_error st = xyz_open(desc, mm);
+		enum wu_error st = xyz_open(desc, mp_parser_mem(mm->len, mm->data));
 		if (st == wu_ok) {
 			struct raw_img *img = alloc_sub_images(infile, 1);
 			if (img) {

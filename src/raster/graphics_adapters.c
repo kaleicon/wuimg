@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "common.h"
 
 #include "strip.h"
@@ -44,7 +46,7 @@ const size_t w, const uint8_t ch, const size_t row_len) {
  * must be called with h = 1 on a loop. */
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t w, const size_t h, const uint8_t ch, const uint8_t bitdepth,
-const uint8_t align, const bool paletted) {
+const align_t align, const bool paletted) {
 	const size_t row_len = scanline_length(w, bitdepth, align);
 	switch (bitdepth) {
 	case 1:
@@ -74,18 +76,18 @@ const size_t dwords, const struct raster_pal *yae) {
 		B = 5*Y/4 - J/2 - K/4
 	*/
 	for (size_t i = 0; i < dwords; ++i) {
-		const int k = unpack_ykj_chroma(src + i*4) * 8;
-		const int j = unpack_ykj_chroma(src + i*4 + 2) * 8;
+		const int k = unpack_ykj_chroma(src + i*4);
+		const int j = unpack_ykj_chroma(src + i*4 + 2);
 		for (size_t p = 0; p < 4; ++p) {
 			const size_t pos = i*4 + p;
-			const int y = src[pos] & 0xf8;
-			if (yae && (y & 0x08)) {
-				memcpy(dst + pos*3, yae->color + y/(8*2),
+			const int y = src[pos] >> 3;
+			if (yae && (y & 1)) {
+				memcpy(dst + pos*3, yae->color + y/2,
 					(i + 1 == dwords) ? 3 : 4);
 			} else {
-				const int g = iclamp(y + k, 0, 0xff);
-				const int r = iclamp(y + j, 0, 0xff);
-				const int b = iclamp(y*5/4 - j/2 - k/4, 0, 0xff);
+				const int g = iclamp(y + k, 0, 0x1f);
+				const int r = iclamp(y + j, 0, 0x1f);
+				const int b = iclamp(y*5/4 - j/2 - k/4, 0, 0x1f);
 				dst[pos*3] = (uint8_t)g;
 				dst[pos*3+1] = (uint8_t)r;
 				dst[pos*3+2] = (uint8_t)b;

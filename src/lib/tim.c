@@ -25,7 +25,7 @@ size_t tim_decode(const struct tim_desc *desc, struct raw_img *img) {
 	size_t read = 0;
 	if (raw_img_alloc_noverify(img)) {
 		read = fread(img->data, 1, raw_img_size(img), desc->ifp);
-		if (img->attr == pix_packing_1555) {
+		if (img->attr == pix_pack_1555) {
 			special_transparency_process((uint16_t *)img->data, read/2);
 		}
 	}
@@ -61,7 +61,7 @@ unsigned char header[static 12]) {
 		}
 
 		special_transparency_process(buf, colors);
-		unpack_strip(pal, buf, colors, 16, pix_packing_1555,
+		unpack_strip(pal, buf, colors, 16, pix_pack_1555,
 			op_expand);
 	}
 	return wu_ok;
@@ -87,12 +87,12 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
 
 	 * CLUT header, if present:
 		Offset  Size    Name
-		0       DWORD   SizeOfCLUT // Including this header
+		0       DWORD   SizeOfCLUT   // Including this header
 		4       WORD    PaletteOrigX
 		6       WORD    PaletteOrigY
-		8       WORD    NbOfColors // Always 2^bpp
+		8       WORD    NbOfColors   // Always 2^bpp
 		10      WORD    NbOfCLUTs
-		12      VAR     CLUTData   // 16bit A1_R5G5B5[1]
+		12      VAR     CLUTData     // 16bit A1_R5G5B5[1]
 		??
 
 	 * Image header:
@@ -105,12 +105,9 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
 		12      VAR     ImageData
 
 	 * [1] For 16bit image data, the "A" bit (called the Special
-	 *     Transparency Proccesing bit) is not really Alpha:
-	 *     If transparency processing is enabled in the PSX, then if
-	 *     the bit is set the color is transparent, except if the color
-	 *     is pure black (0,0,0), where it's opaque if set.
-	 *     In programming terms: for non-black colors, the STP bit must
-	 *     be flipped to convert to Alpha.
+	 *     Transparency Proccesing bit) is not really Alpha.
+	 *     If the bit is set the color is transparent, unless the color
+	 *     is pure black (0,0,0), then if set it means it's opaque.
 	 */
 
 	unsigned char header[16];
@@ -136,7 +133,7 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
 		img->channels = 1;
 		img->bitdepth = depth;
 		if (depth == 16) {
-			img->attr = pix_packing_1555;
+			img->attr = pix_pack_1555;
 		}
 	}
 
@@ -162,7 +159,7 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
 	const size_t line_len = buf_endian16(header + 12, little_endian);
 	img->w = line_len * 16 / depth;
 	img->h = buf_endian16(header + 14, little_endian);
-	img->alignment = 2;
+	img->align_sh = 1;
 	return raw_img_verify(img);
 }
 

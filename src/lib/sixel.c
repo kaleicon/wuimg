@@ -270,8 +270,6 @@ struct raw_img *img) {
 		const int c = mp_next_char(&tp);
 		switch (c) {
 		case EOF:
-			term_line_put("SIXEL error: Ending escape byte not found.",
-				stderr);
 			return wu_decoding_error;
 		case ansi_escape:
 			end = true;
@@ -288,22 +286,16 @@ struct raw_img *img) {
 		case graphics_repeat_introducer:
 			;long repeat;
 			if (!mp_get_uint(&tp, 5, &repeat)) {
-				term_line_put("SIXEL error: Repeat introducer "
-					"lacks digits.", stderr);
 				return wu_decoding_error;
 			}
 
 			if (!issixel(mp_next_char(&tp))) {
-				term_line_put("SIXEL error: Found non-sixel "
-					"graphics repeat.", stderr);
 				return wu_decoding_error;
 			}
 			row_width += (size_t)repeat;
 			break;
 		case color_introducer:
 			if (!validate_color(&tp)) {
-				term_line_put("SIXEL error: Failed to parse "
-					"color introducer.", stderr);
 				return wu_decoding_error;
 			}
 			break;
@@ -315,9 +307,6 @@ struct raw_img *img) {
 			} else if (c >= 0x80) {
 				end = true;
 			} else {
-				fprintf(stderr, "SIXEL error: "
-					"Found invalid character at %#zx: %d\n",
-					tp.pos, c);
 				return wu_decoding_error;
 			}
 		}

@@ -132,35 +132,11 @@ double clock_ellapsed(const clock_t start) {
 	return (double)(clock() - start) / CLOCKS_PER_SEC;
 }
 
-void clock_print(const char *ocurrence, const clock_t start) {
-	fprintf(stderr, "%s in %f seconds\n", ocurrence, clock_ellapsed(start));
-}
-
-size_t scanline_length(const size_t width, const uint8_t bitdepth,
-uint8_t alignment) {
-	const size_t bytes = (width * bitdepth + 7) / 8;
-	--alignment;
-	return (bytes + alignment) & ~alignment;
-}
-
-uint8_t scanline_alignment(const size_t stride, const size_t width,
-const uint8_t bitdepth) {
-	const size_t base = scanline_length(width, bitdepth, 1);
-	if (stride >= base) {
-		const size_t diff = stride - base;
-		if (diff) {
-			return 2 << zulog2(diff);
-		}
-		return 1;
-	}
-	return 0;
-}
-
-size_t subsamp(const size_t dim, const uint8_t sub) {
-	if (sub > 1) {
-		return (dim + 1) / sub;
-	}
-	return dim;
+clock_t clock_print(const char *ocurrence, const clock_t start) {
+	const clock_t end = clock();
+	fprintf(stderr, "%s in %f seconds\n", ocurrence,
+		(double)(end - start) / CLOCKS_PER_SEC);
+	return end;
 }
 
 long lmod(const long val, const long max) {
@@ -171,7 +147,7 @@ int imod(const int val, const int max) {
 	return (val % max + max) % max;
 }
 
-size_t zulog2(size_t x) {
+static size_t zulog2(size_t x) {
 	size_t acc = 0;
 	while ((x >>= 1)) {
 		++acc;
@@ -181,14 +157,6 @@ size_t zulog2(size_t x) {
 
 unsigned int ulog2(unsigned int x) {
 	unsigned int acc = 0;
-	while ((x >>= 1)) {
-		++acc;
-	}
-	return acc;
-}
-
-int ilog2(int x) {
-	int acc = 0;
 	while ((x >>= 1)) {
 		++acc;
 	}
@@ -236,102 +204,28 @@ int iclamp(const int n, const int min, const int max) {
 	return n;
 }
 
-float fclampf(const float n, const float min, const float max) {
-	if (n < min) {
-		return min;
-	} else if (n > max) {
-		return max;
-	}
-	return n;
+align_t align_from_int(const size_t alignment) {
+	return (align_t)zulog2(alignment);
 }
 
-enum endianness which_end(void) {
-	/* This is not UB after C99, except for traps representations, so it
-	 * may be troublesome still, but there don't seem to be alternatives. */
-	union {
-		unsigned int ui;
-		unsigned char uc[sizeof(unsigned int)];
-	} test = {.ui = 1};
-	return (enum endianness)test.uc[0];
+size_t scanline_length(const size_t width, const uint8_t bitdepth,
+const align_t align_sh) {
+	const size_t bytes = (width * bitdepth + 7) / 8;
+	const size_t a = ~0lu << align_sh;
+	return (bytes + ~a) & a;
 }
 
-uint16_t endian16(const uint16_t val, const enum endianness e) {
-	const enum endianness native = which_end();
-	if (native != e) {
-		return (uint16_t)(val << 8 | val >> 8);
-	}
-	return val;
-}
-
-uint32_t endian32(const uint32_t val, const enum endianness e) {
-	const enum endianness native = which_end();
-	if (native != e) {
-		return (uint32_t)(val << 24
-			| (val & 0x00ff00) << 8
-			| (val & 0xff0000) >> 8
-			| val >> 24);
-	}
-	return val;
-}
-
-static uint64_t endian64(const uint64_t val, const enum endianness e) {
-	const enum endianness native = which_end();
-	if (native != e) {
-		uint64_t ret = 0;
-		for (size_t i = 0; i < sizeof(ret); ++i) {
-			ret |= ((val >> i*8) & 0xff) << (56 - i*8);
+align_t scanline_alignment(const size_t stride, const size_t width,
+const uint8_t bitdepth) {
+	const size_t base = scanline_length(width, bitdepth, 0);
+	if (stride >= base) {
+		const size_t diff = stride - base;
+		if (diff) {
+			return (align_t)(zulog2(diff) + 1);
 		}
-		return ret;
+		return 0;
 	}
-	return val;
-}
-
-float endianf32(const uint32_t val, const enum endianness e) {
-	const union int_real f = {.bytes = endian32(val, e)};
-	return f.real;
-}
-
-uint16_t buf_endian16(const void *data, const enum endianness e) {
-	const uint8_t *d = data;
-	return (uint16_t)(e == big_endian
-		? d[0] << 8 | d[1]
-		: d[1] << 8 | d[0]);
-}
-
-uint32_t buf_endian32(const void *data, const enum endianness e) {
-	const uint8_t *d = data;
-	return (uint32_t)(e == big_endian
-		? d[0] << 24 | d[1] << 16 | d[2] << 8 | d[3]
-		: d[3] << 24 | d[2] << 16 | d[1] << 8 | d[0]);
-}
-
-float buf_endianf32(const void *data, const enum endianness e) {
-	const union int_real f = {.bytes = buf_endian32(data, e)};
-	return f.real;
-}
-
-void loop_endian16(uint16_t *data, const enum endianness e, const size_t cnt) {
-	if (e != which_end()) {
-		for (size_t i = 0; i < cnt; ++i) {
-			data[i] = endian16(data[i], e);
-		}
-	}
-}
-
-void loop_endian32(uint32_t *data, const enum endianness e, const size_t cnt) {
-	if (e != which_end()) {
-		for (size_t i = 0; i < cnt; ++i) {
-			data[i] = endian32(data[i], e);
-		}
-	}
-}
-
-void loop_endian64(uint64_t *data, const enum endianness e, const size_t cnt) {
-	if (e != which_end()) {
-		for (size_t i = 0; i < cnt; ++i) {
-			data[i] = endian64(data[i], e);
-		}
-	}
+	return -1;
 }
 
 void * memdup(const void *s, size_t n) {
@@ -356,13 +250,20 @@ void * memrchr(const void *s, const int c, size_t n) {
 #endif
 
 int unmap_file(struct map_info *mm) {
-	return munmap((void *)mm->data, mm->len);
+	if (mm->data) {
+		return munmap((void *)mm->data, mm->len);
+	}
+	return 0;
 }
 
 static bool map_common(struct map_info *mm, const int fd, const off_t end) {
 	const size_t len = (size_t)end;
 	void *data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (data == MAP_FAILED) {
+		*mm = (struct map_info) {
+			.len = 0,
+			.data = NULL,
+		};
 		return false;
 	}
 	*mm = (struct map_info) {

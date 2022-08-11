@@ -32,14 +32,20 @@ struct gl_reader {
 
 struct gl_context {
 	struct gl_uni {
-		GLint pos_matrix;
-		GLint color_mode;
-		GLint alpha_op;
-		GLint cms_mode;
-		GLint to_rgba;
-		GLint cms_mat;
-		GLint transfer;
-		GLint args;
+		struct gl_uni_mat {
+			GLint pos;
+			GLint nonlinear;
+			GLint cms;
+		} mat;
+		struct gl_uni_mode {
+			GLint color;
+			GLint alpha;
+			GLint cms;
+		} mode;
+		struct gl_uni_eotf {
+			GLint fn;
+			GLint args;
+		} eotf;
 	} uni;
 	GLuint pixel_unpack_buf;
 	GLuint timer;

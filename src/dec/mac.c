@@ -13,12 +13,12 @@ struct wu_tree *tree) {
 
 	struct wu_tree *file_branch = tree_add_branch(tree, "File");
 	if (file_branch) {
-		tree_add_measured_leaf(file_branch, "Name", macbin->name,
-			macbin->name_len);
-		tree_add_measured_leaf(file_branch, "Type", macbin->type,
-			sizeof(macbin->type));
-		tree_add_measured_leaf(file_branch, "Creator",
-			macbin->creator, sizeof(macbin->creator));
+		tree_add_leaf_len(file_branch, "Name", macbin->name,
+			macbin->name_len, NULL);
+		tree_add_leaf_len(file_branch, "Type", macbin->type,
+			sizeof(macbin->type), NULL);
+		tree_add_leaf_len(file_branch, "Creator", macbin->creator,
+			sizeof(macbin->creator), NULL);
 
 		const struct wu_tree_sap sap[] = {
 			{"Attributes", {wu_leaf_unsigned,
@@ -70,9 +70,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 	mac_get_sizes(img, desc.has_patterns ? img + 1 : NULL);
 
 	if (infile->nr == 2) {
-		if (mac_patterns_load(&desc, img + 1)) {
-			img[1].id = strdup("patterns");
-		} else {
+		if (!mac_patterns_load(&desc, img + 1)) {
 			image_file_error_append(infile,
 				"Couldn't load pattern data");
 			realloc_sub_images(infile, 1);

@@ -212,10 +212,10 @@ libraw_data_t *data) {
 
 static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 	const libraw_imgother_t *other = libraw_get_imgother(data);
-	tree_add_limited_leaf(tree, "Artist", other->artist,
-		sizeof(other->artist));
-	tree_add_limited_leaf(tree, "Description", other->desc,
-		sizeof(other->desc));
+	tree_add_leaf_limit(tree, "Artist", other->artist,
+		sizeof(other->artist), NULL);
+	tree_add_leaf_limit(tree, "Description", other->desc,
+		sizeof(other->desc), NULL);
 	const struct wu_tree_sap sap[] = {
 		{"ISO speed", {wu_leaf_float, {.f = other->iso_speed}}},
 		{"Shutter speed", {wu_leaf_float, {.f = other->shutter}}},
@@ -227,12 +227,12 @@ static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
 	const libraw_iparams_t *idata = libraw_get_iparams(data);
-	tree_add_limited_leaf(tree, "Make", idata->make,
-		sizeof(idata->make));
-	tree_add_limited_leaf(tree, "Model", idata->model,
-		sizeof(idata->model));
-	tree_add_limited_leaf(tree, "Software", idata->software,
-		sizeof(idata->software));
+	tree_add_leaf_limit(tree, "Make", idata->make, sizeof(idata->make),
+		NULL);
+	tree_add_leaf_limit(tree, "Model", idata->model, sizeof(idata->model),
+		NULL);
+	tree_add_leaf_limit(tree, "Software", idata->software,
+		sizeof(idata->software), NULL);
 	if (idata->dng_version) {
 		const struct wu_leaf leaf = {
 			wu_leaf_unsigned, {.u = idata->dng_version},
@@ -310,7 +310,6 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 		img->channels = 3;
 		img->bitdepth = (thumb->tformat == LIBRAW_THUMBNAIL_BITMAP16)
 			? 16 : 8;
-		img->id = strdup("thumbnail_bitmap");
 	}
 
 	infile->events = infile->nr > 1 ? ev_subcycle : 0;

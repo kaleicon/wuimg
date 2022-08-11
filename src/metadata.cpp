@@ -44,8 +44,8 @@ static void read_any(Datum meta, struct wu_tree *tree) {
 			}
 		}
 		std::string val = meta->toString();
-		tree_add_measured_leaf(branch, tag.c_str(), val.data(),
-			val.size());
+		tree_add_leaf_len(branch, tag.c_str(), val.data(),
+			val.size(), NULL);
 	}
 }
 

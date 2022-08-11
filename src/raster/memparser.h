@@ -40,6 +40,8 @@ const uint8_t * mp_next_slice(struct mp_parser *mp, size_t len);
 
 struct wuptr mp_get_word(struct mp_parser *mp);
 
+size_t mp_get_int(struct mp_parser *mp, size_t digits, long *val);
+
 size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val);
 
 size_t mp_get_xint(struct mp_parser *mp, size_t digits, long *val);

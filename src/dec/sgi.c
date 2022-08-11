@@ -6,8 +6,8 @@
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	const struct sgi_desc *desc = ptr;
-	tree_add_limited_leaf(tree, "Image name", desc->name,
-		sizeof(desc->name));
+	tree_add_leaf_limit(tree, "Image name", desc->name, sizeof(desc->name),
+		NULL);
 	tree_bud_leaf(tree, "Compressed",
 		(struct wu_leaf){.val.b = (desc->compression != sgi_uncompressed),
 			.type = wu_leaf_bool});

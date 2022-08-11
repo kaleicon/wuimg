@@ -49,6 +49,13 @@ const char * wu_error_message(const enum wu_error err) {
 		"Pray for my soul.";
 }
 
+struct wu_tree * raw_img_get_metadata(struct raw_img *img) {
+	if (!img->metadata) {
+		img->metadata = tree_plant("Metadata");
+	}
+	return img->metadata;
+}
+
 void raw_img_aspect_ratio(struct raw_img *img, const int num, const int den) {
 	if (num && den) {
 		img->ratio = (float)num / (float)den;
@@ -77,12 +84,11 @@ static void find_better_alignment(struct raw_img *img) {
 	if (img->mode == image_mode_planar) {
 		return;
 	}
-	const uint8_t ch = img->channels;
-	const size_t bytes = (img->w * ch * img->bitdepth + 7) / 8;
-	const size_t align = img->alignment - 1;
-	const size_t diff = ((bytes + align) & (~align)) - bytes;
+	const size_t w = img->w * img->channels;
+	const size_t diff = scanline_length(w, img->bitdepth, img->align_sh)
+		- scanline_length(w, img->bitdepth, 0);
 	if (diff < 8) {
-		img->alignment = 8;
+		img->align_sh = 3;
 	}
 }
 
@@ -101,7 +107,7 @@ static size_t plane_calc_size(struct raw_img *img, const size_t i) {
 	if (p->w < 1 || p->h < 1) {
 		return 0;
 	}
-	p->stride = scanline_length(p->w, img->bitdepth, img->alignment);
+	p->stride = scanline_length(p->w, img->bitdepth, img->align_sh);
 	p->size = scanline_length(p->h, 8, img->u.planes->v_pad) * p->stride;
 	return p->size;
 }
@@ -109,7 +115,7 @@ static size_t plane_calc_size(struct raw_img *img, const size_t i) {
 static bool test_overflow(struct raw_img *img) {
 	const uint8_t ch = (img->mode == image_mode_planar) ? 1 : img->channels;
 	const bool ok = raster_test_overflow(img->w, img->h, ch, img->bitdepth,
-		img->alignment);
+		img->align_sh);
 	if (ok && img->mode == image_mode_planar) {
 		size_t limit = SIZE_MAX;
 		for (uint8_t i = 0; i < img->channels; ++i) {
@@ -130,32 +136,34 @@ enum wu_error raw_img_verify(struct raw_img *img) {
 		fatal_bug("Bad image", err_msg);
 	}
 	switch (img->attr) {
-	case pix_packing_332:
+	case pix_pack_332:
 		img->channels = 1;
 		img->bitdepth = 8;
 		break;
-	case pix_packing_1555:
+	case pix_pack_1555:
 		img->channels = 1;
 		img->bitdepth = 16;
 		break;
 	default:
 		break;
 	}
-	if (!img->alignment) {
-		img->alignment = 1;
+	if (img->align_sh > 3) {
+		find_better_alignment(img);
+	} else if (img->align_sh < 0) {
+		return wu_invalid_params;
 	}
 
 	if (!test_overflow(img)) {
 		return wu_int_overflow;
 	}
 
-	if (img->alignment > 8) {
-		find_better_alignment(img);
+	if (!img->used_bits) {
+		img->used_bits = img->bitdepth;
 	}
 
 	if (!img->layout) {
 		if (img->mode == image_mode_palette || img->channels >= 3
-		|| img->attr == pix_packing_332) {
+		|| img->attr == pix_pack_332) {
 			img->layout = pix_rgba;
 		} else {
 			img->layout = pix_gray;
@@ -183,7 +191,7 @@ const struct wu_conf *wuconf) {
 
 size_t raw_img_stride(const struct raw_img *img) {
 	return scanline_length(img->w * img->channels, img->bitdepth,
-		img->alignment);
+		img->align_sh);
 }
 
 size_t raw_img_size(const struct raw_img *img) {
@@ -261,10 +269,6 @@ struct image_planes * raw_img_plane_init(struct raw_img *img) {
 	if (planes) {
 		img->u.planes = planes;
 		set_img_mode(img, image_mode_planar);
-		if (!img->alignment) {
-			img->alignment = 1;
-		}
-		planes->v_pad = 1;
 	}
 	return planes;
 }
@@ -282,8 +286,9 @@ struct raster_pal * raw_img_palette_init(struct raw_img *img) {
 	return raw_img_palette_set(img,  malloc(sizeof(struct raster_pal)));
 }
 
-int raw_img_frame_prev_keyframe(struct raw_img *img, int i) {
-	while (i && !img->frames->f[i].keyframe) {
+int raw_img_frame_prev_keyframe(struct raw_img *img, const int current, int i) {
+	const int limit = current <= i ? current : 0;
+	while (i > limit && !img->frames->f[i].keyframe) {
 		--i;
 	}
 	return i;
@@ -311,13 +316,17 @@ struct image_frames * raw_img_frames_init(struct raw_img *img, size_t nr) {
 	return img->frames;
 }
 
+void raw_img_align(struct raw_img *img, const uint8_t alignment) {
+	img->align_sh = align_from_int(alignment);
+}
+
 bool raw_img_clone(struct raw_img *dst, struct raw_img *src) {
 	*dst = *src;
 	dst->data = NULL;
 	dst->frames = NULL;
-	dst->id = NULL;
 	dst->mode = image_mode_raw;
 	dst->cs = color_space_ref(&src->cs);
+	dst->metadata = NULL;
 	switch (src->mode) {
 	case image_mode_raw: break;
 	case image_mode_palette:
@@ -344,7 +353,10 @@ static void raw_img_free(struct raw_img *img) {
 		break;
 	}
 	free(img->frames);
-	free(img->id);
+	if (img->metadata) {
+		tree_unroot(img->metadata);
+		free(img->metadata);
+	}
 	color_space_unref(&img->cs);
 }
 
@@ -422,9 +434,14 @@ static void print_colorspace_data(const struct color_space *cs) {
 	}
 }
 
-static void print_more_data(const struct raw_img *img) {
-	if (img->alignment > 1) {
-		printf("  Alignment: %d\n", img->alignment);
+static void print_more_data(const struct raw_img *img, const int verbosity) {
+	if (img->align_sh) {
+		printf("  Alignment: %d\n", img->align_sh);
+	}
+	fputs("  Pixel layout: ", stdout);
+	pix_layout_print(img->layout, stdout);
+	if (img->used_bits != img->bitdepth) {
+		printf("  Real bitdepth: %d\n", img->used_bits);
 	}
 	if (img->rotate) {
 		printf("  Rotation: %d\n", img->rotate);
@@ -433,8 +450,6 @@ static void print_more_data(const struct raw_img *img) {
 		puts("  Mirror: yes");
 	}
 	printf("  Alpha: %d\n", img->alpha);
-	fputs("  Pixel layout: ", stdout);
-	pix_layout_print(img->layout, stdout);
 	if (img->ratio != 1) {
 		printf("  Ratio: %g\n", img->ratio);
 	}
@@ -447,7 +462,14 @@ static void print_more_data(const struct raw_img *img) {
 			printf("%hhu%hhu%c", p->p[i].x.subsamp, p->p[i].y.subsamp,
 				(i == img->channels - 1) ? '\n' : ':');
 		}
-		printf("  Vertical alignment: %d\n", p->v_pad);
+		if (p->v_pad) {
+			printf("  Vertical alignment: %d\n", p->v_pad);
+		}
+	}
+	if (img->metadata) {
+		const size_t max_x = verbosity > 1 ? SIZE_MAX : 80;
+		const size_t max_y = verbosity > 1 ? SIZE_MAX : 24;
+		tree_print(img->metadata, max_x, max_y, 2, stdout);
 	}
 }
 
@@ -467,7 +489,7 @@ static size_t print_dimensions(const struct raw_img *img) {
 			fputs(" (paletted)", stdout);
 		}
 		memsize = scanline_length(img->w * img->channels, img->bitdepth,
-			img->alignment) * img->h;
+			img->align_sh) * img->h;
 	}
 
 	printf(" x %d", img->bitdepth);
@@ -492,7 +514,7 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 	case 2: max_x = SIZE_MAX; max_y = SIZE_MAX; break;
 	}
 
-	tree_print(&file->metadata, max_x, max_y);
+	tree_print(&file->metadata, max_x, max_y, 0, stdout);
 
 	if (file->errors.str) {
 		fputs("Found warning: ", stdout);
@@ -503,14 +525,13 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 	size_t overall_size = 0;
 	for (size_t i = 0; i < file->nr; ++i) {
 		const struct raw_img *img = file->sub_img + i;
-		printf(" %zu/%zu", i+1, file->nr);
+		printf(" %zu/%zu: ", i+1, file->nr);
+		if (img->metadata) {
+			fputs("(*) ", stdout);
+		}
 		if (img->frames) {
-			printf(", frames: %zu", img->frames->nr);
+			printf("frames: %zu, ", img->frames->nr);
 		}
-		if (img->id) {
-			printf(", \"%s\"", img->id);
-		}
-		fputs(", ", stdout);
 
 		if (img->data) {
 			overall_size += print_dimensions(img);
@@ -518,7 +539,7 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 			puts("Not loaded");
 		}
 		if (verbosity > 0) {
-			print_more_data(img);
+			print_more_data(img, verbosity);
 		}
 	}
 
@@ -572,7 +593,7 @@ enum image_event image_zoom(struct image_context *image, float new_zoom) {
 	const float min = 1.0f/max;
 
 	enum image_event ev = 0;
-	new_zoom = fclampf(new_zoom, min, max);
+	new_zoom = fmaxf(min, fminf(new_zoom, max));
 	if (new_zoom != image->state.zoom) {
 		ev = (new_zoom > image->state.zoom) ? ev_upscale : ev_downscale;
 		image->state.zoom = new_zoom;

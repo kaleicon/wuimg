@@ -55,8 +55,8 @@ enum image_event {
 	ev_upscale = 1 << 2,
 	ev_downscale = 1 << 3,
 	ev_scale = ev_upscale | ev_downscale,
-	ev_mirrot = 1 << 4,
-	ev_move = 1 << 5,
+	ev_move = 1 << 4,
+	ev_mirrot = 1 << 5,
 };
 
 struct plane_dim {
@@ -72,7 +72,7 @@ struct plane_info {
 };
 
 struct image_planes {
-	uint8_t v_pad;
+	align_t v_pad;
 	struct plane_info p[];
 };
 
@@ -92,27 +92,29 @@ struct raw_img {
 	size_t w, h;
 	unsigned char channels;
 	unsigned char bitdepth;
-	unsigned char alignment;
+	align_t align_sh;
+
+	unsigned char used_bits;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
+
+	unsigned char rotate;
+	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate
 	enum alpha_interpretation alpha:2;
 
-	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate
-	unsigned char rotate;
-
-	enum image_mode mode:8;
-	float ratio; // Horizontal/Vertical ratio
-	float dec_scale;
-
+	enum image_mode mode:2;
 	union {
 		struct raster_pal *palette;
 		struct image_planes *planes;
 	} u;
+
+	float ratio; // Pixel ratio (horizontal_size/vertical_size)
+	float dec_scale;
+
 	struct color_space cs;
 	struct image_frames *frames;
 
 	struct wu_tree *metadata;
-	char *id;
 };
 
 struct image_file {
@@ -139,6 +141,8 @@ struct image_context {
 
 const char * wu_error_message(enum wu_error err);
 
+
+struct wu_tree * raw_img_get_metadata(struct raw_img *img);
 
 void raw_img_aspect_ratio(struct raw_img *img, int num, int den);
 
@@ -168,7 +172,7 @@ struct raster_pal *pal);
 
 struct raster_pal * raw_img_palette_init(struct raw_img *img);
 
-int raw_img_frame_prev_keyframe(struct raw_img *img, int i);
+int raw_img_frame_prev_keyframe(struct raw_img *img, int current, int i);
 
 void raw_img_frame_set(struct raw_img *img, size_t i, size_t x, size_t y,
 size_t w, size_t h, int msec, bool opaque);
@@ -176,6 +180,8 @@ size_t w, size_t h, int msec, bool opaque);
 size_t raw_img_frames_nr(const struct raw_img *img);
 
 struct image_frames * raw_img_frames_init(struct raw_img *img, size_t nr);
+
+void raw_img_align(struct raw_img *img, uint8_t alignment);
 
 bool raw_img_clone(struct raw_img *dst, struct raw_img *src);
 

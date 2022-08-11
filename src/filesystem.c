@@ -33,7 +33,7 @@ struct keypool {
 	 * Since we store pointers to the keys, using a single memory area
 	 * would invalidate them on realloc. */
 	struct wugrow grow;
-	size_t used; // Space used on the last buffer
+	size_t used; // Space used on the current buffer
 	unsigned char **buf;
 };
 
@@ -311,7 +311,7 @@ struct fs_entry *init_key) {
 	return status;
 }
 
-static int icu_strcoll(const void *restrict v1, const void *restrict v2) {
+static int mem_strcoll(const void *restrict v1, const void *restrict v2) {
 	const struct fs_entry *f1 = v1;
 	const struct fs_entry *f2 = v2;
 	const struct lenstr *l1 = f1->key;
@@ -321,10 +321,10 @@ static int icu_strcoll(const void *restrict v1, const void *restrict v2) {
 
 static size_t sort_dir_entries(struct fs_dir *dir, const struct fs_entry *init_key) {
 	qsort(dir->entries, dir->entries_grow.pos, sizeof(*dir->entries),
-		icu_strcoll);
+		mem_strcoll);
 	if (init_key->name) {
 		const struct fs_entry *loc = bsearch(init_key, dir->entries,
-			dir->entries_grow.pos, sizeof(*dir->entries), icu_strcoll);
+			dir->entries_grow.pos, sizeof(*dir->entries), mem_strcoll);
 		return (size_t)(loc - dir->entries);
 	}
 	return 0;

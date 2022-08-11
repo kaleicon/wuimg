@@ -8,7 +8,7 @@ static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {
 		t->time_code >> 24, (t->time_code >> 16) & 0xff,
 		(t->time_code >> 8) & 0xff, t->time_code & 0xff);
 	if (w > 0) {
-		tree_add_measured_leaf(tree, "Time code", buf, (size_t)w);
+		tree_add_leaf_utf8_len(tree, "Time code", buf, (size_t)w);
 	}
 
 	const struct wu_tree_sap vid[] = {
@@ -36,7 +36,7 @@ static void read_film(const struct dpx_desc *desc, struct wu_tree *tree) {
 		};
 		tree_bud_leaves(edge, codes, ARRAY_LEN(codes));
 	}
-	tree_add_limited_leaf(tree, "Format", f->format, sizeof(f->format));
+	tree_add_leaf_limit(tree, "Format", f->format, sizeof(f->format), NULL);
 
 	const struct wu_tree_sap sap[] = {
 		{"Frame num.", {wu_leaf_unsigned, {.u = f->frame_num}}},
@@ -47,10 +47,10 @@ static void read_film(const struct dpx_desc *desc, struct wu_tree *tree) {
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
-	tree_add_measured_leaf(tree, "Frame ID", f->frame_id,
-		sizeof(f->frame_id));
-	tree_add_measured_leaf(tree, "Slate info", f->slate_info,
-		sizeof(f->slate_info));
+	tree_add_leaf_len(tree, "Frame ID", f->frame_id, sizeof(f->frame_id),
+		NULL);
+	tree_add_leaf_len(tree, "Slate info", f->slate_info,
+		sizeof(f->slate_info), NULL);
 }
 
 static void read_industry(const struct dpx_desc *desc, struct wu_tree *tree) {
@@ -76,13 +76,13 @@ static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
 		{"H", {wu_leaf_unsigned, {.u = s->h}}},
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
-	tree_add_measured_leaf(tree, "Name", s->filename, sizeof(s->filename));
+	tree_add_leaf_len(tree, "Name", s->filename, sizeof(s->filename), NULL);
 	const struct wu_leaf leaf = {.type = wu_leaf_time, .val.time = s->date};
 	tree_bud_leaf(tree, "Created", leaf);
-	tree_add_measured_leaf(tree, "Input device", s->input_device,
-		sizeof(s->input_device));
-	tree_add_measured_leaf(tree, "Input serial number", s->input_sn,
-		sizeof(s->input_sn));
+	tree_add_leaf_len(tree, "Input device", s->input_device,
+		sizeof(s->input_device), NULL);
+	tree_add_leaf_len(tree, "Input serial number", s->input_sn,
+		sizeof(s->input_sn), NULL);
 
 	struct wu_tree *eros = tree_add_branch(tree, "Erosion");
 	if (eros) {
@@ -98,24 +98,24 @@ static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
 	char buf[sizeof(s->horz_aspect) * 2 * 3];
 	int w = snprintf(buf, sizeof(buf), "%u:%u", s->horz_aspect, s->vert_aspect);
 	if (w > 0) {
-		tree_add_measured_leaf(tree, "Aspect ratio", buf, (size_t)w);
+		tree_add_leaf_utf8_len(tree, "Aspect ratio", buf, (size_t)w);
 	}
 
 	w = snprintf(buf, sizeof(buf), "%.3g x %.3g mm", s->w_mm, s->h_mm);
 	if (w > 0) {
-		tree_add_measured_leaf(tree, "Size", buf, (size_t)w);
+		tree_add_leaf_utf8_len(tree, "Size", buf, (size_t)w);
 	}
 }
 
 static void read_file(const struct dpx_desc *desc, struct wu_tree *tree) {
 	const struct dpx_generic_file *f = &desc->generic.file;
-	tree_add_measured_leaf(tree, "Name", f->name, sizeof(f->name));
+	tree_add_leaf_len(tree, "Name", f->name, sizeof(f->name), NULL);
 	const struct wu_leaf leaf = {.type = wu_leaf_time, .val.time = f->date};
 	tree_bud_leaf(tree, "Created", leaf);
-	tree_add_measured_leaf(tree, "Creator", f->creator, sizeof(f->creator));
-	tree_add_measured_leaf(tree, "Project", f->project, sizeof(f->project));
-	tree_add_measured_leaf(tree, "Copyright", f->copyright,
-		sizeof(f->copyright));
+	tree_add_leaf_len(tree, "Creator", f->creator, sizeof(f->creator), NULL);
+	tree_add_leaf_len(tree, "Project", f->project, sizeof(f->project), NULL);
+	tree_add_leaf_len(tree, "Copyright", f->copyright,
+		sizeof(f->copyright), NULL);
 }
 
 static void read_generic(const struct dpx_desc *desc, struct wu_tree *tree) {

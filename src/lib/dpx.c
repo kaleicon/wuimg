@@ -1,4 +1,3 @@
-#include "wudefs.h"
 #include "lib/dpx.h"
 
 /* This format is a great example on how to do file headers.
@@ -214,7 +213,7 @@ static size_t process16(const struct dpx_desc *desc, uint16_t *data,
 const struct dpx_element *elem, const size_t read) {
 	switch (elem->pack) {
 	case dpx_pack_normal:
-		loop_endian16(data, desc->endian, read);
+		endian_loop16(data, desc->endian, read);
 		break;
 	case dpx_pack_a:
 		// Data is in the 12 most-significant bits
@@ -245,10 +244,10 @@ const struct dpx_element *elem) {
 			process16(desc, (uint16_t *)dst, elem, read/2);
 			break;
 		case 32:
-			loop_endian32((uint32_t *)dst, desc->endian, read/4);
+			endian_loop32((uint32_t *)dst, desc->endian, read/4);
 			break;
 		case 64:
-			loop_endian64((uint64_t *)dst, desc->endian, read/8);
+			endian_loop64((uint64_t *)dst, desc->endian, read/8);
 			break;
 		}
 		total += read;
@@ -299,10 +298,10 @@ const uint8_t i) {
 	img->channels = nfo.ch;
 	img->layout = nfo.layout;
 	img->bitdepth = src->bitdepth;
-	img->alignment = 4;
+	raw_img_align(img, 4);
 	switch (img->bitdepth) {
 	case 10:
-		img->alignment = 2;
+		raw_img_align(img, 2);
 		// fallthrough
 	case 12:
 		if (elem->pack != dpx_pack_normal) {

@@ -60,7 +60,7 @@ static size_t rle_decode(const struct sun_desc *desc,
 unsigned char *restrict dst, const size_t dst_len) {
 	// E.g. 0x80 0x00 0x80 0x00... -> 0x80 0x80...
 	const size_t pathological_rle = dst_len * 2;
-	const size_t file_size = (size_t)file_remaining(desc->ifp);
+	const size_t file_size = file_remaining(desc->ifp);
 
 	size_t written = 0;
 	const size_t rle_len = zumin(file_size, pathological_rle);
@@ -151,7 +151,7 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 	img->h = height;
 	img->channels = (uint8_t)((bitdepth > 8) ? bitdepth / 8 : 1);
 	img->bitdepth = (uint8_t)((bitdepth > 8) ? 8 : bitdepth);
-	img->alignment = 2;
+	img->align_sh = 1;
 
 	desc->type = type;
 	desc->colormap_type = cm_type;

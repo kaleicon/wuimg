@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "common.h"
+#include "raster/endian.h"
 #include "raster/file.h"
 #include "raster/fmt.h"
 #include "raster/mem.h"
@@ -34,7 +35,7 @@ void tga_cleanup(struct tga_desc *desc) {
 
 static size_t raw_process(struct raw_img *img, const size_t bytes) {
 	if (img->bitdepth == 16) {
-		loop_endian16((uint16_t *)img->data, little_endian, bytes/2);
+		endian_loop16((uint16_t *)img->data, little_endian, bytes/2);
 	}
 	return bytes;
 }
@@ -81,7 +82,7 @@ static size_t rle_load(const struct tga_desc *desc, struct raw_img *img) {
 	const size_t dims = img->w * img->h;
 	const size_t bytedepth = ((size_t)desc->depth + 7) / 8;
 
-	const size_t file_len = (size_t)file_remaining(desc->ifp);
+	const size_t file_len = file_remaining(desc->ifp);
 	const size_t packet_len = 1 + bytedepth;
 	// E.g. 0x80 0x00, 0x80 0x00 ...
 	const size_t pathological_rle = dims * packet_len;
@@ -228,7 +229,7 @@ bool tga_parse_footer(struct tga_desc *desc, struct raw_img *img) {
 		EOF
 	*/
 	unsigned char footer[26];
-	if (fread_tail(footer, sizeof(footer), 1, desc->ifp)) {
+	if (file_tail(footer, sizeof(footer), 1, desc->ifp)) {
 		const char sig[] = "TRUEVISION-XFILE."; // null is important
 		if (!memcmp(footer + 8, sig, sizeof(sig))) {
 			const unsigned int extension_off = buf_endian32(footer,
@@ -283,7 +284,7 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct raw_img *img) {
 		for (size_t i = 0; i < elems; ++i) {
 			wbuf[i] = endian16(wbuf[i], little_endian) ^ (1 << 15);
 		}
-		unpack_strip(pal, wbuf, elems, 16, pix_packing_1555, op_expand);
+		unpack_strip(pal, wbuf, elems, 16, pix_pack_1555, op_expand);
 		break;
 	case 24:
 		raster_pal_from_rgb8(pal, buf, elems);
@@ -369,7 +370,7 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 	case 15:
 	case 16:
 		img->bitdepth = 16;
-		img->attr = pix_packing_1555;
+		img->attr = pix_pack_1555;
 		break;
 	case 24:
 	case 32:

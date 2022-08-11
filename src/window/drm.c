@@ -51,9 +51,10 @@ static void fb_destroy_fn(struct gbm_bo *bo, void *data) {
 	*fb_ptr = 0;
 }
 
-static uint32_t get_framebuffer(struct drm_drm *drm, struct gbm_bo *bo,
-struct window_public *pub) {
-	uint32_t *fb_ptr = gbm_bo_get_user_data(bo);
+static uint32_t get_framebuffer(struct drm_drm *drm,
+struct gbm_surface *surface, struct window_public *pub, struct gbm_bo **bo) {
+	*bo = gbm_surface_lock_front_buffer(surface);
+	uint32_t *fb_ptr = gbm_bo_get_user_data(*bo);
 	if (fb_ptr) {
 		if (*fb_ptr) {
 			return *fb_ptr;
@@ -71,12 +72,12 @@ struct window_public *pub) {
 		}
 	}
 
-	const uint32_t width = gbm_bo_get_width(bo);
-	const uint32_t height = gbm_bo_get_height(bo);
-	const uint32_t format = gbm_bo_get_format(bo);
+	const uint32_t width = gbm_bo_get_width(*bo);
+	const uint32_t height = gbm_bo_get_height(*bo);
+	const uint32_t format = gbm_bo_get_format(*bo);
 
-	uint32_t handles[4] = {gbm_bo_get_handle(bo).u32, 0};
-	uint32_t pitches[4] = {gbm_bo_get_stride(bo), 0};
+	uint32_t handles[4] = {gbm_bo_get_handle(*bo).u32, 0};
+	uint32_t pitches[4] = {gbm_bo_get_stride(*bo), 0};
 	uint32_t offsets[4] = {0};
 
 	const int fail = drmModeAddFB2(drm->fd, width, height, format, handles,
@@ -84,7 +85,7 @@ struct window_public *pub) {
 	if (fail) {
 		*fb_ptr = 0;
 	} else {
-		gbm_bo_set_user_data(bo, fb_ptr, fb_destroy_fn);
+		gbm_bo_set_user_data(*bo, fb_ptr, fb_destroy_fn);
 		window_size_update(pub, (int)width, (int)height);
 	}
 	return *fb_ptr;
@@ -101,18 +102,14 @@ unsigned int _usec, void *data) {
 	*flipped = true;
 }
 
-static void drm_egl_swap(struct drm_context *ctx) {
-	egl_swap(&ctx->pub->win.egl);
-}
-
 void drm_swap_buffers(struct drm_context *ctx) {
-	drm_egl_swap(ctx);
+	egl_swap(&ctx->pub->win.egl);
 
-	struct gbm_bo *next_bo = gbm_surface_lock_front_buffer(ctx->gbm.surface);
 	struct drm_drm *drm = &ctx->drm;
-	const uint32_t fb_id = get_framebuffer(drm, next_bo, ctx->pub);
+	struct gbm_bo *next_bo;
+	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.surface, ctx->pub,
+		&next_bo);
 	if (!fb_id) {
-		term_line_put("failed to get framebuffer\n", stderr);
 		return;
 	}
 
@@ -153,11 +150,9 @@ void drm_swap_buffers(struct drm_context *ctx) {
 }
 
 static bool mode_set(struct drm_context *ctx, drmModeModeInfo *mode_info) {
-	drm_egl_swap(ctx);
-
-	ctx->gbm.bo = gbm_surface_lock_front_buffer(ctx->gbm.surface);
 	struct drm_drm *drm = &ctx->drm;
-	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.bo, ctx->pub);
+	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.surface, ctx->pub,
+		&ctx->gbm.bo);
 	if (!fb_id) {
 		return false;
 	}
@@ -183,7 +178,7 @@ drmModeModeInfo *mode_info) {
 	gbm->surface = gbm_surface_create(gbm->device,
 		mode_info->hdisplay, mode_info->vdisplay, WU_GBM_FORMAT,
 		GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-	return gbm->surface != NULL;
+	return (bool)gbm->surface;
 }
 
 static uint32_t find_crtc(const int fd, const drmModeRes *res,
@@ -327,7 +322,7 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 	drmModeConnector *connector = NULL;
 	drmModeModeInfo *mode_info = NULL; // ptr to a *connector member
 
-	const char *err = "DRM: This string shouldn't be seen";
+	const char *err = "This string shouldn't be seen";
 	if (drm_setup(&ctx->drm, &connector, &mode_info)) {
 		if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
 			err = egl_init(&ctx->pub->win.egl,
@@ -338,16 +333,16 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 					// Phew
 					err = NULL;
 				} else {
-					err = "DRM: Mode set failed";
+					err = "Mode set failed";
 				}
 			} else {
 				egl_print_error();
 			}
 		} else {
-			err = "DRM: GBM setup failed";
+			err = "GBM setup failed";
 		}
 	} else {
-		err = "DRM: DRM setup failed";
+		err = "DRM setup failed";
 	}
 	drmModeFreeConnector(connector);
 
@@ -372,7 +367,7 @@ const char * drm_offscreen_init(struct drm_offscreen *ctx) {
 
 	ctx->fd = get_device_fd();
 	if (ctx->fd < 0) {
-		return "DRM: No device found";
+		return "No device found";
 	}
 
 	const char *err = NULL;
@@ -380,7 +375,7 @@ const char * drm_offscreen_init(struct drm_offscreen *ctx) {
 	if (ctx->device) {
 		err = egl_offscreen_init(&ctx->egl_display, ctx->device);
 	} else {
-		err = "DRM: Failed to create GBM device.";
+		err = "Failed to create GBM device.";
 	}
 	if (err) {
 		drm_offscreen_terminate(ctx);

@@ -25,7 +25,7 @@ const struct pcx_desc *desc, struct raw_img *img) {
 	char buf[sizeof(ver_fmt) + 20];
 	const size_t w = (size_t)sprintf(buf, ver_fmt, desc->version,
 		pcx_version_string(desc->version));
-	tree_add_measured_leaf(metadata, "Format version", buf, w);
+	tree_add_leaf_utf8_len(metadata, "Format version", buf, w);
 
 	struct wu_leaf leaf = {
 		.val.u = img->channels,
@@ -44,8 +44,8 @@ const struct pcx_desc *desc, struct raw_img *img) {
 		const size_t len = is_readable_garbage(garbage,
 			sizeof(desc->file_pal) - 12);
 		if (len > 3) {
-			tree_add_measured_leaf(metadata, "Garbage", garbage,
-				len);
+			tree_add_leaf_len(metadata, "Garbage", garbage, len,
+				NULL);
 		}
 	}
 }

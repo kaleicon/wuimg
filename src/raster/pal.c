@@ -30,56 +30,45 @@ const struct raster_pal *cm, const size_t items, const uint8_t bitdepth) {
 
 static inline void palette_common(uint8_t *restrict dst,
 const uint8_t *restrict src, const struct raster_pal *cm, size_t width,
-const size_t height, const uint8_t alignment, const uint8_t bitdepth) {
+const uint8_t bitdepth) {
 	const size_t biab = 8 / bitdepth;
 
 	const size_t bytes = width / biab;
 	const size_t remainer = width % biab;
-	const size_t scan = scanline_length(width, bitdepth, alignment);
-	const size_t rowpad = scan - bytes;
-
-	for (size_t y = 0; y < height; ++y) {
-		for (size_t x = 0; x < bytes; ++x) {
-			dst = expand_palette(*src, dst, cm, biab, bitdepth);
-			++src;
-		}
-		dst = expand_palette(*src, dst, cm, remainer, bitdepth);
-		src += rowpad;
+	for (size_t x = 0; x < bytes; ++x) {
+		dst = expand_palette(*src, dst, cm, biab, bitdepth);
+		++src;
 	}
+	expand_palette(*src, dst, cm, remainer, bitdepth);
 }
 
 static void strip_palette_rgba8(uint8_t *restrict dst,
-const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
-const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 8);
+const uint8_t *restrict src, const struct raster_pal *cm, const size_t width) {
+	palette_common(dst, src, cm, width, 8);
 }
 
 static void strip_palette_rgba4(uint8_t *restrict dst,
-const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
-const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 4);
+const uint8_t *restrict src, const struct raster_pal *cm, const size_t width) {
+	palette_common(dst, src, cm, width, 4);
 }
 
 static void strip_palette_rgba2(uint8_t *restrict dst,
-const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
-const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 2);
+const uint8_t *restrict src, const struct raster_pal *cm, const size_t width) {
+	palette_common(dst, src, cm, width, 2);
 }
 
 static void strip_palette_rgba1(uint8_t *restrict dst,
-const uint8_t *restrict src, const struct raster_pal *cm, const size_t width,
-const size_t height, const uint8_t alignment) {
-	palette_common(dst, src, cm, width, height, alignment, 1);
+const uint8_t *restrict src, const struct raster_pal *cm, const size_t width) {
+	palette_common(dst, src, cm, width, 1);
 }
 
 void raster_pal_expand(void *restrict dst, const uint8_t *restrict src,
-const struct raster_pal *cm, const size_t width, const size_t height,
-const uint8_t alignment, const uint8_t bitdepth) {
+const struct raster_pal *cm, const size_t width, const uint8_t bitdepth) {
 	switch (bitdepth) {
-	case 1: strip_palette_rgba1(dst, src, cm, width, height, alignment); break;
-	case 2: strip_palette_rgba2(dst, src, cm, width, height, alignment); break;
-	case 4: strip_palette_rgba4(dst, src, cm, width, height, alignment); break;
-	case 8: strip_palette_rgba8(dst, src, cm, width, height, alignment); break;
+	case 1: strip_palette_rgba1(dst, src, cm, width); break;
+	case 2: strip_palette_rgba2(dst, src, cm, width); break;
+	case 4: strip_palette_rgba4(dst, src, cm, width); break;
+	case 8: strip_palette_rgba8(dst, src, cm, width); break;
 	}
 }
 

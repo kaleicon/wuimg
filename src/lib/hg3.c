@@ -21,12 +21,12 @@ const size_t plane_len) {
 	 *  3) Place each group into a byte, highest group in the highest byte,
 	 *     first planes into highest bits. Example:
 
-		Plane0: 11001001
-		Result: 11000000 00000000 10000000 01000000
+		Plane0: 11001011
+		Result: 11000000 00000000 10000000 11000000
 		-       Byte 3   Byte 2   Byte 1   Byte 0
 
-		Plane1: 00110101
-		Result: 11000000 00110000 10010000 01010000
+		Plane1: 01110101
+		Result: 11010000 00110000 10010000 11010000
 		-       Byte 3   Byte 2   Byte 1   Byte 0
 
 	 *  4) For each byte, if it's odd, do (255 - byte/2), else, byte/2.
@@ -258,7 +258,7 @@ enum wu_error hg3_next_image(struct hg3_desc *desc) {
 	return wu_unexpected_eof;
 }
 
-enum wu_error hg3_open(struct hg3_desc *desc, const struct map_info *mm) {
+enum wu_error hg3_open(struct hg3_desc *desc, const struct mp_parser mp) {
 	/* Overall structure:
 		Header
 		ImageEntry
@@ -274,7 +274,7 @@ enum wu_error hg3_open(struct hg3_desc *desc, const struct map_info *mm) {
 		12
 	*/
 	*desc = (struct hg3_desc) {
-		.mp = mp_parser_mem(mm->len, mm->data),
+		.mp = mp,
 	};
 	const uint8_t id[4] = "HG-3";
 	const enum wu_error st = fmt_sigcmp_mem(id, sizeof(id), &desc->mp);

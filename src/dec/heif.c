@@ -5,6 +5,7 @@
 
 #include <libheif/heif.h>
 
+#include "dec_enable.def"
 #include "raster/strip.h"
 #include "wudefs.h"
 #include "common.h"
@@ -37,32 +38,37 @@ static void clean_heif_state(struct image_file *infile) {
 	if (ds->ctx) {
 		heif_context_free(ds->ctx);
 	}
-	if (ds->mm.data) {
-		unmap_file(&ds->mm);
-	}
+	unmap_file(&ds->mm);
 }
 
 static void read_block(const struct heif_image_handle* handle,
-struct wu_tree *tree, const heif_item_id id, unsigned char *buf,
+struct raw_img *img, const heif_item_id id, unsigned char *buf,
 const size_t len) {
 	const struct heif_error herr = heif_image_handle_get_metadata(handle,
 		id, buf);
 	if (herr.code == heif_error_Ok) {
-		const char *type = heif_image_handle_get_metadata_type(handle,
-			id);
-		if (!strcmp(type, "Exif") && len > 10) {
-			standard_metadata(exif_metadata, buf + 10, len - 10,
-				tree);
-		} else if (!strcmp(type, "mime")) {
-			standard_metadata(xmp_metadata, buf, len, tree);
-		} else {
-			tree_add_leaf(tree, "Found metadata block", type);
+		if (!img->metadata) {
+			img->metadata = tree_plant(NULL);
+		}
+		if (img->metadata) {
+			const char *type = heif_image_handle_get_metadata_type(
+				handle, id);
+			if (!strcmp(type, "Exif") && len > 10) {
+				standard_metadata(exif_metadata, buf + 10,
+					len - 10, img->metadata);
+			} else if (!strcmp(type, "mime")) {
+				standard_metadata(xmp_metadata, buf, len,
+					img->metadata);
+			} else {
+				tree_add_leaf_utf8(img->metadata,
+					"Found metadata block", type);
+			}
 		}
 	}
 }
 
 static void read_metadata(const struct heif_image_handle* handle,
-struct wu_tree *tree) {
+struct raw_img *img) {
 	const int blocks = heif_image_handle_get_number_of_metadata_blocks(
 		handle, NULL);
 	heif_item_id *ids = malloc(sizeof(*ids) * (size_t)blocks);
@@ -74,7 +80,7 @@ struct wu_tree *tree) {
 				handle, ids[i]);
 			unsigned char *buf = malloc(len);
 			if (buf) {
-				read_block(handle, tree, ids[i], buf, len);
+				read_block(handle, img, ids[i], buf, len);
 				free(buf);
 			}
 		}
@@ -128,13 +134,6 @@ const struct heif_image *himg) {
 	}
 }
 
-static void scale_depth(void *restrict ptr, const size_t w, const size_t h,
-const int bit_range) {
-	const struct scale_info scaler = strip_scale_info(
-		(1u << bit_range) - 1, 16);
-	strip_scale(ptr, w * h, scaler, false);
-}
-
 static enum wu_error get_planar_image(struct raw_img *img,
 struct heif_image *himg, const enum heif_chroma chroma, const bool alpha,
 int *bpl) {
@@ -158,6 +157,7 @@ int *bpl) {
 	img->channels = (uint8_t)((chroma == heif_chroma_monochrome ? 1 : 3)
 		+ alpha);
 	img->bitdepth = (depth > 8) ? 16 : 8;
+	img->used_bits = (uint8_t)depth;
 	for (uint8_t c = 1; c < img->channels; ++c) {
 		const int d = heif_image_get_bits_per_pixel_range(himg, chs[c]);
 		if (d != -1 && d != depth) {
@@ -191,9 +191,6 @@ int *bpl) {
 			if (c == 0) {
 				*bpl = bytes_per_line;
 			}
-			if (depth != img->bitdepth) {
-				scale_depth(p->ptr, p->w, p->h, depth);
-			}
 		}
 	}
 	return st;
@@ -206,13 +203,10 @@ struct heif_image *himg, const bool alpha, int *bpl) {
 
 	img->channels = 3 + alpha;
 	img->bitdepth = (depth > 8) ? 16 : 8;
+	img->used_bits = (uint8_t)depth;
 	const enum wu_error st = raw_img_verify(img);
 	if (st == wu_ok) {
 		img->data = heif_image_get_plane(himg, hch, bpl);
-		if (depth != img->bitdepth) {
-			scale_depth(img->data, img->w * img->channels, img->h,
-				depth);
-		}
 	}
 	return st;
 }
@@ -232,9 +226,8 @@ const struct wu_conf *wuconf, const size_t i) {
 
 	img->alpha = heif_image_handle_is_premultiplied_alpha(handle)
 		? alpha_associated : alpha_unassociated;
-	if (i == 0) {
-		read_metadata(handle, &infile->metadata);
-	}
+
+	read_metadata(handle, img);
 
 	const bool has_alpha = heif_image_handle_has_alpha_channel(handle);
 	herr = heif_decode_image(handle, ds->himgs + i,
@@ -253,9 +246,6 @@ const struct wu_conf *wuconf, const size_t i) {
 	}
 
 	get_color_profile(&img->cs, himg);
-	if (ds->hids[i] == ds->primary_id) {
-		img->id = strdup("primary");
-	}
 
 	const enum heif_chroma chroma = heif_image_get_chroma_format(himg);
 	enum wu_error st = wu_invalid_params;
@@ -277,11 +267,10 @@ const struct wu_conf *wuconf, const size_t i) {
 		scanline = img->w * img->channels;
 		break;
 	}
-	// HEIF and AVIF use different alignments.
 	if (st == wu_ok) {
-		img->alignment = scanline_alignment((size_t)bytes_per_line,
+		img->align_sh = scanline_alignment((size_t)bytes_per_line,
 			scanline, img->bitdepth);
-		if (!img->alignment) {
+		if (img->align_sh < 0) {
 			return wu_invalid_header;
 		}
 		if (img->mode == image_mode_planar) {
@@ -309,11 +298,13 @@ const enum image_event ev) {
 	return wu_no_change;
 }
 
+#ifndef WU_ENABLE_AVIF
 enum wu_error avif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
 	return heif_callback(infile, wuconf, state, ev);
 }
+#endif
 
 enum wu_error heif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
@@ -329,8 +320,6 @@ const struct wu_conf *wuconf) {
 	}
 
 	ds->ctx = heif_context_alloc();
-	heif_context_set_maximum_image_size_limit(ds->ctx,
-		(int)wuconf->max_img_size);
 	struct heif_error herr = heif_context_read_from_memory_without_copy(
 		ds->ctx, ds->mm.data, ds->mm.len, NULL);
 	if (herr.code != heif_error_Ok) {
@@ -357,7 +346,9 @@ const struct wu_conf *wuconf) {
 	return get_image(infile, wuconf, 0);
 }
 
+#ifndef WU_ENABLE_AVIF
 enum wu_error avif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	return heif_dec(infile, wuconf);
 }
+#endif

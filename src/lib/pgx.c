@@ -53,7 +53,7 @@ size_t pgx_decode(const struct pgx_desc *desc, struct raw_img *img) {
 	if (raw_img_alloc_noverify(img)) {
 		uint8_t *comp = malloc(desc->comp_size + LZSS_PAD);
 		if (comp) {
-			const size_t read = fread_tail(comp, 1, desc->comp_size,
+			const size_t read = file_tail(comp, 1, desc->comp_size,
 				desc->ifp);
 			written = lzss_decomp(img->data, raw_img_size(img),
 				comp, read);

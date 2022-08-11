@@ -323,6 +323,7 @@ enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img) {
 			// PixelArt.v04/MAKICHAN/SCR12i/HAWAI.MAG
 			// telparia.com/fileFormatSamples/image/makichan/TSUCHIIN.MAG
 			img->ratio = desc->msx.interlace ? 2 : 1;
+			img->used_bits = 5;
 			is_yjk = true;
 			break;
 		default:

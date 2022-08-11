@@ -48,8 +48,8 @@ enum wu_error xyz_parse(struct xyz_desc *desc, struct raw_img *img) {
 	return wu_unexpected_eof;
 }
 
-enum wu_error xyz_open(struct xyz_desc *desc, const struct map_info *mm) {
-	desc->mp = mp_parser_mem(mm->len, mm->data);
+enum wu_error xyz_open(struct xyz_desc *desc, const struct mp_parser mp) {
+	desc->mp = mp;
 	const unsigned char magic[] = {'X', 'Y', 'Z', '1'};
 	return fmt_sigcmp_mem(magic, sizeof(magic), &desc->mp);
 }

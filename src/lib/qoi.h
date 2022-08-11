@@ -8,6 +8,6 @@ size_t qoi_decode(struct mp_parser *mp, struct raw_img *img);
 
 enum wu_error qoi_parse(struct mp_parser *mp, struct raw_img *img);
 
-enum wu_error qoi_open(struct mp_parser *mp, const struct map_info *mm);
+enum wu_error qoi_open(struct mp_parser *mp);
 
 #endif /* LIB_QOI */

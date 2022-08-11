@@ -11,13 +11,16 @@ struct term_restore {
 	cc_t vtime;
 };
 
-void term_print_unsafe(const void *restrict data, size_t len, FILE *stream);
+void term_print_escaped(const uint8_t *restrict data, size_t len, bool is_utf8,
+FILE *stream);
 
 size_t term_event_read(unsigned char *output, size_t len);
 
 void term_indent(size_t indent, FILE *out);
 
 void term_line_put(const char *text, FILE *out);
+
+void term_line_key_val(const char *key, const char *val, FILE *out);
 
 void term_line_temp(const char *text);
 

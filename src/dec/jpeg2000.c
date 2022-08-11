@@ -1,10 +1,8 @@
-#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <openjpeg-2.1/openjpeg.h>
 
-#include "raster/file.h"
 #include "raster/strip.h"
 #include "wudefs.h"
 
@@ -39,7 +37,8 @@ static OPJ_BOOL file_seek(const OPJ_OFF_T offset, void *file) {
 }
 
 static opj_stream_t setup_jp2_stream(FILE *ifp) {
-	const long size = file_size(ifp);
+	fseek(ifp, 0, SEEK_END);
+	const long size = ftell(ifp);
 	fseek(ifp, 0, SEEK_SET);
 
 	opj_stream_t *stream = opj_stream_default_create(true);
@@ -116,8 +115,8 @@ static enum wu_error dec_wrap(struct raw_img *img, const opj_image_t *jp2) {
 		img->data = IMG_DATA_BORROWED;
 		for (uint8_t z = 0; z < img->channels; ++z) {
 			p[z].ptr = (uint8_t *)jp2->comps[z].data;
-			strip_scale(p[z].ptr, p[z].w * p[z].h, scaler[z],
-				jp2->comps[z].sgnd);
+			strip_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,
+				scaler[z], jp2->comps[z].sgnd);
 		}
 	}
 	return st;

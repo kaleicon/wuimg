@@ -3,12 +3,9 @@
 #include "../common.h"
 #include "raster.h"
 
-size_t raster_stride(const struct raster_desc *desc) {
-	return scanline_length(desc->w * desc->ch, desc->bitdepth, desc->alignment);
-}
-
 size_t raster_size(const struct raster_desc *desc) {
-	return raster_stride(desc) * desc->h;
+	return scanline_length(desc->w * desc->ch, desc->bitdepth, 0)
+		* desc->h;
 }
 
 const char * raster_geom_verify(const uint8_t ch, const uint8_t bitdepth,
@@ -33,9 +30,9 @@ const enum pix_attr attr, const bool paletted) {
 				return "Paletted images can't use signed indices";
 			case pix_float:
 				return "Paletted images can't use floats";
-			case pix_packing_332:
+			case pix_pack_332:
 				return "Paletted images can't use 332 packing";
-			case pix_packing_1555:
+			case pix_pack_1555:
 				return "Paletted images can't use 1555 packing";
 			default:
 				return "Undefined pixel attribute in paletted image";
@@ -49,15 +46,15 @@ const enum pix_attr attr, const bool paletted) {
 		case pix_inverted:
 		case pix_float:
 			break;
-		case pix_packing_332:
+		case pix_pack_332:
 			if (depth != 8) {
-				return "pix_packing_332 must be set with 1"
+				return "pix_pack_332 must be set with 1"
 					"channel and 8 bits";
 			}
 			break;
-		case pix_packing_1555:
+		case pix_pack_1555:
 			if (depth != 16) {
-				return "pix_packing_1555 must be set with 1"
+				return "pix_pack_1555 must be set with 1"
 					"channel and 16 bits";
 			}
 			break;
@@ -69,7 +66,7 @@ const enum pix_attr attr, const bool paletted) {
 }
 
 bool raster_test_overflow(size_t w, const size_t h, const uint8_t ch,
-const uint8_t bitdepth, const uint8_t alignment) {
+const uint8_t bitdepth, const align_t align) {
 	if (w < 1 || h < 1) {
 		return false;
 	}
@@ -82,12 +79,12 @@ const uint8_t bitdepth, const uint8_t alignment) {
 		return false;
 	}
 
-	size_t scanline = scanline_length(w, bitdepth, 1);
-	const size_t align = alignment - 1;
-	if (SIZE_MAX - align < scanline) {
+	size_t scanline = scanline_length(w, bitdepth, 0);
+	const size_t a = ~0lu << align;
+	if (SIZE_MAX - ~a < scanline) {
 		return false;
 	}
-	scanline = (scanline + align) & ~align;
+	scanline = (scanline + ~a) & a;
 	return SIZE_MAX / h / scanline != 0;
 }
 
@@ -104,27 +101,23 @@ bool raster_normalize(struct raster_desc *desc) {
 	case pix_inverted:
 	case pix_float:
 		break;
-	case pix_packing_332:
+	case pix_pack_332:
 		desc->ch = 1;
 		desc->bitdepth = 8;
 		break;
-	case pix_packing_1555:
+	case pix_pack_1555:
 		desc->ch = 1;
 		desc->bitdepth = 16;
 		break;
 	}
 
-	if (!desc->alignment) {
-		desc->alignment = 1;
-	}
-
 	if (!desc->layout) {
-		if (desc->attr == pix_packing_332 || desc->ch >= 3) {
+		if (desc->attr == pix_pack_332 || desc->ch >= 3) {
 			desc->layout = pix_rgba;
 		} else {
 			desc->layout = pix_gray;
 		}
 	}
 	return raster_test_overflow(desc->w, desc->h, desc->ch, desc->bitdepth,
-		desc->alignment);
+		0);
 }

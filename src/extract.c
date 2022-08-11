@@ -12,6 +12,7 @@
 #include "common.h"
 #include "wustr.h"
 #include "dec.h"
+#include "term.h"
 
 void extract_iter_free(struct extract_iter *iter) {
 	for (size_t i = 0; i < iter->grow.pos; ++i) {
@@ -106,16 +107,16 @@ static bool next_archive_entry(struct extract_iter *iter) {
 	const int r = archive_read_next_header(iter->ra, &entry);
 	switch (r) {
 	case ARCHIVE_WARN:
-		fprintf(stderr, "libarchive warning: %s\n",
-			archive_error_string(iter->ra));
+		term_line_key_val("libarchive warning",
+			archive_error_string(iter->ra), stderr);
 		// fallthrough
 	case ARCHIVE_OK:
 		return ok_case(iter, entry);
 	case ARCHIVE_RETRY:
 		break;
 	case ARCHIVE_FATAL:
-		fprintf(stderr, "libarchive error: %s\n",
-			archive_error_string(iter->ra));
+		term_line_key_val("libarchive error",
+			archive_error_string(iter->ra), stderr);
 		// fallthrough
 	case ARCHIVE_EOF:
 		archive_read_free(iter->ra);

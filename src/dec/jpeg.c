@@ -200,9 +200,9 @@ static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
 }
 
 static enum wu_error parse_markers(const struct jpeg_marker_struct *mk,
-struct image_file *infile, struct jpeg_state *js, struct icc_assembler *icc) {
+struct wu_tree *metadata, struct image_file *infile, struct jpeg_state *js,
+struct icc_assembler *icc, const bool is_first) {
 	const struct marker_info info = identify_marker(mk);
-	struct wu_tree *metadata = &infile->metadata;
 	switch (info.type) {
 	case xmp_marker:
 	case exif_marker:
@@ -219,12 +219,14 @@ struct image_file *infile, struct jpeg_state *js, struct icc_assembler *icc) {
 		}
 		break;
 	case mpo_marker:
-		/* MPO offsets are relative to the MPO marker, so we
-		 * need to parse the whole file again. */
-		;const size_t nr = search_file_offsets(infile->ifp, js);
-		if (nr > 1) {
-			if (!realloc_sub_images(infile, nr)) {
-				return wu_alloc_error;
+		if (!is_first) {
+			/* MPO offsets are relative to the MPO marker, so we
+			 * need to parse the whole file again. */
+			const size_t nr = search_file_offsets(infile->ifp, js);
+			if (nr > 1) {
+				if (!realloc_sub_images(infile, nr)) {
+					return wu_alloc_error;
+				}
 			}
 		}
 		return wu_ok;
@@ -237,28 +239,34 @@ struct image_file *infile, struct jpeg_state *js, struct icc_assembler *icc) {
 		char app[] = "APPXXX";
 		sprintf(app + 3, "%hhu", mk->marker - JPEG_APP0);
 
-		tree_add_leaf(branch, "Type", app);
+		tree_add_leaf_utf8(branch, "Type", app);
 		tree_bud_leaf(branch, "Size",
 			(struct wu_leaf){
 				.val.u = mk->data_length,
 				.type = wu_leaf_unsigned
 			});
-		tree_add_measured_leaf(branch, "Data start", mk->data,
-			zumin(12, mk->data_length));
+		tree_add_leaf_len(branch, "Data start", mk->data,
+			zumin(12, mk->data_length), NULL);
 	}
 	return wu_ok;
 }
 
 static enum wu_error iter_markers(const struct jpeg_marker_struct *mk,
-struct image_file *infile, struct raw_img *img, struct jpeg_state *js) {
+struct image_file *infile, struct raw_img *img, struct jpeg_state *js,
+const bool is_first) {
 	struct icc_assembler icc = {0};
 	enum wu_error status = wu_ok;
+	struct wu_tree *metadata = raw_img_get_metadata(img);
+	if (!img->metadata) {
+		return wu_alloc_error;
+	}
 	while (mk) {
 		if (mk->marker == JPEG_COM) {
-			tree_add_measured_leaf(&infile->metadata,
-				"Comment", mk->data, mk->data_length);
+			tree_add_leaf_len(metadata, "Comment", mk->data,
+				mk->data_length, NULL);
 		} else {
-			status = parse_markers(mk, infile, js, &icc);
+			status = parse_markers(mk, metadata, infile, js, &icc,
+				is_first);
 			if (status != wu_ok) {
 				break;
 			}
@@ -319,7 +327,7 @@ const struct jpeg_decompress_struct *dinfo) {
 	if (!planes) {
 		return false;
 	}
-	planes->v_pad = DCTSIZE;
+	planes->v_pad = align_from_int(DCTSIZE);
 	const jpeg_component_info *nfo = dinfo->comp_info;
 	for (uint8_t i = 0; i < img->channels; ++i) {
 		const int xsamp = dinfo->max_h_samp_factor
@@ -333,7 +341,7 @@ const struct jpeg_decompress_struct *dinfo) {
 }
 
 static enum wu_error decode_img(struct image_file *infile,
-const struct wu_conf *wuconf, const int i, const bool get_markers) {
+const struct wu_conf *wuconf, const int i) {
 	struct jpeg_state *js = infile->dec_state;
 	const int val = setjmp(js->jmp);
 	if (val) {
@@ -347,15 +355,13 @@ const struct wu_conf *wuconf, const int i, const bool get_markers) {
 	jpeg_stdio_src(dinfo, infile->ifp);
 
 	struct raw_img *img = infile->sub_img + i;
-	if (get_markers) {
-		jpeg_save_markers(dinfo, JPEG_COM, 0xFFFF);
-		for (int m = 0xE0; m <= 0xEF; ++m) {
-			switch (m) {
-			case 0xE0: case 0xE8: case 0xEE:
-				continue;
-			default:
-				jpeg_save_markers(dinfo, m, 0xFFFF);
-			}
+	jpeg_save_markers(dinfo, JPEG_COM, 0xFFFF);
+	for (int m = 0xE0; m <= 0xEF; ++m) {
+		switch (m) {
+		case 0xE0: case 0xE8: case 0xEE:
+			continue;
+		default:
+			jpeg_save_markers(dinfo, m, 0xFFFF);
 		}
 	}
 	jpeg_read_header(dinfo, TRUE);
@@ -373,7 +379,7 @@ const struct wu_conf *wuconf, const int i, const bool get_markers) {
 	img->h = dinfo->output_height;
 	img->channels = (unsigned char)dinfo->output_components;
 	img->bitdepth = 8;
-	img->alignment = DCTSIZE;
+	raw_img_align(img, DCTSIZE);
 	if (!set_colorspace(img, dinfo)) {
 		return wu_alloc_error;
 	}
@@ -387,13 +393,14 @@ const struct wu_conf *wuconf, const int i, const bool get_markers) {
 	}
 	decode_raw(img, dinfo);
 
-	status = iter_markers(dinfo->marker_list, infile, img, js);
+	if (dinfo->marker_list) {
+		status = iter_markers(dinfo->marker_list, infile, img, js,
+			i == 0);
+	}
 	jpeg_finish_decompress(dinfo);
-	if (status == wu_ok) {
-		if (get_markers) {
-			raw_img_exif_orientation(img,
-				metadata_orientation(&infile->metadata));
-		}
+	if (status == wu_ok && img->metadata) {
+		raw_img_exif_orientation(img,
+			metadata_orientation(img->metadata));
 	}
 	return status;
 }
@@ -403,7 +410,7 @@ const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
 	if (ev) {
 		if (!infile->sub_img[state->idx].data) {
-			return decode_img(infile, wuconf, state->idx, false);
+			return decode_img(infile, wuconf, state->idx);
 		}
 	} else {
 		clean_jpeg_state(infile);
@@ -431,7 +438,7 @@ const struct wu_conf *wuconf) {
 
 	jpeg_create_decompress(&js->dinfo);
 
-	const enum wu_error status = decode_img(infile, wuconf, 0, true);
+	const enum wu_error status = decode_img(infile, wuconf, 0);
 	if (status == wu_ok && infile->nr > 1) {
 		infile->events = ev_subcycle;
 	} else {

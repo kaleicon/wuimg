@@ -10,14 +10,12 @@
 
 struct out_info {
 	unsigned char *output;
-	const struct scale_info scale;
 };
 
 static void scale_write(unsigned char *restrict data, size_t len,
 void *restrict ptr) {
 	struct out_info *restrict p = ptr;
 	memcpy(p->output, data, len);
-	strip_scale(p->output, len >> p->scale.size_shift, p->scale, false);
 	p->output += len;
 }
 
@@ -51,15 +49,12 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 	}
 	img->channels = 1;
 	img->bitdepth = (state->planes > 8) ? 16 : 8;
+	img->used_bits = (uint8_t)state->planes;
 	img->attr = pix_inverted;
 	const enum wu_error st = raw_img_alloc(img);
 	if (st == wu_ok) {
-		const unsigned maxval = (1U << state->planes) - 1;
-		struct out_info info = {
-			.output = img->data,
-			.scale = strip_scale_info(maxval, img->bitdepth),
-		};
-		jbg_dec_merge_planes(state, false, scale_write, &info);
+		struct out_info out = {.output = img->data};
+		jbg_dec_merge_planes(state, false, scale_write, &out);
 	}
 	return st;
 }

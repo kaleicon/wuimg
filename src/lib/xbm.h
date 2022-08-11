@@ -15,7 +15,7 @@ enum xbm_type {
 struct xbm_desc {
 	struct mp_parser tp;
 
-	size_t x_hot, y_hot;
+	long x_hot, y_hot;
 	bool has_hotspot;
 	enum xbm_type type;
 
@@ -26,6 +26,6 @@ struct xbm_desc {
 size_t xbm_decode(const struct xbm_desc *desc, struct raw_img *img);
 
 enum wu_error xbm_parse_header(struct xbm_desc *desc, struct raw_img *img,
-const struct map_info *mm);
+struct mp_parser mp);
 
 #endif /* LIB_XBM */

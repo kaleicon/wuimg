@@ -20,9 +20,7 @@ static void clean_flif_state(struct image_file *infile) {
 	if (ds->dec) {
 		flif_destroy_decoder(ds->dec);
 	}
-	if (ds->map.data) {
-		unmap_file(&ds->map);
-	}
+	unmap_file(&ds->map);
 }
 
 static enum wu_error decode_frame(struct raw_img *img, FLIF_IMAGE *frame,

@@ -184,7 +184,7 @@ static double key_events(struct window_context *window, const double secs) {
 	unsigned char *map = get_map(held_keys);
 	for (int key = WINDOW_KEYSTART; key < WINDOW_KEYEND; ++key) {
 		const unsigned char time = map[key];
-		float dt = msecs;
+		float dt = 16 * (shift ? 2 : 1);
 		switch (time) {
 		case 0:
 			continue;
@@ -192,6 +192,7 @@ static double key_events(struct window_context *window, const double secs) {
 			map[key] = 0;
 			break;
 		case 0xff:
+			dt = msecs;
 			break;
 		default:
 			map[key] = (unsigned char)imin(0xff, time + inc);

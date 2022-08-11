@@ -32,7 +32,7 @@ struct tile_info {
 	tsize_t len;
 };
 
-static void get_metadata_tags(TIFF *tif, struct wu_tree *tree) {
+static void get_metadata_tags(TIFF *tif, struct raw_img *img) {
 	struct tifftag {
 		ttag_t tag;
 		const char *name;
@@ -50,11 +50,15 @@ static void get_metadata_tags(TIFF *tif, struct wu_tree *tree) {
 		{TIFFTAG_PAGENAME, "Page name"},
 	};
 
+	struct wu_tree *tree = raw_img_get_metadata(img);
+	if (!tree) {
+		return;
+	}
+
 	for (size_t i = 0; i < ARRAY_LEN(tag); ++i){
 		char *field;
 		if (TIFFGetField(tif, tag[i].tag, &field)) {
-			tree_add_measured_leaf(tree, tag[i].name, field,
-				strlen(field));
+			tree_add_leaf(tree, tag[i].name, field, NULL);
 	 	}
 	}
 
@@ -371,7 +375,6 @@ const struct wu_conf *wuconf) {
 		return wu_open_error;
 	}
 
-	get_metadata_tags(tif, &infile->metadata);
 	if (!alloc_sub_images(infile, TIFFNumberOfDirectories(tif))) {
 		TIFFCleanup(tif);
 		return wu_alloc_error;
@@ -413,6 +416,7 @@ const struct wu_conf *wuconf) {
 			status = nih_decode(tif, img, &info);
 			if (status == wu_ok) {
 				++i;
+				get_metadata_tags(tif, img);
 				continue;
 			}
 			raw_img_clear(img);
@@ -424,6 +428,7 @@ const struct wu_conf *wuconf) {
 		status = libtiff_decode(tif, infile, img);
 		if (status == wu_ok) {
 			++i;
+			get_metadata_tags(tif, img);
 		} else {
 			raw_img_clear(img);
 		}

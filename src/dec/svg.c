@@ -5,7 +5,7 @@
 #include <librsvg-2.0/librsvg/rsvg.h>
 
 #include "wudefs.h"
-#include "common.h"
+#include "raster/endian.h"
 
 struct svg_state {
 	RsvgHandle *handle;

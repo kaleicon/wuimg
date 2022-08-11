@@ -5,8 +5,8 @@
 #include <stdbool.h>
 
 #include "wudefs.h"
+#include "raster/endian.h"
 #include "raster/raster.h"
-#include "raster/strip.h"
 
 enum pnm_type {
 	pnm_plain_pbm = '1',

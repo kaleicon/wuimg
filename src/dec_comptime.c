@@ -5,19 +5,18 @@
 #include "common.h"
 #include "dec_enable.def"
 
-// These become function pointers in the output file
-typedef bool fmt_dec_t;
-typedef bool fmt_callback_t;
+struct fmt_fn_desc {
+	const char name[8];
+	const bool has_callback;
+};
 
-// Produce the struct definition, preceded by its string form
+// Produces a struct definition in string form, then in code
 #define EXP_STRING(exp) #exp; exp
-static const char fmt_structs[] = EXP_STRING(
-	struct fmt_fn {
-		const char name[8];
-		const fmt_dec_t dec;
-		const fmt_callback_t callback;
-	};
-
+static const char fmt_structs[] = "struct fmt_fn {"
+	"const char name[8];"
+	"const fmt_dec_t dec;"
+	"const fmt_callback_t callback;"
+"};" EXP_STRING(
 	struct fmt_ext {
 		const char ext[6];
 		const short id;
@@ -37,19 +36,22 @@ struct fmt_mimetype {
 
 enum fmt_id {
 	fmt_unknown = -1,
-#define WUDEC(name, callback) fmt_##name,
+#define WUDEC(name, _spec) fmt_##name,
 #include "dec.def"
 #undef WUDEC
 };
 
-static const struct fmt_fn fn_map[] = {
-#define WUDEC(name, callback) { #name , true , callback },
+static const struct fmt_fn_desc fn_map[] = {
+#define WUDEC(name, has_callback) { #name , has_callback },
 #include "dec.def"
 #undef WUDEC
 };
 
 /* Be careful with masks. This array is sorted dumbly. */
 static struct fmt_magic magic_map[] = {
+	// Computer Eyes
+//	{"\xff\xff\xff\xff\xff\xff", "EYES\x00\x01", fmt_ce2},
+
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
 #endif // WU_ENABLE_DIB
@@ -60,6 +62,10 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff" "\0\0\0\0" "\xff\x00\xff\xff",
 		"SDPX\0\0\0\0V\0.0", fmt_dpx},
 #endif // WU_ENABLE_DPX
+
+#ifdef WU_ENABLE_FARBFELD
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff", "farbfeld", fmt_farbfeld},
+#endif // WU_ENABLE_FARBFELD
 
 #ifdef WU_ENABLE_HG3
 	{"\xff\xff\xff\xff", "HG-3", fmt_hg3},
@@ -174,6 +180,17 @@ static struct fmt_magic magic_map[] = {
 #endif // WU_ENABLE_XYZ
 
 
+#if defined WU_ENABLE_AVIF || defined WU_ENABLE_HEIF
+	/* See WU_ENABLE_HEIF for notes. */
+	// avic|avis
+	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\0" "ftypavif", fmt_avif},
+	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\0" "ftypavic", fmt_avif},
+	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+		"\0\0\0\0" "ftypavis", fmt_avif},
+#endif // AVIF || HEIF
+
 #ifdef WU_ENABLE_FLIF
 	{"\xff\xff\xff\xff", "FLIF", fmt_flif},
 #endif // WU_ENABLE_FLIF
@@ -184,53 +201,39 @@ static struct fmt_magic magic_map[] = {
 #endif // WU_ENABLE_GIF
 
 #ifdef WU_ENABLE_HEIF
-	/* HEIF follows ISOBMFF, so we can't stop at 'ftyp' or try to get
+	/* HEIF follows ISOBMFF, so we can't stop at 'ftyp' or try to get too
 	 * clever with masks, or we could match a few hundred other formats.
 	 * https://github.com/file/file/blob/master/magic/Magdir/animation
 
 	 * The first 32-bit word (little-endian) is an offset to something not
 	 * relevant to us. I've only seen values is the range 0x18-0x30, so it
-	 * ought to be safe to depend only on the fourth byte. The offset must
-	 * also be a multiple of 4, so the two lower bits should be zero and
-	 * not be masked. */
+	 * ought to be safe to mask out only the fourth byte. The offset must
+	 * also be a multiple of 4. */
 
-	/* AVIF */
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\0" "ftypavif", fmt_avif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\0" "ftypavis", fmt_avif},
-
-	/* HEIF */
 	// heic|heix|heim|heis
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheic", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheix", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheim", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheis", fmt_heif},
 
 	// hevc|hevx|hevm|hevs
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevc", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevx", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevm", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevs", fmt_heif},
 
-	// avic|avis
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\0" "ftypavic", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
-		"\0\0\0\0" "ftypavis", fmt_heif},
-
 	// mif1|msf1
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypmif1", fmt_heif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypmsf1", fmt_heif},
 #endif // WU_ENABLE_HEIF
 
@@ -274,7 +277,13 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff", "MMOR", fmt_raw},
 
 	// Panasonic RAW/RW2
-	{"\xff\xff\xff\xff\xff\xff\xff\xff", "IIU\x00\x08\x00\0\0", fmt_raw},
+	{"\xff\xff\xff\xff", "IIU\0", fmt_raw},
+
+	// Fujifilm Raw
+	/* It's actually "FUJIFILMCCD-RAW ", but until we bump up the signature
+	 * length, it's truncated. */
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"FUJIFILMCCD-", fmt_raw},
 #endif // WU_ENABLE_RAW
 
 #ifdef WU_ENABLE_TIFF
@@ -300,6 +309,8 @@ static struct fmt_ext ext_map[] = {
 	{"mbfavs", fmt_avs},
 #endif
 
+//	{"ce2", fmt_ce2},
+
 #ifdef WU_ENABLE_DIB
 	{"bmp", -1},
 	{"bmp24", -1},
@@ -310,6 +321,10 @@ static struct fmt_ext ext_map[] = {
 
 #ifdef WU_ENABLE_DPX
 	{"dpx", -1},
+#endif
+
+#ifdef WU_ENABLE_FARBFELD
+	{"ff", -1},
 #endif
 
 #ifdef WU_ENABLE_G00
@@ -461,6 +476,11 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 
+#if defined WU_ENABLE_AVIF || defined WU_ENABLE_HEIF
+	{"avif", -1},
+	{"avifs", -1},
+#endif
+
 #ifdef WU_ENABLE_FLIF
 	{"flif", -1},
 #endif
@@ -472,8 +492,6 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_HEIF
-	{"avif", -1},
-	{"avifs", -1},
 	{"heic", -1},
 	{"heics", -1},
 	{"heif", -1},
@@ -530,9 +548,13 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_RAW
+	// TIFF
+	{"arw", fmt_raw},
 	{"cr2", fmt_raw},
 	{"dng", fmt_raw},
 	{"nef", fmt_raw},
+	{"pef", fmt_raw},
+
 	{"orf", -1},
 	{"raw", -1},
 	{"rw2", -1},
@@ -549,9 +571,11 @@ static struct fmt_ext ext_map[] = {
 #ifndef WU_ENABLE_RAW
 	/* Some RAW formats are just TIFF with extra data. Usually only a
 	 * thumbnail will be shown, but it's better than nothing. */
+	{"arw", -1},
 	{"cr2", -1},
 	{"dng", -1},
 	{"nef", -1},
+	{"pef", -1},
 #endif // !WU_ENABLE_RAW
 #endif // WU_ENABLE_TIFF
 
@@ -599,12 +623,15 @@ static const char *mime_image_map[] = {
 #endif
 
 
+#if defined WU_ENABLE_AVIF || defined WU_ENABLE_HEIF
+	"avif",
+#endif
+
 #ifdef WU_ENABLE_GIF
 	"gif",
 #endif
 
 #ifdef WU_ENABLE_HEIF
-	"avif",
 	"heic",
 	"heif",
 #endif
@@ -695,13 +722,14 @@ static void print_map_def(const char *name) {
 
 static size_t print_hex(const void *str, size_t len) {
 	const unsigned char *bytes = str;
-	// Search from the end as magic bytes can contain nulls
 	while (len && !bytes[len - 1]) {
 		--len;
 	}
+	fputc('"', stdout);
 	for (size_t k = 0; k < len; ++k) {
-		fprintf(stdout, "%#hhx,", bytes[k]);
+		fprintf(stdout, "\\x%hhx", bytes[k]);
 	}
+	fputc('"', stdout);
 	return len;
 }
 
@@ -729,12 +757,15 @@ static int mapsort(void) {
 		fputs("{{", stdout);
 		const int outlen = (int)print_hex(fn_map[i].name,
 			sizeof(fn_map->name));
-		fprintf(stdout, "},%.*s_dec,", outlen, fn_map[i].name);
-		if (fn_map[i].callback) {
-			fprintf(stdout, "%.*s_callback},", outlen, fn_map[i].name);
+		fputs("},", stdout);
+
+		fprintf(stdout, "%.*s_dec,", outlen, fn_map[i].name);
+		if (fn_map[i].has_callback) {
+			fprintf(stdout, "%.*s_callback", outlen, fn_map[i].name);
 		} else {
-			fputs("NULL},", stdout);
+			fputs("NULL", stdout);
 		}
+		fputs("},", stdout);
 	}
 	fputs("};", stdout);
 
@@ -801,7 +832,7 @@ static int dec_headers(void) {
 	print_include("\"wudefs.h\"");
 	for (size_t i = 0; i < ARRAY_LEN(fn_map); ++i) {
 		print_fn_def("", fn_map[i].name, "dec", false);
-		if (fn_map[i].callback) {
+		if (fn_map[i].has_callback) {
 			print_fn_def("", fn_map[i].name, "callback", true);
 		}
 	}

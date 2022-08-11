@@ -4,8 +4,9 @@
 #include "../lib/dib.h"
 
 static void get_dib_metadata(struct wu_tree *tree, const struct dib_desc *desc) {
-	tree_add_leaf(tree, "Header", dib_type_str(desc));
-	tree_add_leaf(tree, "Compression", dib_compression_str(desc->compression));
+	tree_add_leaf_utf8(tree, "Header", dib_type_str(desc));
+	tree_add_leaf_utf8(tree, "Compression",
+		dib_compression_str(desc->compression));
 
 	struct wu_leaf leaf = {.val.u = desc->depth, .type = wu_leaf_unsigned};
 	tree_bud_leaf(tree, "Depth", leaf);
@@ -28,8 +29,9 @@ const struct wu_conf *wuconf, struct raw_img *img, struct dib_desc *desc) {
 	if (dib_decode(desc, img)) {
 		struct wustr name;
 		if (dib_get_linked_profile_name(desc, &name)) {
-			tree_graft_measured_leaf(&infile->metadata,
-				"Linked profile", name.str, name.len);
+			tree_add_leaf_len(&infile->metadata, "Linked profile",
+				name.str, name.len, NULL);
+			wustr_free(&name);
 		}
 		return wu_ok;
 	}
@@ -73,7 +75,7 @@ const struct wu_conf *wuconf, struct ico_desc *desc) {
 		return status;
 	}
 
-	tree_add_leaf(&infile->metadata, "Type", ico_type_str(desc->type));
+	tree_add_leaf_utf8(&infile->metadata, "Type", ico_type_str(desc->type));
 
 	if (!alloc_sub_images(infile, desc->count)) {
 		return wu_alloc_error;

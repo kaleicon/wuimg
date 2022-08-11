@@ -76,39 +76,34 @@ const size_t stride, const uint8_t ch) {
 	if (ch == 1) {
 		memcpy(out, raster, stride);
 	} else {
-		raster_pal_expand(out, raster, pal, stride, 1, 1, 8);
+		raster_pal_expand(out, raster, pal, stride, 8);
 	}
 }
 
-static void alpha_pal(unsigned char *restrict out,
-const GifByteType *restrict raster, const struct raster_pal *pal,
-size_t len, const uint8_t ch, const unsigned char alpha_idx) {
-	const GifByteType *alpha;
-	while ((alpha = memchr(raster, alpha_idx, len)) != NULL) {
-		const size_t stride = (size_t)(alpha - raster);
-		copy_stride(out, raster, pal, stride, ch);
-		out += (stride+1) * ch;
-		raster += stride + 1;
-		len -= stride + 1;
+static void palette_to_color(unsigned char *restrict out,
+const GifByteType *restrict raster, const struct raster_pal *pal, size_t len,
+const unsigned char ch, const int alpha_idx) {
+	if (alpha_idx != -1) {
+		for (;;) {
+			const GifByteType *alpha = memchr(raster, alpha_idx,
+				len);
+			if (!alpha) {
+				break;
+			}
+			const size_t stride = (size_t)(alpha - raster);
+			copy_stride(out, raster, pal, stride, ch);
+			out += (stride+1) * ch;
+			raster += (stride+1);
+			len -= (stride+1);
 
-		while (len && *raster == alpha_idx) {
-			out += ch;
-			++raster;
-			--len;
+			while (len && *raster == alpha_idx) {
+				out += ch;
+				++raster;
+				--len;
+			}
 		}
 	}
 	copy_stride(out, raster, pal, len, ch);
-}
-
-static void palette_to_color(void *restrict out,
-const GifByteType *restrict raster, const void *pal, const size_t len,
-const unsigned char ch, const int alpha_idx) {
-	if (alpha_idx == -1) {
-		copy_stride(out, raster, pal, len, ch);
-	} else {
-		const unsigned char alpha = (unsigned char)alpha_idx;
-		alpha_pal(out, raster, pal, len, ch, alpha);
-	}
 }
 
 static void compost_gif_frame(struct raw_img *img,
@@ -141,11 +136,7 @@ static bool should_cache_prev(struct gif_state *ds) {
 static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 	const GraphicsControlBlock *gcb = ds->gcb + ds->idx;
 	const int trans = gcb->TransparentColor;
-	int fill = 0;
-	if (img->u.palette) {
-		fill = (trans > -1) ? trans : ds->gif_file->SBackGroundColor;
-	}
-
+	const int fill = (img->mode == image_mode_palette) ? trans : 0;
 	if (ds->idx == 0) {
 		if (!ds->opaque_first_frame) {
 			memset(img->data, fill, ds->image_size);
@@ -183,11 +174,15 @@ static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 
 	const SavedImage *gif_image = ds->gif_file->SavedImages + ds->idx;
 	struct raster_pal *pal;
-	if (gif_image->ImageDesc.ColorMap) {
-		pal = &ds->local_pal;
-		expand_palette(pal, gif_image->ImageDesc.ColorMap, trans);
+	if (img->mode == image_mode_palette) {
+		pal = img->u.palette;
 	} else {
-		pal = &ds->global_pal;
+		if (gif_image->ImageDesc.ColorMap) {
+			pal = &ds->local_pal;
+			expand_palette(pal, gif_image->ImageDesc.ColorMap, trans);
+		} else {
+			pal = &ds->global_pal;
+		}
 	}
 	compost_gif_frame(img, img->frames->f + ds->idx, gif_image->RasterBits,
 		pal, trans);
@@ -200,8 +195,8 @@ static enum wu_error gif_frame_iter(struct image_file *infile,
 const struct wu_state *state) {
 	struct gif_state *ds = infile->dec_state;
 	struct raw_img *img = infile->sub_img;
-	if (ds->idx > state->frame) {
-		ds->idx = raw_img_frame_prev_keyframe(img, state->frame);
+	if (ds->idx != state->frame) {
+		ds->idx = raw_img_frame_prev_keyframe(img, ds->idx, state->frame);
 	}
 	while (ds->idx <= state->frame) {
 		const enum wu_error err = gif_dec_frame(infile->sub_img, ds);
@@ -231,8 +226,8 @@ GraphicsControlBlock *gcb, struct wu_tree *tree) {
 		const size_t len = (size_t)ext[j].ByteCount;
 		switch (func) {
 		case COMMENT_EXT_FUNC_CODE:
-			tree_add_measured_leaf(tree, "Comment", ext[j].Bytes,
-				len);
+			tree_add_leaf_len(tree, "Comment", ext[j].Bytes, len,
+				NULL);
 			break;
 		case GRAPHICS_EXT_FUNC_CODE:
 			status = DGifExtensionToGCB(len, ext[j].Bytes, gcb);
@@ -245,7 +240,7 @@ GraphicsControlBlock *gcb, struct wu_tree *tree) {
 }
 
 static bool gather_info(struct image_file *infile,
-struct gif_state *ds, bool *uses_local_palette) {
+struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 	GifFileType *gif_file = ds->gif_file;
 
 	const size_t count = (size_t)gif_file->ImageCount;
@@ -286,7 +281,7 @@ struct gif_state *ds, bool *uses_local_palette) {
 			gcb->DelayTime * 10,
 			gcb->TransparentColor == NO_TRANSPARENT_COLOR);
 		if (desc->ColorMap) {
-			*uses_local_palette = true;
+			*pal_num += 1;
 		}
 
 		if (gcb->DisposalMode == dispose_previous) {
@@ -295,6 +290,9 @@ struct gif_state *ds, bool *uses_local_palette) {
 
 		if (i == 0) {
 			ds->opaque_first_frame = img->frames->f[0].keyframe;
+		} else {
+			*enable_paletted_mode = *enable_paletted_mode
+				&& gcb->TransparentColor == gcb[-1].TransparentColor;
 		}
 	}
 	return true;
@@ -338,35 +336,44 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	img->w = (size_t)gif_file->SWidth;
 	img->h = (size_t)gif_file->SHeight;
-	img->channels = 4; // Assume file uses local palettes for now
+	img->channels = 4;
 	img->bitdepth = 8;
-
-	bool uses_local_palette = false;
-	ds->opaque_first_frame = true;
-	if (!gather_info(infile, ds, &uses_local_palette)) {
-		return wu_alloc_error;
-	}
-
 	if (gif_file->AspectByte) {
 		img->ratio = (gif_file->AspectByte + 15.0f)/64.0f;
 	}
+
+	int pal_num = 0;
+	bool enable_paletted_mode = true;
+	ds->opaque_first_frame = true;
+	if (!gather_info(infile, ds, &pal_num, &enable_paletted_mode)) {
+		return wu_alloc_error;
+	}
+
 	if (gif_file->SColorMap) {
-		struct raster_pal *loc = &ds->global_pal;
-		if (!uses_local_palette) {
-			void *hold = malloc(sizeof(*loc));
-			if (hold) {
-				loc = raw_img_palette_set(img, hold);
-				img->channels = 1;
+		++pal_num;
+
+		struct raster_pal *pal;
+		int trans;
+		if (pal_num == 1 && enable_paletted_mode) {
+			img->channels = 1;
+			pal = raw_img_palette_init(img);
+			if (!pal) {
+				return wu_alloc_error;
 			}
+			trans = ds->gcb[0].TransparentColor;
+		} else {
+			pal = &ds->global_pal;
+			trans = -1;
 		}
-		const int alpha_idx = ds->gcb->TransparentColor;
-		expand_palette(loc, gif_file->SColorMap, alpha_idx);
+		expand_palette(pal, gif_file->SColorMap, trans);
 
 		const int bg = gif_file->SBackGroundColor;
 		if (bg > -1 && bg < gif_file->SColorMap->ColorCount) {
-			infile->bg = loc->color[bg];
+			infile->bg = pal->color[bg];
 		}
 	}
+	tree_bud_leaf(&infile->metadata, "Palettes", (struct wu_leaf) {
+		.type = wu_leaf_signed, .val.d = pal_num});
 
 	const enum wu_error st = raw_img_alloc(img);
 	if (st != wu_ok) {

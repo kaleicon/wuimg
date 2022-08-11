@@ -50,7 +50,7 @@ const char * pictor_video_mode(const struct pictor_desc *desc) {
 static void pictor_interleave(const struct pictor_desc *desc,
 struct raw_img *img, const unsigned char *restrict src) {
 	vga_interleave(img->data, src, img->w, img->h, desc->planes, 1,
-		img->alignment, img->mode == image_mode_palette);
+		1 << img->align_sh, img->mode == image_mode_palette);
 }
 
 static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,

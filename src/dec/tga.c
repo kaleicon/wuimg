@@ -10,10 +10,10 @@
 
 static void read_extension_area(struct wu_tree *tree,
 const struct tga_metadata *meta) {
-	tree_add_measured_leaf(tree, "Author name", meta->author.name,
-		sizeof(meta->author.name));
-	tree_add_measured_leaf(tree, "Author comment", meta->author.comment,
-		sizeof(meta->author.comment));
+	tree_add_leaf_len(tree, "Author name", meta->author.name,
+		sizeof(meta->author.name), NULL);
+	tree_add_leaf_len(tree, "Author comment", meta->author.comment,
+		sizeof(meta->author.comment), NULL);
 
 	struct wu_leaf leaf;
 	if (meta->timestamp) {
@@ -22,22 +22,22 @@ const struct tga_metadata *meta) {
 		tree_bud_leaf(tree, "Timestamp", leaf);
 	}
 
-	tree_add_measured_leaf(tree, "Job ID", meta->job.name,
-		sizeof(meta->job.name));
+	tree_add_leaf_len(tree, "Job ID", meta->job.name,
+		sizeof(meta->job.name), NULL);
 
 	if (meta->job.hour || meta->job.minute || meta->job.second) {
 		const char fmt[] = "%.2hu:%.2hu:%.2hu";
 		char buf[sizeof(fmt)];
 		const size_t w =(size_t)snprintf(buf, sizeof(buf), fmt,
 			meta->job.hour, meta->job.minute, meta->job.second);
-		tree_add_measured_leaf(tree, "Job time", buf, w);
+		tree_add_leaf_utf8_len(tree, "Job time", buf, w);
 	}
 
-	tree_add_measured_leaf(tree, "Software ID", meta->software.id,
-		sizeof(meta->software.id));
+	tree_add_leaf_len(tree, "Software ID", meta->software.id,
+		sizeof(meta->software.id), NULL);
 
 	if (isgraph(meta->software.version_letter)) {
-		tree_add_measured_leaf(tree, "Software version letter",
+		tree_add_leaf_utf8_len(tree, "Software version letter",
 			&meta->software.version_letter, 1);
 	}
 	if (meta->software.version_number) {
@@ -48,14 +48,14 @@ const struct tga_metadata *meta) {
 }
 
 static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
-	tree_add_leaf(tree, "Type", tga_type_str(desc->type));
+	tree_add_leaf_utf8(tree, "Type", tga_type_str(desc->type));
 	struct wu_leaf leaf = {.type = wu_leaf_unsigned, .val.u = desc->depth};
 	tree_bud_leaf(tree, "Depth", leaf);
 	if (desc->map.depth) {
 		leaf.val.u = desc->map.depth;
 		tree_bud_leaf(tree, "Map depth", leaf);
 	}
-	tree_add_measured_leaf(tree, "ID", desc->meta.id, desc->meta.id_len);
+	tree_add_leaf_len(tree, "ID", desc->meta.id, desc->meta.id_len, NULL);
 }
 
 static enum wu_error dec_wrapper(struct image_file *infile,
@@ -94,7 +94,6 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 		if (st != wu_ok) {
 			return st;
 		}
-		img[i].id = strdup("stamp");
 		++i;
 	}
 	if (extra_pal) {
@@ -103,7 +102,6 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 		img[i].h = 16;
 		img[i].channels = 4;
 		img[i].bitdepth = 8;
-		img[i].id = strdup("extra palette");
 	}
 	for (i = 0; i < infile->nr; ++i) {
 		if (raw_img_exceeds_limit(img + i, wuconf)) {

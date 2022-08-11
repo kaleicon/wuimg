@@ -49,7 +49,7 @@ static void set_colorspace(struct raw_img *img, JxlDecoder *jd) {
 
 static bool set_fmt(const struct raw_img *img, JxlPixelFormat *fmt) {
 	fmt->num_channels = img->channels;
-	fmt->align = img->alignment;
+	fmt->align = 1 << img->align_sh;
 	switch (img->bitdepth) {
 	case 8: fmt->data_type = JXL_TYPE_UINT8; break;
 	case 16:
@@ -57,8 +57,7 @@ static bool set_fmt(const struct raw_img *img, JxlPixelFormat *fmt) {
 			? JXL_TYPE_FLOAT16 : JXL_TYPE_UINT16;
 		break;
 	case 32:
-		fmt->data_type = (img->attr == pix_float)
-			? JXL_TYPE_FLOAT : JXL_TYPE_UINT32;
+		fmt->data_type = JXL_TYPE_FLOAT;
 		break;
 	default:
 		return false;
@@ -79,8 +78,7 @@ const struct wu_conf *wuconf, JxlDecoder *jd) {
 		switch (JxlDecoderProcessInput(jd)) {
 		case JXL_DEC_BASIC_INFO:
 			;JxlBasicInfo info;
-			if (JxlDecoderGetBasicInfo(jd, &info) != JXL_DEC_SUCCESS
-			|| JxlDecoderDefaultPixelFormat(jd, &fmt) != JXL_DEC_SUCCESS) {
+			if (JxlDecoderGetBasicInfo(jd, &info) != JXL_DEC_SUCCESS) {
 				return wu_invalid_header;
 			}
 			if (info.have_animation) {

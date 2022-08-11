@@ -4,7 +4,7 @@
 static enum wu_error decode(struct image_file *infile,
 const struct wu_conf *wuconf, const struct map_info *mm) {
 	struct hg3_desc desc;
-	enum wu_error st = hg3_open(&desc, mm);
+	enum wu_error st = hg3_open(&desc, mp_parser_mem(mm->len, mm->data));
 	if (st != wu_ok) {
 		return st;
 	}

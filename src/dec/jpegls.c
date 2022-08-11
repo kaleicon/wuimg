@@ -5,7 +5,7 @@
 #include "raster/strip.h"
 
 static void comment_handler(const void *data, const size_t size, void *ptr) {
-	tree_add_measured_leaf(ptr, "Comment", data, size);
+	tree_add_leaf_len(ptr, "Comment", data, size, NULL);
 }
 
 static enum wu_error read_data(struct image_file *infile,
@@ -48,6 +48,7 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	}
 	img->channels = (uint8_t)frame.component_count;
 	img->bitdepth = (frame.bits_per_sample > 8) ? 16 : 8;
+	img->used_bits = (uint8_t)frame.bits_per_sample;
 	tree_bud_leaf(&infile->metadata, "Bitdepth",
 		(struct wu_leaf) {.type = wu_leaf_signed, .val.d = frame.bits_per_sample});
 
@@ -72,13 +73,6 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	*err = charls_jpegls_decoder_decode_to_buffer(dec, img->data, size, 0);
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
 		return wu_decoding_error;
-	}
-
-	if (img->bitdepth != frame.bits_per_sample) {
-		const struct scale_info scaler = strip_scale_info(
-			(1u << frame.bits_per_sample) - 1, img->bitdepth);
-		strip_scale(img->data, img->w * img->channels * img->h, scaler,
-			false);
 	}
 	return wu_ok;
 }

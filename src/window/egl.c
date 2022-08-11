@@ -3,7 +3,7 @@
 #include "egl.h"
 #include "opengl.h"
 
-static const char CREATE_CONTEXT_FAIL[] = "EGL: Failed to create context";
+static const char CREATE_CONTEXT_FAIL[] = "Failed to create context";
 
 struct ctx_attr {
 	EGLint v[9];
@@ -41,7 +41,7 @@ void egl_print_error(void) {
 static const char * egl_make_current(EGLDisplay display, EGLSurface surface,
 EGLContext context) {
 	if (eglMakeCurrent(display, surface, surface, context) != EGL_TRUE) {
-		return "EGL: Couldn't make context current";
+		return "Couldn't make context current";
 	}
 	if (context != EGL_NO_CONTEXT) {
 		eglSwapInterval(display, 0);
@@ -68,20 +68,20 @@ EGLConfig *cfg, EGLint *restrict cfg_cnt, struct ctx_attr *attr) {
 	EGLint major, minor;
 	*display = eglGetDisplay(native_display);
 	if (*display == EGL_NO_DISPLAY) {
-		return "EGL: No matching display";
+		return "No matching display";
 	} else if (eglInitialize(*display, &major, &minor) != EGL_TRUE) {
-		return "EGL: Couldn't initialized EGL";
+		return "Couldn't initialized EGL";
 	} else if (major != 1 || minor < 4) {
-		return "EGL: Version too old, 1.4 <= required";
+		return "Version too old, 1.4 <= required";
 	}
 
 	if (eglBindAPI(EGL_OPENGL_API) != EGL_TRUE) {
-		return "EGL: Couldn't bind OpenGL API";
+		return "Couldn't bind OpenGL API";
 	}
 
 	eglChooseConfig(*display, cfg_attr, cfg, *cfg_cnt, cfg_cnt);
 	if (*cfg_cnt < 1) {
-		return "EGL: No config candidates found";
+		return "No config candidates found";
 	}
 
 	attr->v[0] = EGL_CONTEXT_MAJOR_VERSION_KHR;
@@ -179,7 +179,11 @@ void *native_window, const uint32_t native_visual, const bool transparent) {
 	egl->surface = eglCreateWindowSurface(egl->display, cfg[i],
 		(EGLNativeWindowType)native_window, surf_attr);
 	if (egl->surface == EGL_NO_SURFACE) {
-		return "EGL: Failed to create window surface";
+		return "Failed to create window surface";
 	}
-	return egl_make_current(egl->display, egl->surface, context);
+	const char *msg = egl_make_current(egl->display, egl->surface, context);
+	if (!msg) {
+		return egl_swap(egl) ? NULL : "Failed to swap buffers";
+	}
+	return msg;
 }

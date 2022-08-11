@@ -5,6 +5,7 @@
 
 #include "common.h"
 #include "window.h"
+#include "term.h"
 
 static volatile sig_atomic_t sig_should_close = 0;
 
@@ -122,18 +123,6 @@ void window_set_title(const struct window_context *window, const char *title) {
 }
 
 void window_postgl_setup(struct window_context *window) {
-	switch (window->backend) {
-	case window_glfw:
-	case window_wayland:
-		// Get window size
-		window_poll(window);
-		break;
-	case window_drm:
-	case window_egl:
-		break;
-	}
-	window->pub.win.focused = true;
-
 	const struct sigaction act = {
 		.sa_handler = signal_handler,
 		.sa_flags = (int)SA_RESETHAND,
@@ -146,11 +135,22 @@ void window_postgl_setup(struct window_context *window) {
 	};
 	sigaction(SIGHUP, &ign, NULL);
 	sigaction(SIGPIPE, &ign, NULL);
+
+	switch (window->backend) {
+	case window_glfw:
+	case window_wayland:
+		window_poll(window);
+		break;
+	case window_drm:
+	case window_egl:
+		break;
+	}
+	window->pub.win.focused = true;
 }
 
 static void error_cleanup(struct window_context *window, const char *err) {
 	window_terminate(window);
-	fprintf(stderr, "%s: %s\n", window_backend_name(window->backend), err);
+	term_line_key_val(window_backend_name(window->backend), err, stderr);
 }
 
 bool window_setup(struct window_context *window) {
@@ -218,7 +218,7 @@ bool window_offscreen_setup(struct window_offscreen *window) {
 	}
 
 	if (err) {
-		fprintf(stderr, "%s\n", err);
+		term_line_put(err, stderr);
 		return false;
 	}
 	return true;

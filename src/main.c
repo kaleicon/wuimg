@@ -74,7 +74,8 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 		image_file_print(infile, 0);
 		what = "Decoded";
 	} else {
-		printf("Decoding error: %s\n", wu_error_message(result));
+		term_line_key_val("Decoding error",
+			wu_error_message(result), stdout);
 		if (infile->errors.str) {
 			fputs("Library message: ", stdout);
 			wustr_print(&infile->errors, stdout);

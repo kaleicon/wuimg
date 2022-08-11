@@ -13,18 +13,19 @@
 #include "raster/mem.h"
 
 static void set_background_color(const struct image_context *image) {
-	const struct image_file *infile = &image->file;
 	const struct wu_conf *conf = &image->conf;
+	if (conf->bg_src != bg_default) {
+		const struct image_file *infile = &image->file;
 
-	uint8_t bg[4];
-	if (conf->bg_src == bg_metadata
-	&& memchk(&infile->bg, 0, sizeof(infile->bg))) {
-		memcpy(bg, &infile->bg, sizeof(bg));
-		bg[3] = conf->bg[3];
-	} else {
-		memcpy(bg, conf->bg, sizeof(bg));
+		uint8_t bg[4];
+		if (memchk(&infile->bg, 0, sizeof(infile->bg))) {
+			memcpy(bg, &infile->bg, sizeof(bg));
+			bg[3] = conf->bg[3];
+		} else {
+			memcpy(bg, conf->bg, sizeof(bg));
+		}
+		gl_clear_color(bg);
 	}
-	gl_clear_color(bg);
 }
 
 void display_end(struct window_context *window, const struct term_restore *tr) {
@@ -173,8 +174,8 @@ bool display_loop(struct window_context *window, const bool single_file) {
 			if (err == wu_ok) {
 				upload = true;
 			} else if (err != wu_no_change) {
-				printf("Callback failed: %s\n",
-					wu_error_message(err));
+				term_line_key_val("Callback failed",
+					wu_error_message(err), stdout);
 				all_ok = false;
 				break;
 			}
@@ -194,7 +195,8 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 		return false;
 	}
 
-	fprintf(stderr, "Window backend: %s\n", window_backend_name(window->backend));
+	term_line_key_val("Window backend",
+		window_backend_name(window->backend), stderr);
 
 	if (!gl_context_setup(&window->pub.gl, &window->pub.image.conf)) {
 		window_terminate(window);

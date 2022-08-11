@@ -13,13 +13,14 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 		} else {
 			len = desc->comment.text_len;
 		}
-		tree_add_measured_leaf(tree, "Comment", desc->comment.data, len);
+		tree_add_leaf_len(tree, "Comment", desc->comment.data, len,
+			"SHIFT-JIS");
 	}
-	tree_add_measured_leaf(tree, "Saver model", desc->saver.sig,
-		sizeof(desc->saver.sig));
+	tree_add_leaf_len(tree, "Saver model", desc->saver.sig,
+		sizeof(desc->saver.sig), "SHIFT-JIS");
 	if (desc->saver.data) {
-		tree_add_measured_leaf(tree, "Saver data", desc->saver.data,
-			desc->saver.len);
+		tree_add_leaf_len(tree, "Saver data", desc->saver.data,
+			desc->saver.len, "SHIFT-JIS");
 	}
 	tree_bud_leaf(tree, "Depth",
 		(struct wu_leaf){.val.u = desc->depth, .type = wu_leaf_unsigned});

@@ -9,20 +9,20 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 	};
 	tree_bud_leaf(tree, "Version", leaf);
 	if (desc->name.len) {
-		tree_add_measured_leaf(tree, "Source name", desc->name.ptr,
-			desc->name.len);
+		tree_add_leaf_len(tree, "Source name", desc->name.ptr,
+			desc->name.len, NULL);
 	}
 	if (desc->comment.len) {
-		tree_add_measured_leaf(tree, "Comment", desc->comment.ptr,
-			desc->comment.len);
+		tree_add_leaf_len(tree, "Comment", desc->comment.ptr,
+			desc->comment.len, NULL);
 	}
 	if (desc->has_hotspot) {
 		struct wu_tree *hot = tree_add_branch(tree, "Hot spot");
 
-		leaf.type = wu_leaf_unsigned;
-		leaf.val.u = desc->x_hot;
+		leaf.type = wu_leaf_signed;
+		leaf.val.d = desc->x_hot;
 		tree_bud_leaf(hot, "X", leaf);
-		leaf.val.u = desc->y_hot;
+		leaf.val.d = desc->y_hot;
 		tree_bud_leaf(hot, "Y", leaf);
 	}
 }
@@ -35,7 +35,8 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 	}
 
 	struct xbm_desc desc;
-	const enum wu_error st = xbm_parse_header(&desc, img, mm);
+	const enum wu_error st = xbm_parse_header(&desc, img,
+		mp_parser_mem(mm->len, mm->data));
 	if (st) {
 		return st;
 	}

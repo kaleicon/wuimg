@@ -58,7 +58,7 @@ const struct wpx_ia2_list *list) {
 				char num[13];
 				snprintf(num, sizeof(num), "%u", i);
 				tree_add_leaf(br, num,
-					(char *)list->str + list->idx.val[i]);
+					(char *)list->str + list->idx.val[i], NULL);
 			}
 		}
 	}

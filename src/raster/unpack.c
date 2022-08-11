@@ -1,9 +1,10 @@
 #include <string.h>
 #include <limits.h>
 
-#include "../common.h"
-#include "bit.h"
-#include "unpack.h"
+#include "common.h"
+#include "raster/bit.h"
+#include "raster/endian.h"
+#include "raster/unpack.h"
 
 // Unpack 2^n-bits onto u8
 static void unpack4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
@@ -102,14 +103,14 @@ const size_t nr, const enum unpack_op action, const size_t bitdepth) {
 static inline void strip_common(uint8_t *restrict dst,
 const uint8_t *restrict src, const size_t width, const uint8_t bitdepth,
 const enum unpack_op op, const uint8_t xor) {
-	const size_t ipb = 8 / bitdepth;
+	const size_t ppb = 8 / bitdepth;
 
-	const size_t bytes = width / ipb;
-	const size_t remainer = width % ipb;
+	const size_t bytes = width / ppb;
+	const size_t remainer = width % ppb;
 	for (size_t x = 0; x < bytes; ++x) {
-		const size_t o = x * ipb;
+		const size_t o = x * ppb;
 		const uint8_t byte = src[x] ^ xor;
-		select_unpack(byte, dst + o, ipb, op, bitdepth);
+		select_unpack(byte, dst + o, ppb, op, bitdepth);
 	}
 	if (remainer) {
 		const uint8_t byte = src[bytes] ^ xor;
@@ -351,12 +352,12 @@ const enum unpack_op op) {
 			}
 			break;
 		case pix_float: break;
-		case pix_packing_332:
+		case pix_pack_332:
 			if (bitdepth == 8) {
 				strip_expand332(dst, src, n);
 			}
 			break;
-		case pix_packing_1555:
+		case pix_pack_1555:
 			if (bitdepth == 16) {
 				strip_expand1555(dst, src, n);
 			}
@@ -379,87 +380,12 @@ const enum unpack_op op) {
 				strip_pack64f_32f(dst, src, n);
 			}
 			break;
-		case pix_packing_332:
-		case pix_packing_1555:
+		case pix_pack_332:
+		case pix_pack_1555:
 			break;
 		}
 		break;
 	}
-
-/*	switch (attr) {
-	case pix_normal:
-		switch (op) {
-		case op_noop: break;
-		case op_unpack:
-			switch (bitdepth) {
-			case 1: strip_unpack1(dst, src, n); break;
-			case 2: strip_unpack2(dst, src, n); break;
-			case 4: strip_unpack4(dst, src, n); break;
-			default: strip_sm_unpack(dst, src, n, bitdepth);
-			}
-			break;
-		case op_expand:
-			switch (bitdepth) {
-			case 1: strip_expand1(dst, src, n); break;
-			case 2: strip_expand2(dst, src, n); break;
-			case 4: strip_expand4(dst, src, n); break;
-			default: strip_sm_expand(dst, src, n, bitdepth);
-			}
-			break;
-		case op_pack:
-			switch (bitdepth) {
-			case 32: strip_pack32_16(dst, src, n, attr); break;
-			case 64: strip_pack64_16(dst, src, n, attr); break;
-			default: strip_packx_16(dst, src, n, bitdepth, attr);
-			}
-			break;
-		}
-		break;
-	case pix_signed:
-	case pix_inverted:
-		switch (op) {
-		case op_noop:
-		case op_unpack:
-			break;
-		case op_expand:
-			switch (bitdepth) {
-			case 1: strip_xor1(dst, src, n); break;
-			case 2: strip_xor2(dst, src, n, attr); break;
-			case 4: strip_xor4(dst, src, n, attr); break;
-			default:
-				if (bitdepth % 8) {
-					strip_sm_invert(dst, src, n, bitdepth);
-				} else {
-					strip_invert(dst, src, n*(bitdepth/8));
-				}
-				break;
-			}
-			break;
-		case op_pack:
-			switch (bitdepth) {
-			case 32: strip_pack32_16(dst, src, n, attr); break;
-			case 64: strip_pack64_16(dst, src, n, attr); break;
-			default: strip_packx_16(dst, src, n, bitdepth, attr);
-			}
-			break;
-		}
-		break;
-	case pix_float:
-		if (op == op_pack && bitdepth == 64) {
-			strip_pack64f_32f(dst, src, n);
-		}
-		break;
-	case pix_packing_332:
-		if (op == op_expand && bitdepth == 8) {
-			strip_expand332(dst, src, n);
-		}
-		break;
-	case pix_packing_1555:
-		if (op == op_expand && bitdepth == 16) {
-			strip_expand1555(dst, src, n);
-		}
-		break;
-	}*/
 }
 
 void unpack_or_copy_strip(void *restrict dst, const void *restrict src,
@@ -529,12 +455,12 @@ const enum unpack_op op) {
 			outdepth = 32;
 		}
 		break;
-	case pix_packing_332:
+	case pix_pack_332:
 		if (op == op_expand && bitdepth == 8) {
 			outdepth = 24;
 		}
 		break;
-	case pix_packing_1555:
+	case pix_pack_1555:
 		if (op == op_expand && bitdepth == 16) {
 			outdepth = 32;
 		}

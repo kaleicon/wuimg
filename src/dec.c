@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 
 #include "dec.h"
+#include "rast_utils.h"
 
 /*
 
@@ -134,26 +135,21 @@ static void stat_metadata(struct wu_tree *tree, const int fd) {
 	tree_bud_leaves(meta, sap, ARRAY_LEN(sap));
 }
 
-static FILE * get_file(struct image_file *infile, const char *name) {
-	if (!infile->ifp) {
-		infile->ifp = fopen(name, "rb");
-	}
-	return infile->ifp;
-}
-
 enum wu_error dec_decode_image(struct image_context *image) {
 	struct image_file *infile = &image->file;
-	errno = 0;
-	FILE *ifp = get_file(infile, image->name);
-	if (!ifp) {
-		if (errno) {
-			image_file_error_append(infile, strerror(errno));
+	if (!infile->ifp) {
+		errno = 0;
+		infile->ifp = fopen(image->name, "rb");
+		if (!infile->ifp) {
+			if (errno) {
+				image_file_error_append(infile, strerror(errno));
+			}
+			return wu_open_error;
 		}
-		return wu_open_error;
 	}
 
 	errno = 0;
-	image->fmt_id = fmtmap_identify_file(ifp, image->name);
+	image->fmt_id = fmtmap_identify_file(infile->ifp, image->name);
 	if (image->fmt_id == -1) {
 		if (errno) {
 			image_file_error_append(infile, strerror(errno));
@@ -166,8 +162,9 @@ enum wu_error dec_decode_image(struct image_context *image) {
 	if (!tree_sow(metadata, "Metadata")) {
 		return wu_alloc_error;
 	}
-	tree_add_leaf(metadata, "Format", fn_map[image->fmt_id].name);
-	stat_metadata(metadata, fileno(ifp));
+	tree_add_leaf_utf8_limit(metadata, "Format", fn_map[image->fmt_id].name,
+		sizeof(fn_map[image->fmt_id].name));
+	stat_metadata(metadata, fileno(infile->ifp));
 
 	const enum wu_error result = fn_map[image->fmt_id].dec(infile,
 		&image->conf);
@@ -210,21 +207,25 @@ struct raw_img **cur_img) {
 	return wu_no_change;
 }
 
+static void write_max(const void *ptr, const size_t max) {
+	fwrite(ptr, 1, strnlen(ptr, max), stdout);
+}
+
+static void put_sep(const size_t i, const size_t limit) {
+	fputs((i + 1 < limit) ? ", " : "\n\n", stdout);
+}
+
 void print_known_formats(void) {
 	printf("Known formats: %zu\n", ARRAY_LEN(fn_map));
 	for (size_t i = 0; i < ARRAY_LEN(fn_map); ++i) {
-		const struct fmt_fn *f = fn_map + i;
-		fwrite(f->name, 1, zumin(sizeof(f->name), strlen(f->name)),
-			stdout);
-		const char *sep = (i + 1 < ARRAY_LEN(fn_map))
-			? ", " : "\n\n";
-		fputs(sep, stdout);
+		write_max(fn_map[i].name, sizeof(fn_map[i].name));
+		put_sep(i, ARRAY_LEN(fn_map));
 	}
 
 	printf("Known extensions: %zu\n", ARRAY_LEN(ext_map));
 	for (size_t i = 0; i < ARRAY_LEN(ext_map); ++i) {
-		fputs(ext_map[i].ext, stdout);
-		fputs( (i + 1 < ARRAY_LEN(ext_map)) ? ", " : "\n\n", stdout);
+		write_max(ext_map[i].ext, sizeof(ext_map[i].ext));
+		put_sep(i, ARRAY_LEN(ext_map));
 	}
 
 	printf("Known magic sequences: %zu\n", ARRAY_LEN(magic_map));

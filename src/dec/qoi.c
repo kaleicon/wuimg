@@ -3,8 +3,8 @@
 
 static enum wu_error dec_wrap(struct image_file *infile,
 const struct wu_conf *wuconf, const struct map_info *mm) {
-	struct mp_parser mp;
-	enum wu_error st = qoi_open(&mp, mm);
+	struct mp_parser mp = mp_parser_mem(mm->len, mm->data);
+	enum wu_error st = qoi_open(&mp);
 	if (st == wu_ok) {
 		struct raw_img *img = alloc_sub_images(infile, 1);
 		if (img) {

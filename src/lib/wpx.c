@@ -3,6 +3,7 @@
 
 #include "wpx.h"
 #include "raster/bit.h"
+#include "raster/endian.h"
 #include "raster/fmt.h"
 #include "raster/mem.h"
 #include "raster/strip.h"
@@ -361,7 +362,7 @@ size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct raw_img *img) {
 	const uint8_t ch = (uint8_t)(desc->depth / 8);
 	struct sewing_machine sew;
 	strip_sew_init(&sew, img->data, desc->pal, img->w, img->h, ch,
-		img->alignment, will_sew);
+		img->align_sh, will_sew);
 
 	size_t written = get_section_data(&desc->mp,
 		desc->dir.sections + desc->raster_idx, sew.color.ptr,
@@ -421,7 +422,7 @@ struct raw_img *img, const struct wpx_section *section) {
 	img->h = buf_endian16(metadata + 6, little_endian);
 	img->channels = (uint8_t)(desc->depth / 8);
 	img->bitdepth = 8;
-	img->alignment = 4;
+	raw_img_align(img, 4);
 	img->layout = (desc->depth <= 8) ? pix_rgba : pix_bgra;
 	return wu_ok;
 }
@@ -550,7 +551,7 @@ const uint32_t nr) {
 		const enum wu_error st = alloc_section_data(desc, section,
 			&arr->val, size);
 		if (st == wu_ok) {
-			loop_endian32(arr->val, little_endian, arr->nr);
+			endian_loop32(arr->val, little_endian, arr->nr);
 		}
 		return st;
 	}

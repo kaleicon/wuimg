@@ -15,6 +15,6 @@ bool xyz_decode(struct xyz_desc *desc, struct raw_img *img);
 
 enum wu_error xyz_parse(struct xyz_desc *desc, struct raw_img *img);
 
-enum wu_error xyz_open(struct xyz_desc *desc, const struct map_info *mm);
+enum wu_error xyz_open(struct xyz_desc *desc, struct mp_parser mp);
 
 #endif /* LIB_XYZ */

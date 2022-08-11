@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "raster/compost.h"
+#include "raster/endian.h"
 #include "g00.h"
 
 struct g00_part_loc {
@@ -326,7 +327,7 @@ FILE *ifp) {
 		if (!fread(v2->dir, table_len, 1, desc->ifp)) {
 			return wu_unexpected_eof;
 		}
-		loop_endian32((uint32_t *)v2->dir, little_endian,
+		endian_loop32((uint32_t *)v2->dir, little_endian,
 			v2->dir_count * sizeof(*v2->dir) / 4);
 	}
 

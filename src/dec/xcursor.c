@@ -4,12 +4,6 @@
 #include "rast_utils.h"
 #include "lib/xcursor.h"
 
-static void add_metadata(struct wu_tree *tree,
-const enum xcursor_comment_type type, uint8_t *restrict data, const size_t len) {
-	tree_graft_measured_leaf(tree, xcursor_comment_type_str(type),
-		data, len);
-}
-
 enum wu_error xcursor_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct xcursor_desc desc;
@@ -63,8 +57,10 @@ const struct wu_conf *wuconf) {
 		if (read) {
 			switch (entry->type) {
 			case xcursor_chunk_comment:
-				add_metadata(&infile->metadata,
-					chunk.u.comment.type, data, read);
+				tree_add_leaf_len(&infile->metadata,
+					xcursor_comment_type_str(chunk.type),
+					data, chunk.len, NULL);
+				free(data);
 				break;
 			case xcursor_chunk_image:
 				img->data = data;

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "raster/file.h"
+#include "raster/endian.h"
 #include "mac.h"
 
 static const size_t RLE_PAD = 129;
@@ -35,8 +36,8 @@ const int8_t *restrict rle, const size_t rle_len) {
 
 static size_t get_rle_len(const struct mac_desc *desc, const size_t dims) {
 	const long start = 512 + 128 * desc->has_macbin_header;
-	const size_t size = file_size_from(desc->ifp, start);
 	fseek(desc->ifp, start, SEEK_SET);
+	const size_t size = file_remaining(desc->ifp);
 	// E.g. 0x00 0x?? 0x00 0x?? ...
 	return zumin(size, dims*2);
 }

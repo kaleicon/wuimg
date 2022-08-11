@@ -1,5 +1,5 @@
-/* Enumerate known formats */
-/* WUDEC: base_name, has_callback_fn */
+/* Enumerate known formats
+ * Format: WUDEC(base_name, has_callback) */
 
 #ifdef WU_ENABLE_AVS
 WUDEC(avs, false)
@@ -13,6 +13,10 @@ WUDEC(ico, false)
 
 #ifdef WU_ENABLE_DPX
 WUDEC(dpx, false)
+#endif
+
+#ifdef WU_ENABLE_FARBFELD
+WUDEC(farbfeld, false)
 #endif
 
 #ifdef WU_ENABLE_G00
@@ -126,6 +130,10 @@ WUDEC(xyz, true)
 #endif
 
 
+#ifdef WU_ENABLE_AVIF
+WUDEC(avif, true)
+#endif
+
 #ifdef WU_ENABLE_FLIF
 WUDEC(flif, true)
 #endif
@@ -135,7 +143,9 @@ WUDEC(gif, true)
 #endif
 
 #ifdef WU_ENABLE_HEIF
+#ifndef WU_ENABLE_AVIF
 WUDEC(avif, true)
+#endif
 WUDEC(heif, true)
 #endif
 

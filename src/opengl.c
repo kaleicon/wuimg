@@ -7,7 +7,9 @@
 
 #include "opengl.h"
 #include "raster/color.h"
+#include "raster/endian.h"
 #include "raster/pix.h"
+#include "raster/strip.h"
 #include "raster/unpack.h"
 
 //define WU_DEBUG_GL
@@ -21,31 +23,30 @@
 #define UNI_PLANE_ALPHA "plane4"
 #define UNI_CMS_LUT "cms_lut"
 
-#define UNI_POS_MATRIX "pos_matrix"
-#define UNI_COLOR_MODE "color_mode"
-#define UNI_ALPHA_OP "alpha_op"
-#define UNI_CMS_MODE "cms_mode"
-#define UNI_TO_RGBA "to_rgba"
-#define UNI_CMS_MAT "cms_mat"
-#define UNI_TRANSFER "transfer"
-#define UNI_ARGS "args"
+#define UNI_MAT_POS "mat_pos"
+#define UNI_MAT_NONLINEAR "mat_nonlinear"
+#define UNI_MAT_CMS "mat_cms"
+#define UNI_MODE_COLOR "mode_color"
+#define UNI_MODE_ALPHA "mode_alpha"
+#define UNI_MODE_CMS "mode_cms"
+#define UNI_EOTF_FN "eotf_fn"
+#define UNI_EOTF_ARGS "eotf_args"
 
 #define COLOR_RAW "0"
 #define COLOR_PALETTE "1"
 #define COLOR_PLANAR "2"
 
+#define ALPHA_MULTIPLY "0"
+#define ALPHA_NO_MULTIPLY "1"
+#define ALPHA_UNMULTIPLY "2"
+
 #define CMS_NONE "0"
 #define CMS_SPACEWALK "1"
 #define CMS_LUT "2"
 
-#define TRANSFER_LINEAR_GAMMA "0"
-#define TRANSFER_LOG "1"
-#define TRANSFER_PQ "2"
-#define TRANSFER_HLG "3"
-
-#define ALPHA_MULTIPLY "0"
-#define ALPHA_NO_MULTIPLY "1"
-#define ALPHA_UNMULTIPLY "2"
+#define EOTF_LINEAR_GAMMA "0"
+#define EOTF_PQ "1"
+#define EOTF_HLG "2"
 
 static const GLint WU_MIPMAP_MAX = 6;
 
@@ -127,7 +128,7 @@ static void set_alpha_ops(const struct gl_context *context) {
 		ops[0] = alpha & alpha_no_multiply;
 	}
 	ops[1] = alpha >> 1;
-	glUniform1iv(context->uni.alpha_op, ARRAY_LEN(ops), ops);
+	glUniform1iv(context->uni.mode.alpha, ARRAY_LEN(ops), ops);
 }
 
 void gl_alpha_toggle(struct gl_context *context, const int cycle) {
@@ -222,7 +223,7 @@ const struct wu_state *state) {
 	mat.m[6] = (floorf( state->x_offset*scale) + fix) * context->pix_size[0];
 	mat.m[7] = (floorf(-state->y_offset*scale) + fix) * context->pix_size[1];
 	mat.m[8] = 1 / state->zoom;
-	glUniformMatrix3fv(context->uni.pos_matrix, 1, GL_FALSE, mat.m);
+	glUniformMatrix3fv(context->uni.mat.pos, 1, GL_FALSE, mat.m);
 
 	if (context->tex.mode == image_mode_planar && context->tex.subsamp) {
 		set_mag_filter(context->tex.subsamp, mat.m[8] >= 0.99);
@@ -318,24 +319,12 @@ const GLenum access) {
 	return glMapBuffer(GL_PIXEL_UNPACK_BUFFER, access);
 }
 
-static enum pix_layout layout_equiv(enum pix_layout layout,
-const bool bgra_swap, const bool reverse) {
-	/* On some cards GL_BGRA seems to be required for good texture upload
-	 * performance, moreso for packed formats. We modify the layout to
-	 * upload with good parameters then fix the colors by swizzling. */
-	enum pix_layout out = 0;
-	for (enum pix_color i = 0; i < pix_color_total; ++i) {
-		unsigned sh = i*2;
-		unsigned off = (layout >> sh) & 0x3;
-		if (reverse) {
-			sh = 6 - sh;
-		}
-		if (bgra_swap && (off + reverse) % 2 == 0) {
-			off ^= 2;
-		}
-		out |= off << sh;
-	}
-	return out;
+static enum pix_layout layout_equiv(const enum pix_layout l1,
+const enum pix_layout l2) {
+	uint8_t swz[] = {0,1,2,3};
+	pix_layout_swizzle(swz, 1, sizeof(swz), l1);
+	pix_layout_swizzle(swz, 1, sizeof(swz), l2);
+	return PIX_LAYOUT_PACK(swz[0], swz[1], swz[2], swz[3]);
 }
 
 static void palette_parameters(const bool enable) {
@@ -385,28 +374,32 @@ const enum image_mode new_mode) {
 		}
 
 		context->tex.mode = new_mode;
-		glUniform1i(context->uni.color_mode, new_mode);
+		glUniform1i(context->uni.mode.color, new_mode);
 	}
 }
 
+static void gl_alignment(const align_t align) {
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1 << align);
+}
+
 static size_t calc_map_outstride(const struct raw_img *img, const size_t w,
-const enum unpack_op op, const uint8_t alignment) {
-	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+const enum unpack_op op, const int8_t align_sh) {
+	gl_alignment(align_sh);
 	if (op == op_noop) {
-		return scanline_length(w, img->bitdepth, alignment);
+		return scanline_length(w, img->bitdepth, align_sh);
 	}
 	const size_t outstride = unpack_stride(w, img->bitdepth, img->attr, op);
 	if (!outstride) {
 		fatal_bug("Upload failure", "Unsupported raster format");
 	}
-	return scanline_length(outstride, 8, alignment);
+	return scanline_length(outstride, 8, align_sh);
 }
 
 static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
 const struct raw_img *img, const size_t w, const size_t h,
 const unsigned char *data) {
-	const size_t instride = scanline_length(w, img->bitdepth, img->alignment);
-	const size_t outstride = calc_map_outstride(img, w, op, 4);
+	const size_t instride = scanline_length(w, img->bitdepth, img->align_sh);
+	const size_t outstride = calc_map_outstride(img, w, op, 2);
 
 	unsigned char *map = map_unpack_buffer(pix_buf, outstride * h,
 		GL_READ_ONLY);
@@ -420,17 +413,42 @@ const unsigned char *data) {
 	return 0;
 }
 
+static void * scale_upload(const GLuint pix_buf, const struct raw_img *img,
+const size_t w, const size_t h, const unsigned char *data) {
+	const align_t align = 2;
+	gl_alignment(align);
+	const size_t instride = scanline_length(w, img->bitdepth, img->align_sh);
+	const size_t outstride = scanline_length(w, img->bitdepth, align);
+	const size_t mapsize = outstride * h;
+
+	const struct scale_info info = strip_scale_info(1 << img->used_bits,
+		img->bitdepth);
+
+	unsigned char *map = map_unpack_buffer(pix_buf, mapsize, GL_READ_ONLY);
+	const clock_t start = clock();
+	for (size_t y = 0; y < h; ++y) {
+		strip_scale(map + outstride*y, data + instride*y, w, info,
+			img->attr == pix_signed);
+	}
+	clock_print("Scaled", start);
+	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+	return 0;
+}
+
 static bool tex_upload(struct gl_context *context, const struct raw_img *img,
 const struct gl_upload_params *params, const size_t w, const size_t h,
 const void *data) {
 	const GLuint pix_buf = context->pixel_unpack_buf;
 	bool bind_buffer = false;
-	if (params->op != op_noop || img->attr == pix_inverted || img->alignment > 8) {
-		const size_t elems = w * params->comps;
+	const size_t elems = w * params->comps;
+	if (img->used_bits != img->bitdepth) {
+		data = scale_upload(pix_buf, img, elems, h, data);
+		bind_buffer = true;
+	} else if (params->op != op_noop || img->attr == pix_inverted || img->align_sh > 3) {
 		data = unpack_upload(pix_buf, params->op, img, elems, h, data);
 		bind_buffer = true;
 	} else {
-		glPixelStorei(GL_UNPACK_ALIGNMENT, img->alignment);
+		gl_alignment(img->align_sh);
 	}
 
 	tex_2d_params(params, w, h, data);
@@ -492,7 +510,7 @@ const struct gl_upload_params *params) {
 	return false;
 }
 
-static GLint in_fmt_lut(const int depth_log, const uint8_t ch) {
+static GLint in_fmt_lut(const unsigned depth_log, const uint8_t ch) {
 	const GLint lut[][4] = {
 		{GL_R8, GL_RG8, GL_RGB8, GL_RGBA8},
 		{GL_R16, GL_RG16, GL_RGB16, GL_RGBA16},
@@ -501,7 +519,17 @@ static GLint in_fmt_lut(const int depth_log, const uint8_t ch) {
 	return lut[depth_log][ch - 1];
 }
 
-static GLenum type_lut(const int depth_log, const enum pix_attr attr) {
+static GLenum fmt_lut(const uint8_t ch) {
+	switch (ch) {
+	case 1: return GL_RED;
+	case 2: return GL_RG;
+	case 3: return GL_RGB;
+	case 4: return GL_RGBA;
+	}
+	return 0;
+}
+
+static GLenum type_lut(const unsigned depth_log, const enum pix_attr attr) {
 	switch (depth_log) {
 	case 0: return GL_UNSIGNED_BYTE;
 	case 1: return (attr == pix_float) ? GL_HALF_FLOAT : GL_UNSIGNED_SHORT;
@@ -510,8 +538,8 @@ static GLenum type_lut(const int depth_log, const enum pix_attr attr) {
 	return 0;
 }
 
-static int bitdepth_log(const uint8_t bd) {
-	return imin(ilog2(bd+7) - 3, 2);
+static unsigned bitdepth_log(const uint8_t bd) {
+	return umin(ulog2(bd+7) - 3, 2);
 }
 
 static const char * set_upload_params(struct gl_upload_params *params,
@@ -519,16 +547,16 @@ const struct raw_img *img) {
 	const uint8_t ch = params->comps;
 	uint8_t bd = img->bitdepth;
 	switch (img->attr) {
-	case pix_packing_332:
+	case pix_pack_332:
 		params->in_fmt = GL_R3_G3_B2;
 		params->fmt = GL_RGB;
 		params->type = GL_UNSIGNED_BYTE_3_3_2;
 		return NULL;
-	case pix_packing_1555:
+	case pix_pack_1555:
 		params->in_fmt = GL_RGB5_A1;
 		params->fmt = GL_BGRA;
 		params->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
-		params->layout = layout_equiv(params->layout, true, false);
+		params->layout = layout_equiv(pix_bgra, params->layout);
 		return NULL;
 	case pix_float:
 		switch (bd) {
@@ -542,13 +570,26 @@ const struct raw_img *img) {
 		}
 		break;
 	case pix_normal:
-		if (bd == 4 && ch == 4) {
-			params->in_fmt = GL_RGBA4;
-			params->fmt = GL_BGRA;
-			params->type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
-			params->layout = layout_equiv(params->layout,
-				true, true);
-			return NULL;
+		if (ch == 4) {
+			if (bd == 8) {
+				params->in_fmt = GL_RGBA8;
+				params->fmt = GL_BGRA;
+				params->type = GL_UNSIGNED_INT_8_8_8_8;
+				const enum pix_layout meta = which_end() == little_endian
+					? PIX_LAYOUT_PACK(3, 0, 1, 2)
+					: PIX_LAYOUT_PACK(2, 1, 0, 3);
+				params->layout = layout_equiv(meta, params->layout);
+				return NULL;
+			} else if (bd == 4) {
+				params->in_fmt = GL_RGBA4;
+				params->fmt = GL_BGRA;
+				params->type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
+				const enum pix_layout meta = which_end() == little_endian
+					? PIX_LAYOUT_PACK(1, 2, 3, 0)
+					: PIX_LAYOUT_PACK(3, 0, 1, 2);
+				params->layout = layout_equiv(meta, params->layout);
+				return NULL;
+			}
 		}
 		// fallthrough
 	case pix_signed:
@@ -571,14 +612,10 @@ const struct raw_img *img) {
 		return "Invalid pix attribute";
 	}
 
-	const GLenum fmt_lut[] = {GL_RED, GL_RG, GL_BGR, GL_BGRA};
-	const int depth = bitdepth_log(bd);
+	const unsigned depth = bitdepth_log(bd);
 	params->in_fmt = in_fmt_lut(depth, ch);
-	params->fmt = fmt_lut[ch - 1];
+	params->fmt = fmt_lut(ch);
 	params->type = type_lut(depth, img->attr);
-	if (ch >= 3) {
-		params->layout = layout_equiv(params->layout, true, false);
-	}
 	return NULL;
 }
 
@@ -630,7 +667,7 @@ static void set_cms(struct gl_context *context, struct raw_img *img) {
 	struct color_convert conv;
 	const bool spacewalk = color_space_to_linear_sRGB(cs, &conv,
 		(img->mode == image_mode_planar) ? img->layout : pix_rgba);
-	glUniformMatrix4x3fv(uni->to_rgba, 1, GL_FALSE, conv.nonlinear.m);
+	glUniformMatrix4x3fv(uni->mat.nonlinear, 1, GL_FALSE, conv.nonlinear.m);
 
 	enum gl_cms_mode {
 		gl_cms_none,
@@ -649,16 +686,16 @@ static void set_cms(struct gl_context *context, struct raw_img *img) {
 
 	if (mode != gl_cms_lut) {
 		tex_cms(0);
-		glUniform1i(uni->transfer, conv.eotf.fn);
-		glUniform1fv(uni->args, ARRAY_LEN(conv.eotf.args),
+		glUniform1i(uni->eotf.fn, conv.eotf.fn);
+		glUniform1fv(uni->eotf.args, ARRAY_LEN(conv.eotf.args),
 			conv.eotf.args);
 		if (spacewalk) {
 			mode = gl_cms_spacewalk;
-			glUniformMatrix3fv(uni->cms_mat, 1, GL_FALSE,
+			glUniformMatrix3fv(uni->mat.cms, 1, GL_FALSE,
 				conv.linear.m);
 		}
 	}
-	glUniform1i(uni->cms_mode, mode);
+	glUniform1i(uni->mode.cms, mode);
 }
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
@@ -723,8 +760,8 @@ static unsigned char get_render_channels(const struct raw_img *img) {
 		ch = 4;
 	} else {
 		switch (img->attr) {
-		case pix_packing_332: ch = 3; break;
-		case pix_packing_1555: ch = 4; break;
+		case pix_pack_332: ch = 3; break;
+		case pix_pack_1555: ch = 4; break;
 		default: ch = img->channels; break;
 		}
 	}
@@ -745,9 +782,8 @@ struct wu_state *state, const struct raw_img *img) {
 	r->ch = get_render_channels(img);
 	r->bd = (img->bitdepth > 8) ? 16 : 8;
 
-	const GLenum fmts[] = {GL_RED, GL_RG, GL_RGB, GL_RGBA};
-	const int depth_log = bitdepth_log(r->bd);
-	r->fmt = fmts[r->ch - 1];
+	const unsigned depth_log = bitdepth_log(r->bd);
+	r->fmt = fmt_lut(r->ch);
 	r->type = type_lut(depth_log, pix_normal);
 	r->len = scanline_length(r->w * r->ch, r->bd, 1);
 
@@ -782,22 +818,20 @@ void gl_reader_unbind(void) {
 }
 
 void gl_reader_bind(struct gl_context *context) {
-	if (context->framebuffer) {
-		glBindFramebuffer(GL_FRAMEBUFFER, context->framebuffer);
-	} else {
-		glGenFramebuffers(1, &context->framebuffer);
-		glBindFramebuffer(GL_FRAMEBUFFER, context->framebuffer);
+	GLuint framebuffer;
+	glGenFramebuffers(1, &framebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 
-		GLuint tex;
-		glGenTextures(1, &tex);
-		tex_active(gl_tex_reader);
-		glBindTexture(GL_TEXTURE_2D, tex);
-		tex_filter(GL_TEXTURE_2D, 0, gl_min_nearest, gl_mag_nearest);
+	GLuint tex;
+	glGenTextures(1, &tex);
+	tex_active(gl_tex_reader);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	tex_filter(GL_TEXTURE_2D, 0, gl_min_nearest, gl_mag_nearest);
 
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-			GL_TEXTURE_2D, tex, 0);
-		tex_active(gl_tex_img);
-	}
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+		GL_TEXTURE_2D, tex, 0);
+	tex_active(gl_tex_img);
+
 	glDisable(GL_BLEND);
 	context->unmultiply = true;
 }
@@ -826,9 +860,11 @@ const GLint *samps) {
 	tex_filter(GL_TEXTURE_2D, WU_MIPMAP_MAX, gl_min_linear, gl_mag_nearest);
 }
 
-static bool check_uniforms(const GLint *uniforms, const size_t len) {
+static bool get_uniforms(const GLuint program, GLint *uni,
+const char **uni_names, const size_t len) {
 	for (size_t i = 0; i < len; ++i) {
-		if (uniforms[i] == -1) {
+		uni[i] = glGetUniformLocation(program, uni_names[i]);
+		if (uni[i] == -1) {
 			return false;
 		}
 	}
@@ -856,7 +892,7 @@ const GLuint object, const GLenum parameter) {
 
 	GLint status = GL_FALSE;
 	(*iv)(object, parameter, &status);
-	return object * (status == GL_TRUE);
+	return (status == GL_TRUE) ? object : 0;
 }
 
 static GLuint setup_program(const GLuint vshader, const GLuint fshader) {
@@ -906,11 +942,11 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"#version 330 core\n"
 		"in vec2 " ATTR_POS ";"
 		"out vec2 texcoord;"
-		"uniform mat3 " UNI_POS_MATRIX ";"
+		"uniform mat3 " UNI_MAT_POS ";"
 		"void main() {"
 			"texcoord =" ATTR_POS " * vec2(.5) + vec2(.5);"
 			"gl_Position = vec4(" ATTR_POS ", 0.0, 1.0);"
-			"gl_Position.xyw =" UNI_POS_MATRIX " * gl_Position.xyw;"
+			"gl_Position.xyw =" UNI_MAT_POS " * gl_Position.xyw;"
 		"}";
 	const char fs[] =
 		"#version 330 core\n"
@@ -923,16 +959,16 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform sampler2D " UNI_PLANE_ALPHA ";"
 		"uniform sampler3D " UNI_CMS_LUT ";"
 
-		"uniform int " UNI_COLOR_MODE ";"
-		"uniform int " UNI_CMS_MODE ";"
-		"uniform int[2] " UNI_ALPHA_OP ";"
-		"uniform mat4x3 " UNI_TO_RGBA ";"
-		"uniform mat3 " UNI_CMS_MAT ";"
-		"uniform int " UNI_TRANSFER ";"
-		"uniform float[5] " UNI_ARGS ";"
+		"uniform mat4x3 " UNI_MAT_NONLINEAR ";"
+		"uniform mat3 " UNI_MAT_CMS ";"
+		"uniform int " UNI_MODE_COLOR ";"
+		"uniform int " UNI_MODE_CMS ";"
+		"uniform int[2] " UNI_MODE_ALPHA ";"
+		"uniform int " UNI_EOTF_FN ";"
+		"uniform float[5] " UNI_EOTF_ARGS ";"
 
 		"void gen_check_pattern() {"
-			"vec2 d = floor(texcoord * textureSize(" UNI_IMG ", 0) * vec2(1./32.));"
+			"vec2 d = floor(texcoord / vec2(dFdx(texcoord.x) * 32.));"
 			"float bg = fract(dot(d, vec2(.5))) * .5 + .5;"
 			"color.rgb += vec3(bg - bg * color.a);"
 		"}"
@@ -954,10 +990,10 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"return c * arg[4];"
 		"}"
 		"vec3 perceptual_quantization(vec3 c, float[5] arg) {"
-			"vec3 nc = pow(c, vec3(arg[0]));"
+			"c = pow(c, vec3(arg[0]));"
 			"return pow("
-				"max(nc - vec3(arg[1]), vec3(0.0))"
-					"/ (vec3(arg[2]) - vec3(arg[3])*nc),"
+				"max(c - vec3(arg[1]), vec3(0.0))"
+					"/ (vec3(arg[2]) - vec3(arg[3]) * c),"
 				"vec3(arg[4]));"
 		"}"
 		"float hybrid_log_gamma(float c, float[5] arg) {"
@@ -967,27 +1003,27 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"return c * c * arg[4];"
 		"}"
 		"vec3 eotf(vec3 c) {"
-			"switch (" UNI_TRANSFER ") {"
-			"case " TRANSFER_LINEAR_GAMMA ":"
+			"switch (" UNI_EOTF_FN ") {"
+			"case " EOTF_LINEAR_GAMMA ":"
 				"for (int i = 0; i < 3; ++i) {"
 					"c[i] = setsign("
-						"linear_gamma(abs(c[i])," UNI_ARGS "),"
+						"linear_gamma(abs(c[i])," UNI_EOTF_ARGS "),"
 						"c[i]);"
 				"}"
 				"break;"
-			"case " TRANSFER_PQ ":"
-				"c = perceptual_quantization(c," UNI_ARGS ");"
+			"case " EOTF_PQ ":"
+				"c = perceptual_quantization(c," UNI_EOTF_ARGS ");"
 				"break;"
-			"case " TRANSFER_HLG ":"
+			"case " EOTF_HLG ":"
 				"for (int i = 0; i < 3; ++i) {"
-					"c[i] = hybrid_log_gamma(c[i]," UNI_ARGS ");"
+					"c[i] = hybrid_log_gamma(c[i]," UNI_EOTF_ARGS ");"
 				"}"
 				"break;"
 			"}"
 			"return c;"
 		"}"
 		"void main() {"
-			"if (" UNI_COLOR_MODE "==" COLOR_PLANAR ") {"
+			"if (" UNI_MODE_COLOR "==" COLOR_PLANAR ") {"
 				"color = vec4("
 					"texture(" UNI_IMG ", texcoord).r,"
 					"texture(" UNI_PAL ", texcoord).r,"
@@ -996,24 +1032,24 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 				");"
 			"} else {"
 				"color = texture(" UNI_IMG ", texcoord);"
-				"if (" UNI_COLOR_MODE "==" COLOR_PALETTE ") {"
+				"if (" UNI_MODE_COLOR "==" COLOR_PALETTE ") {"
 					"color = texture(" UNI_PAL ","
 						"vec2(color.r, 0.0));"
 				"}"
 			"}"
 
-			"color.rgb = (" UNI_TO_RGBA "* vec4(color.rgb, 1.0)).rgb;"
-			"if (" UNI_CMS_MODE "==" CMS_LUT ") {"
+			"color.rgb = (" UNI_MAT_NONLINEAR "* vec4(color.rgb, 1.0)).rgb;"
+			"if (" UNI_MODE_CMS "==" CMS_LUT ") {"
 				"color.rgb = texture("
 					UNI_CMS_LUT ", color.rgb).rgb;"
 			"} else {"
 				"color.rgb = eotf(color.rgb);"
-				"if (" UNI_CMS_MODE "==" CMS_SPACEWALK ") {"
-					"color.rgb *=" UNI_CMS_MAT ";"
+				"if (" UNI_MODE_CMS "==" CMS_SPACEWALK ") {"
+					"color.rgb *=" UNI_MAT_CMS ";"
 				"}"
 			"}"
 
-			"switch (" UNI_ALPHA_OP "[0]) {"
+			"switch (" UNI_MODE_ALPHA "[0]) {"
 			"case " ALPHA_MULTIPLY ": color.rgb *= color.aaa; break;"
 			"case " ALPHA_NO_MULTIPLY ": break;"
 			"case " ALPHA_UNMULTIPLY ":"
@@ -1022,7 +1058,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 				"}"
 				"break;"
 			"}"
-			"switch (" UNI_ALPHA_OP "[1]) {"
+			"switch (" UNI_MODE_ALPHA "[1]) {"
 			"case 2: gen_check_pattern();" // fallthrough
 			"case 1: color.a = 1.0;"
 			"}"
@@ -1032,73 +1068,40 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"}"
 		"}";
 	const GLuint vshader = setup_shader(vs, GL_VERTEX_SHADER);
-	if (vshader == 0) {
+	if (!vshader) {
 		return false;
 	}
 	const GLuint fshader = setup_shader(fs, GL_FRAGMENT_SHADER);
-	if (fshader == 0) {
+	if (!fshader) {
 		return false;
 	}
 	const GLuint program = setup_program(vshader, fshader);
-	if (program == 0) {
+	if (!program) {
 		return false;
 	}
 	glUseProgram(program);
 	glDeleteProgram(program);
 
-	const GLint attr_loc = glGetAttribLocation(program, ATTR_POS);
-	if (attr_loc < 0) {
+
+	const char *samps_name[] = {
+		UNI_IMG, UNI_PAL, UNI_PLANE3, UNI_PLANE_ALPHA, UNI_CMS_LUT
+	};
+	const char *uni_name[] = {
+		UNI_MAT_POS,
+		UNI_MAT_NONLINEAR,
+		UNI_MAT_CMS,
+		UNI_MODE_COLOR,
+		UNI_MODE_ALPHA,
+		UNI_MODE_CMS,
+		UNI_EOTF_FN,
+		UNI_EOTF_ARGS,
+	};
+	GLint samps[ARRAY_LEN(samps_name)];
+	GLint *uni = (GLint *)&context->uni;
+	if (!get_uniforms(program, samps, samps_name, ARRAY_LEN(samps_name))
+	|| !get_uniforms(program, uni, uni_name, ARRAY_LEN(uni_name))) {
 		return false;
 	}
-	const GLint samps[] = {
-		glGetUniformLocation(program, UNI_IMG),
-		glGetUniformLocation(program, UNI_PAL),
-		glGetUniformLocation(program, UNI_PLANE3),
-		glGetUniformLocation(program, UNI_PLANE_ALPHA),
-		glGetUniformLocation(program, UNI_CMS_LUT),
-	};
-	const GLint uni[] = {
-		glGetUniformLocation(program, UNI_POS_MATRIX),
-		glGetUniformLocation(program, UNI_COLOR_MODE),
-		glGetUniformLocation(program, UNI_ALPHA_OP),
-		glGetUniformLocation(program, UNI_CMS_MODE),
-		glGetUniformLocation(program, UNI_TO_RGBA),
-		glGetUniformLocation(program, UNI_CMS_MAT),
-		glGetUniformLocation(program, UNI_TRANSFER),
-		glGetUniformLocation(program, UNI_ARGS),
-	};
-	if (!check_uniforms(samps, ARRAY_LEN(samps))
-	|| !check_uniforms(uni, ARRAY_LEN(uni)) ) {
-		return false;
-	}
-
-	context->uni = (struct gl_uni) {
-		.pos_matrix = uni[0],
-		.color_mode = uni[1],
-		.alpha_op = uni[2],
-		.cms_mode = uni[3],
-		.to_rgba = uni[4],
-		.cms_mat = uni[5],
-		.transfer = uni[6],
-		.args = uni[7],
-	};
-
-	GLuint vertex_array;
-	glGenVertexArrays(1, &vertex_array);
-	glBindVertexArray(vertex_array);
-
-	GLuint array_buf[2];
-	glGenBuffers(ARRAY_LEN(array_buf), array_buf);
-
-	const GLbyte vertices[] = {
-		-1,-1,  1,-1,
-		-1, 1,  1, 1,
-	};
-	bind_buffer_data(GL_ARRAY_BUFFER, array_buf[0], sizeof(vertices),
-		vertices, GL_STATIC_DRAW);
-	glVertexAttribPointer((GLuint)attr_loc, 2, GL_BYTE, GL_FALSE, 0, 0);
-	glEnableVertexAttribArray((GLuint)attr_loc);
-	context->pixel_unpack_buf = array_buf[1];
 
 
 	GLuint texs[ARRAY_LEN(samps)];
@@ -1111,11 +1114,36 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		setup_texture2d(s, texs, samps);
 	}
 
+
+	GLuint vertex_array;
+	glGenVertexArrays(1, &vertex_array);
+	glBindVertexArray(vertex_array);
+
+
+	GLuint array_buf[2];
+	glGenBuffers(ARRAY_LEN(array_buf), array_buf);
+	context->pixel_unpack_buf = array_buf[0];
+	const GLint attr_loc = glGetAttribLocation(program, ATTR_POS);
+	if (attr_loc < 0) {
+		return false;
+	}
+	const GLbyte vertices[] = {
+		-1,-1,  1,-1,
+		-1, 1,  1, 1,
+	};
+	bind_buffer_data(GL_ARRAY_BUFFER, array_buf[1], sizeof(vertices),
+		vertices, GL_STATIC_DRAW);
+	glVertexAttribPointer((GLuint)attr_loc, 2, GL_BYTE, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray((GLuint)attr_loc);
+
+
 	glHint(GL_FRAGMENT_SHADER_DERIVATIVE_HINT, GL_FASTEST);
 	glDisable(GL_POLYGON_SMOOTH);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	gl_clear_color(wuconf->bg);
+	if (wuconf->bg_src == bg_default) {
+		gl_clear_color(wuconf->bg);
+	}
 
 	GLuint mts;
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint *)&mts);

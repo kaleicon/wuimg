@@ -6,7 +6,6 @@
 #include <stdio.h>
 
 enum pix_color {
-	// Color order for pix_layout.
 	pix_red = 0,
 	pix_green = 1,
 	pix_blue = 2,
@@ -14,15 +13,20 @@ enum pix_color {
 	pix_color_total,
 };
 
+/* Specifies on which channel is each color located. r = 3 means red is located
+ * in the fourth channel. */
+#define PIX_LAYOUT_PACK(r, g, b, a) ( (r) << (pix_red * 2) \
+	| (g) << (pix_green * 2) \
+	| (b) << (pix_blue * 2) \
+	| (a) << (pix_alpha * 2) )
 enum pix_layout {
-	// color:   red  |  green |  blue  | alpha/one
-	pix_gray =                           1 << 6,
-	pix_rgba =         1 << 2 | 2 << 4 | 3 << 6,
-	pix_argb =     1 | 2 << 2 | 3 << 4,
-	pix_grba =     1          | 2 << 4 | 3 << 6,
-	pix_gbra =     2          | 1 << 4 | 3 << 6,
-	pix_bgra =     2 | 1 << 2          | 3 << 6,
-	pix_abgr =     3 | 2 << 2 | 1 << 4,
+	pix_gray = PIX_LAYOUT_PACK(0, 0, 0, 1),
+	pix_rgba = PIX_LAYOUT_PACK(0, 1, 2, 3),
+	pix_grba = PIX_LAYOUT_PACK(1, 0, 2, 3),
+	pix_argb = PIX_LAYOUT_PACK(1, 2, 3, 0),
+	pix_gbra = PIX_LAYOUT_PACK(2, 0, 1, 3),
+	pix_bgra = PIX_LAYOUT_PACK(2, 1, 0, 3),
+	pix_abgr = PIX_LAYOUT_PACK(3, 2, 1, 0),
 };
 
 enum pix_attr {
@@ -30,8 +34,8 @@ enum pix_attr {
 	pix_signed,
 	pix_inverted,
 	pix_float,
-	pix_packing_332,
-	pix_packing_1555,
+	pix_pack_332,
+	pix_pack_1555,
 };
 
 struct pix_rgb8 {

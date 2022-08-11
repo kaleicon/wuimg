@@ -39,7 +39,7 @@ static size_t pcx_unpack_interleave(struct raw_img *img) {
 	const size_t comps = (has_pal) ? 1 : img->channels;
 
 	const size_t instride = scanline_length(img->w, img->bitdepth,
-		img->alignment) * img->channels;
+		img->align_sh) * img->channels;
 	const size_t outstride = img->w * comps;
 	unsigned char *dst = malloc(outstride * img->h);
 	if (!dst) {
@@ -48,7 +48,7 @@ static size_t pcx_unpack_interleave(struct raw_img *img) {
 
 	for (size_t y = 0; y < img->h; ++y) {
 		vga_interleave(dst + y*outstride, img->data + y*instride,
-			img->w, 1, img->channels, img->bitdepth, img->alignment,
+			img->w, 1, img->channels, img->bitdepth, 1 << img->align_sh,
 			has_pal);
 	}
 
@@ -58,7 +58,7 @@ static size_t pcx_unpack_interleave(struct raw_img *img) {
 		img->channels = 1;
 		img->bitdepth = 8;
 	}
-	img->alignment = 1;
+	img->align_sh = 0;
 	return 1;
 }
 
@@ -222,7 +222,7 @@ const unsigned char *restrict rle, const size_t rle_len) {
 }
 
 size_t pcx_decode(struct pcx_desc *desc, struct raw_img *img) {
-	const size_t dims = scanline_length(img->w, img->bitdepth, img->alignment)
+	const size_t dims = scanline_length(img->w, img->bitdepth, img->align_sh)
 		* img->channels * img->h;
 	// Add padding to save on a range check.
 	img->data = malloc(dims + RLE_MAX_RUN);
@@ -278,8 +278,8 @@ const uint16_t palette_type) {
 	img->h = (size_t)height;
 	img->channels = planes;
 	img->bitdepth = bitdepth;
-	img->alignment = scanline_alignment(bytes_per_line, img->w, img->bitdepth);
-	if (!img->alignment || img->alignment > 8) {
+	img->align_sh = scanline_alignment(bytes_per_line, img->w, img->bitdepth);
+	if (img->align_sh < 0 || (1 << img->align_sh) > 8) {
 		return wu_invalid_header;
 	}
 

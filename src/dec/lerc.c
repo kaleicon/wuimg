@@ -13,19 +13,43 @@ const enum wu_error fallback_fail) {
 	return wu_unknown_error;
 }
 
-static enum wu_error dec_and_mask(struct raw_img *img,
-const struct map_info *mm, const unsigned bands, const unsigned dim,
-const unsigned type, const unsigned mask_nb) {
-	const size_t mask_dims = img->w * img->h;
-	unsigned char *mask = malloc(mask_dims * mask_nb);
-	const enum wu_error err = map_lerc_to_wu(
-		lerc_decode(mm->data, (unsigned)mm->len, (int)mask_nb, mask,
-			(int)dim, (int)img->w, (int)img->h, (int)bands,
-			type, img->data),
-		wu_decoding_error
-	);
-	free(mask); // TODO: Apply the mask
-	return err;
+static enum wu_error set_mask(struct raw_img *img, const unsigned w,
+const unsigned h, const unsigned mask_nb) {
+	img->w = w;
+	img->h = h;
+	img->channels = (unsigned char)mask_nb;
+	img->bitdepth = 8;
+	if (raw_img_plane_init(img)) {
+		return raw_img_alloc(img);
+	}
+	return wu_alloc_error;
+}
+
+static enum wu_error set_main(struct raw_img *img, const unsigned w,
+const unsigned h, const unsigned dims, const unsigned bands,
+const unsigned type) {
+	img->w = w;
+	img->h = h;
+	img->channels = (unsigned char)(dims * bands);
+	switch (type) {
+	case 0: case 1: // char/uchar
+	case 2: case 3: // short/ushort
+	case 4: case 5: // int/uint
+		img->bitdepth = 8 << (type >> 1);
+		img->attr = (type & 1) ? pix_normal : pix_signed;
+		break;
+	case 6: case 7: // float/double
+		img->bitdepth = (type & 1) ? 64 : 32;
+		img->attr = pix_float;
+		break;
+	default:
+		return wu_unsupported_feature;
+	}
+
+	if (bands > 1 && !raw_img_plane_init(img)) {
+		return wu_alloc_error;
+	}
+	return raw_img_alloc(img);
 }
 
 static enum wu_error dec_wrap(struct image_file *infile,
@@ -39,46 +63,45 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 		return wu_invalid_header;
 	}
 
-	const unsigned dim = info[2];
+	const unsigned w = info[3];
+	const unsigned h = info[4];
+	if (umax(w, h) > wuconf->max_img_size) {
+		return wu_exceeds_size_limit;
+	}
+
+	const unsigned dims = info[2];
 	const unsigned bands = info[5];
-	if ((dim != 1 && bands != 1) || dim > 4 || bands > 4) {
+	const unsigned mask_nb = info[8];
+	if ((dims != 1 && bands != 1) || umax(dims, umax(bands, mask_nb)) > 4) {
 		return wu_unsupported_feature;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct raw_img *img = alloc_sub_images(infile, 1 + (bool)mask_nb);
 	if (!img) {
 		return wu_alloc_error;
 	}
 
-	img->w = info[3];
-	img->h = info[4];
-	img->channels = (unsigned char)(dim * bands);
-	if (raw_img_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
-	}
-	switch (info[1]) {
-	case 0: case 1: // char/uchar
-	case 2: case 3: // short/ushort
-	case 4: case 5: // int/uint
-		img->bitdepth = 8 << (info[1] >> 1);
-		img->attr = (info[1] & 1) ? pix_normal : pix_signed;
-		break;
-	case 6: case 7: // float/double
-		img->bitdepth = (info[1] & 1) ? 64 : 32;
-		img->attr = pix_float;
-		break;
-	default:
-		return wu_unsupported_feature;
+	const unsigned type = info[1];
+	err = set_main(img, w, h, dims, bands, type);
+	if (err != wu_ok) {
+		return err;
 	}
 
-	if (bands > 1 && !raw_img_plane_init(img)) {
-		return wu_alloc_error;
+	uint8_t *mask = NULL;
+	if (mask_nb) {
+		err = set_mask(img + 1, w, h, mask_nb);
+		if (err != wu_ok) {
+			return err;
+		}
+		mask = img[1].data;
 	}
-	const enum wu_error status = raw_img_alloc(img);
-	if (status == wu_ok) {
-		return dec_and_mask(img, mm, bands, dim, info[1], info[8]);
-	}
-	return status;
+
+	return map_lerc_to_wu(
+		lerc_decode(mm->data, (unsigned)mm->len, (int)mask_nb, mask,
+			(int)dims, (int)w, (int)h, (int)bands, type,
+			img[0].data),
+		wu_decoding_error
+	);
 }
 
 enum wu_error lerc_dec(struct image_file *infile, const struct wu_conf *wuconf) {

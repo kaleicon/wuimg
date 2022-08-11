@@ -85,14 +85,18 @@ void mp_skip_nonspace(struct mp_parser *mp) {
 	}
 }
 
-void mp_skip_line(struct mp_parser *mp) {
-	const unsigned char *newline = memchr(mp->mem + mp->pos, '\n',
+static void mp_skip_tochar(struct mp_parser *mp, const uint8_t ch) {
+	const unsigned char *loc = memchr(mp->mem + mp->pos, ch,
 		mp->len - mp->pos);
-	if (newline) {
-		mp->pos = (size_t)newline - (size_t)mp->mem;
+	if (loc) {
+		mp->pos = (size_t)loc - (size_t)mp->mem;
 	} else {
 		mp->pos = mp->len;
 	}
+}
+
+void mp_skip_line(struct mp_parser *mp) {
+	mp_skip_tochar(mp, '\n');
 }
 
 int mp_next_char(struct mp_parser *mp) {
@@ -132,6 +136,29 @@ struct wuptr mp_get_word(struct mp_parser *mp) {
 	const size_t start = mp->pos;
 	mp_skip_nonspace(mp);
 	return wuptr_mem(mp->mem + start, mp->pos - start);
+}
+
+size_t mp_get_int(struct mp_parser *mp, size_t digits, long *val) {
+	digits = zumin(digits, mp->len - mp->pos);
+	*val = 0;
+	size_t k = 0;
+	bool sign = false;
+	while (k < digits) {
+		const uint8_t c = curc(mp);
+		if (k == 0 && c == '-') {
+			sign = true;
+		} else if (isdigit(c)) {
+			*val = *val * 10 + tonum(c);
+		} else {
+			break;
+		}
+		++k;
+		++mp->pos;
+	}
+	if (sign) {
+		*val = -*val;
+	}
+	return k;
 }
 
 size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val) {

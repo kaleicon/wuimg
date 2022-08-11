@@ -1,59 +1,73 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "strip.h"
-#include "pal.h"
 
-static inline void scale_inline(void *buf, const size_t width,
-const uint64_t mul, const uint8_t depth, const uint64_t add) {
+static inline void scale_inline(void *dst, const void *src,
+const size_t width, const uint64_t mul, const uint8_t depth, const uint64_t add) {
 	for (size_t x = 0; x < width; ++x) {
 		switch (depth) {
-		case 8: ;uint8_t *b = buf;
-			b[x] = (uint8_t)(((b[x] + add) * mul) >> depth);
+		case 8:
+			;uint8_t *da = dst;
+			const uint8_t *sa = src;
+			da[x] = (uint8_t)(((sa[x] + add) * mul) >> depth);
 			break;
-		case 16: ;uint16_t *c = buf;
-			c[x] = (uint16_t)(((c[x] + add) * mul) >> depth);
+		case 16:
+			;uint16_t *db = dst;
+			const uint16_t *sb = src;
+			db[x] = (uint16_t)(((sb[x] + add) * mul) >> depth);
 			break;
-		case 32: ;uint32_t *d = buf;
-			d[x] = (uint32_t)((((uint64_t)d[x] + add) * mul) >> depth);
+		case 32:
+			;uint32_t *dc = dst;
+			const uint32_t *sc = src;
+			dc[x] = (uint32_t)(((sc[x] + add) * mul) >> depth);
 			break;
 		}
 	}
 }
 
-static void design8(void *buf, const size_t w, const struct scale_info i) {
-	scale_inline(buf, w, i.mul, 8, i.add);
+static void design8(void *dst, const void *src,
+const size_t w, const struct scale_info i) {
+	scale_inline(dst, src, w, i.mul, 8, i.add);
 }
-static void design16(void *buf, const size_t w, const struct scale_info i) {
-	scale_inline(buf, w, i.mul, 16, i.add);
+static void design16(void *dst, const void *src,
+const size_t w, const struct scale_info i) {
+	scale_inline(dst, src, w, i.mul, 16, i.add);
 }
-static void design32(void *buf, const size_t w, const struct scale_info i) {
-	scale_inline(buf, w, i.mul, 32, i.add);
-}
-
-static void scale8(void *buf, const size_t w, const struct scale_info i) {
-	scale_inline(buf, w, i.mul, 8, 0);
-}
-static void scale16(void *buf, const size_t w, const struct scale_info i) {
-	scale_inline(buf, w, i.mul, 16, 0);
-}
-static void scale32(void *buf, const size_t w, const struct scale_info i) {
-	scale_inline(buf, w, i.mul, 32, 0);
+static void design32(void *dst, const void *src,
+const size_t w, const struct scale_info i) {
+	scale_inline(dst, src, w, i.mul, 32, i.add);
 }
 
-void strip_scale(void *buf, const size_t width, const struct scale_info info,
-const bool design) {
+static void scale8(void *dst, const void *src,
+const size_t w, const struct scale_info i) {
+	scale_inline(dst, src, w, i.mul, 8, 0);
+}
+static void scale16(void *dst, const void *src,
+const size_t w, const struct scale_info i) {
+	scale_inline(dst, src, w, i.mul, 16, 0);
+}
+static void scale32(void *dst, const void *src,
+const size_t w, const struct scale_info i) {
+	scale_inline(dst, src, w, i.mul, 32, 0);
+}
+
+void strip_scale(void *dst, const void *src,
+const size_t width, const struct scale_info info, const bool design) {
 	if (design) {
 		switch (info.bitdepth) {
-		case 8: design8(buf, width, info); break;
-		case 16: design16(buf, width, info); break;
-		case 32: design32(buf, width, info); break;
+		case 8: design8(dst, src, width, info); break;
+		case 16: design16(dst, src, width, info); break;
+		case 32: design32(dst, src, width, info); break;
 		}
 	} else if (info.scale) {
 		switch (info.bitdepth) {
-		case 8: scale8(buf, width, info); break;
-		case 16: scale16(buf, width, info); break;
-		case 32: scale32(buf, width, info); break;
+		case 8: scale8(dst, src, width, info); break;
+		case 16: scale16(dst, src, width, info); break;
+		case 32: scale32(dst, src, width, info); break;
 		}
+	} else if (dst != src) {
+		memcpy(dst, src, width * (info.bitdepth/8));
 	}
 }
 
@@ -141,7 +155,7 @@ void strip_sew_alpha(struct sewing_machine *sew) {
 }
 
 static struct sewing_clothe set_plane(void *ptr, const size_t w, const size_t h,
-const uint8_t align) {
+const align_t align) {
 	const size_t stride = scanline_length(w, 8, align);
 	return (struct sewing_clothe) {
 		.ptr = ptr,
@@ -161,14 +175,14 @@ bool strip_sew_alloc_alpha(struct sewing_machine *sew) {
 
 void strip_sew_init(struct sewing_machine *sew, void *restrict dst,
 const struct raster_pal *pal, const size_t w, const size_t h, const uint8_t ch,
-const uint8_t align, const bool will_sew) {
+const align_t align, const bool will_sew) {
 	const uint8_t out_ch = (will_sew)
 		? ((pal || ch > 2) ? 4 : 2)
 		: ch;
 	*sew = (struct sewing_machine) {
 		.out_ch = out_ch,
 		.ch = ch,
-		.compact = align <= 1,
+		.compact = align == 0,
 		.pal = pal,
 		.w = w,
 		.h = h,

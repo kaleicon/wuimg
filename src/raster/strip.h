@@ -1,10 +1,12 @@
-#ifndef COMMON_UNPACK
-#define COMMON_UNPACK
+#ifndef RASTER_STRIP
+#define RASTER_STRIP
 
+#include <stdbool.h>
 #include <stdint.h>
 
+#include "common.h"
 #include "raster/pix.h"
-#include "wudefs.h"
+#include "raster/pal.h"
 
 struct scale_info {
 	uint8_t bitdepth;
@@ -28,11 +30,13 @@ struct sewing_machine {
 	struct sewing_clothe dst, color, alpha;
 };
 
-void strip_scale(void *buf, size_t width, struct scale_info scaler, bool design);
+void strip_scale(void *dst, const void *src, size_t width,
+struct scale_info scaler, bool design);
 
 struct scale_info strip_scale_info(uint64_t maxval, uint8_t bitdepth);
 
-/* Copies 'width' bytes from 'src' to 'dst', with 'ch' bytes of spacing. */
+
+/* Copies 'width' bytes from 'src' to 'dst', with 'ch' bytes of spacing */
 void strip_spread(uint8_t *restrict dst, const uint8_t *restrict src,
 size_t width, size_t ch);
 
@@ -48,7 +52,7 @@ void strip_sew_free_alpha(struct sewing_machine *sew);
 bool strip_sew_alloc_alpha(struct sewing_machine *sew);
 
 void strip_sew_init(struct sewing_machine *sew, void *restrict dst,
-const struct raster_pal *pal, size_t w, size_t h, uint8_t ch, uint8_t align,
+const struct raster_pal *pal, size_t w, size_t h, uint8_t ch, align_t align,
 bool will_sew);
 
-#endif // COMMON_UNPACK
+#endif // RASTER_STRIP
