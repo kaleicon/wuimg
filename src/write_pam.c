@@ -1,8 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -11,7 +11,7 @@
 #include "term.h"
 #include "filesystem.h"
 #include "write_pam.h"
-#include "raster/endian.h"
+#include "common/endian.h"
 
 void write_writer_terminate(struct write_writer *writer) {
 	window_offscreen_terminate(&writer->window);
@@ -216,14 +216,14 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 		const char *arg = argv[idx];
 		if (arg[0] == '-' && arg[1] && !arg[2]) {
 			switch (arg[1]) {
-			case 'f': args->overwrite = true; break;
-			case 'o':
+			case 'd':
 				if (idx + 1 >= argc) {
 					return idx;
 				}
 				++idx;
 				args->outdir = argv[idx];
 				break;
+			case 'f': args->overwrite = true; break;
 			case 's': args->stdout = true; break;
 			case 'z': args->null = true; break;
 			default:

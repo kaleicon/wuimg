@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <math.h>
 
-#include "common.h"
+#include "common/common.h"
 #include "raster/mat.h"
 #include "raster/unpack.h"
 

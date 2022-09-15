@@ -1,8 +1,7 @@
 #include <string.h>
 
 #include "wudefs.h"
-#include "wutree.h"
-#include "common.h"
+#include "common/file.h"
 #include "lib/wpx.h"
 
 static enum wu_error single_decode(struct raw_img *img,
@@ -36,14 +35,14 @@ const struct wu_conf *wuconf, struct wpx_bmp_desc *desc) {
 
 enum wu_error wbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct map_info mm;
-	if (map_file(&mm, infile->ifp)) {
+	if (file_map(&mm, infile->ifp)) {
 		struct wpx_bmp_desc desc;
-		enum wu_error st = wpx_bmp_open(&desc, &mm);
+		enum wu_error st = wpx_bmp_open(&desc, mp_parser_map(mm));
 		if (st == wu_ok) {
 			st = decode(infile, wuconf, &desc);
 			wpx_bmp_cleanup(&desc);
 		}
-		unmap_file(&mm);
+		file_unmap(&mm);
 		return st;
 	}
 	return wu_open_error;
@@ -116,14 +115,14 @@ const struct wu_conf *wuconf, struct wpx_ia2_desc *desc) {
 
 enum wu_error wia_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct map_info mm;
-	if (map_file(&mm, infile->ifp)) {
+	if (file_map(&mm, infile->ifp)) {
 		struct wpx_ia2_desc desc;
-		enum wu_error st = wpx_ia2_open(&desc, &mm);
+		enum wu_error st = wpx_ia2_open(&desc, mp_parser_map(mm));
 		if (st == wu_ok) {
 			st = anim_wrap(infile, wuconf, &desc);
 			wpx_ia2_cleanup(&desc);
 		}
-		unmap_file(&mm);
+		file_unmap(&mm);
 		return st;
 	}
 	return wu_open_error;

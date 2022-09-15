@@ -1,9 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "raster/endian.h"
+#include "common/common.h"
+#include "common/endian.h"
+#include "common/math.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
 #include "raster/strip.h"
 #include "pdt.h"
 

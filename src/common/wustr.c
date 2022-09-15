@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "wustr.h"
-#include "common.h"
+#include "common/math.h"
 
 bool wugrow_reserve(void *restrict ptr_ptr, struct wugrow *grow, size_t extra) {
 	const size_t needed = grow->pos + extra;
@@ -95,6 +95,9 @@ bool wustr_memdup(struct wustr *w, const char *str, const size_t len) {
 
 bool wustr_append_line(struct wustr *w, const char *str,
 const bool strip_trailing_spaces) {
+	if (!str) {
+		str = "(null)";
+	}
 	size_t len = strlen(str);
 	if (strip_trailing_spaces) {
 		while (len && isspace(str[len-1])) {

@@ -1,7 +1,8 @@
-#include "lib/dpx.h"
+#include "common/common.h"
+#include "dpx.h"
 
 /* This format is a great example on how to do file headers.
- * It's also a great example on how to badly screw up raster storage. */
+ * Too bad the raster storage ruined it. */
 
 struct elem_info {
 	uint8_t ch;
@@ -226,7 +227,7 @@ const struct dpx_element *elem, const size_t read) {
 		// Data is in the 12 least-significant bits
 		for (size_t i = 0; i < read; ++i) {
 			const uint16_t w = endian16(data[i], desc->endian);
-			data[i] = w << 4 | w >> 8;
+			data[i] = (uint16_t)(w << 4 | w >> 8);
 		}
 	}
 	return read;

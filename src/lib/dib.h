@@ -1,11 +1,9 @@
 #ifndef LIB_BMP
 #define LIB_BMP
 
-#include <stdio.h>
-#include <stdlib.h>
-
 #include "wudefs.h"
-#include "wustr.h"
+#include "common/common.h"
+#include "common/wustr.h"
 #include "raster/color.h"
 #include "raster/pal.h"
 

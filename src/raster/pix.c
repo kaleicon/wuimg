@@ -1,6 +1,5 @@
 #include <string.h>
 
-#include "common.h"
 #include "raster/pix.h"
 
 const char * pix_attr_str(const enum pix_attr attr) {
@@ -42,7 +41,7 @@ uint8_t pix_layout_invert(uint8_t map[static 4], const enum pix_layout layout) {
 	const uint8_t len = pix_color_total;
 	uint8_t seen[4] = {0};
 	uint8_t pos = 0;
-	for (enum pix_color color = 0; color < len; ++color) {
+	for (uint8_t color = 0; color < len; ++color) {
 		const uint8_t ch = pix_layout_offset(layout, color);
 		if (!(seen[ch] & 1)) {
 			seen[ch] |= 1;

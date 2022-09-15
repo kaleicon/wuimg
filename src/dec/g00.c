@@ -1,5 +1,3 @@
-#include <stdlib.h>
-
 #include "lib/g00.h"
 
 enum wu_error g00_callback(struct image_file *infile,

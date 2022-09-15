@@ -4,12 +4,11 @@
 #include <stdbool.h>
 #include <math.h>
 
-#include "common.h"
+#include "common/common.h"
 #include "raster/color.h"
 
-static const struct color_xy WHITE_D65 = {
-	.3127, .3290
-};
+#define WHITE_D65 {.3127, .3290}
+#define WHITE_C {.3101, .3162}
 static const struct color_primaries SRGB_PRIMARIES = {
 	.w = WHITE_D65,
 	.r = {.64, .33},
@@ -310,9 +309,8 @@ struct color_transfer *eotf) {
 
 static const struct color_primaries * get_cicp_primaries(
 const enum cicp_primaries primaries) {
-	const struct color_xy white_c = {.3101, .3162};
 	static const struct color_primaries system_m = {
-		.w = white_c,
+		.w = WHITE_C,
 		.r = {.67, .33},
 		.g = {.21, .71},
 		.b = {.14, .08},
@@ -330,7 +328,7 @@ const enum cicp_primaries primaries) {
 		.b = {.155, .070},
 	};
 	static const struct color_primaries generic_film = {
-		.w = white_c,
+		.w = WHITE_C,
 		.r = {.681, .319},
 		.g = {.243, .692},
 		.b = {.145, .049},

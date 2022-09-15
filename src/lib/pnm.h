@@ -5,8 +5,7 @@
 #include <stdbool.h>
 
 #include "wudefs.h"
-#include "raster/endian.h"
-#include "raster/raster.h"
+#include "common/endian.h"
 
 enum pnm_type {
 	pnm_plain_pbm = '1',
@@ -31,7 +30,8 @@ enum pnm_type {
 
 struct pnm_desc {
 	FILE *ifp;
-	struct raster_desc rast;
+//	struct raster_desc rast;
+	struct raw_img rast;
 
 	size_t nr;
 	long data_start;
@@ -47,7 +47,7 @@ struct pnm_desc {
 
 const char * pnm_type_str(enum pnm_type type);
 
-size_t pnm_decode(const struct pnm_desc *desc, void *restrict dst, size_t i);
+size_t pnm_decode(struct pnm_desc *desc, struct raw_img *img, size_t i);
 
 enum wu_error pnm_parse_header(struct pnm_desc *desc);
 

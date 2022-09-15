@@ -3,10 +3,11 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "raster/file.h"
+#include "common/file.h"
+#include "common/math.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
-#include "raster/mem.h"
 #include "raster/unpack.h"
 
 #include "pcx.h"
@@ -38,7 +39,7 @@ static size_t pcx_unpack_interleave(struct raw_img *img) {
 	const bool has_pal = (img->mode == image_mode_palette);
 	const size_t comps = (has_pal) ? 1 : img->channels;
 
-	const size_t instride = scanline_length(img->w, img->bitdepth,
+	const size_t instride = strip_length(img->w, img->bitdepth,
 		img->align_sh) * img->channels;
 	const size_t outstride = img->w * comps;
 	unsigned char *dst = malloc(outstride * img->h);
@@ -48,7 +49,7 @@ static size_t pcx_unpack_interleave(struct raw_img *img) {
 
 	for (size_t y = 0; y < img->h; ++y) {
 		vga_interleave(dst + y*outstride, img->data + y*instride,
-			img->w, 1, img->channels, img->bitdepth, 1 << img->align_sh,
+			img->w, 1, img->channels, img->bitdepth, img->align_sh,
 			has_pal);
 	}
 
@@ -222,7 +223,7 @@ const unsigned char *restrict rle, const size_t rle_len) {
 }
 
 size_t pcx_decode(struct pcx_desc *desc, struct raw_img *img) {
-	const size_t dims = scanline_length(img->w, img->bitdepth, img->align_sh)
+	const size_t dims = strip_length(img->w, img->bitdepth, img->align_sh)
 		* img->channels * img->h;
 	// Add padding to save on a range check.
 	img->data = malloc(dims + RLE_MAX_RUN);
@@ -278,7 +279,7 @@ const uint16_t palette_type) {
 	img->h = (size_t)height;
 	img->channels = planes;
 	img->bitdepth = bitdepth;
-	img->align_sh = scanline_alignment(bytes_per_line, img->w, img->bitdepth);
+	img->align_sh = strip_alignment(bytes_per_line, img->w, img->bitdepth);
 	if (img->align_sh < 0 || (1 << img->align_sh) > 8) {
 		return wu_invalid_header;
 	}
@@ -342,7 +343,7 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct raw_img *img) {
 		buf_endian16(header2 + 4, little_endian));
 }
 
-enum wu_error pcx_open_file(struct pcx_desc *desc, const struct map_info *mm) {
+enum wu_error pcx_open_file(struct pcx_desc *desc, const struct mp_parser mp) {
 	/* PCX header:
 		Offset  Size    Name
 		0	BYTE	IdentifierByte; // Always 0x0A
@@ -351,7 +352,7 @@ enum wu_error pcx_open_file(struct pcx_desc *desc, const struct map_info *mm) {
 		3
 	*/
 
-	desc->mp = mp_parser_mem(mm->len, mm->data);
+	desc->mp = mp;
 	if (desc->mp.len > 128) {
 		const uint8_t *sig = mp_next_slice(&desc->mp, 3);
 		if (sig) {
@@ -380,14 +381,13 @@ void dcx_free(struct dcx_desc *desc) {
 
 enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
 const uint32_t i) {
-	struct map_info mm = {
-		.len = dcx->off[i + 1] - dcx->off[i],
-		.data = dcx->mp.mem + dcx->off[i],
-	};
-	return pcx_open_file(pcx, &mm);
+	return pcx_open_file(pcx, mp_parser_mem(
+		dcx->off[i + 1] - dcx->off[i],
+		dcx->mp.mem + dcx->off[i]
+	));
 }
 
-enum wu_error dcx_open_file(struct dcx_desc *d, const struct map_info *mm) {
+enum wu_error dcx_open_file(struct dcx_desc *d, const struct mp_parser mp) {
 	/* Why would anyone use the most device dependent file format ever for
 	 * sending documents is beyond me.
 
@@ -400,7 +400,7 @@ enum wu_error dcx_open_file(struct dcx_desc *d, const struct map_info *mm) {
 	 * using only two fields. It's amazing.
 	*/
 
-	d->mp = mp_parser_mem(mm->len, mm->data);
+	d->mp = mp;
 	d->off = NULL;
 	const uint8_t sig[] = {0xb1, 0x68, 0xde, 0x3a};
 	enum wu_error st = fmt_sigcmp_mem(sig, sizeof(sig), &d->mp);

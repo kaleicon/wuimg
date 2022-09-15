@@ -1,12 +1,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wpx.h"
-#include "raster/bit.h"
-#include "raster/endian.h"
+#include "common/bit.h"
+#include "common/common.h"
+#include "common/endian.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
 #include "raster/strip.h"
+#include "wpx.h"
 
 /* WPX common header (after signature):
 	Offset  Size    Name
@@ -150,7 +151,7 @@ const uint8_t *restrict bitstream, size_t *bitpos, size_t src_len) {
 			if (src_len - *bitpos <= size) {
 				return false;
 			}
-			const uint_fast32_t idx = bit_advn(bitstream,
+			const uint32_t idx = bit_advn(bitstream,
 				bitpos, size) << (16 - size);
 			table[idx] = size;
 			table[idx + 1] = (uint8_t)n;
@@ -287,7 +288,7 @@ from_offsets:
 static size_t decode_section_data(const struct wpx_section *section,
 uint8_t *restrict dst, const size_t dst_len, const uint8_t *restrict src,
 size_t src_len, const uint8_t quant_size, const size_t stride) {
-	const size_t start_stride = scanline_length(quant_size, 8, 4);
+	const size_t start_stride = strip_length(quant_size, 8, 2);
 	if (start_stride >= src_len || quant_size >= dst_len) {
 		return 0;
 	}
@@ -501,9 +502,9 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct raw_img *img) {
 	return raw_img_verify(img);
 }
 
-enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct map_info *mm) {
+enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct mp_parser mp) {
 	*desc = (struct wpx_bmp_desc) {
-		.mp = mp_parser_mem(mm->len, mm->data),
+		.mp = mp,
 		.raster_idx = -1,
 		.mask_idx = -1,
 	};
@@ -517,11 +518,9 @@ struct wpx_bmp_desc *frame, const uint32_t i) {
 	if (i < desc->frames.nr) {
 		const size_t pos = desc->base + desc->frames.val[i];
 		if (pos < desc->mp.len) {
-			const struct map_info mm = {
-				.data = desc->mp.mem + pos,
-				.len = desc->mp.len - pos,
-			};
-			return wpx_bmp_open(frame, &mm);
+			return wpx_bmp_open(frame, mp_parser_mem(
+				desc->mp.len - pos, desc->mp.mem + pos
+			));
 		}
 		return wu_unexpected_eof;
 	}
@@ -638,9 +637,9 @@ enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc) {
 	return wu_ok;
 }
 
-enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct map_info *mm) {
+enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct mp_parser mp) {
 	*desc = (struct wpx_ia2_desc) {
-		.mp = mp_parser_mem(mm->len, mm->data),
+		.mp = mp,
 	};
 	const uint8_t sig[] = {'W', 'P', 'X', 0x1a, 'I', 'A', '2', 0};
 	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);

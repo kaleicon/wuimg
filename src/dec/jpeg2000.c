@@ -1,6 +1,3 @@
-#include <stdlib.h>
-#include <string.h>
-
 #include <openjpeg-2.1/openjpeg.h>
 
 #include "raster/strip.h"
@@ -112,7 +109,7 @@ static enum wu_error dec_wrap(struct raw_img *img, const opj_image_t *jp2) {
 
 	const enum wu_error st = raw_img_verify(img);
 	if (st == wu_ok) {
-		img->data = IMG_DATA_BORROWED;
+		img->borrowed = true;
 		for (uint8_t z = 0; z < img->channels; ++z) {
 			p[z].ptr = (uint8_t *)jp2->comps[z].data;
 			strip_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,

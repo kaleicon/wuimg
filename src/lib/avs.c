@@ -1,5 +1,5 @@
+#include "common/endian.h"
 #include "avs.h"
-#include "raster/endian.h"
 
 // I like this format.
 

@@ -1,8 +1,9 @@
-#include "mag.h"
-#include "raster/bit.h"
-#include "raster/file.h"
+#include "common/bit.h"
+#include "common/file.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
+#include "mag.h"
 
 /* Based on
 https://mooncore.eu/bunny/txt/makichan.htm
@@ -345,17 +346,17 @@ enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img) {
 	if (desc->msx.screen == mag_msx2_screen6) {
 		// telparia.com/fileFormatSamples/image/makichan/GUARDIAN.MAG
 		// PixelArt.v03/MAKICHAN/ARR6i/
-		img->w *= 2;
+		img->w *= img->bitdepth / 2;
 		img->bitdepth = 2;
 	}
 
-	const size_t outstride = scanline_length(img->w, img->bitdepth, 1);
-	const size_t bytes = outstride * img->h;
-	desc->row_dwords = outstride / 4;
+	const size_t stride = strip_base(img->w, img->bitdepth);
+	const size_t bytes = stride * img->h;
+	desc->row_dwords = stride / 4;
 	const size_t dwords = bytes / 4;
 
 	desc->flag_a.off = buf_endian32(buf + 11, little_endian);
-	desc->flag_a.size = (uint32_t)scanline_length(dwords, 1, 1);
+	desc->flag_a.size = (uint32_t)strip_base(dwords, 1);
 	desc->flag_b.off = buf_endian32(buf + 15, little_endian);
 	desc->flag_b.size = buf_endian32(buf + 19, little_endian);
 	desc->color.off = buf_endian32(buf + 23, little_endian);

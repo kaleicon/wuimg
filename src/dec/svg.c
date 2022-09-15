@@ -5,7 +5,9 @@
 #include <librsvg-2.0/librsvg/rsvg.h>
 
 #include "wudefs.h"
-#include "raster/endian.h"
+#include "common/endian.h"
+#include "common/file.h"
+#include "common/math.h"
 
 struct svg_state {
 	RsvgHandle *handle;
@@ -49,8 +51,8 @@ static enum wu_error svg_render(struct raw_img *img, struct svg_state *ds) {
 		return wu_alloc_error;
 	}
 
-	img->w = (size_t)cairo_image_surface_get_width(surf);
-	img->h = (size_t)cairo_image_surface_get_height(surf);
+	img->w = (size_t)width;
+	img->h = (size_t)height;
 	const enum wu_error st = raw_img_verify(img);
 	if (st != wu_ok) {
 		cairo_surface_destroy(surf);
@@ -125,12 +127,12 @@ const struct wu_conf *wuconf) {
 	infile->dec_state = ds;
 
 	struct map_info map;
-	if (!map_file(&map, infile->ifp)) {
+	if (!file_map(&map, infile->ifp)) {
 		return wu_alloc_error;
 	}
 
 	ds->handle = rsvg_handle_new_from_data(map.data, map.len, NULL);
-	unmap_file(&map);
+	file_unmap(&map);
 	if (!ds->handle) {
 		return wu_open_error;
 	}

@@ -1,9 +1,6 @@
 #ifndef LIB_G00
 #define LIB_G00
 
-#include <stdio.h>
-#include <stdint.h>
-
 #include "wudefs.h"
 
 struct g00_block {

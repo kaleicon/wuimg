@@ -6,9 +6,9 @@
 #include "xdg-shell-client-protocol.h"
 #include <xkbcommon/xkbcommon.h>
 
-#include "../conf.h"
-#include "egl.h"
-#include "base.h"
+#include "conf.h"
+#include "window/base.h"
+#include "window/egl.h"
 
 struct wayland_listeners {
 	struct wl_registry_listener reg;

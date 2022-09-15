@@ -1,5 +1,5 @@
-#include "lib/qoi.h"
 #include "rast_utils.h"
+#include "lib/qoi.h"
 
 static enum wu_error dec_wrap(struct image_file *infile,
 const struct wu_conf *wuconf, const struct map_info *mm) {

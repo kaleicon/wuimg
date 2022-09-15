@@ -1,21 +1,21 @@
 #include "bit.h"
 
-uint_fast32_t bit_getn(const void *stream, const size_t pos, size_t n) {
-	const uint_fast32_t mask = (1u << n) - 1;
+uint32_t bit_getn(const void *stream, const size_t pos, size_t n) {
+	const uint32_t mask = (1u << n) - 1;
 
 	size_t o = pos / 8;
 	size_t i = pos % 8;
 
 	const uint8_t *s = (const uint8_t *)stream;
 	n += i;
-	int_fast32_t word = 0;
+	uint32_t word = 0;
 	while (n > 8) {
 		word = word << 8 | s[o];
 		++o;
 		n -= 8;
 	}
 	word = word << 8 | s[o];
-	return (uint_fast32_t)(word >> ((8 - n)%8)) & mask;
+	return (uint32_t)(word >> ((8 - n)%8)) & mask;
 }
 
 bool bit_get(const void *stream, const size_t pos) {
@@ -23,8 +23,8 @@ bool bit_get(const void *stream, const size_t pos) {
 	return (byte >> (7 - (pos%8))) & 1;
 }
 
-uint_fast32_t bit_advn(const void *stream, size_t *pos, size_t n) {
-	const uint_fast32_t bits = bit_getn(stream, *pos, n);
+uint32_t bit_advn(const void *stream, size_t *pos, size_t n) {
+	const uint32_t bits = bit_getn(stream, *pos, n);
 	*pos += n;
 	return bits;
 }
@@ -41,7 +41,7 @@ const bool delim) {
 	while (bit_adv(stream, pos) != delim && count < 31) {
 		++count;
 	}
-	return 1 << count | bit_advn(stream, pos, count);
+	return 1u << count | bit_advn(stream, pos, count);
 }
 
 

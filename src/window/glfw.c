@@ -1,9 +1,8 @@
-#include <stdlib.h>
 #include <limits.h>
+#include <stdlib.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "glfw.h"
+#include "wudefs.h"
+#include "window/glfw.h"
 
 static void callback_close(GLFWwindow *wnd) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);

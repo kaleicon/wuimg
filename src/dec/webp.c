@@ -8,8 +8,8 @@
 #include <webp/demux.h>
 
 #include "wudefs.h"
-#include "common.h"
 #include "metadata.h"
+#include "common/file.h"
 #include "raster/compost.h"
 
 struct frame_dispose {
@@ -64,7 +64,7 @@ static void clean_webp_state(struct image_file *infile) {
 	}
 
 	WebPFreeDecBuffer(&ds->config.output);
-	unmap_file(&ds->map);
+	file_unmap(&ds->map);
 }
 
 static void rewind_webp_state(struct webp_state *ds, struct raw_img *img,
@@ -229,11 +229,14 @@ static enum wu_error gather_info(struct raw_img *img, WebPIterator *iter) {
 
 	size_t i = 0;
 	do {
-		raw_img_frame_set(img, i,
+		const bool valid = raw_img_frame_set(img, i,
 			(size_t)iter->x_offset, (size_t)iter->y_offset,
 			(size_t)iter->width, (size_t)iter->height,
 			iter->duration,
 			iter->blend_method == WEBP_MUX_NO_BLEND);
+		if (!valid) {
+			return wu_alloc_error;
+		}
 		++i;
 	} while (WebPDemuxNextFrame(iter));
 	return wu_ok;
@@ -399,7 +402,7 @@ const struct wu_conf *wuconf) {
 	}
 	infile->dec_state = ds;
 
-	if (!map_file(&ds->map, infile->ifp)) {
+	if (!file_map(&ds->map, infile->ifp)) {
 		return wu_alloc_error;
 	}
 	ds->data.size = ds->map.len;

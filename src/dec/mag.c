@@ -1,4 +1,3 @@
-#include "wudefs.h"
 #include "rast_utils.h"
 #include "lib/mag.h"
 
@@ -16,6 +15,9 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 		desc->comment.area_len, NULL);
 }
 
+static void cleanup(void *restrict desc) {
+	mag_cleanup(desc);
+}
 static size_t dec(const void *restrict desc, struct raw_img *img) {
 	return mag_decode(desc, img);
 }
@@ -30,5 +32,5 @@ enum wu_error mag_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct mag_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc,
-		open, parse, metadata, dec, NULL);
+		open, parse, metadata, dec, cleanup);
 }

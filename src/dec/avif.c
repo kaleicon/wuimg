@@ -2,6 +2,7 @@
 
 #include "wudefs.h"
 #include "metadata.h"
+#include "common/file.h"
 
 struct avif_state {
 	struct map_info mm;
@@ -14,7 +15,7 @@ static void clean_avif_state(struct image_file *infile) {
 	if (ds->dec) {
 		avifDecoderDestroy(ds->dec);
 	}
-	unmap_file(&ds->mm);
+	file_unmap(&ds->mm);
 }
 
 static void read_metadata_item(struct raw_img *img, avifRWData *meta,
@@ -84,7 +85,7 @@ const struct wu_conf *wuconf, const uint32_t idx) {
 		img->bitdepth = (avif->depth > 8) ? 16 : 8;
 		img->used_bits = (uint8_t)avif->depth;
 		img->alpha = avif->alphaPremultiplied ? alpha_associated : alpha_unassociated;
-		img->align_sh = scanline_alignment(avif->yuvRowBytes[0], img->w,
+		img->align_sh = strip_alignment(avif->yuvRowBytes[0], img->w,
 			img->bitdepth);
 		if (img->align_sh < 0) {
 			return wu_invalid_params;
@@ -111,7 +112,7 @@ const struct wu_conf *wuconf, const uint32_t idx) {
 		if (st != wu_ok) {
 			return st;
 		}
-		img->data = IMG_DATA_BORROWED;
+		img->borrowed = true;
 	}
 	switch (img->channels) {
 	case 4: planes->p[3].ptr = avif->alphaPlane; // fallthrough
@@ -155,7 +156,7 @@ enum wu_error avif_dec(struct image_file *infile, const struct wu_conf *wuconf) 
 	struct avif_state *ds = calloc(1, sizeof(*ds));
 	if (ds) {
 		infile->dec_state = ds;
-		if (map_file(&ds->mm, infile->ifp)) {
+		if (file_map(&ds->mm, infile->ifp)) {
 			ds->dec = avifDecoderCreate();
 			if (ds->dec) {
 				avifResult res;

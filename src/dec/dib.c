@@ -1,7 +1,4 @@
-#include "../wudefs.h"
-#include "../common.h"
-
-#include "../lib/dib.h"
+#include "lib/dib.h"
 
 static void get_dib_metadata(struct wu_tree *tree, const struct dib_desc *desc) {
 	tree_add_leaf_utf8(tree, "Header", dib_type_str(desc));
@@ -19,12 +16,6 @@ const struct wu_conf *wuconf, struct raw_img *img, struct dib_desc *desc) {
 	}
 
 	get_dib_metadata(&infile->metadata, desc);
-
-/*	if (desc->compression == dib_no_compression) {
-		if (desc->depth == 16 || desc.depth == 32) {
-			img->alpha = alpha_ignore;
-		}
-	}*/
 
 	if (dib_decode(desc, img)) {
 		struct wustr name;

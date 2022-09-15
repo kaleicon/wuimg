@@ -1,9 +1,5 @@
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
-
-#include "../wudefs.h"
-#include "../lib/mac.h"
+#include "common/common.h"
+#include "lib/mac.h"
 
 static void read_macbin_metadata(const struct mac_binary_header *macbin,
 struct wu_tree *tree) {

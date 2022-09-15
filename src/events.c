@@ -1,13 +1,13 @@
-#include <stdio.h>
-#include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <stdio.h>
+#include <string.h>
 
-#include "wudefs.h"
-#include "common.h"
+#include "common/math.h"
 #include "events.h"
 #include "term.h"
 #include "write_pam.h"
+#include "wudefs.h"
 
 static unsigned char * get_map(struct window_keymap *held_keys) {
 	return held_keys->map - WINDOW_KEYSTART;

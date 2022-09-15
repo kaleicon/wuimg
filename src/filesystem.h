@@ -1,7 +1,7 @@
 #ifndef WU_FILESYSTEM
 #define WU_FILESYSTEM
 
-#include "wustr.h"
+#include "common/wustr.h"
 
 struct fs_path {
 	struct wustr parent;

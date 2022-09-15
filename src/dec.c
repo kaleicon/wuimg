@@ -8,7 +8,9 @@
 #include <sys/stat.h>
 
 #include "dec.h"
-#include "rast_utils.h"
+#include "common/common.h"
+#include "common/math.h"
+#include "common/mem.h"
 
 /*
 

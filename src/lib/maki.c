@@ -1,6 +1,6 @@
-#include "maki.h"
-#include "raster/bit.h"
+#include "common/bit.h"
 #include "raster/fmt.h"
+#include "maki.h"
 
 /* Based on
 https://mooncore.eu/bunny/txt/makichan.htm
@@ -23,21 +23,21 @@ const char * maki_version_str(enum maki_version version) {
 size_t maki_decode(const struct maki_desc *desc, struct raw_img *img) {
 	/* Compressed data is composed of three sections.
 	 * The first two are FlagA (1000 bytes) and FlagB (variable size),
-	 * which are used to create a Mask buffer that is 320*400 1-bit values
-	 * in size, or 8000 16-bit words.
+	 * which are used to create a Mask buffer that is 8000 16-bit words
+	 * in size.
 	 * Bits are read in MSB-to-LSB order from FlagA. If a bit is one, a
 	 * 16-bit big-endian word is read from FlagB and written to Mask,
 	 * otherwise zero is written. Each word corresponds to an 4*4 bit
-	 * block, corresponding in turn to an 8*4 pixel area.
+	 * block, which will make up an 8*4 pixel area.
 
-	 * The third section is the Pixel area, and it requires reading bits
-	 * from Mask in logical order instead of blocks. For each one bit, a
-	 * a byte is read from Pixel and written to the output, otherwise
-	 * write a 0. Each nibble in this byte corresponds to a palette entry.
+	 * The third section is the Pixel area, and requires linearizing the
+	 * bits in Mask. For each 1 bit, a byte is read from Pixel and written
+	 * to the output, otherwise 0. Each nibble in this byte
+	 * corresponds to a palette entry.
 
-	 * Finally, each row must be XOR'd with previous ones. For MAKI1A, the
-	 * look-back distance is two rows. For MAKI1B, look-back is four rows.
-	 * This obviously doesn't apply to the starting rows.
+	 * When done, each row must be XOR'd with previous ones. For MAKI1A,
+	 * the look-back distance is two rows. For MAKI1B, look-back is four
+	 * rows. This obviously doesn't apply to the starting rows.
 	*/
 
 	if (!raw_img_alloc_noverify(img)) {
@@ -87,11 +87,11 @@ size_t maki_decode(const struct maki_desc *desc, struct raw_img *img) {
 		const uint16_t *mask_row = mask + y/4 * row_len/4;
 		const size_t tile_y = y % 4;
 		for (size_t x = 0; x < row_len/4; ++x) {
-			const uint16_t m = mask_row[x];
+			const uint16_t tile = mask_row[x];
 			const size_t row = y * row_len;
 			for (size_t tile_x = 0; tile_x < 4; ++tile_x) {
 				uint8_t v = 0;
-				if ((m >> (15 - (tile_y*4 + tile_x))) & 1) {
+				if ((tile >> (15 - (tile_y*4 + tile_x))) & 1) {
 					v = pxl[p_pos];
 					++p_pos;
 				}

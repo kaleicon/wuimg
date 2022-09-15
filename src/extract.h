@@ -6,7 +6,7 @@
 
 #include <archive.h>
 
-#include "wustr.h"
+#include "common/wustr.h"
 
 struct extract_file {
 	char *name;

@@ -1,8 +1,10 @@
 #include <libraw/libraw.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../metadata.h"
+#include "wudefs.h"
+#include "metadata.h"
+#include "common/common.h"
+#include "common/file.h"
+#include "common/math.h"
 
 #include "dec_enable.def"
 #ifdef WU_ENABLE_JPEG
@@ -63,7 +65,7 @@ static void raw_state_free(struct image_file *infile) {
 	}
 
 	libraw_close(rs->data);
-	unmap_file(&rs->map);
+	file_unmap(&rs->map);
 }
 
 static enum wu_error copy_jpeg(struct image_file *infile,
@@ -245,7 +247,7 @@ static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 
 static enum wu_error raw_setup(struct image_file *infile,
 const struct wu_conf *wuconf, struct raw_state *rs) {
-	if (!map_file(&rs->map, infile->ifp)) {
+	if (!file_map(&rs->map, infile->ifp)) {
 		return wu_alloc_error;
 	}
 
@@ -322,10 +324,5 @@ enum wu_error raw_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 	infile->dec_state = rs;
-
-	const enum wu_error status = raw_setup(infile, wuconf, rs);
-	if (status != wu_ok) {
-		raw_state_free(infile);
-	}
-	return status;
+	return raw_setup(infile, wuconf, rs);
 }

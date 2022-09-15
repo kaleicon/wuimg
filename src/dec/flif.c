@@ -1,12 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include <flif.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../metadata.h"
+#include "wudefs.h"
+#include "metadata.h"
+#include "common/common.h"
+#include "common/file.h"
 
 struct flif_state {
 	struct map_info map;
@@ -20,7 +17,7 @@ static void clean_flif_state(struct image_file *infile) {
 	if (ds->dec) {
 		flif_destroy_decoder(ds->dec);
 	}
-	unmap_file(&ds->map);
+	file_unmap(&ds->map);
 }
 
 static enum wu_error decode_frame(struct raw_img *img, FLIF_IMAGE *frame,
@@ -73,7 +70,7 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 	FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec, 0);
 	img->w = flif_image_get_width(frame);
 	img->h = flif_image_get_height(frame);
-	if (zumax(img->w, img->h) > wuconf->max_img_size) {
+	if (raw_img_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 	img->channels = flif_image_get_nb_channels(frame);
@@ -133,7 +130,7 @@ const struct wu_conf *wuconf) {
 	}
 	infile->dec_state = ds;
 
-	if (!map_file(&ds->map, infile->ifp)) {
+	if (!file_map(&ds->map, infile->ifp)) {
 		return wu_alloc_error;
 	}
 

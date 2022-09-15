@@ -1,9 +1,9 @@
 #include <string.h>
 #include <limits.h>
 
-#include "common.h"
-#include "raster/bit.h"
-#include "raster/endian.h"
+#include "common/bit.h"
+#include "common/endian.h"
+#include "raster/strip.h"
 #include "raster/unpack.h"
 
 // Unpack 2^n-bits onto u8
@@ -194,17 +194,17 @@ const void *restrict src, const size_t width, const uint8_t bitdepth,
 const enum pix_attr attr, const enum unpack_op op) {
 	const uint8_t outdepth = (bitdepth > 8) ? 16 : 8;
 
-	const uint_fast32_t inrange = (1u << bitdepth) - 1;
-	const uint_fast32_t outrange = (1u << outdepth) - 1;
-	const uint_fast32_t scale = (outrange << 16) / inrange + 1;
-	uint_fast32_t xor;
+	const uint32_t inrange = (1u << bitdepth) - 1;
+	const uint32_t outrange = (1u << outdepth) - 1;
+	const uint32_t scale = (outrange << 16) / inrange + 1;
+	uint32_t xor;
 	switch (attr) {
 	case pix_signed: xor = (1u << (bitdepth - 1)); break;
 	case pix_inverted: xor = inrange; break;
 	default: break;
 	}
 	for (size_t x = 0; x < width; ++x) {
-		uint_fast32_t pix = bit_getn(src, x*bitdepth, bitdepth) ^ xor;
+		uint32_t pix = bit_getn(src, x*bitdepth, bitdepth) ^ xor;
 		if (op == op_expand) {
 			pix = (pix * scale) >> 16;
 		}
@@ -392,7 +392,7 @@ void unpack_or_copy_strip(void *restrict dst, const void *restrict src,
 const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
 const enum unpack_op op) {
 	if (op == op_noop) {
-		const size_t len = scanline_length(n, bitdepth, 1);
+		const size_t len = strip_base(n, bitdepth);
 		switch (attr) {
 		case pix_signed:
 		case pix_inverted:
@@ -473,7 +473,7 @@ size_t unpack_stride(const size_t n, const uint8_t bitdepth,
 const enum pix_attr attr, const enum unpack_op op) {
 	uint8_t outdepth = unpack_depth(bitdepth, attr, op);
 	if (outdepth) {
-		return scanline_length(n, outdepth, 1);
+		return strip_base(n, outdepth);
 	}
 	return 0;
 }

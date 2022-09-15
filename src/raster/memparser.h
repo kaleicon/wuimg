@@ -3,7 +3,8 @@
 
 #include <inttypes.h>
 
-#include "../wustr.h"
+#include "common/file.h"
+#include "common/wustr.h"
 
 struct mp_parser { // ATM machine
 	size_t pos;
@@ -53,5 +54,7 @@ const uint8_t * mp_slice_at(const struct mp_parser *mp, size_t pos,
 size_t len);
 
 struct mp_parser mp_parser_mem(size_t len, const void *restrict mem);
+
+struct mp_parser mp_parser_map(struct map_info mm);
 
 #endif /* COMMON_MEMPARSER */

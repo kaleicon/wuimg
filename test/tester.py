@@ -122,6 +122,7 @@ ENCODERS = (
 	)),
 
 	("imagemagick", encode_imagemagick, (
+		("avif", None),
 		("avs", None),
 		("dib", None), ("bmp", None), ("bmp3", None), ("bmp2", None), ("ico", None),
 		("dpx", {"-depth": (1, 8, 16)}),
@@ -201,7 +202,7 @@ def compare_count(args):
 
 
 if len(sys.argv) <= 2 or sys.argv[2] == "-h":
-	print("Usage:", sys.argv[0], "gen INPUT_FILE.pam [...]")
+	print("Usage:", sys.argv[0], "gen INPUT_FILE.pam")
 	print("Usage:", sys.argv[0], "compare DIR [...]")
 else:
 	args = sys.argv[2:]

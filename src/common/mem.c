@@ -1,5 +1,7 @@
+#include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
+
+#include "common/mem.h"
 
 uint8_t memcycle(uint8_t *dst, const size_t pos) {
 	const uint8_t val = dst[pos];
@@ -92,3 +94,24 @@ const void * memchk(const void *s, const unsigned char c, const size_t n) {
 	}
 	return NULL;
 }
+
+void * memdup(const void *s, size_t n) {
+	void *d = malloc(n);
+	if (d) {
+		memcpy(d, s, n);
+	}
+	return d;
+}
+
+#ifndef _GNU_SOURCE
+void * memrchr(const void *s, const int c, size_t n) {
+	const unsigned char *data = s;
+	while (n) {
+		--n;
+		if (data[n] == c) {
+			return (void *)(data + n);
+		}
+	}
+	return NULL;
+}
+#endif

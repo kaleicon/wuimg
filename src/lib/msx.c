@@ -1,7 +1,7 @@
-#include "lib/msx.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
-#include "raster/mem.h"
+#include "msx.h"
 
 /* SCx are BSAVE-style formats, which means they're a dump of the graphics card
  * memory, in this case the TMS9918 or the V9938, using the BSAVE command in

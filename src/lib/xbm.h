@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #include "wudefs.h"
-#include "wustr.h"
+#include "common/wustr.h"
 #include "raster/memparser.h"
 
 enum xbm_type {

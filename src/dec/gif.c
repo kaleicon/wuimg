@@ -1,11 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include <gif_lib.h>
 
 #include "wudefs.h"
-#include "common.h"
 #include "raster/pal.h"
 #include "raster/compost.h"
 
@@ -121,7 +116,7 @@ const struct raster_pal *palette, const int trans) {
 	}
 }
 
-static void expand_palette(struct raster_pal *pal,
+static void get_palette(struct raster_pal *pal,
 const ColorMapObject *gif_map, const int alpha_idx) {
 	raster_pal_from_rgb8(pal, gif_map->Colors, (size_t)gif_map->ColorCount);
 	if (alpha_idx != -1) {
@@ -179,7 +174,7 @@ static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 	} else {
 		if (gif_image->ImageDesc.ColorMap) {
 			pal = &ds->local_pal;
-			expand_palette(pal, gif_image->ImageDesc.ColorMap, trans);
+			get_palette(pal, gif_image->ImageDesc.ColorMap, trans);
 		} else {
 			pal = &ds->global_pal;
 		}
@@ -239,14 +234,14 @@ GraphicsControlBlock *gcb, struct wu_tree *tree) {
 	return status;
 }
 
-static bool gather_info(struct image_file *infile,
+static enum wu_error gather_info(struct image_file *infile,
 struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 	GifFileType *gif_file = ds->gif_file;
 
 	const size_t count = (size_t)gif_file->ImageCount;
 	struct raw_img *img = infile->sub_img;
 	if (!raw_img_frames_init(img, count)) {
-		return false;
+		return wu_alloc_error;
 	}
 	if (count > 1) {
 		infile->events = ev_frame;
@@ -254,7 +249,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 
 	ds->gcb = malloc(sizeof(*ds->gcb) * count);
 	if (!ds->gcb) {
-		return false;
+		return wu_alloc_error;
 	}
 
 	const int default_delay = 10;
@@ -275,11 +270,14 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 		}
 
 		const GifImageDesc *desc = &image->ImageDesc;
-		raw_img_frame_set(img, i,
+		const bool valid_frame = raw_img_frame_set(img, i,
 			(size_t)desc->Left, (size_t)desc->Top,
 			(size_t)desc->Width, (size_t)desc->Height,
 			gcb->DelayTime * 10,
 			gcb->TransparentColor == NO_TRANSPARENT_COLOR);
+		if (!valid_frame) {
+			return wu_invalid_header;
+		}
 		if (desc->ColorMap) {
 			*pal_num += 1;
 		}
@@ -295,7 +293,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 				&& gcb->TransparentColor == gcb[-1].TransparentColor;
 		}
 	}
-	return true;
+	return wu_ok;
 }
 
 static int dgif_input_fn(GifFileType *gif_file, GifByteType *out, int len) {
@@ -321,12 +319,7 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	error = DGifSlurp(gif_file);
 	if (error != GIF_OK) {
 		image_file_error_append(infile, GifErrorString(gif_file->Error));
-	}
-
-	const unsigned int max_dim = (unsigned int)imax(gif_file->SWidth,
-		gif_file->SHeight);
-	if (max_dim > wuconf->max_img_size) {
-		return wu_exceeds_size_limit;
+		return wu_invalid_header;
 	}
 
 	struct raw_img *img = alloc_sub_images(infile, 1);
@@ -336,6 +329,10 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	img->w = (size_t)gif_file->SWidth;
 	img->h = (size_t)gif_file->SHeight;
+	if (raw_img_exceeds_limit(img, wuconf)) {
+		return wu_exceeds_size_limit;
+	}
+
 	img->channels = 4;
 	img->bitdepth = 8;
 	if (gif_file->AspectByte) {
@@ -345,8 +342,10 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	int pal_num = 0;
 	bool enable_paletted_mode = true;
 	ds->opaque_first_frame = true;
-	if (!gather_info(infile, ds, &pal_num, &enable_paletted_mode)) {
-		return wu_alloc_error;
+	enum wu_error st = gather_info(infile, ds, &pal_num,
+		&enable_paletted_mode);
+	if (st != wu_ok) {
+		return st;
 	}
 
 	if (gif_file->SColorMap) {
@@ -365,7 +364,7 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 			pal = &ds->global_pal;
 			trans = -1;
 		}
-		expand_palette(pal, gif_file->SColorMap, trans);
+		get_palette(pal, gif_file->SColorMap, trans);
 
 		const int bg = gif_file->SBackGroundColor;
 		if (bg > -1 && bg < gif_file->SColorMap->ColorCount) {
@@ -375,7 +374,7 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	tree_bud_leaf(&infile->metadata, "Palettes", (struct wu_leaf) {
 		.type = wu_leaf_signed, .val.d = pal_num});
 
-	const enum wu_error st = raw_img_alloc(img);
+	st = raw_img_alloc(img);
 	if (st != wu_ok) {
 		return st;
 	}

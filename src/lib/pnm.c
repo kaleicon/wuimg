@@ -6,9 +6,10 @@
 #include <stdbool.h>
 #include <math.h>
 
-#include "raster/file.h"
+#include "common/file.h"
+#include "common/math.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
 #include "raster/memparser.h"
 #include "raster/strip.h"
 #include "lib/pnm.h"
@@ -165,12 +166,16 @@ unsigned char *restrict dst, const size_t dims) {
 	return cnt;
 }
 
-size_t pnm_decode(const struct pnm_desc *desc, void *restrict dst,
+size_t pnm_decode(struct pnm_desc *desc, struct raw_img *img,
 const size_t i) {
-	const size_t size = raster_size(&desc->rast);
+	if (!raw_img_clone(img, &desc->rast) || !raw_img_alloc_noverify(img)) {
+		return 0;
+	}
+	const size_t size = raw_img_size(img);
 	fseek(desc->ifp, desc->data_start + (long)(size * i), SEEK_SET);
 
-	const size_t elems = desc->rast.w * desc->rast.h * desc->rast.ch;
+	const size_t elems = img->w * img->h * img->channels;
+	uint8_t *dst = img->data;
 	switch (desc->type) {
 	case pnm_plain_pbm:
 		return plain_pbm_decode(desc, dst, elems);
@@ -197,7 +202,7 @@ const size_t i) {
 
 static size_t count_images(struct pnm_desc *desc) {
 	const size_t len = file_remaining(desc->ifp);
-	return len ? zumax(1, len / raster_size(&desc->rast)) : 0;
+	return len ? zumax(1, len / raw_img_size(&desc->rast)) : 0;
 }
 
 static enum wu_error setup_desc(struct pnm_desc *desc) {
@@ -247,19 +252,20 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 	case pnm_plain_pbm: case pnm_plain_pgm:
 	case pnm_raw_pbm: case pnm_raw_pgm:
 	case pnm_gray_pfm: case pnm_xv_thumb: case pnm_pgx:
-		desc->rast.ch = 1;
+		desc->rast.channels = 1;
 		break;
 	case pnm_plain_ppm: case pnm_raw_ppm: case pnm_mtv: case pnm_color_pfm:
-		desc->rast.ch = 3;
+		desc->rast.channels = 3;
 		break;
 	case pnm_pam:
-		if (!desc->rast.ch) {
+		if (!desc->rast.channels) {
 			return wu_invalid_header;
 		}
 	}
 
-	if (!raster_normalize(&desc->rast)) {
-		return wu_int_overflow;
+	const enum wu_error st = raw_img_verify(&desc->rast);
+	if (st != wu_ok) {
+		return st;
 	}
 	desc->bytedepth = desc->rast.bitdepth / 8;
 	desc->data_start = ftell(desc->ifp);
@@ -374,7 +380,8 @@ bool *finished) {
 	} else if (!strcmp("HEIGHT", token)) {
 		return read_pam_token(desc->ifp, " %zu%c", &desc->rast.h, desc->rast.h);
 	} else if (!strcmp("DEPTH", token)) {
-		return read_pam_token(desc->ifp, " %hhu%c", &desc->rast.ch, desc->rast.ch);
+		return read_pam_token(desc->ifp, " %hhu%c", &desc->rast.channels,
+			desc->rast.channels);
 	} else if (!strcmp("MAXVAL", token)) {
 		return read_pam_token(desc->ifp, " %hu%c", &desc->scale.pnm,
 			desc->scale.pnm);
@@ -435,14 +442,29 @@ static enum wu_error skip_any_junk(struct pnm_desc *desc) {
 }
 
 static enum wu_error parse_any_map(struct pnm_desc *desc) {
-	// Comments may appear at any point
-	int seen = 0;
-	enum wu_error status;
-	while ((status = skip_any_junk(desc)) == wu_ok) {
+	int fields;
+	switch (desc->type) {
+	case pnm_plain_pbm:
+	case pnm_raw_pbm:
+	case pnm_mtv:
+		fields = 2;
+		break;
+	default:
+		fields = 3;
+		break;
+	}
+
+	for (int seen = 0; seen < fields; ++seen) {
+		const enum wu_error status = skip_any_junk(desc);
+		if (status != wu_ok) {
+			return status;
+		}
+
 		int result;
 		switch (seen) {
 		case 0:
 			result = fscanf(desc->ifp, "%zu", &desc->rast.w);
+			printf("%zu\n", desc->rast.w);
 			break;
 		case 1:
 			result = fscanf(desc->ifp, "%zu", &desc->rast.h);
@@ -456,37 +478,19 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 			break;
 		}
 
-		if (result == 0) {
-			status = wu_invalid_header;
-			break;
-		} else if (result == EOF) {
-			status = wu_unexpected_eof;
-			break;
+		if (result != 1) {
+			return (result == EOF)
+				? wu_unexpected_eof : wu_invalid_header;
 		}
-
-		if (seen == 1) {
-			if (desc->type == pnm_plain_pbm
-			|| desc->type == pnm_raw_pbm || desc->type == pnm_mtv) {
-				status = wu_ok;
-				break;
-			}
-		} else if (seen == 2) {
-			status = wu_ok;
-			break;
-		}
-		++seen;
 	}
 
-	if (status == wu_ok) {
-		int c;
-		while ((c = getc(desc->ifp)) != EOF) {
-			if (c == '\n') {
-				return setup_desc(desc);
-			}
+	int c;
+	while ((c = getc(desc->ifp)) != EOF) {
+		if (c == '\n') {
+			return setup_desc(desc);
 		}
-		return wu_unexpected_eof;
 	}
-	return status;
+	return wu_unexpected_eof;
 }
 
 enum wu_error pnm_parse_header(struct pnm_desc *desc) {

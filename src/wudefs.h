@@ -6,15 +6,14 @@
 #include <stdbool.h>
 
 #include "conf.h"
-#include "wustr.h"
 #include "wutree.h"
+#include "common/wustr.h"
 #include "raster/alpha.h"
 #include "raster/color.h"
 #include "raster/compost.h"
 #include "raster/pix.h"
 #include "raster/pal.h"
-
-#define IMG_DATA_BORROWED ((void *)-1)
+#include "raster/strip.h"
 
 enum wu_error {
 	wu_no_change = -1, // For callbacks
@@ -102,6 +101,7 @@ struct raw_img {
 	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate
 	enum alpha_interpretation alpha:2;
 
+	bool borrowed:1; // .data is not ours
 	enum image_mode mode:2;
 	union {
 		struct raster_pal *palette;
@@ -174,7 +174,7 @@ struct raster_pal * raw_img_palette_init(struct raw_img *img);
 
 int raw_img_frame_prev_keyframe(struct raw_img *img, int current, int i);
 
-void raw_img_frame_set(struct raw_img *img, size_t i, size_t x, size_t y,
+bool raw_img_frame_set(struct raw_img *img, size_t i, size_t x, size_t y,
 size_t w, size_t h, int msec, bool opaque);
 
 size_t raw_img_frames_nr(const struct raw_img *img);

@@ -1,10 +1,11 @@
 #ifndef WU_WINDOW_BASE
 #define WU_WINDOW_BASE
 
-#include "../wudefs.h"
-#include "../opengl.h"
-
+#include "common/common.h"
 #include "window/egl.h"
+
+#include "wudefs.h"
+#include "opengl.h"
 
 #define WINDOW_KEYSTART ' '
 #define WINDOW_KEYEND ('Z' + 1)

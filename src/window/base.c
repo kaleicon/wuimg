@@ -1,6 +1,6 @@
-#include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <string.h>
 
 #include "base.h"
 
@@ -19,7 +19,7 @@ const enum key_action action, int code, const bool shift) {
 	if (code >= WINDOW_KEYSTART && code < WINDOW_KEYEND) {
 		unsigned char *map = window_key_get_map(held_keys);
 		if (!map[code] || action == key_release) {
-			map[code] = action;
+			map[code] = (uint8_t)action;
 		}
 	}
 }

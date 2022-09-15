@@ -1,8 +1,9 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "common.h"
+#include "common/common.h"
 #include "dec_enable.def"
 
 struct fmt_fn_desc {
@@ -836,6 +837,7 @@ static int dec_headers(void) {
 			print_fn_def("", fn_map[i].name, "callback", true);
 		}
 	}
+	fputc('\n', stdout);
 	return 0;
 }
 

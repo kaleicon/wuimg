@@ -4,10 +4,11 @@
 #include <string.h>
 #include <limits.h>
 
-#include "raster/bit.h"
-#include "raster/file.h"
+#include "common/bit.h"
+#include "common/file.h"
+#include "common/math.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
 #include "pi.h"
 
 /* Documented in
@@ -85,19 +86,7 @@ end_repeat:
 	return i + cnt*2;
 }
 
-static bool read_bit(const uint8_t *restrict bitstream,
-size_t *restrict bitpos) {
-	const bool bits = bit_get(bitstream, *bitpos);
-	++*bitpos;
-	return bits;
-}
-
-#ifdef EXACT_BITS
-static uint32_t read_bits(const uint8_t *restrict bitstream,
-size_t *restrict bitpos, unsigned long n) {
-	return (uint32_t)bit_advn(bitstream, bitpos, n);
-}
-#else // !EXACT_BITS
+#ifndef EXACT_BITS
 static uint32_t current_dword(const uint8_t *restrict bs,
 const size_t bitpos, const bool full_bits) {
 	size_t i = bitpos / 8;
@@ -153,12 +142,12 @@ static enum pi_repeat_src read_repeat_loc(const uint8_t *restrict bs,
 size_t *restrict bitpos) {
 	/* Location codes: 00, 01, 10, 110, 111 */
 #ifdef EXACT_BITS
-	const uint32_t bits = read_bits(bs, bitpos, 2);
+	const uint32_t bits = bit_advn(bs, bitpos, 2);
 	switch (bits) {
 	case 0: case 1: case 2:
 		return bits;
 	}
-	return (bits << 1) | read_bit(bs, bitpos);
+	return (bits << 1) | bit_adv(bs, bitpos);
 #else
 	const uint_fast32_t word = current_word(bs, *bitpos, false) >> 13;
 	uint8_t diff;
@@ -169,7 +158,7 @@ size_t *restrict bitpos) {
 		diff = 3;
 	}
 	*bitpos += diff;
-	return word >> (3 - diff);
+	return (enum pi_repeat_src)(word >> (3 - diff));
 #endif
 }
 
@@ -187,22 +176,22 @@ size_t *restrict bitpos) {
 		0111111xxxxxxx  128-255
 	*/
 #ifdef EXACT_BITS
-	if (read_bit(bs, bitpos)) {
-		return read_bit(bs, bitpos);
+	if (bit_adv(bs, bitpos)) {
+		return bit_adv(bs, bitpos);
 	} else { // 00
 		uint32_t sh = 0;
 		// 010
-		if (read_bit(bs, bitpos)) { // Weee
+		if (bit_adv(bs, bitpos)) { // Weee
 			// 0110
-			if (read_bit(bs, bitpos)) { // eeee
+			if (bit_adv(bs, bitpos)) { // eeee
 				// 01110
-				if (read_bit(bs, bitpos)) { // eeee
+				if (bit_adv(bs, bitpos)) { // eeee
 					// 011110
-					if (read_bit(bs, bitpos)) { // eeee
+					if (bit_adv(bs, bitpos)) { // eeee
 						// 0111110
-						if (read_bit(bs, bitpos)) { // eeee
+						if (bit_adv(bs, bitpos)) { // eeee
 							// 0111111
-							if (read_bit(bs, bitpos)) {
+							if (bit_adv(bs, bitpos)) {
 								++sh;
 							}
 							++sh;
@@ -216,7 +205,7 @@ size_t *restrict bitpos) {
 			++sh;
 		}
 		++sh;
-		return read_bits(bs, bitpos, sh) | (1U << sh);
+		return bit_advn(bs, bitpos, sh) | (1U << sh);
 	}
 #else
 	const uint32_t word = current_dword(bs, *bitpos, false);
@@ -253,18 +242,18 @@ size_t *restrict bitpos) {
 		011xxx  8-15
 	*/
 #ifdef EXACT_BITS
-	if (read_bit(bs, bitpos)) {
-		return read_bit(bs, bitpos);
+	if (bit_adv(bs, bitpos)) {
+		return bit_adv(bs, bitpos);
 	} else {
 		unsigned int sh = 0;
-		if (read_bit(bs, bitpos)) {
-			if (read_bit(bs, bitpos)) {
+		if (bit_adv(bs, bitpos)) {
+			if (bit_adv(bs, bitpos)) {
 				++sh;
 			}
 			++sh;
 		}
 		++sh;
-		return read_bits(bs, bitpos, sh) | (1U << sh);
+		return bit_advn(bs, bitpos, sh) | (1U << sh);
 	}
 #else
 	const uint32_t word = current_word(bs, *bitpos, false);
@@ -308,7 +297,7 @@ const size_t width, uint8_t *restrict table, const unsigned depth) {
 
 		if (i >= dims) {
 			break;
-		} else if (i == 2 || !read_bit(bitstream, &bitpos)) {
+		} else if (i == 2 || !bit_adv(bitstream, &bitpos)) {
 			enum pi_repeat_src loc[2];
 			loc[1] = depth; // sentinel value
 			for (int cur = 0;; cur = !cur) {
@@ -369,6 +358,15 @@ const uint16_t height) {
 	case 4: case 8:
 		break;
 	default:
+		return wu_invalid_header;
+	}
+
+	/* The decoding algorithm may require copying from previous rows with
+	 * an offset. If the width is 1, this may result in an offset of 0,
+	 * which will cause segfaults and stuff.
+	 * The algorithm is also meant to work for pixel pairs, so 'width & 1'
+	 * may be more appropiate. */
+	if (width < 2)  {
 		return wu_invalid_header;
 	}
 

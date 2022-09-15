@@ -1,15 +1,12 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
 #include <setjmp.h>
 
 #include <jpeglib.h>
 
-#include "../wudefs.h"
-#include "../wustr.h"
-#include "../common.h"
-#include "../metadata.h"
+#include "wudefs.h"
+#include "common/math.h"
+#include "common/wustr.h"
+#include "metadata.h"
 
 enum marker_type {
 	unknown_marker = 0,
@@ -237,7 +234,7 @@ struct icc_assembler *icc, const bool is_first) {
 	struct wu_tree *branch = tree_add_branch(metadata, "Marker");
 	if (branch) {
 		char app[] = "APPXXX";
-		sprintf(app + 3, "%hhu", mk->marker - JPEG_APP0);
+		sprintf(app + 3, "%hhu", (uint8_t)(mk->marker - JPEG_APP0));
 
 		tree_add_leaf_utf8(branch, "Type", app);
 		tree_bud_leaf(branch, "Size",

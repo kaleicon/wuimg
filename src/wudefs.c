@@ -1,14 +1,10 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <assert.h>
-#include <errno.h>
 
+#include "common/common.h"
+#include "common/math.h"
+#include "common/mem.h"
 #include "wudefs.h"
-#include "wutree.h"
-#include "common.h"
-#include "raster/raster.h"
 
 const char * wu_error_message(const enum wu_error err) {
 	switch (err) {
@@ -85,9 +81,7 @@ static void find_better_alignment(struct raw_img *img) {
 		return;
 	}
 	const size_t w = img->w * img->channels;
-	const size_t diff = scanline_length(w, img->bitdepth, img->align_sh)
-		- scanline_length(w, img->bitdepth, 0);
-	if (diff < 8) {
+	if (strip_padding(w, img->bitdepth, img->align_sh) < 8) {
 		img->align_sh = 3;
 	}
 }
@@ -107,14 +101,89 @@ static size_t plane_calc_size(struct raw_img *img, const size_t i) {
 	if (p->w < 1 || p->h < 1) {
 		return 0;
 	}
-	p->stride = scanline_length(p->w, img->bitdepth, img->align_sh);
-	p->size = scanline_length(p->h, 8, img->u.planes->v_pad) * p->stride;
+	p->stride = strip_length(p->w, img->bitdepth, img->align_sh);
+	p->size = strip_length(p->h, 8, img->u.planes->v_pad) * p->stride;
 	return p->size;
+}
+
+static const char * geom_verify(const uint8_t ch, const uint8_t bitdepth,
+const enum pix_attr attr, const bool paletted) {
+	if (!ch) {
+		return "Channel number must not be zero";
+	} else if (!bitdepth) {
+		return "Bitdepth must not be zero";
+	}
+
+	if (paletted) {
+		if (ch != 1) {
+			return "Paletted images must use 1 channel";
+		} else if (bitdepth > 8) {
+			return "Paletted images must not use more than 8 bits";
+		} else {
+			switch (attr) {
+			case pix_normal:
+			case pix_inverted:
+				break;
+			case pix_signed:
+				return "Paletted images can't use signed indices";
+			case pix_float:
+				return "Paletted images can't use floats";
+			case pix_pack_332:
+				return "Paletted images can't use 332 packing";
+			case pix_pack_1555:
+				return "Paletted images can't use 1555 packing";
+			default:
+				return "Undefined pixel attribute in paletted image";
+			}
+		}
+	} else {
+		const int depth = ch * bitdepth;
+		switch (attr) {
+		case pix_normal:
+		case pix_signed:
+		case pix_inverted:
+		case pix_float:
+			break;
+		case pix_pack_332:
+			if (depth != 8) {
+				return "pix_pack_332 must be set with 1"
+					"channel and 8 bits";
+			}
+			break;
+		case pix_pack_1555:
+			if (depth != 16) {
+				return "pix_pack_1555 must be set with 1"
+					"channel and 16 bits";
+			}
+			break;
+		default:
+			return "Undefined pixel attribute";
+		}
+	}
+	return NULL;
+}
+
+static bool test_overflow_common(size_t w, const size_t h, const uint8_t ch,
+const uint8_t bitdepth, const align_t align) {
+	if (w > 0 && h > 0) {
+		if (SIZE_MAX / w / ch > 1) {
+			w *= ch;
+			if (SIZE_MAX / w / bitdepth > 1) {
+				size_t bytes = strip_base(w, bitdepth);
+				const size_t a = ~0lu << align;
+				if (SIZE_MAX - ~a >= bytes) {
+					bytes = (bytes + ~a) & a;
+					return SIZE_MAX / h / bytes > 1;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 static bool test_overflow(struct raw_img *img) {
 	const uint8_t ch = (img->mode == image_mode_planar) ? 1 : img->channels;
-	const bool ok = raster_test_overflow(img->w, img->h, ch, img->bitdepth,
+	const bool ok = test_overflow_common(img->w, img->h, ch, img->bitdepth,
 		img->align_sh);
 	if (ok && img->mode == image_mode_planar) {
 		size_t limit = SIZE_MAX;
@@ -130,7 +199,7 @@ static bool test_overflow(struct raw_img *img) {
 }
 
 enum wu_error raw_img_verify(struct raw_img *img) {
-	const char *err_msg = raster_geom_verify(img->channels, img->bitdepth,
+	const char *err_msg = geom_verify(img->channels, img->bitdepth,
 		img->attr, img->mode == image_mode_palette);
 	if (err_msg) {
 		fatal_bug("Bad image", err_msg);
@@ -175,10 +244,10 @@ enum wu_error raw_img_verify(struct raw_img *img) {
 			img->alpha = alpha_ignore;
 		}
 	}
-	if (!img->ratio) {
+	if (img->ratio == 0) {
 		img->ratio = 1;
 	}
-	if (!img->dec_scale) {
+	if (img->dec_scale == 0) {
 		img->dec_scale = 1;
 	}
 	return wu_ok;
@@ -190,7 +259,7 @@ const struct wu_conf *wuconf) {
 }
 
 size_t raw_img_stride(const struct raw_img *img) {
-	return scanline_length(img->w * img->channels, img->bitdepth,
+	return strip_length(img->w * img->channels, img->bitdepth,
 		img->align_sh);
 }
 
@@ -294,7 +363,7 @@ int raw_img_frame_prev_keyframe(struct raw_img *img, const int current, int i) {
 	return i;
 }
 
-void raw_img_frame_set(struct raw_img *img, const size_t i, const size_t x,
+bool raw_img_frame_set(struct raw_img *img, const size_t i, const size_t x,
 const size_t y, const size_t w, const size_t h, const int msec,
 const bool opaque) {
 	img->frames->f[i] = (struct frame_info) {
@@ -302,6 +371,7 @@ const bool opaque) {
 		.msec = msec,
 		.keyframe = (opaque && !x && !y && w == img->w && h == img->h),
 	};
+	return compost_bounds_check(img->w, img->h, img->frames->f + i);
 }
 
 size_t raw_img_frames_nr(const struct raw_img *img) {
@@ -309,6 +379,9 @@ size_t raw_img_frames_nr(const struct raw_img *img) {
 }
 
 struct image_frames * raw_img_frames_init(struct raw_img *img, size_t nr) {
+	if (nr < 1) {
+		return false;
+	}
 	img->frames = calloc(sizeof(*img->frames) + nr * sizeof(*img->frames->f), 1);
 	if (img->frames) {
 		img->frames->nr = nr;
@@ -339,7 +412,7 @@ bool raw_img_clone(struct raw_img *dst, struct raw_img *src) {
 }
 
 static void raw_img_free(struct raw_img *img) {
-	if (img->data != IMG_DATA_BORROWED) {
+	if (!img->borrowed) {
 		free(img->data);
 	}
 	switch (img->mode) {
@@ -374,6 +447,9 @@ void raw_img_clear(struct raw_img *img) {
 
 
 struct raw_img * realloc_sub_images(struct image_file *file, const size_t nr) {
+	if (nr < 1) {
+		return NULL;
+	}
 	if (nr < file->nr) {
 		raw_img_free_range(file->sub_img, nr, file->nr);
 	}
@@ -392,6 +468,9 @@ struct raw_img * realloc_sub_images(struct image_file *file, const size_t nr) {
 }
 
 struct raw_img * alloc_sub_images(struct image_file *file, const size_t nr) {
+	if (nr < 1) {
+		return NULL;
+	}
 	file->sub_img = calloc(nr, sizeof(*file->sub_img));
 	if (file->sub_img) {
 		file->nr = nr;
@@ -488,7 +567,7 @@ static size_t print_dimensions(const struct raw_img *img) {
 		if (img->mode == image_mode_palette) {
 			fputs(" (paletted)", stdout);
 		}
-		memsize = scanline_length(img->w * img->channels, img->bitdepth,
+		memsize = strip_length(img->w * img->channels, img->bitdepth,
 			img->align_sh) * img->h;
 	}
 
@@ -552,13 +631,21 @@ void image_file_normalize(struct image_file *file) {
 	if (!file->nr) {
 		fatal_bug("Bad image", "No sub-images contained!");
 	}
+	for (size_t i = 0; i < file->nr; ++i) {
+		struct raw_img *img = file->sub_img + i;
+		if (img->mode == image_mode_planar && img->borrowed
+		&& !img->data) {
+			img->data = (void *)(-1);
+		}
+	}
 }
 
 enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) {
-	if (o < file->nr) {
-		if (!o) {
-			return wu_decoding_error;
-		}
+	if (!o) {
+		return wu_decoding_error;
+	} else if (o > file->nr) {
+		fatal_bug("Bad image", "Decoded more images than allocated?");
+	} else if (o < file->nr) {
 		realloc_sub_images(file, o);
 	}
 	return wu_ok;

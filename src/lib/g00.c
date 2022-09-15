@@ -1,18 +1,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "common/endian.h"
+#include "common/math.h"
 #include "raster/compost.h"
-#include "raster/endian.h"
 #include "g00.h"
 
 struct g00_part_loc {
 	uint32_t offset;
-	uint32_t len;
+	uint32_t __len;
 };
 
 static const size_t G00_BLOCK_SIZE = 5*2 + 41*2;
 static const size_t G00_PART_SIZE = 2*2 + 8*4 + 20*4;
-//static const size_t G00_PART_LOC_SIZE = sizeof(struct g00_part_loc);
 static const size_t LZSS_PAD = 3 * 8;
 
 void g00_cleanup(struct g00_desc *desc, struct raw_img *img) {
@@ -101,6 +101,7 @@ const size_t written) {
 	memcpy(pal, desc->buf + 2, v1->pal_entries * 4);
 
 	img->data = desc->buf + pal_bytes;
+	img->borrowed = true;
 	return written - pal_bytes;
 }
 

@@ -12,9 +12,12 @@
 #include <unicode/ucol.h>
 #include <unicode/uiter.h>
 
-#include "common.h"
+#include "common/common.h"
+#include "common/math.h"
+#include "common/mem.h"
+#include "common/wustr.h"
+
 #include "dec.h"
-#include "wustr.h"
 #include "filesystem.h"
 
 struct lenstr {

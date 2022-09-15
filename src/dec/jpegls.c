@@ -1,6 +1,5 @@
 #include <charls/charls_jpegls_decoder.h>
 
-#include "wudefs.h"
 #include "rast_utils.h"
 #include "raster/strip.h"
 

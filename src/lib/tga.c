@@ -3,11 +3,12 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "common.h"
-#include "raster/endian.h"
-#include "raster/file.h"
+#include "common/common.h"
+#include "common/endian.h"
+#include "common/file.h"
+#include "common/math.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
 #include "raster/unpack.h"
 
 #include "tga.h"

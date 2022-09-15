@@ -2,8 +2,9 @@
 
 #include <zlib.h>
 
-#include "xyz.h"
+#include "common/common.h"
 #include "raster/fmt.h"
+#include "xyz.h"
 
 void xyz_free(struct xyz_desc *desc, struct raw_img *img) {
 	img->data = NULL;
@@ -24,6 +25,7 @@ bool xyz_decode(struct xyz_desc *desc, struct raw_img *img) {
 			if (uncmp_len > pal_items*3) {
 				raw_img_palette_set(img, (struct raster_pal *)dst);
 				img->data = dst + sizeof(*img->u.palette);
+				img->borrowed = true;
 				raster_pal_from_rgb8(img->u.palette, uncmp,
 					pal_items);
 				desc->data = dst;

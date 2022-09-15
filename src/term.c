@@ -1,15 +1,11 @@
-#include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <errno.h>
+
 #include <unistd.h>
 
-#include <termios.h>
-
-#include "common.h"
 #include "term.h"
-#include "wustr.h"
+#include "common/wustr.h"
 
 static size_t graph_len(const unsigned char *str, size_t len) {
 	while (len) {
@@ -22,7 +18,7 @@ static size_t graph_len(const unsigned char *str, size_t len) {
 	return len;
 }
 
-void term_print_escaped(const uint8_t *restrict data, size_t len,
+void term_print_escaped(const unsigned char *restrict data, size_t len,
 const bool is_utf8, FILE *stream) {
 	len = graph_len(data, len);
 	const unsigned char hex[16] = "0123456789ABCDEF";

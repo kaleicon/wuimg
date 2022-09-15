@@ -1,10 +1,9 @@
-#include <stdio.h>
+#include <ctype.h>
 #include <stdbool.h>
 #include <string.h>
-#include <ctype.h>
 
-#include "../common.h"
-#include "memparser.h"
+#include "common/math.h"
+#include "raster/memparser.h"
 
 static long tonum(const long c) {
 	return c - '0';
@@ -220,4 +219,8 @@ struct mp_parser mp_parser_mem(const size_t len, const void *mem) {
 		.len = len,
 		.mem = mem,
 	};
+}
+
+struct mp_parser mp_parser_map(const struct map_info mm) {
+	return mp_parser_mem(mm.len, mm.data);
 }

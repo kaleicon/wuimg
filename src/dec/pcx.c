@@ -1,10 +1,7 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <ctype.h>
 
-#include "../wudefs.h"
-#include "../lib/pcx.h"
+#include "lib/pcx.h"
+#include "common/file.h"
 
 static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 	size_t i = 0;
@@ -21,11 +18,8 @@ static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 
 static void add_metadata(struct wu_tree *metadata,
 const struct pcx_desc *desc, struct raw_img *img) {
-	const char ver_fmt[] = "%hhu (%s)";
-	char buf[sizeof(ver_fmt) + 20];
-	const size_t w = (size_t)sprintf(buf, ver_fmt, desc->version,
+	tree_add_leaf_utf8(metadata, "Format version",
 		pcx_version_string(desc->version));
-	tree_add_leaf_utf8_len(metadata, "Format version", buf, w);
 
 	struct wu_leaf leaf = {
 		.val.u = img->channels,
@@ -68,9 +62,9 @@ const struct wu_conf *wuconf, struct wu_tree *metadata) {
 enum wu_error pcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	enum wu_error err = wu_open_error;
 	struct map_info mm;
-	if (map_file(&mm, infile->ifp)) {
+	if (file_map(&mm, infile->ifp)) {
 		struct pcx_desc desc;
-		err = pcx_open_file(&desc, &mm);
+		err = pcx_open_file(&desc, mp_parser_map(mm));
 		if (err == wu_ok) {
 			struct raw_img *img = alloc_sub_images(infile, 1);
 			if (img) {
@@ -80,7 +74,7 @@ enum wu_error pcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 				err = wu_alloc_error;
 			}
 		}
-		unmap_file(&mm);
+		file_unmap(&mm);
 	}
 	return err;
 }
@@ -107,14 +101,14 @@ const struct wu_conf *wuconf, const struct dcx_desc *dcx) {
 
 enum wu_error dcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct map_info mm;
-	if (map_file(&mm, infile->ifp)) {
+	if (file_map(&mm, infile->ifp)) {
 		struct dcx_desc desc;
-		enum wu_error st = dcx_open_file(&desc, &mm);
+		enum wu_error st = dcx_open_file(&desc, mp_parser_map(mm));
 		if (st == wu_ok) {
 			st = wrap_dcx(infile, wuconf, &desc);
 			dcx_free(&desc);
 		}
-		unmap_file(&mm);
+		file_unmap(&mm);
 		return st;
 	}
 	return wu_open_error;

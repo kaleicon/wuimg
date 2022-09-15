@@ -1,10 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <inttypes.h>
-
 #include <jbig.h>
 
+#include "common/file.h"
 #include "raster/strip.h"
 #include "wudefs.h"
 
@@ -61,7 +57,7 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 
 enum wu_error jbig_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct map_info mm;
-	if (!map_file(&mm, infile->ifp)) {
+	if (!file_map(&mm, infile->ifp)) {
 		return wu_alloc_error;
 	}
 
@@ -69,7 +65,7 @@ enum wu_error jbig_dec(struct image_file *infile, const struct wu_conf *wuconf) 
 	jbg_dec_init(&state);
 	unsigned char *why_isnt_it_const = (unsigned char *)mm.data;
 	const int status = jbg_dec_in(&state, why_isnt_it_const, mm.len, NULL);
-	unmap_file(&mm);
+	file_unmap(&mm);
 	const enum wu_error st = dec_wrap(infile, wuconf, &state, status);
 	jbg_dec_free(&state);
 	return st;

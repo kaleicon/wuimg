@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "common.h"
 #include "raster/pix.h"
 #include "raster/pal.h"
 
@@ -29,6 +28,19 @@ struct sewing_machine {
 	size_t w, h;
 	struct sewing_clothe dst, color, alpha;
 };
+
+typedef int8_t align_t;
+
+align_t align_from_int(size_t alignment);
+
+size_t strip_base(size_t width, uint8_t bitdepth);
+
+size_t strip_length(size_t width, uint8_t bitdepth, align_t alignment);
+
+size_t strip_padding(size_t width, uint8_t bitdepth, align_t alignment);
+
+align_t strip_alignment(size_t stride, size_t width, uint8_t bitdepth);
+
 
 void strip_scale(void *dst, const void *src, size_t width,
 struct scale_info scaler, bool design);

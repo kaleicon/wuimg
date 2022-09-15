@@ -1,18 +1,17 @@
+#include <errno.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <locale.h>
-#include <errno.h>
-#include <limits.h>
 
-#include "wudefs.h"
 #include "dec.h"
 #include "display.h"
 #include "events.h"
 #include "extract.h"
-#include "write_pam.h"
 #include "filesystem.h"
+#include "write_pam.h"
+#include "common/math.h"
 
 enum work_mode {
 	guess = 0,
@@ -429,32 +428,31 @@ static void print_help() {
 		"\t" DIRECTORY_MODE "\n"
 		"\t\tDisplay images from PATH if it is a directory, from its\n"
 		"\t\tparent if it is a file, or from the current directory if\n"
-		"\t\tmissing. Assumed when zero or one paths are given. Paths\n"
-		"\t\tafter the first are ignored.\n"
+		"\t\tmissing. Assumed when zero or one paths are given.\n"
 
 		"\t" SOLE_MODE "\n"
 		"\t\tRead only the file(s) given, in the order given. Assumed\n"
 		"\t\twhen more than one path, or \"-\" (stdin), is given.\n"
 
 		"\t" ARCHIVE_MODE "\n"
-		"\t\tExtract and display images from FILE, which must be an\n"
-		"\t\tarchive file supported by libarchive.\n"
+		"\t\tDisplay any images inside FILE, which must be an archive\n"
+		"\t\tformat supported by libarchive.\n"
 
 		"\t" WRITE_MODE " [switches]\n"
 		"\t\tDecode FILE to FILE(_sub#:frame#).pam, with each sub-image\n"
-		"\t\tand animation frame on separate files. Names are written\n"
-		"\t\tto stdout one per line.\n"
+		"\t\tand animation frame on separate files. Output names are\n"
+		"\t\twritten to stdout one per line.\n"
 
 		"\t" TEST_MODE " [switches]\n"
 		"\t\tMeasure decoding time for each FILE.\n"
 
 		"\n"
 		WRITE_MODE " switches:\n"
+		"\t-d OUTDIR\n"
+		"\t\tWrite files to OUTDIR instead of the file's parent.\n"
+
 		"\t-f\n"
 		"\t\tForce overwriting output file(s).\n"
-
-		"\t-o OUTDIR\n"
-		"\t\tWrite files onto OUTDIR instead of the file's parent.\n"
 
 		"\t-s\n"
 		"\t\tWrite only the initial sub-image to stdout.\n"
@@ -468,8 +466,7 @@ static void print_help() {
 		"\t\tDecode each file N times. Default is 1.\n"
 
 		"\t-w N\n"
-		"\t\tBefore measuring, decode each file N times for warmup.\n"
-		"\t\tDefault is 0.\n");
+		"\t\tDecode N times for warmup before measuring. Default is 0");
 }
 
 static int test_args(const int argc, char **argv, struct test_mode_args *args) {
@@ -488,12 +485,13 @@ static int test_args(const int argc, char **argv, struct test_mode_args *args) {
 			default: return read;
 			}
 			// %c doesn't match null bytes
-			const unsigned int val = *ptr;
+			int tmp;
 			char last;
-			if (sscanf(argv[read+1], "%u%c", ptr, &last) == 1) {
+			if (sscanf(argv[read+1], "%d%c", &tmp, &last) == 1
+			&& tmp > 0) {
+				*ptr = (unsigned)tmp;
 				read += 2;
 			} else {
-				*ptr = val;
 				break;
 			}
 		} else {
@@ -515,7 +513,7 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 			|| !strncmp(arg, DIRECTORY_MODE, arglen);
 
 		if (mode_match) {
-			mode->type = arg[0];
+			mode->type = (enum work_mode)arg[0];
 		} else {
 			if (!strcmp(arg, HELP_SHORT)
 			|| !strcmp(arg, HELP_LONG)) {

@@ -1,6 +1,6 @@
-#include "qoi.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
+#include "qoi.h"
 
 enum qoi_ops {
 	qoi_op_index = 0,

@@ -1,7 +1,8 @@
-#include "wudefs.h"
-#include "rast_utils.h"
-
 #include <Lerc_c_api.h>
+
+#include "rast_utils.h"
+#include "common/common.h"
+#include "common/math.h"
 
 static enum wu_error map_lerc_to_wu(const lerc_status status,
 const enum wu_error fallback_fail) {
@@ -35,7 +36,7 @@ const unsigned type) {
 	case 0: case 1: // char/uchar
 	case 2: case 3: // short/ushort
 	case 4: case 5: // int/uint
-		img->bitdepth = 8 << (type >> 1);
+		img->bitdepth = (uint8_t)(8 << (type / 2));
 		img->attr = (type & 1) ? pix_normal : pix_signed;
 		break;
 	case 6: case 7: // float/double

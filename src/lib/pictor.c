@@ -6,7 +6,6 @@
 
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
-
 #include "pictor.h"
 
 const char * pictor_palette_str(enum pictor_palette_type type) {
@@ -50,7 +49,7 @@ const char * pictor_video_mode(const struct pictor_desc *desc) {
 static void pictor_interleave(const struct pictor_desc *desc,
 struct raw_img *img, const unsigned char *restrict src) {
 	vga_interleave(img->data, src, img->w, img->h, desc->planes, 1,
-		1 << img->align_sh, img->mode == image_mode_palette);
+		img->align_sh, img->mode == image_mode_palette);
 }
 
 static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
@@ -157,8 +156,7 @@ size_t pictor_decode(const struct pictor_desc *desc, struct raw_img *img) {
 	size_t raster_len;
 	unsigned char *raster;
 	if (desc->interleave) {
-		raster_len = scanline_length(img->w, 1, 1) * desc->planes
-			* img->h;
+		raster_len = strip_base(img->w, 1) * desc->planes * img->h;
 		raster = malloc(raster_len);
 		if (!raster) {
 			return 0;

@@ -2,7 +2,7 @@
 #define LIB_DPX
 
 #include "wudefs.h"
-#include "raster/endian.h"
+#include "common/endian.h"
 
 enum dpx_signal {
 	dpx_signal_undefined = 0,

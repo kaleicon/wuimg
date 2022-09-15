@@ -1,4 +1,3 @@
-#include "wudefs.h"
 #include "lib/msx.h"
 
 static enum wu_error scr_common(struct image_file *infile,

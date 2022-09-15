@@ -1,15 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
-
 #include <libheif/heif.h>
 
 #include "dec_enable.def"
-#include "raster/strip.h"
-#include "wudefs.h"
-#include "common.h"
+#include "common/file.h"
 #include "metadata.h"
+#include "wudefs.h"
 
 struct heif_state {
 	struct map_info mm;
@@ -38,7 +32,7 @@ static void clean_heif_state(struct image_file *infile) {
 	if (ds->ctx) {
 		heif_context_free(ds->ctx);
 	}
-	unmap_file(&ds->mm);
+	file_unmap(&ds->mm);
 }
 
 static void read_block(const struct heif_image_handle* handle,
@@ -96,8 +90,8 @@ struct heif_color_profile_nclx *nclx) {
 		nclx->color_primary_green_x, nclx->color_primary_green_y,
 		nclx->color_primary_blue_x, nclx->color_primary_blue_y);
 //	cs->primaries = nclx->color_primaries;
-	cs->transfer = nclx->transfer_characteristics;
-	cs->matrix = nclx->matrix_coefficients;
+	cs->transfer = (enum cicp_transfer)nclx->transfer_characteristics;
+	cs->matrix = (enum cicp_matrix)nclx->matrix_coefficients;
 	cs->limited = !nclx->full_range_flag;
 }
 
@@ -153,7 +147,7 @@ int *bpl) {
 		return wu_invalid_params;
 	}
 
-	img->data = IMG_DATA_BORROWED;
+	img->borrowed = true;
 	img->channels = (uint8_t)((chroma == heif_chroma_monochrome ? 1 : 3)
 		+ alpha);
 	img->bitdepth = (depth > 8) ? 16 : 8;
@@ -268,7 +262,7 @@ const struct wu_conf *wuconf, const size_t i) {
 		break;
 	}
 	if (st == wu_ok) {
-		img->align_sh = scanline_alignment((size_t)bytes_per_line,
+		img->align_sh = strip_alignment((size_t)bytes_per_line,
 			scanline, img->bitdepth);
 		if (img->align_sh < 0) {
 			return wu_invalid_header;
@@ -315,7 +309,7 @@ const struct wu_conf *wuconf) {
 
 	infile->dec_state = ds;
 	infile->events = ev_subcycle;
-	if (!map_file(&ds->mm, infile->ifp)) {
+	if (!file_map(&ds->mm, infile->ifp)) {
 		return wu_open_error;
 	}
 

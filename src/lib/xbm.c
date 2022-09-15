@@ -188,7 +188,7 @@ struct xbm_define define[static 4]) {
 			if (define[i].found) {
 				return false;
 			}
-			if (!desc->name.len) {
+			if (!desc->name.ptr) {
 				desc->name.ptr = word.ptr;
 				desc->name.len = word.len - define[i].name.len;
 			}
@@ -196,7 +196,6 @@ struct xbm_define define[static 4]) {
 			break;
 		}
 	}
-	mp_skip_line(tp);
 	return ok;
 }
 

@@ -2,7 +2,7 @@
 
 #include <zlib.h>
 
-#include "raster/bit.h"
+#include "common/bit.h"
 #include "raster/fmt.h"
 #include "hg3.h"
 

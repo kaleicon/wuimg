@@ -1,7 +1,11 @@
 #ifndef WU_CONF
 #define WU_CONF
 
-#include "common.h"
+#include <stdbool.h>
+
+struct display_dims {
+	int w, h;
+};
 
 struct wu_conf {
 	unsigned max_img_size; /* Max image size in either dimension. The
@@ -46,9 +50,8 @@ struct wu_conf {
 	bool tiff_use_homegrown_unpacker:1; /* Use our own pixel unpacking
 		routines instead of libtiff's high-level interface if the image
 		fits certain criteria. Where applicable, this usually results
-		in lower memory usage and faster decoding and display. This
-		also allows decoding some exotic bitdepths that libtiff doesn't
-		render on its own. */
+		in lower memory usage, faster decoding and display, and better
+		support for some exotic bitdepths. */
 
 	// RAW
 	bool raw_16bit:1; // Render with 16 bits per component instead of 8.
@@ -58,7 +61,7 @@ struct wu_conf {
 		original, otherwise do a full and slow render of the raw data.
 		The thumbnail is always decoded at full resolution. If the
 		thumbnail is a JPEG image, the jpeg decoder function will be
-		used and so its settings will also apply to it.
+		used and so its settings will apply to it.
 		  Note that the thumbnail might have camera effects applied,
 		and so might differ drastically from a straight render of the
 		raw data. */

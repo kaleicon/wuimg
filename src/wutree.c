@@ -1,12 +1,11 @@
-#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-#include "common.h"
 #include "term.h"
 #include "utf8.h"
 #include "wutree.h"
-#include "wustr.h"
+#include "common/mem.h"
+#include "common/wustr.h"
 
 static bool is_emb_str(const struct wu_emb_str *emb) {
 	return emb->len > sizeof(emb->s.arr);
@@ -277,8 +276,8 @@ struct wu_tree * tree_findadd_branch(struct wu_tree *par, const char *name) {
 
 struct wu_tree * tree_find_path(struct wu_tree *par, const char *path[],
 const size_t len) {
-	for (size_t i = 0; i < len; ++i) {
-		if (!par || par->leaf.type != not_a_leaf) {
+	for (size_t i = 0; i < len && par; ++i) {
+		if (par->leaf.type != not_a_leaf) {
 			return NULL;
 		}
 		par = tree_find_branch(par, path[i]);

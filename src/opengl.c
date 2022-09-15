@@ -1,18 +1,16 @@
-#include <stdio.h>
-#include <math.h>
 #include <limits.h>
-#include <string.h>
-
-#include <epoxy/gl.h>
+#include <math.h>
 
 #include "opengl.h"
+#include "common/common.h"
+#include "common/endian.h"
+#include "common/math.h"
 #include "raster/color.h"
-#include "raster/endian.h"
 #include "raster/pix.h"
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
-//define WU_DEBUG_GL
+//#define WU_DEBUG_GL
 
 /* GLSL variables */
 #define ATTR_POS "pos"
@@ -146,7 +144,7 @@ static void tex_2d_parameteri(const GLenum name, const GLint param) {
 }
 
 static void tex_2d_mag(const enum gl_mag_filter filter) {
-	tex_2d_parameteri(GL_TEXTURE_MAG_FILTER, filter);
+	tex_2d_parameteri(GL_TEXTURE_MAG_FILTER, (GLint)filter);
 }
 
 static void set_mag_filter(const unsigned subsamp, const bool good) {
@@ -324,7 +322,7 @@ const enum pix_layout l2) {
 	uint8_t swz[] = {0,1,2,3};
 	pix_layout_swizzle(swz, 1, sizeof(swz), l1);
 	pix_layout_swizzle(swz, 1, sizeof(swz), l2);
-	return PIX_LAYOUT_PACK(swz[0], swz[1], swz[2], swz[3]);
+	return (enum pix_layout)PIX_LAYOUT_PACK(swz[0], swz[1], swz[2], swz[3]);
 }
 
 static void palette_parameters(const bool enable) {
@@ -386,19 +384,19 @@ static size_t calc_map_outstride(const struct raw_img *img, const size_t w,
 const enum unpack_op op, const int8_t align_sh) {
 	gl_alignment(align_sh);
 	if (op == op_noop) {
-		return scanline_length(w, img->bitdepth, align_sh);
+		return strip_length(w, img->bitdepth, align_sh);
 	}
 	const size_t outstride = unpack_stride(w, img->bitdepth, img->attr, op);
 	if (!outstride) {
-		fatal_bug("Upload failure", "Unsupported raster format");
+		fatal_bug("Upload error", "Unsupported raster format");
 	}
-	return scanline_length(outstride, 8, align_sh);
+	return strip_length(outstride, 8, align_sh);
 }
 
 static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
 const struct raw_img *img, const size_t w, const size_t h,
 const unsigned char *data) {
-	const size_t instride = scanline_length(w, img->bitdepth, img->align_sh);
+	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
 	const size_t outstride = calc_map_outstride(img, w, op, 2);
 
 	unsigned char *map = map_unpack_buffer(pix_buf, outstride * h,
@@ -417,8 +415,8 @@ static void * scale_upload(const GLuint pix_buf, const struct raw_img *img,
 const size_t w, const size_t h, const unsigned char *data) {
 	const align_t align = 2;
 	gl_alignment(align);
-	const size_t instride = scanline_length(w, img->bitdepth, img->align_sh);
-	const size_t outstride = scanline_length(w, img->bitdepth, align);
+	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
+	const size_t outstride = strip_length(w, img->bitdepth, align);
 	const size_t mapsize = outstride * h;
 
 	const struct scale_info info = strip_scale_info(1 << img->used_bits,
@@ -785,7 +783,7 @@ struct wu_state *state, const struct raw_img *img) {
 	const unsigned depth_log = bitdepth_log(r->bd);
 	r->fmt = fmt_lut(r->ch);
 	r->type = type_lut(depth_log, pix_normal);
-	r->len = scanline_length(r->w * r->ch, r->bd, 1);
+	r->len = strip_base(r->w * r->ch, r->bd);
 
 	const GLint in_fmt = in_fmt_lut(depth_log, r->ch);
 
@@ -838,7 +836,7 @@ void gl_reader_bind(struct gl_context *context) {
 
 static void enable_bind_tex(const GLint idx, const GLuint *texs,
 const GLint *samps, const GLenum target) {
-	tex_active(idx);
+	tex_active((enum gl_tex_unit)idx);
 	glBindTexture(target, texs[idx]);
 	glUniform1i(samps[idx], idx);
 

@@ -2,7 +2,8 @@
 #include <string.h>
 
 #include "tlg.h"
-#include "raster/endian.h"
+#include "common/endian.h"
+#include "common/math.h"
 #include "raster/strip.h"
 
 struct dict {

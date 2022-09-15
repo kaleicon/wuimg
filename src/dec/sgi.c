@@ -1,6 +1,3 @@
-#include <string.h>
-
-#include "wudefs.h"
 #include "rast_utils.h"
 #include "lib/sgi.h"
 

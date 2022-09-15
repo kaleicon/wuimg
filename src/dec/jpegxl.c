@@ -1,6 +1,7 @@
 #include <jxl/decode.h>
 
-#include "../wudefs.h"
+#include "wudefs.h"
+#include "common/file.h"
 
 static void set_colorspace(struct raw_img *img, JxlDecoder *jd) {
 	const JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
@@ -22,7 +23,8 @@ static void set_colorspace(struct raw_img *img, JxlDecoder *jd) {
 			if (enc.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
 				color_space_set_gamma(&img->cs, enc.gamma);
 			} else {
-				img->cs.transfer = enc.transfer_function;
+				img->cs.transfer =
+					(enum cicp_transfer)enc.transfer_function;
 			}
 			return;
 		case JXL_COLOR_SPACE_XYB:
@@ -103,7 +105,7 @@ const struct wu_conf *wuconf, JxlDecoder *jd) {
 			}
 			img->alpha = info.alpha_premultiplied
 				? alpha_associated : alpha_unassociated;
-			raw_img_exif_orientation(img, info.orientation);
+			raw_img_exif_orientation(img, (int)info.orientation);
 			if (!set_fmt(img, &fmt)) {
 				return wu_unsupported_feature;
 			}
@@ -138,7 +140,7 @@ enum wu_error jpegxl_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct map_info mm;
 	enum wu_error err = wu_ok;
-	if (map_file(&mm, infile->ifp)) {
+	if (file_map(&mm, infile->ifp)) {
 		JxlDecoder *jd = JxlDecoderCreate(NULL);
 		if (jd) {
 			/* libjxl can use threading, but the default
@@ -151,7 +153,7 @@ const struct wu_conf *wuconf) {
 		} else {
 			err = wu_alloc_error;
 		}
-		unmap_file(&mm);
+		file_unmap(&mm);
 	} else {
 		err = wu_alloc_error;
 	}

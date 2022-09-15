@@ -46,7 +46,7 @@ struct mag_desc {
 	uint8_t model[4];
 	enum mag_model_code code:8;
 	struct mag_msx msx;
-	size_t row_dwords, dwords;
+	size_t row_dwords;
 	struct mag_comment comment;
 	long null_pos;
 	struct mag_section flag_a, flag_b, color;

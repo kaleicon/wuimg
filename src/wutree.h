@@ -2,6 +2,8 @@
 #define WU_TREE
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <time.h>
 
 enum wu_leaf_type {

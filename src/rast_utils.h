@@ -2,7 +2,7 @@
 #define RAST_WUTILS
 
 #include "wudefs.h"
-#include "common.h"
+#include "common/file.h"
 #include "raster/memparser.h"
 
 typedef void (*rast_vfree_t)(void *desc);

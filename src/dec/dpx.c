@@ -1,4 +1,4 @@
-#include "wudefs.h"
+#include "common/common.h"
 #include "lib/dpx.h"
 
 static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {

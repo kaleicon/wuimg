@@ -1,7 +1,43 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "common/math.h"
 #include "strip.h"
+
+align_t align_from_int(const size_t alignment) {
+	return (align_t)zulog2(alignment);
+}
+
+size_t strip_base(const size_t width, const uint8_t bitdepth) {
+	return (width * bitdepth + 7) / 8;
+}
+
+size_t strip_length(const size_t width, const uint8_t bitdepth,
+const align_t align_sh) {
+	const size_t a = ~0lu << align_sh;
+	return (strip_base(width, bitdepth) + ~a) & a;
+}
+
+size_t strip_padding(const size_t width, const uint8_t bitdepth,
+const align_t align_sh) {
+	const size_t bytes = strip_base(width, bitdepth);
+	const size_t a = ~0lu << align_sh;
+	return ((bytes + ~a) & a) - bytes;
+}
+
+align_t strip_alignment(const size_t stride, const size_t width,
+const uint8_t bitdepth) {
+	const size_t base = strip_base(width, bitdepth);
+	if (stride >= base) {
+		const size_t diff = stride - base;
+		if (diff) {
+			return (align_t)(zulog2(diff) + 1);
+		}
+		return 0;
+	}
+	return -1;
+}
+
 
 static inline void scale_inline(void *dst, const void *src,
 const size_t width, const uint64_t mul, const uint8_t depth, const uint64_t add) {
@@ -156,7 +192,7 @@ void strip_sew_alpha(struct sewing_machine *sew) {
 
 static struct sewing_clothe set_plane(void *ptr, const size_t w, const size_t h,
 const align_t align) {
-	const size_t stride = scanline_length(w, 8, align);
+	const size_t stride = strip_length(w, 8, align);
 	return (struct sewing_clothe) {
 		.ptr = ptr,
 		.stride = stride,

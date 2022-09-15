@@ -1,4 +1,3 @@
-#include "wudefs.h"
 #include "rast_utils.h"
 #include "lib/tlg.h"
 

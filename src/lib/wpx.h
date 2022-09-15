@@ -78,7 +78,7 @@ size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct raw_img *img);
 
 enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct raw_img *img);
 
-enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct map_info *mm);
+enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, struct mp_parser mp);
 
 
 void wpx_ia2_cleanup(struct wpx_ia2_desc *desc);
@@ -88,6 +88,6 @@ struct wpx_bmp_desc *frame, uint32_t i);
 
 enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc);
 
-enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct map_info *mm);
+enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, struct mp_parser mp);
 
 #endif /* LIB_WPX */

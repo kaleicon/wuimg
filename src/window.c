@@ -1,11 +1,10 @@
-#include <stdlib.h>
-#include <string.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include "common.h"
-#include "window.h"
 #include "term.h"
+#include "window.h"
 
 static volatile sig_atomic_t sig_should_close = 0;
 

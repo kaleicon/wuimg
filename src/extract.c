@@ -1,17 +1,15 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
 #include <errno.h>
 #include <locale.h>
+#include <stdlib.h>
 
 #include <archive.h>
 #include <archive_entry.h>
 
-#include "extract.h"
-#include "common.h"
-#include "wustr.h"
+#include "common/math.h"
+#include "common/mem.h"
+#include "common/wustr.h"
 #include "dec.h"
+#include "extract.h"
 #include "term.h"
 
 void extract_iter_free(struct extract_iter *iter) {

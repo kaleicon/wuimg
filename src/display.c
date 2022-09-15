@@ -1,16 +1,16 @@
+#include <ctype.h>
+#include <math.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <time.h>
-#include <math.h>
-#include <limits.h>
 
-#include "common.h"
-#include "display.h"
 #include "dec.h"
+#include "display.h"
 #include "events.h"
-#include "raster/mem.h"
+#include "common/math.h"
+#include "common/mem.h"
 
 static void set_background_color(const struct image_context *image) {
 	const struct wu_conf *conf = &image->conf;
@@ -67,7 +67,7 @@ const bool reset) {
 		}
 		break;
 	case gl_upload_same_size:
-		break; // Keep state as it was
+		break;
 	}
 
 	if (!state->anim_playing) {

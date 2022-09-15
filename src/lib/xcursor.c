@@ -3,7 +3,9 @@
 #include <errno.h>
 
 #include "xcursor.h"
-#include "raster/endian.h"
+#include "common/common.h"
+#include "common/endian.h"
+#include "common/math.h"
 #include "raster/fmt.h"
 
 /* Though this format is simple enough, its only written spec is the mildly

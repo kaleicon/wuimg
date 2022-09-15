@@ -4,10 +4,10 @@
 
 #include <tiffio.h>
 
-#include "../wudefs.h"
-#include "../common.h"
-#include "../metadata.h"
-#include "../raster/unpack.h"
+#include "wudefs.h"
+#include "metadata.h"
+#include "common/common.h"
+#include "raster/unpack.h"
 
 struct tiff_info {
 	uint16_t photometric, spp, bps, sfmt;
@@ -132,12 +132,11 @@ const struct tiff_info *info, const enum unpack_op op) {
 	tiles.per_row = ((uint32_t)img->w + tiles.width - 1) / tiles.width;
 	tiles.per_col = ((uint32_t)img->h + tiles.height - 1) / tiles.height;
 	tiles.end_width = (uint32_t)img->w - tiles.width * (tiles.per_row - 1);
-	tiles.stride = scanline_length(tiles.width * comps, (uint8_t)info->bps, 1);
-	tiles.end_stride = scanline_length(tiles.end_width * comps,
-		(uint8_t)info->bps, 1);
+	tiles.stride = strip_base(tiles.width * comps, (uint8_t)info->bps);
+	tiles.end_stride = strip_base(tiles.end_width * comps,
+		(uint8_t)info->bps);
 
-	const size_t dst_stride = scanline_length(img->w * comps,
-		img->bitdepth, 1);
+	const size_t dst_stride = strip_base(img->w * comps, img->bitdepth);
 	unsigned char *restrict dst = img->data;
 	uint32_t ts = 0;
 	for (uint32_t p = 0; p < info->planes; ++p) {
@@ -175,8 +174,8 @@ const struct tiff_info *info) {
 	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip);
 
 	const uint32_t strips = total_strips / info->planes;
-	const size_t stride = scanline_length(img->w * img->channels / info->planes,
-		img->bitdepth, 1);
+	const size_t stride = strip_base(img->w * img->channels / info->planes,
+		img->bitdepth);
 	unsigned char *data = img->data;
 	for (uint32_t p = 0; p < info->planes; ++p) {
 		for (uint32_t st = 0; st < strips; ++st) {
@@ -380,8 +379,11 @@ const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 
-	size_t i = 0;
-	do {
+	size_t decoded = 0;
+	for (size_t i = 0; i < infile->nr; ++i) {
+		if (!TIFFSetDirectory(tif, (tdir_t)i)) {
+			break;
+		}
 		uint32_t w, h;
 		const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w) == 1
 			&& TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h) == 1;
@@ -391,7 +393,7 @@ const struct wu_conf *wuconf) {
 			continue;
 		}
 
-		struct raw_img *img = infile->sub_img + i;
+		struct raw_img *img = infile->sub_img + decoded;
 		img->w = w;
 		img->h = h;
 		if (raw_img_exceeds_limit(img, wuconf)) {
@@ -404,36 +406,32 @@ const struct wu_conf *wuconf) {
 			image_file_error_append(infile, err);
 			continue;
 		}
-		bool do_it_ourselves;
-		if (wuconf->tiff_use_homegrown_unpacker) {
-			do_it_ourselves = check_support(&info);
-		} else {
-			do_it_ourselves = false;
-		}
+		const bool do_it_ourselves = wuconf->tiff_use_homegrown_unpacker
+			&& check_support(&info);
 
-		enum wu_error status;
-		if (do_it_ourselves) {
+		enum wu_error status = -1;
+		switch ((int)do_it_ourselves) {
+		case true:
 			status = nih_decode(tif, img, &info);
 			if (status == wu_ok) {
-				++i;
-				get_metadata_tags(tif, img);
-				continue;
+				break;
 			}
 			raw_img_clear(img);
-			image_file_error_append(infile,
-				"Native unpacking failed, falling back on "
-				"libtiff.");
+			image_file_error_append(infile, "Native unpacking "
+				"failed, falling back on libtiff.");
+			// fallthrough
+		case false:
+			status = libtiff_decode(tif, infile, img);
 		}
 
-		status = libtiff_decode(tif, infile, img);
 		if (status == wu_ok) {
-			++i;
+			++decoded;
 			get_metadata_tags(tif, img);
 		} else {
 			raw_img_clear(img);
 		}
-	} while (TIFFReadDirectory(tif) && i < infile->nr);
+	}
 
 	TIFFCleanup(tif);
-	return image_file_total_decoded(infile, i);
+	return image_file_total_decoded(infile, decoded);
 }

@@ -5,7 +5,6 @@
 #include <libdrm/drm_mode.h>
 #include <xf86drmMode.h>
 
-#include "../common.h"
 #include "base.h"
 #include "egl.h"
 

@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #include "wudefs.h"
-#include "wustr.h"
+#include "common/wustr.h"
 
 bool fmtmap_known_extension(const struct wuptr filename);
 

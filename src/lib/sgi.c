@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "raster/file.h"
+#include "common/file.h"
+#include "common/math.h"
 #include "raster/fmt.h"
-#include "raster/unpack.h"
 #include "sgi.h"
 
 static const uint8_t RLE_LEN_MASK = 0x7f;
@@ -26,7 +26,7 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 	do {
 		const uint16_t packet = endian16(rle[r], big_endian);
 		const uint16_t len = packet & RLE_LEN_MASK;
-		if (out_limit - o < len) {
+		if (o + len >= out_limit) {
 			return;
 		}
 		++r;
@@ -44,7 +44,7 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 			o += len;
 			++r;
 		}
-	} while (rle_limit - r >= 2);
+	} while (r + 1 < rle_limit);
 }
 
 static void rle_loop8(uint8_t *restrict output, const size_t out_limit,
@@ -54,7 +54,7 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 	do {
 		const uint8_t packet = rle[r];
 		const uint8_t len = packet & RLE_LEN_MASK;
-		if (out_limit - o < len) {
+		if (o + len >= out_limit) {
 			return;
 		}
 		++r;
@@ -67,7 +67,7 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 			o += len;
 			++r;
 		}
-	} while (rle_limit - r >= 2);
+	} while (r + 1 < rle_limit);
 }
 
 static void rle_loop(const struct sgi_desc *desc, struct raw_img *img,
@@ -96,7 +96,9 @@ static bool resolve_offsets(struct rle_info *rle, const uint8_t bytedepth) {
 	for (size_t i = 0; i < rle->entries; ++i) {
 		const uint32_t offset = endian32(rle->row_offset[i], big_endian);
 		const uint32_t len = endian32(rle->row_len[i], big_endian);
-		if (offset + len > rle_end) {
+		if (offset < file_pos) {
+			return false;
+		} else if (offset + len >= rle_end) {
 			return false;
 		} else if (len < min_len) {
 			return false;
@@ -158,7 +160,7 @@ const size_t dims) {
 }
 
 size_t sgi_decode(const struct sgi_desc *desc, struct raw_img *img) {
-	if (raw_img_alloc(img) == wu_ok) {
+	if (raw_img_alloc_noverify(img)) {
 		const size_t size = raw_img_size(img);
 		fseek(desc->ifp, 512, SEEK_SET);
 		if (desc->compression == sgi_rle) {

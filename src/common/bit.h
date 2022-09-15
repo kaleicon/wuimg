@@ -11,11 +11,11 @@ struct bitstrm {
 	size_t len;
 };
 
-uint_fast32_t bit_getn(const void *stream, const size_t pos, size_t n);
+uint32_t bit_getn(const void *stream, const size_t pos, size_t n);
 
 bool bit_get(const void *stream, size_t pos);
 
-uint_fast32_t bit_advn(const void *stream, size_t *pos, size_t n);
+uint32_t bit_advn(const void *stream, size_t *pos, size_t n);
 
 bool bit_adv(const void *stream, size_t *pos);
 

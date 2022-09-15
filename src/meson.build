@@ -81,8 +81,6 @@ endforeach
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : conf_data)
 dec_comptime = executable('dec_comptime', 'dec_comptime.c')
-wayland_scanner = find_program('wayland-scanner')
-xdg_shell_xml = '/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml'
 
 src_list += [custom_target('dec_maps',
 		output : ['dec_maps.c'],
@@ -95,6 +93,44 @@ src_list += [custom_target('dec_maps',
 		depend_files : dec_enable,
 		command : [dec_comptime, '-h']),
 
+	'conf.c',
+	'metadata.cpp',
+	'rast_utils.c',
+	'term.c',
+	'utf8.c',
+	'wudefs.c',
+	'wutree.c',
+
+	'common/bit.c',
+	'common/common.c',
+	'common/endian.c',
+	'common/file.c',
+	'common/math.c',
+	'common/mem.c',
+	'common/wustr.c',
+
+	'raster/cicp.c',
+	'raster/color.c',
+	'raster/compost.c',
+	'raster/fmt.c',
+	'raster/graphics_adapters.c',
+	'raster/icc.c',
+	'raster/mat.c',
+	'raster/memparser.c',
+	'raster/pal.c',
+	'raster/pix.c',
+	'raster/strip.c',
+	'raster/unpack.c']
+
+dep_list += [cc.find_library('m', required : false),
+	dependency('exiv2'),
+	dependency('lcms2'),
+	dependency('icu-i18n'),
+	dependency('uchardet')]
+
+wayland_scanner = find_program('wayland-scanner')
+xdg_shell_xml = '/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml'
+view_src_list = [
 	custom_target('xdg-shell-protocol',
 		output : ['xdg-shell-protocol.c'],
 		command : [wayland_scanner, 'private-code', xdg_shell_xml, '@OUTPUT@']),
@@ -102,41 +138,12 @@ src_list += [custom_target('dec_maps',
 		output : ['xdg-shell-client-protocol.h'],
 		command : [wayland_scanner, 'client-header', xdg_shell_xml, '@OUTPUT@']),
 
-	'main.c',
-
-	'common.c',
-	'conf.c',
 	'display.c',
 	'events.c',
 	'extract.c',
 	'filesystem.c',
-	'metadata.cpp',
 	'opengl.c',
-	'rast_utils.c',
-	'term.c',
-	'utf8.c',
 	'write_pam.c',
-	'wudefs.c',
-	'wustr.c',
-	'wutree.c',
-
-	'raster/bit.c',
-	'raster/cicp.c',
-	'raster/color.c',
-	'raster/compost.c',
-	'raster/endian.c',
-	'raster/file.c',
-	'raster/fmt.c',
-	'raster/graphics_adapters.c',
-	'raster/icc.c',
-	'raster/mat.c',
-	'raster/mem.c',
-	'raster/memparser.c',
-	'raster/pal.c',
-	'raster/pix.c',
-	'raster/raster.c',
-	'raster/strip.c',
-	'raster/unpack.c',
 
 	'window.c',
 	'window/base.c',
@@ -145,12 +152,7 @@ src_list += [custom_target('dec_maps',
 	'window/drm.c',
 	'window/wayland.c']
 
-dep_list += [cc.find_library('m', required : false),
-	cc.find_library('rt'),
-	dependency('exiv2'),
-	dependency('lcms2'),
-	dependency('icu-i18n'),
-	dependency('uchardet'),
+view_dep_list = [
 	dependency('libarchive'),
 
 	dependency('epoxy'),
@@ -158,8 +160,14 @@ dep_list += [cc.find_library('m', required : false),
 	dependency('gbm'),
 	dependency('libdrm'),
 
+	cc.find_library('rt'),
 	dependency('wayland-client'),
 	dependency('wayland-egl'),
 	dependency('xkbcommon')]
 
-wu_exe = executable('wu', src_list, dependencies : dep_list, install : true)
+wufuzz = executable('wu-fuzz', ['main_fuzz.c'] + src_list,
+	dependencies : dep_list,
+	install : true)
+wuview = executable('wu', ['main.c'] + src_list + view_src_list,
+	dependencies : dep_list + view_dep_list,
+	install : true)

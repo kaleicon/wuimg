@@ -1,7 +1,7 @@
 #include <stdlib.h>
 
-#include "wbmp.h"
 #include "raster/fmt.h"
+#include "wbmp.h"
 
 static enum wu_error read_uintvar_dim(FILE *ifp, size_t *value) {
 	for (size_t i = 7; i < sizeof(*value) * 8; i += 7) {

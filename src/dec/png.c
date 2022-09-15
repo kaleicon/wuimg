@@ -6,7 +6,8 @@
 
 #include "wudefs.h"
 #include "metadata.h"
-#include "raster/endian.h"
+#include "common/common.h"
+#include "common/endian.h"
 
 struct png_state {
 	png_struct *png;

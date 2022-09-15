@@ -6,7 +6,8 @@
 #include <limits.h>
 
 #include "sixel.h"
-#include "term.h"
+#include "common/common.h"
+#include "common/math.h"
 #include "raster/fmt.h"
 
 #define MACRO_CASE_SPACE case ' ': case '\f': case '\n': case '\r': case '\t': case '\v':
@@ -116,9 +117,11 @@ static bool validate_color(struct mp_parser *tp) {
 		return false;
 	}
 	if (mp_next_char(tp) == ';') {
-		enum sixel_colorspace pu = mp_next_char(tp);
-		switch (pu) {
+		const int c = mp_next_char(tp);
+		enum sixel_colorspace pu;
+		switch (c) {
 		case sixel_hls: case sixel_rgb:
+			pu = (enum sixel_colorspace)c;
 			break;
 		default:
 			return false;

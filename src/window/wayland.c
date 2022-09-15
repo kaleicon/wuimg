@@ -1,8 +1,8 @@
+#include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <errno.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -11,7 +11,7 @@
 
 #include <linux/input-event-codes.h>
 
-#include "common.h"
+#include "common/math.h"
 #include "raster/memparser.h"
 #include "window/wayland.h"
 

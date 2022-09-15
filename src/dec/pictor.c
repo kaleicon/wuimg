@@ -1,10 +1,6 @@
-#include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
-
-#include "wudefs.h"
-#include "rast_utils.h"
 #include "lib/pictor.h"
+#include "common/common.h"
+#include "rast_utils.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	const struct pictor_desc *desc = ptr;

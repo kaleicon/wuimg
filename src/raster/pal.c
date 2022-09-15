@@ -1,8 +1,8 @@
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "common.h"
+#include "common/common.h"
 #include "raster/pal.h"
 
 void raster_pal_print(const struct raster_pal *cm) {

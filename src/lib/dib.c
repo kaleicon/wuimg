@@ -1,14 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-#include <limits.h>
-
-#include "raster/bit.h"
-#include "raster/endian.h"
-#include "raster/file.h"
+#include "common/bit.h"
+#include "common/endian.h"
+#include "common/file.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
 #include "raster/unpack.h"
 #include "dib.h"
 
@@ -155,7 +149,7 @@ const unsigned char *restrict rle, const size_t rle_len, const size_t scan_len) 
 				i += 2;
 				break;
 			default:
-				;const size_t run_bytes = scanline_length(
+				;const size_t run_bytes = strip_length(
 					marker, 4, 2);
 				if (o + marker > raster_len
 				|| i + run_bytes > rle_len) {
@@ -207,8 +201,7 @@ const size_t scan_len, const unsigned char pix_size) {
 				break;
 			default:
 				;const size_t run = marker*pix_size;
-				const size_t run_bytes = scanline_length(
-					run, 8, 2);
+				const size_t run_bytes = strip_length(run, 8, 2);
 				if (o + run > raster_len
 				|| i + run_bytes > rle_len) {
 					return o;
@@ -249,7 +242,7 @@ uint8_t *restrict src) {
 	const uint8_t bytes = (img->bitdepth > 8) ? 2 : 1;
 	const uint8_t ch = (img->channels == 4) ? 4 : 3; // putting both helps perf.
 
-	const size_t stride = scanline_length(img->w, desc->depth, 4);
+	const size_t stride = strip_length(img->w, desc->depth, 2);
 	for (size_t y = 0; y < img->h; ++y) {
 		const uint8_t *s = src + y*stride;
 		for (size_t x = 0; x < img->w; ++x) {
@@ -519,6 +512,8 @@ const uint16_t storage, const uint32_t color_encoding) {
 			return wu_invalid_header;
 		}
 		break;
+	default:
+		return wu_invalid_header;
 	}
 	if (storage != 0) {
 		(void)storage;
@@ -833,15 +828,20 @@ struct raw_img *img) {
 		return status;
 	}
 
-	const size_t size = scanline_length(img->w, desc->depth, 4) * img->h;
+	const size_t size = strip_length(img->w, desc->depth, 2) * img->h;
 	switch ((int)desc->compression) {
 	case 3: // dib_bitfield, os2_1d_huffman
 		if (desc->is_os2 == trit_true) {
 			break;
 		}
-		// fallthrough
+		desc->size = size;
+		break;
 	case dib_no_compression:
 		desc->size = size;
+		/* Depths 16 and 32 have padding bits that some images use as
+		 * alpha. However, images that follow the spec will have them
+		 * set to zero, and display as an empty image. */
+		img->alpha = alpha_ignore;
 		break;
 	case dib_8bit_rle:
 	case dib_4bit_rle:
@@ -853,6 +853,8 @@ struct raw_img *img) {
 			desc->size = pathological_rle;
 		}
 		break;
+	default:
+		return wu_invalid_header;
 	}
 	return wu_ok;
 }
@@ -931,7 +933,7 @@ void ico_cleanup(struct ico_desc *desc) {
 
 static void ico_buf_sizes(struct ico_buf *buf, const struct raw_img *img,
 const unsigned char depth) {
-	buf->stride = scanline_length(img->w, depth, 4);
+	buf->stride = strip_length(img->w, depth, 2);
 	buf->size = buf->stride * img->h;
 }
 
@@ -1035,8 +1037,8 @@ static bool ico_palette_dec(struct dib_desc *dib, struct raw_img *img) {
 		return false;
 	}
 
-	const size_t instride = scanline_length(img->w, dib->depth, 4);
-	const size_t outstride = scanline_length(img->w, 32, 4);
+	const size_t instride = strip_length(img->w, dib->depth, 2);
+	const size_t outstride = strip_length(img->w, 32, 2);
 	for (size_t y = 0; y < img->h; ++y) {
 		raster_pal_expand(dst.buf + outstride*y, xor.buf + instride*y,
 			img->u.palette, img->w, dib->depth);

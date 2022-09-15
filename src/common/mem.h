@@ -1,6 +1,7 @@
 #ifndef RASTER_MEM
 #define RASTER_MEM
 
+#include <stddef.h>
 #include <stdint.h>
 
 uint8_t memcycle(uint8_t *dst, size_t pos);
@@ -16,5 +17,11 @@ void memrepeat(void *dst, size_t pos, size_t offset, size_t count);
 void memrepeat_or_zero(void *dst, size_t pos, size_t offset, size_t count);
 
 const void * memchk(const void *s, unsigned char c, size_t n);
+
+void * memdup(const void *s, size_t n);
+
+#ifndef _GNU_SOURCE
+void * memrchr(const void *s, int c, size_t n);
+#endif
 
 #endif /* RASTER_MEM */

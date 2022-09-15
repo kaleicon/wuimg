@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wudefs.h"
 #include "rast_utils.h"
 #include "lib/sixel.h"
 

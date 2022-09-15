@@ -1,8 +1,9 @@
 #ifndef ANIM_COMMON
 #define ANIM_COMMON
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 struct frame_info {
 	size_t x, y;

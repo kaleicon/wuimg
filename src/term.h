@@ -1,7 +1,9 @@
 #ifndef WU_TERM
 #define WU_TERM
 
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #include <termios.h>
 
@@ -11,8 +13,8 @@ struct term_restore {
 	cc_t vtime;
 };
 
-void term_print_escaped(const uint8_t *restrict data, size_t len, bool is_utf8,
-FILE *stream);
+void term_print_escaped(const unsigned char *restrict data, size_t len,
+bool is_utf8, FILE *stream);
 
 size_t term_event_read(unsigned char *output, size_t len);
 

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "common/math.h"
 #include "raster/fmt.h"
 
 size_t fmt_load_raster(struct raw_img *img, FILE *ifp, const enum endianness e) {

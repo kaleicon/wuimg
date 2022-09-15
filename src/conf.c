@@ -1,6 +1,6 @@
-#include <stdlib.h>
 #include <ctype.h>
 #include <limits.h>
+#include <stdlib.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -9,7 +9,8 @@
 
 #include "conf.h"
 #include "term.h"
-#include "common.h"
+#include "common/common.h"
+#include "common/file.h"
 #include "raster/memparser.h"
 
 struct wu_conf conf_default(void) {
@@ -214,7 +215,7 @@ struct wu_conf conf_load(void) {
 	}
 
 	struct map_info mm;
-	bool ok = map_file_fd(&mm, fd);
+	bool ok = file_map_fd(&mm, fd);
 	close(fd);
 	if (!ok) {
 		return conf;
@@ -223,7 +224,7 @@ struct wu_conf conf_load(void) {
 	struct mp_parser tp = mp_parser_mem(mm.len, mm.data);
 
 	ok = parse_config_file(&conf, &tp);
-	unmap_file(&mm);
+	file_unmap(&mm);
 	if (ok) {
 		return conf;
 	}

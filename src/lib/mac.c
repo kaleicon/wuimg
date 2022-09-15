@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "raster/file.h"
-#include "raster/endian.h"
+#include "common/endian.h"
+#include "common/file.h"
+#include "common/math.h"
 #include "mac.h"
 
 static const size_t RLE_PAD = 129;

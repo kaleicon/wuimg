@@ -33,13 +33,13 @@ const struct wu_conf *wuconf, void *desc, rast_vmopen_t mopen,
 rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
 	struct map_info mm;
 	enum wu_error st = wu_open_error;
-	if (map_file(&mm, infile->ifp)) {
+	if (file_map(&mm, infile->ifp)) {
 		st = (*mopen)(desc, mp_parser_mem(mm.len, mm.data));
 		if (st == wu_ok) {
 			st = common_trivial(infile, wuconf, desc, parse, meta,
 				dec, cleanup);
 		}
-		unmap_file(&mm);
+		file_unmap(&mm);
 	}
 	return st;
 }
@@ -59,9 +59,9 @@ enum wu_error rast_map_wrap(struct image_file *infile,
 const struct wu_conf *wuconf, rast_map_t wrap_fn) {
 	struct map_info mm;
 	enum wu_error err = wu_open_error;
-	if (map_file(&mm, infile->ifp)) {
+	if (file_map(&mm, infile->ifp)) {
 		err = (*wrap_fn)(infile, wuconf, &mm);
-		unmap_file(&mm);
+		file_unmap(&mm);
 	}
 	return err;
 }

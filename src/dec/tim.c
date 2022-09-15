@@ -1,8 +1,5 @@
-#include <stdlib.h>
-#include <string.h>
-
-#include "wudefs.h"
 #include "rast_utils.h"
+#include "common/common.h"
 #include "lib/tim.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {

@@ -36,7 +36,7 @@ size_t pcx_decode(struct pcx_desc *desc, struct raw_img *img);
 
 enum wu_error pcx_read_header(struct pcx_desc *desc, struct raw_img *img);
 
-enum wu_error pcx_open_file(struct pcx_desc *desc, const struct map_info *mm);
+enum wu_error pcx_open_file(struct pcx_desc *desc, struct mp_parser mp);
 
 
 struct dcx_desc {
@@ -50,6 +50,6 @@ void dcx_free(struct dcx_desc *desc);
 enum wu_error dcx_set_file(const struct dcx_desc *dcx,
 struct pcx_desc *pcx, uint32_t i);
 
-enum wu_error dcx_open_file(struct dcx_desc *desc, const struct map_info *mm);
+enum wu_error dcx_open_file(struct dcx_desc *desc, struct mp_parser mp);
 
 #endif /* LIB_PCX */

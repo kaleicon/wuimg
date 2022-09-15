@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "raster/file.h"
+#include "common/file.h"
+#include "common/math.h"
 #include "raster/fmt.h"
 #include "sun.h"
 

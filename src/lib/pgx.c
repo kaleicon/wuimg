@@ -3,9 +3,9 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "raster/file.h"
+#include "common/file.h"
+#include "common/mem.h"
 #include "raster/fmt.h"
-#include "raster/mem.h"
 #include "pgx.h"
 
 static const size_t LZSS_PAD = 2 * 8 + 1;

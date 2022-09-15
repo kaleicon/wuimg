@@ -1,5 +1,6 @@
 #include <epoxy/egl.h>
 
+#include "common/common.h"
 #include "egl.h"
 #include "opengl.h"
 

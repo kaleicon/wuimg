@@ -4,7 +4,6 @@
 #include <ctype.h>
 
 #include "../wudefs.h"
-#include "../common.h"
 
 #include "../lib/tga.h"
 

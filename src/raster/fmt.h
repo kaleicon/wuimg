@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 #include "wudefs.h"
-#include "raster/endian.h"
+#include "common/endian.h"
 #include "raster/memparser.h"
 #include "raster/pal.h"
 

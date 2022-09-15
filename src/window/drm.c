@@ -8,10 +8,10 @@
 #include <xf86drm.h>
 #include <gbm.h>
 
-#include "common.h"
+#include "common/math.h"
+#include "window/drm.h"
 #include "opengl.h"
 #include "term.h"
-#include "window/drm.h"
 
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 

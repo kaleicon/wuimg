@@ -1,9 +1,7 @@
 #include <string.h>
 
-#include "common.h"
-
-#include "strip.h"
-#include "graphics_adapters.h"
+#include "common/math.h"
+#include "raster/graphics_adapters.h"
 
 static void interleave_pal1(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t w, const size_t h, const uint8_t planes, const size_t row_len) {
@@ -47,7 +45,7 @@ const size_t w, const uint8_t ch, const size_t row_len) {
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t w, const size_t h, const uint8_t ch, const uint8_t bitdepth,
 const align_t align, const bool paletted) {
-	const size_t row_len = scanline_length(w, bitdepth, align);
+	const size_t row_len = strip_length(w, bitdepth, align);
 	switch (bitdepth) {
 	case 1:
 		if (paletted) {
@@ -64,7 +62,7 @@ const align_t align, const bool paletted) {
 }
 
 static int unpack_ykj_chroma(const uint8_t *src) {
-	const unsigned n = (src[0] & 0x07) | ((src[1] & 0x07) << 3);
+	const unsigned n = (src[0] & 0x07u) | ((src[1] & 0x07u) << 3);
 	return (int)((n ^ 0x20) - 0x20);
 }
 

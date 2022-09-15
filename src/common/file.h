@@ -12,4 +12,16 @@ size_t file_tail(void *buf, size_t size, size_t nmemb, FILE *ifp);
 
 size_t file_remaining(FILE *ifp);
 
+
+struct map_info {
+	size_t len;
+	const unsigned char *data;
+};
+
+int file_unmap(struct map_info *mm);
+
+bool file_map(struct map_info *mm, FILE *ifp);
+
+bool file_map_fd(struct map_info *mm, int fd);
+
 #endif /* WU_FILE */
