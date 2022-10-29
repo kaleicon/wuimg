@@ -6,8 +6,8 @@
 
 #include "wudefs.h"
 #include "metadata.h"
-#include "common/common.h"
-#include "common/endian.h"
+#include "misc/common.h"
+#include "misc/endian.h"
 
 struct png_state {
 	png_struct *png;
@@ -32,7 +32,7 @@ static void big_trouble_fn(png_struct *png, const char *msg) {
 static void read_png_info(const png_struct *png, png_info *info,
 struct image_file *infile) {
 	struct wu_tree *tree = &infile->metadata;
-	struct raw_img *img = infile->sub_img;
+	struct wuimg *img = infile->sub_img;
 
 #ifdef PNG_bKGD_SUPPORTED
 	png_color_16 *bg = NULL;
@@ -86,7 +86,7 @@ struct image_file *infile) {
 	png_uint_32 len;
 	png_get_eXIf_1(png, info, &len, &exif);
 	if (exif && standard_metadata(exif_metadata, exif, len, tree)) {
-		raw_img_exif_orientation(img, metadata_orientation(tree));
+		wuimg_exif_orientation(img, metadata_orientation(tree));
 	}
 #endif
 }
@@ -136,8 +136,8 @@ struct color_space *cs) {
 	(void)png; (void)info; (void)cs;
 }
 
-static bool read_palette(const struct png_state *png, struct raw_img *img) {
-	struct raster_pal *palette = raw_img_palette_init(img);
+static bool read_palette(const struct png_state *png, struct wuimg *img) {
+	struct raster_pal *palette = wuimg_palette_init(img);
 	if (palette) {
 		png_color *plte;
 		int plte_num;
@@ -159,7 +159,7 @@ static bool read_palette(const struct png_state *png, struct raw_img *img) {
 
 static enum wu_error decode_image(struct image_file *infile,
 const struct wu_conf *wuconf, struct png_state *png) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
@@ -169,7 +169,7 @@ const struct wu_conf *wuconf, struct png_state *png) {
 	img->channels = png_get_channels(png->png, png->info);
 	img->bitdepth = png_get_bit_depth(png->png, png->info);
 	img->alpha = alpha_unassociated;
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 	if (png_get_color_type(png->png, png->info) == PNG_COLOR_TYPE_PALETTE) {
@@ -179,12 +179,12 @@ const struct wu_conf *wuconf, struct png_state *png) {
 	}
 	img->ratio = png_get_pixel_aspect_ratio(png->png, png->info);
 
-	const enum wu_error st = raw_img_alloc(img);
+	const enum wu_error st = wuimg_alloc(img);
 	if (st != wu_ok) {
 		return st;
 	}
 
-	const size_t stride = raw_img_stride(img);
+	const size_t stride = wuimg_stride(img);
 	int passes = 1;
 #ifdef PNG_READ_INTERLACING_SUPPORTED
 	passes = png_set_interlace_handling(png->png);

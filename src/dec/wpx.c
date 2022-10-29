@@ -1,14 +1,14 @@
 #include <string.h>
 
 #include "wudefs.h"
-#include "common/file.h"
+#include "misc/file.h"
 #include "lib/wpx.h"
 
-static enum wu_error single_decode(struct raw_img *img,
+static enum wu_error single_decode(struct wuimg *img,
 const struct wu_conf *wuconf, struct wpx_bmp_desc *desc) {
 	const enum wu_error status = wpx_bmp_parse(desc, img);
 	if (status == wu_ok) {
-		if (raw_img_exceeds_limit(img, wuconf)) {
+		if (wuimg_exceeds_limit(img, wuconf)) {
 			return wu_exceeds_size_limit;
 		}
 		return wpx_bmp_decode(desc, img) ? wu_ok : wu_decoding_error;
@@ -18,7 +18,7 @@ const struct wu_conf *wuconf, struct wpx_bmp_desc *desc) {
 
 static enum wu_error decode(struct image_file *infile,
 const struct wu_conf *wuconf, struct wpx_bmp_desc *desc) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
@@ -46,6 +46,39 @@ enum wu_error wbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return st;
 	}
 	return wu_open_error;
+}
+
+
+struct wia_state {
+	struct map_info mm;
+	struct wpx_ia2_desc desc;
+};
+
+static enum wu_error frame_decode(struct wpx_ia2_desc *desc, struct wuimg *img,
+const struct wu_conf *wuconf, const uint32_t i) {
+	struct wpx_bmp_desc frame;
+	enum wu_error st = wpx_ia2_set_frame(desc, &frame, i);
+	if (st == wu_ok) {
+		st = single_decode(img, wuconf, &frame);
+		wpx_bmp_cleanup(&frame);
+	}
+	return st;
+}
+
+enum wu_error wia_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	struct wia_state *ds = infile->dec_state;
+	if (ev == ev_subcycle) {
+		struct wuimg *img = infile->sub_img + state->idx;
+		if (!img->data) {
+			return frame_decode(&ds->desc, img, wuconf,
+				(uint32_t)state->idx);
+		}
+	} else {
+		wpx_ia2_cleanup(&ds->desc);
+		file_unmap(&ds->mm);
+	}
+	return wu_no_change;
 }
 
 static void add_list(struct wu_tree *tree, const char *branch_name,
@@ -86,44 +119,35 @@ static void anim_metadata(struct wu_tree *tree, const struct wpx_ia2_desc *desc)
 //	array_print("Mys5", &desc->mys5, 5);
 }
 
-static enum wu_error anim_wrap(struct image_file *infile,
+static enum wu_error anim_setup(struct image_file *infile,
 const struct wu_conf *wuconf, struct wpx_ia2_desc *desc) {
 	enum wu_error status = wpx_ia2_parse(desc);
 	if (status != wu_ok) {
 		return status;
 	}
-
 	anim_metadata(&infile->metadata, desc);
 	if (!alloc_sub_images(infile, desc->frames.nr)) {
 		return wu_alloc_error;
 	}
-
-	uint32_t o = 0;
-	for (uint32_t i = 0; i < desc->frames.nr; ++i) {
-		struct wpx_bmp_desc frame;
-		status = wpx_ia2_set_frame(desc, &frame, i);
-		if (status == wu_ok) {
-			struct raw_img *img = infile->sub_img + o;
-			if (single_decode(img, wuconf, &frame)) {
-				++o;
-			}
-			wpx_bmp_cleanup(&frame);
-		}
-	}
-	return image_file_total_decoded(infile, o);
+	return frame_decode(desc, infile->sub_img, wuconf, 0);
 }
 
 enum wu_error wia_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct map_info mm;
-	if (file_map(&mm, infile->ifp)) {
-		struct wpx_ia2_desc desc;
-		enum wu_error st = wpx_ia2_open(&desc, mp_parser_map(mm));
-		if (st == wu_ok) {
-			st = anim_wrap(infile, wuconf, &desc);
-			wpx_ia2_cleanup(&desc);
+	enum wu_error st = wu_alloc_error;
+	struct wia_state *ds = calloc(1, sizeof(*ds));
+	if (ds) {
+		if (file_map(&ds->mm, infile->ifp)) {
+			st = wpx_ia2_open(&ds->desc, mp_parser_map(ds->mm));
+			if (st == wu_ok) {
+				infile->dec_state = ds;
+				infile->events = ev_subcycle;
+				return anim_setup(infile, wuconf, &ds->desc);
+			}
+			file_unmap(&ds->mm);
+		} else {
+			st = wu_open_error;
 		}
-		file_unmap(&mm);
-		return st;
+		free(ds);
 	}
-	return wu_open_error;
+	return st;
 }

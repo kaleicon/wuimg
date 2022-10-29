@@ -59,7 +59,7 @@ static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
 
 static enum wu_error dec_wrapper(struct image_file *infile,
 const struct wu_conf *wuconf, struct tga_desc *desc) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
@@ -103,7 +103,7 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 		img[i].bitdepth = 8;
 	}
 	for (i = 0; i < infile->nr; ++i) {
-		if (raw_img_exceeds_limit(img + i, wuconf)) {
+		if (wuimg_exceeds_limit(img + i, wuconf)) {
 			return wu_exceeds_size_limit;
 		}
 	}

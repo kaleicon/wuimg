@@ -6,11 +6,12 @@
 #include <stdbool.h>
 #include <math.h>
 
-#include "common/file.h"
-#include "common/math.h"
-#include "common/mem.h"
+#include "misc/bit.h"
+#include "misc/file.h"
+#include "misc/math.h"
+#include "misc/mem.h"
+#include "misc/memparser.h"
 #include "raster/fmt.h"
-#include "raster/memparser.h"
 #include "raster/strip.h"
 #include "lib/pnm.h"
 
@@ -166,12 +167,12 @@ unsigned char *restrict dst, const size_t dims) {
 	return cnt;
 }
 
-size_t pnm_decode(struct pnm_desc *desc, struct raw_img *img,
+size_t pnm_decode(struct pnm_desc *desc, struct wuimg *img,
 const size_t i) {
-	if (!raw_img_clone(img, &desc->rast) || !raw_img_alloc_noverify(img)) {
+	if (!wuimg_clone(img, &desc->rast) || !wuimg_alloc_noverify(img)) {
 		return 0;
 	}
-	const size_t size = raw_img_size(img);
+	const size_t size = wuimg_size(img);
 	fseek(desc->ifp, desc->data_start + (long)(size * i), SEEK_SET);
 
 	const size_t elems = img->w * img->h * img->channels;
@@ -202,7 +203,7 @@ const size_t i) {
 
 static size_t count_images(struct pnm_desc *desc) {
 	const size_t len = file_remaining(desc->ifp);
-	return len ? zumax(1, len / raw_img_size(&desc->rast)) : 0;
+	return len ? zumax(1, len / wuimg_size(&desc->rast)) : 0;
 }
 
 static enum wu_error setup_desc(struct pnm_desc *desc) {
@@ -263,7 +264,7 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		}
 	}
 
-	const enum wu_error st = raw_img_verify(&desc->rast);
+	const enum wu_error st = wuimg_verify(&desc->rast);
 	if (st != wu_ok) {
 		return st;
 	}
@@ -339,7 +340,7 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 	}
 
 	desc->sign = (sign[1] == '-');
-	desc->scale.pnm = ~0u >> (32 - depth);
+	desc->scale.pnm = bit_set32(depth);
 	desc->rast.bitdepth = (unsigned char)(2 << ulog2(umax(depth, 8) - 1));
 	return setup_desc(desc);
 }
@@ -464,7 +465,6 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 		switch (seen) {
 		case 0:
 			result = fscanf(desc->ifp, "%zu", &desc->rast.w);
-			printf("%zu\n", desc->rast.w);
 			break;
 		case 1:
 			result = fscanf(desc->ifp, "%zu", &desc->rast.h);

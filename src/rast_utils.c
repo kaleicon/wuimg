@@ -1,12 +1,12 @@
 #include <stdlib.h>
 
-#include "rast_utils.h"
 #include "raster/fmt.h"
+#include "rast_utils.h"
 
 static enum wu_error common_trivial(struct image_file *infile,
 const struct wu_conf *wuconf, void *desc, rast_vparse_t parse,
 rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	enum wu_error st = wu_alloc_error;
 	if (img) {
 		st = (*parse)(desc, img);
@@ -14,7 +14,7 @@ rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
 			if (meta) {
 				(*meta)(desc, &infile->metadata);
 			}
-			if (raw_img_exceeds_limit(img, wuconf)) {
+			if (wuimg_exceeds_limit(img, wuconf)) {
 				st = wu_exceeds_size_limit;
 			} else {
 				st = (*dec)(desc, img)
@@ -68,12 +68,12 @@ const struct wu_conf *wuconf, rast_map_t wrap_fn) {
 
 enum wu_error rast_fread_dec(struct image_file *infile,
 const struct wu_conf *wuconf, rast_open_t open_fn) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (img) {
 		enum wu_error st = (*open_fn)(img, infile->ifp);
 		if (st == wu_ok) {
-			if (!raw_img_exceeds_limit(img, wuconf)) {
-				st = raw_img_alloc(img);
+			if (!wuimg_exceeds_limit(img, wuconf)) {
+				st = wuimg_alloc(img);
 				if (st == wu_ok) {
 					return fmt_load_raster(img, infile->ifp,
 						big_endian)

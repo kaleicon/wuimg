@@ -3,8 +3,8 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "common/file.h"
-#include "common/mem.h"
+#include "misc/file.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "pgx.h"
 
@@ -48,14 +48,14 @@ const uint8_t *restrict pack, const size_t pack_len) {
 	return upos;
 }
 
-size_t pgx_decode(const struct pgx_desc *desc, struct raw_img *img) {
+size_t pgx_decode(const struct pgx_desc *desc, struct wuimg *img) {
 	size_t written = 0;
-	if (raw_img_alloc_noverify(img)) {
+	if (wuimg_alloc_noverify(img)) {
 		uint8_t *comp = malloc(desc->comp_size + LZSS_PAD);
 		if (comp) {
 			const size_t read = file_tail(comp, 1, desc->comp_size,
 				desc->ifp);
-			written = lzss_decomp(img->data, raw_img_size(img),
+			written = lzss_decomp(img->data, wuimg_size(img),
 				comp, read);
 			free(comp);
 		}
@@ -63,7 +63,7 @@ size_t pgx_decode(const struct pgx_desc *desc, struct raw_img *img) {
 	return written;
 }
 
-enum wu_error pgx_read_header(struct pgx_desc *desc, struct raw_img *img) {
+enum wu_error pgx_read_header(struct pgx_desc *desc, struct wuimg *img) {
 	/* PGX header (after signature):
 		Offset  Size    Name
 		0       BYTE[4] StartingBytes; // of compressed data
@@ -95,7 +95,7 @@ enum wu_error pgx_read_header(struct pgx_desc *desc, struct raw_img *img) {
 	img->alpha = buf_endian16(buf + 12, little_endian)
 		? alpha_unassociated : alpha_ignore;
 	desc->comp_size = buf_endian32(buf + 16, little_endian);
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 enum wu_error pgx_open_file(struct pgx_desc *desc, FILE *ifp) {

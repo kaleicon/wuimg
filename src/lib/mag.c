@@ -1,6 +1,6 @@
-#include "common/bit.h"
-#include "common/file.h"
-#include "common/mem.h"
+#include "misc/bit.h"
+#include "misc/file.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
 #include "mag.h"
@@ -44,7 +44,7 @@ const char * mag_model_code_str(const enum mag_model_code code) {
 }
 
 void mag_cleanup(struct mag_desc *desc) {
-	free(desc->comment.data);
+	wustr_free(&desc->comm);
 	free(desc->yjk_pal);
 }
 
@@ -54,7 +54,7 @@ const struct mag_section *src, void *restrict ptr) {
 	return fread(ptr, 1, src->size, desc->ifp);
 }
 
-size_t mag_decode(const struct mag_desc *desc, struct raw_img *img) {
+size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 	/* Decoding depends on 5 sections. These are the FlagA, FlagB, and
 	 * Color sections in the file, plus an Action buffer and the image
 	 * itself. The Action buffer must be one fourth the size of an image
@@ -163,7 +163,7 @@ size_t mag_decode(const struct mag_desc *desc, struct raw_img *img) {
 	case mag_msx2p_screen10:
 	case mag_msx2p_screen11:
 	case mag_msx2p_screen12:
-		if (raw_img_alloc_noverify(img)) {
+		if (wuimg_alloc_noverify(img)) {
 			v9958_ykj_to_grb(img->data, (uint8_t *)dst, dwords,
 				desc->yjk_pal);
 		} else {
@@ -178,11 +178,11 @@ size_t mag_decode(const struct mag_desc *desc, struct raw_img *img) {
 }
 
 static bool deca_loader(const struct mag_desc *desc) {
-	const struct mag_comment *comm = &desc->comment;
+	const struct wustr *comm = &desc->comm;
 	const size_t offset = 24;
 	const uint8_t id[12] = "Deca loader ";
-	if (comm->text_len > offset + sizeof(id)) {
-		return !memcmp(comm->data + offset, id, sizeof(id));
+	if (comm->len > offset + sizeof(id)) {
+		return !memcmp(comm->str + offset, id, sizeof(id));
 	}
 	return false;
 }
@@ -228,7 +228,7 @@ struct raster_pal *pal, const size_t entries) {
 	return wu_ok;
 }
 
-static enum wu_error get_dimensions(struct raw_img *img, const unsigned x_left,
+static enum wu_error get_dimensions(struct wuimg *img, const unsigned x_left,
 const unsigned y_top, const unsigned x_right, const unsigned y_bottom) {
 	// x_right and y_bottom are inclusive
 	if (x_left <= x_right && y_top <= y_bottom) {
@@ -242,22 +242,7 @@ const unsigned y_top, const unsigned x_right, const unsigned y_bottom) {
 	return wu_invalid_header;
 }
 
-static enum wu_error read_comment(struct mag_desc *desc) {
-	// FIXME: Merge with Pi's read_comment
-	struct mag_comment *comm = &desc->comment;
-	struct wugrow grow;
-	const size_t max = 0x4000; // PixelArt.v03/MAKICHAN/MAGSCR7/CHO13.MAG
-	comm->data = fileccpy(&grow, '\0', max, desc->ifp);
-	if (comm->data) {
-		uint8_t *p = memrchr(comm->data, 0x1a, grow.pos);
-		comm->text_len = p ? (size_t)(p - comm->data) : grow.pos;
-		comm->area_len = grow.pos;
-		return wu_ok;
-	}
-	return wu_invalid_header;
-}
-
-enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img) {
+enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 	/* MAKI02 header (after prev):
 		Offset  Size    Name
 		0       u8	ComputerModel[4]
@@ -285,9 +270,8 @@ enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img) {
 		return wu_unexpected_eof;
 	}
 
-	enum wu_error st = read_comment(desc);
-	if (st != wu_ok) {
-		return st;
+	if (!file_read_pi_comm(&desc->comm, desc->ifp)) {
+		return wu_unexpected_eof;
 	}
 	desc->null_pos = ftell(desc->ifp) - 1;
 
@@ -334,7 +318,7 @@ enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img) {
 		img->ratio = ((buf[2] & 0x81) == 0x01) ? 1/2.0 : 1;
 	}
 
-	st = get_dimensions(img,
+	enum wu_error st = get_dimensions(img,
 		buf_endian16(buf + 3, little_endian),
 		buf_endian16(buf + 5, little_endian),
 		buf_endian16(buf + 7, little_endian),
@@ -383,7 +367,7 @@ enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img) {
 		if (is_yjk) {
 			desc->yjk_pal = pal;
 		} else {
-			raw_img_palette_set(img, pal);
+			wuimg_palette_set(img, pal);
 		}
 	}
 
@@ -392,7 +376,7 @@ enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img) {
 		img->channels = 3;
 		img->bitdepth = 8;
 	}
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 enum wu_error mag_open(struct mag_desc *desc, FILE *ifp) {

@@ -1,5 +1,5 @@
 #include "lib/pictor.h"
-#include "common/common.h"
+#include "misc/common.h"
 #include "rast_utils.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
@@ -24,10 +24,10 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	}
 }
 
-static size_t dec(const void *restrict ptr, struct raw_img *img) {
+static size_t dec(const void *restrict ptr, struct wuimg *img) {
 	return pictor_decode(ptr, img);
 }
-static enum wu_error parse(void *restrict ptr, struct raw_img *img) {
+static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
 	return pictor_read_header(ptr, img);
 }
 static enum wu_error open(void *restrict ptr, FILE *ifp) {

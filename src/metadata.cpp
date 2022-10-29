@@ -4,7 +4,7 @@
 
 extern "C" {
 #include "metadata.h"
-#include "common/common.h"
+#include "misc/common.h"
 }
 
 static const char EXIF[] = "Exif";

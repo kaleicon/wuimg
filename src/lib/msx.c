@@ -1,4 +1,4 @@
-#include "common/mem.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
 #include "msx.h"
@@ -96,7 +96,7 @@ static void default_msx2_pal(struct raster_pal *pal, const uint8_t depth) {
 	set_msx_pal(pal, grb, depth);
 }
 
-static size_t scr2_4_decode(const struct msx_desc *desc, struct raw_img *img) {
+static size_t scr2_4_decode(const struct msx_desc *desc, struct wuimg *img) {
 	/* SCREEN 2 and 4 are the same outside of the sprite mode. They display
 	 * at a 256*192 resolution with 4-bit palette indices, and they do this
 	 * by dividing the screen into three bands (256*64), each made up of
@@ -163,7 +163,7 @@ static size_t scr2_4_decode(const struct msx_desc *desc, struct raw_img *img) {
 	return read;
 }
 
-static size_t scr3_decode(const struct msx_desc *desc, struct raw_img *img) {
+static size_t scr3_decode(const struct msx_desc *desc, struct wuimg *img) {
 	/* SCREEN 3 displays graphics at a 64*48*16 resolution, using patterns
 	 * 2*2 pixels in size. This is commonly magnified 4 times to a 256*192
 	 * resolution.
@@ -218,7 +218,7 @@ static size_t scr3_decode(const struct msx_desc *desc, struct raw_img *img) {
 	return read;
 }
 
-static size_t fread_decode(const struct msx_desc *desc, struct raw_img *img,
+static size_t fread_decode(const struct msx_desc *desc, struct wuimg *img,
 const long pal_offset) {
 	/* SCREEN 5, 6, 7, and 8 are basically raw formats. There's only a Name
 	 * section (a normal raster) and optional palette.
@@ -243,14 +243,14 @@ const long pal_offset) {
 
 	*/
 
-	const size_t read = fread(img->data, 1, raw_img_size(img), desc->ifp);
+	const size_t read = fread(img->data, 1, wuimg_size(img), desc->ifp);
 	if (img->mode == image_mode_palette) {
 		read_pal_at(desc, pal_offset, img->u.palette, img->bitdepth);
 	}
 	return read;
 }
 
-static size_t msx2p_decode(const struct msx_desc *desc, struct raw_img *img) {
+static size_t msx2p_decode(const struct msx_desc *desc, struct wuimg *img) {
 	/* SCREEN 10, 11, and 12 are based on SCREEN 8, but instead of a 332
 	 * packing they are encoded in the YJK colorspace. SCREEN 10 and 11
 	 * are additionally in YAE mode.
@@ -277,8 +277,8 @@ static size_t msx2p_decode(const struct msx_desc *desc, struct raw_img *img) {
 	return read;
 }
 
-size_t msx_decode(const struct msx_desc *desc, struct raw_img *img) {
-	if (raw_img_alloc_noverify(img)) {
+size_t msx_decode(const struct msx_desc *desc, struct wuimg *img) {
+	if (wuimg_alloc_noverify(img)) {
 		switch (desc->mode) {
 		case msx_screen2:
 		case msx_screen4:
@@ -299,7 +299,7 @@ size_t msx_decode(const struct msx_desc *desc, struct raw_img *img) {
 	return 0;
 }
 
-enum wu_error msx_parse(struct msx_desc *desc, struct raw_img *img, FILE *ifp,
+enum wu_error msx_parse(struct msx_desc *desc, struct wuimg *img, FILE *ifp,
 const enum msx_screen mode) {
 	/* MSX-BASIC header:
 		Offset  Size    Name
@@ -390,12 +390,12 @@ const enum msx_screen mode) {
 	img->cs.transfer = cicp_transfer_bt470_6_system_m;
 	img->cs.primaries = cicp_primaries_bt470_6_system_m;
 	if (pal_depth) {
-		struct raster_pal *pal = raw_img_palette_init(img);
+		struct raster_pal *pal = wuimg_palette_init(img);
 		if (!pal) {
 			return wu_alloc_error;
 		}
 		pal->color[0] = (struct pix_rgba8){0};
 		default_msx2_pal(pal, pal_depth);
 	}
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }

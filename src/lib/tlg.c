@@ -2,8 +2,8 @@
 #include <string.h>
 
 #include "tlg.h"
-#include "common/endian.h"
-#include "common/math.h"
+#include "misc/endian.h"
+#include "misc/math.h"
 #include "raster/strip.h"
 
 struct dict {
@@ -92,7 +92,7 @@ const uint8_t ch) {
 	}
 }
 
-static size_t decode_blocks(const struct tlg_desc *desc, struct raw_img *img,
+static size_t decode_blocks(const struct tlg_desc *desc, struct wuimg *img,
 struct dict *dict, struct mp_parser *mp) {
 	/* TLG v5 data stream:
 		Offset  Type    Name
@@ -137,10 +137,10 @@ struct dict *dict, struct mp_parser *mp) {
 	return img->h;
 }
 
-static size_t decode_v5(const struct tlg_desc *desc, struct raw_img *img,
+static size_t decode_v5(const struct tlg_desc *desc, struct wuimg *img,
 struct mp_parser *mp) {
 	size_t w = 0;
-	if (raw_img_alloc_noverify(img)) {
+	if (wuimg_alloc_noverify(img)) {
 		struct dict *dict = calloc(1, sizeof(*dict));
 		if (dict) {
 			w = decode_blocks(desc, img, dict, mp);
@@ -150,7 +150,7 @@ struct mp_parser *mp) {
 	return w;
 }
 
-size_t tlg_decode(const struct tlg_desc *desc, struct raw_img *img) {
+size_t tlg_decode(const struct tlg_desc *desc, struct wuimg *img) {
 	struct mp_parser mp = desc->mp;
 	switch (desc->version) {
 	case tlg_v5: return decode_v5(desc, img, &mp);
@@ -159,7 +159,7 @@ size_t tlg_decode(const struct tlg_desc *desc, struct raw_img *img) {
 	return 0;
 }
 
-static enum wu_error read_v5_header(struct tlg_desc *desc, struct raw_img *img) {
+static enum wu_error read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
 	/* TLG v5 header (after common header):
 		Offset  Type    Name
 		0       u32     BlockHeight
@@ -183,7 +183,7 @@ static enum wu_error read_v5_header(struct tlg_desc *desc, struct raw_img *img) 
 		? wu_ok : wu_unexpected_eof;
 }
 
-static enum wu_error validate_dims(struct tlg_desc *desc, struct raw_img *img,
+static enum wu_error validate_dims(struct tlg_desc *desc, struct wuimg *img,
 const uint8_t ch, const uint32_t width, const uint32_t height) {
 	switch (ch) {
 	case 1:
@@ -206,10 +206,10 @@ const uint8_t ch, const uint32_t width, const uint32_t height) {
 	img->channels = ch;
 	img->bitdepth = 8;
 	img->layout = pix_bgra;
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
-enum wu_error tlg_read_header(struct tlg_desc *desc, struct raw_img *img) {
+enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img) {
 	/* Common TLG header, after tagged data:
 		Offset  Type    Name
 		0       u8      ColorChannels

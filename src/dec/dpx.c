@@ -1,5 +1,6 @@
-#include "common/common.h"
 #include "lib/dpx.h"
+#include "misc/common.h"
+#include "wudefs.h"
 
 static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {
 	const struct dpx_industry_television *t = &desc->industry.tv;
@@ -163,13 +164,13 @@ enum wu_error dpx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	uint8_t o = 0;
 	for (uint8_t i = 0; i < infile->nr; ++i) {
-		struct raw_img *img = infile->sub_img + o;
+		struct wuimg *img = infile->sub_img + o;
 		if (dpx_set_image(&desc, img, i) == wu_ok
-		&& !raw_img_exceeds_limit(img, wuconf)
+		&& !wuimg_exceeds_limit(img, wuconf)
 		&& dpx_decode(&desc, img, i)) {
 			++o;
 		} else {
-			raw_img_clear(img);
+			wuimg_clear(img);
 		}
 	}
 	return image_file_total_decoded(infile, o);

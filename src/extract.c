@@ -5,9 +5,9 @@
 #include <archive.h>
 #include <archive_entry.h>
 
-#include "common/math.h"
-#include "common/mem.h"
-#include "common/wustr.h"
+#include "misc/math.h"
+#include "misc/mem.h"
+#include "misc/wustr.h"
 #include "dec.h"
 #include "extract.h"
 #include "term.h"

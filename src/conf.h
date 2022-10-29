@@ -78,9 +78,9 @@ struct wu_conf {
 	bool webp_fast_upsamp:1; /* Use a faster chroma upsampler for lossy WebP.
 		This only affects lossy animations, as static images are
 		handled in the GPU. */
-	bool webp_use_homegrown_renderer:1; /* Composite animations using our
-		own routines instead of libwebp's. They seem to be correct and
-		maybe slightly faster, but I wouldn't bet on it. */
+	bool webp_use_homegrown_renderer:1; /* Composite animation frames using
+		our own routines instead of libwebp's. They seem to be slightly
+		faster. */
 };
 
 struct wu_conf conf_default(void);

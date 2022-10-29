@@ -1,5 +1,6 @@
 #include <openjpeg-2.1/openjpeg.h>
 
+#include "misc/bit.h"
 #include "raster/strip.h"
 #include "wudefs.h"
 
@@ -49,14 +50,14 @@ static opj_stream_t setup_jp2_stream(FILE *ifp) {
 	return stream;
 }
 
-static enum wu_error dec_wrap(struct raw_img *img, const opj_image_t *jp2) {
+static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 	if (jp2->numcomps > 4) {
 		return wu_unsupported_feature;
 	}
 	img->channels = (unsigned char)jp2->numcomps;
 	img->bitdepth = 32;
 
-	struct image_planes *planes = raw_img_plane_init(img);
+	struct image_planes *planes = wuimg_plane_init(img);
 	if (!planes) {
 		return wu_alloc_error;
 	}
@@ -72,7 +73,7 @@ static enum wu_error dec_wrap(struct raw_img *img, const opj_image_t *jp2) {
 		}
 		p[j].x.subsamp = (unsigned char)comps[j].dx;
 		p[j].y.subsamp = (unsigned char)comps[j].dy;
-		scaler[j] = strip_scale_info(~0u >> (32 - comps[j].prec),
+		scaler[j] = strip_scale_info(bit_set32(comps[j].prec),
 			img->bitdepth);
 	}
 
@@ -107,7 +108,7 @@ static enum wu_error dec_wrap(struct raw_img *img, const opj_image_t *jp2) {
 		return wu_unsupported_feature;
 	}
 
-	const enum wu_error st = raw_img_verify(img);
+	const enum wu_error st = wuimg_verify(img);
 	if (st == wu_ok) {
 		img->borrowed = true;
 		for (uint8_t z = 0; z < img->channels; ++z) {
@@ -128,9 +129,9 @@ static void set_limits(opj_codec_t *dec, opj_image_t *jp2) {
 
 static enum wu_error jpeg2000_dec(struct image_file *infile,
 const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
-	struct raw_img *img = infile->sub_img;
+	struct wuimg *img = infile->sub_img;
 	if (img) {
-		raw_img_clear(img);
+		wuimg_clear(img);
 	} else {
 		img = alloc_sub_images(infile, 1);
 		if (!img) {
@@ -164,7 +165,7 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 					opj_end_decompress(dec, stream);
 					img->w = jp2->x1 - jp2->x0;
 					img->h = jp2->y1 - jp2->y0;
-					st = raw_img_exceeds_limit(img, wuconf)
+					st = wuimg_exceeds_limit(img, wuconf)
 						? wu_exceeds_size_limit : wu_ok;
 				} else {
 					st = wu_decoding_error;

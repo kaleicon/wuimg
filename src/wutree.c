@@ -4,8 +4,8 @@
 #include "term.h"
 #include "utf8.h"
 #include "wutree.h"
-#include "common/mem.h"
-#include "common/wustr.h"
+#include "misc/mem.h"
+#include "misc/wustr.h"
 
 static bool is_emb_str(const struct wu_emb_str *emb) {
 	return emb->len > sizeof(emb->s.arr);

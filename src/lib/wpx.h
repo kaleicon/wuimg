@@ -3,8 +3,8 @@
 
 #include <stdio.h>
 
-#include "wudefs.h"
-#include "raster/memparser.h"
+#include "raster/wuimg.h"
+#include "misc/memparser.h"
 
 enum wpx_section_id {
 	wpx_bmp_info = 0x10,
@@ -74,9 +74,9 @@ struct wpx_ia2_desc {
 
 void wpx_bmp_cleanup(struct wpx_bmp_desc *desc);
 
-size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct raw_img *img);
+size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img);
 
-enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct raw_img *img);
+enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img);
 
 enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, struct mp_parser mp);
 

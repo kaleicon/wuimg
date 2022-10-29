@@ -2,13 +2,13 @@
 #define RAST_WUTILS
 
 #include "wudefs.h"
-#include "common/file.h"
-#include "raster/memparser.h"
+#include "misc/file.h"
+#include "misc/memparser.h"
 
 typedef void (*rast_vfree_t)(void *desc);
-typedef size_t (*rast_vdec_t)(const void *restrict desc, struct raw_img *img);
+typedef size_t (*rast_vdec_t)(const void *restrict desc, struct wuimg *img);
 typedef void (*rast_vmeta_t)(const void *restrict desc, struct wu_tree *metadata);
-typedef enum wu_error (*rast_vparse_t)(void *restrict desc, struct raw_img *img);
+typedef enum wu_error (*rast_vparse_t)(void *restrict desc, struct wuimg *img);
 typedef enum wu_error (*rast_vmopen_t)(void *restrict desc, struct mp_parser mp);
 typedef enum wu_error (*rast_vopen_t)(void *restrict desc, FILE *ifp);
 
@@ -16,7 +16,7 @@ typedef enum wu_error (*rast_vopen_t)(void *restrict desc, FILE *ifp);
 typedef enum wu_error (*rast_map_t)(struct image_file *infile,
 const struct wu_conf *wuconf, const struct map_info *mm);
 
-typedef enum wu_error (*rast_open_t)(struct raw_img *img, FILE *ifp);
+typedef enum wu_error (*rast_open_t)(struct wuimg *img, FILE *ifp);
 
 
 enum wu_error rast_trivial_dec(struct image_file *infile,

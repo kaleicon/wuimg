@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "wudefs.h"
-#include "raster/memparser.h"
+#include "raster/wuimg.h"
+#include "misc/memparser.h"
 
 enum sixel_background_color {
 	sixel_set_to_bg = 0,
@@ -17,10 +17,10 @@ struct sixel_desc {
 	unsigned char horizontal_grid_size;
 };
 
-size_t sixel_decode(const struct sixel_desc *desc, struct raw_img *img);
+size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img);
 
 enum wu_error sixel_calc_parameters(struct sixel_desc *desc,
-struct raw_img *img);
+struct wuimg *img);
 
 enum wu_error sixel_open_mem(struct sixel_desc *desc,
 const struct mp_parser mp);

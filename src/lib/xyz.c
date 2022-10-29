@@ -2,20 +2,20 @@
 
 #include <zlib.h>
 
-#include "common/common.h"
+#include "misc/common.h"
 #include "raster/fmt.h"
 #include "xyz.h"
 
-void xyz_free(struct xyz_desc *desc, struct raw_img *img) {
+void xyz_free(struct xyz_desc *desc, struct wuimg *img) {
 	img->data = NULL;
 	img->u.palette = NULL;
 	free(desc->data);
 }
 
-bool xyz_decode(struct xyz_desc *desc, struct raw_img *img) {
+bool xyz_decode(struct xyz_desc *desc, struct wuimg *img) {
 	struct wuptr src = mp_next_remaining(&desc->mp, SIZE_MAX);
 	if (src.len) {
-		const size_t dst_len = sizeof(*img->u.palette) + raw_img_size(img);
+		const size_t dst_len = sizeof(*img->u.palette) + wuimg_size(img);
 		uint8_t *dst = malloc(dst_len);
 		if (dst) {
 			const size_t pal_items = ARRAY_LEN(img->u.palette->color);
@@ -23,7 +23,7 @@ bool xyz_decode(struct xyz_desc *desc, struct raw_img *img) {
 			uLong uncmp_len = (uLong)(dst_len - pal_items);
 			uncompress(uncmp, &uncmp_len, src.ptr, (uLong)src.len);
 			if (uncmp_len > pal_items*3) {
-				raw_img_palette_set(img, (struct raster_pal *)dst);
+				wuimg_palette_set(img, (struct raster_pal *)dst);
 				img->data = dst + sizeof(*img->u.palette);
 				img->borrowed = true;
 				raster_pal_from_rgb8(img->u.palette, uncmp,
@@ -37,7 +37,7 @@ bool xyz_decode(struct xyz_desc *desc, struct raw_img *img) {
 	return false;
 }
 
-enum wu_error xyz_parse(struct xyz_desc *desc, struct raw_img *img) {
+enum wu_error xyz_parse(struct xyz_desc *desc, struct wuimg *img) {
 	const uint8_t *header = mp_next_slice(&desc->mp, 4);
 	if (header) {
 		img->w = buf_endian16(header, little_endian);
@@ -45,7 +45,7 @@ enum wu_error xyz_parse(struct xyz_desc *desc, struct raw_img *img) {
 		img->channels = 1;
 		img->bitdepth = 8;
 		img->layout = pix_rgba;
-		return raw_img_verify(img);
+		return wuimg_verify(img);
 	}
 	return wu_unexpected_eof;
 }

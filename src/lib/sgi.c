@@ -2,8 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/file.h"
-#include "common/math.h"
+#include "misc/math.h"
 #include "raster/fmt.h"
 #include "sgi.h"
 
@@ -11,12 +10,10 @@ static const uint8_t RLE_LEN_MASK = 0x7f;
 
 struct rle_info {
 	size_t entries;
-	size_t table_size;
-	size_t rle_size;
 	size_t total;
-	uint32_t *row_offset; // Base pointer
+	uint8_t *buf;
+	uint32_t *row_offset;
 	uint32_t *row_len;
-	void *rle;
 };
 
 static void rle_loop16(uint16_t *restrict output, const size_t out_limit,
@@ -26,7 +23,7 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 	do {
 		const uint16_t packet = endian16(rle[r], big_endian);
 		const uint16_t len = packet & RLE_LEN_MASK;
-		if (o + len >= out_limit) {
+		if (o + len > out_limit) {
 			return;
 		}
 		++r;
@@ -54,7 +51,7 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 	do {
 		const uint8_t packet = rle[r];
 		const uint8_t len = packet & RLE_LEN_MASK;
-		if (o + len >= out_limit) {
+		if (o + len > out_limit) {
 			return;
 		}
 		++r;
@@ -70,108 +67,106 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 	} while (r + 1 < rle_limit);
 }
 
-static void rle_loop(const struct sgi_desc *desc, struct raw_img *img,
+static void rle_loop(const struct sgi_desc *desc, struct wuimg *img,
 const struct rle_info *rle) {
-	void *restrict output = img->data;
 	const size_t width = img->w;
 	for (size_t y = 0; y < rle->entries; ++y) {
 		const size_t offset = width*y;
 		const uint32_t row_off = rle->row_offset[y];
 		const uint32_t row_len = rle->row_len[y];
 		if (desc->bytedepth == 1) {
-			rle_loop8((uint8_t *)output + offset, width,
-				(uint8_t *)rle->rle + row_off, row_len);
+			rle_loop8((uint8_t *)img->data + offset, width,
+				(uint8_t *)rle->buf + row_off, row_len);
 		} else {
-			rle_loop16((uint16_t *)output + offset, width,
-				(uint16_t *)rle->rle + row_off, row_len);
+			rle_loop16((uint16_t *)img->data + offset, width,
+				(uint16_t *)rle->buf + row_off, row_len);
 		}
 	}
 }
 
-static bool resolve_offsets(struct rle_info *rle, const uint8_t bytedepth) {
-	const uint32_t file_pos = (uint32_t)(512 + rle->table_size);
-	const uint32_t rle_end = (uint32_t)(file_pos + rle->rle_size);
-	const uint32_t min_len = bytedepth * 2; // Packet + payload
-
+static bool check_offsets(struct rle_info *rle, const uint8_t bytedepth) {
+	const uint32_t min_len = bytedepth * 2; // Packet + min payload
 	for (size_t i = 0; i < rle->entries; ++i) {
 		const uint32_t offset = endian32(rle->row_offset[i], big_endian);
 		const uint32_t len = endian32(rle->row_len[i], big_endian);
-		if (offset < file_pos) {
+		if (len < min_len) {
 			return false;
-		} else if (offset + len >= rle_end) {
-			return false;
-		} else if (len < min_len) {
-			return false;
-		} else if (offset % bytedepth || len % bytedepth) {
+		} else if (offset > UINT32_MAX - len || offset + len > rle->total) {
 			return false;
 		}
-		rle->row_offset[i] = (offset - file_pos)/bytedepth;
+		rle->row_offset[i] = offset/bytedepth;
 		rle->row_len[i] = len/bytedepth;
 	}
 	return true;
 }
 
-static size_t get_filesize(const struct sgi_desc *desc,
-const size_t table_size, const size_t dims) {
-	const size_t size = file_remaining(desc->ifp);
-	if (size > table_size) {
+static size_t get_total_size(const struct sgi_desc *desc,
+const size_t non_rle, const size_t dims) {
+	fseek(desc->ifp, 0, SEEK_END);
+	const size_t size = (size_t)ftell(desc->ifp);
+	if (size > non_rle) {
 		// E.g. (bytedepth == 1) 01 ff  01 ff ...
 		// E.g. (bytedepth == 2) 00 01 ff ff  00 01 ff ff ...
 		const size_t pathological_rle = dims * 2;
-		return zumin(pathological_rle, size - table_size);
+		return zumin(pathological_rle + non_rle, size);
 	}
 	return 0;
 }
 
-static size_t rle_decode(const struct sgi_desc *desc, struct raw_img *img,
-const size_t dims) {
+static size_t rle_decode(const struct sgi_desc *desc, struct wuimg *img) {
 	/* RLE table:
-		LONG    RLEOffset[Y*Z]; // From the beginning of the file. In bytes
-		LONG    RLELen[Y*Z];    // In bytes
+		u32     RLEOffset[Y*Z];
+		u32     RLELen[Y*Z];
+
+	 * Both fields are in bytes, and offsets are from the beginning of the
+	 * file.
 	*/
+
+	const size_t file_header = 512;
 
 	struct rle_info rle;
 	rle.entries = img->h * img->channels;
-	rle.table_size = rle.entries * sizeof(uint32_t) * 2;
-	rle.rle_size = get_filesize(desc, rle.table_size, dims);
+	const size_t table_size = rle.entries * sizeof(uint32_t) * 2;
+	const size_t non_rle = file_header + table_size;
+	rle.total = get_total_size(desc, non_rle, wuimg_size(img));
 
 	bool ok = false;
-	if (rle.rle_size) {
+	if (rle.total) {
+		/* Just load the whole file so we don't have to subtract
+		 * offsets and all that jazz. */
 		const size_t padding = RLE_LEN_MASK * desc->bytedepth;
-		rle.total = rle.table_size + rle.rle_size;
-		rle.row_offset = malloc(rle.total + padding);
+		rle.buf = malloc(rle.total + padding);
 
-		if (rle.row_offset) {
-			const size_t read = fread(rle.row_offset, 1, rle.total,
-				desc->ifp);
-			if (read > rle.table_size) {
+		if (rle.buf) {
+			fseek(desc->ifp, 0, SEEK_SET);
+			const size_t read = fread(rle.buf, 1, rle.total, desc->ifp);
+			if (read > non_rle) {
+				rle.row_offset = (uint32_t *)(rle.buf + file_header);
 				rle.row_len = rle.row_offset + rle.entries;
-				rle.rle = rle.row_len + rle.entries;
 
-				if (resolve_offsets(&rle, desc->bytedepth)) {
+				if (check_offsets(&rle, desc->bytedepth)) {
 					rle_loop(desc, img, &rle);
 					ok = true;
 				}
 			}
-			free(rle.row_offset);
+			free(rle.buf);
 		}
 	}
 	return ok;
 }
 
-size_t sgi_decode(const struct sgi_desc *desc, struct raw_img *img) {
-	if (raw_img_alloc_noverify(img)) {
-		const size_t size = raw_img_size(img);
-		fseek(desc->ifp, 512, SEEK_SET);
+size_t sgi_decode(const struct sgi_desc *desc, struct wuimg *img) {
+	if (wuimg_alloc_noverify(img)) {
 		if (desc->compression == sgi_rle) {
-			return rle_decode(desc, img, size);
+			return rle_decode(desc, img);
 		}
+		fseek(desc->ifp, 512, SEEK_SET);
 		return fmt_load_raster(img, desc->ifp, big_endian);
 	}
 	return 0;
 }
 
-static enum wu_error validate_header(struct sgi_desc *desc, struct raw_img *img,
+static enum wu_error validate_header(struct sgi_desc *desc, struct wuimg *img,
 const uint8_t compression, const uint8_t bytedepth,
 const uint16_t dimension, const uint16_t width, const uint16_t height,
 const uint16_t channels, const uint32_t bitmap_type) {
@@ -226,16 +221,16 @@ const uint16_t channels, const uint32_t bitmap_type) {
 	img->channels = (unsigned char)channels;
 	img->bitdepth = bytedepth * 8;
 	img->mirror = true;
-	if (raw_img_plane_init(img)) {
+	if (wuimg_plane_init(img)) {
 		desc->bytedepth = bytedepth;
 		desc->compression = (enum sgi_compression)compression;
 		desc->type = (enum sgi_bitmap_type)bitmap_type;
-		return raw_img_verify(img);
+		return wuimg_verify(img);
 	}
 	return wu_alloc_error;
 }
 
-enum wu_error sgi_parse_header(struct sgi_desc *desc, struct raw_img *img) {
+enum wu_error sgi_parse_header(struct sgi_desc *desc, struct wuimg *img) {
 	/* SGI header (after magic bytes)
 		Offset  Size    Name
 		0       CHAR    Compression;

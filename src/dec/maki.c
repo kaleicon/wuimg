@@ -14,10 +14,10 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	tree_bud_leaf(tree, "Y", leaf);
 }
 
-static size_t dec(const void *restrict desc, struct raw_img *img) {
+static size_t dec(const void *restrict desc, struct wuimg *img) {
 	return maki_decode(desc, img);
 }
-static enum wu_error parse(void *restrict desc, struct raw_img *img) {
+static enum wu_error parse(void *restrict desc, struct wuimg *img) {
 	return maki_parse(desc, img);
 }
 static enum wu_error open(void *restrict desc, FILE *ifp) {

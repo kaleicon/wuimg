@@ -9,9 +9,9 @@
 
 #include "conf.h"
 #include "term.h"
-#include "common/common.h"
-#include "common/file.h"
-#include "raster/memparser.h"
+#include "misc/common.h"
+#include "misc/file.h"
+#include "misc/memparser.h"
 
 struct wu_conf conf_default(void) {
 	const unsigned default_max = USHRT_MAX / 4;

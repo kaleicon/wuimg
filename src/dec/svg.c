@@ -5,9 +5,9 @@
 #include <librsvg-2.0/librsvg/rsvg.h>
 
 #include "wudefs.h"
-#include "common/endian.h"
-#include "common/file.h"
-#include "common/math.h"
+#include "misc/endian.h"
+#include "misc/file.h"
+#include "misc/math.h"
 
 struct svg_state {
 	RsvgHandle *handle;
@@ -33,7 +33,7 @@ unsigned int limit, bool *reached_limit) {
 	return zoom;
 }
 
-static enum wu_error svg_render(struct raw_img *img, struct svg_state *ds) {
+static enum wu_error svg_render(struct wuimg *img, struct svg_state *ds) {
 	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
 	const int width = (int)ceil((ds->viewport.width * ds->dec_scale));
 	const int height = (int)ceil((ds->viewport.height * ds->dec_scale));
@@ -53,7 +53,7 @@ static enum wu_error svg_render(struct raw_img *img, struct svg_state *ds) {
 
 	img->w = (size_t)width;
 	img->h = (size_t)height;
-	const enum wu_error st = raw_img_verify(img);
+	const enum wu_error st = wuimg_verify(img);
 	if (st != wu_ok) {
 		cairo_surface_destroy(surf);
 		return st;
@@ -145,7 +145,7 @@ const struct wu_conf *wuconf) {
 		ds->viewport.height = (double)wuconf->fb.h;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}

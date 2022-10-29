@@ -17,7 +17,7 @@ static enum wu_error read_uintvar_dim(FILE *ifp, size_t *value) {
 	return wu_int_overflow;
 }
 
-enum wu_error wbmp_open_file(struct raw_img *img, FILE *ifp) {
+enum wu_error wbmp_open_file(struct wuimg *img, FILE *ifp) {
 	unsigned char sig[2] = {0};
 	enum wu_error status = fmt_sigcmp(sig, sizeof(sig), ifp);
 	if (status == wu_ok) {

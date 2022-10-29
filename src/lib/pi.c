@@ -4,10 +4,10 @@
 #include <string.h>
 #include <limits.h>
 
-#include "common/bit.h"
-#include "common/file.h"
-#include "common/math.h"
-#include "common/mem.h"
+#include "misc/bit.h"
+#include "misc/file.h"
+#include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "pi.h"
 
@@ -27,7 +27,7 @@ enum pi_repeat_src {
 };
 
 void pi_cleanup(struct pi_desc *desc) {
-	free(desc->comment.data);
+	wustr_free(&desc->comm);
 	free(desc->saver.data);
 }
 
@@ -87,33 +87,30 @@ end_repeat:
 }
 
 #ifndef EXACT_BITS
-static uint32_t current_dword(const uint8_t *restrict bs,
-const size_t bitpos, const bool full_bits) {
-	size_t i = bitpos / 8;
-	size_t o = bitpos % 8;
-	const uint32_t f = buf_endian32(bs + i, big_endian) << o;
+static uint32_t current_dword(const struct bitstrm *bs, const bool full_bits) {
+	size_t i = bs->pos / 8;
+	size_t o = bs->pos % 8;
+	const uint32_t f = buf_endian32(bs->buf + i, big_endian) << o;
 	if (full_bits) {
-		return f | (unsigned)(bs[i+4] >> (8 - o));
+		return f | (unsigned)(bs->buf[i+4] >> (8 - o));
 	}
 	return f;
 }
 
-static uint16_t current_word(const uint8_t *restrict bs,
-const size_t bitpos, const bool full_bits) {
-	size_t i = bitpos / 8;
-	size_t o = bitpos % 8;
-	const uint16_t f = (uint16_t)(buf_endian16(bs + i, big_endian) << o);
+static uint16_t current_word(const struct bitstrm *bs, const bool full_bits) {
+	size_t i = bs->pos / 8;
+	size_t o = bs->pos % 8;
+	const uint16_t f = (uint16_t)(buf_endian16(bs->buf + i, big_endian) << o);
 	if (full_bits) {
-		return f | (uint16_t)(bs[i+2] >> (8 - o));
+		return f | (uint16_t)(bs->buf[i+2] >> (8 - o));
 	}
 	return f;
 }
 #endif // EXACT_BITS
 
-static uint32_t read_repeat_cnt(const uint8_t *restrict bs,
-size_t *restrict bitpos) {
+static uint32_t read_repeat_cnt(struct bitstrm *bs) {
 #ifdef EXACT_BITS
-	return (uint32_t)bit_adv_gamma(bs, bitpos, 0);
+	return bitstrm_msb_gamma(bs, 0);
 #else
 	/* Gamma bit encoding:
 		Coding  Range
@@ -125,31 +122,30 @@ size_t *restrict bitpos) {
 
 	uint_fast32_t seq_len = 0;
 	const uint32_t mask = 1U << 31;
-	const uint32_t repeat = current_dword(bs, *bitpos, true);
+	const uint32_t repeat = current_dword(bs, true);
 	while ((repeat << seq_len) & mask && seq_len < 31) {
 		++seq_len;
 	}
 
-	*bitpos += seq_len;
+	bs->pos += seq_len;
 	// The beginning zero is included
-	const uint32_t payload = current_dword(bs, *bitpos, true);
-	*bitpos += seq_len + 1;
+	const uint32_t payload = current_dword(bs, true);
+	bs->pos += seq_len + 1;
 	return (payload | mask) >> (31 - seq_len);
 #endif
 }
 
-static enum pi_repeat_src read_repeat_loc(const uint8_t *restrict bs,
-size_t *restrict bitpos) {
+static enum pi_repeat_src read_repeat_loc(struct bitstrm *bs) {
 	/* Location codes: 00, 01, 10, 110, 111 */
 #ifdef EXACT_BITS
-	const uint32_t bits = bit_advn(bs, bitpos, 2);
+	const uint32_t bits = bitstrm_msb_adv(bs, 2);
 	switch (bits) {
 	case 0: case 1: case 2:
 		return bits;
 	}
-	return (bits << 1) | bit_adv(bs, bitpos);
+	return (bits << 1) | bitstrm_msb_next(bs);
 #else
-	const uint_fast32_t word = current_word(bs, *bitpos, false) >> 13;
+	const uint_fast32_t word = current_word(bs, false) >> 13;
 	uint8_t diff;
 	switch (word) {
 	case 0: case 1: case 2: case 3: case 4: case 5:
@@ -157,13 +153,12 @@ size_t *restrict bitpos) {
 	default:
 		diff = 3;
 	}
-	*bitpos += diff;
+	bs->pos += diff;
 	return (enum pi_repeat_src)(word >> (3 - diff));
 #endif
 }
 
-static size_t read_8bit_delta(const uint8_t *restrict bs,
-size_t *restrict bitpos) {
+static size_t read_8bit_delta(struct bitstrm *bs) {
 	/* 8-bit delta encoding:
 		Code            Values
 		1x              0-1
@@ -176,22 +171,22 @@ size_t *restrict bitpos) {
 		0111111xxxxxxx  128-255
 	*/
 #ifdef EXACT_BITS
-	if (bit_adv(bs, bitpos)) {
-		return bit_adv(bs, bitpos);
+	if (bitstrm_msb_next(bs)) {
+		return bitstrm_msb_next(bs);
 	} else { // 00
 		uint32_t sh = 0;
 		// 010
-		if (bit_adv(bs, bitpos)) { // Weee
+		if (bitstrm_msb_next(bs)) { // Weee
 			// 0110
-			if (bit_adv(bs, bitpos)) { // eeee
+			if (bitstrm_msb_next(bs)) { // eeee
 				// 01110
-				if (bit_adv(bs, bitpos)) { // eeee
+				if (bitstrm_msb_next(bs)) { // eeee
 					// 011110
-					if (bit_adv(bs, bitpos)) { // eeee
+					if (bitstrm_msb_next(bs)) { // eeee
 						// 0111110
-						if (bit_adv(bs, bitpos)) { // eeee
+						if (bitstrm_msb_next(bs)) { // eeee
 							// 0111111
-							if (bit_adv(bs, bitpos)) {
+							if (bitstrm_msb_next(bs)) {
 								++sh;
 							}
 							++sh;
@@ -205,10 +200,10 @@ size_t *restrict bitpos) {
 			++sh;
 		}
 		++sh;
-		return bit_advn(bs, bitpos, sh) | (1U << sh);
+		return bitstrm_msb_adv(bs, sh) | (1U << sh);
 	}
 #else
-	const uint32_t word = current_dword(bs, *bitpos, false);
+	const uint32_t word = current_dword(bs, false);
 	uint32_t read, xor;
 	if (word >= 0x01U << (32 - 1)) {        //       1x
 		read = 2; xor = 0x01 << 1;
@@ -227,13 +222,12 @@ size_t *restrict bitpos) {
 	} else {                                //      00x----
 		read = 3; xor = 0x01 << 1;
 	}
-	*bitpos += read;
+	bs->pos += read;
 	return (word >> (32 - read)) ^ xor;
 #endif
 }
 
-static size_t read_4bit_delta(const uint8_t *restrict bs,
-size_t *restrict bitpos) {
+static size_t read_4bit_delta(struct bitstrm *bs) {
 	/* 4-bit delta encoding:
 		Code    Values
 		1x      0-1
@@ -242,21 +236,21 @@ size_t *restrict bitpos) {
 		011xxx  8-15
 	*/
 #ifdef EXACT_BITS
-	if (bit_adv(bs, bitpos)) {
-		return bit_adv(bs, bitpos);
+	if (bitstrm_msb_next(bs)) {
+		return bitstrm_msb_next(bs);
 	} else {
 		unsigned int sh = 0;
-		if (bit_adv(bs, bitpos)) {
-			if (bit_adv(bs, bitpos)) {
+		if (bitstrm_msb_next(bs)) {
+			if (bitstrm_msb_next(bs)) {
 				++sh;
 			}
 			++sh;
 		}
 		++sh;
-		return bit_advn(bs, bitpos, sh) | (1U << sh);
+		return bitstrm_msb_adv(bs, sh) | (1U << sh);
 	}
 #else
-	const uint32_t word = current_word(bs, *bitpos, false);
+	const uint32_t word = current_word(bs, false);
 	uint32_t read, xor;
 	switch (word >> 13) {
 	case 0: case 1:
@@ -272,24 +266,23 @@ size_t *restrict bitpos) {
 		read = 2; xor = 0x02;
 		break;
 	}
-	*bitpos += read;
+	bs->pos += read;
 	return (word >> (16 - read)) ^ xor;
 #endif
 }
 
-static size_t bt_decode_loop(uint8_t *restrict output,
-const size_t dims, const uint8_t *restrict bitstream, const size_t bitlen,
-const size_t width, uint8_t *restrict table, const unsigned depth) {
+static size_t bt_decode_loop(uint8_t *restrict output, const size_t dims,
+struct bitstrm *bs, const size_t width, uint8_t *restrict table,
+const unsigned depth) {
 	size_t i = 0;
-	size_t bitpos = 0;
-	for (uint8_t prev = 0; i < dims && bitpos < bitlen; prev = output[i-1]) {
+	for (uint8_t prev = 0; i < dims && bs->pos < bs->len; prev = output[i-1]) {
 		size_t dt[2];
 		if (depth == 1 << 4) {
-			dt[0] = read_4bit_delta(bitstream, &bitpos);
-			dt[1] = read_4bit_delta(bitstream, &bitpos);
+			dt[0] = read_4bit_delta(bs);
+			dt[1] = read_4bit_delta(bs);
 		} else {
-			dt[0] = read_8bit_delta(bitstream, &bitpos);
-			dt[1] = read_8bit_delta(bitstream, &bitpos);
+			dt[0] = read_8bit_delta(bs);
+			dt[1] = read_8bit_delta(bs);
 		}
 		output[i] = table_lookup(table, depth, prev, dt[0]);
 		output[i+1] = table_lookup(table, depth, output[i], dt[1]);
@@ -297,16 +290,16 @@ const size_t width, uint8_t *restrict table, const unsigned depth) {
 
 		if (i >= dims) {
 			break;
-		} else if (i == 2 || !bit_adv(bitstream, &bitpos)) {
+		} else if (i == 2 || !bitstrm_msb_next(bs)) {
 			enum pi_repeat_src loc[2];
 			loc[1] = depth; // sentinel value
 			for (int cur = 0;; cur = !cur) {
-				loc[cur] = read_repeat_loc(bitstream, &bitpos);
+				loc[cur] = read_repeat_loc(bs);
 				if (loc[cur] == loc[!cur]) {
 					break;
 				}
 
-				size_t cnt = read_repeat_cnt(bitstream, &bitpos)
+				size_t cnt = read_repeat_cnt(bs)
 					- (i == 2);
 				if (cnt*2 + i > dims) {
 					break;
@@ -323,35 +316,36 @@ static size_t max_bitstream_size(FILE *ifp, const size_t dims) {
 	return zumin(dims * 2, file_remaining(ifp));
 }
 
-size_t pi_decode(const struct pi_desc *desc, struct raw_img *img) {
+size_t pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 	size_t written = 0;
-	if (raw_img_alloc_noverify(img)) {
-		const size_t dims = raw_img_size(img);
+	if (wuimg_alloc_noverify(img)) {
+		const size_t dims = wuimg_size(img);
 		const unsigned colors = (1 << desc->depth);
 		const unsigned table_size = colors*colors;
 		const size_t bslen = max_bitstream_size(desc->ifp, dims);
 		/* The spec recommends that the last 32 bits be zero. We'll
 		 * enforce this to do away with some bounds checks in the
 		 * middle of decoding. */
-		void *buf = malloc(table_size + bslen + 4);
+		const size_t pad = 4;
+		void *buf = malloc(table_size + bslen + pad);
 		if (buf) {
 			uint8_t *restrict delta_table = buf;
 			uint8_t *restrict bitstream = delta_table + table_size;
 
 			init_delta_table(delta_table, colors);
 			const size_t read = fread(bitstream, 1, bslen, desc->ifp);
-			memset(bitstream + read, 0, 4);
+			memset(bitstream + read, 0, pad);
 
-			const size_t bitlen = read * 8;
-			written = bt_decode_loop(img->data, dims,
-				bitstream, bitlen, img->w, buf, colors);
+			struct bitstrm bs = bitstrm_from_bytes(bitstream, read*8);
+			written = bt_decode_loop(img->data, dims, &bs, img->w,
+				delta_table, colors);
 			free(buf);
 		}
 	}
 	return written;
 }
 
-static enum wu_error validate_header(struct pi_desc *desc, struct raw_img *img,
+static enum wu_error validate_header(struct pi_desc *desc, struct wuimg *img,
 uint8_t pixel_x, uint8_t pixel_y, const uint8_t bitdepth, const uint16_t width,
 const uint16_t height) {
 	switch (bitdepth) {
@@ -374,26 +368,13 @@ const uint16_t height) {
 	img->h = height;
 	img->channels = 1;
 	img->bitdepth = 8;
-	raw_img_aspect_ratio(img, pixel_x, pixel_y);
+	wuimg_aspect_ratio(img, pixel_x, pixel_y);
 
 	desc->depth = bitdepth;
 	return wu_ok;
 }
 
-static enum wu_error read_comment(struct pi_desc *desc) {
-	struct pi_comment *comm = &desc->comment;
-	struct wugrow grow;
-	comm->data = fileccpy(&grow, '\0', 0x4000, desc->ifp);
-	if (comm->data) {
-		uint8_t *p = memrchr(comm->data, 0x1a, grow.pos);
-		comm->text_len = p ? (size_t)(p - comm->data) : grow.pos;
-		comm->area_len = grow.pos;
-		return wu_ok;
-	}
-	return wu_invalid_header;
-}
-
-enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img) {
+enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img) {
 	/* Pi header (after magic bytes):
 		Offset  Size    Name
 		0       VAR     Comment[];      // 0x1a then 0x00 terminated
@@ -411,9 +392,8 @@ enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img) {
 		+4      VAR     Palette;        // Length of 1 << BitDepth
 	*/
 
-	enum wu_error status = read_comment(desc);
-	if (status != wu_ok) {
-		return status;
+	if (!file_read_pi_comm(&desc->comm, desc->ifp)) {
+		return wu_unexpected_eof;
 	}
 
 	uint8_t buf[10];
@@ -438,31 +418,29 @@ enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img) {
 		return wu_unexpected_eof;
 	}
 
-	status = validate_header(desc, img, buf[1], buf[2], buf[3],
+	enum wu_error status = validate_header(desc, img,
+		buf[1], buf[2], buf[3],
 		buf_endian16(buf + 4, big_endian),
 		buf_endian16(buf + 6, big_endian));
 	if (status != wu_ok) {
 		return status;
 	}
 
-	struct raster_pal *pal = raw_img_palette_init(img);
+	struct raster_pal *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return wu_alloc_error;
 	}
 	status = fmt_load_pal(desc->ifp, pal, fmt_pal_rgb, 1 << desc->depth);
 	if (status == wu_ok) {
-		return raw_img_verify(img);
+		return wuimg_verify(img);
 	}
 	return status;
 }
 
 enum wu_error pi_open_file(struct pi_desc *desc, FILE *ifp) {
+	*desc = (struct pi_desc) {
+		.ifp = ifp,
+	};
 	const unsigned char sig[] = {'P', 'i'};
-	const enum wu_error st = fmt_sigcmp(sig, sizeof(sig), ifp);
-	if (st == wu_ok) {
-		*desc = (struct pi_desc) {
-			.ifp = ifp,
-		};
-	}
-	return st;
+	return fmt_sigcmp(sig, sizeof(sig), ifp);
 }

@@ -2,7 +2,7 @@
 
 #include "wudefs.h"
 #include "metadata.h"
-#include "common/file.h"
+#include "misc/file.h"
 
 struct avif_state {
 	struct map_info mm;
@@ -18,22 +18,22 @@ static void clean_avif_state(struct image_file *infile) {
 	file_unmap(&ds->mm);
 }
 
-static void read_metadata_item(struct raw_img *img, avifRWData *meta,
+static void read_metadata_item(struct wuimg *img, avifRWData *meta,
 const enum metadata_type type) {
 	if (meta->size) {
-		struct wu_tree *tree = raw_img_get_metadata(img);
+		struct wu_tree *tree = wuimg_get_metadata(img);
 		if (tree) {
 			standard_metadata(type, meta->data, meta->size, tree);
 		}
 	}
 }
 
-static void get_metadata(struct raw_img *img, avifImage *avif) {
+static void get_metadata(struct wuimg *img, avifImage *avif) {
 	read_metadata_item(img, &avif->exif, exif_metadata);
 	read_metadata_item(img, &avif->xmp, xmp_metadata);
 }
 
-static void get_colorspace(struct raw_img *img, avifImage *avif) {
+static void get_colorspace(struct wuimg *img, avifImage *avif) {
 	if (avif->icc.size) {
 		color_space_set_icc_copy(&img->cs, avif->icc.data,
 			avif->icc.size);
@@ -45,7 +45,7 @@ static void get_colorspace(struct raw_img *img, avifImage *avif) {
 	}
 }
 
-static void get_transforms(struct raw_img *img, avifImage *avif) {
+static void get_transforms(struct wuimg *img, avifImage *avif) {
 	if (avif->transformFlags & AVIF_TRANSFORM_PASP) {
 		img->ratio = (float)avif->pasp.hSpacing / (float)avif->pasp.vSpacing;
 	}
@@ -60,7 +60,7 @@ static void get_transforms(struct raw_img *img, avifImage *avif) {
 
 static enum wu_error dec_subimg(struct image_file *infile,
 const struct wu_conf *wuconf, const uint32_t idx) {
-	struct raw_img *img = infile->sub_img + idx;
+	struct wuimg *img = infile->sub_img + idx;
 	struct avif_state *ds = infile->dec_state;
 	avifDecoder *dec = ds->dec;
 
@@ -75,7 +75,7 @@ const struct wu_conf *wuconf, const uint32_t idx) {
 	if (!planes) {
 		img->w = avif->width;
 		img->h = avif->height;
-		if (raw_img_exceeds_limit(img, wuconf)) {
+		if (wuimg_exceeds_limit(img, wuconf)) {
 			return wu_exceeds_size_limit;
 		}
 
@@ -94,21 +94,21 @@ const struct wu_conf *wuconf, const uint32_t idx) {
 		get_colorspace(img, avif);
 		get_metadata(img, avif);
 
-		planes = raw_img_plane_init(img);
+		planes = wuimg_plane_init(img);
 		if (!planes) {
 			return wu_alloc_error;
 		}
 		switch (avif->yuvFormat) {
 		case AVIF_PIXEL_FORMAT_YUV422:
-			raw_img_plane_subsamp(img, 2, 1);
+			wuimg_plane_subsamp(img, 2, 1);
 			break;
 		case AVIF_PIXEL_FORMAT_YUV420:
-			raw_img_plane_subsamp(img, 2, 2);
+			wuimg_plane_subsamp(img, 2, 2);
 			break;
 		default: break;
 		}
-		raw_img_plane_resolve(img);
-		const enum wu_error st = raw_img_verify(img);
+		wuimg_plane_resolve(img);
+		const enum wu_error st = wuimg_verify(img);
 		if (st != wu_ok) {
 			return st;
 		}
@@ -145,7 +145,7 @@ const struct wu_conf *wuconf, struct avif_state *ds, avifResult *res) {
 		return wu_invalid_header;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, (size_t)dec->imageCount);
+	struct wuimg *img = alloc_sub_images(infile, (size_t)dec->imageCount);
 	if (!img) {
 		return wu_alloc_error;
 	}

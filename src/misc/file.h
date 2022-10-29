@@ -6,7 +6,7 @@
 
 #include "wustr.h"
 
-uint8_t * fileccpy(struct wugrow *grow, uint8_t ch, size_t max, FILE *ifp);
+bool file_read_pi_comm(struct wustr *comm, FILE *ifp);
 
 size_t file_tail(void *buf, size_t size, size_t nmemb, FILE *ifp);
 

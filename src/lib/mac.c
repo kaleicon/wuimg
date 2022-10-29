@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/endian.h"
-#include "common/file.h"
-#include "common/math.h"
+#include "misc/endian.h"
+#include "misc/file.h"
+#include "misc/math.h"
 #include "mac.h"
 
 static const size_t RLE_PAD = 129;
@@ -43,11 +43,11 @@ static size_t get_rle_len(const struct mac_desc *desc, const size_t dims) {
 	return zumin(size, dims*2);
 }
 
-size_t mac_decode(const struct mac_desc *desc, struct raw_img *main) {
+size_t mac_decode(const struct mac_desc *desc, struct wuimg *main) {
 	size_t written = 0;
-	const size_t dst_len = raw_img_size(main);
+	const size_t dst_len = wuimg_size(main);
 	const size_t rle_len = get_rle_len(desc, dst_len);
-	if (rle_len && raw_img_alloc_noverify(main)) {
+	if (rle_len && wuimg_alloc_noverify(main)) {
 		int8_t *rle = malloc(rle_len + RLE_PAD);
 		if (rle) {
 			written = rle_decode(main->data, dst_len, rle,
@@ -58,15 +58,15 @@ size_t mac_decode(const struct mac_desc *desc, struct raw_img *main) {
 	return written;
 }
 
-size_t mac_patterns_load(const struct mac_desc *desc, struct raw_img *pats) {
-	if (raw_img_alloc_noverify(pats)) {
+size_t mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats) {
+	if (wuimg_alloc_noverify(pats)) {
 		fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
-		return fread(pats->data, 1, raw_img_size(pats), desc->ifp);
+		return fread(pats->data, 1, wuimg_size(pats), desc->ifp);
 	}
 	return 0;
 }
 
-void mac_get_sizes(struct raw_img *main, struct raw_img *pats) {
+void mac_get_sizes(struct wuimg *main, struct wuimg *pats) {
 	main->w = 576;
 	main->h = 720;
 	main->channels = 1;

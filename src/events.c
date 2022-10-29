@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "common/math.h"
+#include "misc/math.h"
 #include "events.h"
 #include "term.h"
 #include "write_pam.h"
@@ -42,7 +42,7 @@ const float dt, const bool shift) {
 		break;
 	// Metadata
 	case 'M':
-		image_file_print(file, 1 + shift);
+		image_file_print(file, 2 + shift);
 		return true;
 
 	// Delete
@@ -93,7 +93,7 @@ const float dt, const bool shift) {
 		state->anim_playing = false;
 		break;
 	case ' ':
-		if (raw_img_frames_nr(image_cur_sub_img(image)) > 1) {
+		if (wuimg_frames_nr(image_cur_sub_img(image)) > 1) {
 			state->anim_playing = !state->anim_playing;
 		} else {
 			state->anim_playing = false;
@@ -163,7 +163,7 @@ const float dt, const bool shift) {
 		return true;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
-		;const struct raw_img *img = image_cur_sub_img(image);
+		;const struct wuimg *img = image_cur_sub_img(image);
 		event->image = image_zoom(image,
 			(float)(code - '0') * (1/img->dec_scale));
 		return true;

@@ -1,4 +1,4 @@
-#include "common/endian.h"
+#include "misc/endian.h"
 
 enum endianness which_end(void) {
 	/* This is not UB after C99, except for traps representations, so it

@@ -1,5 +1,5 @@
 
-#include "common/math.h"
+#include "misc/math.h"
 
 long lmod(const long val, const long max) {
 	return (val % max + max) % max;

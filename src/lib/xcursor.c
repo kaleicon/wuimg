@@ -3,9 +3,9 @@
 #include <errno.h>
 
 #include "xcursor.h"
-#include "common/common.h"
-#include "common/endian.h"
-#include "common/math.h"
+#include "misc/common.h"
+#include "misc/endian.h"
+#include "misc/math.h"
 #include "raster/fmt.h"
 
 /* Though this format is simple enough, its only written spec is the mildly
@@ -107,7 +107,7 @@ const size_t elems, uint32_t *buf) {
 
 enum wu_error xcursor_get_image_info(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
-struct raw_img *img) {
+struct wuimg *img) {
 	uint32_t buf[9];
 	enum wu_error st = common_chunk(desc, entry, chunk, ARRAY_LEN(buf), buf);
 	if (st == wu_ok) {
@@ -125,9 +125,9 @@ struct raw_img *img) {
 		if (!max || max > XCURSOR_DIM_LIMIT) {// || max != subtype) {
 			return wu_invalid_header;
 		}
-		st = raw_img_verify(img);
+		st = wuimg_verify(img);
 		if (st == wu_ok) {
-			chunk->len = raw_img_size(img);
+			chunk->len = wuimg_size(img);
 		}
 	}
 	return st;

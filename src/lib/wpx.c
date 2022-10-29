@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/bit.h"
-#include "common/common.h"
-#include "common/endian.h"
-#include "common/mem.h"
+#include "misc/bit.h"
+#include "misc/common.h"
+#include "misc/endian.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/strip.h"
 #include "wpx.h"
@@ -354,8 +354,8 @@ const uint8_t quant_size, const size_t stride) {
 		quant_size, stride);
 }
 
-size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct raw_img *img) {
-	if (!raw_img_alloc_noverify(img)) {
+size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
 
@@ -405,7 +405,7 @@ const struct wpx_section *section) {
 }
 
 static enum wu_error read_metadata(struct wpx_bmp_desc *desc,
-struct raw_img *img, const struct wpx_section *section) {
+struct wuimg *img, const struct wpx_section *section) {
 	uint8_t metadata[16];
 	if (get_section_data(&desc->mp, section, metadata, sizeof(metadata), 1, 0)
 	!= sizeof(metadata)) {
@@ -423,7 +423,7 @@ struct raw_img *img, const struct wpx_section *section) {
 	img->h = buf_endian16(metadata + 6, little_endian);
 	img->channels = (uint8_t)(desc->depth / 8);
 	img->bitdepth = 8;
-	raw_img_align(img, 4);
+	wuimg_align(img, 4);
 	img->layout = (desc->depth <= 8) ? pix_rgba : pix_bgra;
 	return wu_ok;
 }
@@ -455,7 +455,7 @@ struct mp_parser *mp, const uint8_t min_sections) {
 	return wu_unexpected_eof;
 }
 
-enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct raw_img *img) {
+enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img) {
 	enum wu_error st = load_section_dir(&desc->dir, &desc->mp, 2);
 	if (st != wu_ok) {
 		return st;
@@ -496,10 +496,10 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct raw_img *img) {
 		}
 		img->channels = 4;
 	} else if (desc->pal) {
-		raw_img_palette_set(img, desc->pal);
+		wuimg_palette_set(img, desc->pal);
 		desc->pal = NULL;
 	}
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct mp_parser mp) {

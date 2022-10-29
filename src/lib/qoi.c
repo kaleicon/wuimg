@@ -1,4 +1,4 @@
-#include "common/mem.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "qoi.h"
 
@@ -21,8 +21,8 @@ const struct pix_rgba8 cur) {
 	memcpy(seen + hash_pxl(cur), &cur, sizeof(cur));
 }
 
-size_t qoi_decode(struct mp_parser *mp, struct raw_img *img) {
-	const size_t dst_len = raw_img_size(img);
+size_t qoi_decode(struct mp_parser *mp, struct wuimg *img) {
+	const size_t dst_len = wuimg_size(img);
 	// Add 1 byte of padding so we can use a faster 4-byte memcpy
 	img->data = malloc(dst_len + (bool)(img->channels == 3));
 	if (!img->data) {
@@ -97,7 +97,7 @@ size_t qoi_decode(struct mp_parser *mp, struct raw_img *img) {
 	return d;
 }
 
-enum wu_error qoi_parse(struct mp_parser *mp, struct raw_img *img) {
+enum wu_error qoi_parse(struct mp_parser *mp, struct wuimg *img) {
 	/* QOI header (after magic bytes):
 		Offset  Size    Name
 		0       u32     Width
@@ -119,7 +119,7 @@ enum wu_error qoi_parse(struct mp_parser *mp, struct raw_img *img) {
 		img->cs.transfer = cicp_transfer_linear;
 	}
 	switch (img->channels) {
-	case 3: case 4: return raw_img_verify(img);
+	case 3: case 4: return wuimg_verify(img);
 	}
 	return wu_invalid_header;
 }

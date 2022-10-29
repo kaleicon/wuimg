@@ -54,7 +54,7 @@ WUDEC(scr12, false)
 
 #ifdef WU_ENABLE_PCX
 WUDEC(pcx, false)
-WUDEC(dcx, false)
+WUDEC(dcx, true)
 #endif
 
 #ifdef WU_ENABLE_PDT
@@ -69,6 +69,10 @@ WUDEC(pgx, false)
 WUDEC(pi, false)
 #endif
 
+#ifdef WU_ENABLE_PIC
+WUDEC(pic, false)
+#endif
+
 #ifdef WU_ENABLE_PICTOR
 WUDEC(pictor, false)
 #endif
@@ -79,6 +83,10 @@ WUDEC(pnm, false)
 
 #ifdef WU_ENABLE_PRT
 WUDEC(prt, false)
+#endif
+
+#ifdef WU_ENABLE_PX
+WUDEC(px, true)
 #endif
 
 #ifdef WU_ENABLE_QOI
@@ -115,7 +123,7 @@ WUDEC(wbmp, false)
 
 #ifdef WU_ENABLE_WPX
 WUDEC(wbm, false)
-WUDEC(wia, false)
+WUDEC(wia, true)
 #endif
 
 #ifdef WU_ENABLE_XBM

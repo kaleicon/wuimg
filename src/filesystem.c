@@ -12,10 +12,10 @@
 #include <unicode/ucol.h>
 #include <unicode/uiter.h>
 
-#include "common/common.h"
-#include "common/math.h"
-#include "common/mem.h"
-#include "common/wustr.h"
+#include "misc/common.h"
+#include "misc/math.h"
+#include "misc/mem.h"
+#include "misc/wustr.h"
 
 #include "dec.h"
 #include "filesystem.h"

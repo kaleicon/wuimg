@@ -4,7 +4,7 @@
 #include <lcms2.h>
 #include <lcms2_plugin.h>
 
-#include "memparser.h"
+#include "misc/memparser.h"
 
 struct icc_profile {
 	cmsHPROFILE in;

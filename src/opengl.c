@@ -2,9 +2,9 @@
 #include <math.h>
 
 #include "opengl.h"
-#include "common/common.h"
-#include "common/endian.h"
-#include "common/math.h"
+#include "misc/common.h"
+#include "misc/endian.h"
+#include "misc/math.h"
 #include "raster/color.h"
 #include "raster/pix.h"
 #include "raster/strip.h"
@@ -167,7 +167,7 @@ const int rotate) {
 		vert = 1/horz;
 		horz = 1;
 	}
-	const int r1 = (context->tex.rotate + rotate) & 1;
+	const int r1 = rotate & 1;
 	const float w = context->tex.w * context->pix_size[r1] * horz;
 	const float h = context->tex.h * context->pix_size[r1^1] * vert;
 
@@ -180,7 +180,7 @@ const int rotate) {
 }
 
 static void calc_fit_zoom(struct gl_context *context) {
-	fix_aspect_ratio(NULL, context, 0);
+	fix_aspect_ratio(NULL, context, context->tex.rotate);
 }
 
 static int bool_to_sign(const bool val) {
@@ -380,7 +380,7 @@ static void gl_alignment(const align_t align) {
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1 << align);
 }
 
-static size_t calc_map_outstride(const struct raw_img *img, const size_t w,
+static size_t calc_map_outstride(const struct wuimg *img, const size_t w,
 const enum unpack_op op, const int8_t align_sh) {
 	gl_alignment(align_sh);
 	if (op == op_noop) {
@@ -394,7 +394,7 @@ const enum unpack_op op, const int8_t align_sh) {
 }
 
 static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
-const struct raw_img *img, const size_t w, const size_t h,
+const struct wuimg *img, const size_t w, const size_t h,
 const unsigned char *data) {
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
 	const size_t outstride = calc_map_outstride(img, w, op, 2);
@@ -411,7 +411,7 @@ const unsigned char *data) {
 	return 0;
 }
 
-static void * scale_upload(const GLuint pix_buf, const struct raw_img *img,
+static void * scale_upload(const GLuint pix_buf, const struct wuimg *img,
 const size_t w, const size_t h, const unsigned char *data) {
 	const align_t align = 2;
 	gl_alignment(align);
@@ -433,7 +433,7 @@ const size_t w, const size_t h, const unsigned char *data) {
 	return 0;
 }
 
-static bool tex_upload(struct gl_context *context, const struct raw_img *img,
+static bool tex_upload(struct gl_context *context, const struct wuimg *img,
 const struct gl_upload_params *params, const size_t w, const size_t h,
 const void *data) {
 	const GLuint pix_buf = context->pixel_unpack_buf;
@@ -464,7 +464,7 @@ const void *data) {
 }
 
 static bool planar_upload(struct gl_context *context,
-const struct raw_img *img, const struct gl_upload_params *params) {
+const struct wuimg *img, const struct gl_upload_params *params) {
 	uint8_t map[4];
 	pix_layout_invert(map, img->layout);
 	context->tex.subsamp = 0;
@@ -490,7 +490,7 @@ const struct raw_img *img, const struct gl_upload_params *params) {
 	return true;
 }
 
-static bool mode_upload(struct gl_context *context, const struct raw_img *img,
+static bool mode_upload(struct gl_context *context, const struct wuimg *img,
 const struct gl_upload_params *params) {
 	switch (img->mode) {
 	case image_mode_palette:
@@ -541,7 +541,7 @@ static unsigned bitdepth_log(const uint8_t bd) {
 }
 
 static const char * set_upload_params(struct gl_upload_params *params,
-const struct raw_img *img) {
+const struct wuimg *img) {
 	const uint8_t ch = params->comps;
 	uint8_t bd = img->bitdepth;
 	switch (img->attr) {
@@ -658,7 +658,7 @@ cmsHPROFILE out) {
 	return true;
 }
 
-static void set_cms(struct gl_context *context, struct raw_img *img) {
+static void set_cms(struct gl_context *context, struct wuimg *img) {
 	struct color_space *cs = &img->cs;
 	const struct gl_uni *uni = &context->uni;
 
@@ -697,7 +697,7 @@ static void set_cms(struct gl_context *context, struct raw_img *img) {
 }
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
-struct raw_img *img) {
+struct wuimg *img) {
 	if (img->channels > 4) {
 		fprintf(stderr, "Number of color channels unsupported (%d given)\n",
 			img->channels);
@@ -752,7 +752,7 @@ const struct gl_reader *reader, void *restrict dst, const size_t row) {
 		dst);
 }
 
-static unsigned char get_render_channels(const struct raw_img *img) {
+static unsigned char get_render_channels(const struct wuimg *img) {
 	unsigned char ch;
 	if (img->mode == image_mode_palette) {
 		ch = 4;
@@ -771,7 +771,7 @@ static unsigned char get_render_channels(const struct raw_img *img) {
 }
 
 bool gl_reader_set(struct gl_context *context, struct gl_reader *r,
-struct wu_state *state, const struct raw_img *img) {
+struct wu_state *state, const struct wuimg *img) {
 	context->tex.ratio = 1;
 
 	const bool swap = img->rotate & 1;
@@ -966,7 +966,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform float[5] " UNI_EOTF_ARGS ";"
 
 		"void gen_check_pattern() {"
-			"vec2 d = floor(texcoord / vec2(dFdx(texcoord.x) * 32.));"
+			"vec2 d = floor(texcoord / fwidth(texcoord) * vec2(1/16.));"
 			"float bg = fract(dot(d, vec2(.5))) * .5 + .5;"
 			"color.rgb += vec3(bg - bg * color.a);"
 		"}"

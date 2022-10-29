@@ -1,7 +1,7 @@
 #ifndef LIB_G00
 #define LIB_G00
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 struct g00_block {
 	uint16_t x, y;
@@ -56,11 +56,11 @@ struct g00_desc {
 	} u;
 };
 
-void g00_cleanup(struct g00_desc *desc, struct raw_img *img);
+void g00_cleanup(struct g00_desc *desc, struct wuimg *img);
 
-size_t g00_decode(struct g00_desc *desc, struct raw_img *img);
+size_t g00_decode(struct g00_desc *desc, struct wuimg *img);
 
-enum wu_error g00_read_header(struct g00_desc *desc, struct raw_img *img,
+enum wu_error g00_read_header(struct g00_desc *desc, struct wuimg *img,
 FILE *ifp);
 
 #endif /* LIB_G00 */

@@ -1,7 +1,7 @@
 #include "raster/fmt.h"
 #include "farbfeld.h"
 
-enum wu_error farbfeld_open_file(struct raw_img *img, FILE *ifp) {
+enum wu_error farbfeld_open_file(struct wuimg *img, FILE *ifp) {
 	const uint8_t magic[8] = "farbfeld";
 	const enum wu_error st = fmt_sigcmp(magic, sizeof(magic), ifp);
 	if (st == wu_ok) {

@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/common.h"
-#include "common/endian.h"
-#include "common/math.h"
-#include "common/mem.h"
+#include "misc/common.h"
+#include "misc/endian.h"
+#include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/strip.h"
 #include "pdt.h"
@@ -101,8 +101,8 @@ const enum pdt_version version) {
 	return pal_decode(dst, dst_len, src, src_len);
 }
 
-size_t pdt_decode(const struct pdt_desc *desc, struct raw_img *img) {
-	if (!raw_img_alloc_noverify(img)) {
+size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
 
@@ -129,7 +129,7 @@ size_t pdt_decode(const struct pdt_desc *desc, struct raw_img *img) {
 	return written;
 }
 
-enum wu_error pdt_parse_header(struct pdt_desc *desc, struct raw_img *img) {
+enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 	/* PDT header (after magic bytes):
 		Offset  Type    Name
 		0       u32     FileSize
@@ -164,7 +164,7 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct raw_img *img) {
 			desc->pal = buf;
 		} else {
 			img->channels = 1;
-			struct raster_pal *pal = raw_img_palette_init(img);
+			struct raster_pal *pal = wuimg_palette_init(img);
 			if (!pal) {
 				return wu_alloc_error;
 			}
@@ -174,7 +174,7 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct raw_img *img) {
 	} else {
 		img->channels = (desc->mask_offset) ? 4 : 3;
 	}
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct mp_parser mp) {

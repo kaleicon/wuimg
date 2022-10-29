@@ -1,5 +1,5 @@
 #include "rast_utils.h"
-#include "common/common.h"
+#include "misc/common.h"
 #include "lib/prt.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
@@ -18,10 +18,10 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 static void cleanup(void *ptr) {
 	prt_cleanup(ptr);
 }
-static size_t dec(const void *restrict ptr, struct raw_img *img) {
+static size_t dec(const void *restrict ptr, struct wuimg *img) {
 	return prt_decode(ptr, img);
 }
-static enum wu_error parse(void *restrict ptr, struct raw_img *img) {
+static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
 	return prt_parse(ptr, img);
 }
 static enum wu_error open(void *restrict ptr, FILE *ifp) {

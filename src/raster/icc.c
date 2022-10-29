@@ -1,6 +1,5 @@
 #include "icc.h"
 #include "term.h"
-#include "memparser.h"
 
 void icc_profile_free(struct icc_profile *icc) {
 	if (icc->transform) {

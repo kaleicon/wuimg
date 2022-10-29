@@ -1,8 +1,8 @@
 #include <string.h>
 #include <limits.h>
 
-#include "common/bit.h"
-#include "common/endian.h"
+#include "misc/bit.h"
+#include "misc/endian.h"
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
@@ -172,7 +172,7 @@ const size_t n, const uint8_t bytedepth, const enum pix_attr attr) {
 		for (size_t x = 0; x < n; ++x) {
 			dst[x] = src[x] ^ 0xff;
 		}
-	} else {
+	} else { // pix_signed
 		const size_t step = (which_end() == little_endian)
 			? bytedepth - 1 : 0;
 		for (size_t x = 0; x < n; x += bytedepth) {
@@ -201,7 +201,7 @@ const enum pix_attr attr, const enum unpack_op op) {
 	switch (attr) {
 	case pix_signed: xor = (1u << (bitdepth - 1)); break;
 	case pix_inverted: xor = inrange; break;
-	default: break;
+	default: xor = 0; break;
 	}
 	for (size_t x = 0; x < width; ++x) {
 		uint32_t pix = bit_getn(src, x*bitdepth, bitdepth) ^ xor;

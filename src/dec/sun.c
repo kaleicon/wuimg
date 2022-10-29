@@ -7,10 +7,10 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 		.val.b = (desc->type == sun_byte_encoded), .type = wu_leaf_bool});
 }
 
-static size_t dec(const void *restrict ptr, struct raw_img *img) {
+static size_t dec(const void *restrict ptr, struct wuimg *img) {
 	return sun_decode(ptr, img);
 }
-static enum wu_error parse(void *restrict ptr, struct raw_img *img) {
+static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
 	return sun_parse_header(ptr, img);
 }
 static enum wu_error open(void *restrict ptr, FILE *ifp) {

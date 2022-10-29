@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 struct xcursor_image {
 	uint32_t xhot;
@@ -59,7 +59,7 @@ const struct xcursor_chunk *chunk, void *restrict dst);
 
 enum wu_error xcursor_get_image_info(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
-struct raw_img *img);
+struct wuimg *img);
 
 enum wu_error xcursor_get_comment_info(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk);

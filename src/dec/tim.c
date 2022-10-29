@@ -1,5 +1,5 @@
 #include "rast_utils.h"
-#include "common/common.h"
+#include "misc/common.h"
 #include "lib/tim.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
@@ -26,10 +26,10 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	}
 }
 
-static size_t dec(const void *restrict ptr, struct raw_img *img) {
+static size_t dec(const void *restrict ptr, struct wuimg *img) {
 	return tim_decode(ptr, img);
 }
-static enum wu_error parse(void *restrict ptr, struct raw_img *img) {
+static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
 	return tim_parse_header(ptr, img);
 }
 static enum wu_error open(void *restrict ptr, FILE *ifp) {

@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 struct pi_saver {
 	unsigned char *data;
@@ -11,25 +11,19 @@ struct pi_saver {
 	unsigned char sig[4];
 };
 
-struct pi_comment {
-	unsigned char *data;
-	size_t text_len;
-	size_t area_len;
-};
-
 struct pi_desc {
 	FILE *ifp;
 	unsigned char depth;
 
-	struct pi_comment comment;
+	struct wustr comm;
 	struct pi_saver saver;
 };
 
 void pi_cleanup(struct pi_desc *desc);
 
-size_t pi_decode(const struct pi_desc *desc, struct raw_img *img);
+size_t pi_decode(const struct pi_desc *desc, struct wuimg *img);
 
-enum wu_error pi_read_header(struct pi_desc *desc, struct raw_img *img);
+enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img);
 
 enum wu_error pi_open_file(struct pi_desc *desc, FILE *ifp);
 

@@ -4,10 +4,10 @@
 #include "rast_utils.h"
 #include "lib/sixel.h"
 
-static size_t dec(const void *ptr, struct raw_img *img) {
+static size_t dec(const void *ptr, struct wuimg *img) {
 	return sixel_decode(ptr, img);
 }
-static enum wu_error parse(void *ptr, struct raw_img *img) {
+static enum wu_error parse(void *ptr, struct wuimg *img) {
 	return sixel_calc_parameters(ptr, img);
 }
 static enum wu_error mopen(void *ptr, const struct mp_parser mp) {

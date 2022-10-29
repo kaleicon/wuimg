@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/common.h"
+#include "misc/common.h"
 #include "raster/pal.h"
 
 void raster_pal_print(const struct raster_pal *cm) {

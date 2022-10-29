@@ -1,4 +1,4 @@
-#include "common/bit.h"
+#include "misc/bit.h"
 #include "raster/fmt.h"
 #include "maki.h"
 
@@ -20,7 +20,7 @@ const char * maki_version_str(enum maki_version version) {
 	return "???";
 }
 
-size_t maki_decode(const struct maki_desc *desc, struct raw_img *img) {
+size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	/* Compressed data is composed of three sections.
 	 * The first two are FlagA (1000 bytes) and FlagB (variable size),
 	 * which are used to create a Mask buffer that is 8000 16-bit words
@@ -40,7 +40,7 @@ size_t maki_decode(const struct maki_desc *desc, struct raw_img *img) {
 	 * rows. This obviously doesn't apply to the starting rows.
 	*/
 
-	if (!raw_img_alloc_noverify(img)) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
 
@@ -108,7 +108,7 @@ size_t maki_decode(const struct maki_desc *desc, struct raw_img *img) {
 	return read;
 }
 
-enum wu_error maki_parse(struct maki_desc *desc, struct raw_img *img) {
+enum wu_error maki_parse(struct maki_desc *desc, struct wuimg *img) {
 	/* MAKI01 header (after magic bytes):
 		Offset  Size    Name
 		0       u8	ComputerModel[4]
@@ -145,12 +145,12 @@ enum wu_error maki_parse(struct maki_desc *desc, struct raw_img *img) {
 	img->bitdepth = 4;
 	img->layout = pix_grba;
 	img->ratio = (endian16(buf[3], big_endian) & 1) ? 1/2.0 : 1;
-	struct raster_pal *pal = raw_img_palette_init(img);
+	struct raster_pal *pal = wuimg_palette_init(img);
 	if (pal) {
 		const enum wu_error st = fmt_load_pal(desc->ifp, pal,
 			fmt_pal_rgb, 16);
 		if (st == wu_ok) {
-			return raw_img_verify(img);
+			return wuimg_verify(img);
 		}
 		return st;
 	}

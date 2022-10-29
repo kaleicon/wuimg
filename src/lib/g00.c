@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/endian.h"
-#include "common/math.h"
+#include "misc/endian.h"
+#include "misc/math.h"
 #include "raster/compost.h"
 #include "g00.h"
 
@@ -15,7 +15,7 @@ static const size_t G00_BLOCK_SIZE = 5*2 + 41*2;
 static const size_t G00_PART_SIZE = 2*2 + 8*4 + 20*4;
 static const size_t LZSS_PAD = 3 * 8;
 
-void g00_cleanup(struct g00_desc *desc, struct raw_img *img) {
+void g00_cleanup(struct g00_desc *desc, struct wuimg *img) {
 	switch (desc->version) {
 	case g00_v0:
 		return;
@@ -67,7 +67,7 @@ const size_t min_run) {
 	return d;
 }
 
-static size_t v1_finish(struct g00_desc *desc, struct raw_img *img,
+static size_t v1_finish(struct g00_desc *desc, struct wuimg *img,
 const size_t written) {
 	/* V1 decoded data format:
 		Offset  Size    Name
@@ -90,11 +90,11 @@ const size_t written) {
 		return 0;
 	}
 
-	if (desc->decomp_size - pal_bytes < raw_img_size(img)) {
+	if (desc->decomp_size - pal_bytes < wuimg_size(img)) {
 		return 0;
 	}
 
-	struct raster_pal *pal = raw_img_palette_init(img);
+	struct raster_pal *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return 0;
 	}
@@ -105,7 +105,7 @@ const size_t written) {
 	return written - pal_bytes;
 }
 
-static size_t v2_compost(struct g00_desc *desc, struct raw_img *img,
+static size_t v2_compost(struct g00_desc *desc, struct wuimg *img,
 const size_t written) {
 	/* V2 decoded data format:
 		Offset  Type    Name
@@ -148,7 +148,7 @@ const size_t written) {
 	 * [2] I have no idea what most of the fields are used for, actually.
 	*/
 
-	img->data = calloc(1, raw_img_size(img));
+	img->data = calloc(1, wuimg_size(img));
 	if (!img->data) {
 		return 0;
 	}
@@ -205,7 +205,7 @@ const size_t written) {
 	return composted;
 }
 
-size_t g00_decode(struct g00_desc *desc, struct raw_img *img) {
+size_t g00_decode(struct g00_desc *desc, struct wuimg *img) {
 	desc->buf = malloc(desc->decomp_size);
 	if (!desc->buf) {
 		return 0;
@@ -239,7 +239,7 @@ size_t g00_decode(struct g00_desc *desc, struct raw_img *img) {
 	return written;
 }
 
-static enum wu_error header_set(struct g00_desc *desc, struct raw_img *img,
+static enum wu_error header_set(struct g00_desc *desc, struct wuimg *img,
 const enum g00_version version, const uint16_t width, const uint16_t height) {
 	uint8_t ch;
 	switch (version) {
@@ -255,10 +255,10 @@ const enum g00_version version, const uint16_t width, const uint16_t height) {
 	img->channels = ch;
 	img->bitdepth = 8;
 	img->layout = pix_bgra;
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
-enum wu_error g00_read_header(struct g00_desc *desc, struct raw_img *img,
+enum wu_error g00_read_header(struct g00_desc *desc, struct wuimg *img,
 FILE *ifp) {
 	/* Base header:
 		Offset  Type    Name

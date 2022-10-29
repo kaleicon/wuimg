@@ -1,10 +1,10 @@
 #include "rast_utils.h"
 #include "lib/pgx.h"
 
-static size_t dec(const void *restrict desc, struct raw_img *img) {
+static size_t dec(const void *restrict desc, struct wuimg *img) {
 	return pgx_decode(desc, img);
 }
-static enum wu_error parse(void *restrict desc, struct raw_img *img) {
+static enum wu_error parse(void *restrict desc, struct wuimg *img) {
 	return pgx_read_header(desc, img);
 }
 static enum wu_error open(void *restrict desc, FILE *ifp) {

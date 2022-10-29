@@ -2,7 +2,7 @@
 
 #include <zlib.h>
 
-#include "common/bit.h"
+#include "misc/bit.h"
 #include "raster/fmt.h"
 #include "hg3.h"
 
@@ -16,8 +16,8 @@ static uint32_t biject(const uint32_t val) {
 static void plane_mix(uint32_t *data, const uint8_t *plane[static restrict 4],
 const size_t plane_len) {
 	/* The recipe is
-	 *  1) Read a byte from a plane
-	 *  2) Split it into 4 2-bit groups
+	 *  1) Read a byte from the four planes
+	 *  2) Split each into 4 2-bit groups
 	 *  3) Place each group into a byte, highest group in the highest byte,
 	 *     first planes into highest bits. Example:
 
@@ -29,9 +29,9 @@ const size_t plane_len) {
 		Result: 11010000 00110000 10010000 11010000
 		-       Byte 3   Byte 2   Byte 1   Byte 0
 
-	 *  4) For each byte, if it's odd, do (255 - byte/2), else, byte/2.
-	 *  5) Write in little-endian order to the output buffer. The result is
-	 *     a BGRA image. */
+	 *  4) For each resulting byte, if it's odd, do (255 - byte/2), else,
+	 *     byte/2.
+	 *  5) Write in little-endian order to the output buffer. */
 
 	uint32_t mult, repl;
 	if (which_end() == little_endian) {
@@ -61,7 +61,7 @@ const size_t plane_len) {
 	}
 }
 
-static size_t decode_delta(struct raw_img *img, const uint8_t *restrict src,
+static size_t decode_delta(struct wuimg *img, const uint8_t *restrict src,
 const size_t src_len) {
 	size_t plane_len = src_len / 4;
 	const uint8_t *plane[4] = {
@@ -71,7 +71,7 @@ const size_t src_len) {
 		src + plane_len*3,
 	};
 
-	const size_t max = raw_img_size(img) / 4;
+	const size_t max = wuimg_size(img) / 4;
 	if (plane_len > max) {
 		plane_len = max;
 	}
@@ -118,7 +118,7 @@ uint8_t *restrict ctrl, size_t ctrl_len, size_t *data_len) {
 	return data;
 }
 
-size_t hg3_decode(const struct hg3_desc *desc, struct raw_img *img) {
+size_t hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	/* img0000 header (after id string):
 		Offset  Size    Name
 		0       u32     ???[4]
@@ -166,7 +166,7 @@ size_t hg3_decode(const struct hg3_desc *desc, struct raw_img *img) {
 
 	size_t w = 0;
 	if (buf) {
-		if (raw_img_alloc_noverify(img)) {
+		if (wuimg_alloc_noverify(img)) {
 			w = decode_delta(img, buf, data_len);
 		}
 		free(buf);
@@ -174,7 +174,7 @@ size_t hg3_decode(const struct hg3_desc *desc, struct raw_img *img) {
 	return w;
 }
 
-enum wu_error hg3_parse_image(struct hg3_desc *desc, struct raw_img *img) {
+enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img) {
 	const uint8_t *stdinfo = mp_next_slice(&desc->image, STDINFO_LEN);
 	if (!stdinfo) {
 		return wu_unexpected_eof;
@@ -211,7 +211,7 @@ enum wu_error hg3_parse_image(struct hg3_desc *desc, struct raw_img *img) {
 	const uint8_t id[8] = "img0000\0";
 	const uint8_t other[4] = "img_";
 	if (!memcmp(data, id, sizeof(id))) {
-		return raw_img_verify(img);
+		return wuimg_verify(img);
 	} else if (!memcmp(data, other, sizeof(other))) {
 		return wu_unsupported_feature;
 	}

@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 enum msx_screen {
 	msx_screen2,
@@ -23,9 +23,9 @@ struct msx_desc {
 	uint16_t end;
 };
 
-size_t msx_decode(const struct msx_desc *desc, struct raw_img *img);
+size_t msx_decode(const struct msx_desc *desc, struct wuimg *img);
 
-enum wu_error msx_parse(struct msx_desc *desc, struct raw_img *img, FILE *ifp,
+enum wu_error msx_parse(struct msx_desc *desc, struct wuimg *img, FILE *ifp,
 enum msx_screen mode);
 
 #endif /* LIB_MSX */

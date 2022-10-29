@@ -6,8 +6,8 @@
 #include <limits.h>
 
 #include "sixel.h"
-#include "common/common.h"
-#include "common/math.h"
+#include "misc/common.h"
+#include "misc/math.h"
 #include "raster/fmt.h"
 
 #define MACRO_CASE_SPACE case ' ': case '\f': case '\n': case '\r': case '\t': case '\v':
@@ -209,8 +209,8 @@ static void xterm_colormap_init(struct sixel_colormap *map) {
 	}
 }
 
-size_t sixel_decode(const struct sixel_desc *desc, struct raw_img *img) {
-	const size_t size = raw_img_size(img);
+size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
+	const size_t size = wuimg_size(img);
 	struct pix_rgba8 *dst = calloc(1, size);
 	if (!dst) {
 		return 0;
@@ -263,7 +263,7 @@ size_t sixel_decode(const struct sixel_desc *desc, struct raw_img *img) {
 }
 
 static enum wu_error calc_dimensions(struct sixel_desc *desc,
-struct raw_img *img) {
+struct wuimg *img) {
 	/* We must do a pass over the whole stream to know the image
 	 * dimensions. No other way around it. */
 	size_t row_width = 0;
@@ -327,7 +327,7 @@ struct raw_img *img) {
 			img->h = height;
 		}
 		desc->data_end = tp.pos - 1;
-		return raw_img_verify(img);
+		return wuimg_verify(img);
 	}
 	return wu_decoding_error;
 }
@@ -395,7 +395,7 @@ unsigned char macro[3]) {
 }
 
 enum wu_error sixel_calc_parameters(struct sixel_desc *desc,
-struct raw_img *img) {
+struct wuimg *img) {
 	/* Format (after DCS): P1 ; P2 ; P3 ; 'q'
 	 * P1 is the pixel vertical aspect ratio, in range 0-9.
 	 * P2 is whether 0 pixels are set to the background color or not
@@ -461,7 +461,7 @@ struct raw_img *img) {
 	}
 	img->channels = 4;
 	img->bitdepth = 8;
-	raw_img_aspect_ratio(img, (int)pan, (int)pad);
+	wuimg_aspect_ratio(img, (int)pan, (int)pad);
 	return calc_dimensions(desc, img);
 }
 

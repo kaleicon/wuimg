@@ -1,4 +1,4 @@
-#include "common/common.h"
+#include "misc/common.h"
 #include "dpx.h"
 
 /* This format is a great example on how to do file headers.
@@ -168,7 +168,7 @@ const uint8_t shr, const uint16_t mask, const uint32_t scale) {
 	}
 }
 
-static size_t process10(const struct dpx_desc *desc, struct raw_img *img,
+static size_t process10(const struct dpx_desc *desc, struct wuimg *img,
 const struct dpx_element *elem) {
 	const size_t items = (img->w * img->channels);
 	const size_t whole = items / 3;
@@ -233,9 +233,9 @@ const struct dpx_element *elem, const size_t read) {
 	return read;
 }
 
-static size_t process_rows(const struct dpx_desc *desc, struct raw_img *img,
+static size_t process_rows(const struct dpx_desc *desc, struct wuimg *img,
 const struct dpx_element *elem) {
-	const size_t stride = raw_img_stride(img);
+	const size_t stride = wuimg_stride(img);
 	size_t total = 0;
 	for (size_t y = 0; y < img->h; ++y) {
 		uint8_t *dst = img->data + y*stride;
@@ -260,9 +260,9 @@ const struct dpx_element *elem) {
 	return total;
 }
 
-size_t dpx_decode(const struct dpx_desc *desc, struct raw_img *img,
+size_t dpx_decode(const struct dpx_desc *desc, struct wuimg *img,
 const uint8_t i) {
-	if (!raw_img_alloc_noverify(img)) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
 	const struct dpx_element *elem = desc->generic.image.elem + i;
@@ -274,7 +274,7 @@ const uint8_t i) {
 	return process_rows(desc, img, elem);
 }
 
-enum wu_error dpx_set_image(const struct dpx_desc *desc, struct raw_img *img,
+enum wu_error dpx_set_image(const struct dpx_desc *desc, struct wuimg *img,
 const uint8_t i) {
 	const struct dpx_generic_image *src = &desc->generic.image;
 	img->w = src->w;
@@ -299,10 +299,10 @@ const uint8_t i) {
 	img->channels = nfo.ch;
 	img->layout = nfo.layout;
 	img->bitdepth = src->bitdepth;
-	raw_img_align(img, 4);
+	wuimg_align(img, 4);
 	switch (img->bitdepth) {
 	case 10:
-		raw_img_align(img, 2);
+		wuimg_align(img, 2);
 		// fallthrough
 	case 12:
 		if (elem->pack != dpx_pack_normal) {
@@ -314,7 +314,7 @@ const uint8_t i) {
 	if (nfo.ycbcr) {
 		img->cs.matrix = guess_matrix(src->primaries);
 	}
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 static time_t read_date(FILE *in) {

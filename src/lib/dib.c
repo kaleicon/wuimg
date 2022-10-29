@@ -1,7 +1,7 @@
-#include "common/bit.h"
-#include "common/endian.h"
-#include "common/file.h"
-#include "common/mem.h"
+#include "misc/bit.h"
+#include "misc/endian.h"
+#include "misc/file.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/unpack.h"
 #include "dib.h"
@@ -215,11 +215,11 @@ const size_t scan_len, const unsigned char pix_size) {
 	return o;
 }
 
-static bool rle_decode(const struct dib_desc *desc, struct raw_img *img,
+static bool rle_decode(const struct dib_desc *desc, struct wuimg *img,
 unsigned char *restrict rle, const size_t read) {
 	const size_t rle_len = read & (~1u);
-	if (rle_len && raw_img_alloc_noverify(img)) {
-		const size_t row = raw_img_stride(img);
+	if (rle_len && wuimg_alloc_noverify(img)) {
+		const size_t row = wuimg_stride(img);
 		const size_t dst_len = row * img->h;
 		if (desc->compression == dib_4bit_rle) {
 			return rle_loop4(img->data, dst_len, rle, rle_len, row);
@@ -234,9 +234,9 @@ static uint32_t expand_bits(const uint32_t word, const struct dib_bitfield *p) {
 	return (((word >> p->shift) & p->mask) * p->scale) >> BITFIELD_SHIFT;
 }
 
-static bool bitfield_decode(const struct dib_desc *desc, struct raw_img *img,
+static bool bitfield_decode(const struct dib_desc *desc, struct wuimg *img,
 uint8_t *restrict src) {
-	if (!raw_img_alloc_noverify(img)) {
+	if (!wuimg_alloc_noverify(img)) {
 		return false;
 	}
 	const uint8_t bytes = (img->bitdepth > 8) ? 2 : 1;
@@ -264,7 +264,7 @@ uint8_t *restrict src) {
 	return true;
 }
 
-bool dib_decode(const struct dib_desc *desc, struct raw_img *img) {
+bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 	bool ok = false;
 	void *src = malloc(desc->size);
 	if (src) {
@@ -295,10 +295,10 @@ bool dib_decode(const struct dib_desc *desc, struct raw_img *img) {
 	return ok;
 }
 
-static enum wu_error load_pal(struct dib_desc *desc, struct raw_img *img,
+static enum wu_error load_pal(struct dib_desc *desc, struct wuimg *img,
 const enum fmt_pal_type type) {
 	img->alpha = alpha_ignore;
-	struct raster_pal *pal = raw_img_palette_init(img);
+	struct raster_pal *pal = wuimg_palette_init(img);
 	if (pal) {
 		return fmt_load_pal(desc->ifp, pal, type, desc->pal_entries);
 	}
@@ -383,7 +383,7 @@ static enum wu_error load_colorspace(struct dib_desc *desc, uint8_t *buf) {
 	return wu_ok;
 }
 
-static enum wu_error load_mask(struct dib_desc *desc, struct raw_img *img,
+static enum wu_error load_mask(struct dib_desc *desc, struct wuimg *img,
 uint8_t *buf) {
 	uint8_t ch = desc->type < dib_v3_info_header ? 3 : 4;
 	const uint32_t mask[4] = {
@@ -450,7 +450,7 @@ uint8_t *buf) {
 	return wu_ok;
 }
 
-static enum wu_error validate_common(struct dib_desc *desc, struct raw_img *img,
+static enum wu_error validate_common(struct dib_desc *desc, struct wuimg *img,
 const uint16_t planes, const uint32_t horz_res, const uint32_t vert_res,
 const uint32_t colors) {
 	if (planes > 1) { // Some files set it to 0
@@ -465,12 +465,12 @@ const uint32_t colors) {
 			desc->pal_entries = 1 << desc->depth;
 		}
 	}
-	raw_img_aspect_ratio(img, (int)vert_res, (int)horz_res);
+	wuimg_aspect_ratio(img, (int)vert_res, (int)horz_res);
 	return wu_ok;
 }
 
 static enum wu_error validate_os2_header(struct dib_desc *desc,
-struct raw_img *img, const uint32_t width, const uint32_t height,
+struct wuimg *img, const uint32_t width, const uint32_t height,
 const uint16_t depth, const uint32_t compression, const uint32_t size,
 const uint16_t storage, const uint32_t color_encoding) {
 	if (width < 1 || height < 1) {
@@ -531,7 +531,7 @@ const uint16_t storage, const uint32_t color_encoding) {
 }
 
 static enum wu_error validate_dib_header(struct dib_desc *desc,
-struct raw_img *img, const int32_t width, const int32_t height,
+struct wuimg *img, const int32_t width, const int32_t height,
 const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 	if (width < 1) {
 		return wu_invalid_header;
@@ -590,7 +590,7 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 }
 
 static enum wu_error dib_parse_os2_2x_header(struct dib_desc *desc,
-struct raw_img *img) {
+struct wuimg *img) {
 	/* OS/2 v2 header (after header size field)
 		Offset  Size    Name
 		0       u32     Width           // Width in pixels
@@ -648,7 +648,7 @@ struct raw_img *img) {
 }
 
 static enum wu_error dib_parse_type3_header(struct dib_desc *desc,
-struct raw_img *img) {
+struct wuimg *img) {
 	/* Type 3 and up DIB header (after header size field)
 
 	 * BITMAPINFOHEADER:
@@ -732,7 +732,7 @@ struct raw_img *img) {
 }
 
 static enum wu_error dib_parse_core_header(struct dib_desc *desc,
-struct raw_img *img) {
+struct wuimg *img) {
 	/* Type 2 DIB header (after header size)
 		Offset  Size    Name
 		0       u16     Width           // Image width in pixels
@@ -773,7 +773,7 @@ struct raw_img *img) {
 }
 
 static enum wu_error dib_parse_header(struct dib_desc *desc,
-struct raw_img *img) {
+struct wuimg *img) {
 	/* Common DIB header:
 		Offset  Size    Name
 		0       u32     Size         // Size of DIB header in bytes
@@ -809,7 +809,7 @@ struct raw_img *img) {
 	}
 
 	desc->type = (enum dib_type)hsize;
-	raw_img_align(img, 4);
+	wuimg_align(img, 4);
 	img->layout = pix_bgra;
 
 	enum wu_error status;
@@ -822,7 +822,7 @@ struct raw_img *img) {
 	}
 
 	if (status == wu_ok) {
-		status = raw_img_verify(img);
+		status = wuimg_verify(img);
 	}
 	if (status != wu_ok) {
 		return status;
@@ -859,13 +859,13 @@ struct raw_img *img) {
 	return wu_ok;
 }
 
-enum wu_error dib_open_file(struct dib_desc *desc, struct raw_img *img,
+enum wu_error dib_open_file(struct dib_desc *desc, struct wuimg *img,
 FILE *ifp) {
 	desc->ifp = ifp;
 	return dib_parse_header(desc, img);
 }
 
-enum wu_error bmp_parse_header(struct dib_desc *desc, struct raw_img *img) {
+enum wu_error bmp_parse_header(struct dib_desc *desc, struct wuimg *img) {
 	/* Minimum non-type-1 BMP header (after magic bytes)
 
 		Offset	Size    Name
@@ -931,13 +931,13 @@ void ico_cleanup(struct ico_desc *desc) {
 	free(desc->images);
 }
 
-static void ico_buf_sizes(struct ico_buf *buf, const struct raw_img *img,
+static void ico_buf_sizes(struct ico_buf *buf, const struct wuimg *img,
 const unsigned char depth) {
 	buf->stride = strip_length(img->w, depth, 2);
 	buf->size = buf->stride * img->h;
 }
 
-static bool ico_buf_load(struct ico_buf *buf, const struct raw_img *img,
+static bool ico_buf_load(struct ico_buf *buf, const struct wuimg *img,
 const unsigned char depth, FILE *ifp) {
 	ico_buf_sizes(buf, img, depth);
 	buf->buf = malloc(buf->size);
@@ -947,7 +947,7 @@ const unsigned char depth, FILE *ifp) {
 	return false;
 }
 
-static void ico_32bit_dec(const struct raw_img *img, struct pix_rgba8 *dst,
+static void ico_32bit_dec(const struct wuimg *img, struct pix_rgba8 *dst,
 const uint8_t *and, const size_t and_stride) {
 	for (size_t y = 0; y < img->h; ++y) {
 		struct pix_rgba8 *d = dst + img->w * y;
@@ -960,7 +960,7 @@ const uint8_t *and, const size_t and_stride) {
 	}
 }
 
-static bool ico_word_dec(const struct dib_desc *dib, struct raw_img *img) {
+static bool ico_word_dec(const struct dib_desc *dib, struct wuimg *img) {
 	struct ico_buf dst, and;
 	if (!ico_buf_load(&dst, img, dib->depth, dib->ifp)) {
 		return false;
@@ -991,7 +991,7 @@ static bool ico_word_dec(const struct dib_desc *dib, struct raw_img *img) {
 }
 
 static bool ico_truecolor_expands(const struct dib_desc *dib,
-struct raw_img *img, struct ico_buf *restrict dst, struct ico_buf *restrict xor,
+struct wuimg *img, struct ico_buf *restrict dst, struct ico_buf *restrict xor,
 struct ico_buf *restrict and) {
 	ico_buf_sizes(dst, img, 32);
 	ico_buf_sizes(xor, img, dib->depth);
@@ -1011,7 +1011,7 @@ struct ico_buf *restrict and) {
 	return fread(xor->buf, 1, xor->size + and->size, dib->ifp) != 0;
 }
 
-static bool ico_24bit_dec(const struct dib_desc *dib, struct raw_img *img) {
+static bool ico_24bit_dec(const struct dib_desc *dib, struct wuimg *img) {
 	struct ico_buf dst, xor, and;
 	if (!ico_truecolor_expands(dib, img, &dst, &xor, &and)) {
 		return false;
@@ -1031,7 +1031,7 @@ static bool ico_24bit_dec(const struct dib_desc *dib, struct raw_img *img) {
 	return true;
 }
 
-static bool ico_palette_dec(struct dib_desc *dib, struct raw_img *img) {
+static bool ico_palette_dec(struct dib_desc *dib, struct wuimg *img) {
 	struct ico_buf dst, xor, and;
 	if (!ico_truecolor_expands(dib, img, &dst, &xor, &and)) {
 		return false;
@@ -1053,7 +1053,7 @@ static bool ico_palette_dec(struct dib_desc *dib, struct raw_img *img) {
 	return true;
 }
 
-bool ico_decode(struct ico_desc *desc, struct raw_img *img) {
+bool ico_decode(struct ico_desc *desc, struct wuimg *img) {
 	struct dib_desc *dib = &desc->dib;
 	switch (dib->depth) {
 	case 16: case 32:
@@ -1063,7 +1063,7 @@ bool ico_decode(struct ico_desc *desc, struct raw_img *img) {
 	return ico_palette_dec(dib, img);
 }
 
-enum wu_error ico_set_image(struct ico_desc *desc, struct raw_img *img,
+enum wu_error ico_set_image(struct ico_desc *desc, struct wuimg *img,
 const uint16_t i) {
 	/* ICO image components:
 		BITMAPINFOHEADER

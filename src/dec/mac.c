@@ -1,5 +1,6 @@
-#include "common/common.h"
 #include "lib/mac.h"
+#include "misc/common.h"
+#include "wudefs.h"
 
 static void read_macbin_metadata(const struct mac_binary_header *macbin,
 struct wu_tree *tree) {
@@ -58,7 +59,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 	tree_bud_leaf(&infile->metadata, "Version",
 		(struct wu_leaf){.val.u = desc.version, .type = wu_leaf_unsigned});
 
-	struct raw_img *img = alloc_sub_images(infile, desc.has_patterns ? 2 : 1);
+	struct wuimg *img = alloc_sub_images(infile, desc.has_patterns ? 2 : 1);
 	if (!img) {
 		return wu_alloc_error;
 	}

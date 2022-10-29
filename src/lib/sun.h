@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 enum sun_colormap_type {
 	sun_no_colormap = 0,
@@ -29,9 +29,9 @@ struct sun_desc {
 	enum sun_colormap_type colormap_type;
 };
 
-size_t sun_decode(const struct sun_desc *desc, struct raw_img *img);
+size_t sun_decode(const struct sun_desc *desc, struct wuimg *img);
 
-enum wu_error sun_parse_header(struct sun_desc *desc, struct raw_img *img);
+enum wu_error sun_parse_header(struct sun_desc *desc, struct wuimg *img);
 
 enum wu_error sun_open_file(struct sun_desc *desc, FILE *ifp);
 

@@ -2,9 +2,9 @@
 
 #include "wudefs.h"
 #include "metadata.h"
-#include "common/common.h"
-#include "common/file.h"
-#include "common/math.h"
+#include "misc/common.h"
+#include "misc/file.h"
+#include "misc/math.h"
 
 #include "dec_enable.def"
 #ifdef WU_ENABLE_JPEG
@@ -48,7 +48,7 @@ static enum wu_error raw_error_to_wu(struct image_file *infile, const int err) {
 
 static void raw_state_free(struct image_file *infile) {
 	struct raw_state *rs = infile->dec_state;
-	struct raw_img *img = infile->sub_img;
+	struct wuimg *img = infile->sub_img;
 	size_t i = 0;
 	while (i < rs->raw.count) {
 		libraw_dcraw_clear_mem(rs->raw.proc[i]);
@@ -71,7 +71,7 @@ static void raw_state_free(struct image_file *infile) {
 static enum wu_error copy_jpeg(struct image_file *infile,
 const struct raw_state *rs) {
 	const struct image_file *jpeg = &rs->jpeg;
-	struct raw_img *img = infile->sub_img;
+	struct wuimg *img = infile->sub_img;
 	const size_t raw_count = rs->raw.count;
 	if (infile->nr - raw_count != jpeg->nr) {
 		img = realloc_sub_images(infile, raw_count + jpeg->nr);
@@ -80,7 +80,7 @@ const struct raw_state *rs) {
 		}
 	}
 
-	struct raw_img *thumbs = img + raw_count;
+	struct wuimg *thumbs = img + raw_count;
 	memcpy(thumbs, jpeg->sub_img, jpeg->nr * sizeof(*thumbs));
 	infile->events = jpeg->events;
 	return wu_ok;
@@ -89,7 +89,7 @@ const struct raw_state *rs) {
 static enum wu_error raw_decode(struct image_file *infile,
 const struct wu_conf *wuconf, const size_t i) {
 	struct raw_state *rs = infile->dec_state;
-	struct raw_img *img = infile->sub_img + i;
+	struct wuimg *img = infile->sub_img + i;
 
 	if (i < rs->raw.count) {
 		libraw_data_t *data = rs->data;
@@ -116,7 +116,7 @@ const struct wu_conf *wuconf, const size_t i) {
 		img->h = proc->height;
 		img->channels = (unsigned char)proc->colors;
 		img->bitdepth = (unsigned char)proc->bits;
-		return raw_img_verify(img);
+		return wuimg_verify(img);
 	} else {
 		const libraw_thumbnail_t *thumb = &rs->data->thumbnail;
 		if (thumb->tformat == LIBRAW_THUMBNAIL_JPEG) {
@@ -151,7 +151,7 @@ const enum image_event ev) {
 	struct raw_state *rs = infile->dec_state;
 	enum wu_error status = wu_no_change;
 	if (ev) {
-		struct raw_img *img = infile->sub_img;
+		struct wuimg *img = infile->sub_img;
 		const int raws = (int)rs->raw.count;
 		if (state->idx >= raws && rs->jpeg.ifp) {
 			state->idx -= raws;
@@ -292,7 +292,7 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 		nr += rs->raw.count;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, nr);
+	struct wuimg *img = alloc_sub_images(infile, nr);
 	if (!img) {
 		return wu_alloc_error;
 	}

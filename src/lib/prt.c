@@ -18,8 +18,8 @@ static void turn_mask(struct sewing_machine *sew) {
 	}
 }
 
-size_t prt_decode(const struct prt_desc *desc, struct raw_img *img) {
-	if (!raw_img_alloc_noverify(img)) {
+size_t prt_decode(const struct prt_desc *desc, struct wuimg *img) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
 
@@ -43,7 +43,7 @@ size_t prt_decode(const struct prt_desc *desc, struct raw_img *img) {
 	return w;
 }
 
-static enum wu_error validate_header(struct prt_desc *desc, struct raw_img *img,
+static enum wu_error validate_header(struct prt_desc *desc, struct wuimg *img,
 const uint16_t bitdepth, const uint16_t width, const uint16_t height,
 const bool mask) {
 	switch (bitdepth) {
@@ -57,14 +57,14 @@ const bool mask) {
 	img->h = height;
 	img->channels = mask ? 4 : (uint8_t)(desc->depth / 8);
 	img->bitdepth = 8;
-	raw_img_align(img, 4);
+	wuimg_align(img, 4);
 	img->layout = pix_bgra;
 	img->alpha = (img->channels == 1) ? alpha_ignore : alpha_unassociated;
 	img->mirror = true;
 	return wu_ok;
 }
 
-enum wu_error prt_parse(struct prt_desc *desc, struct raw_img *img) {
+enum wu_error prt_parse(struct prt_desc *desc, struct wuimg *img) {
 	/* PRT header (after magic bytes):
 		Offset  Size    Name
 		0       u16     Version       // 101 or 102
@@ -134,11 +134,11 @@ enum wu_error prt_parse(struct prt_desc *desc, struct raw_img *img) {
 		if (desc->mask) {
 			desc->pal = pal;
 		} else {
-			raw_img_palette_set(img, pal);
+			wuimg_palette_set(img, pal);
 		}
 	}
 	fseek(desc->ifp, data_offset, SEEK_SET);
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 enum wu_error prt_open(struct prt_desc *desc, FILE *ifp) {

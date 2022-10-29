@@ -62,11 +62,11 @@ const size_t size) {
 	return i;
 }
 
-size_t xbm_decode(const struct xbm_desc *desc, struct raw_img *img) {
+size_t xbm_decode(const struct xbm_desc *desc, struct wuimg *img) {
 	size_t cnt = 0;
-	if (raw_img_alloc_noverify(img)) {
+	if (wuimg_alloc_noverify(img)) {
 		const size_t size = desc->type;
-		const size_t dims = raw_img_size(img) / size;
+		const size_t dims = wuimg_size(img) / size;
 
 		const unsigned char *text = desc->tp.mem;
 		const size_t end = desc->tp.len;
@@ -101,7 +101,7 @@ size_t xbm_decode(const struct xbm_desc *desc, struct raw_img *img) {
 	return cnt;
 }
 
-static bool read_type(struct xbm_desc *desc, struct raw_img *img,
+static bool read_type(struct xbm_desc *desc, struct wuimg *img,
 struct mp_parser *tp, const struct xbm_define define[static 4]) {
 	if (!define[0].found || !define[1].found
 	|| define[0].d < 1 || define[1].d < 1) {
@@ -236,7 +236,7 @@ static bool skip_comment(struct xbm_desc *desc, struct mp_parser *tp) {
 	return false;
 }
 
-enum wu_error xbm_parse_header(struct xbm_desc *desc, struct raw_img *img,
+enum wu_error xbm_parse_header(struct xbm_desc *desc, struct wuimg *img,
 const struct mp_parser mp) {
 	desc->tp = mp;
 	struct mp_parser *tp = &desc->tp;
@@ -262,7 +262,7 @@ const struct mp_parser mp) {
 			--tp->pos;
 			ok = read_type(desc, img, tp, define);
 			if (ok) {
-				return raw_img_verify(img);
+				return wuimg_verify(img);
 			}
 			break;
 		} else {

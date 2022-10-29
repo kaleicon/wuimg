@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "common/math.h"
+#include "misc/math.h"
 #include "raster/graphics_adapters.h"
 
 static void interleave_pal1(uint8_t *restrict dst, const uint8_t *restrict src,

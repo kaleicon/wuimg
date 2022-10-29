@@ -1,7 +1,7 @@
 #include <libheif/heif.h>
 
 #include "dec_enable.def"
-#include "common/file.h"
+#include "misc/file.h"
 #include "metadata.h"
 #include "wudefs.h"
 
@@ -36,7 +36,7 @@ static void clean_heif_state(struct image_file *infile) {
 }
 
 static void read_block(const struct heif_image_handle* handle,
-struct raw_img *img, const heif_item_id id, unsigned char *buf,
+struct wuimg *img, const heif_item_id id, unsigned char *buf,
 const size_t len) {
 	const struct heif_error herr = heif_image_handle_get_metadata(handle,
 		id, buf);
@@ -62,7 +62,7 @@ const size_t len) {
 }
 
 static void read_metadata(const struct heif_image_handle* handle,
-struct raw_img *img) {
+struct wuimg *img) {
 	const int blocks = heif_image_handle_get_number_of_metadata_blocks(
 		handle, NULL);
 	heif_item_id *ids = malloc(sizeof(*ids) * (size_t)blocks);
@@ -128,7 +128,7 @@ const struct heif_image *himg) {
 	}
 }
 
-static enum wu_error get_planar_image(struct raw_img *img,
+static enum wu_error get_planar_image(struct wuimg *img,
 struct heif_image *himg, const enum heif_chroma chroma, const bool alpha,
 int *bpl) {
 	const enum heif_colorspace cs = heif_image_get_colorspace(himg);
@@ -159,7 +159,7 @@ int *bpl) {
 		}
 	}
 
-	struct image_planes *planes = raw_img_plane_init(img);
+	struct image_planes *planes = wuimg_plane_init(img);
 	if (!planes) {
 		return wu_alloc_error;
 	}
@@ -172,10 +172,10 @@ int *bpl) {
 	default: break;
 	}
 
-	raw_img_plane_subsamp(img, h, v);
-	raw_img_plane_resolve(img);
+	wuimg_plane_subsamp(img, h, v);
+	wuimg_plane_resolve(img);
 
-	const enum wu_error st = raw_img_verify(img);
+	const enum wu_error st = wuimg_verify(img);
 	if (st == wu_ok) {
 		for (uint8_t c = 0; c < img->channels; ++c) {
 			int bytes_per_line;
@@ -190,7 +190,7 @@ int *bpl) {
 	return st;
 }
 
-static enum wu_error get_interleaved_image(struct raw_img *img,
+static enum wu_error get_interleaved_image(struct wuimg *img,
 struct heif_image *himg, const bool alpha, int *bpl) {
 	const enum heif_channel hch = heif_channel_interleaved;
 	const int depth = heif_image_get_bits_per_pixel_range(himg, hch);
@@ -198,7 +198,7 @@ struct heif_image *himg, const bool alpha, int *bpl) {
 	img->channels = 3 + alpha;
 	img->bitdepth = (depth > 8) ? 16 : 8;
 	img->used_bits = (uint8_t)depth;
-	const enum wu_error st = raw_img_verify(img);
+	const enum wu_error st = wuimg_verify(img);
 	if (st == wu_ok) {
 		img->data = heif_image_get_plane(himg, hch, bpl);
 	}
@@ -208,7 +208,7 @@ struct heif_image *himg, const bool alpha, int *bpl) {
 static enum wu_error get_image(struct image_file *infile,
 const struct wu_conf *wuconf, const size_t i) {
 	struct heif_state *ds = infile->dec_state;
-	struct raw_img *img = infile->sub_img + i;
+	struct wuimg *img = infile->sub_img + i;
 
 	struct heif_image_handle *handle;
 	struct heif_error herr = heif_context_get_image_handle(ds->ctx,
@@ -235,7 +235,7 @@ const struct wu_conf *wuconf, const size_t i) {
 	struct heif_image *himg = ds->himgs[i];
 	img->w = (size_t)heif_image_get_primary_width(himg);
 	img->h = (size_t)heif_image_get_primary_height(himg);
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -268,7 +268,7 @@ const struct wu_conf *wuconf, const size_t i) {
 			return wu_invalid_header;
 		}
 		if (img->mode == image_mode_planar) {
-			raw_img_plane_resolve(img);
+			wuimg_plane_resolve(img);
 		}
 		++ds->decoded;
 		if (ds->decoded == infile->nr) {
@@ -321,7 +321,7 @@ const struct wu_conf *wuconf) {
 		return wu_open_error;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile,
+	struct wuimg *img = alloc_sub_images(infile,
 		(size_t)heif_context_get_number_of_top_level_images(ds->ctx));
 	ds->hids = malloc(sizeof(*ds->hids) * infile->nr);
 	ds->himgs = calloc(sizeof(*ds->himgs), infile->nr);

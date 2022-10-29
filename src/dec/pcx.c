@@ -1,7 +1,9 @@
 #include <ctype.h>
 
 #include "lib/pcx.h"
-#include "common/file.h"
+#include "misc/file.h"
+#include "rast_utils.h"
+#include "wudefs.h"
 
 static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 	size_t i = 0;
@@ -16,8 +18,12 @@ static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 	return i;
 }
 
-static void add_metadata(struct wu_tree *metadata,
-const struct pcx_desc *desc, struct raw_img *img) {
+static void add_metadata(const struct pcx_desc *desc, struct wuimg *img) {
+	struct wu_tree *metadata = wuimg_get_metadata(img);
+	if (!metadata) {
+		return;
+	}
+
 	tree_add_leaf_utf8(metadata, "Format version",
 		pcx_version_string(desc->version));
 
@@ -44,72 +50,83 @@ const struct pcx_desc *desc, struct raw_img *img) {
 	}
 }
 
-static enum wu_error common_pcx(struct pcx_desc *desc, struct raw_img *img,
-const struct wu_conf *wuconf, struct wu_tree *metadata) {
+static enum wu_error common_pcx(struct pcx_desc *desc, struct wuimg *img,
+const struct wu_conf *wuconf) {
 	const enum wu_error st = pcx_read_header(desc, img);
 	if (st == wu_ok) {
-		if (metadata) {
-			add_metadata(metadata, desc, img);
-		}
-		if (raw_img_exceeds_limit(img, wuconf)) {
+		add_metadata(desc, img);
+		if (wuimg_exceeds_limit(img, wuconf)) {
 			return wu_exceeds_size_limit;
 		}
-		return pcx_decode(desc, img) ? wu_ok : wu_decoding_error;
+		return pcx_decode(desc, img);
 	}
 	return st;
 }
 
-enum wu_error pcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	enum wu_error err = wu_open_error;
-	struct map_info mm;
-	if (file_map(&mm, infile->ifp)) {
-		struct pcx_desc desc;
-		err = pcx_open_file(&desc, mp_parser_map(mm));
-		if (err == wu_ok) {
-			struct raw_img *img = alloc_sub_images(infile, 1);
-			if (img) {
-				err = common_pcx(&desc, img, wuconf,
-					&infile->metadata);
-			} else {
-				err = wu_alloc_error;
-			}
-		}
-		file_unmap(&mm);
+static enum wu_error map_pcx(struct image_file *infile,
+const struct wu_conf *wuconf, const struct map_info *mm) {
+	struct pcx_desc desc;
+	enum wu_error err = pcx_open_file(&desc, mp_parser_map(*mm));
+	if (err == wu_ok) {
+		struct wuimg *img = alloc_sub_images(infile, 1);
+		err = (img) ? common_pcx(&desc, img, wuconf) : wu_alloc_error;
 	}
 	return err;
 }
 
-static enum wu_error wrap_dcx(struct image_file *infile,
-const struct wu_conf *wuconf, const struct dcx_desc *dcx) {
-	struct raw_img *img = alloc_sub_images(infile, dcx->nr);
-	if (!img) {
-		return wu_alloc_error;
-	}
+enum wu_error pcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	return rast_map_wrap(infile, wuconf, map_pcx);
+}
 
-	size_t dec = 0;
-	for (uint32_t i = 0; i < dcx->nr; ++i) {
-		struct pcx_desc pcx;
-		if (dcx_set_file(dcx, &pcx, i) == wu_ok
-		&& common_pcx(&pcx, img + dec, wuconf, &infile->metadata) == wu_ok) {
-			++dec;
-		} else {
-			raw_img_clear(img + dec);
-		}
+
+struct dcx_state {
+	struct map_info mm;
+	struct dcx_desc desc;
+};
+
+static enum wu_error get_dcx_image(struct dcx_desc *desc, struct wuimg *img,
+const struct wu_conf *wuconf, const uint32_t idx) {
+	struct pcx_desc pcx;
+	enum wu_error st = dcx_set_file(desc, &pcx, idx);
+	if (st == wu_ok) {
+		return common_pcx(&pcx, img, wuconf);
 	}
-	return image_file_total_decoded(infile, dec);
+	return st;
+}
+
+enum wu_error dcx_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	struct dcx_state *ds = infile->dec_state;
+	if (ev) {
+		const uint32_t idx = (uint32_t)state->idx;
+		struct wuimg *img = infile->sub_img + idx;
+		return get_dcx_image(&ds->desc, img, wuconf, idx);
+	}
+	dcx_free(&ds->desc);
+	file_unmap(&ds->mm);
+	return wu_ok;
 }
 
 enum wu_error dcx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct map_info mm;
-	if (file_map(&mm, infile->ifp)) {
-		struct dcx_desc desc;
-		enum wu_error st = dcx_open_file(&desc, mp_parser_map(mm));
-		if (st == wu_ok) {
-			st = wrap_dcx(infile, wuconf, &desc);
-			dcx_free(&desc);
-		}
-		file_unmap(&mm);
-		return st;
+	struct dcx_state *ds = malloc(sizeof(*ds));
+	if (!ds) {
+		return wu_alloc_error;
 	}
-	return wu_open_error;
+
+	enum wu_error st = wu_open_error;
+	if (file_map(&ds->mm, infile->ifp)) {
+		st = dcx_open_file(&ds->desc, mp_parser_map(ds->mm));
+		if (st == wu_ok) {
+			infile->dec_state = ds;
+			infile->events = ev_subcycle;
+			struct wuimg *img = alloc_sub_images(infile, ds->desc.nr);
+			if (img) {
+				return get_dcx_image(&ds->desc, img, wuconf, 0);
+			}
+			return wu_alloc_error;
+		}
+		file_unmap(&ds->mm);
+	}
+	free(ds);
+	return st;
 }

@@ -1,7 +1,7 @@
 #ifndef WU_WINDOW_BASE
 #define WU_WINDOW_BASE
 
-#include "common/common.h"
+#include "misc/common.h"
 #include "window/egl.h"
 
 #include "wudefs.h"

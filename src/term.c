@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 #include "term.h"
-#include "common/wustr.h"
+#include "misc/wustr.h"
 
 static size_t graph_len(const unsigned char *str, size_t len) {
 	while (len) {

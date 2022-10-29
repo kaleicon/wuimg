@@ -1,6 +1,6 @@
 #include <jbig.h>
 
-#include "common/file.h"
+#include "misc/file.h"
 #include "raster/strip.h"
 #include "wudefs.h"
 
@@ -33,21 +33,21 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 		return wu_unsupported_feature;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
 
 	img->w = jbg_dec_getwidth(state);
 	img->h = jbg_dec_getheight(state);
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 	img->channels = 1;
 	img->bitdepth = (state->planes > 8) ? 16 : 8;
 	img->used_bits = (uint8_t)state->planes;
 	img->attr = pix_inverted;
-	const enum wu_error st = raw_img_alloc(img);
+	const enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {
 		struct out_info out = {.output = img->data};
 		jbg_dec_merge_planes(state, false, scale_write, &out);

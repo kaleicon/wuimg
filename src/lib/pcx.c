@@ -3,9 +3,9 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "common/file.h"
-#include "common/math.h"
-#include "common/mem.h"
+#include "misc/file.h"
+#include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"
 #include "raster/unpack.h"
@@ -35,7 +35,7 @@ const char * pcx_version_string(const enum pcx_version ver) {
 	return "???";
 }
 
-static size_t pcx_unpack_interleave(struct raw_img *img) {
+static enum wu_error pcx_unpack_interleave(struct wuimg *img) {
 	const bool has_pal = (img->mode == image_mode_palette);
 	const size_t comps = (has_pal) ? 1 : img->channels;
 
@@ -44,7 +44,7 @@ static size_t pcx_unpack_interleave(struct raw_img *img) {
 	const size_t outstride = img->w * comps;
 	unsigned char *dst = malloc(outstride * img->h);
 	if (!dst) {
-		return 0;
+		return wu_alloc_error;
 	}
 
 	for (size_t y = 0; y < img->h; ++y) {
@@ -60,11 +60,11 @@ static size_t pcx_unpack_interleave(struct raw_img *img) {
 		img->bitdepth = 8;
 	}
 	img->align_sh = 0;
-	return 1;
+	return wu_ok;
 }
 
 static bool check_cga_mode(const struct pcx_desc *desc,
-const struct raw_img *img) {
+const struct wuimg *img) {
 	/* Files with bitdepth == 2 can be in CGA mode, meaning bytes in the
 	 * first two entries of the header palette are used to select one of
 	 * CGA palettes, or can be in 'regular' mode, in which the header
@@ -85,9 +85,9 @@ const struct raw_img *img) {
 }
 
 static bool load_palette(const struct pcx_desc *desc,
-struct raw_img *img, const struct pix_rgb8 *pal_data) {
+struct wuimg *img, const struct pix_rgb8 *pal_data) {
 	// Take a deep breath...
-	struct raster_pal *pal = raw_img_palette_init(img);
+	struct raster_pal *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return false;
 	}
@@ -156,7 +156,7 @@ struct raw_img *img, const struct pix_rgb8 *pal_data) {
 }
 
 static enum wu_error looking_for_lost_pauline(struct pcx_desc *desc,
-struct raw_img *img, const unsigned char *restrict vga_id,
+struct wuimg *img, const unsigned char *restrict vga_id,
 const size_t rle_remaining) {
 	if (img->bitdepth * img->channels > 8) {
 		return wu_ok;
@@ -222,37 +222,39 @@ const unsigned char *restrict rle, const size_t rle_len) {
 	return r;
 }
 
-size_t pcx_decode(struct pcx_desc *desc, struct raw_img *img) {
+enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 	const size_t dims = strip_length(img->w, img->bitdepth, img->align_sh)
 		* img->channels * img->h;
 	// Add padding to save on a range check.
 	img->data = malloc(dims + RLE_MAX_RUN);
 	if (!img->data) {
-		return 0;
+		return wu_alloc_error;
 	}
 
 	desc->mp.pos = 128;
 	struct wuptr rle = mp_next_remaining(&desc->mp,
 		zumin(dims*2 + VGA_PAL_LEN + 1, desc->rle_len));
 	if (!rle.len) {
-		return 0;
+		return wu_unexpected_eof;
 	}
 
 	const size_t r = rle_decode(img->data, dims, rle.ptr, rle.len);
-	const enum wu_error fail = looking_for_lost_pauline(desc, img,
+	enum wu_error fail = looking_for_lost_pauline(desc, img,
 		rle.ptr + r, rle.len - r);
 	if (fail != wu_ok) {
-		return 0;
+		return fail;
 	}
 
-	bool ok = true;
 	if (img->channels > 1) {
-		ok = pcx_unpack_interleave(img);
+		fail = pcx_unpack_interleave(img);
+		if (fail != wu_ok) {
+			return fail;
+		}
 	}
-	return ok && raw_img_verify(img) == wu_ok;
+	return wuimg_verify(img);
 }
 
-static enum wu_error validate_header(struct pcx_desc *desc, struct raw_img *img,
+static enum wu_error validate_header(struct pcx_desc *desc, struct wuimg *img,
 const uint8_t bitdepth, const int width, const int height,
 const uint8_t planes, const uint16_t bytes_per_line,
 const uint16_t palette_type) {
@@ -290,7 +292,7 @@ const uint16_t palette_type) {
 	return wu_ok;
 }
 
-enum wu_error pcx_read_header(struct pcx_desc *desc, struct raw_img *img) {
+enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 	/* Header continuation
 		Offset  Size    Name
 		0       BYTE    BitsPerPixel;   // 1, 2, 4, or 8
@@ -381,10 +383,13 @@ void dcx_free(struct dcx_desc *desc) {
 
 enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
 const uint32_t i) {
-	return pcx_open_file(pcx, mp_parser_mem(
-		dcx->off[i + 1] - dcx->off[i],
-		dcx->mp.mem + dcx->off[i]
-	));
+	if (i < dcx->nr) {
+		return pcx_open_file(pcx, mp_parser_mem(
+			dcx->off[i + 1] - dcx->off[i],
+			dcx->mp.mem + dcx->off[i]
+		));
+	}
+	return wu_invalid_params;
 }
 
 enum wu_error dcx_open_file(struct dcx_desc *d, const struct mp_parser mp) {
@@ -394,10 +399,10 @@ enum wu_error dcx_open_file(struct dcx_desc *d, const struct mp_parser mp) {
 	 * DCX header:
 		Offset  Size    Name
 		0       DWORD   Identifier
-		4       DWORD   PageTable[] // PCX offsets. 1024 entries max
+		4       DWORD   PageTable[] // PCX offsets. Max 1024 entries
 
-	 * PageTable is 0 terminated, so this format manages to be bad despite
-	 * using only two fields. It's amazing.
+	 * PageTable is 0-terminated, so this format also manages to suck
+	 * despite using only two fields. It's amazing.
 	*/
 
 	d->mp = mp;
@@ -405,19 +410,20 @@ enum wu_error dcx_open_file(struct dcx_desc *d, const struct mp_parser mp) {
 	const uint8_t sig[] = {0xb1, 0x68, 0xde, 0x3a};
 	enum wu_error st = fmt_sigcmp_mem(sig, sizeof(sig), &d->mp);
 	if (st == wu_ok) {
-		const size_t max = 1023;
+		const struct wuptr p = mp_next_remaining(&d->mp, SIZE_MAX);
+		const size_t max = zumin(1024, p.len/4);
 		d->off = malloc(sizeof(*d->off) * (max + 1));
 		if (d->off) {
-			const struct wuptr p = mp_next_remaining(&d->mp,
-				SIZE_MAX);
-			for (d->nr = 0; d->nr < max && d->nr*4 < p.len; ++d->nr) {
-				d->off[d->nr] = buf_endian32(p.ptr + d->nr*4,
-					little_endian);
-				if (!d->off[d->nr]
-				|| d->off[d->nr] >= d->mp.len
-				|| (d->nr && d->off[d->nr] <= d->off[d->nr - 1])) {
+			uint32_t prev = 0;
+			for (d->nr = 0; d->nr < max; ++d->nr) {
+				const uint32_t pos = buf_endian32(
+					p.ptr + d->nr*4, little_endian);
+				if (!pos || pos >= d->mp.len
+				|| (d->nr && pos <= prev)) {
 					break;
 				}
+				d->off[d->nr] = pos;
+				prev = pos;
 			}
 			if (d->nr) {
 				d->off[d->nr] = (uint32_t)d->mp.len;

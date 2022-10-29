@@ -1,11 +1,11 @@
 #ifndef LIB_BMP
 #define LIB_BMP
 
-#include "wudefs.h"
-#include "common/common.h"
-#include "common/wustr.h"
+#include "misc/common.h"
+#include "misc/wustr.h"
 #include "raster/color.h"
 #include "raster/pal.h"
+#include "raster/wuimg.h"
 
 enum dib_os2_compression {
 	os2_no_compression = 0,
@@ -102,13 +102,13 @@ const char * dib_type_str(const struct dib_desc *desc);
 bool dib_get_linked_profile_name(const struct dib_desc *desc,
 struct wustr *name);
 
-bool dib_decode(const struct dib_desc *desc, struct raw_img *img);
+bool dib_decode(const struct dib_desc *desc, struct wuimg *img);
 
-enum wu_error dib_open_file(struct dib_desc *desc, struct raw_img *img,
+enum wu_error dib_open_file(struct dib_desc *desc, struct wuimg *img,
 FILE *ifp);
 
 
-enum wu_error bmp_parse_header(struct dib_desc *desc, struct raw_img *img);
+enum wu_error bmp_parse_header(struct dib_desc *desc, struct wuimg *img);
 
 enum wu_error bmp_open_file(struct dib_desc *desc, FILE *ifp);
 
@@ -134,9 +134,9 @@ const char * ico_type_str(enum ico_type);
 
 void ico_cleanup(struct ico_desc *desc);
 
-bool ico_decode(struct ico_desc *desc, struct raw_img *img);
+bool ico_decode(struct ico_desc *desc, struct wuimg *img);
 
-enum wu_error ico_set_image(struct ico_desc *desc, struct raw_img *img, uint16_t i);
+enum wu_error ico_set_image(struct ico_desc *desc, struct wuimg *img, uint16_t i);
 
 enum wu_error ico_parse_header(struct ico_desc *desc);
 

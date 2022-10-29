@@ -1,7 +1,7 @@
 #ifndef LIB_PRT
 #define LIB_PRT
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 enum prt_version {
 	prt_v101 = 101,
@@ -19,9 +19,9 @@ struct prt_desc {
 
 void prt_cleanup(struct prt_desc *desc);
 
-size_t prt_decode(const struct prt_desc *desc, struct raw_img *img);
+size_t prt_decode(const struct prt_desc *desc, struct wuimg *img);
 
-enum wu_error prt_parse(struct prt_desc *desc, struct raw_img *img);
+enum wu_error prt_parse(struct prt_desc *desc, struct wuimg *img);
 
 enum wu_error prt_open(struct prt_desc *desc, FILE *ifp);
 

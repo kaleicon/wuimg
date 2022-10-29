@@ -1,8 +1,8 @@
 #ifndef LIB_AVS
 #define LIB_AVS
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
-enum wu_error avs_open_file(struct raw_img *img, FILE *ifp);
+enum wu_error avs_open_file(struct wuimg *img, FILE *ifp);
 
 #endif /* LIB_AVS */

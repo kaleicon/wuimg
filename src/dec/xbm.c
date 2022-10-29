@@ -28,7 +28,7 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 
 static enum wu_error decode(struct image_file *infile,
 const struct wu_conf *wuconf, const struct map_info *mm) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
@@ -42,7 +42,7 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 
 	get_metadata(&infile->metadata, &desc);
 
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 	return xbm_decode(&desc, img) ? wu_ok : wu_decoding_error;

@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "common/file.h"
-#include "common/math.h"
+#include "misc/file.h"
+#include "misc/math.h"
 #include "raster/fmt.h"
 #include "sun.h"
 
@@ -74,9 +74,9 @@ unsigned char *restrict dst, const size_t dst_len) {
 	return written;
 }
 
-size_t sun_decode(const struct sun_desc *desc, struct raw_img *img) {
-	if (raw_img_alloc_noverify(img)) {
-		const size_t dst_len = raw_img_size(img);
+size_t sun_decode(const struct sun_desc *desc, struct wuimg *img) {
+	if (wuimg_alloc_noverify(img)) {
+		const size_t dst_len = wuimg_size(img);
 		if (desc->type == sun_byte_encoded) {
 			return rle_decode(desc, img->data, dst_len);
 		}
@@ -86,8 +86,8 @@ size_t sun_decode(const struct sun_desc *desc, struct raw_img *img) {
 }
 
 static enum wu_error interleave_colormap(struct sun_desc *desc,
-struct raw_img *img) {
-	struct raster_pal *map = raw_img_palette_init(img);
+struct wuimg *img) {
+	struct raster_pal *map = wuimg_palette_init(img);
 	if (map) {
 		const size_t entries = 1 << img->bitdepth;
 		return fmt_load_pal_planar(desc->ifp, map, fmt_pal_rgb,
@@ -96,7 +96,7 @@ struct raw_img *img) {
 	return wu_alloc_error;
 }
 
-static enum wu_error validate_header(struct sun_desc *desc, struct raw_img *img,
+static enum wu_error validate_header(struct sun_desc *desc, struct wuimg *img,
 const uint32_t width, const uint32_t height, const uint32_t bitdepth,
 const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 	switch (type) {
@@ -162,7 +162,7 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 	return wu_ok;
 }
 
-enum wu_error sun_parse_header(struct sun_desc *desc, struct raw_img *img) {
+enum wu_error sun_parse_header(struct sun_desc *desc, struct wuimg *img) {
 	/* SUN header (after magic bytes)
 		Offset  Size    Name
 		0       DWORD   Width;
@@ -189,7 +189,7 @@ enum wu_error sun_parse_header(struct sun_desc *desc, struct raw_img *img) {
 		endian32(header[5], big_endian),
 		endian32(header[6], big_endian));
 	if (st == wu_ok) {
-		st = raw_img_verify(img);
+		st = wuimg_verify(img);
 	}
 	return st;
 }

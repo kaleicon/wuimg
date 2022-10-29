@@ -9,7 +9,7 @@
 
 #include "wudefs.h"
 #include "metadata.h"
-#include "common/file.h"
+#include "misc/file.h"
 #include "raster/compost.h"
 
 struct frame_dispose {
@@ -67,14 +67,14 @@ static void clean_webp_state(struct image_file *infile) {
 	file_unmap(&ds->map);
 }
 
-static void rewind_webp_state(struct webp_state *ds, struct raw_img *img,
+static void rewind_webp_state(struct webp_state *ds, struct wuimg *img,
 const int frame) {
 	if (ds->anim_render == webp_library) {
 		WebPAnimDecoderReset(ds->anim.l.dec);
 		ds->idx = 0;
 		ds->anim.l.prev_msec = 0;
 	} else {
-		ds->idx = raw_img_frame_prev_keyframe(img, ds->idx, frame);
+		ds->idx = wuimg_frame_prev_keyframe(img, ds->idx, frame);
 	}
 }
 
@@ -109,7 +109,7 @@ static enum wu_error map_status(VP8StatusCode status, const char **msg) {
 	return wu_unknown_error;
 }
 
-static void compost_frame(struct raw_img *img, struct homegrown_anim *hanim,
+static void compost_frame(struct wuimg *img, struct homegrown_anim *hanim,
 const struct frame_info *frame) {
 	if (hanim->iter.blend_method == WEBP_MUX_NO_BLEND || !hanim->iter.has_alpha) {
 		compost_overwrite(img->data, img->w, img->channels,
@@ -120,7 +120,7 @@ const struct frame_info *frame) {
 	}
 }
 
-static enum wu_error libwebp_dec_frame(struct raw_img *img,
+static enum wu_error libwebp_dec_frame(struct wuimg *img,
 struct webp_state *ds) {
 	unsigned char *buf;
 	int msec;
@@ -135,7 +135,7 @@ struct webp_state *ds) {
 	return wu_ok;
 }
 
-static enum wu_error homegrown_dec_frame(struct raw_img *img,
+static enum wu_error homegrown_dec_frame(struct wuimg *img,
 struct webp_state *ds) {
 	struct homegrown_anim *hanim = &ds->anim.h;
 	WebPDemuxGetFrame(hanim->dmux, ds->idx + 1, &hanim->iter);
@@ -143,7 +143,7 @@ struct webp_state *ds) {
 	const struct frame_info *frame = img->frames->f + ds->idx;
 	const int stride = hanim->iter.width * img->channels;
 	const size_t buf_size = (size_t)(stride * hanim->iter.height);
-	ds->config.output.colorspace = MODE_RGBA;
+	ds->config.output.colorspace = MODE_BGRA;
 	ds->config.output.u.RGBA.stride = stride;
 	ds->config.output.u.RGBA.size = buf_size;
 	if (frame->keyframe) {
@@ -165,7 +165,7 @@ struct webp_state *ds) {
 
 	if (!frame->keyframe) {
 		if (ds->idx == 0) {
-			memset(img->data, 0, raw_img_size(img));
+			memset(img->data, 0, wuimg_size(img));
 		} else {
 			switch (hanim->dispose.method) {
 			case WEBP_MUX_DISPOSE_BACKGROUND:
@@ -187,7 +187,7 @@ struct webp_state *ds) {
 	return wu_ok;
 }
 
-static enum wu_error webp_dec_frame(struct raw_img *img,
+static enum wu_error webp_dec_frame(struct wuimg *img,
 struct webp_state *ds) {
 	if (ds->anim_render == webp_homegrown) {
 		return homegrown_dec_frame(img, ds);
@@ -198,7 +198,7 @@ struct webp_state *ds) {
 static enum wu_error webp_frame_iter(struct image_file *infile,
 struct wu_state *state) {
 	struct webp_state *ds = infile->dec_state;
-	struct raw_img *img = infile->sub_img;
+	struct wuimg *img = infile->sub_img;
 	if (ds->idx > state->frame) {
 		rewind_webp_state(ds, img, state->frame);
 	}
@@ -222,14 +222,14 @@ const enum image_event event) {
 	return wu_ok;
 }
 
-static enum wu_error gather_info(struct raw_img *img, WebPIterator *iter) {
-	if (!raw_img_frames_init(img, (size_t)iter->num_frames)) {
+static enum wu_error gather_info(struct wuimg *img, WebPIterator *iter) {
+	if (!wuimg_frames_init(img, (size_t)iter->num_frames)) {
 		return wu_alloc_error;
 	}
 
 	size_t i = 0;
 	do {
-		const bool valid = raw_img_frame_set(img, i,
+		const bool valid = wuimg_frame_set(img, i,
 			(size_t)iter->x_offset, (size_t)iter->y_offset,
 			(size_t)iter->width, (size_t)iter->height,
 			iter->duration,
@@ -252,7 +252,7 @@ static struct pix_rgba8 get_bg_color(const uint32_t color) {
 	};
 }
 
-static enum wu_error homegrown_anim_setup(struct raw_img *img,
+static enum wu_error homegrown_anim_setup(struct wuimg *img,
 struct webp_state *ds, struct pix_rgba8 *bg_color) {
 	struct homegrown_anim *hanim = &ds->anim.h;
 
@@ -260,7 +260,7 @@ struct webp_state *ds, struct pix_rgba8 *bg_color) {
 		return wu_decoding_error;
 	}
 
-	const enum wu_error st = raw_img_alloc(img);
+	const enum wu_error st = wuimg_alloc(img);
 	if (st != wu_ok) {
 		return st;
 	}
@@ -270,15 +270,15 @@ struct webp_state *ds, struct pix_rgba8 *bg_color) {
 	return gather_info(img, &hanim->iter);
 }
 
-static enum wu_error library_anim_setup(struct raw_img *img,
+static enum wu_error library_anim_setup(struct wuimg *img,
 struct webp_state *ds, struct pix_rgba8 *bg_color) {
-	const enum wu_error st = raw_img_verify(img);
+	const enum wu_error st = wuimg_verify(img);
 	if (st != wu_ok) {
 		return st;
 	}
 	WebPAnimDecoderOptions anim_opts;
 	WebPAnimDecoderOptionsInit(&anim_opts);
-	anim_opts.color_mode = MODE_RGBA;
+	anim_opts.color_mode = MODE_BGRA;
 	anim_opts.use_threads = true;
 
 	ds->anim.l.dec = WebPAnimDecoderNew(&ds->data, &anim_opts);
@@ -292,7 +292,7 @@ struct webp_state *ds, struct pix_rgba8 *bg_color) {
 	return gather_info(img, &iter);
 }
 
-static enum wu_error anim_setup(struct raw_img *img, struct webp_state *ds,
+static enum wu_error anim_setup(struct wuimg *img, struct webp_state *ds,
 struct pix_rgba8 *bg) {
 	if (ds->anim_render == webp_homegrown) {
 		return homegrown_anim_setup(img, ds, bg);
@@ -300,22 +300,22 @@ struct pix_rgba8 *bg) {
 	return library_anim_setup(img, ds, bg);
 }
 
-static VP8StatusCode single_image_decode(struct raw_img *img,
+static VP8StatusCode single_image_decode(struct wuimg *img,
 struct webp_state *ds) {
 	const bool alpha = ds->config.input.has_alpha;
 	img->channels = alpha ? 4 : 3;
 	WEBP_CSP_MODE colorspace;
 	if (ds->config.input.format == 1) {
-		struct image_planes *planes = raw_img_plane_init(img);
+		struct image_planes *planes = wuimg_plane_init(img);
 		if (!planes) {
 			return VP8_STATUS_OUT_OF_MEMORY;
 		}
 
-		raw_img_plane_subsamp(img, 2, 2);
+		wuimg_plane_subsamp(img, 2, 2);
 		img->cs.matrix = cicp_matrix_bt601_7;
 		img->cs.limited = true;
 
-		if (raw_img_alloc(img) != wu_ok) {
+		if (wuimg_alloc(img) != wu_ok) {
 			return VP8_STATUS_OUT_OF_MEMORY;
 		}
 		struct plane_info *p = planes->p;
@@ -335,17 +335,18 @@ struct webp_state *ds) {
 		};
 		colorspace = alpha ? MODE_YUVA : MODE_YUV;
 	} else {
-		if (raw_img_alloc(img) != wu_ok) {
+		if (wuimg_alloc(img) != wu_ok) {
 			return VP8_STATUS_OUT_OF_MEMORY;
 		}
-		const size_t stride = raw_img_stride(img);
+		const size_t stride = wuimg_stride(img);
 
 		ds->config.output.u.RGBA = (struct WebPRGBABuffer) {
 			.rgba = img->data,
 			.stride = (int)stride,
 			.size = stride * img->h,
 		};
-		colorspace = alpha ? MODE_RGBA : MODE_RGB;
+		colorspace = alpha ? MODE_BGRA : MODE_BGR;
+		img->layout = pix_bgra;
 	}
 	ds->config.output.colorspace = colorspace;
 	return WebPDecode(ds->data.bytes, ds->data.size, &ds->config);
@@ -418,14 +419,14 @@ const struct wu_conf *wuconf) {
 	read_metadata(&infile->metadata, ds,
 		wuconf->webp_use_homegrown_renderer);
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
 	img->w = (size_t)ds->config.input.width;
 	img->h = (size_t)ds->config.input.height;
 	img->bitdepth = 8;
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -438,6 +439,7 @@ const struct wu_conf *wuconf) {
 	if (ds->config.input.has_animation) {
 		infile->events = ev_frame;
 		img->channels = 4;
+		img->layout = pix_bgra;
 
 		ds->anim_render = wuconf->webp_use_homegrown_renderer
 			? webp_homegrown : webp_library;

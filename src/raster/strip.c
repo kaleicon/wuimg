@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/math.h"
+#include "misc/math.h"
 #include "strip.h"
 
 align_t align_from_int(const size_t alignment) {

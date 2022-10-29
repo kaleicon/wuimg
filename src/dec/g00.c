@@ -1,4 +1,5 @@
 #include "lib/g00.h"
+#include "wudefs.h"
 
 enum wu_error g00_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
@@ -10,7 +11,7 @@ const enum image_event ev) {
 
 static enum wu_error decode(struct image_file *infile,
 const struct wu_conf *wuconf, struct g00_desc *desc) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
@@ -20,7 +21,7 @@ const struct wu_conf *wuconf, struct g00_desc *desc) {
 		return st;
 	}
 
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 

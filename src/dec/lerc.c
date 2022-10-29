@@ -1,8 +1,8 @@
 #include <Lerc_c_api.h>
 
 #include "rast_utils.h"
-#include "common/common.h"
-#include "common/math.h"
+#include "misc/common.h"
+#include "misc/math.h"
 
 static enum wu_error map_lerc_to_wu(const lerc_status status,
 const enum wu_error fallback_fail) {
@@ -14,19 +14,19 @@ const enum wu_error fallback_fail) {
 	return wu_unknown_error;
 }
 
-static enum wu_error set_mask(struct raw_img *img, const unsigned w,
+static enum wu_error set_mask(struct wuimg *img, const unsigned w,
 const unsigned h, const unsigned mask_nb) {
 	img->w = w;
 	img->h = h;
 	img->channels = (unsigned char)mask_nb;
 	img->bitdepth = 8;
-	if (raw_img_plane_init(img)) {
-		return raw_img_alloc(img);
+	if (wuimg_plane_init(img)) {
+		return wuimg_alloc(img);
 	}
 	return wu_alloc_error;
 }
 
-static enum wu_error set_main(struct raw_img *img, const unsigned w,
+static enum wu_error set_main(struct wuimg *img, const unsigned w,
 const unsigned h, const unsigned dims, const unsigned bands,
 const unsigned type) {
 	img->w = w;
@@ -47,10 +47,10 @@ const unsigned type) {
 		return wu_unsupported_feature;
 	}
 
-	if (bands > 1 && !raw_img_plane_init(img)) {
+	if (bands > 1 && !wuimg_plane_init(img)) {
 		return wu_alloc_error;
 	}
-	return raw_img_alloc(img);
+	return wuimg_alloc(img);
 }
 
 static enum wu_error dec_wrap(struct image_file *infile,
@@ -77,7 +77,7 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 		return wu_unsupported_feature;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, 1 + (bool)mask_nb);
+	struct wuimg *img = alloc_sub_images(infile, 1 + (bool)mask_nb);
 	if (!img) {
 		return wu_alloc_error;
 	}

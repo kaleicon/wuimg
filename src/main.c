@@ -11,7 +11,7 @@
 #include "extract.h"
 #include "filesystem.h"
 #include "write_pam.h"
-#include "common/math.h"
+#include "misc/math.h"
 
 enum work_mode {
 	guess = 0,
@@ -34,6 +34,7 @@ struct file_list {
 struct test_mode_args {
 	unsigned int iters;
 	unsigned int warmup;
+	bool metadata;
 };
 
 struct program_mode {
@@ -70,7 +71,7 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 	const struct image_file *infile = &image->file;
 	const char *what = "Failed";
 	if (result == wu_ok) {
-		image_file_print(infile, 0);
+		image_file_print(infile, 1);
 		what = "Decoded";
 	} else {
 		term_line_key_val("Decoding error",
@@ -134,13 +135,18 @@ const struct write_args *args) {
 	return status;
 }
 
-static enum wu_error test_iter(struct image_context *image, double *spent) {
+static enum wu_error test_iter(struct image_context *image, double *spent,
+const bool metadata) {
 	const clock_t start = clock();
 	enum wu_error err;
 	do {
-		struct raw_img *img;
+		struct wuimg *img;
 		err = dec_iter_image(image, &img);
 	} while (err == wu_ok);
+	if (metadata && err == wu_no_change) {
+		putchar('\n');
+		image_file_print(&image->file, 3);
+	}
 	*spent = clock_ellapsed(start);
 	dec_free_image(image);
 	if (err == wu_no_change) {
@@ -168,7 +174,7 @@ const struct test_mode_args args) {
 			const bool counting = (j >= args.warmup);
 			double spent;
 			image_reset(&image);
-			result = test_iter(&image, &spent);
+			result = test_iter(&image, &spent, !j && args.metadata);
 			if (result != wu_ok) {
 				break;
 			} else if (counting) {
@@ -466,7 +472,11 @@ static void print_help() {
 		"\t\tDecode each file N times. Default is 1.\n"
 
 		"\t-w N\n"
-		"\t\tDecode N times for warmup before measuring. Default is 0");
+		"\t\tDecode N times for warmup before measuring. Default is 0\n"
+
+		"\t-m\n"
+		"\t\tPrint full metadata for each file."
+	);
 }
 
 static int test_args(const int argc, char **argv, struct test_mode_args *args) {
@@ -482,6 +492,7 @@ static int test_args(const int argc, char **argv, struct test_mode_args *args) {
 			switch (arg[1]) {
 			case 't': ptr = &args->iters; break;
 			case 'w': ptr = &args->warmup; break;
+			case 'm': args->metadata = true; ++read; continue;
 			default: return read;
 			}
 			// %c doesn't match null bytes

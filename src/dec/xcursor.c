@@ -26,7 +26,7 @@ const struct wu_conf *wuconf) {
 	for (uint32_t i = 0; i < desc.ntoc; ++i) {
 		const struct xcursor_toc *entry = desc.toc + i;
 		struct xcursor_chunk chunk;
-		struct raw_img *img = NULL;
+		struct wuimg *img = NULL;
 		enum wu_error err = wu_decoding_error;
 		switch (entry->type) {
 		case xcursor_chunk_comment:
@@ -41,7 +41,7 @@ const struct wu_conf *wuconf) {
 			if (err != wu_ok) {
 				continue;
 			}
-			if (raw_img_exceeds_limit(img, wuconf)) {
+			if (wuimg_exceeds_limit(img, wuconf)) {
 				continue;
 			}
 			break;

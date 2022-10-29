@@ -1,4 +1,5 @@
 #include "lib/dib.h"
+#include "wudefs.h"
 
 static void get_dib_metadata(struct wu_tree *tree, const struct dib_desc *desc) {
 	tree_add_leaf_utf8(tree, "Header", dib_type_str(desc));
@@ -10,8 +11,8 @@ static void get_dib_metadata(struct wu_tree *tree, const struct dib_desc *desc) 
 }
 
 static enum wu_error dib_common(struct image_file *infile,
-const struct wu_conf *wuconf, struct raw_img *img, struct dib_desc *desc) {
-	if (raw_img_exceeds_limit(img, wuconf)) {
+const struct wu_conf *wuconf, struct wuimg *img, struct dib_desc *desc) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -33,7 +34,7 @@ enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct dib_desc desc;
 	enum wu_error err = bmp_open_file(&desc, infile->ifp);
 	if (err == wu_ok) {
-		struct raw_img *img = alloc_sub_images(infile, 1);
+		struct wuimg *img = alloc_sub_images(infile, 1);
 		if (img) {
 			err = bmp_parse_header(&desc, img);
 			if (err == wu_ok) {
@@ -47,7 +48,7 @@ enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 }
 
 enum wu_error dib_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (img) {
 		struct dib_desc desc;
 		const enum wu_error err = dib_open_file(&desc, img, infile->ifp);
@@ -74,13 +75,13 @@ const struct wu_conf *wuconf, struct ico_desc *desc) {
 
 	size_t o = 0;
 	for (uint16_t i = 0; i < desc->count; ++i) {
-		struct raw_img *img = infile->sub_img + o;
+		struct wuimg *img = infile->sub_img + o;
 		if (ico_set_image(desc, img, i) == wu_ok
-		&& !raw_img_exceeds_limit(img, wuconf)
+		&& !wuimg_exceeds_limit(img, wuconf)
 		&& ico_decode(desc, img)) {
 			++o;
 		} else {
-			raw_img_clear(img);
+			wuimg_clear(img);
 		}
 	}
 	return image_file_total_decoded(infile, o);

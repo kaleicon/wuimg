@@ -9,8 +9,8 @@
 #include "dec.h"
 #include "display.h"
 #include "events.h"
-#include "common/math.h"
-#include "common/mem.h"
+#include "misc/math.h"
+#include "misc/mem.h"
 
 static void set_background_color(const struct image_context *image) {
 	const struct wu_conf *conf = &image->conf;
@@ -50,7 +50,7 @@ static double poll_events(struct window_context *window) {
 static bool update_texture(struct image_context *image, struct gl_context *gl,
 const bool reset) {
 	struct wu_state *state = &image->state;
-	struct raw_img *img = image->file.sub_img + state->idx;
+	struct wuimg *img = image->file.sub_img + state->idx;
 	switch (gl_texture_upload(gl, img)) {
 	case gl_upload_fail:
 		term_line_put("Failed to upload to texture.", stderr);
@@ -117,7 +117,7 @@ struct window_context *window, double remaining) {
 	return remaining;
 }
 
-static double min_time(const struct raw_img *img, const struct wu_state *state) {
+static double min_time(const struct wuimg *img, const struct wu_state *state) {
 	struct image_frames *frames = img->frames;
 	if (frames) {
 		return fmax(frames->f[state->frame].msec / 1000.0, 1.0 / 30);
@@ -142,9 +142,9 @@ bool display_loop(struct window_context *window, const bool single_file) {
 	double remaining = 0;
 	for (bool upload = true, first_iter = true;;) {
 		if (upload) {
-			const struct raw_img *img = infile->sub_img + state->idx;
+			const struct wuimg *img = infile->sub_img + state->idx;
 			if (event->image == ev_subcycle) {
-				state->anim_playing = raw_img_frames_nr(img) > 1;
+				state->anim_playing = wuimg_frames_nr(img) > 1;
 			}
 
 			all_ok = update_texture(image, &window->pub.gl,

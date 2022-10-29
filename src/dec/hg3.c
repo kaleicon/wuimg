@@ -11,7 +11,7 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 
 	size_t i = 0;
 	while ((st = hg3_next_image(&desc)) == wu_ok) {
-		struct raw_img *img = infile->sub_img;
+		struct wuimg *img = infile->sub_img;
 		if (i >= infile->nr) {
 			img = realloc_sub_images(infile, i + 1);
 			if (!img) {
@@ -22,11 +22,11 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 
 		st = hg3_parse_image(&desc, img);
 		if (st == wu_ok) {
-			if (!raw_img_exceeds_limit(img, wuconf)) {
+			if (!wuimg_exceeds_limit(img, wuconf)) {
 				if (hg3_decode(&desc, img)) {
 					++i;
 				} else {
-					raw_img_clear(img);
+					wuimg_clear(img);
 				}
 			}
 		}

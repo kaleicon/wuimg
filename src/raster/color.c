@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <math.h>
 
-#include "common/common.h"
+#include "misc/common.h"
 #include "raster/color.h"
 
 #define WHITE_D65 {.3127, .3290}

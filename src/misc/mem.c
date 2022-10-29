@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/mem.h"
+#include "misc/mem.h"
 
 uint8_t memcycle(uint8_t *dst, const size_t pos) {
 	const uint8_t val = dst[pos];

@@ -1,9 +1,9 @@
-#include "common/endian.h"
+#include "misc/endian.h"
 #include "avs.h"
 
 // I like this format.
 
-enum wu_error avs_open_file(struct raw_img *img, FILE *ifp) {
+enum wu_error avs_open_file(struct wuimg *img, FILE *ifp) {
 	uint32_t buf[2];
 	if (fread(buf, sizeof(buf), 1, ifp)) {
 		img->w = endian32(buf[0], big_endian);

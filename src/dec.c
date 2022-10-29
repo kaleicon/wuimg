@@ -8,9 +8,9 @@
 #include <sys/stat.h>
 
 #include "dec.h"
-#include "common/common.h"
-#include "common/math.h"
-#include "common/mem.h"
+#include "misc/common.h"
+#include "misc/math.h"
+#include "misc/mem.h"
 
 /*
 
@@ -94,6 +94,7 @@ bool fmtmap_known_extension(const struct wuptr filename) {
 
 enum wu_error dec_callback_image(struct image_context *image,
 const enum image_event event) {
+//	const clock_t start = clock();
 	struct image_file *infile = &image->file;
 	const enum image_event ev = infile->events & event;
 	enum wu_error status = wu_no_change;
@@ -105,6 +106,7 @@ const enum image_event event) {
 			image_file_normalize(infile);
 		}
 	}
+//	clock_print("Callback done in", start);
 	return status;
 }
 
@@ -177,7 +179,7 @@ enum wu_error dec_decode_image(struct image_context *image) {
 }
 
 enum wu_error dec_iter_image(struct image_context *image,
-struct raw_img **cur_img) {
+struct wuimg **cur_img) {
 	enum wu_error err;
 	struct wu_state *state = &image->state;
 	if (!image->file.nr) {
@@ -187,8 +189,8 @@ struct raw_img **cur_img) {
 	}
 
 	enum image_event ev = 0;
-	const struct raw_img *img = image->file.sub_img + state->idx;
-	const int frames = (int)raw_img_frames_nr(img);
+	const struct wuimg *img = image->file.sub_img + state->idx;
+	const int frames = (int)wuimg_frames_nr(img);
 	if (state->frame + 1 < frames) {
 		ev = ev_frame;
 		++state->frame;

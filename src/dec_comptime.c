@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/common.h"
+#include "misc/common.h"
 #include "dec_enable.def"
 
 struct fmt_fn_desc {
@@ -13,6 +13,7 @@ struct fmt_fn_desc {
 
 // Produces a struct definition in string form, then in code
 #define EXP_STRING(exp) #exp; exp
+
 static const char fmt_structs[] = "struct fmt_fn {"
 	"const char name[8];"
 	"const fmt_dec_t dec;"
@@ -30,14 +31,9 @@ static const char fmt_structs[] = "struct fmt_fn {"
 	};
 ) /* EXP_STRING fmt_structs end */
 
-struct fmt_mimetype {
-	const char *type;
-	const char **subtypes;
-};
-
 enum fmt_id {
 	fmt_unknown = -1,
-#define WUDEC(name, _spec) fmt_##name,
+#define WUDEC(name, _callback) fmt_##name,
 #include "dec.def"
 #undef WUDEC
 };
@@ -48,11 +44,9 @@ static const struct fmt_fn_desc fn_map[] = {
 #undef WUDEC
 };
 
+
 /* Be careful with masks. This array is sorted dumbly. */
 static struct fmt_magic magic_map[] = {
-	// Computer Eyes
-//	{"\xff\xff\xff\xff\xff\xff", "EYES\x00\x01", fmt_ce2},
-
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
 #endif // WU_ENABLE_DIB
@@ -106,6 +100,10 @@ static struct fmt_magic magic_map[] = {
 #ifdef WU_ENABLE_PI
 	{"\xff\xff", "Pi", fmt_pi},
 #endif // WU_ENABLE_PI
+
+#ifdef WU_ENABLE_PIC
+	{"\xff\xff\xff", "PIC", fmt_pic},
+#endif // WU_ENABLE_PIC
 
 #ifdef WU_ENABLE_PICTOR
 	{"\xff\xff", "\x34\x12", fmt_pictor},
@@ -310,8 +308,6 @@ static struct fmt_ext ext_map[] = {
 	{"mbfavs", fmt_avs},
 #endif
 
-//	{"ce2", fmt_ce2},
-
 #ifdef WU_ENABLE_DIB
 	{"bmp", -1},
 	{"bmp24", -1},
@@ -333,16 +329,7 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_HG3
-	{"hg3", fmt_hg3},
-#endif
-
-#ifdef WU_ENABLE_MAG
-	{"mag", fmt_mag},
-	{"max", fmt_mag},
-#endif
-
-#ifdef WU_ENABLE_MAKI
-	{"mki", fmt_maki},
+	{"hg3", -1},
 #endif
 
 #ifdef WU_ENABLE_MAC
@@ -350,46 +337,13 @@ static struct fmt_ext ext_map[] = {
 	{"pntg", fmt_mac},
 #endif
 
-#ifdef WU_ENABLE_PCX
-	{"dcx", -1},
-	{"pcc", -1},
-	{"pcx", -1},
+#ifdef WU_ENABLE_MAG
+	{"mag", -1},
+	{"max", -1},
 #endif
 
-#ifdef WU_ENABLE_PDT
-	{"pdt", -1},
-#endif
-
-#ifdef WU_ENABLE_PGX
-	{"pgx", -1},
-#endif
-
-#ifdef WU_ENABLE_PI
-	{"pi", -1},
-#endif
-
-#ifdef WU_ENABLE_PICTOR
-	{"pic", -1},
-#endif
-
-#ifdef WU_ENABLE_PNM
-	{"mtv", fmt_pnm},
-	{"pbm", -1},
-	{"pgm", -1},
-	{"ppm", -1},
-	{"pam", -1},
-	{"pnm", -1},
-	{"pfm", -1},
-	{"p7", -1},
-	{"pgx", -1},
-#endif
-
-#ifdef WU_ENABLE_PRT
-	{"prt", -1},
-#endif
-
-#ifdef WU_ENABLE_QOI
-	{"qoi", -1},
+#ifdef WU_ENABLE_MAKI
+	{"mki", -1},
 #endif
 
 #ifdef WU_ENABLE_MSX
@@ -423,6 +377,56 @@ static struct fmt_ext ext_map[] = {
 	{"scc", fmt_scr12},
 	{"srs", fmt_scr12},
 	{"yjk", fmt_scr12},
+#endif
+
+#ifdef WU_ENABLE_PCX
+	{"dcx", -1},
+	{"pcc", -1},
+	{"pcx", -1},
+#endif
+
+#ifdef WU_ENABLE_PDT
+	{"pdt", -1},
+#endif
+
+#ifdef WU_ENABLE_PGX
+	{"pgx", -1},
+#endif
+
+#ifdef WU_ENABLE_PI
+	{"pi", -1},
+#endif
+
+#ifdef WU_ENABLE_PIC
+	{"jpc", -1},
+#endif
+
+#if defined WU_ENABLE_PIC || defined WU_ENABLE_PICTOR
+	{"pic", -1},
+#endif
+
+#ifdef WU_ENABLE_PNM
+	{"mtv", fmt_pnm},
+	{"pbm", -1},
+	{"pgm", -1},
+	{"ppm", -1},
+	{"pam", -1},
+	{"pnm", -1},
+	{"pfm", -1},
+	{"p7", -1},
+	{"pgx", -1},
+#endif
+
+#ifdef WU_ENABLE_PRT
+	{"prt", -1},
+#endif
+
+#ifdef WU_ENABLE_PX
+	{"px", fmt_px},
+#endif
+
+#ifdef WU_ENABLE_QOI
+	{"qoi", -1},
 #endif
 
 #ifdef WU_ENABLE_SGI

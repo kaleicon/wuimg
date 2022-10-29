@@ -1,7 +1,7 @@
 #ifndef LIB_MAG
 #define LIB_MAG
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 enum mag_msx_screen {
 	mag_msx2_screen7 = 0x0,
@@ -30,12 +30,6 @@ struct mag_section {
 	uint32_t size, off;
 };
 
-struct mag_comment {
-	uint8_t *data;
-	size_t text_len;
-	size_t area_len;
-};
-
 struct mag_msx {
 	enum mag_msx_screen screen:8;
 	bool interlace;
@@ -47,7 +41,7 @@ struct mag_desc {
 	enum mag_model_code code:8;
 	struct mag_msx msx;
 	size_t row_dwords;
-	struct mag_comment comment;
+	struct wustr comm;
 	long null_pos;
 	struct mag_section flag_a, flag_b, color;
 	struct raster_pal *yjk_pal;
@@ -59,9 +53,9 @@ const char * mag_model_code_str(enum mag_model_code code);
 
 void mag_cleanup(struct mag_desc *desc);
 
-size_t mag_decode(const struct mag_desc *desc, struct raw_img *img);
+size_t mag_decode(const struct mag_desc *desc, struct wuimg *img);
 
-enum wu_error mag_parse(struct mag_desc *desc, struct raw_img *img);
+enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img);
 
 enum wu_error mag_open(struct mag_desc *desc, FILE *ifp);
 

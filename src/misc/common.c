@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/common.h"
+#include "misc/common.h"
 
 // A straw broke my camel's back so I wrote my own time functions.
 static const long DAYS_BETWEEN_1970_2000 = 365*30 + 30/4; // 10957 btw

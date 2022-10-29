@@ -47,7 +47,7 @@ const char * pictor_video_mode(const struct pictor_desc *desc) {
 }
 
 static void pictor_interleave(const struct pictor_desc *desc,
-struct raw_img *img, const unsigned char *restrict src) {
+struct wuimg *img, const unsigned char *restrict src) {
 	vga_interleave(img->data, src, img->w, img->h, desc->planes, 1,
 		img->align_sh, img->mode == image_mode_palette);
 }
@@ -148,8 +148,8 @@ const size_t blocks, FILE *ifp) {
 	return i;
 }
 
-size_t pictor_decode(const struct pictor_desc *desc, struct raw_img *img) {
-	if (!raw_img_alloc_noverify(img)) {
+size_t pictor_decode(const struct pictor_desc *desc, struct wuimg *img) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
 
@@ -162,7 +162,7 @@ size_t pictor_decode(const struct pictor_desc *desc, struct raw_img *img) {
 			return 0;
 		}
 	} else {
-		raster_len = raw_img_size(img);
+		raster_len = wuimg_size(img);
 		raster = img->data;
 	}
 
@@ -180,7 +180,7 @@ size_t pictor_decode(const struct pictor_desc *desc, struct raw_img *img) {
 	return written;
 }
 
-static enum wu_error load_palette(struct pictor_desc *desc, struct raw_img *img,
+static enum wu_error load_palette(struct pictor_desc *desc, struct wuimg *img,
 const enum pictor_palette_type pal_type, const uint16_t size) {
 	desc->pal_type = pal_type;
 	const int bpp = desc->depth * desc->planes;
@@ -213,7 +213,7 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 		return wu_invalid_header;
 	}
 
-	struct raster_pal *pal = raw_img_palette_init(img);
+	struct raster_pal *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return wu_alloc_error;
 	}
@@ -278,7 +278,7 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 	return wu_ok;
 }
 
-enum wu_error pictor_read_header(struct pictor_desc *desc, struct raw_img *img) {
+enum wu_error pictor_read_header(struct pictor_desc *desc, struct wuimg *img) {
 	/* Pictor file header (after id):
 		Offset  Type    Name
 		0       u16     Width
@@ -357,10 +357,10 @@ enum wu_error pictor_read_header(struct pictor_desc *desc, struct raw_img *img) 
 			desc->interleave = true;
 		} else {
 			img->channels = desc->planes;
-			raw_img_plane_init(img);
+			wuimg_plane_init(img);
 		}
 	}
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 enum wu_error pictor_open_file(struct pictor_desc *desc, FILE *ifp) {

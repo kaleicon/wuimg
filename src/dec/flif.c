@@ -2,8 +2,8 @@
 
 #include "wudefs.h"
 #include "metadata.h"
-#include "common/common.h"
-#include "common/file.h"
+#include "misc/common.h"
+#include "misc/file.h"
 
 struct flif_state {
 	struct map_info map;
@@ -20,9 +20,9 @@ static void clean_flif_state(struct image_file *infile) {
 	file_unmap(&ds->map);
 }
 
-static enum wu_error decode_frame(struct raw_img *img, FLIF_IMAGE *frame,
+static enum wu_error decode_frame(struct wuimg *img, FLIF_IMAGE *frame,
 struct flif_state *ds) {
-	const size_t stride = raw_img_stride(img);
+	const size_t stride = wuimg_stride(img);
 	for (uint32_t y = 0; y < img->h; ++y) {
 		ds->read_func(frame, y, img->data + y*stride, stride);
 	}
@@ -62,7 +62,7 @@ static void read_metadata(struct wu_tree *tree, FLIF_IMAGE *frame) {
 
 static enum wu_error setup_img(struct image_file *infile,
 const struct wu_conf *wuconf, struct flif_state *ds) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
@@ -70,7 +70,7 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 	FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec, 0);
 	img->w = flif_image_get_width(frame);
 	img->h = flif_image_get_height(frame);
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 	img->channels = flif_image_get_nb_channels(frame);
@@ -78,7 +78,7 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 	img->alpha = alpha_unassociated;
 
 	if (img->channels == 1 && flif_image_get_palette_size(frame)) {
-		raw_img_palette_init(img);
+		wuimg_palette_init(img);
 	}
 
 	if (img->mode == image_mode_palette) {
@@ -97,14 +97,14 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 			: flif_image_read_row_RGBA16;
 	}
 
-	const enum wu_error st = raw_img_alloc(img);
+	const enum wu_error st = wuimg_alloc(img);
 	if (st != wu_ok) {
 		return st;
 	}
 
 	const size_t nr = flif_decoder_num_images(ds->dec);
 	if (nr > 1) {
-		struct image_frames *f = raw_img_frames_init(img, nr);
+		struct image_frames *f = wuimg_frames_init(img, nr);
 		if (!f) {
 			return wu_alloc_error;
 		}

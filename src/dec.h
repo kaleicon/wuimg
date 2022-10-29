@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #include "wudefs.h"
-#include "common/wustr.h"
+#include "misc/wustr.h"
 
 bool fmtmap_known_extension(const struct wuptr filename);
 
@@ -16,7 +16,7 @@ void dec_free_image(struct image_context *image);
 enum wu_error dec_decode_image(struct image_context *image);
 
 enum wu_error dec_iter_image(struct image_context *image,
-struct raw_img **cur_img);
+struct wuimg **cur_img);
 
 void print_known_formats(void);
 

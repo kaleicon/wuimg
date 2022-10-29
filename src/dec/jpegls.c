@@ -33,14 +33,14 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 		return wu_decoding_error;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
 
 	img->w = frame.width;
 	img->h = frame.height;
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	} else if (frame.component_count > 4 || frame.bits_per_sample > 16) {
 		return wu_unsupported_feature;
@@ -53,7 +53,7 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 
 	switch (mode) {
 	case CHARLS_INTERLEAVE_MODE_NONE:
-		raw_img_plane_init(img);
+		wuimg_plane_init(img);
 		break;
 	case CHARLS_INTERLEAVE_MODE_LINE:
 		return wu_unsupported_feature;
@@ -63,12 +63,12 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 		return wu_invalid_params;
 	}
 
-	const enum wu_error st = raw_img_alloc(img);
+	const enum wu_error st = wuimg_alloc(img);
 	if (st != wu_ok) {
 		return st;
 	}
 
-	const size_t size = raw_img_size(img);
+	const size_t size = wuimg_size(img);
 	*err = charls_jpegls_decoder_decode_to_buffer(dec, img->data, size, 0);
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
 		return wu_decoding_error;

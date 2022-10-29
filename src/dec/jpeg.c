@@ -4,8 +4,8 @@
 #include <jpeglib.h>
 
 #include "wudefs.h"
-#include "common/math.h"
-#include "common/wustr.h"
+#include "misc/math.h"
+#include "misc/wustr.h"
 #include "metadata.h"
 
 enum marker_type {
@@ -114,7 +114,7 @@ static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
 	return grow.pos + 1;
 }
 
-static void assemble_icc(struct raw_img *img, struct icc_assembler *icc) {
+static void assemble_icc(struct wuimg *img, struct icc_assembler *icc) {
 	if (icc->total == icc->seen) {
 		unsigned char *data = malloc(icc->acc);
 		if (data) {
@@ -249,11 +249,11 @@ struct icc_assembler *icc, const bool is_first) {
 }
 
 static enum wu_error iter_markers(const struct jpeg_marker_struct *mk,
-struct image_file *infile, struct raw_img *img, struct jpeg_state *js,
+struct image_file *infile, struct wuimg *img, struct jpeg_state *js,
 const bool is_first) {
 	struct icc_assembler icc = {0};
 	enum wu_error status = wu_ok;
-	struct wu_tree *metadata = raw_img_get_metadata(img);
+	struct wu_tree *metadata = wuimg_get_metadata(img);
 	if (!img->metadata) {
 		return wu_alloc_error;
 	}
@@ -279,7 +279,7 @@ const bool is_first) {
 	return status;
 }
 
-static void decode_raw(struct raw_img *img,
+static void decode_raw(struct wuimg *img,
 struct jpeg_decompress_struct *dinfo) {
 	const unsigned dct_h = (unsigned)dinfo->max_v_samp_factor * DCTSIZE;
 
@@ -303,7 +303,7 @@ struct jpeg_decompress_struct *dinfo) {
 	}
 }
 
-static bool set_colorspace(struct raw_img *img,
+static bool set_colorspace(struct wuimg *img,
 const struct jpeg_decompress_struct *dinfo) {
 	img->alpha = alpha_key;
 	switch (dinfo->jpeg_color_space) {
@@ -320,7 +320,7 @@ const struct jpeg_decompress_struct *dinfo) {
 		break;
 	}
 
-	struct image_planes *planes = raw_img_plane_init(img);
+	struct image_planes *planes = wuimg_plane_init(img);
 	if (!planes) {
 		return false;
 	}
@@ -351,7 +351,7 @@ const struct wu_conf *wuconf, const int i) {
 	fseek(infile->ifp, pos, SEEK_SET);
 	jpeg_stdio_src(dinfo, infile->ifp);
 
-	struct raw_img *img = infile->sub_img + i;
+	struct wuimg *img = infile->sub_img + i;
 	jpeg_save_markers(dinfo, JPEG_COM, 0xFFFF);
 	for (int m = 0xE0; m <= 0xEF; ++m) {
 		switch (m) {
@@ -376,15 +376,15 @@ const struct wu_conf *wuconf, const int i) {
 	img->h = dinfo->output_height;
 	img->channels = (unsigned char)dinfo->output_components;
 	img->bitdepth = 8;
-	raw_img_align(img, DCTSIZE);
+	wuimg_align(img, DCTSIZE);
 	if (!set_colorspace(img, dinfo)) {
 		return wu_alloc_error;
 	}
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 
-	enum wu_error status = raw_img_alloc(img);
+	enum wu_error status = wuimg_alloc(img);
 	if (status != wu_ok) {
 		return status;
 	}
@@ -396,7 +396,7 @@ const struct wu_conf *wuconf, const int i) {
 	}
 	jpeg_finish_decompress(dinfo);
 	if (status == wu_ok && img->metadata) {
-		raw_img_exif_orientation(img,
+		wuimg_exif_orientation(img,
 			metadata_orientation(img->metadata));
 	}
 	return status;

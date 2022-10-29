@@ -101,7 +101,7 @@ const unsigned char ch, const int alpha_idx) {
 	copy_stride(out, raster, pal, len, ch);
 }
 
-static void compost_gif_frame(struct raw_img *img,
+static void compost_gif_frame(struct wuimg *img,
 const struct frame_info *geom, const GifByteType *restrict raster,
 const struct raster_pal *palette, const int trans) {
 	const unsigned char ch = img->channels;
@@ -128,7 +128,7 @@ static bool should_cache_prev(struct gif_state *ds) {
 	return ds->previous.num_of_disposals > 1 || !ds->previous.written;
 }
 
-static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
+static enum wu_error gif_dec_frame(struct wuimg *img, struct gif_state *ds) {
 	const GraphicsControlBlock *gcb = ds->gcb + ds->idx;
 	const int trans = gcb->TransparentColor;
 	const int fill = (img->mode == image_mode_palette) ? trans : 0;
@@ -189,9 +189,9 @@ static enum wu_error gif_dec_frame(struct raw_img *img, struct gif_state *ds) {
 static enum wu_error gif_frame_iter(struct image_file *infile,
 const struct wu_state *state) {
 	struct gif_state *ds = infile->dec_state;
-	struct raw_img *img = infile->sub_img;
+	struct wuimg *img = infile->sub_img;
 	if (ds->idx != state->frame) {
-		ds->idx = raw_img_frame_prev_keyframe(img, ds->idx, state->frame);
+		ds->idx = wuimg_frame_prev_keyframe(img, ds->idx, state->frame);
 	}
 	while (ds->idx <= state->frame) {
 		const enum wu_error err = gif_dec_frame(infile->sub_img, ds);
@@ -239,8 +239,8 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 	GifFileType *gif_file = ds->gif_file;
 
 	const size_t count = (size_t)gif_file->ImageCount;
-	struct raw_img *img = infile->sub_img;
-	if (!raw_img_frames_init(img, count)) {
+	struct wuimg *img = infile->sub_img;
+	if (!wuimg_frames_init(img, count)) {
 		return wu_alloc_error;
 	}
 	if (count > 1) {
@@ -270,7 +270,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 		}
 
 		const GifImageDesc *desc = &image->ImageDesc;
-		const bool valid_frame = raw_img_frame_set(img, i,
+		const bool valid_frame = wuimg_frame_set(img, i,
 			(size_t)desc->Left, (size_t)desc->Top,
 			(size_t)desc->Width, (size_t)desc->Height,
 			gcb->DelayTime * 10,
@@ -322,14 +322,14 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_invalid_header;
 	}
 
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;
 	}
 
 	img->w = (size_t)gif_file->SWidth;
 	img->h = (size_t)gif_file->SHeight;
-	if (raw_img_exceeds_limit(img, wuconf)) {
+	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -355,7 +355,7 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		int trans;
 		if (pal_num == 1 && enable_paletted_mode) {
 			img->channels = 1;
-			pal = raw_img_palette_init(img);
+			pal = wuimg_palette_init(img);
 			if (!pal) {
 				return wu_alloc_error;
 			}
@@ -374,11 +374,11 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	tree_bud_leaf(&infile->metadata, "Palettes", (struct wu_leaf) {
 		.type = wu_leaf_signed, .val.d = pal_num});
 
-	st = raw_img_alloc(img);
+	st = wuimg_alloc(img);
 	if (st != wu_ok) {
 		return st;
 	}
-	ds->image_size = raw_img_size(img);
+	ds->image_size = wuimg_size(img);
 
 	if (ds->previous.num_of_disposals) {
 		ds->previous.buf = malloc(ds->image_size);

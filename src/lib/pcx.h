@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "wudefs.h"
-#include "raster/memparser.h"
+#include "raster/wuimg.h"
+#include "misc/memparser.h"
 
 enum pcx_version {
 	pcx_ver25 = 0,
@@ -32,9 +32,9 @@ struct pcx_desc {
 
 const char * pcx_version_string(enum pcx_version ver);
 
-size_t pcx_decode(struct pcx_desc *desc, struct raw_img *img);
+enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img);
 
-enum wu_error pcx_read_header(struct pcx_desc *desc, struct raw_img *img);
+enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img);
 
 enum wu_error pcx_open_file(struct pcx_desc *desc, struct mp_parser mp);
 
@@ -47,8 +47,8 @@ struct dcx_desc {
 
 void dcx_free(struct dcx_desc *desc);
 
-enum wu_error dcx_set_file(const struct dcx_desc *dcx,
-struct pcx_desc *pcx, uint32_t i);
+enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
+uint32_t i);
 
 enum wu_error dcx_open_file(struct dcx_desc *desc, struct mp_parser mp);
 

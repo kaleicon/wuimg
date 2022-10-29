@@ -1,8 +1,8 @@
 #ifndef LIB_DPX
 #define LIB_DPX
 
-#include "wudefs.h"
-#include "common/endian.h"
+#include "raster/wuimg.h"
+#include "misc/endian.h"
 
 enum dpx_signal {
 	dpx_signal_undefined = 0,
@@ -187,9 +187,9 @@ struct dpx_desc {
 	struct dpx_industry industry;
 };
 
-size_t dpx_decode(const struct dpx_desc *desc, struct raw_img *img, uint8_t i);
+size_t dpx_decode(const struct dpx_desc *desc, struct wuimg *img, uint8_t i);
 
-enum wu_error dpx_set_image(const struct dpx_desc *desc, struct raw_img *img,
+enum wu_error dpx_set_image(const struct dpx_desc *desc, struct wuimg *img,
 uint8_t i);
 
 enum wu_error dpx_parse(struct dpx_desc *desc);

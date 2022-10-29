@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "wustr.h"
-#include "common/math.h"
+#include "misc/math.h"
 
 bool wugrow_reserve(void *restrict ptr_ptr, struct wugrow *grow, size_t extra) {
 	const size_t needed = grow->pos + extra;

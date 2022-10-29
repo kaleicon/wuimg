@@ -3,9 +3,9 @@
 
 #include <stdbool.h>
 
-#include "wudefs.h"
-#include "common/wustr.h"
-#include "raster/memparser.h"
+#include "raster/wuimg.h"
+#include "misc/wustr.h"
+#include "misc/memparser.h"
 
 enum xbm_type {
 	xbm_x11 = 1,
@@ -23,9 +23,9 @@ struct xbm_desc {
 	struct wuptr comment;
 };
 
-size_t xbm_decode(const struct xbm_desc *desc, struct raw_img *img);
+size_t xbm_decode(const struct xbm_desc *desc, struct wuimg *img);
 
-enum wu_error xbm_parse_header(struct xbm_desc *desc, struct raw_img *img,
+enum wu_error xbm_parse_header(struct xbm_desc *desc, struct wuimg *img,
 struct mp_parser mp);
 
 #endif /* LIB_XBM */

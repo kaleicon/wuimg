@@ -8,7 +8,7 @@
 #include <xf86drm.h>
 #include <gbm.h>
 
-#include "common/math.h"
+#include "misc/math.h"
 #include "window/drm.h"
 #include "opengl.h"
 #include "term.h"

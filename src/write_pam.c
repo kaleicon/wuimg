@@ -11,7 +11,7 @@
 #include "term.h"
 #include "filesystem.h"
 #include "write_pam.h"
-#include "common/endian.h"
+#include "misc/endian.h"
 
 void write_writer_terminate(struct write_writer *writer) {
 	window_offscreen_terminate(&writer->window);
@@ -127,7 +127,7 @@ struct write_out *out, const char *outdir, struct fs_path *path) {
 
 static const char * write_sub_img(struct write_writer *writer,
 const struct write_args *args, struct wu_state *state,
-struct raw_img *img) {
+struct wuimg *img) {
 	FILE *ofp;
 	if (args->stdout) {
 		ofp = stdout;
@@ -160,7 +160,7 @@ struct raw_img *img) {
 
 enum wu_error write_image(struct image_context *image,
 struct write_writer *writer, const struct write_args *args) {
-	struct raw_img *img;
+	struct wuimg *img;
 	enum wu_error err = dec_iter_image(image, &img);
 	if (err == wu_ok) {
 		struct fs_path path;

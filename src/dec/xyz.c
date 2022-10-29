@@ -16,11 +16,11 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 		infile->dec_state = desc;
 		enum wu_error st = xyz_open(desc, mp_parser_mem(mm->len, mm->data));
 		if (st == wu_ok) {
-			struct raw_img *img = alloc_sub_images(infile, 1);
+			struct wuimg *img = alloc_sub_images(infile, 1);
 			if (img) {
 				st = xyz_parse(desc, img);
 				if (st == wu_ok) {
-					if (!raw_img_exceeds_limit(img, wuconf)) {
+					if (!wuimg_exceeds_limit(img, wuconf)) {
 						return xyz_decode(desc, img)
 							? wu_ok : wu_decoding_error;
 					}

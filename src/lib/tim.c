@@ -21,10 +21,10 @@ static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 	}
 }
 
-size_t tim_decode(const struct tim_desc *desc, struct raw_img *img) {
+size_t tim_decode(const struct tim_desc *desc, struct wuimg *img) {
 	size_t read = 0;
-	if (raw_img_alloc_noverify(img)) {
-		read = fread(img->data, 1, raw_img_size(img), desc->ifp);
+	if (wuimg_alloc_noverify(img)) {
+		read = fread(img->data, 1, wuimg_size(img), desc->ifp);
 		if (img->attr == pix_pack_1555) {
 			special_transparency_process((uint16_t *)img->data, read/2);
 		}
@@ -32,7 +32,7 @@ size_t tim_decode(const struct tim_desc *desc, struct raw_img *img) {
 	return read;
 }
 
-static enum wu_error read_cluts(struct tim_desc *desc, struct raw_img *img,
+static enum wu_error read_cluts(struct tim_desc *desc, struct wuimg *img,
 unsigned char header[static 12]) {
 	struct tim_clut *clut = &desc->clut;
 	clut->x = buf_endian16(header + 4, little_endian);
@@ -51,7 +51,7 @@ unsigned char header[static 12]) {
 	if (!palette) {
 		return wu_alloc_error;
 	}
-	raw_img_palette_set(img, palette);
+	wuimg_palette_set(img, palette);
 
 	for (size_t n = 0; n < clut->nb; ++n) {
 		struct raster_pal *pal = palette + n;
@@ -67,7 +67,7 @@ unsigned char header[static 12]) {
 	return wu_ok;
 }
 
-enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
+enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
 	/* TIM header (little-endian) (after id):
 		Offset  Size    Name
 		0       DWORD   Flags:
@@ -160,7 +160,7 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img) {
 	img->w = line_len * 16 / depth;
 	img->h = buf_endian16(header + 14, little_endian);
 	img->align_sh = 1;
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
 enum wu_error tim_open_file(struct tim_desc *desc, FILE *ifp) {

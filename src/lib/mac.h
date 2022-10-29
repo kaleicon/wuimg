@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 typedef uint32_t mac_time_t;
 
@@ -37,11 +37,11 @@ struct mac_desc {
 
 time_t mac_time_to_unix(mac_time_t time);
 
-size_t mac_decode(const struct mac_desc *desc, struct raw_img *main);
+size_t mac_decode(const struct mac_desc *desc, struct wuimg *main);
 
-size_t mac_patterns_load(const struct mac_desc *desc, struct raw_img *pats);
+size_t mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats);
 
-void mac_get_sizes(struct raw_img *main, struct raw_img *pats);
+void mac_get_sizes(struct wuimg *main, struct wuimg *pats);
 
 enum wu_error mac_open_file(struct mac_desc *desc, FILE *ifp);
 

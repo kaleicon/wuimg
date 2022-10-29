@@ -1,8 +1,8 @@
 #ifndef LIB_TLG
 #define LIB_TLG
 
-#include "wudefs.h"
-#include "raster/memparser.h"
+#include "raster/wuimg.h"
+#include "misc/memparser.h"
 
 enum tlg_version {
 	tlg_v5 = '5',
@@ -18,9 +18,9 @@ struct tlg_desc {
 
 const char * tlg_version_str(enum tlg_version ver);
 
-size_t tlg_decode(const struct tlg_desc *desc, struct raw_img *img);
+size_t tlg_decode(const struct tlg_desc *desc, struct wuimg *img);
 
-enum wu_error tlg_read_header(struct tlg_desc *desc, struct raw_img *img);
+enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img);
 
 enum wu_error tlg_open_mem(struct tlg_desc *desc, struct mp_parser mp);
 

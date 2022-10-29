@@ -1,5 +1,10 @@
 #include "bit.h"
 
+uint32_t bit_set32(const uint32_t bits) {
+	const uint32_t ones = ~(uint32_t)0;
+	return ones >> (sizeof(ones)*8 - bits);
+}
+
 uint32_t bit_getn(const void *stream, const size_t pos, size_t n) {
 	const uint32_t mask = (1u << n) - 1;
 
@@ -29,40 +34,38 @@ uint32_t bit_advn(const void *stream, size_t *pos, size_t n) {
 	return bits;
 }
 
-bool bit_adv(const void *stream, size_t *pos) {
-	const bool bit = bit_get(stream, *pos);
-	*pos += 1;
-	return bit;
-}
 
-uint_fast32_t bit_adv_gamma(const void *stream, size_t *pos,
-const bool delim) {
-	size_t count = 0;
-	while (bit_adv(stream, pos) != delim && count < 31) {
-		++count;
-	}
-	return 1u << count | bit_advn(stream, pos, count);
-}
-
-
-static bool bit_lsb_get(const void *stream, const size_t pos) {
-	const uint8_t byte = ((const uint8_t *)stream)[pos/8];
-	return (byte >> (pos%8)) & 1;
-}
-
-
-bool bitstrm_lsb_next(struct bitstrm *bs) {
-	const bool bit = bit_lsb_get(bs->buf, bs->pos);
+bool bitstrm_msb_next(struct bitstrm *bs) {
+	const bool bit = bit_get(bs->buf, bs->pos);
 	++bs->pos;
 	return bit;
 }
 
-uint_fast32_t bitstrm_lsb_gamma(struct bitstrm *bs, const bool delim) {
+uint32_t bitstrm_msb_adv(struct bitstrm *bs, const size_t n) {
+	return bit_advn(bs->buf, &bs->pos, n);
+}
+
+uint32_t bitstrm_msb_gamma(struct bitstrm *bs, const bool delim) {
+	size_t count = 0;
+	while (bitstrm_msb_next(bs) != delim && count < 31) {
+		++count;
+	}
+	return 1u << count | bitstrm_msb_adv(bs, count);
+}
+
+bool bitstrm_lsb_next(struct bitstrm *bs) {
+	const uint8_t byte = bs->buf[bs->pos/8];
+	const bool bit = (byte >> (bs->pos%8)) & 1;
+	++bs->pos;
+	return bit;
+}
+
+uint32_t bitstrm_lsb_gamma(struct bitstrm *bs, const bool delim) {
 	size_t count = 0;
 	while (bitstrm_lsb_next(bs) != delim && count < 31) {
 		++count;
 	}
-	uint_fast32_t word = 1;
+	uint32_t word = 1;
 	while (count) {
 		word = (word << 1) | bitstrm_lsb_next(bs);
 		--count;

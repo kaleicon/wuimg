@@ -1,14 +1,15 @@
 #include "lib/msx.h"
+#include "wudefs.h"
 
 static enum wu_error scr_common(struct image_file *infile,
 const struct wu_conf *wuconf, const enum msx_screen mode) {
-	struct raw_img *img = alloc_sub_images(infile, 1);
+	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (img) {
 		struct msx_desc desc;
 		const enum wu_error st = msx_parse(&desc, img, infile->ifp,
 			mode);
 		if (st == wu_ok) {
-			if (!raw_img_exceeds_limit(img, wuconf)) {
+			if (!wuimg_exceeds_limit(img, wuconf)) {
 				return msx_decode(&desc, img)
 					? wu_ok : wu_decoding_error;
 			}

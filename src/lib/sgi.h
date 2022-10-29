@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 enum sgi_bitmap_type {
 	sgi_raw,
@@ -29,9 +29,9 @@ struct sgi_desc {
 	char name[80];
 };
 
-size_t sgi_decode(const struct sgi_desc *desc, struct raw_img *img);
+size_t sgi_decode(const struct sgi_desc *desc, struct wuimg *img);
 
-enum wu_error sgi_parse_header(struct sgi_desc *desc, struct raw_img *img);
+enum wu_error sgi_parse_header(struct sgi_desc *desc, struct wuimg *img);
 
 enum wu_error sgi_open_file(struct sgi_desc *desc, FILE *ifp);
 

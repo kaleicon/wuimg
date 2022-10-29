@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 struct tim_clut {
 	size_t nb;
@@ -16,9 +16,9 @@ struct tim_desc {
 	struct tim_clut clut;
 };
 
-size_t tim_decode(const struct tim_desc *desc, struct raw_img *img);
+size_t tim_decode(const struct tim_desc *desc, struct wuimg *img);
 
-enum wu_error tim_parse_header(struct tim_desc *desc, struct raw_img *img);
+enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img);
 
 enum wu_error tim_open_file(struct tim_desc *desc, FILE *ifp);
 

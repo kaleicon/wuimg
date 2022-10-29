@@ -1,9 +1,9 @@
 #include <jxl/decode.h>
 
 #include "wudefs.h"
-#include "common/file.h"
+#include "misc/file.h"
 
-static void set_colorspace(struct raw_img *img, JxlDecoder *jd) {
+static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
 	const JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
 	JxlColorEncoding enc;
 	if (JxlDecoderGetColorAsEncodedProfile(jd, NULL, target, &enc)
@@ -49,7 +49,7 @@ static void set_colorspace(struct raw_img *img, JxlDecoder *jd) {
 	}
 }
 
-static bool set_fmt(const struct raw_img *img, JxlPixelFormat *fmt) {
+static bool set_fmt(const struct wuimg *img, JxlPixelFormat *fmt) {
 	fmt->num_channels = img->channels;
 	fmt->align = 1 << img->align_sh;
 	switch (img->bitdepth) {
@@ -87,14 +87,14 @@ const struct wu_conf *wuconf, JxlDecoder *jd) {
 				return wu_unsupported_feature;
 			}
 
-			struct raw_img *img = alloc_sub_images(infile, 1);
+			struct wuimg *img = alloc_sub_images(infile, 1);
 			if (!img) {
 				return wu_alloc_error;
 			}
 
 			img->w = info.xsize;
 			img->h = info.ysize;
-			if (raw_img_exceeds_limit(img, wuconf)) {
+			if (wuimg_exceeds_limit(img, wuconf)) {
 				return wu_exceeds_size_limit;
 			}
 			img->channels = (uint8_t)(info.num_color_channels
@@ -105,7 +105,7 @@ const struct wu_conf *wuconf, JxlDecoder *jd) {
 			}
 			img->alpha = info.alpha_premultiplied
 				? alpha_associated : alpha_unassociated;
-			raw_img_exif_orientation(img, (int)info.orientation);
+			wuimg_exif_orientation(img, (int)info.orientation);
 			if (!set_fmt(img, &fmt)) {
 				return wu_unsupported_feature;
 			}
@@ -118,12 +118,12 @@ const struct wu_conf *wuconf, JxlDecoder *jd) {
 				(struct wu_leaf){.val.b = true, .type = wu_leaf_bool});
 			break;
 		case JXL_DEC_NEED_IMAGE_OUT_BUFFER:
-			;const enum wu_error st = raw_img_alloc(img);
+			;const enum wu_error st = wuimg_alloc(img);
 			if (st != wu_ok) {
 				return st;
 			}
 			if (JxlDecoderSetImageOutBuffer(jd, &fmt, img->data,
-			raw_img_size(img)) != JXL_DEC_SUCCESS) {
+			wuimg_size(img)) != JXL_DEC_SUCCESS) {
 				return wu_invalid_params;
 			}
 			break;

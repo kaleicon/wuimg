@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <time.h>
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 #include "raster/pix.h"
 
 struct tga_metadata {
@@ -65,18 +65,18 @@ const char * tga_type_str(enum tga_image_type type);
 
 void tga_cleanup(struct tga_desc *desc);
 
-size_t tga_decode_stamp(const struct tga_desc *desc, struct raw_img *stamp);
+size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp);
 
-size_t tga_decode(const struct tga_desc *desc, struct raw_img *img);
+size_t tga_decode(const struct tga_desc *desc, struct wuimg *img);
 
 struct raster_pal * tga_take_extra_palette(struct tga_desc *desc);
 
 enum wu_error tga_parse_stamp(const struct tga_desc *desc,
-struct raw_img *main, struct raw_img *stamp);
+struct wuimg *main, struct wuimg *stamp);
 
-bool tga_parse_footer(struct tga_desc *desc, struct raw_img *img);
+bool tga_parse_footer(struct tga_desc *desc, struct wuimg *img);
 
-enum wu_error tga_parse_header(struct tga_desc *desc, struct raw_img *img,
+enum wu_error tga_parse_header(struct tga_desc *desc, struct wuimg *img,
 FILE *ifp);
 
 #endif /* LIB_TGA */

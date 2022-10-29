@@ -85,13 +85,13 @@ bool gl_draw(struct gl_context *context, const struct wu_state *state);
 void gl_clear_color(const uint8_t bg[static 4]);
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
-struct raw_img *img);
+struct wuimg *img);
 
 void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
 const struct gl_reader *reader, void *restrict dst, size_t row);
 
 bool gl_reader_set(struct gl_context *context, struct gl_reader *r,
-struct wu_state *state, const struct raw_img *img);
+struct wu_state *state, const struct wuimg *img);
 
 void gl_reader_unbind(void);
 

@@ -13,9 +13,11 @@ internal_fmts = [
 	'pdt',
 	'pgx',
 	'pi',
+	'pic',
 	'pictor',
 	'pnm',
 	'prt',
+	'px',
 	'qoi',
 	'sgi',
 	'sixel',
@@ -101,13 +103,14 @@ src_list += [custom_target('dec_maps',
 	'wudefs.c',
 	'wutree.c',
 
-	'common/bit.c',
-	'common/common.c',
-	'common/endian.c',
-	'common/file.c',
-	'common/math.c',
-	'common/mem.c',
-	'common/wustr.c',
+	'misc/bit.c',
+	'misc/common.c',
+	'misc/endian.c',
+	'misc/file.c',
+	'misc/math.c',
+	'misc/mem.c',
+	'misc/memparser.c',
+	'misc/wustr.c',
 
 	'raster/cicp.c',
 	'raster/color.c',
@@ -116,11 +119,11 @@ src_list += [custom_target('dec_maps',
 	'raster/graphics_adapters.c',
 	'raster/icc.c',
 	'raster/mat.c',
-	'raster/memparser.c',
 	'raster/pal.c',
 	'raster/pix.c',
 	'raster/strip.c',
-	'raster/unpack.c']
+	'raster/unpack.c',
+	'raster/wuimg.c']
 
 dep_list += [cc.find_library('m', required : false),
 	dependency('exiv2'),
@@ -165,9 +168,11 @@ view_dep_list = [
 	dependency('wayland-egl'),
 	dependency('xkbcommon')]
 
-wufuzz = executable('wu-fuzz', ['main_fuzz.c'] + src_list,
-	dependencies : dep_list,
-	install : true)
 wuview = executable('wu', ['main.c'] + src_list + view_src_list,
 	dependencies : dep_list + view_dep_list,
 	install : true)
+if get_option('fuzzer').enabled()
+	wufuzz = executable('wu-fuzz', ['main_fuzz.c'] + src_list,
+		dependencies : dep_list,
+		install : true)
+endif

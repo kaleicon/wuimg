@@ -6,7 +6,7 @@
 
 #include "wudefs.h"
 #include "metadata.h"
-#include "common/common.h"
+#include "misc/common.h"
 #include "raster/unpack.h"
 
 struct tiff_info {
@@ -32,7 +32,7 @@ struct tile_info {
 	tsize_t len;
 };
 
-static void get_metadata_tags(TIFF *tif, struct raw_img *img) {
+static void get_metadata_tags(TIFF *tif, struct wuimg *img) {
 	struct tifftag {
 		ttag_t tag;
 		const char *name;
@@ -50,7 +50,7 @@ static void get_metadata_tags(TIFF *tif, struct raw_img *img) {
 		{TIFFTAG_PAGENAME, "Page name"},
 	};
 
-	struct wu_tree *tree = raw_img_get_metadata(img);
+	struct wu_tree *tree = wuimg_get_metadata(img);
 	if (!tree) {
 		return;
 	}
@@ -74,7 +74,7 @@ static void get_metadata_tags(TIFF *tif, struct raw_img *img) {
 
 // Default and safe libtiff decoding.
 static enum wu_error libtiff_decode(TIFF *tif, struct image_file *infile,
-struct raw_img *img) {
+struct wuimg *img) {
 	TIFFRGBAImage tifimg;
 	char emsg[1024];
 	if (!TIFFRGBAImageBegin(&tifimg, tif, 0, emsg)) {
@@ -92,7 +92,7 @@ struct raw_img *img) {
 		img->alpha = alpha_ignore;
 	}
 
-	enum wu_error st = raw_img_alloc(img);
+	enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {
 		st = TIFFRGBAImageGet(&tifimg, (uint32_t *)img->data,
 			tifimg.width, tifimg.height)
@@ -114,7 +114,7 @@ const uint16_t bps) {
 	}
 }
 
-static enum wu_error read_tiles(TIFF *tif, struct raw_img *img,
+static enum wu_error read_tiles(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info, const enum unpack_op op) {
 	struct tile_info tiles;
 	if (TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tiles.width) != 1
@@ -165,7 +165,7 @@ const struct tiff_info *info, const enum unpack_op op) {
 	return wu_ok;
 }
 
-static enum wu_error read_strips(TIFF *tif, struct raw_img *img,
+static enum wu_error read_strips(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info) {
 	const tsize_t buflen = TIFFStripSize(tif);
 
@@ -190,7 +190,7 @@ const struct tiff_info *info) {
 	return wu_ok;
 }
 
-static void get_colorspace(TIFF *tif, struct raw_img *img) {
+static void get_colorspace(TIFF *tif, struct wuimg *img) {
 	uint32_t len;
 	void *data;
 	if (TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &data) == 1) {
@@ -209,11 +209,11 @@ static void get_colorspace(TIFF *tif, struct raw_img *img) {
 	}
 }
 
-static struct raster_pal * load_palette(TIFF *tif, struct raw_img *img,
+static struct raster_pal * load_palette(TIFF *tif, struct wuimg *img,
 uint16_t bps) {
 	uint16_t *red, *green, *blue;
 	if (TIFFGetField(tif, TIFFTAG_COLORMAP, &red, &green, &blue) == 1) {
-		struct raster_pal *pal = raw_img_palette_init(img);
+		struct raster_pal *pal = wuimg_palette_init(img);
 		if (pal) {
 			const size_t len = 1U << bps;
 			for (size_t i = 0; i < len; ++i) {
@@ -227,7 +227,7 @@ uint16_t bps) {
 	return NULL;
 }
 
-static enum wu_error nih_decode(TIFF *tif, struct raw_img *img,
+static enum wu_error nih_decode(TIFF *tif, struct wuimg *img,
 struct tiff_info *info) {
 	img->channels = (unsigned char)info->spp;
 	enum unpack_op op;
@@ -239,7 +239,7 @@ struct tiff_info *info) {
 		img->bitdepth = (unsigned char)info->bps;
 	}
 
-	if (info->planes > 1 && !raw_img_plane_init(img)) {
+	if (info->planes > 1 && !wuimg_plane_init(img)) {
 		return wu_alloc_error;
 	}
 
@@ -278,7 +278,7 @@ struct tiff_info *info) {
 		}
 	}
 
-	const enum wu_error st = raw_img_alloc(img);
+	const enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {
 		return (info->is_tiled)
 			? read_tiles(tif, img, info, op)
@@ -393,10 +393,10 @@ const struct wu_conf *wuconf) {
 			continue;
 		}
 
-		struct raw_img *img = infile->sub_img + decoded;
+		struct wuimg *img = infile->sub_img + decoded;
 		img->w = w;
 		img->h = h;
-		if (raw_img_exceeds_limit(img, wuconf)) {
+		if (wuimg_exceeds_limit(img, wuconf)) {
 			continue;
 		}
 
@@ -416,7 +416,7 @@ const struct wu_conf *wuconf) {
 			if (status == wu_ok) {
 				break;
 			}
-			raw_img_clear(img);
+			wuimg_clear(img);
 			image_file_error_append(infile, "Native unpacking "
 				"failed, falling back on libtiff.");
 			// fallthrough
@@ -428,7 +428,7 @@ const struct wu_conf *wuconf) {
 			++decoded;
 			get_metadata_tags(tif, img);
 		} else {
-			raw_img_clear(img);
+			wuimg_clear(img);
 		}
 	}
 

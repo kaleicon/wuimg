@@ -3,11 +3,11 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "common/common.h"
-#include "common/endian.h"
-#include "common/file.h"
-#include "common/math.h"
-#include "common/mem.h"
+#include "misc/common.h"
+#include "misc/endian.h"
+#include "misc/file.h"
+#include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/unpack.h"
 
@@ -34,19 +34,19 @@ void tga_cleanup(struct tga_desc *desc) {
 	free(desc->map.extra_pal);
 }
 
-static size_t raw_process(struct raw_img *img, const size_t bytes) {
+static size_t raw_process(struct wuimg *img, const size_t bytes) {
 	if (img->bitdepth == 16) {
 		endian_loop16((uint16_t *)img->data, little_endian, bytes/2);
 	}
 	return bytes;
 }
 
-static size_t raw_load(struct raw_img *img, FILE *ifp) {
-	return raw_process(img, fread(img->data, 1, raw_img_size(img), ifp));
+static size_t raw_load(struct wuimg *img, FILE *ifp) {
+	return raw_process(img, fread(img->data, 1, wuimg_size(img), ifp));
 }
 
-size_t tga_decode_stamp(const struct tga_desc *desc, struct raw_img *stamp) {
-	if (raw_img_alloc_noverify(stamp)) {
+size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp) {
+	if (wuimg_alloc_noverify(stamp)) {
 		fseek(desc->ifp, desc->meta.stamp_offset + 2, SEEK_SET);
 		return raw_load(stamp, desc->ifp);
 	}
@@ -79,7 +79,7 @@ const unsigned char *restrict rle_limit, const size_t pixel_size) {
 	} while (rle + pixel_size < rle_limit);
 }
 
-static size_t rle_load(const struct tga_desc *desc, struct raw_img *img) {
+static size_t rle_load(const struct tga_desc *desc, struct wuimg *img) {
 	const size_t dims = img->w * img->h;
 	const size_t bytedepth = ((size_t)desc->depth + 7) / 8;
 
@@ -103,8 +103,8 @@ static size_t rle_load(const struct tga_desc *desc, struct raw_img *img) {
 
 }
 
-size_t tga_decode(const struct tga_desc *desc, struct raw_img *img) {
-	if (raw_img_alloc_noverify(img)) {
+size_t tga_decode(const struct tga_desc *desc, struct wuimg *img) {
+	if (wuimg_alloc_noverify(img)) {
 		fseek(desc->ifp, desc->data_start, SEEK_SET);
 		switch (desc->type) {
 		case tga_no_image_data:
@@ -129,22 +129,22 @@ struct raster_pal * tga_take_extra_palette(struct tga_desc *desc) {
 }
 
 enum wu_error tga_parse_stamp(const struct tga_desc *desc,
-struct raw_img *main, struct raw_img *stamp) {
+struct wuimg *main, struct wuimg *stamp) {
 	uint8_t buf[2];
 	fseek(desc->ifp, desc->meta.stamp_offset, SEEK_SET);
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
 		return wu_unexpected_eof;
 	}
 
-	if (raw_img_clone(stamp, main)) {
+	if (wuimg_clone(stamp, main)) {
 		stamp->w = buf[0];
 		stamp->h = buf[1];
-		return raw_img_verify(stamp);
+		return wuimg_verify(stamp);
 	}
 	return wu_alloc_error;
 }
 
-static bool read_extension_area(struct tga_desc *desc, struct raw_img *img) {
+static bool read_extension_area(struct tga_desc *desc, struct wuimg *img) {
 	struct tga_metadata *meta = &desc->meta;
 	unsigned char buf[24];
 
@@ -206,7 +206,7 @@ static bool read_extension_area(struct tga_desc *desc, struct raw_img *img) {
 	meta->software.version_number = buf_endian16(buf + 1, little_endian);
 	memcpy(&meta->key_color, buf + 3, sizeof(meta->key_color));
 
-	raw_img_aspect_ratio(img, buf_endian16(buf + 7, little_endian),
+	wuimg_aspect_ratio(img, buf_endian16(buf + 7, little_endian),
 		buf_endian16(buf + 9, little_endian));
 
 	const struct tga_ratio gamma = {
@@ -221,7 +221,7 @@ static bool read_extension_area(struct tga_desc *desc, struct raw_img *img) {
 	return true;
 }
 
-bool tga_parse_footer(struct tga_desc *desc, struct raw_img *img) {
+bool tga_parse_footer(struct tga_desc *desc, struct wuimg *img) {
 	/* TGA footer
 		Offset  Size    Name
 		-26     DWORD   ExtensionOffset;
@@ -244,7 +244,7 @@ bool tga_parse_footer(struct tga_desc *desc, struct raw_img *img) {
 	return false;
 }
 
-static enum wu_error load_colormap(struct tga_desc *desc, struct raw_img *img) {
+static enum wu_error load_colormap(struct tga_desc *desc, struct wuimg *img) {
 	struct raster_pal *pal = malloc(sizeof(*pal));
 	if (!pal) {
 		return wu_alloc_error;
@@ -252,7 +252,7 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct raw_img *img) {
 	switch (desc->type) {
 	case tga_colormap_data:
 	case tga_colormap_rle:
-		raw_img_palette_set(img, pal);
+		wuimg_palette_set(img, pal);
 		break;
 	default:
 		desc->map.extra_pal = pal;
@@ -294,7 +294,7 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct raw_img *img) {
 	return wu_ok;
 }
 
-static enum wu_error validate_header(struct tga_desc *desc, struct raw_img *img,
+static enum wu_error validate_header(struct tga_desc *desc, struct wuimg *img,
 const uint8_t cm_type, const uint8_t type, const uint16_t cm_start,
 const uint16_t cm_len, const uint8_t cm_depth, const uint16_t width,
 const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
@@ -380,10 +380,10 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 	default:
 		return wu_invalid_header;
 	}
-	return raw_img_verify(img);
+	return wuimg_verify(img);
 }
 
-enum wu_error tga_parse_header(struct tga_desc *desc, struct raw_img *img,
+enum wu_error tga_parse_header(struct tga_desc *desc, struct wuimg *img,
 FILE *ifp) {
 	/* TGA header
 		Offset  Size    Name

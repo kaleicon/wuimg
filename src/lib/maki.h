@@ -1,7 +1,7 @@
 #ifndef LIB_MAKI
 #define LIB_MAKI
 
-#include "wudefs.h"
+#include "raster/wuimg.h"
 
 enum maki_version {
 	maki_1a = 'A',
@@ -18,9 +18,9 @@ struct maki_desc {
 
 const char * maki_version_str(enum maki_version version);
 
-size_t maki_decode(const struct maki_desc *desc, struct raw_img *img);
+size_t maki_decode(const struct maki_desc *desc, struct wuimg *img);
 
-enum wu_error maki_parse(struct maki_desc *desc, struct raw_img *img);
+enum wu_error maki_parse(struct maki_desc *desc, struct wuimg *img);
 
 enum wu_error maki_open(struct maki_desc *desc, FILE *ifp);
 

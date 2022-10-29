@@ -16,7 +16,7 @@ const struct wu_conf *wuconf) {
 		return st;
 	}
 
-	if (raw_img_exceeds_limit(&desc.rast, wuconf)) {
+	if (wuimg_exceeds_limit(&desc.rast, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -28,7 +28,7 @@ const struct wu_conf *wuconf) {
 
 	size_t i = 0;
 	while (i < infile->nr) {
-		struct raw_img *img = infile->sub_img + i;
+		struct wuimg *img = infile->sub_img + i;
 		if (!pnm_decode(&desc, img, i)) {
 			break;
 		}

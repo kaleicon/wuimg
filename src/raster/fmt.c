@@ -1,11 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common/math.h"
+#include "misc/math.h"
 #include "raster/fmt.h"
 
-size_t fmt_load_raster(struct raw_img *img, FILE *ifp, const enum endianness e) {
-	const size_t read = fread(img->data, 1, raw_img_size(img), ifp);
+size_t fmt_load_raster(struct wuimg *img, FILE *ifp, const enum endianness e) {
+	const size_t read = fread(img->data, 1, wuimg_size(img), ifp);
 	switch (img->bitdepth) {
 	case 16: endian_loop16((uint16_t *)img->data, e, read/2); break;
 	case 32: endian_loop32((uint32_t *)img->data, e, read/4); break;

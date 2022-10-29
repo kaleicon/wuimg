@@ -11,8 +11,8 @@
 
 #include <linux/input-event-codes.h>
 
-#include "common/math.h"
-#include "raster/memparser.h"
+#include "misc/math.h"
+#include "misc/memparser.h"
 #include "window/wayland.h"
 
 static void null_function() {}

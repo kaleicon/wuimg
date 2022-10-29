@@ -39,7 +39,7 @@ int main(const int argc, char *argv[]) {
 		}
 		enum wu_error err;
 		do {
-			struct raw_img *img;
+			struct wuimg *img;
 			err = dec_iter_image(&image, &img);
 		} while (err == wu_ok);
 		dec_free_image(&image);
