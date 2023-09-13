@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <string.h>
 
 #include <uchardet/uchardet.h>
@@ -28,7 +29,7 @@ struct wustr *out, const char *restrict enc) {
 		return trit_false;
 	}
 
-	UErrorCode err;
+	UErrorCode err = U_ZERO_ERROR;
 	UConverter *from = NULL;
 	if (enc) {
 		from = ucnv_open(enc, &err);

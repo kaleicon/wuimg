@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
 #include "xcursor.h"
 #include "misc/common.h"

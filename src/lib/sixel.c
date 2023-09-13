@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -210,12 +211,11 @@ static void xterm_colormap_init(struct sixel_colormap *map) {
 }
 
 size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
-	const size_t size = wuimg_size(img);
-	struct pix_rgba8 *dst = calloc(1, size);
-	if (!dst) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
-	img->data = (uint8_t *)dst;
+
+	struct pix_rgba8 *dst = (struct pix_rgba8 *)img->data;
 
 	struct sixel_colormap map;
 	xterm_colormap_init(&map);
@@ -231,7 +231,7 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 	while (tp.pos < tp.len) {
 		unsigned char c = mp_next_char_unsafe(&tp);
 		switch (c) {
-			size_t line;
+		size_t line;
 		case graphics_new_line:
 			y += LINE_HEIGHT;
 			// fallthrough
@@ -484,8 +484,8 @@ static int skip_csi(struct mp_parser *tp) {
 }
 
 enum wu_error sixel_open_mem(struct sixel_desc *desc,
-const struct mp_parser mp) {
-	desc->tp = mp;
+const struct map_info *map) {
+	desc->tp = mp_parser_map(*map);
 	struct mp_parser *tp = &desc->tp;
 
 	/* The sixel format begins with the Device Control String, which might

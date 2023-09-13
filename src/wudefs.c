@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -48,8 +49,10 @@ struct wuimg * alloc_sub_images(struct image_file *file, const size_t nr) {
 void image_file_free_if_single(struct image_file *file) {
 	if (!file->events && !file->dec_state && file->nr == 1) {
 		struct wuimg *img = file->sub_img;
-		free(img->data);
-		img->data = NULL;
+		if (!img->borrowed) {
+			free(img->data);
+			img->data = NULL;
+		}
 	}
 }
 
@@ -90,13 +93,6 @@ void image_file_normalize(struct image_file *file) {
 	if (!file->nr) {
 		fatal_bug("Bad image", "No sub-images contained!");
 	}
-	for (size_t i = 0; i < file->nr; ++i) {
-		struct wuimg *img = file->sub_img + i;
-		if (img->mode == image_mode_planar && img->borrowed
-		&& !img->data) {
-			img->data = (void *)(-1);
-		}
-	}
 }
 
 enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) {
@@ -110,12 +106,12 @@ enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) 
 	return wu_ok;
 }
 
-void image_file_error_append(struct image_file *file, const char *str) {
+void image_file_strerror_append(struct image_file *file, const char *str) {
 	wustr_append_line(&file->errors, str, true);
 }
 
-void image_file_status_append(struct image_file *file, const enum wu_error st) {
-	image_file_error_append(file, wu_error_message(st));
+void image_file_error_append(struct image_file *file, const enum wu_error st) {
+	image_file_strerror_append(file, wu_error_message(st));
 }
 
 void image_file_free(struct image_file *file) {
@@ -124,6 +120,9 @@ void image_file_free(struct image_file *file) {
 	free(file->dec_state);
 	wustr_free(&file->errors);
 	tree_unroot(&file->metadata);
+	if (file->map.data) {
+		file_unmap(&file->map);
+	}
 	if (file->ifp) {
 		fclose(file->ifp);
 	}
@@ -139,7 +138,7 @@ enum image_event image_zoom(struct image_context *image, float new_zoom) {
 	const float min = 1.0f/max;
 
 	enum image_event ev = 0;
-	new_zoom = fmaxf(min, fminf(new_zoom, max));
+	new_zoom = fclampf(new_zoom, min, max);
 	if (new_zoom != image->state.zoom) {
 		ev = (new_zoom > image->state.zoom) ? ev_upscale : ev_downscale;
 		image->state.zoom = new_zoom;

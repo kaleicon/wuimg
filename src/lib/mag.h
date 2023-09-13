@@ -1,7 +1,26 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_MAG
 #define LIB_MAG
 
 #include "raster/wuimg.h"
+
+enum mag_screen_flags {
+	mag_screen_200_rows = 1,
+	mag_screen_8_colors = 1 << 1,
+	mag_screen_digital = 1 << 2,
+	mag_screen_256_colors = 1 << 7,
+};
+
+enum mag_screen_mode {
+	mag_screen_mode_pc98_standard = 0,
+	mag_screen_mode_msx_sc7 = mag_screen_200_rows,
+	mag_screen_mode_vm98 = mag_screen_8_colors,
+	mag_screen_mode_pc88_analog_pal = mag_screen_8_colors | mag_screen_200_rows,
+	mag_screen_mode_pc98_old = mag_screen_digital | mag_screen_8_colors,
+	mag_screen_mode_pc88_standard =
+		mag_screen_digital | mag_screen_8_colors | mag_screen_200_rows,
+	mag_screen_mode_msx_sc8 = mag_screen_256_colors | mag_screen_200_rows,
+};
 
 enum mag_msx_screen {
 	mag_msx2_screen7 = 0x0,
@@ -39,13 +58,16 @@ struct mag_desc {
 	FILE *ifp;
 	uint8_t model[4];
 	enum mag_model_code code:8;
+	enum mag_screen_mode screen_mode:8;
 	struct mag_msx msx;
 	size_t row_dwords;
 	struct wustr comm;
 	long null_pos;
 	struct mag_section flag_a, flag_b, color;
-	struct raster_pal *yjk_pal;
+	struct raster_pal *yae;
 };
+
+const char * mag_screen_mode_str(enum mag_screen_mode mode);
 
 const char * mag_msx_screen_str(enum mag_msx_screen flag);
 

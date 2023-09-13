@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <math.h>
 
 #include "misc/common.h"
+#include "misc/math.h"
 #include "raster/mat.h"
 #include "raster/unpack.h"
 
@@ -28,16 +30,18 @@ const double *restrict m2, const int len, const int w2) {
 	}
 }
 
+void mat_mul(double *restrict out, const double *restrict m1,
+const double *restrict m2, const int len, const int h1, const int w2) {
+	for (int y = 0; y < h1; ++y) {
+		vec_mul_mat(out + y*w2, m1 + y*len, m2, len, w2);
+	}
+}
+
 void mat_mul_tofloat(float *restrict out, const double *restrict m1,
 const double *restrict m2, const int len, const int h1, const int w2) {
 	for (int y = 0; y < h1; ++y) {
 		vec_mul_mat_tofloat(out + y*w2, m1 + y*len, m2, len, w2);
 	}
-}
-
-static bool float_ce(const double f1, const double f2) {
-	// _ce is for Close Enough
-	return fabs(f1 - f2) < 1.0/(1 << 16);
 }
 
 static double fms(const double x, const double y, const double z) {

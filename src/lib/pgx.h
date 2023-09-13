@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_PGX
 #define LIB_PGX
 

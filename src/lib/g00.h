@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_G00
 #define LIB_G00
 
@@ -50,10 +51,7 @@ struct g00_desc {
 
 	uint8_t *buf;
 
-	union {
-		struct g00_desc_v1 v1;
-		struct g00_desc_v2 v2;
-	} u;
+	struct g00_desc_v2 v2;
 };
 
 void g00_cleanup(struct g00_desc *desc, struct wuimg *img);

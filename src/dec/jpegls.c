@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: 0BSD
 #include <charls/charls_jpegls_decoder.h>
 
 #include "rast_utils.h"
 #include "raster/strip.h"
 
-static void comment_handler(const void *data, const size_t size, void *ptr) {
-	tree_add_leaf_len(ptr, "Comment", data, size, NULL);
+static int comment_handler(const void *data, const size_t size, void *ptr) {
+	tree_add_leaf_len(ptr, "Comment", wuptr_mem(data, size), NULL);
+	return 0;
 }
 
 static enum wu_error read_data(struct image_file *infile,
@@ -48,8 +50,7 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	img->channels = (uint8_t)frame.component_count;
 	img->bitdepth = (frame.bits_per_sample > 8) ? 16 : 8;
 	img->used_bits = (uint8_t)frame.bits_per_sample;
-	tree_bud_leaf(&infile->metadata, "Bitdepth",
-		(struct wu_leaf) {.type = wu_leaf_signed, .val.d = frame.bits_per_sample});
+	tree_bud_leaf_d(&infile->metadata, "Bitdepth", frame.bits_per_sample);
 
 	switch (mode) {
 	case CHARLS_INTERLEAVE_MODE_NONE:
@@ -76,23 +77,23 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	return wu_ok;
 }
 
-static enum wu_error dec_wrap(struct image_file *infile,
-const struct wu_conf *wuconf, const struct map_info *mm) {
+static enum wu_error jpegls_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	enum wu_error st = wu_alloc_error;
 	charls_jpegls_decoder *dec = charls_jpegls_decoder_create();
 	if (dec) {
-		// Ignore result.
+		// Result can't be ignored here
 		charls_jpegls_errc err = charls_jpegls_decoder_at_comment(dec,
 			comment_handler, &infile->metadata);
 
-		err = charls_jpegls_decoder_set_source_buffer(dec, mm->data,
-			mm->len);
+		err = charls_jpegls_decoder_set_source_buffer(dec,
+			infile->map.data, infile->map.len);
 		if (err == CHARLS_JPEGLS_ERRC_SUCCESS) {
 			st = read_data(infile, wuconf, dec, &err);
 		}
 
 		if (err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-			image_file_error_append(infile,
+			image_file_strerror_append(infile,
 				charls_get_error_message(err));
 		}
 		charls_jpegls_decoder_destroy(dec);
@@ -100,7 +101,4 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 	return st;
 }
 
-enum wu_error jpegls_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	return rast_map_wrap(infile, wuconf, dec_wrap);
-}
+const struct image_fn jpegls_fn = {.mmap = true, .dec = jpegls_dec};

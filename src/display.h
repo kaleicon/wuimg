@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_DISPLAY
 #define WU_DISPLAY
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WUIMG
 #define WUIMG
 
@@ -22,18 +23,19 @@ enum wu_error {
 	wu_unexpected_eof,
 	wu_invalid_signature,
 	wu_invalid_header,
-	wu_invalid_params,
 	wu_unsupported_feature,
 	wu_no_image_data,
 	wu_exceeds_size_limit,
 	wu_int_overflow,
 	wu_decoding_error,
+	wu_invalid_params,
 	wu_display_error,
 	wu_unknown_error,
 };
 
 struct plane_dim {
 	uint8_t subsamp;
+	int8_t pos;
 };
 
 struct plane_info {
@@ -116,6 +118,8 @@ enum wu_error wuimg_alloc(struct wuimg *img);
 
 
 size_t wuimg_plane_resolve(struct wuimg *img);
+
+void wuimg_plane_position(struct wuimg *img, int8_t horz, int8_t vert);
 
 void wuimg_plane_subsamp(struct wuimg *img, uint8_t horz, uint8_t vert);
 

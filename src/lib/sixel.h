@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -23,4 +24,4 @@ enum wu_error sixel_calc_parameters(struct sixel_desc *desc,
 struct wuimg *img);
 
 enum wu_error sixel_open_mem(struct sixel_desc *desc,
-const struct mp_parser mp);
+const struct map_info *map);

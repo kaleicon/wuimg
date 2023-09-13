@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "cicp.h"
 
 static const char BT709[] = "BT.709-6";
@@ -78,8 +79,8 @@ const char * cicp_matrix_str(const enum cicp_matrix matrix) {
 		return "Chroma derived nonconstant luminance";
 	case cicp_matrix_chroma_derived_constant:
 		return "Chroma derived constant luminance";
-	case cicp_matrix_bt2100_2_icpct:
-		return "BT.2100-2 ICpCt";
+	case cicp_matrix_bt2100_2_ictcp:
+		return "BT.2100-2 ICtCp";
 	}
 	return DEFAULT;
 }

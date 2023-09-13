@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

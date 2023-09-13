@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <epoxy/egl.h>
 
 #include "misc/common.h"
@@ -44,9 +45,9 @@ EGLContext context) {
 	if (eglMakeCurrent(display, surface, surface, context) != EGL_TRUE) {
 		return "Couldn't make context current";
 	}
-	if (context != EGL_NO_CONTEXT) {
-		eglSwapInterval(display, 0);
-	}
+//	if (context != EGL_NO_CONTEXT) {
+		eglSwapInterval(display, 1);
+//	}
 	return NULL;
 }
 
@@ -172,7 +173,7 @@ void *native_window, const uint32_t native_visual, const bool transparent) {
 		return CREATE_CONTEXT_FAIL;
 	}
 
-	const EGLint surf_attr[5] = {
+	const EGLint surf_attr[] = {
 		EGL_RENDER_BUFFER, EGL_SINGLE_BUFFER,
 		EGL_NONE,
 	};

@@ -1,24 +1,15 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_WAYLAND
 #define WU_WAYLAND
 
 #include <wayland-client.h>
 #include <wayland-egl.h>
-#include "xdg-shell-client-protocol.h"
+#include "xdg-shell-client-header.h"
 #include <xkbcommon/xkbcommon.h>
 
 #include "conf.h"
 #include "window/base.h"
 #include "window/egl.h"
-
-struct wayland_listeners {
-	struct wl_registry_listener reg;
-	struct wl_seat_listener seat;
-	struct wl_pointer_listener pointer;
-	struct wl_keyboard_listener keyboard;
-	struct xdg_wm_base_listener wm_base;
-	struct xdg_surface_listener surface;
-	struct xdg_toplevel_listener toplevel;
-};
 
 struct wayland_binds {
 	struct wl_compositor *comp;
@@ -46,7 +37,6 @@ struct wayland {
 	struct wl_display *display;
 	struct wl_registry *reg;
 
-	struct wayland_listeners listen;
 	struct wayland_binds binds;
 
 	struct wayland_cursor cursor;
@@ -66,6 +56,8 @@ struct wayland_offscreen {
 void wayland_terminate(struct wayland *wl);
 
 void wayland_set_title(const struct wayland *wl, const char *title);
+
+void wayland_swap_buffers(struct wayland *wl);
 
 void wayland_poll(struct wayland *wl, int msecs);
 

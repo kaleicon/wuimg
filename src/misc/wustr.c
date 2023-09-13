@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5,24 +6,23 @@
 #include "wustr.h"
 #include "misc/math.h"
 
-bool wugrow_reserve(void *restrict ptr_ptr, struct wugrow *grow, size_t extra) {
+bool wugrow_reserve(struct wugrow *grow, size_t extra) {
 	const size_t needed = grow->pos + extra;
 	if (needed >= grow->alloc) {
 		const size_t new_len = zumax(needed,
 			grow->alloc + grow->alloc / 4) + 16;
-		void **ptr = ptr_ptr;
-		void *hold = realloc(*ptr, grow->elem_size * new_len);
+		void *hold = realloc(grow->ptr, grow->elem_size * new_len);
 		if (!hold) {
 			return false;
 		}
-		*ptr = hold;
+		grow->ptr = hold;
 		grow->alloc = new_len;
 	}
 	return true;
 }
 
-bool wugrow_recheck(void *restrict ptr_ptr, struct wugrow *grow) {
-	return wugrow_reserve(ptr_ptr, grow, 0);
+bool wugrow_recheck(struct wugrow *grow) {
+	return wugrow_reserve(grow, 0);
 }
 
 struct wugrow wugrow_init(const size_t elem_size) {
@@ -38,6 +38,10 @@ struct wuptr wuptr_mem(const void *str, const size_t len) {
 
 struct wuptr wuptr_str(const char *str) {
 	return wuptr_mem(str, strlen(str));
+}
+
+struct wuptr wuptr_wustr(const struct wustr w) {
+	return (struct wuptr){.len = w.len, .ptr = w.str};
 }
 
 bool wuptr_suffix(const struct wuptr w1, const struct wuptr w2) {

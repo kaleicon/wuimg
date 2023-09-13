@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -275,7 +276,7 @@ static size_t bt_decode_loop(uint8_t *restrict output, const size_t dims,
 struct bitstrm *bs, const size_t width, uint8_t *restrict table,
 const unsigned depth) {
 	size_t i = 0;
-	for (uint8_t prev = 0; i < dims && bs->pos < bs->len; prev = output[i-1]) {
+	for (uint8_t prev = 0; i < dims - 1 && bs->pos < bs->len; prev = output[i-1]) {
 		size_t dt[2];
 		if (depth == 1 << 4) {
 			dt[0] = read_4bit_delta(bs);
@@ -298,7 +299,6 @@ const unsigned depth) {
 				if (loc[cur] == loc[!cur]) {
 					break;
 				}
-
 				size_t cnt = read_repeat_cnt(bs)
 					- (i == 2);
 				if (cnt*2 + i > dims) {
@@ -323,10 +323,7 @@ size_t pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 		const unsigned colors = (1 << desc->depth);
 		const unsigned table_size = colors*colors;
 		const size_t bslen = max_bitstream_size(desc->ifp, dims);
-		/* The spec recommends that the last 32 bits be zero. We'll
-		 * enforce this to do away with some bounds checks in the
-		 * middle of decoding. */
-		const size_t pad = 4;
+		const size_t pad = 9; // Skip some bounds checks.
 		void *buf = malloc(table_size + bslen + pad);
 		if (buf) {
 			uint8_t *restrict delta_table = buf;
@@ -336,7 +333,7 @@ size_t pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 			const size_t read = fread(bitstream, 1, bslen, desc->ifp);
 			memset(bitstream + read, 0, pad);
 
-			struct bitstrm bs = bitstrm_from_bytes(bitstream, read*8);
+			struct bitstrm bs = bitstrm_from_bytes(bitstream, read);
 			written = bt_decode_loop(img->data, dims, &bs, img->w,
 				delta_table, colors);
 			free(buf);
@@ -355,13 +352,11 @@ const uint16_t height) {
 		return wu_invalid_header;
 	}
 
-	/* The decoding algorithm may require copying from previous rows with
-	 * an offset. If the width is 1, this may result in an offset of 0,
-	 * which will cause segfaults and stuff.
-	 * The algorithm is also meant to work for pixel pairs, so 'width & 1'
-	 * may be more appropiate. */
-	if (width < 2)  {
-		return wu_invalid_header;
+	/* Images of width 2 or less are stored 'without repetition'. I guess
+	 * the bitstream may omit the 'process delta again' bit then, but I
+	 * don't have any samples to check that. Hence, this. */
+	if (width <= 2)  {
+		return wu_unsupported_feature;
 	}
 
 	img->w = width;

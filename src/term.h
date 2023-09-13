@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_TERM
 #define WU_TERM
 

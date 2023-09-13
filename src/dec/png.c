@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
@@ -21,7 +22,7 @@ static void free_png_state(struct png_state *png) {
 
 static void little_trouble_fn(png_struct *png, const char *msg) {
 	struct image_file *infile = png_get_error_ptr(png);
-	image_file_error_append(infile, msg);
+	image_file_strerror_append(infile, msg);
 }
 
 static void big_trouble_fn(png_struct *png, const char *msg) {
@@ -71,13 +72,9 @@ struct image_file *infile) {
 	png_time *time = NULL;
 	png_get_tIME(png, info, &time);
 	if (time) {
-		const struct wu_leaf leaf = {
-			.val.time = utc_to_epoch(time->year, time->month,
-				time->day, time->hour, time->minute,
-				time->second),
-			.type = wu_leaf_time,
-		};
-		tree_bud_leaf(tree, "Time", leaf);
+		const time_t t = utc_to_epoch(time->year, time->month,
+			time->day, time->hour, time->minute, time->second);
+		tree_bud_leaf_time(tree, "Time", t);
 	}
 #endif /* tIME */
 
@@ -192,12 +189,11 @@ const struct wu_conf *wuconf, struct png_state *png) {
 
 	/* We swap bytes ourselves as it's slightly faster for some reason.
 	 * Perhaps not enabling any transforms at all speeds things up. */
-	const bool swap = (which_end() != big_endian) && img->bitdepth > 8;
 	for (int p = 0; p < passes; ++p) {
 		for (size_t y = 0; y < img->h; ++y) {
 			void *row = img->data + stride*y;
 			png_read_row(png->png, row, NULL);
-			if (swap && p == passes - 1) {
+			if (p == passes - 1 && img->bitdepth > 8) {
 				endian_loop16(row, big_endian, stride/2);
 			}
 		}
@@ -251,3 +247,5 @@ const struct wu_conf *wuconf) {
 	}
 	return wu_alloc_error;
 }
+
+const struct image_fn png_fn = {.dec = png_dec};

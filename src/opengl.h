@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_OPENGL
 #define WU_OPENGL
 
 #include <epoxy/gl.h>
 
 #include "wudefs.h"
+#include "misc/common.h"
 
 // Texture swizzling is the newest feature we require, so 3.3 is the minimum
 #define WU_GL_MAJOR 3
@@ -46,20 +48,15 @@ struct gl_context {
 			GLint fn;
 			GLint args;
 		} eotf;
+		GLint positioning;
 	} uni;
 	GLuint pixel_unpack_buf;
 	GLuint timer;
 	GLuint framebuffer;
 
-	float pix_size[2];
-
-	enum gl_update update:8;
-	uint8_t user_alpha;
-	bool unmultiply;
-
 	struct gl_image_info {
-		enum alpha_interpretation alpha:8;
 		enum image_mode mode:8;
+		enum alpha_interpretation alpha:8;
 		unsigned subsamp:4;
 		bool mirror:1;
 		uint8_t rotate;
@@ -67,6 +64,12 @@ struct gl_context {
 		float ratio;
 		float w, h;
 	} tex;
+	float pix_size[2];
+
+	enum gl_update update:8;
+	uint8_t user_alpha;
+	bool unmultiply;
+
 	cmsHPROFILE icc;
 };
 
@@ -74,7 +77,7 @@ const char * gl_strerror(GLenum error);
 
 void gl_terminate(struct gl_context *context);
 
-GLuint64 gl_clock_query(const struct gl_context *context);
+watch_t gl_clock_query(const struct gl_context *context);
 
 void gl_alpha_toggle(struct gl_context *context, int cycle);
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef RASTER_MAT
 #define RASTER_MAT
 
@@ -21,6 +22,9 @@ struct mat43 {
 
 void vec_mul_mat(double *restrict out, const double *restrict v1,
 const double *restrict m2, int len, int w2);
+
+void mat_mul(double *restrict out, const double *restrict m1,
+const double *restrict m2, int len, int h1, int w2);
 
 void mat_mul_tofloat(float *restrict out, const double *restrict m1,
 const double *restrict m2, int len, int h1, int w2);

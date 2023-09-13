@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "bit.h"
 
 uint32_t bit_set32(const uint32_t bits) {

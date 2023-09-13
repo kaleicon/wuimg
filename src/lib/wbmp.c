@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 
 #include "raster/fmt.h"

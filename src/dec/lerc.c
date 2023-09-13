@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <Lerc_c_api.h>
 
 #include "rast_utils.h"
@@ -53,14 +54,15 @@ const unsigned type) {
 	return wuimg_alloc(img);
 }
 
-static enum wu_error dec_wrap(struct image_file *infile,
-const struct wu_conf *wuconf, const struct map_info *mm) {
+static enum wu_error lerc_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	const struct map_info *mm = &infile->map;
 	unsigned info[9];
 	enum wu_error err = map_lerc_to_wu(lerc_getBlobInfo(mm->data,
 		(unsigned)mm->len, info, NULL, ARRAY_LEN(info), 0),
 		wu_invalid_header);
 	if (err != wu_ok) {
-		image_file_error_append(infile, "Failed to get blob info");
+		image_file_strerror_append(infile, "Failed to get blob info");
 		return wu_invalid_header;
 	}
 
@@ -105,6 +107,4 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 	);
 }
 
-enum wu_error lerc_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	return rast_map_wrap(infile, wuconf, dec_wrap);
-}
+const struct image_fn lerc_fn = {.mmap = true, .dec = lerc_dec};

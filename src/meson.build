@@ -1,85 +1,125 @@
-internal_fmts = [
-	'avs',
-	'dib',
-	'dpx',
-	'farbfeld',
-	'g00',
-	'hg3',
-	'mac',
-	'mag',
-	'maki',
-	'msx',
-	'pcx',
-	'pdt',
-	'pgx',
-	'pi',
-	'pic',
-	'pictor',
-	'pnm',
-	'prt',
-	'px',
-	'qoi',
-	'sgi',
-	'sixel',
-	'sun',
-	'tga',
-	'tim',
-	'tlg',
-	'wbmp',
-	'wpx',
-	'xbm',
-	'xcursor',
-	'xyz']
+# SPDX-License-Identifier: 0BSD
+fmt_map = {
+	'internal': [
+		'avs',
+		'dib',
+		'dpx',
+		'farbfeld',
+		'g00',
+		'hg3',
+		'mac',
+		'mag',
+		'maki',
+		'msx',
+		'pcx',
+		'pdt',
+		'pgx',
+		'pi',
+		'pic',
+		'pictor',
+		'pnm',
+		'prt',
+		'px',
+		'qoi',
+		'sgi',
+		'sixel',
+		'sun',
+		'tga',
+		'tim',
+		'tlg',
+		'wbmp',
+		'wpx',
+		'xbm',
+		'xcursor',
+		'xyz'
+	],
 
-external_fmts = [
-	'avif',
-	'flif',
-	'gif',
-	'heif',
-	'jbig',
-	'jpeg',
-	'jpeg2000',
-	'jpegls',
-	'jpegxl',
-	'Lerc',
-	'png',
-	'raw',
-	'svg',
-	'tiff',
-	'webp']
+	'external': [
+		'avif',
+		'flif',
+		'gif',
+		'heif',
+		'jbig',
+		'jpeg',
+		'jpeg2000',
+		'jpegls',
+		'jpegxl',
+		'Lerc',
+		'png',
+		'raw',
+		'svg',
+		'tiff',
+		'webp'
+	],
+
+	'freerider': [
+		'bmz',
+	],
+}
+
+pkg_map = {
+	'bmz': ['zlib'],
+	'hg3': ['zlib'],
+	'xyz': ['zlib'],
+
+	'jpeg2000': ['libopenjp2'],
+	'jpegls': ['charls'],
+	'jpegxl': ['libjxl', 'libjxl_threads'],
+	'svg': ['librsvg-2.0'],
+	'webp': ['libwebpdemux']
+}
 
 dep_list = []
 src_list = []
 conf_data = configuration_data()
 
-pkg_map = {'jpeg2000': 'libopenjp2', 'jpegls': 'charls',
-	'jpegxl': 'libjxl', 'svg': 'librsvg-2.0', 'webp': 'libwebpdemux'}
-foreach f : external_fmts
-	state = get_option(f)
-	if f in pkg_map
-		dep = dependency(pkg_map[f], required : state)
-	else
-		dep = cc.find_library(f, required : state)
-	endif
-
-	if dep.found()
-		dep_list += dep
-		src_list += ''.join(['dec/', f.to_lower(), '.c'])
-		conf_data.set('WU_ENABLE_' + f.to_upper(), true)
-	endif
-endforeach
-
-extra_deps = {'hg3': 'zlib', 'xyz': 'zlib'}
-foreach f : internal_fmts
-	if not get_option(f).disabled()
-		src_list += ''.join(['lib/', f, '.c'])
-		src_list += ''.join(['dec/', f, '.c'])
-		conf_data.set('WU_ENABLE_' + f.to_upper(), true)
-		if f in extra_deps
-			dep_list += dependency(extra_deps[f])
+foreach cat, fmts : fmt_map
+	foreach f : fmts
+		state = get_option(f)
+		deps = []
+		if f in pkg_map
+			foreach lib : pkg_map[f]
+				deps += dependency(lib, required : state)
+			endforeach
+		elif cat == 'external'
+			deps += cc.find_library(f, required : state)
 		endif
-	endif
+
+		enable = true
+		foreach d : deps
+			if not d.found()
+				enable = false
+			endif
+		endforeach
+
+		if state.require(enable).allowed()
+			conf_data.set('WU_ENABLE_' + f.to_upper(), true)
+			dep_list += deps
+			if cat != 'freerider'
+				src_list += ''.join(['dec/', f.to_lower(), '.c'])
+				if cat == 'internal'
+					src_list += ''.join(['lib/', f.to_lower(), '.c'])
+				endif
+			endif
+		endif
+	endforeach
 endforeach
+
+dep_list += [cc.find_library('m', required : false),
+	dependency('exiv2'),
+	dependency('lcms2'),
+	dependency('icu-i18n'),
+	dependency('uchardet')]
+
+view_dep_list = [dependency('libarchive'),
+	dependency('epoxy'),
+	dependency('glfw3'),
+	dependency('gbm'),
+	dependency('libdrm'),
+	cc.find_library('rt'),
+	dependency('wayland-client'),
+	dependency('wayland-egl'),
+	dependency('xkbcommon')]
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : conf_data)
 dec_comptime = executable('dec_comptime', 'dec_comptime.c')
@@ -125,23 +165,7 @@ src_list += [custom_target('dec_maps',
 	'raster/unpack.c',
 	'raster/wuimg.c']
 
-dep_list += [cc.find_library('m', required : false),
-	dependency('exiv2'),
-	dependency('lcms2'),
-	dependency('icu-i18n'),
-	dependency('uchardet')]
-
-wayland_scanner = find_program('wayland-scanner')
-xdg_shell_xml = '/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml'
-view_src_list = [
-	custom_target('xdg-shell-protocol',
-		output : ['xdg-shell-protocol.c'],
-		command : [wayland_scanner, 'private-code', xdg_shell_xml, '@OUTPUT@']),
-	custom_target('xdg-shell-client-protocol',
-		output : ['xdg-shell-client-protocol.h'],
-		command : [wayland_scanner, 'client-header', xdg_shell_xml, '@OUTPUT@']),
-
-	'display.c',
+view_src_list = ['display.c',
 	'events.c',
 	'extract.c',
 	'filesystem.c',
@@ -155,23 +179,23 @@ view_src_list = [
 	'window/drm.c',
 	'window/wayland.c']
 
-view_dep_list = [
-	dependency('libarchive'),
-
-	dependency('epoxy'),
-	dependency('glfw3'),
-	dependency('gbm'),
-	dependency('libdrm'),
-
-	cc.find_library('rt'),
-	dependency('wayland-client'),
-	dependency('wayland-egl'),
-	dependency('xkbcommon')]
+wayland_scanner = find_program('wayland-scanner')
+protocol_names = ['xdg-shell']
+type = [['private-code', '.c'], ['client-header', '.h']]
+foreach p : protocol_names
+	foreach t : type
+		name = '-'.join([p, t[0]])
+		path = '/usr/share/wayland-protocols/stable/%/%.xml'.replace('%', p)
+		view_src_list += custom_target(name,
+			output : [name + t[1]],
+			command : [wayland_scanner, t[0], path, '@OUTPUT@'])
+	endforeach
+endforeach
 
 wuview = executable('wu', ['main.c'] + src_list + view_src_list,
 	dependencies : dep_list + view_dep_list,
 	install : true)
-if get_option('fuzzer').enabled()
+if get_option('compile_fuzzer')
 	wufuzz = executable('wu-fuzz', ['main_fuzz.c'] + src_list,
 		dependencies : dep_list,
 		install : true)

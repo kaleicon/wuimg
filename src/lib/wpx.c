@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -85,6 +86,7 @@ void wpx_ia2_cleanup(struct wpx_ia2_desc *desc) {
 	free_array(&desc->mys4);
 	free_array(&desc->mys3);
 	free_array(&desc->frames);
+	free(desc->dir.sections);
 }
 
 static void free_retriever(struct wpx_retriever *rt) {
@@ -496,6 +498,9 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img) {
 		}
 		img->channels = 4;
 	} else if (desc->pal) {
+		if (img->channels != 1) {
+			return wu_invalid_header;
+		}
 		wuimg_palette_set(img, desc->pal);
 		desc->pal = NULL;
 	}
@@ -525,6 +530,20 @@ struct wpx_bmp_desc *frame, const uint32_t i) {
 		return wu_unexpected_eof;
 	}
 	return wu_invalid_params;
+}
+
+bool wpx_ia2_list_get(const struct wpx_ia2_list *list, const uint32_t idx,
+struct wuptr *str) {
+	if (idx < list->idx.nr) {
+		const uint32_t pos = list->idx.val[idx];
+		if (pos < list->str_len) {
+			const char *s = list->str + pos;
+			str->ptr = (const uint8_t *)s;
+			str->len = strnlen(s, list->str_len - pos);
+			return true;
+		}
+	}
+	return false;
 }
 
 static enum wu_error alloc_section_data(struct wpx_ia2_desc *desc,
@@ -613,16 +632,16 @@ enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc) {
 			st = read_array(desc, s, &desc->mys5, s->decomp_size/4);
 			break;
 		case wpx_ia2_name_idx:
-			read_list_idx(desc, s, &desc->names);
+			st = read_list_idx(desc, s, &desc->names);
 			break;
 		case wpx_ia2_names:
-			read_list_str(desc, s, &desc->names);
+			st = read_list_str(desc, s, &desc->names);
 			break;
 		case wpx_ia2_sfx_idx:
-			read_list_idx(desc, s, &desc->sfx);
+			st = read_list_idx(desc, s, &desc->sfx);
 			break;
 		case wpx_ia2_sfx:
-			read_list_str(desc, s, &desc->sfx);
+			st = read_list_str(desc, s, &desc->sfx);
 			break;
 		default:
 			break;

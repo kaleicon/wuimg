@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <setjmp.h>
 
@@ -39,15 +40,13 @@ struct jpeg_state {
 	jmp_buf jmp;
 };
 
-__attribute__((unused))
 static void joutput_message(struct jpeg_common_struct *dinfo) {
 	struct image_file *infile = dinfo->client_data;
 	char msg[JMSG_LENGTH_MAX];
 	(*dinfo->err->format_message)(dinfo, msg);
-	image_file_error_append(infile, msg);
+	image_file_strerror_append(infile, msg);
 }
 
-__attribute__((unused))
 static void jerror_exit(struct jpeg_common_struct *dinfo) {
 	struct image_file *infile = dinfo->client_data;
 	struct jpeg_state *js = infile->dec_state;
@@ -79,12 +78,14 @@ static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
 		jpeg_parse_length = 2,
 	} state = jpeg_parse_marker;
 	for (int c; (c = getc(ifp)) != EOF;) {
-		if (state == jpeg_parse_marker) {
+		switch (state) {
+		case jpeg_parse_marker:
 			switch (c) {
 			case 0xD8:
-				if (!wugrow_recheck(&js->soi_offsets, &grow)) {
+				if (!wugrow_recheck(&grow)) {
 					return 0;
 				}
+				js->soi_offsets = grow.ptr;
 				js->soi_offsets[grow.pos] = ftell(ifp) - 2;
 				++grow.pos;
 				state = jpeg_parse_normal;
@@ -100,15 +101,20 @@ static size_t search_file_offsets(FILE *ifp, struct jpeg_state *js) {
 			default:
 				state = jpeg_parse_length;
 			}
-		} else if (state == jpeg_parse_length) {
-			long len = marker_len(ifp, c);
+			break;
+		case jpeg_parse_length:
+			;long len = marker_len(ifp, c);
 			if (len == EOF) {
-				break;
+				return grow.pos + 1;
 			}
 			fseek(ifp, len, SEEK_CUR);
 			state = jpeg_parse_normal;
-		} else if (c == 0xFF) {
-			state = jpeg_parse_marker;
+			break;
+		case jpeg_parse_normal:
+			if (c == 0xFF) {
+				state = jpeg_parse_marker;
+			}
+			break;
 		}
 	}
 	return grow.pos + 1;
@@ -237,13 +243,9 @@ struct icc_assembler *icc, const bool is_first) {
 		sprintf(app + 3, "%hhu", (uint8_t)(mk->marker - JPEG_APP0));
 
 		tree_add_leaf_utf8(branch, "Type", app);
-		tree_bud_leaf(branch, "Size",
-			(struct wu_leaf){
-				.val.u = mk->data_length,
-				.type = wu_leaf_unsigned
-			});
-		tree_add_leaf_len(branch, "Data start", mk->data,
-			zumin(12, mk->data_length), NULL);
+		tree_bud_leaf_u(branch, "Size", mk->data_length);
+		tree_add_leaf_len(branch, "Data start",
+			wuptr_mem(mk->data, zumin(12, mk->data_length)), NULL);
 	}
 	return wu_ok;
 }
@@ -259,8 +261,8 @@ const bool is_first) {
 	}
 	while (mk) {
 		if (mk->marker == JPEG_COM) {
-			tree_add_leaf_len(metadata, "Comment", mk->data,
-				mk->data_length, NULL);
+			tree_add_leaf_len(metadata, "Comment",
+				wuptr_mem(mk->data, mk->data_length), NULL);
 		} else {
 			status = parse_markers(mk, metadata, infile, js, &icc,
 				is_first);
@@ -366,22 +368,23 @@ const struct wu_conf *wuconf, const int i) {
 	dinfo->raw_data_out = TRUE;
 	dinfo->out_color_space = dinfo->jpeg_color_space;
 	dinfo->do_block_smoothing = FALSE;
-	if (wuconf->jpeg_fast_dct) {
-		dinfo->dct_method = JDCT_FASTEST;
+	dinfo->dct_method = wuconf->jpeg_fast_dct
+		? JDCT_FASTEST : JDCT_DEFAULT;
+
+	jpeg_calc_output_dimensions(dinfo);
+	img->w = dinfo->output_width;
+	img->h = dinfo->output_height;
+	if (wuimg_exceeds_limit(img, wuconf)) {
+		return wu_exceeds_size_limit;
 	}
 
 	jpeg_start_decompress(dinfo);
 
-	img->w = dinfo->output_width;
-	img->h = dinfo->output_height;
 	img->channels = (unsigned char)dinfo->output_components;
 	img->bitdepth = 8;
 	wuimg_align(img, DCTSIZE);
 	if (!set_colorspace(img, dinfo)) {
 		return wu_alloc_error;
-	}
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
 	}
 
 	enum wu_error status = wuimg_alloc(img);
@@ -406,9 +409,7 @@ enum wu_error jpeg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
 	if (ev) {
-		if (!infile->sub_img[state->idx].data) {
-			return decode_img(infile, wuconf, state->idx);
-		}
+		return decode_img(infile, wuconf, state->idx);
 	} else {
 		clean_jpeg_state(infile);
 	}
@@ -417,29 +418,24 @@ const enum image_event ev) {
 
 enum wu_error jpeg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	if (!alloc_sub_images(infile, 1)) {
-		return wu_alloc_error;
+	(void)wuconf;
+	if (alloc_sub_images(infile, 1)) {
+		struct jpeg_state *js = malloc(sizeof(*js));
+		if (js) {
+			infile->dec_state = js;
+
+			js->dinfo.client_data = infile;
+			js->dinfo.err = jpeg_std_error(&js->jerr);
+			js->jerr.error_exit = jerror_exit;
+			js->jerr.output_message = joutput_message;
+			js->soi_offsets = NULL;
+
+			jpeg_create_decompress(&js->dinfo);
+			infile->events = ev_subcycle;
+			return wu_ok;
+		}
 	}
-
-	struct jpeg_state *js = malloc(sizeof(*js));
-	if (!js) {
-		return wu_alloc_error;
-	}
-	infile->dec_state = js;
-
-	js->dinfo.client_data = infile;
-	js->dinfo.err = jpeg_std_error(&js->jerr);
-	js->jerr.error_exit = jerror_exit;
-	js->jerr.output_message = joutput_message;
-	js->soi_offsets = NULL;
-
-	jpeg_create_decompress(&js->dinfo);
-
-	const enum wu_error status = decode_img(infile, wuconf, 0);
-	if (status == wu_ok && infile->nr > 1) {
-		infile->events = ev_subcycle;
-	} else {
-		clean_jpeg_state(infile);
-	}
-	return status;
+	return wu_alloc_error;
 }
+
+const struct image_fn jpeg_fn = {.dec = jpeg_dec, .callback = jpeg_callback};

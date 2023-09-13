@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_EVENTS
 #define WU_EVENTS
 

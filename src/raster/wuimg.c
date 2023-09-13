@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -88,7 +89,7 @@ static void find_better_alignment(struct wuimg *img) {
 
 static size_t subsamp_dim(const size_t dim, struct plane_dim *s) {
 	if (s->subsamp > 1) {
-		return (dim + 1) / s->subsamp;
+		return (dim + (s->subsamp - 1)) / s->subsamp;
 	}
 	s->subsamp = 1;
 	return dim;
@@ -232,7 +233,7 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 
 	if (!img->layout) {
 		if (img->mode == image_mode_palette || img->channels >= 3
-		|| img->attr == pix_pack_332) {
+		|| img->attr == pix_pack_332 || img->attr == pix_pack_1555) {
 			img->layout = pix_rgba;
 		} else {
 			img->layout = pix_gray;
@@ -284,7 +285,7 @@ size_t wuimg_plane_resolve(struct wuimg *img) {
 
 static void plane_alloc(struct wuimg *img) {
 	const size_t total = wuimg_plane_resolve(img);
-	img->data = malloc(total);
+	img->data = calloc(1, total);
 	if (img->data) {
 		struct plane_info *p = img->u.planes->p;
 		size_t pos = 0;
@@ -299,7 +300,7 @@ bool wuimg_alloc_noverify(struct wuimg *img) {
 	if (img->mode == image_mode_planar) {
 		plane_alloc(img);
 	} else {
-		img->data = malloc(wuimg_size(img));
+		img->data = calloc(1, wuimg_size(img));
 	}
 	return img->data;
 }
@@ -317,6 +318,19 @@ static void set_img_mode(struct wuimg *img, const enum image_mode mode) {
 		fatal_bug("Bad image mode", "Image mode had been set previously");
 	}
 	img->mode = mode;
+}
+
+void wuimg_plane_position(struct wuimg *img, const int8_t horz,
+const int8_t vert) {
+	struct plane_info *p = img->u.planes->p;
+	if (img->channels >= 2) {
+		if (img->channels >= 3) {
+			p[2].x.pos = horz;
+			p[2].y.pos = vert;
+		}
+		p[1].x.pos = horz;
+		p[1].y.pos = vert;
+	}
 }
 
 void wuimg_plane_subsamp(struct wuimg *img, const uint8_t horz,
@@ -352,7 +366,7 @@ struct raster_pal *pal) {
 }
 
 struct raster_pal * wuimg_palette_init(struct wuimg *img) {
-	return wuimg_palette_set(img,  malloc(sizeof(struct raster_pal)));
+	return wuimg_palette_set(img,  calloc(1, sizeof(struct raster_pal)));
 }
 
 int wuimg_frame_prev_keyframe(struct wuimg *img, const int current, int i) {
@@ -440,15 +454,19 @@ void wuimg_clear(struct wuimg *img) {
 
 
 static void print_colorspace_data(const struct color_space *cs) {
-	puts("  Colorspace:");
-	printf("   Profile type: %s\n", color_space_type_str(cs));
-	printf("   Range: %s\n", cs->limited ? "limited" : "full");
-	printf("   Matrix: %s\n", cicp_matrix_str(cs->matrix));
+	printf("  Colorspace:\n"
+		"   Type: %s\n"
+		"   Range: %s\n"
+		"   Matrix: %s\n",
+		color_space_type_str(cs),
+		cs->limited ? "limited" : "full",
+		cicp_matrix_str(cs->matrix));
 	switch (cs->type) {
 	case color_profile_enum:
-		printf("   Transfer: %s\n",
-			cicp_transfer_str(cs->transfer, cs->matrix));
-		printf("   Primaries: %s\n", cicp_primaries_str(cs->primaries));
+		printf("   Transfer: %s\n"
+			"   Primaries: %s\n",
+			cicp_transfer_str(cs->transfer, cs->matrix),
+			cicp_primaries_str(cs->primaries));
 		break;
 	case color_profile_custom:
 		;const struct color_profile *prof = &cs->desc->u.prof;
@@ -467,35 +485,47 @@ static void print_colorspace_data(const struct color_space *cs) {
 }
 
 static void print_more_data(const struct wuimg *img, const int verbosity) {
-	if (img->align_sh) {
-		printf("  Alignment: %d\n", img->align_sh);
-	}
-	fputs("  Pixel layout: ", stdout);
+	fputs("  Layout: ", stdout);
 	pix_layout_print(img->layout, stdout);
-	if (img->used_bits != img->bitdepth) {
-		printf("  Real bitdepth: %d\n", img->used_bits);
-	}
-	if (img->rotate) {
-		printf("  Rotation: %d\n", img->rotate);
-	}
-	if (img->mirror) {
-		puts("  Mirror: yes");
-	}
-	printf("  Alpha: %d\n", img->alpha);
-	if (img->ratio != 1) {
-		printf("  Ratio: %g\n", img->ratio);
-	}
+	printf("  Alignment: %d\n"
+		"  Rotation: %d\n"
+		"  Mirror: %s\n"
+		"  Alpha: %d\n"
+		"  Ratio: %g\n"
+		"  Bits used: %d\n",
+		img->align_sh, img->rotate, img->mirror ? "yes" : "no",
+		img->alpha, img->ratio, img->used_bits);
 
 	print_colorspace_data(&img->cs);
 	if (img->mode == image_mode_planar) {
-		struct image_planes *p = img->u.planes;
-		fputs("  Subsampling: ", stdout);
-		for (int i = 0; i < img->channels; ++i) {
-			printf("%hhu%hhu%c", p->p[i].x.subsamp, p->p[i].y.subsamp,
-				(i == img->channels - 1) ? '\n' : ':');
-		}
-		if (p->v_pad) {
-			printf("  Vertical alignment: %d\n", p->v_pad);
+		const struct image_planes *planes = img->u.planes;
+		const struct plane_info *p = planes->p;
+		fputs("  Planes:\n", stdout);
+		printf("   Vertical alignment: %d\n", planes->v_pad);
+		if (verbosity > 2) {
+			for (int i = 0; i < img->channels; ++i) {
+				printf("   Plane %d:\n"
+					"    Subsampling: %d:%d\n"
+					"    Positioning: %d:%d\n"
+					"    Width: %zu\n"
+					"    Height: %zu\n"
+					"    Stride: %zu\n",
+					i,
+					p[i].x.subsamp, p[i].y.subsamp,
+					p[i].x.pos, p[i].y.pos,
+					p[i].w, p[i].h, p[i].stride);
+			}
+		} else {
+			fputs("   Subsampling: ", stdout);
+			for (int i = 0; i < img->channels; ++i) {
+				printf("%d:%d%c", p[i].x.subsamp, p[i].y.subsamp,
+					(i == img->channels - 1) ? '\n' : '/');
+			}
+			fputs("   Positioning: ", stdout);
+			for (int i = 0; i < img->channels; ++i) {
+				printf("%d:%d%c", p[i].x.pos, p[i].y.pos,
+					(i == img->channels - 1) ? '\n' : '/');
+			}
 		}
 	}
 	if (img->metadata) {
@@ -541,8 +571,8 @@ size_t wuimg_print(const struct wuimg *img, const int verbosity) {
 	}
 
 	size_t size = 0;
-	if (img->data) {
-		size += print_dimensions(img);
+	if (img->data || (img->mode == image_mode_planar && img->u.planes)) {
+		size = print_dimensions(img);
 	} else {
 		puts("Not loaded");
 	}

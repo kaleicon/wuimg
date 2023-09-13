@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef RASTER_CICP
 #define RASTER_CICP
 
@@ -52,7 +53,7 @@ enum cicp_matrix {
 	cicp_matrix_smpte_st_2085 = 11,
 	cicp_matrix_chroma_derived_nonconstant = 12,
 	cicp_matrix_chroma_derived_constant = 13,
-	cicp_matrix_bt2100_2_icpct = 14,
+	cicp_matrix_bt2100_2_ictcp = 14,
 };
 
 const char * cicp_primaries_str(enum cicp_primaries primaries);

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_WINDOW_GLFW
 #define WU_WINDOW_GLFW
 

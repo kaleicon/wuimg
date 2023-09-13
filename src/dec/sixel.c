@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,12 +11,14 @@ static size_t dec(const void *ptr, struct wuimg *img) {
 static enum wu_error parse(void *ptr, struct wuimg *img) {
 	return sixel_calc_parameters(ptr, img);
 }
-static enum wu_error mopen(void *ptr, const struct mp_parser mp) {
-	return sixel_open_mem(ptr, mp);
+static enum wu_error open(void *ptr, struct image_file *infile) {
+	return sixel_open_mem(ptr, &infile->map);
 }
 
 enum wu_error sixel_dec(struct image_file *infile, const struct wu_conf *conf) {
 	struct sixel_desc desc;
-	return rast_trivial_map(infile, conf, &desc, mopen, parse, NULL, dec,
+	return rast_trivial_dec(infile, conf, &desc, open, parse, NULL, dec,
 		NULL);
 }
+
+const struct image_fn sixel_fn = {.mmap = true, .dec = sixel_dec};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "icc.h"
 #include "term.h"
 

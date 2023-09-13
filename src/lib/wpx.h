@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_WPX
 #define LIB_WPX
 
@@ -85,6 +86,9 @@ void wpx_ia2_cleanup(struct wpx_ia2_desc *desc);
 
 enum wu_error wpx_ia2_set_frame(const struct wpx_ia2_desc *desc,
 struct wpx_bmp_desc *frame, uint32_t i);
+
+bool wpx_ia2_list_get(const struct wpx_ia2_list *list, uint32_t idx,
+struct wuptr *str);
 
 enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc);
 

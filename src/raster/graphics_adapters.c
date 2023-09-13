@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <string.h>
 
 #include "misc/math.h"
@@ -63,15 +64,20 @@ const align_t align, const bool paletted) {
 
 static int unpack_ykj_chroma(const uint8_t *src) {
 	const unsigned n = (src[0] & 0x07u) | ((src[1] & 0x07u) << 3);
-	return (int)((n ^ 0x20) - 0x20);
+	return (int)((n ^ 0x20) - 0x20); // Propagate sign
 }
 
-void v9958_ykj_to_grb(uint8_t *restrict dst, const uint8_t *restrict src,
+void v9958_ykj_to_grb(upack1555_t *dst, const uint8_t *restrict src,
 const size_t dwords, const struct raster_pal *yae) {
 	/*
 		G = Y + K
 		R = Y + J
 		B = 5*Y/4 - J/2 - K/4
+	 * Where
+		Y is an unsigned 5-bit int
+		K and J are signed 6-bit ints
+		Division is floored (a.k.a. integer division)
+		G, R, and B are clamped to [0, 0x1f]
 	*/
 	for (size_t i = 0; i < dwords; ++i) {
 		const int k = unpack_ykj_chroma(src + i*4);
@@ -79,17 +85,17 @@ const size_t dwords, const struct raster_pal *yae) {
 		for (size_t p = 0; p < 4; ++p) {
 			const size_t pos = i*4 + p;
 			const int y = src[pos] >> 3;
+			int g, r, b;
 			if (yae && (y & 1)) {
-				memcpy(dst + pos*3, yae->color + y/2,
-					(i + 1 == dwords) ? 3 : 4);
+				g = yae->color[y/2].r;
+				r = yae->color[y/2].g;
+				b = yae->color[y/2].b;
 			} else {
-				const int g = iclamp(y + k, 0, 0x1f);
-				const int r = iclamp(y + j, 0, 0x1f);
-				const int b = iclamp(y*5/4 - j/2 - k/4, 0, 0x1f);
-				dst[pos*3] = (uint8_t)g;
-				dst[pos*3+1] = (uint8_t)r;
-				dst[pos*3+2] = (uint8_t)b;
+				g = iclamp(y + k, 0, 0x1f);
+				r = iclamp(y + j, 0, 0x1f);
+				b = iclamp(y*5/4 - j/2 - k/4, 0, 0x1f);
 			}
+			dst[pos] = (upack1555_t)(b << 10 | r << 5 | g);
 		}
 	}
 }

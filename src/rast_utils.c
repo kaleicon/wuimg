@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 
 #include "raster/fmt.h"
 #include "rast_utils.h"
 
-static enum wu_error common_trivial(struct image_file *infile,
+enum wu_error rast_trivial_opened(struct image_file *infile,
 const struct wu_conf *wuconf, void *desc, rast_vparse_t parse,
 rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
 	struct wuimg *img = alloc_sub_images(infile, 1);
@@ -28,45 +29,18 @@ rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
 	return st;
 }
 
-enum wu_error rast_trivial_map(struct image_file *infile,
-const struct wu_conf *wuconf, void *desc, rast_vmopen_t mopen,
-rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
-	struct map_info mm;
-	enum wu_error st = wu_open_error;
-	if (file_map(&mm, infile->ifp)) {
-		st = (*mopen)(desc, mp_parser_mem(mm.len, mm.data));
-		if (st == wu_ok) {
-			st = common_trivial(infile, wuconf, desc, parse, meta,
-				dec, cleanup);
-		}
-		file_unmap(&mm);
-	}
-	return st;
-}
-
 enum wu_error rast_trivial_dec(struct image_file *infile,
 const struct wu_conf *wuconf, void *desc, rast_vopen_t open,
 rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
-	enum wu_error st = (*open)(desc, infile->ifp);
+	enum wu_error st = (*open)(desc, infile);
 	if (st == wu_ok) {
-		st = common_trivial(infile, wuconf, desc, parse, meta, dec,
-			cleanup);
+		st = rast_trivial_opened(infile, wuconf, desc, parse, meta,
+			dec, cleanup);
 	}
 	return st;
 }
 
-enum wu_error rast_map_wrap(struct image_file *infile,
-const struct wu_conf *wuconf, rast_map_t wrap_fn) {
-	struct map_info mm;
-	enum wu_error err = wu_open_error;
-	if (file_map(&mm, infile->ifp)) {
-		err = (*wrap_fn)(infile, wuconf, &mm);
-		file_unmap(&mm);
-	}
-	return err;
-}
-
-enum wu_error rast_fread_dec(struct image_file *infile,
+enum wu_error rast_trivial_fread(struct image_file *infile,
 const struct wu_conf *wuconf, rast_open_t open_fn) {
 	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (img) {

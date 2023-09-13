@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -98,7 +99,7 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 	}
 
 	if (new_zoom > ds->dec_scale
-	|| (wuconf->svg_redraw == svg_anyscale && new_zoom != ds->dec_scale)) {
+	|| (wuconf->svg_redraw == svg_scale && new_zoom != ds->dec_scale)) {
 		state->zoom = 1;
 		state->x_offset *= new_zoom / ds->dec_scale;
 		state->y_offset *= new_zoom / ds->dec_scale;
@@ -126,13 +127,8 @@ const struct wu_conf *wuconf) {
 	}
 	infile->dec_state = ds;
 
-	struct map_info map;
-	if (!file_map(&map, infile->ifp)) {
-		return wu_alloc_error;
-	}
-
-	ds->handle = rsvg_handle_new_from_data(map.data, map.len, NULL);
-	file_unmap(&map);
+	ds->handle = rsvg_handle_new_from_data(infile->map.data,
+		infile->map.len, NULL);
 	if (!ds->handle) {
 		return wu_open_error;
 	}
@@ -166,9 +162,12 @@ const struct wu_conf *wuconf) {
 	if (err == wu_ok && !reached_limit) {
 		switch (wuconf->svg_redraw) {
 		case svg_upscale: infile->events = ev_upscale; break;
-		case svg_anyscale: infile->events = ev_scale; break;
+		case svg_scale: infile->events = ev_scale; break;
 		default: break;
 		}
 	}
 	return err;
 }
+
+const struct image_fn svg_fn = {.mmap = true,
+	.dec = svg_dec, .callback = svg_callback};

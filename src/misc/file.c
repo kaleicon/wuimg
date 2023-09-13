@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 
 #include <unistd.h>
@@ -26,9 +27,10 @@ bool file_read_pi_comm(struct wustr *comm, FILE *ifp) {
 			}
 			return true;
 		}
-		if (!wugrow_recheck(&buf, &grow)) {
+		if (!wugrow_recheck(&grow)) {
 			break;
 		}
+		buf = grow.ptr;
 		buf[grow.pos] = (uint8_t)c;
 		++grow.pos;
 	}

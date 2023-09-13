@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 
 #include "rast_utils.h"
@@ -58,7 +59,7 @@ const struct wu_conf *wuconf) {
 			case xcursor_chunk_comment:
 				tree_add_leaf_len(&infile->metadata,
 					xcursor_comment_type_str(chunk.type),
-					data, chunk.len, NULL);
+					wuptr_mem(data, read), NULL);
 				free(data);
 				break;
 			case xcursor_chunk_image:
@@ -73,3 +74,5 @@ const struct wu_conf *wuconf) {
 	xcursor_free(&desc);
 	return image_file_total_decoded(infile, o);
 }
+
+const struct image_fn xcursor_fn = {.dec = xcursor_dec};

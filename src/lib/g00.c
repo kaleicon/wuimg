@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -23,13 +24,12 @@ void g00_cleanup(struct g00_desc *desc, struct wuimg *img) {
 		if (img) {
 			img->data = NULL;
 		}
+		free(desc->buf);
 		break;
 	case g00_v2:
-		;struct g00_desc_v2 *v2 = &desc->u.v2;
-		free(v2->dir);
+		free(desc->v2.dir);
 		break;
 	}
-	free(desc->buf);
 }
 
 static size_t lzss_decomp(uint8_t *restrict dst, const size_t dst_len,
@@ -79,13 +79,12 @@ const size_t written) {
 		return 0;
 	}
 
-	struct g00_desc_v1 *v1 = &desc->u.v1;
-	v1->pal_entries = buf_endian16(desc->buf, little_endian);
-	if (!v1->pal_entries || v1->pal_entries > 256) {
+	const uint16_t pal_entries = buf_endian16(desc->buf, little_endian);
+	if (pal_entries || pal_entries > 256) {
 		return 0;
 	}
 
-	const size_t pal_bytes = v1->pal_entries * 4u + 2;
+	const size_t pal_bytes = pal_entries * 4u + 2;
 	if (pal_bytes >= written) {
 		return 0;
 	}
@@ -98,7 +97,7 @@ const size_t written) {
 	if (!pal) {
 		return 0;
 	}
-	memcpy(pal, desc->buf + 2, v1->pal_entries * 4);
+	memcpy(pal, desc->buf + 2, pal_entries * 4);
 
 	img->data = desc->buf + pal_bytes;
 	img->borrowed = true;
@@ -148,13 +147,12 @@ const size_t written) {
 	 * [2] I have no idea what most of the fields are used for, actually.
 	*/
 
-	img->data = calloc(1, wuimg_size(img));
-	if (!img->data) {
+	if (!wuimg_alloc_noverify(img)) {
 		return 0;
 	}
 
 	const void *data_end = desc->buf + written;
-	struct g00_desc_v2 *v2 = &desc->u.v2;
+	struct g00_desc_v2 *v2 = &desc->v2;
 
 	struct g00_part_loc *loc = (struct g00_part_loc *)(desc->buf + 4);
 	if ((void *)(loc + v2->dir_count) >= data_end
@@ -206,34 +204,38 @@ const size_t written) {
 }
 
 size_t g00_decode(struct g00_desc *desc, struct wuimg *img) {
-	desc->buf = malloc(desc->decomp_size);
-	if (!desc->buf) {
-		return 0;
-	}
-
-	void *src = malloc(desc->comp_size + LZSS_PAD);
-	if (!src) {
-		return 0;
-	}
-
-	const size_t read = fread(src, 1, desc->comp_size, desc->ifp);
 	size_t written = 0;
-	if (read) {
-		const size_t elem_size = (desc->version == g00_v0) ? 3 : 1;
-		const size_t min_run = (desc->version == g00_v0) ? 1 : 2;
-		written = lzss_decomp(desc->buf, desc->decomp_size, src, read,
-			elem_size, min_run);
-	}
-	free(src);
+	void *dst = malloc(desc->decomp_size);
+	if (dst) {
+		void *src = malloc(desc->comp_size + LZSS_PAD);
+		if (src) {
+			const size_t read = fread(src, 1, desc->comp_size,
+				desc->ifp);
+			if (read) {
+				const size_t elem_size = (desc->version == g00_v0) ? 3 : 1;
+				const size_t min_run = (desc->version == g00_v0) ? 1 : 2;
+				written = lzss_decomp(dst, desc->decomp_size,
+					src, read, elem_size, min_run);
+			}
+			free(src);
+		}
 
-	if (written) {
-		switch (desc->version) {
-		case g00_v0:
-			img->data = desc->buf;
-			desc->buf = NULL;
-			break;
-		case g00_v1: return v1_finish(desc, img, written);
-		case g00_v2: return v2_compost(desc, img, written);
+		if (written) {
+			switch (desc->version) {
+			case g00_v0:
+				img->data = dst;
+				break;
+			case g00_v1:
+				desc->buf = dst;
+				written = v1_finish(desc, img, written);
+				break;
+			case g00_v2:
+				desc->buf = dst;
+				written = v2_compost(desc, img, written);
+				break;
+			}
+		} else {
+			free(dst);
 		}
 	}
 	return written;
@@ -312,7 +314,7 @@ FILE *ifp) {
 			return wu_unexpected_eof;
 		}
 
-		struct g00_desc_v2 *v2 = &desc->u.v2;
+		struct g00_desc_v2 *v2 = &desc->v2;
 		v2->dir_count = buf_endian32(header, little_endian);
 		const size_t overflow = SIZE_MAX / dims;
 		if (!v2->dir_count || v2->dir_count >= zumin(dims, overflow)) {

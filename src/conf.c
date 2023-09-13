@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <ctype.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -22,10 +23,7 @@ struct wu_conf conf_default(void) {
 		// Window
 		.initial_size = {640, 480},
 
-		.bg[0] = 0x33,
-		.bg[1] = 0x33,
-		.bg[2] = 0x33,
-		.bg[3] = 0x66,
+		.bg = {0x33, 0x33, 0x33, 0x66},
 
 		.bg_src = bg_metadata,
 
@@ -45,24 +43,10 @@ struct wu_conf conf_default(void) {
 	};
 }
 
-static bool read_xint(struct mp_parser *tp, unsigned char *cval) {
+static long read_xint(struct mp_parser *tp, bool *ok) {
 	long val;
-	const unsigned char limit = UCHAR_MAX;
-	if (mp_get_xint(tp, sizeof(*cval) * 3, &val) && val <= limit) {
-		*cval = (unsigned char)val;
-		return true;
-	}
-	return false;
-}
-
-static bool read_uint(struct mp_parser *tp, void *ival) {
-	long val;
-	const int limit = INT_MAX;
-	if (mp_get_uint(tp, sizeof(limit) * 3, &val) && val <= limit) {
-		*(int *)ival = (int)val;
-		return true;
-	}
-	return false;
+	*ok = mp_get_xint(tp, 5, &val);
+	return val;
 }
 
 static bool read_bool(struct mp_parser *tp, bool *ok) {
@@ -91,21 +75,21 @@ static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 		mp_skip_blank(tp);
 		bool ok = true;
 		if (wuptr_eq_str(key, "max_img_size")) {
-			ok = read_uint(tp, &conf->max_img_size);
+			conf->max_img_size = (unsigned)read_xint(tp, &ok);
 		} else if (wuptr_eq_str(key, "magnify_under")) {
-			ok = read_uint(tp, &conf->magnify_under);
+			conf->magnify_under = (unsigned)read_xint(tp, &ok);
 		} else if (wuptr_eq_str(key, "initial_size")) {
 			struct display_dims *i = &conf->initial_size;
-			ok = read_uint(tp, &i->w);
+			i->w = (int)read_xint(tp, &ok);
 			if (ok) {
 				mp_skip_blank(tp);
-				ok = read_uint(tp, &i->h);
+				i->h = (int)read_xint(tp, &ok);
 			}
 		} else if (wuptr_eq_str(key, "bg")) {
 			unsigned char *bg = conf->bg;
 			for (size_t i = 0; ok && i < ARRAY_LEN(conf->bg); ++i) {
 				mp_skip_blank(tp);
-				ok = read_xint(tp, bg + i);
+				bg[i] = (unsigned char)read_xint(tp, &ok);
 			}
 		} else if (wuptr_eq_str(key, "bg_src")) {
 			struct wuptr val = mp_get_word(tp);
@@ -140,8 +124,8 @@ static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 				conf->svg_redraw = svg_never;
 			} else if (wuptr_eq_str(val, "upscale")) {
 				conf->svg_redraw = svg_upscale;
-			} else if (wuptr_eq_str(val, "anyscale")) {
-				conf->svg_redraw = svg_anyscale;
+			} else if (wuptr_eq_str(val, "scale")) {
+				conf->svg_redraw = svg_scale;
 			} else {
 				ok = false;
 			}
@@ -162,13 +146,13 @@ static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 
 		mp_skip_blank(tp);
 		switch (mp_next_char(tp)) {
-		case EOF:
-			return true;
-		case '\n':
-			break;
 		case '#':
 			mp_skip_line(tp);
 			break;
+		case '\n':
+			break;
+		case EOF:
+			return true;
 		default:
 			return false;
 		}
@@ -221,8 +205,7 @@ struct wu_conf conf_load(void) {
 		return conf;
 	}
 
-	struct mp_parser tp = mp_parser_mem(mm.len, mm.data);
-
+	struct mp_parser tp = mp_parser_map(mm);
 	ok = parse_config_file(&conf, &tp);
 	file_unmap(&mm);
 	if (ok) {

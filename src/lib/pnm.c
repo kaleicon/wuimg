@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,8 @@ const char * pnm_type_str(const enum pnm_type type) {
 	case pnm_xv_thumb: return "Xv thumb";
 	case pnm_color_pfm: return "Color PFM";
 	case pnm_gray_pfm: return "Gray PFM";
+	case pnm_color_phm: return "Color PHM";
+	case pnm_gray_phm: return "Gray PHM";
 	case pnm_mtv: return "MTV";
 	case pnm_pgx: return "PGX";
 	}
@@ -82,11 +85,17 @@ const size_t dims) {
 	case pnm_gray_pfm:
 		pfm_decode(desc, dst, dims);
 		break;
+	case pnm_color_phm:
+	case pnm_gray_phm:
+		// FIXME: Support f16 scaling.
+		endian_loop16(dst, desc->endian, dims);
+		break;
 	default:
 		switch (desc->bytedepth) {
 		case 1:
 			strip_scale(dst, dst, dims,
-				strip_scale_info(desc->scale.pnm, 8), desc->sign);
+				strip_scale_info(desc->scale.pnm, 8),
+				desc->sign ? pix_signed : pix_normal);
 			break;
 		case 2: scale_16(desc, dst, dims); break;
 		case 4: scale_32(desc, dst, dims); break;
@@ -100,18 +109,18 @@ static size_t plain_ppm_decode(const struct pnm_desc *restrict desc,
 void *restrict dst, const size_t dims) {
 	size_t cnt = 0;
 	size_t len = file_remaining(desc->ifp);
-	uint8_t *src = malloc(len + 2);
+	uint8_t *src = malloc(len + 1);
 	if (src) {
-		src[0] = ' '; // Ensure skip_space returns 1 on first iter
-		len = file_tail(src + 1, 1, len, desc->ifp) + 1;
-		src[len] = 'd'; // Sentinel
+		len = file_tail(src, 1, len, desc->ifp);
+		src[len] = 's'; // Sentinel
 		struct mp_parser mp = mp_parser_mem(len, src);
 
 		const long range = (desc->scale.pnm > UCHAR_MAX)
 			? USHRT_MAX : UCHAR_MAX;
 		const long scale = (range << 16) / desc->scale.pnm + 1;
 		const size_t digits = 5;
-		while (cnt < dims && mp_skip_space_unsafe(&mp)) {
+		mp_skip_space_unsafe(&mp);
+		do {
 			long val;
 			if (!mp_get_uint(&mp, digits, &val)
 			|| val > desc->scale.pnm) {
@@ -127,7 +136,7 @@ void *restrict dst, const size_t dims) {
 				out[cnt] = (unsigned char)(val);
 			}
 			++cnt;
-		}
+		} while (cnt < dims && mp_skip_space_unsafe(&mp));
 		free(src);
 	}
 	return cnt;
@@ -192,6 +201,8 @@ const size_t i) {
 	case pnm_pam:
 	case pnm_color_pfm:
 	case pnm_gray_pfm:
+	case pnm_color_phm:
+	case pnm_gray_phm:
 	case pnm_pgx:
 		break;
 	}
@@ -211,6 +222,7 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		return wu_invalid_header;
 	}
 
+	bool is_half = false;
 	switch (desc->type) {
 	case pnm_raw_pbm:
 		desc->rast.bitdepth = 1;
@@ -228,16 +240,22 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		desc->rast.bitdepth = 8;
 		desc->rast.attr = pix_pack_332;
 		break;
+	case pnm_color_phm: case pnm_gray_phm:
+		is_half = true;
+		// fallthrough
 	case pnm_color_pfm: case pnm_gray_pfm:
 		if (fpclassify(desc->scale.pfm) != FP_NORMAL) {
 			return wu_invalid_header;
 		}
-		desc->rast.bitdepth = 32;
+		desc->rast.bitdepth = is_half ? 16 : 32;
 		desc->rast.attr = pix_float;
 		desc->rast.mirror = true;
 		desc->endian = signbit(desc->scale.pfm)
 			? little_endian : big_endian;
 		desc->scale.pfm = fabsf(desc->scale.pfm);
+		if (is_half && desc->scale.pfm != 1.0f) {
+			return wu_unsupported_feature;
+		}
 		break;
 	case pnm_plain_pgm: case pnm_plain_ppm:
 	case pnm_raw_pgm: case pnm_raw_ppm:
@@ -252,10 +270,12 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 	switch (desc->type) {
 	case pnm_plain_pbm: case pnm_plain_pgm:
 	case pnm_raw_pbm: case pnm_raw_pgm:
-	case pnm_gray_pfm: case pnm_xv_thumb: case pnm_pgx:
+	case pnm_gray_pfm: case pnm_gray_phm:
+	case pnm_xv_thumb: case pnm_pgx:
 		desc->rast.channels = 1;
 		break;
-	case pnm_plain_ppm: case pnm_raw_ppm: case pnm_mtv: case pnm_color_pfm:
+	case pnm_plain_ppm: case pnm_raw_ppm: case pnm_mtv:
+	case pnm_color_pfm: case pnm_color_phm:
 		desc->rast.channels = 3;
 		break;
 	case pnm_pam:
@@ -470,9 +490,12 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 			result = fscanf(desc->ifp, "%zu", &desc->rast.h);
 			break;
 		case 2:
-			if (desc->type == pnm_color_pfm || desc->type == pnm_gray_pfm) {
+			switch (desc->type) {
+			case pnm_color_pfm: case pnm_gray_pfm:
+			case pnm_color_phm: case pnm_gray_phm:
 				result = fscanf(desc->ifp, "%f", &desc->scale.pfm);
-			} else {
+				break;
+			default:
 				result = fscanf(desc->ifp, "%u", &desc->scale.pnm);
 			}
 			break;
@@ -550,6 +573,8 @@ const bool maybe_mtv) {
 			case pnm_xv_thumb:
 			case pnm_color_pfm:
 			case pnm_gray_pfm:
+			case pnm_color_phm:
+			case pnm_gray_phm:
 			case pnm_pgx:
 				return wu_ok;
 			case pnm_mtv: // Invalid here

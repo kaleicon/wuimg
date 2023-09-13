@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <libheif/heif.h>
 
 #include "dec_enable.def"
@@ -6,12 +7,10 @@
 #include "wudefs.h"
 
 struct heif_state {
-	struct map_info mm;
 	struct heif_context *ctx;
 	struct heif_decoding_options *opts;
 	heif_item_id *hids;
 	struct heif_image **himgs;
-	size_t decoded;
 	heif_item_id primary_id;
 };
 
@@ -32,7 +31,6 @@ static void clean_heif_state(struct image_file *infile) {
 	if (ds->ctx) {
 		heif_context_free(ds->ctx);
 	}
-	file_unmap(&ds->mm);
 }
 
 static void read_block(const struct heif_image_handle* handle,
@@ -41,20 +39,17 @@ const size_t len) {
 	const struct heif_error herr = heif_image_handle_get_metadata(handle,
 		id, buf);
 	if (herr.code == heif_error_Ok) {
-		if (!img->metadata) {
-			img->metadata = tree_plant(NULL);
-		}
-		if (img->metadata) {
+		struct wu_tree *meta = wuimg_get_metadata(img);
+		if (meta) {
 			const char *type = heif_image_handle_get_metadata_type(
 				handle, id);
 			if (!strcmp(type, "Exif") && len > 10) {
 				standard_metadata(exif_metadata, buf + 10,
-					len - 10, img->metadata);
+					len - 10, meta);
 			} else if (!strcmp(type, "mime")) {
-				standard_metadata(xmp_metadata, buf, len,
-					img->metadata);
+				standard_metadata(xmp_metadata, buf, len, meta);
 			} else {
-				tree_add_leaf_utf8(img->metadata,
+				tree_add_leaf_utf8(meta,
 					"Found metadata block", type);
 			}
 		}
@@ -147,7 +142,6 @@ int *bpl) {
 		return wu_invalid_params;
 	}
 
-	img->borrowed = true;
 	img->channels = (uint8_t)((chroma == heif_chroma_monochrome ? 1 : 3)
 		+ alpha);
 	img->bitdepth = (depth > 8) ? 16 : 8;
@@ -214,7 +208,7 @@ const struct wu_conf *wuconf, const size_t i) {
 	struct heif_error herr = heif_context_get_image_handle(ds->ctx,
 		ds->hids[i], &handle);
 	if (herr.code != heif_error_Ok) {
-		image_file_error_append(infile, herr.message);
+		image_file_strerror_append(infile, herr.message);
 		return wu_decoding_error;
 	}
 
@@ -228,7 +222,7 @@ const struct wu_conf *wuconf, const size_t i) {
 		heif_colorspace_undefined, heif_chroma_undefined, ds->opts);
 	heif_image_handle_release(handle);
 	if (herr.code != heif_error_Ok) {
-		image_file_error_append(infile, herr.message);
+		image_file_strerror_append(infile, herr.message);
 		return wu_decoding_error;
 	}
 
@@ -238,6 +232,7 @@ const struct wu_conf *wuconf, const size_t i) {
 	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
 	}
+	img->borrowed = true;
 
 	get_color_profile(&img->cs, himg);
 
@@ -270,10 +265,6 @@ const struct wu_conf *wuconf, const size_t i) {
 		if (img->mode == image_mode_planar) {
 			wuimg_plane_resolve(img);
 		}
-		++ds->decoded;
-		if (ds->decoded == infile->nr) {
-			infile->events = 0;
-		}
 	}
 	return st;
 }
@@ -281,27 +272,17 @@ const struct wu_conf *wuconf, const size_t i) {
 enum wu_error heif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
-	if (ev == ev_subcycle) {
-		const size_t i = (size_t)state->idx;
-		if (!infile->sub_img[i].data) {
-			return get_image(infile, wuconf, i);
-		}
+	if (ev) {
+		return get_image(infile, wuconf, (size_t)state->idx);
 	} else {
 		clean_heif_state(infile);
 	}
 	return wu_no_change;
 }
 
-#ifndef WU_ENABLE_AVIF
-enum wu_error avif_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev) {
-	return heif_callback(infile, wuconf, state, ev);
-}
-#endif
-
 enum wu_error heif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
+	(void)wuconf;
 	struct heif_state *ds = calloc(sizeof(*ds), 1);
 	if (!ds) {
 		return wu_alloc_error;
@@ -309,15 +290,12 @@ const struct wu_conf *wuconf) {
 
 	infile->dec_state = ds;
 	infile->events = ev_subcycle;
-	if (!file_map(&ds->mm, infile->ifp)) {
-		return wu_open_error;
-	}
 
 	ds->ctx = heif_context_alloc();
 	struct heif_error herr = heif_context_read_from_memory_without_copy(
-		ds->ctx, ds->mm.data, ds->mm.len, NULL);
+		ds->ctx, infile->map.data, infile->map.len, NULL);
 	if (herr.code != heif_error_Ok) {
-		image_file_error_append(infile, herr.message);
+		image_file_strerror_append(infile, herr.message);
 		return wu_open_error;
 	}
 
@@ -337,12 +315,11 @@ const struct wu_conf *wuconf) {
 	//ds->opts->ignore_transformations = true;
 
 	heif_context_get_primary_image_ID(ds->ctx, &ds->primary_id);
-	return get_image(infile, wuconf, 0);
+	return wu_ok;
 }
 
+const struct image_fn heif_fn = {.mmap = true,
+	.dec = heif_dec, .callback = heif_callback};
 #ifndef WU_ENABLE_AVIF
-enum wu_error avif_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	return heif_dec(infile, wuconf);
-}
+const struct image_fn avif_fn = heif_fn;
 #endif

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_PDT
 #define LIB_PDT
 
@@ -22,6 +23,6 @@ size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img);
 
 enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img);
 
-enum wu_error pdt_open_mem(struct pdt_desc *desc, struct mp_parser mp);
+enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *map);
 
 #endif /* LIB_PDT */

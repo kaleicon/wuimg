@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -19,10 +20,8 @@ void write_writer_terminate(struct write_writer *writer) {
 
 static void pam_write_row(void *out, const uint8_t depth, const size_t len,
 FILE *ofp) {
-	if (which_end() != big_endian) {
-		if (depth == 16) {
-			endian_loop16(out, big_endian, len);
-		}
+	if (depth == 16) {
+		endian_loop16(out, big_endian, len);
 	}
 	fwrite(out, depth/8, len, ofp);
 }
@@ -161,7 +160,7 @@ struct wuimg *img) {
 enum wu_error write_image(struct image_context *image,
 struct write_writer *writer, const struct write_args *args) {
 	struct wuimg *img;
-	enum wu_error err = dec_iter_image(image, &img);
+	enum wu_error err = dec_iter(image, &img);
 	if (err == wu_ok) {
 		struct fs_path path;
 		errno = 0;
@@ -179,7 +178,7 @@ struct write_writer *writer, const struct write_args *args) {
 					fputs(writer->out.name, stdout);
 					fputc(args->null ? 0 : '\n', stdout);
 				}
-				err = dec_iter_image(image, &img);
+				err = dec_iter(image, &img);
 			} while (err == wu_ok);
 
 			fs_path_free(&path);

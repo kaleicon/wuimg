@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -122,15 +123,34 @@ int second) {
 		+ second;
 }
 
-double clock_ellapsed(const clock_t start) {
-	return (double)(clock() - start) / CLOCKS_PER_SEC;
+void nanosec_report(const char *ocurrence, const watch_t elapsed) {
+	fprintf(stderr, "%s in %" PRIu64 " ns\n", ocurrence, elapsed);
 }
 
-clock_t clock_print(const char *ocurrence, const clock_t start) {
-	const clock_t end = clock();
-	fprintf(stderr, "%s in %f seconds\n", ocurrence,
-		(double)(end - start) / CLOCKS_PER_SEC);
+watch_t watch_look(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (watch_t)(ts.tv_sec * 1000000000 + ts.tv_nsec);
+}
+
+watch_t watch_elapsed(const watch_t start) {
+	return watch_look() - start;
+}
+
+watch_t watch_report(const char *ocurrence, const watch_t start) {
+	const watch_t end = watch_look();
+	nanosec_report(ocurrence, end - start);
 	return end;
+}
+
+long num_cpus(void) {
+#if defined(_SC_NPROCESSORS_ONLN)
+	return sysconf(_SC_NPROCESSORS_ONLN); // Linux
+#elif defined(SC_NPROCESSORS_ONLN)
+	return sysconf(SC_NPROCESSORS_ONLN); // FreeBSD
+#else
+	return 1; // sorry
+#endif
 }
 
 void fatal_bug(const char *name, const char *msg) {

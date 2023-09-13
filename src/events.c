@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -9,12 +10,18 @@
 #include "write_pam.h"
 #include "wudefs.h"
 
+enum event_repeat {
+	repeat_none = 0,
+	repeat_fixed = 1,
+	repeat_smooth = 2,
+};
+
 static unsigned char * get_map(struct window_keymap *held_keys) {
 	return held_keys->map - WINDOW_KEYSTART;
 }
 
-static bool apply_event(struct window_context *window, const int code,
-const float dt, const bool shift) {
+static enum event_repeat apply_event(struct window_context *window,
+const int code, const float dt, const bool shift) {
 	struct window_public *pub = &window->pub;
 	struct image_context *image = &pub->image;
 	const struct image_file *file = &image->file;
@@ -35,7 +42,7 @@ const float dt, const bool shift) {
 	// Fullscreen
 	case 'F':
 		window_fullscreen(window);
-		return true;
+		return repeat_none;
 	// Alpha display
 	case 'A':
 		gl_alpha_toggle(gl, shift ? -1 : 1);
@@ -43,23 +50,23 @@ const float dt, const bool shift) {
 	// Metadata
 	case 'M':
 		image_file_print(file, 2 + shift);
-		return true;
+		return repeat_none;
 
 	// Delete
 	case 'D':
 		if (!shift && event->rm == trit_false) {
 			event->rm = trit_what;
-			term_line_temp("Delete file? (D to confirm, "
-				"u to dismiss)");
+			term_line_temp("Delete file?"
+				" (D to confirm, u to dismiss)");
 		} else if (shift && event->rm == trit_what) {
 			event->rm = trit_true;
 		}
-		return true;
+		return repeat_none;
 	// Abort delete
 	case 'U':
 		event->program = 0;
 		term_line_clear();
-		return true;
+		return repeat_none;
 
 	// Cycling
 	case 'N': // Next
@@ -98,25 +105,25 @@ const float dt, const bool shift) {
 		} else {
 			state->anim_playing = false;
 		}
-		break;
+		return repeat_none;
 
 	// Image movement
 	case 'H': // Left
 		event->image = ev_move;
 		state->x_offset += dt / state->zoom;
-		break;
+		return repeat_smooth;
 	case 'J': // Down
 		event->image = ev_move;
 		state->y_offset -= dt / state->zoom;
-		break;
+		return repeat_smooth;
 	case 'K': // Up
 		event->image = ev_move;
 		state->y_offset += dt / state->zoom;
-		break;
+		return repeat_smooth;
 	case 'L': // Right
 		event->image = ev_move;
 		state->x_offset -= dt / state->zoom;
-		break;
+		return repeat_smooth;
 
 	// Rotation
 	case 'Z': // Counterclockwise
@@ -141,16 +148,16 @@ const float dt, const bool shift) {
 
 	// Zoom
 	case '+':
-		event->image = image_zoom(image, state->zoom * powf(2, 1.0f/3.0f));
+		event->image = image_zoom(image, state->zoom * exp2f(1.0f/3.0f));
 		break;
 	case '-':
-		event->image = image_zoom(image, state->zoom * powf(2, -1.0f/3.0f));
+		event->image = image_zoom(image, state->zoom * exp2f(1.0f/-3.0f));
 		break;
 	case '*':
-		event->image = image_zoom(image, state->zoom * powf(2, 1.0f/6.0f));
+		event->image = image_zoom(image, state->zoom * exp2f(1.0f/6.0f));
 		break;
 	case '/':
-		event->image = image_zoom(image, state->zoom * powf(2, -1.0f/6.0f));
+		event->image = image_zoom(image, state->zoom * exp2f(1.0f/-6.0f));
 		break;
 	case '=':
 	case '0':
@@ -160,15 +167,15 @@ const float dt, const bool shift) {
 		event->image = image_zoom(image,
 			(code == '0') ? fminf(1.0, fit) : fit);
 		event->image |= ev_move;
-		return true;
+		return repeat_none;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
 		;const struct wuimg *img = image_cur_sub_img(image);
 		event->image = image_zoom(image,
 			(float)(code - '0') * (1/img->dec_scale));
-		return true;
+		return repeat_none;
 	}
-	return false;
+	return repeat_fixed;
 }
 
 static double key_events(struct window_context *window, const double secs) {
@@ -196,14 +203,21 @@ static double key_events(struct window_context *window, const double secs) {
 			break;
 		default:
 			map[key] = (unsigned char)imin(0xff, time + inc);
-			if (time == key_press) {
-				dt = 16 * (shift ? 2 : 1);
-			} else {
+			if (time != key_press) {
 				continue;
 			}
 		}
-		if (apply_event(window, key, dt, shift)) {
+
+		switch (apply_event(window, key, dt, shift)) {
+		case repeat_none:
 			map[key] = 0;
+			break;
+		case repeat_fixed:
+//			if (map[key] == 255) {
+//				map[key] = 255 - 7;
+//			}
+			break;
+		case repeat_smooth: break;
 		}
 	}
 	return secs;
@@ -219,11 +233,16 @@ const struct timespec end) {
 double event_exec(struct window_context *window) {
 	struct window_public *pub = &window->pub;
 	struct window_cursor *cursor = &pub->win.cur;
-	pub->event.image = image_sub_cycle(&pub->image,
-		iclamp((int)cursor->x.scroll, -1, 1));
-	pub->event.cycle = iclamp((int)cursor->y.scroll, -1, 1);
-	cursor->x.scroll = 0;
-	cursor->y.scroll = 0;
+	const int x_scroll = iclamp((int)cursor->x.scroll, -1, 1);
+	if (x_scroll) {
+		pub->event.image = image_sub_cycle(&pub->image, x_scroll);
+		cursor->x.scroll = 0;
+	}
+	const int y_scroll = iclamp((int)cursor->y.scroll, -1, 1);
+	if (y_scroll) {
+		pub->event.cycle = y_scroll;
+		cursor->y.scroll = 0;
+	}
 
 	const struct timespec start = pub->timer;
 	clock_gettime(CLOCK_MONOTONIC, &pub->timer);

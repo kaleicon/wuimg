@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <string.h>
 
 #include "compost.h"

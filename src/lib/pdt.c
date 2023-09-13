@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,7 +18,7 @@ const char * pdt_version_str(const enum pdt_version version) {
 	return "???";
 }
 
-static inline size_t base_decode(uint8_t *restrict dst, const size_t dst_len,
+static inline size_t base_lzss(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len, const uint8_t ch,
 const uint32_t *off_table) {
 	size_t d = 0;
@@ -41,7 +42,10 @@ const uint32_t *off_table) {
 					}
 					const uint8_t tmp = src[s];
 					++s;
-					cnt = zumin((tmp >> 4) + 2, dst_len - d);
+					cnt = (tmp >> 4) + 2;
+					if (dst_len - d < cnt) {
+						return d;
+					}
 					offset = off_table[tmp & 0x0f];
 					memrepeat_or_zero(dst, d, offset, cnt);
 				} else {
@@ -72,12 +76,12 @@ const uint32_t *off_table) {
 
 static size_t alpha_decode(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len) {
-	return base_decode(dst, dst_len, src, src_len, 1, NULL);
+	return base_lzss(dst, dst_len, src, src_len, 1, NULL);
 }
 
 static size_t color_decode(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len) {
-	return base_decode(dst, dst_len, src, src_len, 3, NULL);
+	return base_lzss(dst, dst_len, src, src_len, 3, NULL);
 }
 
 static size_t pal_decode(uint8_t *restrict dst, const size_t dst_len,
@@ -86,7 +90,12 @@ const uint8_t *restrict src, const size_t src_len) {
 	if (src_len > sizeof(offs)) {
 		memcpy(offs, src, sizeof(offs));
 		endian_loop32(offs, little_endian, ARRAY_LEN(offs));
-		return base_decode(dst, dst_len, src + sizeof(offs),
+		for (size_t k = 0; k < ARRAY_LEN(offs); ++k) {
+			if (!offs[k]) {
+				return 0;
+			}
+		}
+		return base_lzss(dst, dst_len, src + sizeof(offs),
 			src_len - sizeof(offs), 1, offs);
 	}
 	return 0;
@@ -177,9 +186,9 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 	return wuimg_verify(img);
 }
 
-enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct mp_parser mp) {
+enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *map) {
 	*desc = (struct pdt_desc) {
-		.mp = mp,
+		.mp = mp_parser_map(*map),
 	};
 	const uint8_t *buf = mp_next_slice(&desc->mp, 8);
 	if (buf) {

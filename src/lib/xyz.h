@@ -1,20 +1,14 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_XYZ
 #define LIB_XYZ
 
-#include "raster/wuimg.h"
 #include "misc/memparser.h"
+#include "raster/wuimg.h"
 
-struct xyz_desc {
-	struct mp_parser mp;
-	uint8_t *data;
-};
+size_t xyz_decode(const struct mp_parser *mp, struct wuimg *img);
 
-void xyz_free(struct xyz_desc *desc, struct wuimg *img);
+enum wu_error xyz_parse(struct mp_parser *mp, struct wuimg *img);
 
-bool xyz_decode(struct xyz_desc *desc, struct wuimg *img);
-
-enum wu_error xyz_parse(struct xyz_desc *desc, struct wuimg *img);
-
-enum wu_error xyz_open(struct xyz_desc *desc, struct mp_parser mp);
+enum wu_error xyz_open(struct mp_parser *mp);
 
 #endif /* LIB_XYZ */

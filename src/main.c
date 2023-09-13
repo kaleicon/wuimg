@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <errno.h>
 #include <locale.h>
 #include <stdio.h>
@@ -64,9 +65,9 @@ static int lsign(const long i) {
 }
 
 static enum wu_error decode_with_stats(struct image_context *image) {
-	const clock_t start = clock();
-	const enum wu_error result = dec_decode_image(image);
-	const double diff = clock_ellapsed(start);
+	const watch_t start = watch_look();
+	const enum wu_error result = dec_decode(image);
+	const watch_t diff = watch_elapsed(start);
 
 	const struct image_file *infile = &image->file;
 	const char *what = "Failed";
@@ -81,7 +82,7 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 			wustr_print(&infile->errors, stdout);
 		}
 	}
-	fprintf(stderr, "%s in %f seconds\n", what, diff);
+	nanosec_report(what, diff);
 	return result;
 }
 
@@ -135,26 +136,6 @@ const struct write_args *args) {
 	return status;
 }
 
-static enum wu_error test_iter(struct image_context *image, double *spent,
-const bool metadata) {
-	const clock_t start = clock();
-	enum wu_error err;
-	do {
-		struct wuimg *img;
-		err = dec_iter_image(image, &img);
-	} while (err == wu_ok);
-	if (metadata && err == wu_no_change) {
-		putchar('\n');
-		image_file_print(&image->file, 3);
-	}
-	*spent = clock_ellapsed(start);
-	dec_free_image(image);
-	if (err == wu_no_change) {
-		return wu_ok;
-	}
-	return err;
-}
-
 static enum wu_error test_with(const struct file_list *entries,
 const struct test_mode_args args) {
 	printf("Testing %u times with %u extra runs for warmup.\n\n",
@@ -166,15 +147,30 @@ const struct test_mode_args args) {
 
 	enum wu_error result = wu_ok;
 	size_t failures = 0;
-	double grand_total = 0;
+	watch_t grand_total = 0;
 	for (size_t i = 0; i < entries->nr; ++i) {
-		double sum = 0;
+		watch_t sum = 0;
 		image.name = entries->name[i];
 		for (unsigned int j = 0; j < args.warmup + args.iters; ++j) {
 			const bool counting = (j >= args.warmup);
-			double spent;
 			image_reset(&image);
-			result = test_iter(&image, &spent, !j && args.metadata);
+
+			const watch_t start = watch_look();
+			do {
+				struct wuimg *img;
+				result = dec_iter(&image, &img);
+			} while (result == wu_ok);
+			const watch_t spent = watch_elapsed(start);
+
+			if (result == wu_no_change) {
+				result = wu_ok;
+			}
+			if (args.metadata && result == wu_ok && !j) {
+				putchar('\n');
+				image_file_print(&image.file, 3);
+			}
+			dec_free_image(&image);
+
 			if (result != wu_ok) {
 				break;
 			} else if (counting) {
@@ -183,7 +179,7 @@ const struct test_mode_args args) {
 		}
 
 		if (result == wu_ok) {
-			printf("Average: %f ", sum / args.iters);
+			printf("Average: %" PRIu64 " ", sum / args.iters);
 		} else {
 			printf("Error: %s ", wu_error_message(result));
 			++failures;
@@ -194,7 +190,7 @@ const struct test_mode_args args) {
 	}
 	putchar('\n');
 	if (entries->nr * args.iters > 1) {
-		printf("Total: %f\n", grand_total);
+		printf("Total: %" PRIu64 "\n", grand_total);
 	}
 	printf("%zu successful, %zu failed\n", entries->nr - failures,
 		failures);
@@ -409,7 +405,7 @@ static enum wu_error from_path(const char *name) {
 #define TEST_MODE "test"
 #define STDIN_MODE "-"
 
-static void print_help() {
+static void print_help(void) {
 	puts("Usage:\n"
 		"\t" WU_CANON_NAME "\t(read images from \".\")\n"
 		"\t" WU_CANON_NAME " DIR\t(read from DIR)\n"
@@ -464,7 +460,7 @@ static void print_help() {
 		"\t\tWrite only the initial sub-image to stdout.\n"
 
 		"\t-z\n"
-		"\t\tUse null as line terminator.\n"
+		"\t\tUse null as line terminator for output filenames.\n"
 
 		"\n"
 		TEST_MODE " switches:\n"

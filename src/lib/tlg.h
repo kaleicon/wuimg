@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_TLG
 #define LIB_TLG
 
@@ -22,6 +23,6 @@ size_t tlg_decode(const struct tlg_desc *desc, struct wuimg *img);
 
 enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img);
 
-enum wu_error tlg_open_mem(struct tlg_desc *desc, struct mp_parser mp);
+enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct map_info *map);
 
 #endif /* LIB_TLG */

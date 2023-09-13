@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/bit.h"
 #include "misc/file.h"
 #include "misc/mem.h"
@@ -8,7 +9,10 @@
 /* Based on
 https://mooncore.eu/bunny/txt/makichan.htm
 
- * With some fixes to make the MSX Pixel Art Collection and telparia.com
+ * and
+https://mooncore.eu/bunny/txt/magerrata_e.txt
+
+ * with some fixes to make the MSX Pixel Art Collection and telparia.com
  * samples work. (Some images NSFW).
 https://frs.badcoffee.info/MSXart.html
 https://telparia.com/fileFormatSamples/image/makichan/
@@ -16,6 +20,19 @@ https://telparia.com/fileFormatSamples/image/makichan/
  * MAKI01 is implemented in maki.c, as it has almost nothing in common with
  * MAG/MAKI02.
 */
+
+const char * mag_screen_mode_str(const enum mag_screen_mode mode) {
+	switch (mode) {
+	case mag_screen_mode_pc98_standard: return "Standard PC98";
+	case mag_screen_mode_msx_sc7: return "MSX SC7";
+	case mag_screen_mode_vm98: return "VM98";
+	case mag_screen_mode_pc88_analog_pal: return "PC88 wih analog palette";
+	case mag_screen_mode_pc98_old: return "Old PC98";
+	case mag_screen_mode_pc88_standard: return "Standard PC88";
+	case mag_screen_mode_msx_sc8: return "MSX SC8";
+	}
+	return "???";
+}
 
 const char * mag_msx_screen_str(const enum mag_msx_screen flag) {
 	switch (flag) {
@@ -45,7 +62,7 @@ const char * mag_model_code_str(const enum mag_model_code code) {
 
 void mag_cleanup(struct mag_desc *desc) {
 	wustr_free(&desc->comm);
-	free(desc->yjk_pal);
+	free(desc->yae);
 }
 
 static size_t load_section(const struct mag_desc *desc,
@@ -67,7 +84,7 @@ size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 	 * Read a byte from Action and advance the pointer. Read the nibbles is
 	 * MS-to-LS order. If the nibble is zero, read a 16-bit word from Color
 	 * and write it to the output image. Otherwise, copy a previous word
-	 * from the image
+	 * from the image, according to the table below.
 
 		+-------+---+---++-------+---+----++-------+---+----+
 		| Value | X | Y || Value | X |  Y || Value | X |  Y |
@@ -164,8 +181,8 @@ size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 	case mag_msx2p_screen11:
 	case mag_msx2p_screen12:
 		if (wuimg_alloc_noverify(img)) {
-			v9958_ykj_to_grb(img->data, (uint8_t *)dst, dwords,
-				desc->yjk_pal);
+			v9958_ykj_to_grb((upack1555_t *)img->data,
+				(uint8_t *)dst, dwords, desc->yae);
 		} else {
 			read = 0;
 		}
@@ -187,36 +204,53 @@ static bool deca_loader(const struct mag_desc *desc) {
 	return false;
 }
 
-static enum wu_error read_pal(const struct mag_desc *desc,
-struct raster_pal *pal, const size_t entries) {
+static enum wu_error read_pal(struct mag_desc *desc, struct wuimg *img,
+const bool is_yjk) {
+	struct raster_pal *pal = malloc(sizeof(*pal));
+	if (!pal) {
+		return wu_alloc_error;
+	}
+	if (is_yjk) {
+		desc->yae = pal;
+	} else {
+		wuimg_palette_set(img, pal);
+	}
+
+	const size_t entries = 1 << img->bitdepth;
 	struct pix_rgb8 *buf = (struct pix_rgb8 *)(pal->color + entries)
 		- entries;
 	if (!fread(buf, sizeof(*buf) * entries, 1, desc->ifp)) {
 		return wu_unexpected_eof;
 	}
 
-	uint8_t bits = 4;
-	switch (desc->code) {
-	case mag_model_msx:
-		if (entries == 256) {
-			bits = 8;
-		} else if (!deca_loader(desc)) {
-			bits = 3;
+	uint8_t outbits = 8;
+	uint8_t inbits = 4;
+	if (is_yjk) {
+		outbits = 5;
+		inbits = 3;
+	} else {
+		switch (desc->code) {
+		case mag_model_msx:
+			if (img->bitdepth == 8) {
+				inbits = 8;
+			} else if (!deca_loader(desc)) {
+				inbits = 3;
+			}
+			break;
+		case mag_model_x68k: inbits = 5; break;
+		case mag_model_mac: inbits = 8; break;
+		case mag_model_pc88:
+			break;
+		default:
+			if (img->bitdepth == 8) {
+				inbits = 8;
+			}
+			break;
 		}
-		break;
-	case mag_model_x68k: bits = 5; break;
-	case mag_model_mac: bits = 8; break;
-	case mag_model_pc88:
-		break;
-	default:
-		if (entries == 256) {
-			bits = 8;
-		}
-		break;
 	}
 
-	const int scale = (0xff << 8) / ((1 << bits) - 1) + 1;
-	const int shr = (8 - bits);
+	const unsigned scale = (bit_set32(outbits) << 8) / bit_set32(inbits) + 1;
+	const unsigned shr = 8 - inbits;
 	for (size_t i = 0; i < entries; ++i) {
 		pal->color[i] = (struct pix_rgba8) {
 			(uint8_t)(((buf[i].r >> shr) * scale) >> 8),
@@ -246,11 +280,11 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 	/* MAKI02 header (after prev):
 		Offset  Size    Name
 		0       u8	ComputerModel[4]
-		4       char    Comment[]        // 0x1a 0x00 terminated
+		4       char    Comment[]        // 0x1a then 0x00 terminated
 
 		-1      u8      Null             // End of comment
 		0       u8      ModelCode
-		+1      u8      ModelFlags
+		+1      u8      MSXFlags
 		+2      u8      ScreenMode
 		+3      u16     XLeftEdge
 		+5      u16     YTopEdge
@@ -280,15 +314,16 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 		return wu_unexpected_eof;
 	}
 
+	desc->code = buf[0];
+	desc->screen_mode = buf[2];
 	img->channels = 1;
-	img->bitdepth = (buf[2] & 0x80) ? 8 : 4;
+	img->bitdepth = (desc->screen_mode & 0x80) ? 8 : 4;
 	img->layout = pix_grba;
 	bool is_yjk = false;
 	bool load_pal = true;
-	desc->code = buf[0];
 	if (desc->code == mag_model_msx) {
 		desc->msx.screen = buf[1] >> 4;
-		desc->msx.interlace = !(buf[1] & 0x04);
+		desc->msx.interlace = !(buf[1] & 0x04); // ???
 		switch (desc->msx.screen) {
 		case mag_msx2_screen5:
 			break;
@@ -308,14 +343,13 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 			// PixelArt.v04/MAKICHAN/SCR12i/HAWAI.MAG
 			// telparia.com/fileFormatSamples/image/makichan/TSUCHIIN.MAG
 			img->ratio = desc->msx.interlace ? 2 : 1;
-			img->used_bits = 5;
 			is_yjk = true;
 			break;
 		default:
 			return wu_invalid_header;
 		}
 	} else {
-		img->ratio = ((buf[2] & 0x81) == 0x01) ? 1/2.0 : 1;
+		img->ratio = ((desc->screen_mode & 0x81) == 0x01) ? 1/2.0 : 1;
 	}
 
 	enum wu_error st = get_dimensions(img,
@@ -353,28 +387,17 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 	}
 
 	if (load_pal) {
-		struct raster_pal *pal = malloc(sizeof(*pal));
-		if (!pal) {
-			return wu_alloc_error;
-		}
-
-		st = read_pal(desc, pal, 1 << img->bitdepth);
+		st = read_pal(desc, img, is_yjk);
 		if (st != wu_ok) {
-			free(pal);
 			return st;
-		}
-
-		if (is_yjk) {
-			desc->yjk_pal = pal;
-		} else {
-			wuimg_palette_set(img, pal);
 		}
 	}
 
 	if (is_yjk) {
 		img->w /= 8 / img->bitdepth;
-		img->channels = 3;
-		img->bitdepth = 8;
+		img->bitdepth = 16;
+		img->attr = pix_pack_1555;
+		img->alpha = alpha_ignore;
 	}
 	return wuimg_verify(img);
 }

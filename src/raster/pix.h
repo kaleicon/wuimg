@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef RASTER_PIX
 #define RASTER_PIX
 
@@ -37,6 +38,8 @@ enum pix_attr {
 	pix_pack_332,
 	pix_pack_1555,
 };
+
+typedef uint16_t upack1555_t;
 
 struct pix_rgb8 {
 	uint8_t r, g, b;

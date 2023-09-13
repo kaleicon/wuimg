@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,6 @@ struct homegrown_anim {
 };
 
 struct webp_state {
-	struct map_info map;
 	WebPData data;
 	WebPDecoderConfig config;
 
@@ -64,7 +64,6 @@ static void clean_webp_state(struct image_file *infile) {
 	}
 
 	WebPFreeDecBuffer(&ds->config.output);
-	file_unmap(&ds->map);
 }
 
 static void rewind_webp_state(struct webp_state *ds, struct wuimg *img,
@@ -323,15 +322,15 @@ struct webp_state *ds) {
 			.y = p[0].ptr,
 			.u = p[1].ptr,
 			.v = p[2].ptr,
-			.a = p[3].ptr,
+			.a = alpha ? p[3].ptr : NULL,
 			.y_stride = (int)p[0].stride,
 			.u_stride = (int)p[1].stride,
 			.v_stride = (int)p[2].stride,
-			.a_stride = (int)p[3].stride,
+			.a_stride = alpha ? (int)p[3].stride : 0,
 			.y_size = p[0].size,
 			.u_size = p[1].size,
 			.v_size = p[2].size,
-			.a_size = p[3].size,
+			.a_size = alpha ? p[3].size : 0,
 		};
 		colorspace = alpha ? MODE_YUVA : MODE_YUV;
 	} else {
@@ -403,11 +402,8 @@ const struct wu_conf *wuconf) {
 	}
 	infile->dec_state = ds;
 
-	if (!file_map(&ds->map, infile->ifp)) {
-		return wu_alloc_error;
-	}
-	ds->data.size = ds->map.len;
-	ds->data.bytes = ds->map.data;
+	ds->data.size = infile->map.len;
+	ds->data.bytes = infile->map.data;
 
 	WebPInitDecoderConfig(&ds->config);
 	VP8StatusCode status = WebPGetFeatures(ds->data.bytes, ds->data.size,
@@ -450,12 +446,14 @@ const struct wu_conf *wuconf) {
 	} else {
 		status = single_image_decode(img, ds);
 		clean_webp_state(infile);
-		infile->dec_state = NULL;
 		if (status != VP8_STATUS_OK) {
 			const char *msg;
 			err = map_status(status, &msg);
-			image_file_error_append(infile, msg);
+			image_file_strerror_append(infile, msg);
 		}
 	}
 	return err;
 }
+
+const struct image_fn webp_fn = {.mmap = true,
+	.dec = webp_dec, .callback = webp_callback};

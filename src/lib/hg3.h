@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_HG3
 #define LIB_HG3
 
@@ -11,7 +12,7 @@ struct hg3_desc {
 	uint32_t canvas_w, canvas_h;
 };
 
-size_t hg3_decode(const struct hg3_desc *desc, struct wuimg *img);
+bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img);
 
 enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img);
 

@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: 0BSD
 #include <ctype.h>
-#include <math.h>
 #include <string.h>
 
 #include "base.h"
+#include "misc/math.h"
 
 static unsigned char * window_key_get_map(struct window_keymap *held_keys) {
 	return held_keys->map - WINDOW_KEYSTART;
@@ -56,9 +57,13 @@ const double y) {
 	struct wu_state *state = &pub->image.state;
 	if (win->pressed) {
 		const double zoom = 1 / state->zoom;
-		state->x_offset += (float)((x - win->cur.x.pos) * zoom);
-		state->y_offset += (float)((y - win->cur.y.pos) * zoom);
-		pub->gl.update = gl_update_matrix;
+		const double x_diff = (x - win->cur.x.pos) * zoom;
+		const double y_diff = (y - win->cur.y.pos) * zoom;
+		if (!float_ce(0, x_diff) || !float_ce(0, y_diff)) {
+			state->x_offset += (float)x_diff;
+			state->y_offset += (float)y_diff;
+			pub->event.image = ev_move;
+		}
 	}
 	win->cur.x.pos = (float)x;
 	win->cur.y.pos = (float)y;

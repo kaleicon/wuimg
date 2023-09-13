@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_MSX
 #define LIB_MSX
 
@@ -6,20 +7,21 @@
 #include "raster/wuimg.h"
 
 enum msx_screen {
-	msx_screen2,
-	msx_screen3,
-	msx_screen4,
-	msx_screen5,
-	msx_screen6,
-	msx_screen7,
-	msx_screen8,
-	msx_screen10,
-	msx_screen12,
+	msx_screen2 = '2',
+	msx_screen3 = '3',
+	msx_screen4 = '4',
+	msx_screen5 = '5',
+	msx_screen6 = '6',
+	msx_screen7 = '7',
+	msx_screen8 = '8',
+	msx_screen10 = 'a',
+	msx_screen12 = 'c',
 };
 
 struct msx_desc {
 	FILE *ifp;
 	enum msx_screen mode;
+	bool compressed;
 	uint16_t end;
 };
 

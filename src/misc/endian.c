@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/endian.h"
 
 enum endianness which_end(void) {
@@ -65,25 +66,25 @@ float buf_endianf32(const void *data, const enum endianness e) {
 	return f.real;
 }
 
-void endian_loop16(uint16_t *data, const enum endianness e, const size_t cnt) {
+void endian_loop16(uint16_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
-		for (size_t i = 0; i < cnt; ++i) {
+		for (size_t i = 0; i < n; ++i) {
 			data[i] = endian16(data[i], e);
 		}
 	}
 }
 
-void endian_loop32(uint32_t *data, const enum endianness e, const size_t cnt) {
+void endian_loop32(uint32_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
-		for (size_t i = 0; i < cnt; ++i) {
+		for (size_t i = 0; i < n; ++i) {
 			data[i] = endian32(data[i], e);
 		}
 	}
 }
 
-void endian_loop64(uint64_t *data, const enum endianness e, const size_t cnt) {
+void endian_loop64(uint64_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
-		for (size_t i = 0; i < cnt; ++i) {
+		for (size_t i = 0; i < n; ++i) {
 			data[i] = endian64(data[i], e);
 		}
 	}

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "rast_utils.h"
 #include "lib/tlg.h"
 
@@ -12,12 +13,14 @@ static size_t dec(const void *ptr, struct wuimg *img) {
 static enum wu_error parse(void *ptr, struct wuimg *img) {
 	return tlg_read_header(ptr, img);
 }
-static enum wu_error mopen(void *ptr, const struct mp_parser mp) {
-	return tlg_open_mem(ptr, mp);
+static enum wu_error open(void *ptr, struct image_file *infile) {
+	return tlg_open_mem(ptr, &infile->map);
 }
 
 enum wu_error tlg_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct tlg_desc desc;
-	return rast_trivial_map(infile, wuconf, &desc, mopen, parse, metadata,
+	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
 		dec, NULL);
 }
+
+const struct image_fn tlg_fn = {.mmap = true, .dec = tlg_dec};

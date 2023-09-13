@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "qoi.h"
@@ -21,7 +22,7 @@ const struct pix_rgba8 cur) {
 	memcpy(seen + hash_pxl(cur), &cur, sizeof(cur));
 }
 
-size_t qoi_decode(struct mp_parser *mp, struct wuimg *img) {
+size_t qoi_decode(const struct mp_parser *mp, struct wuimg *img) {
 	const size_t dst_len = wuimg_size(img);
 	// Add 1 byte of padding so we can use a faster 4-byte memcpy
 	img->data = malloc(dst_len + (bool)(img->channels == 3));
@@ -29,7 +30,7 @@ size_t qoi_decode(struct mp_parser *mp, struct wuimg *img) {
 		return 0;
 	}
 
-	const struct wuptr src = mp_next_remaining(mp, SIZE_MAX);
+	const struct wuptr src = mp_remaining_at(mp, mp->pos, SIZE_MAX);
 	struct pix_rgba8 seen[64] = {0};
 	size_t s = 0;
 	size_t d = 0;

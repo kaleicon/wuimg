@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -237,12 +238,12 @@ enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img) {
 	return wu_unsupported_feature;
 }
 
-enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct mp_parser mp) {
+enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct map_info *map) {
 	const unsigned char tlg[] = {'T', 'L', 'G'};
 	const unsigned char sds[] = {'.', '0', 0, 's', 'd', 's', 0x1a};
 	const unsigned char raw[] = {'.', '0', 0, 'r', 'a', 'w', 0x1a};
 
-	desc->mp = mp;
+	desc->mp = mp_parser_map(*map);
 	const size_t siglen = sizeof(tlg) + sizeof(sds) + 1;
 	const uint8_t *magic = mp_next_slice(&desc->mp, siglen);
 	if (magic) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <limits.h>
 #include <stdlib.h>
 
@@ -174,20 +175,19 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	}
 
 	*glfw = (struct glfw_context){0};
+
+	GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode *video = glfwGetVideoMode(monitor);
+	pub->win.refresh_nsec = (unsigned)(1000000000/video->refreshRate);
+
 	struct wu_conf *conf = &pub->image.conf;
 	int width = (int)conf->initial_size.w;
 	int height = (int)conf->initial_size.h;
 	if (!width || !height) {
 		int default_w = 640;
 		int default_h = 480;
-		GLFWmonitor *monitor = glfwGetPrimaryMonitor();
-		if (monitor) {
-			const GLFWvidmode *video = glfwGetVideoMode(monitor);
-			if (video) {
-				default_w = video->width;
-				default_h = video->height;
-			}
-		}
+		default_w = video->width;
+		default_h = video->height;
 		if (!width) {
 			width = default_w;
 		}
@@ -233,5 +233,6 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	glfwSetMouseButtonCallback(window, callback_cursor_button);
 	glfwSetScrollCallback(window, callback_scroll);
 	glfwSetKeyCallback(window, callback_key);
+	glfwSwapInterval(1);
 	return NULL;
 }

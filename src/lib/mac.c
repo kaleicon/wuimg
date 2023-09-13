@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5,6 +6,7 @@
 #include "misc/endian.h"
 #include "misc/file.h"
 #include "misc/math.h"
+#include "raster/fmt.h"
 #include "mac.h"
 
 static const size_t RLE_PAD = 129;
@@ -61,7 +63,7 @@ size_t mac_decode(const struct mac_desc *desc, struct wuimg *main) {
 size_t mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats) {
 	if (wuimg_alloc_noverify(pats)) {
 		fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
-		return fread(pats->data, 1, wuimg_size(pats), desc->ifp);
+		return fmt_load_raster(pats, desc->ifp, big_endian);
 	}
 	return 0;
 }

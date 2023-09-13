@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,7 +77,7 @@ void raster_pal_from_rgb8(struct raster_pal *dst, const void *src,
 const size_t nmemb) {
 	const struct pix_rgb8 *s = src;
 	for (size_t i = 0; i < nmemb; ++i) {
-		memcpy(dst->color + i, s + i, (i + 1 < nmemb) ? 4 : 3);
+		memmove(dst->color + i, s + i, (i + 1 < nmemb) ? 4 : 3);
 		dst->color[i].a = 0xff;
 	}
 }

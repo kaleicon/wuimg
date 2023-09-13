@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <jbig.h>
 
 #include "misc/file.h"
@@ -22,10 +23,10 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 	case JBG_EOK_INTR:
 		break;
 	case JBG_EAGAIN:
-		image_file_status_append(infile, wu_unexpected_eof);
+		image_file_error_append(infile, wu_unexpected_eof);
 		break;
 	default:
-		image_file_error_append(infile, jbg_strerror(status));
+		image_file_strerror_append(infile, jbg_strerror(status));
 		return wu_decoding_error;
 	}
 
@@ -56,17 +57,14 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 }
 
 enum wu_error jbig_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct map_info mm;
-	if (!file_map(&mm, infile->ifp)) {
-		return wu_alloc_error;
-	}
-
 	struct jbg_dec_state state;
 	jbg_dec_init(&state);
-	unsigned char *why_isnt_it_const = (unsigned char *)mm.data;
-	const int status = jbg_dec_in(&state, why_isnt_it_const, mm.len, NULL);
-	file_unmap(&mm);
+	unsigned char *why_isnt_it_const = (unsigned char *)infile->map.data;
+	const int status = jbg_dec_in(&state, why_isnt_it_const,
+		infile->map.len, NULL);
 	const enum wu_error st = dec_wrap(infile, wuconf, &state, status);
 	jbg_dec_free(&state);
 	return st;
 }
+
+const struct image_fn jbig_fn = {.mmap = true, .dec = jbig_dec};

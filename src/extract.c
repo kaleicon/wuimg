@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <errno.h>
 #include <locale.h>
 #include <stdlib.h>
@@ -32,31 +33,29 @@ void extract_file_free(struct extract_file *entry) {
 	entry->tmp = NULL;
 }
 
-static la_int64_t tmp_extract(FILE *tmp, struct archive *r,
+static bool tmp_extract(FILE *tmp, struct archive *r,
 struct archive_entry *entry) {
-	const void *buf;
-	size_t size;
-	la_int64_t off;
-	while (archive_read_data_block(r, &buf, &size, &off) == ARCHIVE_OK) {
-		fwrite(buf, 1, size, tmp);
-	}
-
-	if (off) {
+	const int fd = fileno(tmp);
+	if (archive_read_data_into_fd(r, fd) != ARCHIVE_FATAL) {
 		struct timespec times[2];
 		if (archive_entry_atime_is_set(entry)) {
 			times[0].tv_sec = archive_entry_atime(entry);
+			times[0].tv_nsec = 0;
 		} else {
 			times[0].tv_nsec = UTIME_OMIT;
 		}
 
 		if (archive_entry_mtime_is_set(entry)) {
 			times[1].tv_sec = archive_entry_mtime(entry);
+			times[1].tv_nsec = 0;
 		} else {
 			times[1].tv_nsec = UTIME_OMIT;
 		}
-		futimens(fileno(tmp), times);
+		futimens(fd, times);
+		lseek(fd, 0, SEEK_SET);
+		return true;
 	}
-	return off;
+	return false;
 }
 
 static bool ok_case(struct extract_iter *iter, struct archive_entry *entry) {
@@ -76,12 +75,12 @@ static bool ok_case(struct extract_iter *iter, struct archive_entry *entry) {
 			return false;
 		}
 
-		const la_int64_t written = tmp_extract(tmp, iter->ra, entry);
-		if (written) {
-			if (!wugrow_recheck(&iter->entry, &iter->grow)) {
+		if (tmp_extract(tmp, iter->ra, entry)) {
+			if (!wugrow_recheck(&iter->grow)) {
 				fclose(tmp);
 				return false;
 			}
+			iter->entry = iter->grow.ptr;
 
 			char *nname = memdup(name.ptr, name.len + 1);
 			if (!nname) {

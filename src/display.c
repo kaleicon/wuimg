@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <ctype.h>
 #include <math.h>
 #include <limits.h>
@@ -36,19 +37,9 @@ void display_end(struct window_context *window, const struct term_restore *tr) {
 	}
 }
 
-static double poll_events(struct window_context *window) {
-	unsigned char tk[8];
-	const size_t read = term_event_read(tk, sizeof(tk));
-	for (size_t i = 0; i < read; ++i) {
-		window_key_add(&window->pub.held_keys, key_external,
-			toupper(tk[i]), isupper(tk[i]));
-	}
-	window_poll(window);
-	return event_exec(window);
-}
-
-static bool update_texture(struct image_context *image, struct gl_context *gl,
-const bool reset) {
+static bool update_texture(struct image_context *image,
+struct window_context *window, const bool reset) {
+	struct gl_context *gl = &window->pub.gl;
 	struct wu_state *state = &image->state;
 	struct wuimg *img = image->file.sub_img + state->idx;
 	switch (gl_texture_upload(gl, img)) {
@@ -71,34 +62,53 @@ const bool reset) {
 	}
 
 	if (!state->anim_playing) {
-		fprintf(stderr, "Frame %d uploaded in %lu ns\n",
+		fprintf(stderr, "Frame %d uploaded in %" PRIu64 " ns\n",
 			state->frame, gl_clock_query(gl));
 	}
 	return true;
+}
+
+static double draw_rest_poll(struct window_context *window,
+const bool print_draw_time) {
+	uint64_t draw_time = 0;
+	if (window_draw(window)) {
+		draw_time = gl_clock_query(&window->pub.gl);
+		if (print_draw_time) {
+			nanosec_report("Drawn", draw_time);
+		}
+	}
+
+	uint32_t refresh = window->pub.win.refresh_nsec;
+	if (!refresh) {
+		refresh = 1000000000 / 60;
+	}
+	const struct timespec tm = {
+		.tv_nsec = (long)refresh - (long)draw_time*2,
+	};
+	nanosleep(&tm, NULL);
+
+	window_poll(window);
+	unsigned char tk[8];
+	const size_t read = term_event_read(tk, sizeof(tk));
+	for (size_t i = 0; i < read; ++i) {
+		window_key_add(&window->pub.held_keys, key_external,
+			tk[i], isupper(tk[i]));
+	}
+	return event_exec(window);
 }
 
 static double idle_display(struct image_context *image,
 struct window_context *window, double remaining) {
 	struct wu_event *event = &window->pub.event;
 	struct wu_state *state = &window->pub.image.state;
-	struct gl_context *gl = &window->pub.gl;
 
 	for (bool first = true;; first = false) {
-		if (window_draw(window)) {
-			if (!state->anim_playing && first) {
-				fprintf(stderr, "Drawn in %lu ns\n",
-					gl_clock_query(gl));
-			}
-		}
-		const struct timespec tm = {
-			.tv_nsec = 2000000,
-		};
-		nanosleep(&tm, NULL);
-		const double ellapsed = poll_events(window);
-
-		if (state->anim_playing && window_has_focus(window)) {
+		event->image = 0;
+		const double ellapsed = draw_rest_poll(window,
+			!state->anim_playing && first);
+		if (state->anim_playing && window->pub.win.focused) {
 			remaining -= ellapsed;
-			if (remaining <= ellapsed) {
+			if (remaining <= 0) {
 				event->image = image_frame_cycle(image, 1);
 			}
 		}
@@ -106,12 +116,11 @@ struct window_context *window, double remaining) {
 		if (event->cycle || event->program || event->rm == trit_true) {
 			break;
 		} else if (event->image) {
+			window->pub.gl.update = gl_update_matrix;
 			if (event->image & image->file.events
-			|| event->image == ev_subcycle) {
+			|| event->image & ev_subcycle) {
 				break;
 			}
-			gl->update = gl_update_matrix;
-			event->image = 0;
 		}
 	}
 	return remaining;
@@ -143,12 +152,11 @@ bool display_loop(struct window_context *window, const bool single_file) {
 	for (bool upload = true, first_iter = true;;) {
 		if (upload) {
 			const struct wuimg *img = infile->sub_img + state->idx;
-			if (event->image == ev_subcycle) {
+			if (event->image & ev_subcycle) {
 				state->anim_playing = wuimg_frames_nr(img) > 1;
 			}
 
-			all_ok = update_texture(image, &window->pub.gl,
-				first_iter);
+			all_ok = update_texture(image, window, first_iter);
 			if (!all_ok) {
 				break;
 			}
@@ -168,20 +176,22 @@ bool display_loop(struct window_context *window, const bool single_file) {
 		if ((!single_file && event->cycle)
 		|| event->program || event->rm == trit_true) {
 			break;
-		} else if (event->image & infile->events) {
-			const enum wu_error err = dec_callback_image(image,
-				event->image);
-			if (err == wu_ok) {
-				upload = true;
-			} else if (err != wu_no_change) {
-				term_line_key_val("Callback failed",
-					wu_error_message(err), stdout);
-				all_ok = false;
-				break;
+		} else if (event->image) {
+			if (event->image & infile->events) {
+				const enum wu_error err = dec_callback(
+					image, event->image);
+				if (err == wu_ok) {
+					upload = true;
+				} else if (err != wu_no_change) {
+					term_line_key_val("Callback failed",
+						wu_error_message(err), stdout);
+					all_ok = false;
+					break;
+				}
 			}
-		}
-		if (event->image & (ev_subcycle | ev_frame)) {
-			upload = true;
+			if (event->image & (ev_subcycle | ev_frame)) {
+				upload = true;
+			}
 		}
 	}
 	term_line_clear();
@@ -189,7 +199,7 @@ bool display_loop(struct window_context *window, const bool single_file) {
 }
 
 bool display_setup(struct window_context *window, struct term_restore *tr) {
-	const clock_t start = clock();
+	const watch_t start = watch_look();
 	if (!window_setup(window)) {
 		term_line_put("Failed to create window", stderr);
 		return false;
@@ -209,6 +219,6 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 	if (tr) {
 		term_noncanon_start(tr);
 	}
-	clock_print("Display set", start);
+	watch_report("Display set", start);
 	return true;
 }

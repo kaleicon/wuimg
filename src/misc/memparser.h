@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef COMMON_MEMPARSER
 #define COMMON_MEMPARSER
 
@@ -19,8 +20,6 @@ size_t mp_skip_space_unsafe(struct mp_parser *mp);
 size_t mp_get_uint_unsafe(struct mp_parser *mp, long *val);
 
 
-bool mp_set_pos(struct mp_parser *mp, size_t pos);
-
 void mp_skip_blank(struct mp_parser *mp);
 
 size_t mp_skip_space(struct mp_parser *mp);
@@ -41,9 +40,9 @@ const uint8_t * mp_next_slice(struct mp_parser *mp, size_t len);
 
 struct wuptr mp_get_word(struct mp_parser *mp);
 
-size_t mp_get_int(struct mp_parser *mp, size_t digits, long *val);
-
 size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val);
+
+size_t mp_get_int(struct mp_parser *mp, size_t digits, long *val);
 
 size_t mp_get_xint(struct mp_parser *mp, size_t digits, long *val);
 

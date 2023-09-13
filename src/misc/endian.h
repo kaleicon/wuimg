@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef RASTER_ENDIAN
 #define RASTER_ENDIAN
 
@@ -28,10 +29,16 @@ uint32_t buf_endian32(const void *data, enum endianness e);
 
 float buf_endianf32(const void *data, enum endianness e);
 
-void endian_loop16(uint16_t *data, enum endianness e, size_t cnt);
+/* Swaps `n` data words in place if `e` doesn't match the processor's
+ * endianness. Otherwise does nothing.
+ * Happily enough, these also work the other way. If data is in native order,
+ * after the call it will be in the specified endianness. So, to write an
+ * array in big-endian order to a file, an unconditional call to
+ * endian_loopN(data, big_endian, n) suffices. */
+void endian_loop16(uint16_t *data, enum endianness e, size_t n);
 
-void endian_loop32(uint32_t *data, enum endianness e, size_t cnt);
+void endian_loop32(uint32_t *data, enum endianness e, size_t n);
 
-void endian_loop64(uint64_t *data, enum endianness e, size_t cnt);
+void endian_loop64(uint64_t *data, enum endianness e, size_t n);
 
 #endif /* RASTER_ENDIAN */

@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: 0BSD
 #include "rast_utils.h"
 #include "lib/hg3.h"
 
-static enum wu_error decode(struct image_file *infile,
-const struct wu_conf *wuconf, const struct map_info *mm) {
+static enum wu_error hg3_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct hg3_desc desc;
-	enum wu_error st = hg3_open(&desc, mp_parser_mem(mm->len, mm->data));
+	enum wu_error st = hg3_open(&desc, mp_parser_map(infile->map));
 	if (st != wu_ok) {
 		return st;
 	}
@@ -34,6 +35,4 @@ const struct wu_conf *wuconf, const struct map_info *mm) {
 	return i ? image_file_total_decoded(infile, i) : st;
 }
 
-enum wu_error hg3_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	return rast_map_wrap(infile, wuconf, decode);
-}
+const struct image_fn hg3_fn = {.mmap = true, .dec = hg3_dec};

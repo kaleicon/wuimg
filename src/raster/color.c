@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,13 +74,12 @@ const double gamma) {
 	const double over = pow(ap, gamma) * pow(gm, gm);
 	const double under = pow(alpha, gm) * pow(gamma, gamma);
 
-	const double a = 1 / ap;
 	*eotf = (struct color_transfer) {
 		.fn = color_transfer_linear_gamma,
 		.args = {
 			(float)(alpha / gm),
 			(float)ap,
-			(float)(alpha * a),
+			(float)(alpha / ap),
 			(float)gamma,
 			(float)(under / over),
 		},
@@ -89,13 +89,13 @@ const double gamma) {
 static void eotf_sRGB(struct color_transfer *eotf) {
 	/* Famously, sRGB is not continous, and precisely requires rounded
 	 * values. */
-	const double a = 1 / (1 + SRGB_ALPHA);
+	const double a = 1 + SRGB_ALPHA;
 	*eotf = (struct color_transfer) {
 		.fn = color_transfer_linear_gamma,
 		.args = {
 			0.04045f,
-			(float)a,
-			(float)(SRGB_ALPHA * a),
+			(float)(1/a),
+			(float)(SRGB_ALPHA / a),
 			(float)SRGB_GAMMA,
 			(float)(1/12.92),
 		},
@@ -126,29 +126,33 @@ const double div) {
 		return 0
 
 	 * where cutoff is where the output becomes 0, as tipped off by the
-	 * else branch. This means it's really a max() function, that the EOTF
-	 * input will always be positive, it's corresponding cutoff 0, and so
-	 * a branch is not needed. Thus the EOTF ought to be:
+	 * else branch. This means that any valid input to the corresponding
+	 * EOTF will be positive, it's cutoff 0, and so a branch is not needed.
+	 * Thus the EOTF ought to be:
 
 		return pow(10, (comp - 1) * div)
 
-	 * Let us remember that pow(x, y) is implemented as exp2(log2(x) * y),
-	 * and that exp2 and log2 are typically hardware instructions. Thus:
+	 * Let us remember that pow(x, y) is really exp2(log2(x) * y), and that
+	 * exp2 and log2 are typically hardware instructions. Thus it's really:
+
+		return exp2(log2(10) * (comp - 1) * div)
+
+	 * Simplified:
 
 		logdiv = log2(10) * div
 		return exp2((comp - 1) * logdiv)
 
-	 * Or more clearly
+	 * With FMA:
 
 		return exp2(comp * logdiv - logdiv)
 	*/
 
 	(void)cutoff;
 	const float logdiv = (float)(div * log2(10.0));
-	// The HLG function can be repurposed to be equivalent, so why not
 	*eotf = (struct color_transfer) {
+		// The HLG function can be repurposed for this, so why not
 		.fn = color_transfer_hlg,
-		.args = {0, logdiv, logdiv, 0, 0},
+		.args = {0, logdiv, -logdiv, 0, 0},
 	};
 }
 
@@ -158,23 +162,26 @@ static void eotf_perceptual_quantization(struct color_transfer *eotf) {
 		n = 2523 / 4096 * 128
 		c = 2392 / 4096 * 32
 		b = 2413 / 4096 * 32
-		a = c - b + 1 //3424 / 4096 * 32
+		a = c - b + 1 // alternatively (3424 / 4096)
 
 		ncomp = pow(comp, 1/n)
-		return pow(max(ncomp - a, 0) / (b - c*ncomp), 1/m)
+		num = max(ncomp - a, 0)
+		den = b - c*ncomp
+		return pow(num / den, 1/m)
 	*/
-	const double im = 16384.0 / 2610.0;
-	const double in = 32.0 / 2523.0;
+	const double inv_m = 16384.0 / 2610.0;
+	const double inv_n = 32.0 / 2523.0;
 	const double c = 2392.0 / 128.0;
 	const double b = 2413.0 / 128.0;
+	const double a = c - b + 1;
 	*eotf = (struct color_transfer) {
-		.fn = color_transfer_hlg,
+		.fn = color_transfer_pq,
 		.args = {
-			(float)in,
-			(float)(c - b + 1),
+			(float)inv_n,
+			(float)a,
 			(float)b,
 			(float)c,
-			(float)im,
+			(float)inv_m,
 		},
 	};
 }
@@ -207,29 +214,28 @@ static void eotf_hybrid_log_gamma(struct color_transfer *eotf) {
 	 * Hence, we can fold the (1/12) into iac by adding its logarithm,
 	 * thus saving on a constant:
 
-		iac = -(ia * c) // Swap signs for clarity
-		iac = iac + log2(1/12)
-		return exp2(comp * ia + iac) + bt
+		iacl = -iac + log2(1/12)
+		return exp2(comp * ia + iacl) + bt
 
 	 * Putting it all together:
 
 		if comp > 1/2:
-			return exp2(comp * ia + iac) + bt
+			return exp2(comp * ia + iacl) + bt
 		return comp * comp * (1/3)
 	*/
 
 	const double a = 0.17883277;
-	const double b = 1 - 4*a;
-	const double c = 0.5 - a*log(4*a);
+	const double b = fma(4, -a, 1);
+	const double c = fma(log(4*a), -a, 0.5);
 
-	const double ia = 1/a * M_LOG2E;
+	const double ia = M_LOG2E / a;
 	const double bt = b / 12;
 	*eotf = (struct color_transfer) {
 		.fn = color_transfer_hlg,
 		.args = {
 			(float)(1.0/2.0),
 			(float)ia,
-			(float)( -(ia * c) + log2(1.0/12) ),
+			(float)( fma(ia, -c, log2(1.0/12.0)) ),
 			(float)bt,
 			(float)(1.0/3.0),
 		},
@@ -240,16 +246,25 @@ static bool set_cicp_eotf(const enum cicp_transfer transfer,
 struct color_transfer *eotf) {
 	switch (transfer) {
 	case cicp_transfer_bt709_6:
-	case cicp_transfer_bt601_7:
-	case cicp_transfer_iec_61966_2_4: /* Defined additionally for negative
-		 * inputs. It's equivalent to doing abs() on input and
-		 * copysign() on output. */
-	case cicp_transfer_bt1361_0: /* Also defined for inputs < 0 and > 1,
-		 * but the curve is complicated, so TODO. */
+	case cicp_transfer_bt601_7: // Same as BT.709
+	case cicp_transfer_iec_61966_2_4: /* Same as above, but additionally
+		 * defined for negative inputs. Since the curve is symmetric,
+		 * it can be implemented with abs() on input and copysign() on
+		 * output. */
+	case cicp_transfer_bt1361_0: /* As BT.709, but extended to the range
+		 * [-0.25,1.33]. Values >= -0.0045 are a simple extension of
+		 * the curve, but the region < -0.0045 would require a third
+		 * branch. I believe we should simply forget about it.
+
+		 * But for completeness, comp < oetf(-0.0045) is
+			alpha = 0.0993
+			gamma = 1/0.45
+			c = (comp*-4 + alpha) / (alpha+1)
+			return pow(c, gamma) / -4
+		 */
 	case cicp_transfer_bt2020_2_10bit:
-	case cicp_transfer_bt2020_2_12bit:
-		// https://www.itu.int/rec/R-REC-BT.2020/en
-		eotf_linear_gamma(eotf, 0.0993, 1/0.45);
+	case cicp_transfer_bt2020_2_12bit: // https://www.itu.int/rec/R-REC-BT.2020/en
+		eotf_linear_gamma(eotf, 0.09929682680944, 1/0.45);
 		return true;
 	case cicp_transfer_unspecified:
 		break;
@@ -283,8 +298,8 @@ struct color_transfer *eotf) {
 		return true;
 	case cicp_transfer_iec_61966_2_1:
 		/* With matrix coef == 0, uses the sRGB EOTF.
-		 * With matrix coef == 5, uses the sYCC EOTF, which is extended
-		 * to negative inputs. */
+		 * With matrix coef == 5, uses the sYCC EOTF, which is the same
+		 * but extended to negative inputs. */
 		eotf_sRGB(eotf);
 		return true;
 	case cicp_transfer_smpte_st_2084:
@@ -292,11 +307,11 @@ struct color_transfer *eotf) {
 		eotf_perceptual_quantization(eotf);
 		return true;
 	case cicp_transfer_smpte_st_428_1:
-		/*
+		/* The function is
 			return pow(comp, 2.6) * 52.37 / 48
-		 * becomes
+		 * This can be turned into
 			return pow(comp * pow(52.37 / 48, 1/2.6), 2.6)
-		 * Which lets us reuse the normal gamma code.
+		 * which lets us reuse the normal gamma code.
 		*/
 		eotf_gamma(eotf, pow(52.37 / 48, 1/2.6), 2.6);
 		return true;
@@ -308,7 +323,7 @@ struct color_transfer *eotf) {
 }
 
 static const struct color_primaries * get_cicp_primaries(
-const enum cicp_primaries primaries) {
+const enum cicp_primaries primaries, const enum cicp_matrix matrix) {
 	static const struct color_primaries system_m = {
 		.w = WHITE_C,
 		.r = {.67, .33},
@@ -363,6 +378,11 @@ const enum cicp_primaries primaries) {
 		.g = {.295, .605},
 		.b = {.155, .077},
 	};
+
+	if (matrix == cicp_matrix_bt2100_2_ictcp) {
+		return &bt2020;
+	}
+
 	switch (primaries) {
 	case cicp_primaries_bt709_6:
 		return &SRGB_PRIMARIES;
@@ -395,7 +415,7 @@ static const struct color_primaries * get_primaries(
 const struct color_space *cs) {
 	switch (cs->type) {
 	case color_profile_enum:
-		return get_cicp_primaries(cs->primaries);
+		return get_cicp_primaries(cs->primaries, cs->matrix);
 	case color_profile_custom:
 		return &cs->desc->u.prof.pri;
 	case color_profile_icc:
@@ -457,8 +477,8 @@ const bool limited, const double b, const double r) {
 	const double chr = range_diff_scaler(limited);
 	const double mg = -1.0 + b + r; // minus green
 
-	const double two_b = (2 - 2*b) * chr;
-	const double two_r = (2 - 2*r) * chr;
+	const double two_b = fma(-2, b, 2) * chr; // 2 - 2*b
+	const double two_r = fma(-2, r, 2) * chr; // 2 - 2*r
 
 	off[0] = range_offset(limited);
 	off[1] = -.5;
@@ -485,7 +505,8 @@ const bool limited) {
 		(Dz * 2.0 + Y) / 0.986566 = B
 		Dx * 2.0 + 0.991902 * Y   = R
 
-	 * As tipped off by the names, the output is in X'Y'Z' color space.
+	 * As tipped off by the names, the output is actually in the X'Y'Z'
+	 * (that is, gamma-encoded) color space.
 	 * TODO: Test.
 	*/
 
@@ -504,6 +525,52 @@ const bool limited) {
 			d,          0,      0,        // in-Dx
 		}
 	};
+}
+
+static void gen_mat_ictcp(struct mat3 *in, double off[static 3],
+const bool limited, const enum cicp_transfer transfer) {
+	/* ICtCp is derived by
+		LMS = RGB * mat
+		L'M'S' = oetf(LMS)
+		ICtCp = L'M'S' * diff_mat
+
+	 * where diff_mat depends on whether the transfer function is HLG or PQ.
+	 * diff_mat is equivalent to the following:
+
+		I = 0.5*L' + 0.5*M'
+		PQ:
+			Ct = (6610*L' - 13613*M' + 7003*S') / 4096
+			Cp = (17933*L' - 17390*M' - 543*S') / 4096
+		HLG:
+			Ct = (3625*L' - 7465*M' + 3840*S') / 4096
+			Cp = (9500*L' - 9212*M' - 288*S') / 4096
+	*/
+	const double i = range_scaler(limited) / 2;
+	const double d = range_diff_scaler(limited) / 4096;
+
+	off[0] = range_offset(limited);
+	off[1] = -.5;
+	off[2] = -.5;
+
+	struct mat3 from_lms;
+	if (transfer == cicp_transfer_smpte_st_2084) { // PQ
+		from_lms = (struct mat3) {
+			.m = {
+				i, d*6610, d*17933,
+				i, -d*13613, -d*17390,
+				0, d*7003, -d*543
+			},
+		};
+	} else { // HLG, hopefully
+		from_lms = (struct mat3) {
+			.m = {
+				i, d*3625, d*9500,
+				i, -d*7465, -d*9212,
+				0, d*3840, -d*288,
+			},
+		};
+	}
+	mat3_invert(in, &from_lms);
 }
 
 static double primary_z(const struct color_xy xy) {
@@ -599,8 +666,8 @@ const struct color_space *cs) {
 		break;
 	case cicp_matrix_bt2020_2_constant:
 	case cicp_matrix_chroma_derived_constant:
-		/* Constant-luminance requires branching so it can't be handled
-		 * by a matrix. TODO */
+		/* Constant-luminance requires branching, so a matrix is not
+		 * powerful enough for the task. TODO. */
 		return false;
 	case cicp_matrix_smpte_st_2085:
 		gen_mat_ydzdx(in, off, cs->limited);
@@ -610,8 +677,10 @@ const struct color_space *cs) {
 			return false;
 		}
 		break;
-	case cicp_matrix_bt2100_2_icpct: // TODO
-		return false;
+	case cicp_matrix_bt2100_2_ictcp:
+		/* Output is L'M'S' colorspace. */
+		gen_mat_ictcp(in, off, cs->limited, cs->transfer);
+		return true;
 	}
 	gen_mat_ycbcr(in, off, cs->limited, b, r);
 	return true;
@@ -635,6 +704,25 @@ struct mat43f *dst, const enum pix_layout layout) {
 		swz.m[y*3 + i] = 1;
 	}
 	mat_mul_tofloat(dst->m, swz.m, cm.m, 3, 4, 3);
+}
+
+static bool set_eotf(const struct color_space *cs, struct color_transfer *eotf) {
+	switch (cs->type) {
+	case color_profile_enum:
+		if (set_cicp_eotf(cs->transfer, eotf)) {
+			return true;
+		}
+		break;
+	case color_profile_custom:
+		if (!set_cicp_eotf(cs->transfer, eotf)) {
+			struct color_gamma *gamma = &cs->desc->u.prof.gamma;
+			eotf_gamma(eotf, 1, gamma->r);
+		}
+		return true;
+	case color_profile_icc:
+		break;
+	}
+	return false;
 }
 
 static void rgb_to_XYZ(struct mat3 *out, const struct color_primaries *pri) {
@@ -661,23 +749,26 @@ static void XYZ_to_rgb(struct mat3 *out, const struct color_primaries *pri) {
 	mat3_invert(out, &tmp);
 }
 
-static bool set_eotf(const struct color_space *cs, struct color_transfer *eotf) {
-	switch (cs->type) {
-	case color_profile_enum:
-		if (set_cicp_eotf(cs->transfer, eotf)) {
-			return true;
+static void LMS_to_bt2020_rgb(struct mat3 *out) {
+	const double s = 4096;
+	const struct mat3 lms = {
+		.m = {
+			1688/s, 2146/s, 262/s,
+			683/s, 2951/s, 462/s,
+			99/s, 309/s, 3688/s,
 		}
-		break;
-	case color_profile_custom:
-		if (!set_cicp_eotf(cs->transfer, eotf)) {
-			struct color_gamma *gamma = &cs->desc->u.prof.gamma;
-			eotf_gamma(eotf, 1, gamma->r);
-		}
-		return true;
-	case color_profile_icc:
-		break;
+	};
+	mat3_invert(out, &lms);
+}
+
+static bool is_linear_rgb(const enum cicp_matrix matrix) {
+	switch (matrix) {
+	case cicp_matrix_smpte_st_2085:
+	case cicp_matrix_bt2100_2_ictcp:
+		return false;
+	default: break;
 	}
-	return false;
+	return true;
 }
 
 bool color_space_to_linear_sRGB(const struct color_space *cs,
@@ -686,24 +777,34 @@ struct color_convert *conv, const enum pix_layout layout) {
 	if (!set_eotf(cs, &conv->eotf)) {
 		eotf_sRGB(&conv->eotf);
 	}
-	const struct color_primaries *pri = get_primaries(cs);
-	if (pri && pri != &SRGB_PRIMARIES) {
-		if (cs->matrix == cicp_matrix_smpte_st_2085) {
-			struct mat3 tmp;
-			XYZ_to_rgb(&tmp, &SRGB_PRIMARIES);
-			float_from_double(conv->linear.m, tmp.m,
-				ARRAY_LEN(tmp.m));
-		} else {
-			struct mat3 in, out;
-			rgb_to_XYZ(&in, pri);
-			XYZ_to_rgb(&out, &SRGB_PRIMARIES);
 
-			mat_mul_tofloat(conv->linear.m, in.m, out.m,
-				3, 3, 3);
-		}
-	} else {
-		// If NULL, assume we're already in sRGB and set to identity.
+	const struct color_primaries *pri = get_primaries(cs);
+	if (!pri) {
+		pri = &SRGB_PRIMARIES;
+	}
+
+	if (is_linear_rgb(cs->matrix) && pri == &SRGB_PRIMARIES) {
 		matf_identity(conv->linear.m, 3, 3);
+	} else {
+		struct mat3 out;
+		XYZ_to_rgb(&out, &SRGB_PRIMARIES);
+		if (cs->matrix == cicp_matrix_smpte_st_2085) {
+			float_from_double(conv->linear.m, out.m,
+				ARRAY_LEN(conv->linear.m));
+		} else {
+			struct mat3 in;
+			rgb_to_XYZ(&in, pri);
+			if (cs->matrix == cicp_matrix_bt2100_2_ictcp) {
+				struct mat3 to_rgb, tmp;
+				LMS_to_bt2020_rgb(&to_rgb);
+				mat_mul(tmp.m, to_rgb.m, in.m, 3, 3, 3);
+				mat_mul_tofloat(conv->linear.m, tmp.m, out.m,
+					3, 3, 3);
+			} else {
+				mat_mul_tofloat(conv->linear.m, in.m, out.m,
+					3, 3, 3);
+			}
+		}
 	}
 	return (bool)pri;
 }
@@ -711,7 +812,8 @@ struct color_convert *conv, const enum pix_layout layout) {
 cmsHTRANSFORM color_icc_transform(struct color_space *cs, cmsHPROFILE out) {
 	struct icc_profile *c = &cs->desc->u.icc;
 	if (!c->transform) {
-		c->transform = cmsCreateTransform(c->in, TYPE_RGB_8,
+		c->transform = cmsCreateTransform(c->in,
+			(COLORSPACE_SH(PT_ANY)|CHANNELS_SH(3)|BYTES_SH(1)),
 			out, TYPE_RGB_16, INTENT_PERCEPTUAL, 0);
 	}
 	return c->transform;
@@ -752,7 +854,7 @@ const enum color_profile_type type) {
 				set_transfer_triple(&desc->u.prof.gamma,
 					SRGB_GAMMA);
 				const struct color_primaries *pri =
-					get_cicp_primaries(cs->primaries);
+					get_cicp_primaries(cs->primaries, cs->matrix);
 				if (!pri) {
 					pri = &SRGB_PRIMARIES;
 				}

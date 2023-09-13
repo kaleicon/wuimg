@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_CONF
 #define WU_CONF
 
@@ -59,9 +60,8 @@ struct wu_conf {
 	bool raw_prefer_thumbnail:1; /* If true, display the file's embedded
 		thumbnail instead if it is at least half as big as the
 		original, otherwise do a full and slow render of the raw data.
-		The thumbnail is always decoded at full resolution. If the
-		thumbnail is a JPEG image, the jpeg decoder function will be
-		used and so its settings will apply to it.
+		If the thumbnail is a JPEG image, the jpeg decoder function
+		will be used and so its settings will also apply to it.
 		  Note that the thumbnail might have camera effects applied,
 		and so might differ drastically from a straight render of the
 		raw data. */
@@ -70,14 +70,14 @@ struct wu_conf {
 	enum svg_redraw_on { // If and when should the vector be redrawn.
 		svg_never = 0,
 		svg_upscale, // Only when zooming in.
-		svg_anyscale, // When zooming in and out. Crystal crispness always.
+		svg_scale, // When zooming in and out. Crystal crispness always.
 	} svg_redraw:2;
 
 	// WEBP
 	bool webp_bypass_filtering:1; // Skip the filtering stage for lossy WebP.
 	bool webp_fast_upsamp:1; /* Use a faster chroma upsampler for lossy WebP.
-		This only affects lossy animations, as static images are
-		handled in the GPU. */
+		This only applies to lossy animations, as static images are
+		upsampled in the GPU. */
 	bool webp_use_homegrown_renderer:1; /* Composite animation frames using
 		our own routines instead of libwebp's. They seem to be slightly
 		faster. */

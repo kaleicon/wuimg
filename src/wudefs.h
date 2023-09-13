@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WUDEFS
 #define WUDEFS
 
-#include <stdio.h>
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "misc/file.h"
 #include "misc/wustr.h"
 #include "raster/wuimg.h"
 
@@ -34,6 +35,8 @@ enum image_event {
 
 struct image_file {
 	FILE *ifp;
+	struct map_info map;
+
 	size_t nr;
 	struct wuimg *sub_img;
 	struct wu_tree metadata;
@@ -46,12 +49,23 @@ struct image_file {
 	struct wustr errors;
 };
 
+typedef enum wu_error (*fmt_dec_t)(struct image_file *infile,
+	const struct wu_conf *wuconf);
+typedef enum wu_error (*fmt_callback_t)(struct image_file *infile,
+	const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev);
+
+struct image_fn {
+	bool mmap;
+	fmt_dec_t dec;
+	fmt_callback_t callback;
+};
+
 struct image_context {
 	const char *name;
 	struct image_file file;
 	struct wu_state state;
 	struct wu_conf conf;
-	int fmt_id;
+	const struct image_fn *fn;
 };
 
 
@@ -67,9 +81,9 @@ void image_file_normalize(struct image_file *file);
 
 enum wu_error image_file_total_decoded(struct image_file *file, size_t o);
 
-void image_file_error_append(struct image_file *file, const char *str);
+void image_file_strerror_append(struct image_file *file, const char *str);
 
-void image_file_status_append(struct image_file *file, enum wu_error status);
+void image_file_error_append(struct image_file *file, enum wu_error status);
 
 void image_file_free(struct image_file *file);
 

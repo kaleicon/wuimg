@@ -1,28 +1,21 @@
+// SPDX-License-Identifier: 0BSD
 #include "rast_utils.h"
 #include "lib/qoi.h"
 
-static enum wu_error dec_wrap(struct image_file *infile,
-const struct wu_conf *wuconf, const struct map_info *mm) {
-	struct mp_parser mp = mp_parser_mem(mm->len, mm->data);
-	enum wu_error st = qoi_open(&mp);
-	if (st == wu_ok) {
-		struct wuimg *img = alloc_sub_images(infile, 1);
-		if (img) {
-			st = qoi_parse(&mp, img);
-			if (st == wu_ok) {
-				if (!wuimg_exceeds_limit(img, wuconf)) {
-					return qoi_decode(&mp, img)
-						? wu_ok : wu_decoding_error;
-				}
-				return wu_exceeds_size_limit;
-			}
-			return st;
-		}
-		return wu_alloc_error;
-	}
-	return st;
+static size_t dec(const void *restrict desc, struct wuimg *img) {
+	return qoi_decode(desc, img);
+}
+static enum wu_error parse(void *restrict desc, struct wuimg *img) {
+	return qoi_parse(desc, img);
 }
 
-enum wu_error qoi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	return rast_map_wrap(infile, wuconf, dec_wrap);
+static enum wu_error qoi_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	struct mp_parser mp = mp_parser_map(infile->map);
+	const enum wu_error st = qoi_open(&mp);
+	return (st == wu_ok)
+		? rast_trivial_opened(infile, wuconf, &mp, parse, NULL, dec, NULL)
+		: st;
 }
+
+const struct image_fn qoi_fn = {.mmap = true, .dec = qoi_dec};

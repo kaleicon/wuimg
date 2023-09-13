@@ -1,23 +1,19 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "wudefs.h"
 #include "misc/common.h"
 #include "dec_enable.def"
-
-struct fmt_fn_desc {
-	const char name[8];
-	const bool has_callback;
-};
 
 // Produces a struct definition in string form, then in code
 #define EXP_STRING(exp) #exp; exp
 
-static const char fmt_structs[] = "struct fmt_fn {"
+static const char fmt_structs[] = "struct fmt_desc {"
 	"const char name[8];"
-	"const fmt_dec_t dec;"
-	"const fmt_callback_t callback;"
+	"const struct image_fn *fn;"
 "};" EXP_STRING(
 	struct fmt_ext {
 		const char ext[6];
@@ -33,22 +29,31 @@ static const char fmt_structs[] = "struct fmt_fn {"
 
 enum fmt_id {
 	fmt_unknown = -1,
-#define WUDEC(name, _callback) fmt_##name,
+#define WUDEC(name) fmt_##name,
 #include "dec.def"
 #undef WUDEC
 };
 
-static const struct fmt_fn_desc fn_map[] = {
-#define WUDEC(name, has_callback) { #name , has_callback },
+static const char name_map[][8] = {
+#define WUDEC(name) { #name },
 #include "dec.def"
 #undef WUDEC
 };
 
+
+#if defined WU_ENABLE_RAW
+static const short RAW_IF_PRESENT = fmt_raw;
+#elif defined WU_ENABLE_TIFF
+static const short RAW_IF_PRESENT = -1;
+#endif
 
 /* Be careful with masks. This array is sorted dumbly. */
 static struct fmt_magic magic_map[] = {
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
+#ifdef WU_ENABLE_BMZ
+	{"\xff\xff\xff\xff", "ZLC3", fmt_bmz},
+#endif // WU_ENABLE_BMZ
 #endif // WU_ENABLE_DIB
 
 #ifdef WU_ENABLE_DPX
@@ -76,8 +81,12 @@ static struct fmt_magic magic_map[] = {
 #endif //WU_ENABLE_MAKI
 
 #ifdef WU_ENABLE_MSX
-	// Maybe this is too general.
-	//{"\xff\xff\xff\x00\x00\xff\xff", "\xfe\x00\x00\x00\x00\x00\x00", fmt_scr2},
+	/* You can generally tell whether a file is an MSX-BASIC format,
+	 * but you can rarely tell the screen mode it uses. */
+
+	// Graph saurus SR5
+	{"\xff\xff\xff\xff\xff\xff\xff", "\xfe\x00\x00\x00\x6a\x00\x00", fmt_sc5},
+
 #endif // WU_ENABLE_MSX
 
 #ifdef WU_ENABLE_PCX
@@ -120,6 +129,8 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff\xff\xff\xff", "P7 332\n", fmt_pnm}, // Xv thumbnail
 	{"\xff\xff", "PF", fmt_pnm}, // Color PFM
 	{"\xff\xff", "Pf", fmt_pnm}, // Gray PFM
+	{"\xff\xff", "PH", fmt_pnm}, // Color PHM
+	{"\xff\xff", "Ph", fmt_pnm}, // Gray PHM
 
 	{"\xff\xff\xff\xff\xff\xff", "PG ML ", fmt_pnm}, // PGX
 	{"\xff\xff\xff\xff\xff\xff", "PG LM ", fmt_pnm},
@@ -314,6 +325,9 @@ static struct fmt_ext ext_map[] = {
 	{"cur", fmt_ico},
 	{"dib", fmt_dib},
 	{"ico", fmt_ico},
+#ifdef WU_ENABLE_BMZ
+	{"bmz", -1},
+#endif
 #endif
 
 #ifdef WU_ENABLE_DPX
@@ -347,36 +361,37 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_MSX
-	{"sc2", fmt_scr2},
-	{"grp", fmt_scr2},
+	{"sc2", fmt_sc2},
+	{"grp", fmt_sc2},
 
-	{"sc3", fmt_scr3},
-	{"sc4", fmt_scr4},
+	{"sc3", fmt_sc3},
 
-	{"sc5", fmt_scr5},
-	{"sr5", fmt_scr5}, // Graph Saurus raw
-	{"ge5", fmt_scr5},
+	{"sc4", fmt_sc4},
 
-	{"sc6", fmt_scr6},
-	{"s16", fmt_scr6}, // Alternate field of an SC7 file
-	{"sr6", fmt_scr6}, // Graph Saurus raw
+	{"sc5", fmt_sc5},
+	{"sr5", fmt_sc5}, // Graph Saurus
+	{"ge5", fmt_sc5},
 
-	{"sc7", fmt_scr7},
-	{"s17", fmt_scr7}, // Alternate field of an SC7 file
-	{"sr7", fmt_scr7},
-	{"ge7", fmt_scr7},
-	{"gl7", fmt_scr7},
+	{"sc6", fmt_sc6},
+	{"s16", fmt_sc6}, // Alternate field of an SC7 file
+	{"sr6", fmt_sc6}, // Graph Saurus
 
-	{"sc8", fmt_scr8},
-	{"sr8", fmt_scr8},
-	{"ge8", fmt_scr8},
-	{"gl8", fmt_scr8},
+	{"sc7", fmt_sc7},
+	{"s17", fmt_sc7}, // Alternate field of an SC7 file
+	{"sr7", fmt_sc7}, // Graph Saurus
+	{"ge7", fmt_sc7},
 
-	{"sca", fmt_scr10},
+	{"sc8", fmt_sc8},
+	{"sr8", fmt_sc8},
+	{"ge8", fmt_sc8},
 
-	{"scc", fmt_scr12},
-	{"srs", fmt_scr12},
-	{"yjk", fmt_scr12},
+	{"sca", fmt_sc10},
+	{"s1a", fmt_sc10}, // Alternate field of an SCA file
+
+	{"scc", fmt_sc12},
+	{"s1c", fmt_sc12}, // Alternate field of an SCC file
+	{"srs", fmt_sc12}, // Graph Saurus
+	{"yjk", fmt_sc12},
 #endif
 
 #ifdef WU_ENABLE_PCX
@@ -413,11 +428,13 @@ static struct fmt_ext ext_map[] = {
 	{"pam", -1},
 	{"pnm", -1},
 	{"pfm", -1},
+	{"phm", -1},
 	{"p7", -1},
 	{"pgx", -1},
 #endif
 
 #ifdef WU_ENABLE_PRT
+	{"cps", -1},
 	{"prt", -1},
 #endif
 
@@ -553,16 +570,26 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_RAW
-	// TIFF
-	{"arw", fmt_raw},
-	{"cr2", fmt_raw},
-	{"dng", fmt_raw},
-	{"nef", fmt_raw},
-	{"pef", fmt_raw},
-
 	{"orf", -1},
 	{"raw", -1},
+	{"raf", -1},
 	{"rw2", -1},
+	{"rwl", -1},
+#endif
+
+#if defined WU_ENABLE_RAW || defined WU_ENABLE_TIFF
+	/* These RAW formats are just TIFF with extra data, and it's usually
+	 * possible to show a thumbnail if libraw is not used. */
+	{"arw", RAW_IF_PRESENT},
+	{"cr2", RAW_IF_PRESENT},
+	{"dcr", RAW_IF_PRESENT},
+	{"dng", RAW_IF_PRESENT},
+	{"erf", RAW_IF_PRESENT},
+	{"k25", RAW_IF_PRESENT},
+	{"kdc", RAW_IF_PRESENT},
+	{"nef", RAW_IF_PRESENT},
+	{"nrw", RAW_IF_PRESENT},
+	{"pef", RAW_IF_PRESENT},
 #endif
 
 #ifdef WU_ENABLE_SVG
@@ -573,16 +600,7 @@ static struct fmt_ext ext_map[] = {
 #ifdef WU_ENABLE_TIFF
 	{"tif", -1},
 	{"tiff", -1},
-#ifndef WU_ENABLE_RAW
-	/* Some RAW formats are just TIFF with extra data. Usually only a
-	 * thumbnail will be shown, but it's better than nothing. */
-	{"arw", -1},
-	{"cr2", -1},
-	{"dng", -1},
-	{"nef", -1},
-	{"pef", -1},
-#endif // !WU_ENABLE_RAW
-#endif // WU_ENABLE_TIFF
+#endif
 
 #ifdef WU_ENABLE_WEBP
 	{"webp", -1},
@@ -712,15 +730,6 @@ static int quine_fextcmp(const void *restrict e1, const void *restrict e2) {
 	return memcmp(ext1->ext, ext2->ext, sizeof(ext2->ext));
 }
 
-static void print_fn_def(const char *qual, const char *name,
-const char *suffix, const bool is_callback) {
-	const char *extra_args = (is_callback)
-		? ",struct wu_state *state, enum image_event ev" : "";
-	fprintf(stdout, "%s enum wu_error %.8s_%s("
-		"struct image_file *infile, const struct wu_conf *wuconf %s);",
-		qual, name, suffix, extra_args);
-}
-
 static void print_map_def(const char *name) {
 	fprintf(stdout, "static const struct fmt_%s %s_map[] = {", name, name);
 }
@@ -742,34 +751,35 @@ static void print_include(const char *file) {
 	fprintf(stdout, "#include %s\n", file);
 }
 
+static int dec_headers(void) {
+	print_include("\"wudefs.h\"");
+	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
+		printf("extern const struct image_fn %.8s_fn;", name_map[i]);
+	}
+	fputc('\n', stdout);
+	return 0;
+}
+
 static int mapsort(void) {
 	qsort(magic_map, ARRAY_LEN(magic_map), sizeof(*magic_map),
 		quine_fmaskmagiccmp);
 	qsort(ext_map, ARRAY_LEN(ext_map), sizeof(*ext_map), quine_fextcmp);
 
+	/* Output of dec_headers() */
 	print_include("\"dec_fn.h\"");
-
-	/* Function pointer typedef */
-	print_fn_def("typedef", "(*fmt", "dec_t)", false);
-	print_fn_def("typedef", "(*fmt", "callback_t)", true);
 
 	/* Struct maps definition string */
 	fwrite(fmt_structs, 1, sizeof(fmt_structs) - 1, stdout);
 
 	/* The maps proper */
-	print_map_def("fn");
-	for (size_t i = 0; i < ARRAY_LEN(fn_map); ++i) {
+	print_map_def("desc");
+	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
 		fputs("{{", stdout);
-		const int outlen = (int)print_hex(fn_map[i].name,
-			sizeof(fn_map->name));
+		const int outlen = (int)print_hex(name_map[i],
+			sizeof(*name_map));
 		fputs("},", stdout);
 
-		fprintf(stdout, "%.*s_dec,", outlen, fn_map[i].name);
-		if (fn_map[i].has_callback) {
-			fprintf(stdout, "%.*s_callback", outlen, fn_map[i].name);
-		} else {
-			fputs("NULL", stdout);
-		}
+		fprintf(stdout, "&%.*s_fn", outlen, name_map[i]);
 		fputs("},", stdout);
 	}
 	fputs("};", stdout);
@@ -830,18 +840,6 @@ static int mapsort(void) {
 
 	/* Include the rest of the file */
 	fputs("\n#include \"dec.c\"\n", stdout);
-	return 0;
-}
-
-static int dec_headers(void) {
-	print_include("\"wudefs.h\"");
-	for (size_t i = 0; i < ARRAY_LEN(fn_map); ++i) {
-		print_fn_def("", fn_map[i].name, "dec", false);
-		if (fn_map[i].has_callback) {
-			print_fn_def("", fn_map[i].name, "callback", true);
-		}
-	}
-	fputc('\n', stdout);
 	return 0;
 }
 

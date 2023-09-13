@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <flif.h>
 
 #include "wudefs.h"
@@ -6,7 +7,6 @@
 #include "misc/file.h"
 
 struct flif_state {
-	struct map_info map;
 	FLIF_DECODER *dec;
 	void (*read_func)(FLIF_IMAGE *image, uint32_t row, void *buffer,
 		size_t buffer_size_bytes);
@@ -17,7 +17,6 @@ static void clean_flif_state(struct image_file *infile) {
 	if (ds->dec) {
 		flif_destroy_decoder(ds->dec);
 	}
-	file_unmap(&ds->map);
 }
 
 static enum wu_error decode_frame(struct wuimg *img, FLIF_IMAGE *frame,
@@ -130,15 +129,14 @@ const struct wu_conf *wuconf) {
 	}
 	infile->dec_state = ds;
 
-	if (!file_map(&ds->map, infile->ifp)) {
-		return wu_alloc_error;
-	}
-
 	ds->dec = flif_create_decoder();
 	const int32_t success = flif_decoder_decode_memory(ds->dec,
-		ds->map.data, ds->map.len);
+		infile->map.data, infile->map.len);
 	if (success) {
 		return setup_img(infile, wuconf, ds);
 	}
 	return wu_decoding_error;
 }
+
+const struct image_fn flif_fn = {.mmap = true,
+	.dec = flif_dec, .callback = flif_callback};

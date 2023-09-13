@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef RASTER_STRIP
 #define RASTER_STRIP
 
@@ -10,8 +11,8 @@
 struct scale_info {
 	uint8_t bitdepth;
 	bool scale;
-	uint8_t size_shift;
-	uint64_t mul, add;
+	uint32_t add;
+	uint64_t mul;
 };
 
 struct sewing_clothe {
@@ -43,9 +44,9 @@ align_t strip_alignment(size_t stride, size_t width, uint8_t bitdepth);
 
 
 void strip_scale(void *dst, const void *src, size_t width,
-struct scale_info scaler, bool design);
+struct scale_info scaler, enum pix_attr attr);
 
-struct scale_info strip_scale_info(uint64_t maxval, uint8_t bitdepth);
+struct scale_info strip_scale_info(uint32_t maxval, uint8_t outdepth);
 
 
 /* Copies 'width' bytes from 'src' to 'dst', with 'ch' bytes of spacing */
@@ -53,8 +54,8 @@ void strip_spread(uint8_t *restrict dst, const uint8_t *restrict src,
 size_t width, size_t ch);
 
 
-void strip_handsew_alpha(void *restrict dst, const void *restrict color,
-const void *restrict alpha, const size_t w, const void *restrict pal,
+void strip_handsew_alpha(void *dst, const void *color,
+const void *alpha, const size_t w, const void *restrict pal,
 const uint8_t ch);
 
 void strip_sew_alpha(struct sewing_machine *sew);

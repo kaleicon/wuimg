@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_WINDOW
 #define WU_WINDOW
 
@@ -43,8 +44,6 @@ void window_fullscreen(struct window_context *window);
 void window_poll(struct window_context *window);
 
 void window_adapt(struct window_context *window);
-
-bool window_has_focus(const struct window_context *window);
 
 void window_set_title(const struct window_context *window, const char *title);
 

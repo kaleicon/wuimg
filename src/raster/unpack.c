@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <string.h>
 #include <limits.h>
 
@@ -272,7 +273,7 @@ static void strip_pack64f_32f(float *dst, const double *src, const size_t len) {
 
 
 // Irregular packings
-static void expand1555(const uint16_t word, uint8_t *dst) {
+static void expand1555(const upack1555_t word, uint8_t *dst) {
 	const uint8_t mask = (1 << 5) - 1;
 	const uint8_t p = 6;
 	const uint16_t scale = (UCHAR_MAX << p) / mask + 1;
@@ -285,7 +286,7 @@ static void expand1555(const uint16_t word, uint8_t *dst) {
 }
 
 static void strip_expand1555(uint8_t *restrict dst,
-const uint16_t *restrict src, const size_t n) {
+const upack1555_t *restrict src, const size_t n) {
 	for (size_t x = 0; x < n; ++x) {
 		expand1555(src[x], dst + x*4);
 	}

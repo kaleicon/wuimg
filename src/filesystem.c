@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -168,9 +169,10 @@ static bool is_regular_file(DIR *dp, const struct dirent *entry) {
 static struct lenstr * pool_getptr(struct keypool *pool, const size_t reserve) {
 	struct wugrow *pg = &pool->grow;
 	if (reserve > POOL_SIZE - pool->used) {
-		if (!wugrow_recheck(&pool->buf, pg)) {
+		if (!wugrow_recheck(pg)) {
 			return NULL;
 		}
+		pool->buf = pg->ptr;
 		pool->buf[pg->pos] = malloc(POOL_SIZE);
 		if (!pool->buf[pg->pos]) {
 			return NULL;
@@ -204,9 +206,10 @@ struct collator *icu) {
 
 static bool pathcat(struct fs_dir *dir, const struct wuptr *file,
 struct collator *icu) {
-	if (!wugrow_recheck(&dir->entries, &dir->entries_grow)) {
+	if (!wugrow_recheck(&dir->entries_grow)) {
 		return false;
 	}
+	dir->entries = dir->entries_grow.ptr;
 
 	struct lenstr *keyptr = keygen(&dir->pool, file, icu);
 	if (!keyptr) {

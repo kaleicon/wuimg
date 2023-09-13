@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/bit.h"
 #include "misc/endian.h"
 #include "misc/file.h"
@@ -61,14 +62,14 @@ double dib_gamma_to_double(const dib_gamma_t f) {
 	return (double)f / (1 << 16);
 }
 
-static bool load_profile_data(const struct dib_desc *desc, struct wustr *name) {
+static bool load_profile_data(const struct dib_desc *desc, struct wustr *dst) {
 	fseek(desc->ifp, desc->lcs.profile_off, SEEK_SET);
-	if (wustr_malloc(name, file_remaining(desc->ifp))) {
-		name->len = fread(name->str, 1, name->len, desc->ifp);
-		if (name->len) {
+	if (wustr_malloc(dst, file_remaining(desc->ifp))) {
+		dst->len = fread(dst->str, 1, dst->len, desc->ifp);
+		if (dst->len) {
 			return true;
 		}
-		wustr_free(name);
+		wustr_free(dst);
 	}
 	return false;
 }
@@ -84,140 +85,122 @@ struct wustr *name) {
 static bool dib_get_colorspace(const struct dib_desc *desc, struct color_space *cs) {
 	if (desc->type >= dib_v4_header) {
 		const struct dib_lcs *lcs = &desc->lcs;
-		switch (lcs->type) {
-		case dib_lcs_calibrated_rgb:
-			return color_space_set_primaries_rgb(cs,
-				dib_cie_to_double(lcs->r.x),
-				dib_cie_to_double(lcs->r.y),
-				dib_cie_to_double(lcs->g.x),
-				dib_cie_to_double(lcs->g.y),
-				dib_cie_to_double(lcs->b.x),
-				dib_cie_to_double(lcs->b.y))
-			&& color_space_set_gamma_rgb(cs,
-				dib_gamma_to_double(lcs->gamma.r),
-				dib_gamma_to_double(lcs->gamma.g),
-				dib_gamma_to_double(lcs->gamma.b));
-		case dib_profile_embedded:
-			;struct wustr name;
-			if (load_profile_data(desc, &name)) {
-				return color_space_set_icc_owned(cs, name.str,
-					name.len);
+		if (lcs->type == dib_profile_embedded) {
+			struct wustr icc;
+			if (load_profile_data(desc, &icc)) {
+				return color_space_set_icc_owned(cs, icc.str,
+					icc.len);
 			}
-			break;
-		case dib_profile_linked:
-		case dib_lcs_srgb:
-		case dib_lcs_windows_color_space:
-			return true;
+			return false;
 		}
-		return false;
 	}
 	return true;
 }
 
-static size_t rle_loop4(unsigned char *restrict raster, const size_t raster_len,
-const unsigned char *restrict rle, const size_t rle_len, const size_t scan_len) {
+static size_t rle_loop4(unsigned char *restrict dst, const size_t dst_len,
+const unsigned char *restrict src, const size_t src_len, const size_t scan_len) {
 	size_t i = 0;
 	size_t o = 0;
 	do {
-		const unsigned char repeat = rle[i];
-		const unsigned char marker = rle[i+1];
+		const unsigned char repeat = src[i];
+		const unsigned char marker = src[i+1];
 		i += 2;
 		if (repeat) {
-			if (o + repeat > raster_len) {
+			if (o + repeat > dst_len) {
 				return o;
 			}
 			const unsigned char val[] = {
 				marker >> 4,
 				marker & 0x0f,
 			};
-			memtessel(raster + o, val, sizeof(val), repeat);
+			memtessel(dst + o, val, sizeof(val), repeat);
 			o += repeat;
 		} else {
 			switch (marker) {
 			case dib_end_of_scan_line:
-				o += (raster_len - o) % scan_len;
+				o += (dst_len - o) % scan_len;
 				break;
 			case dib_end_of_rle:
 				return o;
 			case dib_delta:
-				if (i >= rle_len) {
+				if (i >= src_len) {
 					return o;
 				}
-				const unsigned char x_diff = rle[i];
-				const unsigned char y_diff = rle[i+1];
+				const unsigned char x_diff = src[i];
+				const unsigned char y_diff = src[i+1];
 				o += scan_len * y_diff + x_diff;
 				i += 2;
 				break;
 			default:
 				;const size_t run_bytes = strip_length(
-					marker, 4, 2);
-				if (o + marker > raster_len
-				|| i + run_bytes > rle_len) {
+					marker, 4, 1);
+				if (o + marker > dst_len
+				|| i + run_bytes > src_len) {
 					return o;
 				}
-				unpack_strip(raster + o, rle + i, marker, 4,
+				unpack_strip(dst + o, src + i, marker, 4,
 					pix_normal, op_unpack);
 				o += marker;
 				i += run_bytes;
 			}
 		}
-	} while (o < raster_len && i < rle_len);
+	} while (o < dst_len && i < src_len);
 	return o;
 }
 
-static size_t rle_loop(unsigned char *restrict raster,
-const size_t raster_len, unsigned char *restrict rle, const size_t rle_len,
+static size_t rle_loop(unsigned char *restrict dst,
+const size_t dst_len, unsigned char *restrict src, const size_t src_len,
 const size_t scan_len, const unsigned char pix_size) {
 	size_t i = 0;
 	size_t o = 0;
 	do {
-		const unsigned char repeat = rle[i];
+		const unsigned char repeat = src[i];
 		++i;
 		if (repeat) {
 			const size_t len = repeat * pix_size;
-			if (o + len > raster_len) {
+			if (o + len > dst_len) {
 				return o;
 			}
-			memwordset(raster + o, rle + i, pix_size, repeat);
+			memwordset(dst + o, src + i, pix_size, repeat);
 			o += len;
 			i += pix_size;
 		} else {
-			const unsigned char marker = rle[i];
+			const unsigned char marker = src[i];
 			++i;
 			switch (marker) {
 			case dib_end_of_scan_line:
-				o += (raster_len - o) % scan_len;
+				o += (dst_len - o) % scan_len;
 				break;
 			case dib_end_of_rle:
 				return o;
 			case dib_delta:
-				if (i >= rle_len) {
+				if (i >= src_len) {
 					return o;
 				}
-				const unsigned char x_diff = rle[i];
-				const unsigned char y_diff = rle[i+1];
+				const unsigned char x_diff = src[i];
+				const unsigned char y_diff = src[i+1];
 				o += scan_len * y_diff + x_diff*pix_size;
 				i += 2;
 				break;
 			default:
 				;const size_t run = marker*pix_size;
-				const size_t run_bytes = strip_length(run, 8, 2);
-				if (o + run > raster_len
-				|| i + run_bytes > rle_len) {
+				const size_t run_bytes = strip_length(run, 8, 1);
+				if (o + run > dst_len
+				|| i + run_bytes > src_len) {
 					return o;
 				}
-				memcpy(raster + o, rle + i, run);
+				memcpy(dst + o, src + i, run);
 				o += run;
 				i += run_bytes;
 			}
 		}
-	} while (o < raster_len && i + pix_size < rle_len);
+	} while (o < dst_len && i + pix_size < src_len);
 	return o;
 }
 
 static bool rle_decode(const struct dib_desc *desc, struct wuimg *img,
 unsigned char *restrict rle, const size_t read) {
-	const size_t rle_len = read & (~1u);
+	const size_t rle_len = read & (~1u); // len should be even
 	if (rle_len && wuimg_alloc_noverify(img)) {
 		const size_t row = wuimg_stride(img);
 		const size_t dst_len = row * img->h;
@@ -271,11 +254,11 @@ bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 		const size_t read = fread(src, 1, desc->size, desc->ifp);
 		switch ((int)desc->compression) {
 		case dib_no_compression:
-			img->data = src;
-			src = NULL;
 			if (desc->depth == 16) {
 				endian_loop16(src, little_endian, read/2);
 			}
+			img->data = src;
+			src = NULL;
 			ok = true;
 			break;
 		case dib_8bit_rle:
@@ -313,7 +296,8 @@ static struct dib_ciexyz load_xyz(uint8_t *buf) {
 	};
 }
 
-static enum wu_error load_colorspace(struct dib_desc *desc, uint8_t *buf) {
+static enum wu_error load_colorspace(struct dib_desc *desc, struct wuimg *img,
+uint8_t *buf) {
 	/* BITMAPV4HEADER (after previous fields):
 		Offset  Type    Name
 		0       u32     ColorSpaceType
@@ -340,30 +324,48 @@ static enum wu_error load_colorspace(struct dib_desc *desc, uint8_t *buf) {
 		8       u32     ZCoord
 	*/
 
-	uint32_t type;
-	memcpy(&type, buf, sizeof(type));
-	switch (type) {
+	struct dib_lcs *lcs = &desc->lcs;
+	lcs->type = buf_endian32(buf, little_endian);
+	switch (lcs->type) {
 	case dib_lcs_calibrated_rgb:
-		desc->lcs = (struct dib_lcs) {
-			.r = load_xyz(buf + 4),
-			.g = load_xyz(buf + 16),
-			.b = load_xyz(buf + 28),
-			.gamma = {
-				.r = buf_endian32(buf + 40, little_endian),
-				.g = buf_endian32(buf + 44, little_endian),
-				.b = buf_endian32(buf + 48, little_endian),
-			},
+		lcs->r = load_xyz(buf + 4),
+		lcs->g = load_xyz(buf + 16),
+		lcs->b = load_xyz(buf + 28),
+		lcs->gamma = (struct dib_gamma) {
+			.r = buf_endian32(buf + 40, little_endian),
+			.g = buf_endian32(buf + 44, little_endian),
+			.b = buf_endian32(buf + 48, little_endian),
 		};
-		break;
+		if (!memchk(buf + 4, 0, 12*3)
+		&& lcs->gamma.r && lcs->gamma.g && lcs->gamma.b) {
+			const bool ok = color_space_set_primaries_rgb(&img->cs,
+				dib_cie_to_double(desc->lcs.r.x),
+				dib_cie_to_double(desc->lcs.r.y),
+				dib_cie_to_double(desc->lcs.g.x),
+				dib_cie_to_double(desc->lcs.g.y),
+				dib_cie_to_double(desc->lcs.b.x),
+				dib_cie_to_double(desc->lcs.b.y))
+			&& color_space_set_gamma_rgb(&img->cs,
+				dib_gamma_to_double(desc->lcs.gamma.r),
+				dib_gamma_to_double(desc->lcs.gamma.g),
+				dib_gamma_to_double(desc->lcs.gamma.b));
+			if (!ok) {
+				return wu_alloc_error;
+			}
+		}
+		return wu_ok;
 	case dib_profile_linked:
 	case dib_profile_embedded:
-		desc->lcs.profile_off = buf_endian32(buf + 60, little_endian);
-		// fallthrough
-	case dib_lcs_srgb:
-	case dib_lcs_windows_color_space:
 		if (desc->type < dib_v5_header) {
 			return wu_invalid_header;
 		}
+		desc->lcs.profile_off = buf_endian32(buf + 60, little_endian);
+		break;
+	case dib_lcs_srgb:
+	case dib_lcs_windows_color_space:
+		break;
+	}
+	if (desc->type >= dib_v5_header) {
 		const uint32_t intent = buf_endian32(buf + 52, little_endian);
 		switch (intent) {
 		case dib_gm_abs_colorimetric:
@@ -371,15 +373,8 @@ static enum wu_error load_colorspace(struct dib_desc *desc, uint8_t *buf) {
 		case dib_gm_graphics:
 		case dib_gm_images:
 			desc->lcs.intent = intent;
-			break;
-		default:
-			return wu_invalid_header;
 		}
-		break;
-	default:
-		return wu_invalid_header;
 	}
-	desc->lcs.type = type;
 	return wu_ok;
 }
 
@@ -720,7 +715,7 @@ struct wuimg *img) {
 	}
 
 	if (desc->type >= dib_v4_header) {
-		status = load_colorspace(desc, buf + 52);
+		status = load_colorspace(desc, img, buf + 52);
 		if (status != wu_ok) {
 			return status;
 		}
@@ -772,7 +767,7 @@ struct wuimg *img) {
 	return wu_ok;
 }
 
-static enum wu_error dib_parse_header(struct dib_desc *desc,
+static enum wu_error parse_header(struct dib_desc *desc,
 struct wuimg *img) {
 	/* Common DIB header:
 		Offset  Size    Name
@@ -859,13 +854,11 @@ struct wuimg *img) {
 	return wu_ok;
 }
 
-enum wu_error dib_open_file(struct dib_desc *desc, struct wuimg *img,
-FILE *ifp) {
-	desc->ifp = ifp;
-	return dib_parse_header(desc, img);
-}
+enum wu_error dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
+	if (!desc->bmp_header) {
+		return parse_header(desc, img);
+	}
 
-enum wu_error bmp_parse_header(struct dib_desc *desc, struct wuimg *img) {
 	/* Minimum non-type-1 BMP header (after magic bytes)
 
 		Offset	Size    Name
@@ -883,7 +876,7 @@ enum wu_error bmp_parse_header(struct dib_desc *desc, struct wuimg *img) {
 		return wu_unexpected_eof;
 	}
 
-	enum wu_error status = dib_parse_header(desc, img);
+	enum wu_error status = parse_header(desc, img);
 	if (status != wu_ok) {
 		return status;
 	}
@@ -893,8 +886,17 @@ enum wu_error bmp_parse_header(struct dib_desc *desc, struct wuimg *img) {
 	return status;
 }
 
-enum wu_error bmp_open_file(struct dib_desc *desc, FILE *ifp) {
-	enum wu_error fail;
+enum wu_error dib_open_file(struct dib_desc *desc, FILE *ifp, const bool is_bmp,
+const enum trit is_os2) {
+	*desc = (struct dib_desc) {
+		.ifp = ifp,
+		.bmp_header = is_bmp,
+		.is_os2 = is_os2,
+	};
+	if (!is_bmp) {
+		return wu_ok;
+	}
+
 	const unsigned char magic[][2] = {
 		{'B', 'M'}, // BMP
 		{0, 0}, // DDB
@@ -902,20 +904,13 @@ enum wu_error bmp_open_file(struct dib_desc *desc, FILE *ifp) {
 	unsigned char sig[2];
 	if (fread(sig, sizeof(sig), 1, ifp)) {
 		if (!memcmp(magic[0], sig, sizeof(sig))) {
-			*desc = (struct dib_desc) {
-				.ifp = ifp,
-				.is_os2 = trit_what,
-			};
 			return wu_ok;
 		} else if (!memcmp(magic[1], sig, sizeof(sig))) {
-			fail = wu_unsupported_feature;
-		} else {
-			fail = wu_invalid_signature;
+			return wu_unsupported_feature;
 		}
-	} else {
-		fail = wu_unexpected_eof;
+		return wu_invalid_signature;
 	}
-	return fail;
+	return wu_unexpected_eof;
 }
 
 /* ICO functions */
@@ -1178,3 +1173,50 @@ enum wu_error ico_open_file(struct ico_desc *desc, FILE *ifp) {
 	}
 	return wu_unexpected_eof;
 }
+
+#ifdef WU_ENABLE_BMZ
+#include <zlib.h>
+
+void bmz_cleanup(struct bmz_desc *desc) {
+	fclose(desc->bmp.ifp);
+	free(desc->buf);
+}
+
+enum wu_error bmz_open(struct bmz_desc *desc, struct mp_parser mp) {
+	const uint8_t magic[4] = {'Z', 'L', 'C', '3'};
+	enum wu_error st = fmt_sigcmp_mem(magic, sizeof(magic), &mp);
+	if (st == wu_ok) {
+		const struct wuptr z = mp_next_remaining(&mp, SIZE_MAX);
+		if (z.len > 4) {
+			uLong orig = buf_endian32(z.ptr, little_endian);
+			uint8_t *buf = malloc(orig);
+			if (buf) {
+				uncompress(buf, &orig, z.ptr + 4, z.len - 4);
+				if (orig) {
+					FILE *ifp = fmemopen(buf, orig, "r");
+					if (ifp) {
+						st = dib_open_file(&desc->bmp,
+							ifp, true, trit_false);
+						if (st == wu_ok) {
+							desc->buf = buf;
+							return st;
+						}
+						fclose(ifp);
+					} else {
+						st = wu_alloc_error;
+					}
+				} else {
+					st = wu_unexpected_eof;
+				}
+				free(buf);
+			} else {
+				st = wu_alloc_error;
+			}
+		} else {
+			st = wu_unexpected_eof;
+		}
+	}
+	return st;
+}
+
+#endif /* WU_ENABLE_BMZ */

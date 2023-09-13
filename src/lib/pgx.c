@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,9 +35,12 @@ const uint8_t *restrict pack, const size_t pack_len) {
 				ppos += 2;
 
 				const size_t dict_offset = (second & 0xf0U) << 4 | first;
-				const size_t offset = (upos - 18 - dict_offset)
-					& dict_mask;
 				const size_t count = 18 - (second & 0x0f);
+				size_t offset = (upos - 18 - dict_offset)
+					& dict_mask;
+				if (!offset) {
+					offset = dict_mask + 1;
+				}
 				if (upos + count >= unpack_len) {
 					return upos;
 				}

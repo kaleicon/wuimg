@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -14,6 +15,18 @@
 #include "misc/math.h"
 #include "misc/memparser.h"
 #include "window/wayland.h"
+
+struct wayland_listeners {
+	struct wl_registry_listener reg;
+	struct wl_seat_listener seat;
+	struct wl_pointer_listener pointer;
+	struct wl_keyboard_listener keyboard;
+	struct xdg_wm_base_listener wm_base;
+	struct xdg_surface_listener surface;
+	struct xdg_toplevel_listener toplevel;
+};
+
+static const struct wayland_listeners listen;
 
 static void null_function() {}
 
@@ -95,6 +108,10 @@ void wayland_terminate(struct wayland *wl) {
 
 void wayland_set_title(const struct wayland *wl, const char *title) {
 	xdg_toplevel_set_title(wl->toplevel, title);
+}
+
+void wayland_swap_buffers(struct wayland *wl) {
+	egl_swap(&wl->pub->win.egl);
 }
 
 static bool has_events(struct wl_display *display, const int msecs) {
@@ -222,18 +239,21 @@ static int create_shm(void) {
 	const int urand = open("/dev/urandom", O_RDONLY);
 	int fd = -1;
 	if (urand >= 0) {
-		unsigned char name[10] = {'/'};
+		char name[10] = {'/'};
+		unsigned char *buf = (unsigned char *)name + 1;
 		const size_t len = sizeof(name) - 2;
 		for (int tries = 0; tries < 4; ++tries) {
-			if ((size_t)read(urand, name + 1, len) == len) {
+			if (read(urand, buf, len) == (ssize_t)len) {
+				const unsigned char base_char = '/' + 1;
 				for (size_t i = 0; i < len; ++i) {
-					name[i] = (unsigned char)
-						(('/' + 1) + (name[i] >> 2));
+					buf[i] = (unsigned char)(
+						base_char + (buf[i] >> 2)
+					);
 				}
-				fd = shm_open((char *)name,
-					O_RDWR | O_CREAT | O_EXCL, 0600);
+				fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL,
+					0600);
 				if (fd >= 0) {
-					shm_unlink((char *)name);
+					shm_unlink(name);
 					break;
 				}
 			}
@@ -305,9 +325,9 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
-	const clock_t start = clock();
+//	const watch_t start = watch_report();
 	draw_cursor(data, width, height);
-	clock_print("Cursor generated", start);
+//	watch_report("Cursor generated", start);
 	munmap(data, (size_t)dims);
 	return buf;
 }
@@ -487,7 +507,7 @@ const uint32_t caps) {
 		if (!c->pointer) {
 			win->pressed = false;
 			c->pointer = wl_seat_get_pointer(seat);
-			wl_pointer_add_listener(c->pointer, &wl->listen.pointer, wl);
+			wl_pointer_add_listener(c->pointer, &listen.pointer, wl);
 		}
 	} else {
 		if (c->pointer) {
@@ -499,7 +519,7 @@ const uint32_t caps) {
 	if (caps & WL_SEAT_CAPABILITY_KEYBOARD) {
 		if (!k->keyboard) {
 			k->keyboard = wl_seat_get_keyboard(seat);
-			wl_keyboard_add_listener(k->keyboard, &wl->listen.keyboard, wl);
+			wl_keyboard_add_listener(k->keyboard, &listen.keyboard, wl);
 		}
 	} else {
 		if (k->keyboard) {
@@ -516,28 +536,59 @@ const uint32_t serial) {
 	xdg_wm_base_pong(xwb, serial);
 }
 
-static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
-const char *interface, uint32_t version) {
+static void reg_global(void *data, struct wl_registry *reg, const uint32_t name,
+const char *interface, const uint32_t version) {
 	(void)version;
 	struct wayland *wl = data;
 	struct wayland_binds *b = &wl->binds;
 	if (!strcmp(interface, wl_compositor_interface.name)) {
-		b->comp = wl_registry_bind(reg, name, &wl_compositor_interface, 4);
+		b->comp = wl_registry_bind(reg, name, &wl_compositor_interface, 1);
 	} else if (!strcmp(interface, wl_seat_interface.name)) {
-		b->seat = wl_registry_bind(reg, name, &wl_seat_interface, 7);
-		wl_seat_add_listener(b->seat, &wl->listen.seat, wl);
+		b->seat = wl_registry_bind(reg, name, &wl_seat_interface, 1);
+		wl_seat_add_listener(b->seat, &listen.seat, wl);
 	} else if (!strcmp(interface, wl_shm_interface.name)) {
 		b->shm = wl_registry_bind(reg, name, &wl_shm_interface, 1);
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
-		b->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 2);
-		xdg_wm_base_add_listener(b->xwb, &wl->listen.wm_base, NULL);
+		b->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
+		xdg_wm_base_add_listener(b->xwb, &listen.wm_base, NULL);
 	}
-
 }
 
-static void reg_global_remove(void *data, struct wl_registry *reg, uint32_t name) {
-	(void)data; (void)reg; (void)name;
-}
+static const struct wayland_listeners listen = {
+	.reg = {
+		.global = reg_global,
+		.global_remove = null_function,
+	},
+	.seat = {
+		.capabilities = seat_capabilities,
+		.name = null_function,
+	},
+	.pointer = {
+		.enter = pointer_enter,
+		.leave = null_function,
+		.motion = pointer_motion,
+		.button = pointer_button,
+		.axis = pointer_axis,
+		.frame = null_function,
+		.axis_source = null_function,
+		.axis_stop = null_function,
+		.axis_discrete = null_function,
+	},
+	.keyboard = {
+		.keymap = keyboard_keymap,
+		.enter = null_function,
+		.leave = keyboard_leave,
+		.key = keyboard_key,
+		.modifiers = keyboard_modifiers,
+		.repeat_info = null_function,
+	},
+	.wm_base = {.ping = wm_base_ping},
+	.surface = {.configure = surface_configure},
+	.toplevel = {
+		.configure = toplevel_configure,
+		.close = toplevel_close,
+	},
+};
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	*wl = (struct wayland){0};
@@ -555,43 +606,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return "Couldn't obtain registry";
 	}
 
-	wl->listen = (struct wayland_listeners) {
-		.reg = {
-			.global = reg_global,
-			.global_remove = reg_global_remove,
-		},
-		.seat = {
-			.capabilities = seat_capabilities,
-			.name = null_function,
-		},
-		.pointer = {
-			.enter = pointer_enter,
-			.leave = null_function,
-			.motion = pointer_motion,
-			.button = pointer_button,
-			.axis = pointer_axis,
-			.frame = null_function,
-			.axis_source = null_function,
-			.axis_stop = null_function,
-			.axis_discrete = null_function,
-		},
-		.keyboard = {
-			.keymap = keyboard_keymap,
-			.enter = null_function,
-			.leave = keyboard_leave,
-			.key = keyboard_key,
-			.modifiers = keyboard_modifiers,
-			.repeat_info = null_function,
-		},
-		.wm_base = {.ping = wm_base_ping},
-		.surface = {.configure = surface_configure},
-		.toplevel = {
-			.configure = toplevel_configure,
-			.close = toplevel_close,
-		},
-	};
-
-	wl_registry_add_listener(wl->reg, &wl->listen.reg, wl);
+	wl_registry_add_listener(wl->reg, &listen.reg, wl);
 	wl_display_roundtrip(wl->display);
 	if (!wl->binds.comp) {
 		return "Failed to bind to compositor";
@@ -619,14 +634,14 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	if (!wl->xdg_surf) {
 		return "Failed to get xdg_surface";
 	}
-	xdg_surface_add_listener(wl->xdg_surf, &wl->listen.surface, NULL);
+	xdg_surface_add_listener(wl->xdg_surf, &listen.surface, NULL);
 
 	wl->toplevel = xdg_surface_get_toplevel(wl->xdg_surf);
 	if (!wl->toplevel) {
 		return "Failed to get toplevel";
 	}
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
-	xdg_toplevel_add_listener(wl->toplevel, &wl->listen.toplevel, wl);
+	xdg_toplevel_add_listener(wl->toplevel, &listen.toplevel, wl);
 
 	wl_surface_commit(wl->surf);
 	wl_display_roundtrip(wl->display);

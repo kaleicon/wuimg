@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WRITE_PAM
 #define WRITE_PAM
 

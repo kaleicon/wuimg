@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_FILESYSTEM
 #define WU_FILESYSTEM
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_STR
 #define WU_STR
 
@@ -9,6 +10,7 @@ struct wugrow {
 	size_t elem_size;
 	size_t alloc;
 	size_t pos;
+	void *ptr;
 };
 
 struct wustr {
@@ -21,16 +23,20 @@ struct wuptr {
 	const unsigned char *ptr;
 };
 
-bool wugrow_reserve(void *restrict ptr_ptr, struct wugrow *grow, size_t extra);
+bool wugrow_reserve(struct wugrow *grow, size_t extra);
 
-bool wugrow_recheck(void *restrict ptr_ptr, struct wugrow *grow);
+bool wugrow_recheck(struct wugrow *grow);
 
 struct wugrow wugrow_init(size_t elem_size);
 
 
+#define WUPTR_ARRAY(arr) ( (struct wuptr){.len = sizeof(arr), .ptr = (const uint8_t *)arr} )
+
 struct wuptr wuptr_mem(const void *str, size_t len);
 
 struct wuptr wuptr_str(const char *str);
+
+struct wuptr wuptr_wustr(struct wustr w);
 
 bool wuptr_suffix(struct wuptr w1, struct wuptr w2);
 

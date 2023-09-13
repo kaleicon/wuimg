@@ -1,5 +1,15 @@
+// SPDX-License-Identifier: 0BSD
 
 #include "misc/math.h"
+
+bool float_ce(const double f1, const double f2) {
+	// _ce is for Close Enough
+	return fabs(f1 - f2) < 0x1p-14;
+}
+
+float fclampf(const float x, const float min, const float max) {
+	return fminf(fmaxf(x, min), max);
+}
 
 long lmod(const long val, const long max) {
 	return (val % max + max) % max;
@@ -55,6 +65,15 @@ int imax(const int x, const int y) {
 
 int imin(const int x, const int y) {
 	return x < y ? x : y;
+}
+
+unsigned uclamp(const unsigned n, const unsigned min, const unsigned max) {
+	if (n < min) {
+		return min;
+	} else if (n > max) {
+		return max;
+	}
+	return n;
 }
 
 int iclamp(const int n, const int min, const int max) {

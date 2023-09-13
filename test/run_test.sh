@@ -1,9 +1,11 @@
 #!/bin/sh
+# SPDX-License-Identifier: 0BSD
+
 # Dimensions should always be < 256 so that ICO encoding succeeds
 WIDTH=31 # Odd width to test alignment handling
 HEIGHT=30 # Multiple of 6 so that SIXEL images are not trimmed
+RASFILE=,ras.pam
 
-# Use FFmpeg for rasterization, as ImageMagick has three different SVG renderers
-ffmpeg -n -width "$WIDTH" -height "$HEIGHT" -keep_ar 0 -i "$1" \
-	-f image2 -c:v pam ras.pam
-./tester.py gen ras.pam #&& ./tester.py compare gen
+ffmpeg -y -width "$WIDTH" -height "$HEIGHT" -keep_ar 0 -i vec.svgz \
+	-c:v pam "$RASFILE"
+./tester.py generate "$RASFILE" ,gen

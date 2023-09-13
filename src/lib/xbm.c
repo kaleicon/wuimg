@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -225,7 +226,7 @@ static bool skip_comment(struct xbm_desc *desc, struct mp_parser *tp) {
 	const unsigned char *comm = comment_end(tp->mem + tp->pos, end,
 		tp->len - tp->pos);
 	if (comm) {
-		size_t len = (size_t)comm - (size_t)base - (end == '\n');
+		size_t len = (size_t)comm - (size_t)base + (end == '/');
 		tp->pos += len;
 		if (!desc->comment.len) {
 			desc->comment.ptr = base;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/bit.h"
 #include "raster/fmt.h"
 #include "maki.h"
@@ -25,9 +26,9 @@ size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	 * The first two are FlagA (1000 bytes) and FlagB (variable size),
 	 * which are used to create a Mask buffer that is 8000 16-bit words
 	 * in size.
-	 * Bits are read in MSB-to-LSB order from FlagA. If a bit is one, a
+	 * Bits are read in MS-to-LS order from FlagA. If a bit is one, a
 	 * 16-bit big-endian word is read from FlagB and written to Mask,
-	 * otherwise zero is written. Each word corresponds to an 4*4 bit
+	 * otherwise zero is written. Each word corresponds to a 4*4 bit
 	 * block, which will make up an 8*4 pixel area.
 
 	 * The third section is the Pixel area, and requires linearizing the

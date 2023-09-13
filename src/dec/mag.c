@@ -1,19 +1,19 @@
+// SPDX-License-Identifier: 0BSD
 #include "rast_utils.h"
 #include "lib/mag.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	const struct mag_desc *desc = ptr;
-	tree_add_leaf_limit(tree, "Model", desc->model, sizeof(desc->model),
-		"SHIFT-JIS");
+	tree_add_leaf_limit(tree, "Model", WUPTR_ARRAY(desc->model), "SHIFT-JIS");
 	tree_add_leaf_utf8(tree, "Code", mag_model_code_str(desc->code));
 	if (desc->code == mag_model_msx) {
-		tree_add_leaf_utf8(tree, "Screen mode",
+		tree_add_leaf_utf8(tree, "MSX Screen mode",
 			mag_msx_screen_str(desc->msx.screen));
-		tree_bud_leaf(tree, "Interlace", (struct wu_leaf)
-			{.type = wu_leaf_bool, .val.b = desc->msx.interlace});
+		tree_bud_leaf_bool(tree, "Interlace", desc->msx.interlace);
 	}
-	tree_add_leaf_len(tree, "Comment", desc->comm.str, desc->comm.len,
-		"SHIFT-JIS");
+	tree_add_leaf_utf8(tree, "Screen mode",
+		mag_screen_mode_str(desc->screen_mode));
+	tree_add_leaf_len(tree, "Comment", wuptr_wustr(desc->comm), "SHIFT_JIS");
 }
 
 static void cleanup(void *restrict desc) {
@@ -25,8 +25,8 @@ static size_t dec(const void *restrict desc, struct wuimg *img) {
 static enum wu_error parse(void *restrict desc, struct wuimg *img) {
 	return mag_parse(desc, img);
 }
-static enum wu_error open(void *restrict desc, FILE *ifp) {
-	return mag_open(desc, ifp);
+static enum wu_error open(void *restrict desc, struct image_file *infile) {
+	return mag_open(desc, infile->ifp);
 }
 
 enum wu_error mag_dec(struct image_file *infile,
@@ -35,3 +35,5 @@ const struct wu_conf *wuconf) {
 	return rast_trivial_dec(infile, wuconf, &desc,
 		open, parse, metadata, dec, cleanup);
 }
+
+const struct image_fn mag_fn = {.dec = mag_dec};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,7 @@ const uint8_t *restrict src, const uint8_t c, size_t dst_len, size_t src_len) {
 	if (end) {
 		src_len = (size_t)(end - src);
 	}
-	if (src_len > dst_len) {
+	if (dst_len < src_len) {
 		src_len = dst_len;
 	}
 	memcpy(dst, src, src_len);
@@ -28,31 +29,32 @@ const unsigned char *restrict rle, const size_t rle_len) {
 	const unsigned char RLE_FLAG = 0x80;
 	size_t d = 0;
 	size_t r = 0;
-	while (d < dst_len && rle_len - r >= 2) {
-		while (rle[r] == RLE_FLAG) {
-			const unsigned char run_count = rle[r+1];
+	while (d < dst_len && r < rle_len) {
+		if (rle[r] == RLE_FLAG) {
+			++r;
+			if (r >= rle_len) {
+				break;
+			}
+			const unsigned char run_count = rle[r];
+			++r;
 			if (run_count) {
 				if (dst_len - d < (size_t)run_count + 1
-				|| rle_len - r < 3) {
+				|| r >= rle_len) {
 					return d;
 				}
-				memset(dst + d, rle[r+2], run_count + 1);
+				memset(dst + d, rle[r], run_count + 1);
 				d += run_count + 1;
-				r += 3;
+				++r;
 			} else {
 				dst[d] = RLE_FLAG;
 				++d;
-				r += 2;
 			}
-			if (d >= dst_len && rle_len - r < 2) {
-				return d;
-			}
+		} else {
+			const size_t read = memccpy_cur(dst + d, rle + r, RLE_FLAG,
+				dst_len - d, rle_len - r);
+			d += read;
+			r += read;
 		}
-
-		const size_t read = memccpy_cur(dst + d, rle + r, RLE_FLAG,
-			dst_len - d, rle_len - r);
-		d += read;
-		r += read;
 	}
 	return d;
 }
@@ -76,11 +78,10 @@ unsigned char *restrict dst, const size_t dst_len) {
 
 size_t sun_decode(const struct sun_desc *desc, struct wuimg *img) {
 	if (wuimg_alloc_noverify(img)) {
-		const size_t dst_len = wuimg_size(img);
 		if (desc->type == sun_byte_encoded) {
-			return rle_decode(desc, img->data, dst_len);
+			return rle_decode(desc, img->data, wuimg_size(img));
 		}
-		return fread(img->data, 1, dst_len, desc->ifp);
+		return fmt_load_raster(img, desc->ifp, big_endian);
 	}
 	return 0;
 }

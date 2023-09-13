@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <ctype.h>
 #include <stdbool.h>
 #include <string.h>
@@ -55,14 +56,6 @@ size_t mp_get_uint_unsafe(struct mp_parser *mp, long *val) {
 }
 
 
-bool mp_set_pos(struct mp_parser *mp, const size_t pos) {
-	if (pos < mp->len) {
-		mp->pos = pos;
-		return true;
-	}
-	return false;
-}
-
 void mp_skip_blank(struct mp_parser *mp) {
 	while (bndchk(mp) && isblank(curc(mp))) {
 		++mp->pos;
@@ -84,18 +77,14 @@ void mp_skip_nonspace(struct mp_parser *mp) {
 	}
 }
 
-static void mp_skip_tochar(struct mp_parser *mp, const uint8_t ch) {
-	const unsigned char *loc = memchr(mp->mem + mp->pos, ch,
+void mp_skip_line(struct mp_parser *mp) {
+	const unsigned char *loc = memchr(mp->mem + mp->pos, '\n',
 		mp->len - mp->pos);
 	if (loc) {
 		mp->pos = (size_t)loc - (size_t)mp->mem;
 	} else {
 		mp->pos = mp->len;
 	}
-}
-
-void mp_skip_line(struct mp_parser *mp) {
-	mp_skip_tochar(mp, '\n');
 }
 
 int mp_next_char(struct mp_parser *mp) {
@@ -137,29 +126,6 @@ struct wuptr mp_get_word(struct mp_parser *mp) {
 	return wuptr_mem(mp->mem + start, mp->pos - start);
 }
 
-size_t mp_get_int(struct mp_parser *mp, size_t digits, long *val) {
-	digits = zumin(digits, mp->len - mp->pos);
-	*val = 0;
-	size_t k = 0;
-	bool sign = false;
-	while (k < digits) {
-		const uint8_t c = curc(mp);
-		if (k == 0 && c == '-') {
-			sign = true;
-		} else if (isdigit(c)) {
-			*val = *val * 10 + tonum(c);
-		} else {
-			break;
-		}
-		++k;
-		++mp->pos;
-	}
-	if (sign) {
-		*val = -*val;
-	}
-	return k;
-}
-
 size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val) {
 	digits = zumin(digits, mp->len - mp->pos);
 	*val = 0;
@@ -176,26 +142,45 @@ size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val) {
 	return k;
 }
 
+size_t mp_get_int(struct mp_parser *mp, size_t digits, long *val) {
+	bool sign = false;
+	if (curc(mp) == '-') {
+		++mp->pos;
+		sign = true;
+	}
+	const size_t k = mp_get_uint(mp, digits, val);
+	if (sign) {
+		*val = -*val;
+	}
+	return k;
+}
+
 size_t mp_get_xint(struct mp_parser *mp, size_t digits, long *val) {
 	const uint8_t *pre = mp_next_slice(mp, 2);
+	bool hex = false;
 	if (pre) {
-		if (pre[0] != '0' || (pre[1] != 'x' && pre[1] != 'X')) {
+		if (pre[0] == '0' && (pre[1] == 'x' || pre[1] == 'X')) {
+			hex = true;
+		} else {
 			mp->pos -= 2;
 		}
 	}
-	digits = zumin(digits, mp->len - mp->pos);
-	*val = 0;
-	size_t k = 0;
-	while (k < digits) {
-		const uint8_t c = curc(mp);
-		if (!isxdigit(c)) {
-			break;
+	if (hex) {
+		digits = zumin(digits, mp->len - mp->pos);
+		*val = 0;
+		size_t k = 0;
+		while (k < digits) {
+			const uint8_t c = curc(mp);
+			if (!isxdigit(c)) {
+				break;
+			}
+			*val = *val * 16 + toxnum(c);
+			++k;
+			++mp->pos;
 		}
-		*val = *val * 16 + toxnum(c);
-		++k;
-		++mp->pos;
+		return k;
 	}
-	return k;
+	return mp_get_uint(mp, digits, val);
 }
 
 struct wuptr mp_remaining_at(const struct mp_parser *mp, const size_t pos,

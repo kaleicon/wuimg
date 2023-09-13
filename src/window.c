@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -42,11 +43,18 @@ void window_terminate(struct window_context *window) {
 bool window_draw(struct window_context *window) {
 	if (gl_draw(&window->pub.gl, &window->pub.image.state)) {
 		switch (window->backend) {
-		case window_glfw: glfwSwapBuffers(window->ctx.glfw.window); break;
-		case window_drm: drm_swap_buffers(&window->ctx.drm); break;
-		case window_wayland: egl_swap(&window->pub.win.egl); break;
+		case window_glfw:
+			glfwSwapBuffers(window->ctx.glfw.window);
+			break;
+		case window_drm:
+			drm_swap_buffers(&window->ctx.drm);
+			break;
+		case window_wayland:
+			wayland_swap_buffers(&window->ctx.wl);
+			break;
 		case window_egl: break;
 		}
+		glFinish();
 		return true;
 	}
 	return false;
@@ -87,9 +95,9 @@ void window_poll(struct window_context *window) {
 }
 
 void window_adapt(struct window_context *window) {
-	const struct gl_image_info *tex = &window->pub.gl.tex;
-	int w = (int)tex->w;
-	int h = (int)tex->h;
+	const struct gl_context *context = &window->pub.gl;
+	const int w = (int)context->tex.w;
+	const int h = (int)context->tex.h;
 	switch (window->backend) {
 	case window_glfw:
 		glfwSetWindowSize(window->ctx.glfw.window, w, h);
@@ -101,10 +109,6 @@ void window_adapt(struct window_context *window) {
 	case window_egl:
 		break;
 	}
-}
-
-bool window_has_focus(const struct window_context *window) {
-	return window->pub.win.focused;
 }
 
 void window_set_title(const struct window_context *window, const char *title) {

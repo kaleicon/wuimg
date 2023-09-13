@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_WINDOW_BASE
 #define WU_WINDOW_BASE
 
@@ -44,6 +45,8 @@ struct window_cursor {
 struct window_common {
 	struct egl egl;
 	struct window_cursor cur;
+	uint32_t refresh_nsec;
+	bool wait_redraw;
 	bool pressed;
 	bool focused;
 	bool fullscreen;

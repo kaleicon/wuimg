@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef RASTER_BITSTREAM
 #define RASTER_BITSTREAM
 

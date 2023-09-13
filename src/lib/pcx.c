@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -428,7 +429,6 @@ enum wu_error dcx_open_file(struct dcx_desc *d, const struct mp_parser mp) {
 			if (d->nr) {
 				d->off[d->nr] = (uint32_t)d->mp.len;
 			} else {
-				free(d->off);
 				st = wu_unexpected_eof;
 			}
 		} else {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <exiv2/exif.hpp>
 #include <exiv2/xmp_exiv2.hpp>
 #include <exiv2/iptc.hpp>
@@ -22,30 +23,25 @@ static void read_any(Datum meta, struct wu_tree *tree) {
 		std::string tag = meta->tagName();
 
 		if (meta->count() == 1) {
-			struct wu_leaf leaf;
 			switch (meta->typeId()) {
 			case Exiv2::TypeId::unsignedByte:
 			case Exiv2::TypeId::unsignedShort:
 			case Exiv2::TypeId::signedByte:
 			case Exiv2::TypeId::signedShort:
 			case Exiv2::TypeId::signedLong:
-				leaf.val.d = meta->toLong();
-				leaf.type = wu_leaf_signed;
-				tree_bud_leaf(branch, tag.c_str(), leaf);
+				tree_bud_leaf_d(branch, tag.c_str(), meta->toLong());
 				return;
 			case Exiv2::TypeId::tiffFloat:
 			case Exiv2::TypeId::tiffDouble:
-				leaf.val.f = meta->toFloat();
-				leaf.type = wu_leaf_float;
-				tree_bud_leaf(branch, tag.c_str(), leaf);
+				tree_bud_leaf_f(branch, tag.c_str(), meta->toFloat());
 				return;
 			default:
 				break;
 			}
 		}
 		std::string val = meta->toString();
-		tree_add_leaf_len(branch, tag.c_str(), val.data(),
-			val.size(), NULL);
+		tree_add_leaf_len(branch, tag.c_str(),
+			wuptr_mem(val.data(), val.size()), NULL);
 	}
 }
 

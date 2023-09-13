@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "lib/dpx.h"
 #include "misc/common.h"
 #include "wudefs.h"
@@ -5,12 +6,10 @@
 static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {
 	const struct dpx_industry_television *t = &desc->industry.tv;
 	char buf[16];
-	int w = snprintf(buf, sizeof(buf), "%x:%x:%x %x",
+	const int w = snprintf(buf, sizeof(buf), "%x:%x:%x %x",
 		t->time_code >> 24, (t->time_code >> 16) & 0xff,
 		(t->time_code >> 8) & 0xff, t->time_code & 0xff);
-	if (w > 0) {
-		tree_add_leaf_utf8_len(tree, "Time code", buf, (size_t)w);
-	}
+	tree_add_leaf_utf8_len(tree, "Time code", wuptr_mem(buf, (size_t)w));
 
 	const struct wu_tree_sap vid[] = {
 		{"Interlaced", {wu_leaf_bool, {.f = t->interlaced}}},
@@ -37,7 +36,7 @@ static void read_film(const struct dpx_desc *desc, struct wu_tree *tree) {
 		};
 		tree_bud_leaves(edge, codes, ARRAY_LEN(codes));
 	}
-	tree_add_leaf_limit(tree, "Format", f->format, sizeof(f->format), NULL);
+	tree_add_leaf_limit(tree, "Format", WUPTR_ARRAY(f->format), NULL);
 
 	const struct wu_tree_sap sap[] = {
 		{"Frame num.", {wu_leaf_unsigned, {.u = f->frame_num}}},
@@ -48,10 +47,8 @@ static void read_film(const struct dpx_desc *desc, struct wu_tree *tree) {
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
-	tree_add_leaf_len(tree, "Frame ID", f->frame_id, sizeof(f->frame_id),
-		NULL);
-	tree_add_leaf_len(tree, "Slate info", f->slate_info,
-		sizeof(f->slate_info), NULL);
+	tree_add_leaf_len(tree, "Frame ID", WUPTR_ARRAY(f->frame_id), NULL);
+	tree_add_leaf_len(tree, "Slate info", WUPTR_ARRAY(f->slate_info), NULL);
 }
 
 static void read_industry(const struct dpx_desc *desc, struct wu_tree *tree) {
@@ -77,13 +74,12 @@ static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
 		{"H", {wu_leaf_unsigned, {.u = s->h}}},
 	};
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
-	tree_add_leaf_len(tree, "Name", s->filename, sizeof(s->filename), NULL);
-	const struct wu_leaf leaf = {.type = wu_leaf_time, .val.time = s->date};
-	tree_bud_leaf(tree, "Created", leaf);
-	tree_add_leaf_len(tree, "Input device", s->input_device,
-		sizeof(s->input_device), NULL);
-	tree_add_leaf_len(tree, "Input serial number", s->input_sn,
-		sizeof(s->input_sn), NULL);
+	tree_add_leaf_len(tree, "Name", WUPTR_ARRAY(s->filename), NULL);
+	tree_bud_leaf_time(tree, "Created", s->date);
+	tree_add_leaf_len(tree, "Input device", WUPTR_ARRAY(s->input_device),
+		NULL);
+	tree_add_leaf_len(tree, "Input serial number", WUPTR_ARRAY(s->input_sn),
+		NULL);
 
 	struct wu_tree *eros = tree_add_branch(tree, "Erosion");
 	if (eros) {
@@ -97,26 +93,21 @@ static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
 	}
 
 	char buf[sizeof(s->horz_aspect) * 2 * 3];
-	int w = snprintf(buf, sizeof(buf), "%u:%u", s->horz_aspect, s->vert_aspect);
-	if (w > 0) {
-		tree_add_leaf_utf8_len(tree, "Aspect ratio", buf, (size_t)w);
-	}
+	int w = snprintf(buf, sizeof(buf), "%u:%u", s->horz_aspect,
+		s->vert_aspect);
+	tree_add_leaf_utf8_len(tree, "Aspect ratio", wuptr_mem(buf, (size_t)w));
 
 	w = snprintf(buf, sizeof(buf), "%.3g x %.3g mm", s->w_mm, s->h_mm);
-	if (w > 0) {
-		tree_add_leaf_utf8_len(tree, "Size", buf, (size_t)w);
-	}
+	tree_add_leaf_utf8_len(tree, "Size", wuptr_mem(buf, (size_t)w));
 }
 
 static void read_file(const struct dpx_desc *desc, struct wu_tree *tree) {
 	const struct dpx_generic_file *f = &desc->generic.file;
-	tree_add_leaf_len(tree, "Name", f->name, sizeof(f->name), NULL);
-	const struct wu_leaf leaf = {.type = wu_leaf_time, .val.time = f->date};
-	tree_bud_leaf(tree, "Created", leaf);
-	tree_add_leaf_len(tree, "Creator", f->creator, sizeof(f->creator), NULL);
-	tree_add_leaf_len(tree, "Project", f->project, sizeof(f->project), NULL);
-	tree_add_leaf_len(tree, "Copyright", f->copyright,
-		sizeof(f->copyright), NULL);
+	tree_add_leaf_len(tree, "Name", WUPTR_ARRAY(f->name), NULL);
+	tree_bud_leaf_time(tree, "Created", f->date);
+	tree_add_leaf_len(tree, "Creator", WUPTR_ARRAY(f->creator), NULL);
+	tree_add_leaf_len(tree, "Project", WUPTR_ARRAY(f->project), NULL);
+	tree_add_leaf_len(tree, "Copyright", WUPTR_ARRAY(f->copyright), NULL);
 }
 
 static void read_generic(const struct dpx_desc *desc, struct wu_tree *tree) {
@@ -144,34 +135,47 @@ static void read_metadata(const struct dpx_desc *desc, struct wu_tree *tree) {
 	}
 }
 
-enum wu_error dpx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
-	struct dpx_desc desc;
-	enum wu_error st = dpx_open(&desc, infile->ifp);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	st = dpx_parse(&desc);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	read_metadata(&desc, &infile->metadata);
-
-	if (!alloc_sub_images(infile, desc.generic.image.nb_elem)) {
-		return wu_alloc_error;
-	}
-
-	uint8_t o = 0;
-	for (uint8_t i = 0; i < infile->nr; ++i) {
-		struct wuimg *img = infile->sub_img + o;
-		if (dpx_set_image(&desc, img, i) == wu_ok
-		&& !wuimg_exceeds_limit(img, wuconf)
-		&& dpx_decode(&desc, img, i)) {
-			++o;
-		} else {
-			wuimg_clear(img);
+static enum wu_error dec_wrap(struct wuimg *img, const struct wu_conf *wuconf,
+const struct dpx_desc *desc, const uint8_t idx) {
+	const enum wu_error st =  dpx_set_image(desc, img, idx);
+	if (st == wu_ok) {
+		if (!wuimg_exceeds_limit(img, wuconf)) {
+			return dpx_decode(desc, img, idx)
+				? wu_ok : wu_decoding_error;
 		}
+		return wu_exceeds_size_limit;
 	}
-	return image_file_total_decoded(infile, o);
+	return st;
 }
+
+enum wu_error dpx_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	if (ev) {
+		const uint8_t idx = (uint8_t)state->idx;
+		struct wuimg *img = infile->sub_img + idx;
+		return dec_wrap(img, wuconf, infile->dec_state, idx);
+	}
+	return wu_no_change;
+}
+
+enum wu_error dpx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+	(void)wuconf;
+	struct dpx_desc *desc = malloc(sizeof(*desc));
+	if (desc) {
+		infile->dec_state = desc;
+		infile->events = ev_subcycle;
+		enum wu_error st = dpx_open(desc, infile->ifp);
+		if (st == wu_ok) {
+			st = dpx_parse(desc);
+			if (st == wu_ok) {
+				read_metadata(desc, &infile->metadata);
+				return alloc_sub_images(infile, desc->generic.image.nb_elem)
+					? wu_ok : wu_alloc_error;
+			}
+		}
+		return st;
+	}
+	return wu_alloc_error;
+}
+
+const struct image_fn dpx_fn = {.dec = dpx_dec, .callback = dpx_callback};

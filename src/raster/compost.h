@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef ANIM_COMMON
 #define ANIM_COMMON
 

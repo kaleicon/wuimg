@@ -1,12 +1,13 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef COMMON_FMT
 #define COMMON_FMT
 
 #include <stdio.h>
 
-#include "raster/wuimg.h"
 #include "misc/endian.h"
 #include "misc/memparser.h"
 #include "raster/pal.h"
+#include "raster/wuimg.h"
 
 enum fmt_pal_type {
 	fmt_pal_rgb = 3,

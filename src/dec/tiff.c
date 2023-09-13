@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -78,11 +79,11 @@ struct wuimg *img) {
 	TIFFRGBAImage tifimg;
 	char emsg[1024];
 	if (!TIFFRGBAImageBegin(&tifimg, tif, 0, emsg)) {
-		image_file_error_append(infile, emsg);
+		image_file_strerror_append(infile, emsg);
 		return wu_unsupported_feature;
 	}
 
-	image_file_error_append(infile, "Using libtiff high-level interface");
+	image_file_strerror_append(infile, "Using libtiff high-level interface");
 	tifimg.req_orientation = tifimg.orientation;
 	img->w = tifimg.width;
 	img->h = tifimg.height;
@@ -365,8 +366,74 @@ static const char * get_tiff_info(TIFF *tif, struct tiff_info *info) {
 	return NULL;
 }
 
+static enum wu_error get_dir(struct image_file *infile,
+const struct wu_conf *wuconf, TIFF *tif, struct wuimg *img, const tdir_t i) {
+	if (!TIFFSetDirectory(tif, (tdir_t)i)) {
+		return wu_invalid_header;
+	}
+
+	uint32_t w, h;
+	if (!TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w)
+	|| !TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h)) {
+		image_file_strerror_append(infile,
+			"Failed to get image dimensions");
+		return wu_invalid_header;
+	}
+
+	img->w = w;
+	img->h = h;
+	if (wuimg_exceeds_limit(img, wuconf)) {
+		return wu_exceeds_size_limit;
+	}
+
+	struct tiff_info info;
+	const char *err = get_tiff_info(tif, &info);
+	if (err) {
+		image_file_strerror_append(infile, err);
+		return wu_invalid_header;
+	}
+	const bool do_it_ourselves = wuconf->tiff_use_homegrown_unpacker
+		&& check_support(&info);
+
+	enum wu_error status = -1;
+	switch ((int)do_it_ourselves) {
+	case true:
+		status = nih_decode(tif, img, &info);
+		if (status == wu_ok) {
+			break;
+		}
+		wuimg_clear(img);
+		image_file_strerror_append(infile, "Native unpacking "
+			"failed, falling back on libtiff.");
+		// fallthrough
+	case false:
+		status = libtiff_decode(tif, infile, img);
+	}
+
+	if (status == wu_ok) {
+		get_metadata_tags(tif, img);
+	}
+	return status;
+}
+
+enum wu_error tiff_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	TIFF *tif = infile->dec_state;
+	if (ev) {
+		const tdir_t idx = (tdir_t)state->idx;
+		struct wuimg *img = infile->sub_img + idx;
+		return get_dir(infile, wuconf, tif, img, idx);
+	} else {
+		TIFFCleanup(tif);
+		infile->dec_state = NULL;
+		return wu_ok;
+	}
+	return wu_no_change;
+}
+
 enum wu_error tiff_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
+	(void)wuconf;
 	const int fd = fileno(infile->ifp);
 	// libtiff insists on knowing the filename for some of its errors.
 	TIFF *tif = TIFFFdOpen(fd, "", "r");
@@ -374,64 +441,10 @@ const struct wu_conf *wuconf) {
 		return wu_open_error;
 	}
 
-	if (!alloc_sub_images(infile, TIFFNumberOfDirectories(tif))) {
-		TIFFCleanup(tif);
-		return wu_alloc_error;
-	}
-
-	size_t decoded = 0;
-	for (size_t i = 0; i < infile->nr; ++i) {
-		if (!TIFFSetDirectory(tif, (tdir_t)i)) {
-			break;
-		}
-		uint32_t w, h;
-		const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w) == 1
-			&& TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h) == 1;
-		if (!ok) {
-			image_file_error_append(infile,
-				"Failed to get image dimensions");
-			continue;
-		}
-
-		struct wuimg *img = infile->sub_img + decoded;
-		img->w = w;
-		img->h = h;
-		if (wuimg_exceeds_limit(img, wuconf)) {
-			continue;
-		}
-
-		struct tiff_info info;
-		const char *err = get_tiff_info(tif, &info);
-		if (err) {
-			image_file_error_append(infile, err);
-			continue;
-		}
-		const bool do_it_ourselves = wuconf->tiff_use_homegrown_unpacker
-			&& check_support(&info);
-
-		enum wu_error status = -1;
-		switch ((int)do_it_ourselves) {
-		case true:
-			status = nih_decode(tif, img, &info);
-			if (status == wu_ok) {
-				break;
-			}
-			wuimg_clear(img);
-			image_file_error_append(infile, "Native unpacking "
-				"failed, falling back on libtiff.");
-			// fallthrough
-		case false:
-			status = libtiff_decode(tif, infile, img);
-		}
-
-		if (status == wu_ok) {
-			++decoded;
-			get_metadata_tags(tif, img);
-		} else {
-			wuimg_clear(img);
-		}
-	}
-
-	TIFFCleanup(tif);
-	return image_file_total_decoded(infile, decoded);
+	infile->dec_state = tif;
+	infile->events = ev_subcycle;
+	return alloc_sub_images(infile, TIFFNumberOfDirectories(tif))
+		? wu_ok : wu_alloc_error;
 }
+
+const struct image_fn tiff_fn = {.dec = tiff_dec, .callback = tiff_callback};

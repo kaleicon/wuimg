@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <string.h>
 #include <stdlib.h>
 
@@ -5,7 +6,6 @@
 #include "utf8.h"
 #include "wutree.h"
 #include "misc/mem.h"
-#include "misc/wustr.h"
 
 static bool is_emb_str(const struct wu_emb_str *emb) {
 	return emb->len > sizeof(emb->s.arr);
@@ -21,19 +21,28 @@ static const uint8_t * get_emb_str(const struct wu_emb_str *emb) {
 	return is_emb_str(emb) ? emb->s.str : emb->s.arr;
 }
 
-static bool copy_emb_mem(struct wu_emb_str *emb, const void *mem,
-const size_t len) {
-	emb->len = len;
+static void graft_emb_mem(struct wu_emb_str *emb, struct wustr src) {
+	emb->len = src.len;
 	if (is_emb_str(emb)) {
-		emb->s.str = memdup(mem, emb->len);
+		emb->s.str = src.str;
+	} else {
+		memcpy(emb->s.arr, src.str, src.len);
+		wustr_free(&src);
+	}
+}
+
+static bool copy_emb_mem(struct wu_emb_str *emb, const struct wuptr src) {
+	emb->len = src.len;
+	if (is_emb_str(emb)) {
+		emb->s.str = memdup(src.ptr, emb->len);
 		return (bool)emb->s.str;
 	}
-	memcpy(emb->s.arr, mem, emb->len);
+	memcpy(emb->s.arr, src.ptr, emb->len);
 	return true;
 }
 
 static bool copy_name(struct wu_tree *tree, const char *name) {
-	return copy_emb_mem(&tree->name, name, strlen(name));
+	return copy_emb_mem(&tree->name, wuptr_str(name));
 }
 
 static struct wu_branch * get_branch(struct wu_tree *tree) {
@@ -75,6 +84,7 @@ void tree_unroot(struct wu_tree *root) {
 		free(branch->b);
 		break;
 	case wu_leaf_string:
+	case wu_leaf_bin:
 		free_emb_str(&root->leaf.val.s);
 		break;
 	default:
@@ -131,11 +141,11 @@ const size_t max_y, const size_t indent, FILE *out) {
 }
 
 static bool add_leaf_copy(struct wu_tree *par, const char *restrict name,
-const void *restrict value, const size_t len, const bool is_utf8) {
-	struct wu_tree *leaf = irrigate(par, 1);
-	if (leaf && copy_name(leaf, name)) {
-		if (copy_emb_mem(&leaf->leaf.val.s, value, len)) {
-			leaf->leaf.type = is_utf8 ? wu_leaf_string : wu_leaf_bin;
+const struct wuptr value, const bool is_utf8) {
+	struct wu_tree *branch = irrigate(par, 1);
+	if (branch && copy_name(branch, name)) {
+		if (copy_emb_mem(&branch->leaf.val.s, value)) {
+			branch->leaf.type = is_utf8 ? wu_leaf_string : wu_leaf_bin;
 			++par->leaf.val.branch.len;
 			return true;
 		}
@@ -144,48 +154,43 @@ const void *restrict value, const size_t len, const bool is_utf8) {
 }
 
 static bool add_leaf_owned(struct wu_tree *par, const char *restrict name,
-void *restrict value, const size_t len, const bool is_utf8) {
-	struct wu_tree *leaf = irrigate(par, 1);
-	if (leaf && copy_name(leaf, name)) {
-		struct wu_emb_str *emb = &leaf->leaf.val.s;
-		emb->len = len;
-		if (is_emb_str(emb)) {
-			emb->s.str = value;
-		} else {
-			memcpy(emb->s.arr, value, len);
-			free(value);
-		}
-		leaf->leaf.type = is_utf8 ? wu_leaf_string : wu_leaf_bin;
+struct wustr value, const bool is_utf8) {
+	struct wu_tree *branch = irrigate(par, 1);
+	if (branch && copy_name(branch, name)) {
+		struct wu_leaf *leaf = &branch->leaf;
+		graft_emb_mem(&leaf->val.s, value);
+		leaf->type = is_utf8 ? wu_leaf_string : wu_leaf_bin;
 		++par->leaf.val.branch.len;
 		return true;
 	}
-	free(value);
+	wustr_free(&value);
 	return false;
 }
 
 bool tree_add_leaf_utf8_len(struct wu_tree *par, const char *name,
-const void *restrict value, const size_t len) {
-	return add_leaf_copy(par, name, value, len, true);
+const struct wuptr value) {
+	return add_leaf_copy(par, name, value, true);
 }
 
 bool tree_add_leaf_utf8_limit(struct wu_tree *par, const char *restrict name,
-const char *restrict value, const size_t len) {
-	return tree_add_leaf_utf8_len(par, name, value, strnlen(value, len));
+struct wuptr value) {
+	value.len = strnlen((const char *)value.ptr, value.len);
+	return tree_add_leaf_utf8_len(par, name, value);
 }
 
 bool tree_add_leaf_utf8(struct wu_tree *par, const char *restrict name,
 const char *restrict value) {
-	return tree_add_leaf_utf8_len(par, name, value, strlen(value));
+	return tree_add_leaf_utf8_len(par, name, wuptr_str(value));
 }
 
 bool tree_add_leaf_len(struct wu_tree *par, const char *restrict name,
-const void *restrict value, const size_t len, const char *restrict encoding) {
+const struct wuptr value, const char *restrict encoding) {
 	struct wustr utf;
-	switch (utf8_convert(value, len, &utf, encoding)) {
+	switch (utf8_convert((const char *)value.ptr, value.len, &utf, encoding)) {
 	case trit_true:
-		return add_leaf_owned(par, name, utf.str, utf.len, true);
+		return add_leaf_owned(par, name, utf, true);
 	case trit_false:
-		return tree_add_leaf_utf8_len(par, name, value, len);
+		return tree_add_leaf_utf8_len(par, name, value);
 	case trit_what:
 		break;
 	}
@@ -193,15 +198,16 @@ const void *restrict value, const size_t len, const char *restrict encoding) {
 }
 
 bool tree_add_leaf_limit(struct wu_tree *par, const char *name,
-const void *restrict value, const size_t len, const char *encoding) {
-	return tree_add_leaf_len(par, name, value, strnlen(value, len),
-		encoding);
+struct wuptr value, const char *encoding) {
+	value.len = strnlen((const char *)value.ptr, value.len);
+	return tree_add_leaf_len(par, name, value, encoding);
 }
 
 bool tree_add_leaf(struct wu_tree *par, const char *restrict name,
 const char *restrict value, const char *restrict encoding) {
-	return tree_add_leaf_len(par, name, value, strlen(value), encoding);
+	return tree_add_leaf_len(par, name, wuptr_str(value), encoding);
 }
+
 
 static bool sap_bud(struct wu_tree *bud, const char *name,
 const struct wu_leaf leaf, struct wu_tree *parent) {
@@ -224,10 +230,36 @@ const struct wu_leaf leaf, struct wu_tree *parent) {
 	return false;
 }
 
-bool tree_bud_leaf(struct wu_tree *par, const char *name,
+static bool bud_leaf(struct wu_tree *par, const char *name,
 const struct wu_leaf leaf) {
 	struct wu_tree *bud = irrigate(par, 1);
 	return bud ? sap_bud(bud, name, leaf, par) : false;
+}
+
+bool tree_bud_leaf_u(struct wu_tree *par, const char *name,
+const unsigned long val) {
+	return bud_leaf(par, name,
+		(struct wu_leaf){.val.u = val, .type = wu_leaf_unsigned});
+}
+
+bool tree_bud_leaf_d(struct wu_tree *par, const char *name, const long val) {
+	return bud_leaf(par, name,
+		(struct wu_leaf){.val.d = val, .type = wu_leaf_signed});
+}
+
+bool tree_bud_leaf_f(struct wu_tree *par, const char *name, const double val) {
+	return bud_leaf(par, name,
+		(struct wu_leaf){.val.f = val, .type = wu_leaf_float});
+}
+
+bool tree_bud_leaf_time(struct wu_tree *par, const char *name, const time_t val) {
+	return bud_leaf(par, name,
+		(struct wu_leaf){.val.time = val, .type = wu_leaf_time});
+}
+
+bool tree_bud_leaf_bool(struct wu_tree *par, const char *name, const bool val) {
+	return bud_leaf(par, name,
+		(struct wu_leaf){.val.b = val, .type = wu_leaf_bool});
 }
 
 bool tree_bud_leaves(struct wu_tree *par, const struct wu_tree_sap *sap,

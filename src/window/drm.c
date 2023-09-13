@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -324,6 +325,7 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 
 	const char *err = "This string shouldn't be seen";
 	if (drm_setup(&ctx->drm, &connector, &mode_info)) {
+		pub->win.refresh_nsec = 1000000000 / mode_info->vrefresh;
 		if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
 			err = egl_init(&ctx->pub->win.egl,
 				(EGLNativeDisplayType)ctx->gbm.device,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,21 +35,10 @@ void tga_cleanup(struct tga_desc *desc) {
 	free(desc->map.extra_pal);
 }
 
-static size_t raw_process(struct wuimg *img, const size_t bytes) {
-	if (img->bitdepth == 16) {
-		endian_loop16((uint16_t *)img->data, little_endian, bytes/2);
-	}
-	return bytes;
-}
-
-static size_t raw_load(struct wuimg *img, FILE *ifp) {
-	return raw_process(img, fread(img->data, 1, wuimg_size(img), ifp));
-}
-
 size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp) {
 	if (wuimg_alloc_noverify(stamp)) {
 		fseek(desc->ifp, desc->meta.stamp_offset + 2, SEEK_SET);
-		return raw_load(stamp, desc->ifp);
+		return fmt_load_raster(stamp, desc->ifp, little_endian);
 	}
 	return 0;
 }
@@ -97,7 +87,10 @@ static size_t rle_load(const struct tga_desc *desc, struct wuimg *img) {
 		rle_decode(img->data, img->data + dst_len, rle, rle + read,
 			bytedepth);
 		free(rle);
-		return raw_process(img, dst_len);
+		if (img->bitdepth == 16) {
+			endian_loop16((uint16_t *)img->data, little_endian, dims);
+		}
+		return dst_len;
 	}
 	return 0;
 
@@ -112,7 +105,7 @@ size_t tga_decode(const struct tga_desc *desc, struct wuimg *img) {
 		case tga_colormap_data:
 		case tga_truecolor_data:
 		case tga_monochrome_data:
-			return raw_load(img, desc->ifp);
+			return fmt_load_raster(img, desc->ifp, little_endian);
 		case tga_colormap_rle:
 		case tga_truecolor_rle:
 		case tga_monochrome_rle:

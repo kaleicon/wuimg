@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_BMP
 #define LIB_BMP
 
@@ -82,6 +83,7 @@ struct dib_lcs {
 
 struct dib_desc {
 	FILE *ifp;
+	bool bmp_header;
 	enum trit is_os2:8;
 
 	unsigned char depth;
@@ -104,13 +106,11 @@ struct wustr *name);
 
 bool dib_decode(const struct dib_desc *desc, struct wuimg *img);
 
-enum wu_error dib_open_file(struct dib_desc *desc, struct wuimg *img,
-FILE *ifp);
+enum wu_error dib_parse_header(struct dib_desc *desc, struct wuimg *img);
 
+enum wu_error dib_open_file(struct dib_desc *desc, FILE *ifp, bool is_bmp,
+enum trit is_os2);
 
-enum wu_error bmp_parse_header(struct dib_desc *desc, struct wuimg *img);
-
-enum wu_error bmp_open_file(struct dib_desc *desc, FILE *ifp);
 
 /* ICO functions */
 enum ico_type {
@@ -141,5 +141,18 @@ enum wu_error ico_set_image(struct ico_desc *desc, struct wuimg *img, uint16_t i
 enum wu_error ico_parse_header(struct ico_desc *desc);
 
 enum wu_error ico_open_file(struct ico_desc *desc, FILE *ifp);
+
+
+#include "dec_enable.def"
+#ifdef WU_ENABLE_BMZ
+struct bmz_desc {
+	uint8_t *restrict buf;
+	struct dib_desc bmp;
+};
+
+void bmz_cleanup(struct bmz_desc *desc);
+
+enum wu_error bmz_open(struct bmz_desc *desc, struct mp_parser mp);
+#endif /* WU_ENABLE_BMZ */
 
 #endif /* LIB_BMP */

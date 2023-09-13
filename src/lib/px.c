@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/endian.h"
 #include "px.h"
 
@@ -7,7 +8,7 @@ const uint16_t *map) {
 	const uint32_t *end = data + img->w * img->h;
 
 	const struct px_tile *tile = &desc->tile;
-	uint8_t wh[2];
+	uint8_t wh[2]; // width and height
 	const size_t tilept = tile->len + 2 /* unknown data on both axis */;
 	const long tile_bytes = (long)(sizeof(wh) + tilept * tilept * sizeof(*data));
 	for (uint16_t y = 0; y < tile->h; ++y) {
@@ -54,14 +55,9 @@ const uint32_t i) {
 	if (map) {
 		fseek(desc->ifp, 32 + (long)(i*map_len), SEEK_SET);
 		if (fread(map, map_len, 1, desc->ifp)) {
-			err = wuimg_verify(img);
+			err = wuimg_alloc(img);
 			if (err == wu_ok) {
-				img->data = calloc(1, wuimg_size(img));
-				if (img->data) {
-					dec_wrap(desc, img, map);
-				} else {
-					err = wu_alloc_error;
-				}
+				dec_wrap(desc, img, map);
 			}
 		} else {
 			err = wu_unexpected_eof;
@@ -79,7 +75,7 @@ enum wu_error px_parse(struct px_desc *desc, FILE *ifp) {
 		0       u32     ImageCount
 		4       u32     TileSize
 		8       u8      ???[8]
-		16      u16     Type        // 0x0c
+		16      u16     Type        // 0x000c
 		18      u16     Bitdepth
 		20      u16     Width
 		22      u16     Height
@@ -96,9 +92,9 @@ enum wu_error px_parse(struct px_desc *desc, FILE *ifp) {
 	*desc = (struct px_desc) {
 		.ifp = ifp,
 		.nr = buf_endian32(buf, little_endian),
+		.type = endian16(buf[8], little_endian),
 		.w = endian16(buf[10], little_endian),
 		.h = endian16(buf[11], little_endian),
-		.type = endian16(buf[8], little_endian),
 		.tile.len = buf_endian32(buf + 2, little_endian),
 		.tile.w = endian16(buf[14], little_endian),
 		.tile.h = endian16(buf[15], little_endian),
@@ -106,8 +102,14 @@ enum wu_error px_parse(struct px_desc *desc, FILE *ifp) {
 	const long tiles = desc->tile.w * desc->tile.h;
 	desc->tile.data_start = (long)sizeof(buf) + desc->nr * (tiles * 2);
 
-	if (desc->type != px_type_0c) {
-		return wu_unknown_file_type;
+	switch (desc->type) {
+	case px_type_0c:
+		break;
+	case px_type_01: case px_type_04: case px_type_07:
+	case px_type_40: case px_type_44: case px_type_90:
+		return wu_unsupported_feature;
+	default:
+		return wu_invalid_header;
 	}
 
 	if (!desc->nr || endian16(buf[9], little_endian) != 32) {

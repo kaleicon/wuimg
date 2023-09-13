@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "lib/g00.h"
 #include "wudefs.h"
 
@@ -25,8 +26,7 @@ const struct wu_conf *wuconf, struct g00_desc *desc) {
 		return wu_exceeds_size_limit;
 	}
 
-	tree_bud_leaf(&infile->metadata, "Version",
-		(struct wu_leaf){.val.u = desc->version, .type = wu_leaf_unsigned});
+	tree_bud_leaf_u(&infile->metadata, "Version", desc->version);
 	return g00_decode(desc, img) ? wu_ok : wu_decoding_error;
 }
 
@@ -44,3 +44,5 @@ enum wu_error g00_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	}
 	return wu_alloc_error;
 }
+
+const struct image_fn g00_fn = {.dec = g00_dec, .callback = g00_callback};

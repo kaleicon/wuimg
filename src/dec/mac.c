@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "lib/mac.h"
 #include "misc/common.h"
 #include "wudefs.h"
@@ -8,36 +9,27 @@ struct wu_tree *tree) {
 		return;
 	}
 
-	struct wu_tree *file_branch = tree_add_branch(tree, "File");
-	if (file_branch) {
-		tree_add_leaf_len(file_branch, "Name", macbin->name,
-			macbin->name_len, NULL);
-		tree_add_leaf_len(file_branch, "Type", macbin->type,
-			sizeof(macbin->type), NULL);
-		tree_add_leaf_len(file_branch, "Creator", macbin->creator,
-			sizeof(macbin->creator), NULL);
+	struct wu_tree *file = tree_add_branch(tree, "File");
+	if (file) {
+		tree_add_leaf_len(file, "Name",
+			wuptr_mem(macbin->name, macbin->name_len), NULL);
+		tree_add_leaf_len(file, "Type", WUPTR_ARRAY(macbin->type), NULL);
+		tree_add_leaf_len(file, "Creator", WUPTR_ARRAY(macbin->creator),
+			NULL);
 
-		const struct wu_tree_sap sap[] = {
-			{"Attributes", {wu_leaf_unsigned,
-				{.u = macbin->attributes}}},
-			{"Protected", {wu_leaf_unsigned,
-				{.u = macbin->protection}}},
-			{"Created", {wu_leaf_time,
-				{.time = mac_time_to_unix(macbin->time.created)}}},
-			{"Last modified", {wu_leaf_time,
-				{.time = mac_time_to_unix(macbin->time.modified)}}},
-		};
-		tree_bud_leaves(file_branch, sap, ARRAY_LEN(sap));
+		tree_bud_leaf_u(file, "Attributes", macbin->attributes);
+		tree_bud_leaf_u(file, "Protected", macbin->protection);
+		tree_bud_leaf_time(file, "Created",
+			mac_time_to_unix(macbin->time.created));
+		tree_bud_leaf_time(file, "Last modified",
+			mac_time_to_unix(macbin->time.modified));
 	}
 
-	struct wu_tree *window_branch = tree_add_branch(tree, "Window");
-	if (window_branch) {
-		const struct wu_tree_sap sap[] = {
-			{"y", {wu_leaf_unsigned, {.u = macbin->window.y}}},
-			{"x", {wu_leaf_unsigned, {.u = macbin->window.x}}},
-			{"id", {wu_leaf_unsigned, {.u = macbin->window.id}}},
-		};
-		tree_bud_leaves(window_branch, sap, ARRAY_LEN(sap));
+	struct wu_tree *window = tree_add_branch(tree, "Window");
+	if (window) {
+		tree_bud_leaf_u(window, "Y", macbin->window.y);
+		tree_bud_leaf_u(window, "X", macbin->window.x);
+		tree_bud_leaf_u(window, "ID", macbin->window.id);
 	}
 }
 
@@ -56,8 +48,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 		read_macbin_metadata(&desc.macbin,
 			tree_add_branch(&infile->metadata, "MacBinary"));
 	}
-	tree_bud_leaf(&infile->metadata, "Version",
-		(struct wu_leaf){.val.u = desc.version, .type = wu_leaf_unsigned});
+	tree_bud_leaf_u(&infile->metadata, "Version", desc.version);
 
 	struct wuimg *img = alloc_sub_images(infile, desc.has_patterns ? 2 : 1);
 	if (!img) {
@@ -68,10 +59,12 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 
 	if (infile->nr == 2) {
 		if (!mac_patterns_load(&desc, img + 1)) {
-			image_file_error_append(infile,
+			image_file_strerror_append(infile,
 				"Couldn't load pattern data");
 			realloc_sub_images(infile, 1);
 		}
 	}
 	return mac_decode(&desc, img) ? wu_ok : wu_decoding_error;
 }
+
+const struct image_fn mac_fn = {.dec = mac_dec};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WU_EXTRACT
 #define WU_EXTRACT
 

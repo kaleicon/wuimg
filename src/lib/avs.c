@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/endian.h"
 #include "avs.h"
 

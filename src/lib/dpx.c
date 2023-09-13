@@ -1,7 +1,8 @@
+// SPDX-License-Identifier: 0BSD
 #include "misc/common.h"
 #include "dpx.h"
 
-/* This format is a great example on how to do file headers.
+/* This format is a great example of how to do file headers.
  * Too bad the raster storage ruined it. */
 
 struct elem_info {
@@ -280,11 +281,11 @@ const uint8_t i) {
 	img->w = src->w;
 	img->h = src->h;
 	const uint8_t o = src->orientation;
-	if (o <= 7) {
-		img->rotate = (o & 1) ? 2 : 0;
+	if (o <= 0x07) {
+		img->rotate = (o << 1) & 2;
+		img->rotate |= (o >> 2) & 1;
 		img->mirror = (o & 1);
 		img->mirror ^= (o >> 1) & 1;
-		img->rotate |= (o >> 2) & 1;
 	}
 
 	const struct dpx_element *elem = src->elem + i;
@@ -327,37 +328,26 @@ static time_t read_date(FILE *in) {
 		return 0;
 	}
 
-	int year, month, day, hour, min, sec;
-	const int m = sscanf(buf, "%4d:%2d:%2d:%2d:%2d:%2d",
-		&year, &month, &day, &hour, &min, &sec);
-	if (m == 6) {
-		const size_t pos = 24 - 5;
-		int hz = 0;
-		int mz = 0;
-		switch (sscanf(buf + pos, "%3d%2d", &hz, &mz)) {
-		case 2:
-			if (mz >= 60 || mz < 0) {
-				return 0;
-			}
-			min += (hz >= 0) ? mz : -mz;
-			// fallthrough
-		case 1:
-			// Crazy, but who knows
-			if (hz >= 24 || hz <= -24) {
-				return 0;
-			}
-			hour += hz;
-			break;
-		default:
-			;const char utc[5] = "Z";
-			if (memcmp(buf + pos, utc, sizeof(utc))) {
-				return 0;
-			}
-			break;
+	int year, month, day, hour, min, sec, hz, mz;
+	const int m = sscanf(buf, "%4d:%2d:%2d:%2d:%2d:%2d%3d%2d",
+		&year, &month, &day, &hour, &min, &sec, &hz, &mz);
+	switch (m) {
+	case 8:
+		min += (hz >= 0) ? mz : -mz;
+		// fallthrough
+	case 7:
+		hour += hz;
+		break;
+	case 6:
+		;const size_t tz_pos = 24 - 5;
+		const char utc[5] = "Z";
+		if (memcmp(buf + tz_pos, utc, sizeof(utc))) {
+			return 0;
 		}
-		return utc_to_epoch(year, month, day, hour, min, sec);
+		break;
+	default: return 0;
 	}
-	return 0;
+	return utc_to_epoch(year, month, day, hour, min, sec);
 }
 
 static enum wu_error television_parse(struct dpx_desc *desc) {
@@ -688,7 +678,6 @@ static enum wu_error file_info_parse(struct dpx_desc *desc) {
 	if (!strcmp(str, v1) || !strcmp(str, v2)) {
 		desc->version = (uint8_t)str[1];
 	} else {
-		puts("HERE");
 		return wu_unsupported_feature;
 	}
 

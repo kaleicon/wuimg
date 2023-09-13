@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <unistd.h>
 
 #include "dec.h"
@@ -16,12 +17,8 @@ unsigned char fuzz_buf[1024000];
 
 __AFL_FUZZ_INIT()
 
-int main(const int argc, char *argv[]) {
-	(void)argv;
-	if (argc <= 1) {
-		return 1;
-	}
-
+//int main(const int argc, char *argv[]) {
+int main(void) {
 	struct image_context image = {
 		.conf = conf_default(),
 	};
@@ -31,17 +28,22 @@ int main(const int argc, char *argv[]) {
 #endif
 
 	unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
-	while (__AFL_LOOP(1 << 16)) {
+	while (__AFL_LOOP(1 << 14)) {
 		const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
 		image.file.ifp = fmemopen(buf, (size_t)len, "r");
 		if (!image.file.ifp) {
 			return 1;
 		}
+		image.file.map = (struct map_info) {
+			.data = buf,
+			.len = (size_t)len,
+		};
 		enum wu_error err;
 		do {
 			struct wuimg *img;
-			err = dec_iter_image(&image, &img);
+			err = dec_iter(&image, &img);
 		} while (err == wu_ok);
+		image.file.map = (struct map_info){0};
 		dec_free_image(&image);
 		image_reset(&image);
 	}

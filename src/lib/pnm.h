@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef LIB_PNM
 #define LIB_PNM
 
@@ -19,6 +20,8 @@ enum pnm_type {
 	pnm_xv_thumb = ' ',
 	pnm_color_pfm = 'F',
 	pnm_gray_pfm = 'f',
+	pnm_color_phm = 'H',
+	pnm_gray_phm = 'h',
 	pnm_mtv = 1,
 
 	/* PGX format, defined in JPEG2000 Part 4 Annex B.2.6 for conformance
@@ -30,7 +33,6 @@ enum pnm_type {
 
 struct pnm_desc {
 	FILE *ifp;
-//	struct raster_desc rast;
 	struct wuimg rast;
 
 	size_t nr;

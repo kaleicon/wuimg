@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <gif_lib.h>
 
 #include "wudefs.h"
@@ -221,8 +222,8 @@ GraphicsControlBlock *gcb, struct wu_tree *tree) {
 		const size_t len = (size_t)ext[j].ByteCount;
 		switch (func) {
 		case COMMENT_EXT_FUNC_CODE:
-			tree_add_leaf_len(tree, "Comment", ext[j].Bytes, len,
-				NULL);
+			tree_add_leaf_len(tree, "Comment",
+				wuptr_mem(ext[j].Bytes, len), NULL);
 			break;
 		case GRAPHICS_EXT_FUNC_CODE:
 			status = DGifExtensionToGCB(len, ext[j].Bytes, gcb);
@@ -311,14 +312,14 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	int error = 0;
 	GifFileType *gif_file = DGifOpen(infile->ifp, dgif_input_fn, &error);
 	if (error) {
-		image_file_error_append(infile, GifErrorString(error));
+		image_file_strerror_append(infile, GifErrorString(error));
 		return map_error_to_wu(error);
 	}
 	ds->gif_file = gif_file;
 
 	error = DGifSlurp(gif_file);
 	if (error != GIF_OK) {
-		image_file_error_append(infile, GifErrorString(gif_file->Error));
+		image_file_strerror_append(infile, GifErrorString(gif_file->Error));
 		return wu_invalid_header;
 	}
 
@@ -371,8 +372,7 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 			infile->bg = pal->color[bg];
 		}
 	}
-	tree_bud_leaf(&infile->metadata, "Palettes", (struct wu_leaf) {
-		.type = wu_leaf_signed, .val.d = pal_num});
+	tree_bud_leaf_d(&infile->metadata, "Palettes", pal_num);
 
 	st = wuimg_alloc(img);
 	if (st != wu_ok) {
@@ -388,3 +388,5 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	}
 	return gif_dec_frame(img, ds);
 }
+
+const struct image_fn gif_fn = {.dec = gif_dec, .callback = gif_callback};

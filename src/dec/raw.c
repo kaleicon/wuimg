@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <libraw/libraw.h>
 
 #include "wudefs.h"
@@ -7,6 +8,7 @@
 #include "misc/math.h"
 
 #include "dec_enable.def"
+#include "dec.h"
 #ifdef WU_ENABLE_JPEG
 #include "dec_fn.h"
 #endif
@@ -23,7 +25,6 @@ struct raw_image_info {
 };
 
 struct raw_state {
-	struct map_info map;
 	libraw_data_t *data;
 	struct raw_image_info raw;
 	enum raw_thumbnail thumb_type;
@@ -31,7 +32,7 @@ struct raw_state {
 };
 
 static enum wu_error raw_error_to_wu(struct image_file *infile, const int err) {
-	image_file_error_append(infile, libraw_strerror(err));
+	image_file_strerror_append(infile, libraw_strerror(err));
 	switch (err) {
 	case LIBRAW_SUCCESS: return wu_ok;
 	case LIBRAW_UNSPECIFIED_ERROR: return wu_unknown_error;
@@ -48,24 +49,18 @@ static enum wu_error raw_error_to_wu(struct image_file *infile, const int err) {
 
 static void raw_state_free(struct image_file *infile) {
 	struct raw_state *rs = infile->dec_state;
-	struct wuimg *img = infile->sub_img;
 	size_t i = 0;
 	while (i < rs->raw.count) {
 		libraw_dcraw_clear_mem(rs->raw.proc[i]);
-		img[i].data = NULL;
 		++i;
 	}
 	free(rs->raw.proc);
-	if (rs->thumb_type == raw_thumb_bitmap) {
-		img[i].data = NULL;
-	} else if (rs->jpeg.events) {
-		jpeg_callback(&rs->jpeg, NULL, NULL, ev_end);
-		infile->nr -= rs->jpeg.nr;
+	if (rs->jpeg.events) {
+		jpeg_fn.callback(&rs->jpeg, NULL, NULL, ev_end);
 		image_file_free(&rs->jpeg);
+		infile->nr -= rs->jpeg.nr;
 	}
-
 	libraw_close(rs->data);
-	file_unmap(&rs->map);
 }
 
 static enum wu_error copy_jpeg(struct image_file *infile,
@@ -82,22 +77,49 @@ const struct raw_state *rs) {
 
 	struct wuimg *thumbs = img + raw_count;
 	memcpy(thumbs, jpeg->sub_img, jpeg->nr * sizeof(*thumbs));
-	infile->events = jpeg->events;
+	infile->events |= jpeg->events;
 	return wu_ok;
 }
 
+static enum wu_error decode_jpeg(struct image_file *infile,
+struct raw_state *rs, const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event ev) {
+#ifdef WU_ENABLE_JPEG
+	const int raws = (int)rs->raw.count;
+	struct image_file *thumb = &rs->jpeg;
+
+	state->idx -= raws;
+	enum wu_error status = ev
+		? dec_callback_manual(thumb, wuconf, state, ev, &jpeg_fn)
+		: dec_decode_manual(thumb, wuconf, state, &jpeg_fn);
+	state->idx += raws;
+
+	if (status <= wu_ok) {
+		enum wu_error copy_status = copy_jpeg(infile, rs);
+		if (copy_status != wu_ok) {
+			status = copy_status;
+		}
+	}
+	return status;
+#else
+	(void)infile; (void)rs; (void)wuconf; (void)state; (void)ev;
+	return wu_unknown_file_type;
+#endif
+}
+
 static enum wu_error raw_decode(struct image_file *infile,
-const struct wu_conf *wuconf, const size_t i) {
+const struct wu_conf *wuconf, struct wu_state *state) {
 	struct raw_state *rs = infile->dec_state;
-	struct wuimg *img = infile->sub_img + i;
+	const unsigned i = (unsigned)state->idx;
+	struct wuimg *img = infile->sub_img + state->idx;
 
 	if (i < rs->raw.count) {
 		libraw_data_t *data = rs->data;
-		data->params.shot_select = (unsigned int)i;
+		data->rawparams.shot_select = i;
 
 		int err = libraw_dcraw_process(data);
 		if (err != LIBRAW_SUCCESS) {
-			image_file_error_append(infile, libraw_strerror(err));
+			image_file_strerror_append(infile, libraw_strerror(err));
 			return wu_decoding_error;
 		}
 
@@ -116,6 +138,7 @@ const struct wu_conf *wuconf, const size_t i) {
 		img->h = proc->height;
 		img->channels = (unsigned char)proc->colors;
 		img->bitdepth = (unsigned char)proc->bits;
+		img->borrowed = true;
 		return wuimg_verify(img);
 	} else {
 		const libraw_thumbnail_t *thumb = &rs->data->thumbnail;
@@ -124,21 +147,13 @@ const struct wu_conf *wuconf, const size_t i) {
 			enum wu_error status = wu_open_error;
 			jpeg->ifp = fmemopen(thumb->thumb, thumb->tlength, "rb");
 			if (jpeg->ifp) {
-				status = jpeg_dec(jpeg, wuconf);
-				if (status == wu_ok) {
-					status = copy_jpeg(infile, rs);
-				} else {
-					image_file_free(jpeg);
-				}
+				status = decode_jpeg(infile, rs, wuconf, state, 0);
 			}
 
 			if (status != wu_ok) {
-				image_file_error_append(infile, "Failed to "
+				image_file_strerror_append(infile, "Failed to "
 					"decode JPEG thumbnail");
-				if (infile->nr <= 1) {
-					return status;
-				}
-				realloc_sub_images(infile, rs->raw.count);
+				return status;
 			}
 		}
 	}
@@ -151,20 +166,11 @@ const enum image_event ev) {
 	struct raw_state *rs = infile->dec_state;
 	enum wu_error status = wu_no_change;
 	if (ev) {
-		struct wuimg *img = infile->sub_img;
 		const int raws = (int)rs->raw.count;
 		if (state->idx >= raws && rs->jpeg.ifp) {
-			state->idx -= raws;
-			status = jpeg_callback(&rs->jpeg, wuconf, state, ev);
-			state->idx += raws;
-			if (status <= wu_ok) {
-				enum wu_error copy_status = copy_jpeg(infile, rs);
-				if (copy_status != wu_ok) {
-					status = copy_status;
-				}
-			}
-		} else if (!img[state->idx].data) {
-			status = raw_decode(infile, wuconf, (size_t)state->idx);
+			status = decode_jpeg(infile, rs, wuconf, state, ev);
+		} else {
+			status = raw_decode(infile, wuconf, state);
 		}
 	} else {
 		raw_state_free(infile);
@@ -195,11 +201,9 @@ libraw_data_t *data) {
 	if (thumb_dims <= wuconf->max_img_size) {
 		if (libraw_unpack_thumb(data) == LIBRAW_SUCCESS) {
 			switch (data->thumbnail.tformat) {
-			case LIBRAW_THUMBNAIL_JPEG:
 #ifdef WU_ENABLE_JPEG
+			case LIBRAW_THUMBNAIL_JPEG:
 				return raw_thumb_jpeg;
-#else
-				break;
 #endif
 			case LIBRAW_THUMBNAIL_BITMAP:
 			case LIBRAW_THUMBNAIL_BITMAP16:
@@ -214,10 +218,8 @@ libraw_data_t *data) {
 
 static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 	const libraw_imgother_t *other = libraw_get_imgother(data);
-	tree_add_leaf_limit(tree, "Artist", other->artist,
-		sizeof(other->artist), NULL);
-	tree_add_leaf_limit(tree, "Description", other->desc,
-		sizeof(other->desc), NULL);
+	tree_add_leaf_limit(tree, "Artist", WUPTR_ARRAY(other->artist), NULL);
+	tree_add_leaf_limit(tree, "Description", WUPTR_ARRAY(other->desc), NULL);
 	const struct wu_tree_sap sap[] = {
 		{"ISO speed", {wu_leaf_float, {.f = other->iso_speed}}},
 		{"Shutter speed", {wu_leaf_float, {.f = other->shutter}}},
@@ -229,17 +231,11 @@ static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 	tree_bud_leaves(tree, sap, ARRAY_LEN(sap));
 
 	const libraw_iparams_t *idata = libraw_get_iparams(data);
-	tree_add_leaf_limit(tree, "Make", idata->make, sizeof(idata->make),
-		NULL);
-	tree_add_leaf_limit(tree, "Model", idata->model, sizeof(idata->model),
-		NULL);
-	tree_add_leaf_limit(tree, "Software", idata->software,
-		sizeof(idata->software), NULL);
+	tree_add_leaf_limit(tree, "Make", WUPTR_ARRAY(idata->make), NULL);
+	tree_add_leaf_limit(tree, "Model", WUPTR_ARRAY(idata->model), NULL);
+	tree_add_leaf_limit(tree, "Software", WUPTR_ARRAY(idata->software), NULL);
 	if (idata->dng_version) {
-		const struct wu_leaf leaf = {
-			wu_leaf_unsigned, {.u = idata->dng_version},
-		};
-		tree_bud_leaf(tree, "DNG version", leaf);
+		tree_bud_leaf_u(tree, "DNG version", idata->dng_version);
 	}
 
 	standard_metadata(xmp_metadata, idata->xmpdata, idata->xmplen, tree);
@@ -247,18 +243,14 @@ static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 
 static enum wu_error raw_setup(struct image_file *infile,
 const struct wu_conf *wuconf, struct raw_state *rs) {
-	if (!file_map(&rs->map, infile->ifp)) {
-		return wu_alloc_error;
-	}
-
 	libraw_data_t *data = libraw_init(0);
 	if (!data) {
 		return wu_alloc_error;
 	}
 	rs->data = data;
 
-	unsigned char *will_crash_if_written_to = (unsigned char *)rs->map.data;
-	int err = libraw_open_buffer(data, will_crash_if_written_to, rs->map.len);
+	unsigned char *will_crash_if_written_to = (unsigned char *)infile->map.data;
+	int err = libraw_open_buffer(data, will_crash_if_written_to, infile->map.len);
 	if (err != LIBRAW_SUCCESS) {
 		return raw_error_to_wu(infile, err);
 	}
@@ -273,8 +265,8 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 		data->params.user_flip = 0;
 		data->params.user_qual = 0;
 		data->params.user_sat = 0;
-		data->params.use_rawspeed = 1;
 		data->params.med_passes = 0;
+		data->rawparams.use_rawspeed = 1;
 		libraw_set_output_bps(data, wuconf->raw_16bit ? 16 : 8);
 		libraw_set_fbdd_noiserd(data, 0);
 
@@ -312,10 +304,10 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 		img->channels = 3;
 		img->bitdepth = (thumb->tformat == LIBRAW_THUMBNAIL_BITMAP16)
 			? 16 : 8;
+		img->borrowed = true;
+		return wuimg_verify(img);
 	}
-
-	infile->events = infile->nr > 1 ? ev_subcycle : 0;
-	return raw_decode(infile, wuconf, 0);
+	return wu_ok;
 }
 
 enum wu_error raw_dec(struct image_file *infile, const struct wu_conf *wuconf) {
@@ -324,5 +316,9 @@ enum wu_error raw_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 		return wu_alloc_error;
 	}
 	infile->dec_state = rs;
+	infile->events = ev_subcycle;
 	return raw_setup(infile, wuconf, rs);
 }
+
+const struct image_fn raw_fn = {.mmap = true,
+	.dec = raw_dec, .callback = raw_callback};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include "pic.h"
 #include "misc/bit.h"
 #include "misc/common.h"
@@ -10,9 +11,6 @@
 https://mooncore.eu/bunny/txt/picfmt_e.txt
  * with some studying of
 https://github.com/DavidGriffith/xv/blob/master/xvpic.c
-
- * Tested on samples from Tom's Gallery
-https://tomsgallery.com/gallery
 
  * TODO:
  * · Test with 12-bit files
@@ -172,7 +170,7 @@ const uint8_t ch, int x, int y, const int w, const int limit, uint8_t *mask) {
 			break;
 		}
 		++y;
-		const int dst = y * w + x;
+		const int dst = y * w + iclamp(x, 0, w);
 		if (dst >= limit) {
 			return;
 		}
@@ -191,7 +189,7 @@ static uint32_t read_len_code(struct bitstrm *bs) {
 	 * And so on, and so on
 	*/
 	unsigned b = 1;
-	while (b < 30 && bitstrm_msb_next(bs)) {
+	while (b < 29 && bitstrm_msb_next(bs)) {
 		++b;
 	}
 	return bit_set32(b) + bitstrm_msb_adv(bs, b);

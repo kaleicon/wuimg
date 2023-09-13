@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
@@ -77,9 +78,10 @@ void memrepeat_or_zero(void *dst, size_t pos, size_t offset, size_t count) {
 		memset(d + pos, 0, count);
 	} else {
 		if (offset > pos) {
-			memset(d + pos, 0, offset - pos);
-			pos += offset - pos;
-			count -= offset - pos;
+			const size_t diff = offset - pos;
+			memset(d + pos, 0, diff);
+			pos += diff;
+			count -= diff;
 		}
 		memrepeat(dst, pos, offset, count);
 	}

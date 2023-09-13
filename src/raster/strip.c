@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 #include <string.h>
 
+#include "misc/bit.h"
 #include "misc/math.h"
 #include "strip.h"
 
@@ -39,9 +41,32 @@ const uint8_t bitdepth) {
 }
 
 
-static inline void scale_inline(void *dst, const void *src,
-const size_t width, const uint64_t mul, const uint8_t depth, const uint64_t add) {
-	for (size_t x = 0; x < width; ++x) {
+static inline void scale_inline(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t xor, const uint8_t depth) {
+	for (size_t x = 0; x < w; ++x) {
+		switch (depth) {
+		case 8:
+			;uint8_t *da = dst;
+			const uint8_t *sa = src;
+			da[x] = (uint8_t)(((sa[x] * mul) >> depth) ^ xor);
+			break;
+		case 16:
+			;uint16_t *db = dst;
+			const uint16_t *sb = src;
+			db[x] = (uint16_t)(((sb[x] * mul) >> depth) ^ xor);
+			break;
+		case 32:
+			;uint32_t *dc = dst;
+			const uint32_t *sc = src;
+			dc[x] = (uint32_t)(((sc[x] * mul) >> depth) ^ xor);
+			break;
+		}
+	}
+}
+
+static inline void design_inline(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t add, const uint8_t depth) {
+	for (size_t x = 0; x < w; ++x) {
 		switch (depth) {
 		case 8:
 			;uint8_t *da = dst;
@@ -62,60 +87,77 @@ const size_t width, const uint64_t mul, const uint8_t depth, const uint64_t add)
 	}
 }
 
-static void design8(void *dst, const void *src,
-const size_t w, const struct scale_info i) {
-	scale_inline(dst, src, w, i.mul, 8, i.add);
+static void design8(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t add) {
+	design_inline(dst, src, w, mul, add, 8);
 }
-static void design16(void *dst, const void *src,
-const size_t w, const struct scale_info i) {
-	scale_inline(dst, src, w, i.mul, 16, i.add);
+static void design16(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t add) {
+	design_inline(dst, src, w, mul, add, 16);
 }
-static void design32(void *dst, const void *src,
-const size_t w, const struct scale_info i) {
-	scale_inline(dst, src, w, i.mul, 32, i.add);
+static void design32(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t add) {
+	design_inline(dst, src, w, mul, add, 32);
 }
 
-static void scale8(void *dst, const void *src,
-const size_t w, const struct scale_info i) {
-	scale_inline(dst, src, w, i.mul, 8, 0);
+static void scale8(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t xor) {
+	scale_inline(dst, src, w, mul, xor, 8);
 }
-static void scale16(void *dst, const void *src,
-const size_t w, const struct scale_info i) {
-	scale_inline(dst, src, w, i.mul, 16, 0);
+static void scale16(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t xor) {
+	scale_inline(dst, src, w, mul, xor, 16);
 }
-static void scale32(void *dst, const void *src,
-const size_t w, const struct scale_info i) {
-	scale_inline(dst, src, w, i.mul, 32, 0);
+static void scale32(void *dst, const void *src, const size_t w,
+const uint64_t mul, const uint32_t xor) {
+	scale_inline(dst, src, w, mul, xor, 32);
 }
 
 void strip_scale(void *dst, const void *src,
-const size_t width, const struct scale_info info, const bool design) {
-	if (design) {
+const size_t width, const struct scale_info info, const enum pix_attr attr) {
+	uint32_t xor = 0;
+	const uint64_t mul = info.mul;
+	switch (attr) {
+	case pix_signed:
+		;const uint32_t add = info.add;
 		switch (info.bitdepth) {
-		case 8: design8(dst, src, width, info); break;
-		case 16: design16(dst, src, width, info); break;
-		case 32: design32(dst, src, width, info); break;
+		case 8: design8(dst, src, width, mul, add); break;
+		case 16: design16(dst, src, width, mul, add); break;
+		case 32: design32(dst, src, width, mul, add); break;
 		}
-	} else if (info.scale) {
-		switch (info.bitdepth) {
-		case 8: scale8(dst, src, width, info); break;
-		case 16: scale16(dst, src, width, info); break;
-		case 32: scale32(dst, src, width, info); break;
+		return;
+	case pix_inverted:
+		xor = ~xor;
+		break;
+	case pix_normal:
+		if (!info.scale) {
+			if (dst != src) {
+				memcpy(dst, src, width * (info.bitdepth/8));
+			}
+			return;
 		}
-	} else if (dst != src) {
-		memcpy(dst, src, width * (info.bitdepth/8));
+		break;
+	case pix_float:
+	case pix_pack_332:
+	case pix_pack_1555:
+		return;
+	}
+
+	switch (info.bitdepth) {
+	case 8: scale8(dst, src, width, mul, xor); break;
+	case 16: scale16(dst, src, width, mul, xor); break;
+	case 32: scale32(dst, src, width, mul, xor); break;
 	}
 }
 
-struct scale_info strip_scale_info(const uint64_t maxval,
-const uint8_t bitdepth) {
-	const uint64_t range = ~0u >> (32 - bitdepth);
+struct scale_info strip_scale_info(const uint32_t maxval,
+const uint8_t outdepth) {
+	const uint32_t range = bit_set32(outdepth);
 	return (struct scale_info) {
-		.bitdepth = bitdepth,
+		.bitdepth = outdepth,
 		.scale = maxval != range,
-		.size_shift = (uint8_t)(ulog2(umax(bitdepth, 8) - 1) - 2),
-		.mul = (range << bitdepth) / maxval + 1,
 		.add = maxval/2 + 1,
+		.mul = ((uint64_t)range << outdepth) / maxval + 1,
 	};
 }
 
@@ -147,13 +189,13 @@ const uint8_t *restrict gray, const uint8_t *restrict alpha, const size_t w) {
 static void sew_color24_alpha8(struct pix_rgba8 *dst,
 const struct pix_rgb8 *color, const uint8_t *restrict alpha, const size_t w) {
 	for (size_t x = 0; x < w; ++x) {
-		memcpy(dst + x, color + x, (x + 1 < w) ? 4 : 3);
+		memmove(dst + x, color + x, (x + 1 < w) ? 4 : 3);
 		dst[x].a = alpha[x];
 	}
 }
 
-void strip_handsew_alpha(void *restrict dst, const void *restrict color,
-const void *restrict alpha, const size_t w, const void *restrict pal,
+void strip_handsew_alpha(void *dst, const void *color,
+const void *alpha, const size_t w, const void *restrict pal,
 const uint8_t ch) {
 	switch (ch) {
 	case 1:

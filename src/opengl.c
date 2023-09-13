@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: 0BSD
 #include <limits.h>
 #include <math.h>
 
 #include "opengl.h"
-#include "misc/common.h"
+#include "misc/bit.h"
 #include "misc/endian.h"
 #include "misc/math.h"
 #include "raster/color.h"
@@ -29,6 +30,7 @@
 #define UNI_MODE_CMS "mode_cms"
 #define UNI_EOTF_FN "eotf_fn"
 #define UNI_EOTF_ARGS "eotf_args"
+#define UNI_POSITIONING "posit"
 
 #define COLOR_RAW "0"
 #define COLOR_PALETTE "1"
@@ -97,7 +99,7 @@ const char * gl_strerror(const GLenum error) {
 	return "???";
 }
 
-GLuint64 gl_clock_query(const struct gl_context *context) {
+watch_t gl_clock_query(const struct gl_context *context) {
 	GLuint64 ns = 0;
 	glGetQueryObjectui64v(context->timer, GL_QUERY_RESULT, &ns);
 	return ns;
@@ -147,12 +149,12 @@ static void tex_2d_mag(const enum gl_mag_filter filter) {
 	tex_2d_parameteri(GL_TEXTURE_MAG_FILTER, (GLint)filter);
 }
 
-static void set_mag_filter(const unsigned subsamp, const bool good) {
+static void set_mag_filter(const unsigned is_subsamp, const bool good) {
+	(void)is_subsamp;
 	for (enum gl_tex_unit i = gl_tex_img; i <= gl_tex_plane_alpha; ++i) {
-		if ((subsamp >> i) & 1) {
-			tex_active(i);
-			tex_2d_mag(good ? gl_mag_linear : gl_mag_nearest);
-		}
+		tex_active(i);
+		tex_2d_mag((good || ((is_subsamp >> i) & 1))
+			? gl_mag_linear : gl_mag_nearest);
 	}
 	tex_active(gl_tex_img);
 }
@@ -160,16 +162,15 @@ static void set_mag_filter(const unsigned subsamp, const bool good) {
 static void fix_aspect_ratio(struct mat3f *mat, struct gl_context *context,
 const int rotate) {
 	/* Scale the image to its natural size and aspect ratio, taking
-	 * rotation into account. */
-	float horz = context->tex.ratio;
-	float vert = 1;
-	if (horz < 1) { // Ensure all pixels are visible.
-		vert = 1/horz;
-		horz = 1;
-	}
+	 * rotation into account.
+	 * 'horz' and 'vert' should always be greater than 1, so that all
+	 * pixels are visible at 1x. */
+	const float horz = fmaxf(context->tex.ratio, 1);
+	const float vert = fmaxf(1/context->tex.ratio, 1);
+
 	const int r1 = rotate & 1;
-	const float w = context->tex.w * context->pix_size[r1] * horz;
-	const float h = context->tex.h * context->pix_size[r1^1] * vert;
+	const float w = context->tex.w * horz * context->pix_size[r1];
+	const float h = context->tex.h * vert * context->pix_size[r1^1];
 
 	if (mat) {
 		const int r2 = 4 - r1;
@@ -208,6 +209,7 @@ static void set_mirrot(struct mat3f *mat, const int rotate, const bool mirror) {
 static void matrix_update(struct gl_context *context,
 const struct wu_state *state) {
 	struct mat3f mat = {0};
+
 	const int rot = context->tex.rotate + state->rotate;
 	set_mirrot(&mat, rot, context->tex.mirror ^ state->mirror);
 	fix_aspect_ratio(&mat, context, rot);
@@ -217,14 +219,15 @@ const struct wu_state *state) {
 	const float scale = 2;
 	/* Using exact integer offsets causes ugly artifacts when rendering.
 	 * We add a fraction of a pixel to fix this. */
-	const float fix = 1.0f / 17.0f;
-	mat.m[6] = (floorf( state->x_offset*scale) + fix) * context->pix_size[0];
-	mat.m[7] = (floorf(-state->y_offset*scale) + fix) * context->pix_size[1];
+	const float fix = 0.5f;
+	mat.m[6] = fmaf( state->x_offset, scale, fix) * context->pix_size[0];
+	mat.m[7] = fmaf(-state->y_offset, scale, fix) * context->pix_size[1];
 	mat.m[8] = 1 / state->zoom;
 	glUniformMatrix3fv(context->uni.mat.pos, 1, GL_FALSE, mat.m);
 
-	if (context->tex.mode == image_mode_planar && context->tex.subsamp) {
-		set_mag_filter(context->tex.subsamp, mat.m[8] >= 0.99);
+	if (context->tex.mode != image_mode_palette) {
+		set_mag_filter(context->tex.subsamp,
+			1.01 < state->zoom && state->zoom < 1.99);
 	}
 }
 
@@ -348,7 +351,6 @@ static void planar_disable(const enum gl_tex_unit start) {
 	for (enum gl_tex_unit i = start; i <= gl_tex_plane_alpha; ++i) {
 		tex_active(i);
 		tex_2d_null();
-		tex_2d_mag(gl_mag_nearest);
 	}
 	tex_active(gl_tex_img);
 }
@@ -382,7 +384,6 @@ static void gl_alignment(const align_t align) {
 
 static size_t calc_map_outstride(const struct wuimg *img, const size_t w,
 const enum unpack_op op, const int8_t align_sh) {
-	gl_alignment(align_sh);
 	if (op == op_noop) {
 		return strip_length(w, img->bitdepth, align_sh);
 	}
@@ -396,39 +397,41 @@ const enum unpack_op op, const int8_t align_sh) {
 static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
 const struct wuimg *img, const size_t w, const size_t h,
 const unsigned char *data) {
+	const align_t out_align = 2;
+	gl_alignment(out_align);
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
-	const size_t outstride = calc_map_outstride(img, w, op, 2);
+	const size_t outstride = calc_map_outstride(img, w, op, out_align);
 
 	unsigned char *map = map_unpack_buffer(pix_buf, outstride * h,
 		GL_READ_ONLY);
-	const clock_t start = clock();
+	const watch_t start = watch_look();
 	for (size_t y = 0; y < h; ++y) {
 		unpack_or_copy_strip(map + outstride*y, data + instride*y,
 			w, img->bitdepth, img->attr, op);
 	}
-	clock_print("Unpacked", start);
+	watch_report("Unpacked", start);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
 
 static void * scale_upload(const GLuint pix_buf, const struct wuimg *img,
 const size_t w, const size_t h, const unsigned char *data) {
-	const align_t align = 2;
-	gl_alignment(align);
+	const align_t out_align = 2;
+	gl_alignment(out_align);
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
-	const size_t outstride = strip_length(w, img->bitdepth, align);
+	const size_t outstride = strip_length(w, img->bitdepth, out_align);
 	const size_t mapsize = outstride * h;
 
-	const struct scale_info info = strip_scale_info(1 << img->used_bits,
-		img->bitdepth);
+	const struct scale_info info = strip_scale_info(
+		bit_set32(img->used_bits), img->bitdepth);
 
 	unsigned char *map = map_unpack_buffer(pix_buf, mapsize, GL_READ_ONLY);
-	const clock_t start = clock();
+	const watch_t start = watch_look();
 	for (size_t y = 0; y < h; ++y) {
 		strip_scale(map + outstride*y, data + instride*y, w, info,
-			img->attr == pix_signed);
+			img->attr);
 	}
-	clock_print("Scaled", start);
+	watch_report("Scaled", start);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
@@ -442,8 +445,10 @@ const void *data) {
 	if (img->used_bits != img->bitdepth) {
 		data = scale_upload(pix_buf, img, elems, h, data);
 		bind_buffer = true;
-	} else if (params->op != op_noop || img->attr == pix_inverted || img->align_sh > 3) {
-		data = unpack_upload(pix_buf, params->op, img, elems, h, data);
+	} else if (params->op != op_noop || img->attr == pix_inverted ||
+	img->attr == pix_signed || img->align_sh > 3) {
+		data = unpack_upload(pix_buf, params->op, img, elems, h,
+			data);
 		bind_buffer = true;
 	} else {
 		gl_alignment(img->align_sh);
@@ -463,19 +468,41 @@ const void *data) {
 	return true;
 }
 
+static float get_coord_mul(const size_t dim, const size_t subdim,
+const uint8_t subsamp) {
+	if (subsamp > 1) {
+		return (float)dim / (float)(subdim*subsamp);
+	}
+	return 1;
+}
+
+static void subsamp_positioning(float pos[static 4], const struct wuimg *img,
+const struct plane_info *p) {
+	/* Scale coordinates so that subsampled planes align with the full
+	 * planes.
+	 * Consider a 3x3 YCbCr 4:2:0 image, with the chroma planes measuring
+	 * 2x2. If these were naively stretched, the pixel at Cb(0, 0) would
+	 * span from Y(0, 0) to Y(1.5, 1.5), where the correct result should
+	 * be to cover up to Y(2, 2), as on a 4x4 image. */
+	pos[0] = get_coord_mul(img->w, p->w, p->x.subsamp);
+	pos[1] = get_coord_mul(img->h, p->h, p->y.subsamp);
+	pos[2] = p->x.pos / 2.0f / (float)p->w;
+	pos[3] = p->y.pos / 2.0f / (float)p->h;
+}
+
 static bool planar_upload(struct gl_context *context,
 const struct wuimg *img, const struct gl_upload_params *params) {
 	uint8_t map[4];
 	pix_layout_invert(map, img->layout);
-	context->tex.subsamp = 0;
+	float pos[4][4] = {0};
 	for (uint8_t i = 0; i < 4; ++i) {
 		tex_active(map[i]);
 		if (i < img->channels) {
 			const struct plane_info *p = img->u.planes->p + i;
 			tex_upload(context, img, params, p->w, p->h, p->ptr);
-			if (p->x.subsamp > 1 || p->y.subsamp > 1) {
-				context->tex.subsamp |= 1 << map[i];
-			}
+			subsamp_positioning(pos[i], img, p);
+			context->tex.subsamp |= (bool)
+				(p->x.subsamp > 1 || p->y.subsamp > 1) << i;
 		} else {
 			tex_2d_solid();
 		}
@@ -486,12 +513,14 @@ const struct wuimg *img, const struct gl_upload_params *params) {
 			return false;
 		}
 	}
+	glUniform2fv(context->uni.positioning, ARRAY_LEN(pos)*2, *pos);
 	tex_active(gl_tex_img);
 	return true;
 }
 
 static bool mode_upload(struct gl_context *context, const struct wuimg *img,
 const struct gl_upload_params *params) {
+	context->tex.subsamp = 0;
 	switch (img->mode) {
 	case image_mode_palette:
 		tex_active(gl_tex_pal);
@@ -501,7 +530,8 @@ const struct gl_upload_params *params) {
 		tex_active(gl_tex_img);
 		// fallthrough
 	case image_mode_raw:
-		return tex_upload(context, img, params, img->w, img->h, img->data);
+		return tex_upload(context, img, params, img->w, img->h,
+			img->data);
 	case image_mode_planar:
 		return planar_upload(context, img, params);
 	}
@@ -537,7 +567,7 @@ static GLenum type_lut(const unsigned depth_log, const enum pix_attr attr) {
 }
 
 static unsigned bitdepth_log(const uint8_t bd) {
-	return umin(ulog2(bd+7) - 3, 2);
+	return ulog2(uclamp(bd, 8, 32)*2 - 1) - 3;
 }
 
 static const char * set_upload_params(struct gl_upload_params *params,
@@ -627,13 +657,13 @@ static void tex_cms(const size_t size) {
 
 static bool set_icc_lut(const GLuint pix_buf, struct color_space *cs,
 cmsHPROFILE out) {
-	const clock_t start = clock();
+	const watch_t start = watch_look();
 	cmsHTRANSFORM xfr = color_icc_transform(cs, out);
 	if (!xfr) {
 		return false;
 	}
 
-	const size_t size = 64;
+	const size_t size = 32;
 	const size_t len = size*size*size;
 	const size_t items = len*3;
 	uint16_t *buf = map_unpack_buffer(pix_buf, items * sizeof(*buf),
@@ -643,9 +673,9 @@ cmsHPROFILE out) {
 		for (size_t g = 0; g < size; ++g) {
 			uint8_t *row = in + (b*size*size + g*size) * 3;
 			for (size_t r = 0; r < size; ++r) {
-				row[r*3] = (uint8_t)((r << 2) + (r >> 4));
-				row[r*3+1] = (uint8_t)((g << 2) + (g >> 4));
-				row[r*3+2] = (uint8_t)((b << 2) + (b >> 4));
+				row[r*3] = (uint8_t)((r << 3) + (r >> 5));
+				row[r*3+1] = (uint8_t)((g << 3) + (g >> 5));
+				row[r*3+2] = (uint8_t)((b << 3) + (b >> 5));
 			}
 		}
 	}
@@ -654,7 +684,7 @@ cmsHPROFILE out) {
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	tex_cms(size);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-	clock_print("icc lut created", start);
+	watch_report("icc lut created", start);
 	return true;
 }
 
@@ -964,6 +994,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform int[2] " UNI_MODE_ALPHA ";"
 		"uniform int " UNI_EOTF_FN ";"
 		"uniform float[5] " UNI_EOTF_ARGS ";"
+		"uniform vec2[8] " UNI_POSITIONING ";"
 
 		"void gen_check_pattern() {"
 			"vec2 d = floor(texcoord / fwidth(texcoord) * vec2(1/16.));"
@@ -989,10 +1020,9 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"}"
 		"vec3 perceptual_quantization(vec3 c, float[5] arg) {"
 			"c = pow(c, vec3(arg[0]));"
-			"return pow("
-				"max(c - vec3(arg[1]), vec3(0.0))"
-					"/ (vec3(arg[2]) - vec3(arg[3]) * c),"
-				"vec3(arg[4]));"
+			"vec3 num = max(c - vec3(arg[1]), vec3(0.0));"
+			"vec3 den = vec3(arg[2]) - vec3(arg[3]) * c;"
+			"return pow(num / den, vec3(arg[4]));"
 		"}"
 		"float hybrid_log_gamma(float c, float[5] arg) {"
 			"if (c > arg[0]) {"
@@ -1020,13 +1050,16 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"}"
 			"return c;"
 		"}"
+		"vec2 subsamp_coord(int i) {"
+			"return texcoord *" UNI_POSITIONING "[i*2] +" UNI_POSITIONING "[i*2+1];"
+		"}"
 		"void main() {"
 			"if (" UNI_MODE_COLOR "==" COLOR_PLANAR ") {"
 				"color = vec4("
-					"texture(" UNI_IMG ", texcoord).r,"
-					"texture(" UNI_PAL ", texcoord).r,"
-					"texture(" UNI_PLANE3 ", texcoord).r,"
-					"texture(" UNI_PLANE_ALPHA ", texcoord).r"
+					"texture(" UNI_IMG ", subsamp_coord(0)).r,"
+					"texture(" UNI_PAL ", subsamp_coord(1)).r,"
+					"texture(" UNI_PLANE3 ", subsamp_coord(2)).r,"
+					"texture(" UNI_PLANE_ALPHA ", subsamp_coord(3)).r"
 				");"
 			"} else {"
 				"color = texture(" UNI_IMG ", texcoord);"
@@ -1093,6 +1126,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		UNI_MODE_CMS,
 		UNI_EOTF_FN,
 		UNI_EOTF_ARGS,
+		UNI_POSITIONING,
 	};
 	GLint samps[ARRAY_LEN(samps_name)];
 	GLint *uni = (GLint *)&context->uni;
