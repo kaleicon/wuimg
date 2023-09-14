@@ -363,7 +363,7 @@ const uint16_t height) {
 	img->h = height;
 	img->channels = 1;
 	img->bitdepth = 8;
-	wuimg_aspect_ratio(img, pixel_x, pixel_y);
+	wuimg_aspect_ratio(img, pixel_y, pixel_x);
 
 	desc->depth = bitdepth;
 	return wu_ok;
