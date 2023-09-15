@@ -2,38 +2,49 @@
 #ifndef WU_WINDOW
 #define WU_WINDOW
 
-#include "window/glfw.h"
-#include "window/drm.h"
-#include "window/wayland.h"
+#include "window_enable.def"
 #include "window/egl.h"
 
-enum window_backend {
-	window_glfw = 1,
-	window_drm,
-	window_wayland,
-	window_egl,
-};
+#ifdef WU_ENABLE_WINDOW_GLFW
+#include "window/glfw.h"
+#endif
+#ifdef WU_ENABLE_WINDOW_DRM
+#include "window/drm.h"
+#endif
+#ifdef WU_ENABLE_WINDOW_WAYLAND
+#include "window/wayland.h"
+#endif
 
 struct window_context {
 	struct window_public pub;
-	enum window_backend backend;
 	union {
+		bool _non_empty_union;
+#ifdef WU_ENABLE_WINDOW_GLFW
 		struct glfw_context glfw;
+#endif
+#ifdef WU_ENABLE_WINDOW_DRM
 		struct drm_context drm;
+#endif
+#ifdef WU_ENABLE_WINDOW_WAYLAND
 		struct wayland wl;
+#endif
 	} ctx;
+	const char *backend;
 };
 
 struct window_offscreen {
-	enum window_backend backend;
+	window_fn_ctx_t terminate;
 	union {
-		struct drm_offscreen drm;
-		struct wayland_offscreen wl;
 		EGLDisplay egl;
+#ifdef WU_ENABLE_WINDOW_DRM
+		struct drm_offscreen drm;
+#endif
+#ifdef WU_ENABLE_WINDOW_WAYLAND
+		struct wayland_offscreen wl;
+#endif
 	} ctx;
+	const char *backend;
 };
-
-const char * window_backend_name(enum window_backend backend);
 
 void window_terminate(struct window_context *window);
 
@@ -45,7 +56,7 @@ void window_poll(struct window_context *window);
 
 void window_adapt(struct window_context *window);
 
-void window_set_title(const struct window_context *window, const char *title);
+void window_set_title(struct window_context *window, const char *title);
 
 void window_postgl_setup(struct window_context *window);
 

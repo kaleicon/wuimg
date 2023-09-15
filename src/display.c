@@ -205,8 +205,7 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 		return false;
 	}
 
-	term_line_key_val("Window backend",
-		window_backend_name(window->backend), stderr);
+	term_line_key_val("Window backend", window->backend, stderr);
 
 	if (!gl_context_setup(&window->pub.gl, &window->pub.image.conf)) {
 		window_terminate(window);

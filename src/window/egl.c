@@ -51,7 +51,8 @@ EGLContext context) {
 	return NULL;
 }
 
-void egl_offscreen_terminate(EGLDisplay display) {
+void egl_offscreen_terminate(void *ctx) {//EGLDisplay display) {
+	EGLDisplay display = ctx;
 	egl_make_current(display, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 	eglTerminate(display);
 }
@@ -106,7 +107,7 @@ EGLConfig *cfg, EGLint *restrict cfg_cnt, struct ctx_attr *attr) {
 	return NULL;
 }
 
-const char * egl_offscreen_init(EGLDisplay *display,
+const char * egl_offscreen_init(EGLDisplay *display, window_fn_ctx_t *terminate,
 EGLNativeDisplayType native_display) {
 	const EGLint cfg_attr[] = {
 		EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
@@ -126,6 +127,9 @@ EGLNativeDisplayType native_display) {
 		attr.v);
 	if (context == EGL_NO_CONTEXT) {
 		return CREATE_CONTEXT_FAIL;
+	}
+	if (terminate) {
+		*terminate = egl_offscreen_terminate;
 	}
 	return egl_make_current(*display, EGL_NO_SURFACE, context);
 }

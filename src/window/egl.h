@@ -4,6 +4,8 @@
 
 #include <epoxy/egl.h>
 
+#include "base.h"
+
 struct egl {
 	EGLDisplay display;
 	EGLSurface surface;
@@ -11,9 +13,9 @@ struct egl {
 
 void egl_print_error(void);
 
-void egl_offscreen_terminate(EGLDisplay display);
+void egl_offscreen_terminate(void *ctx);
 
-const char * egl_offscreen_init(EGLDisplay *display,
+const char * egl_offscreen_init(EGLDisplay *display, window_fn_ctx_t *terminate,
 EGLNativeDisplayType native_display);
 
 void egl_terminate(struct egl *egl);

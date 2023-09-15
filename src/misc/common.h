@@ -36,4 +36,6 @@ long num_cpus(void);
 
 void fatal_bug(const char *name, const char *msg);
 
+void null_function();
+
 #endif /* COMMON_FUNCS */

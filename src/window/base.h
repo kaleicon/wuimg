@@ -3,7 +3,6 @@
 #define WU_WINDOW_BASE
 
 #include "misc/common.h"
-#include "window/egl.h"
 
 #include "wudefs.h"
 #include "opengl.h"
@@ -42,8 +41,22 @@ struct window_cursor {
 	struct window_cursor_axis x, y;
 };
 
+typedef void (*window_fn_title_t)(void *ctx, const char *title);
+typedef void (*window_fn_resize_t)(void *ctx, int w, int h);
+typedef void (*window_fn_fullscreen_t)(void *ctx, int enable);
+typedef void (*window_fn_ctx_t)(void *ctx);
+
+struct window_fn {
+	window_fn_title_t title;
+	window_fn_resize_t resize;
+	window_fn_fullscreen_t fullscreen;
+	window_fn_ctx_t poll;
+	window_fn_ctx_t swap_buffers;
+	window_fn_ctx_t terminate;
+};
+
 struct window_common {
-	struct egl egl;
+	struct window_fn fn;
 	struct window_cursor cur;
 	uint32_t refresh_nsec;
 	bool wait_redraw;

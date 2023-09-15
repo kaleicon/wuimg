@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: 0BSD
 option('compile_fuzzer', type : 'boolean', value : false, description : 'Compile fuzzer binary')
 
+option('window_glfw', type : 'feature', description : 'GLFW backend, for X11 and Wayland')
+option('window_drm', type : 'feature', description : 'DRM/KMS backend')
+option('window_wayland', type : 'feature', description : 'Wayland native backend')
+
 option('avif', type : 'feature', description : 'via libavif')
 option('flif', type : 'feature', description : 'via libflif')
 option('gif', type : 'feature', description : 'via libgif')

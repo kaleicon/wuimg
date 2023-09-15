@@ -14,8 +14,6 @@ struct glfw_context {
 	} geom;
 };
 
-void glfw_fullscreen(struct glfw_context *glfw, bool is_fullscreen);
-
 const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub);
 
 #endif /* WU_WINDOW_GLFW */

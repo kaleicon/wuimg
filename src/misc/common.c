@@ -157,3 +157,5 @@ void fatal_bug(const char *name, const char *msg) {
 	fprintf(stderr, "Fatal bug!\n%s: %s\n", name, msg);
 	abort();
 }
+
+void null_function() {}

@@ -28,8 +28,6 @@ struct wayland_listeners {
 
 static const struct wayland_listeners listen;
 
-static void null_function() {}
-
 static void reset_xkb(struct wayland_keyboard *k) {
 	if (k->state) {
 		xkb_state_unref(k->state);
@@ -78,8 +76,9 @@ static void destroy_binds(struct wayland_binds *b) {
 	}
 }
 
-void wayland_terminate(struct wayland *wl) {
-	egl_terminate(&wl->pub->win.egl);
+void wayland_terminate(void *ctx) {
+	struct wayland *wl = ctx;
+	egl_terminate(&wl->egl);
 	if (wl->egl_window) {
 		wl_egl_window_destroy(wl->egl_window);
 	}
@@ -106,12 +105,14 @@ void wayland_terminate(struct wayland *wl) {
 	}
 }
 
-void wayland_set_title(const struct wayland *wl, const char *title) {
+void wayland_set_title(void *ctx, const char *title) {
+	const struct wayland *wl = ctx;
 	xdg_toplevel_set_title(wl->toplevel, title);
 }
 
-void wayland_swap_buffers(struct wayland *wl) {
-	egl_swap(&wl->pub->win.egl);
+void wayland_swap_buffers(void *ctx) {
+	const struct wayland *wl = ctx;
+	egl_swap(&wl->egl);
 }
 
 static bool has_events(struct wl_display *display, const int msecs) {
@@ -132,7 +133,9 @@ static bool has_events(struct wl_display *display, const int msecs) {
 	return poll(&has_data, 1, msecs) > 0 && has_data.revents & POLLIN;
 }
 
-void wayland_poll(struct wayland *wl, const int msecs) {
+void wayland_poll(void *ctx) {
+	struct wayland *wl = ctx;
+	const int msecs = 0;
 	while (wl_display_prepare_read(wl->display)) {
 		wl_display_dispatch_pending(wl->display);
 	}
@@ -144,7 +147,8 @@ void wayland_poll(struct wayland *wl, const int msecs) {
 	}
 }
 
-void wayland_fullscreen(struct wayland *wl, const bool is_fullscreen) {
+void wayland_fullscreen(void *ctx, const int is_fullscreen) {
+	struct wayland *wl = ctx;
 	if (is_fullscreen) {
 		xdg_toplevel_unset_fullscreen(wl->toplevel);
 	} else {
@@ -152,12 +156,11 @@ void wayland_fullscreen(struct wayland *wl, const bool is_fullscreen) {
 	}
 }
 
-enum trit wayland_resize(struct wayland *wl, const int32_t w, const int32_t h) {
-	const enum trit st = window_size_update(wl->pub, w, h);
-	if (st == trit_true) {
+void wayland_resize(void *ctx, const int w, const int h) {
+	struct wayland *wl = ctx;
+	if (window_size_update(wl->pub, w, h) == trit_true) {
 		wl_egl_window_resize(wl->egl_window, w, h, 0, 0);
 	}
-	return st;
 }
 
 static bool test_mod(struct xkb_state *state, const char *name) {
@@ -646,17 +649,27 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	wl_surface_commit(wl->surf);
 	wl_display_roundtrip(wl->display);
 
-	const char *err = egl_init(&wl->pub->win.egl,
+	const char *err = egl_init(&wl->egl,
 		(EGLNativeDisplayType)wl->display, wl->egl_window, 0,
 		conf->bg[3] < 0xff);
 	if (err) {
 		egl_print_error();
 		return err;
 	}
+
+	pub->win.fn = (struct window_fn) {
+		.title = wayland_set_title,
+		.resize = wayland_resize,
+		.fullscreen = wayland_fullscreen,
+		.poll = wayland_poll,
+		.swap_buffers = wayland_swap_buffers,
+		.terminate = wayland_terminate,
+	};
 	return NULL;
 }
 
-void wayland_offscreen_terminate(struct wayland_offscreen *wl) {
+static void wayland_offscreen_terminate(void *ctx) {
+	struct wayland_offscreen *wl = ctx;
 	if (wl->egl_display) {
 		egl_offscreen_terminate(wl->egl_display);
 	}
@@ -665,14 +678,17 @@ void wayland_offscreen_terminate(struct wayland_offscreen *wl) {
 	}
 }
 
-const char * wayland_offscreen_init(struct wayland_offscreen *wl) {
+const char * wayland_offscreen_init(struct wayland_offscreen *wl,
+window_fn_ctx_t *terminate) {
 	wl->display = wl_display_connect(NULL);
 	if (!wl->display) {
 		return "Couldn't connect to display";
 	}
-	const char *err = egl_offscreen_init(&wl->egl_display, wl->display);
+	const char *err = egl_offscreen_init(&wl->egl_display, NULL, wl->display);
 	if (err) {
 		wayland_offscreen_terminate(wl);
+	} else {
+		*terminate = wayland_offscreen_terminate;
 	}
 	return err;
 }

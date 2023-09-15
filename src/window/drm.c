@@ -16,8 +16,9 @@
 
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 
-void drm_terminate(struct drm_context *ctx) {
-	eglTerminate(ctx->pub->win.egl.display);
+void drm_terminate(void *ctxv) {
+	struct drm_context *ctx = ctxv;
+	eglTerminate(ctx->egl.display);
 
 	if (ctx->drm.fd != -1) {
 		drmModeRmFB(ctx->drm.fd, ctx->drm.fb_id[0]);
@@ -103,8 +104,9 @@ unsigned int _usec, void *data) {
 	*flipped = true;
 }
 
-void drm_swap_buffers(struct drm_context *ctx) {
-	egl_swap(&ctx->pub->win.egl);
+void drm_swap_buffers(void *ctxv) {
+	struct drm_context *ctx = ctxv;
+	egl_swap(&ctx->egl);
 
 	struct drm_drm *drm = &ctx->drm;
 	struct gbm_bo *next_bo;
@@ -327,7 +329,7 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 	if (drm_setup(&ctx->drm, &connector, &mode_info)) {
 		pub->win.refresh_nsec = 1000000000 / mode_info->vrefresh;
 		if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
-			err = egl_init(&ctx->pub->win.egl,
+			err = egl_init(&ctx->egl,
 				(EGLNativeDisplayType)ctx->gbm.device,
 				ctx->gbm.surface, WU_GBM_FORMAT, false);
 			if (!err) {
@@ -350,11 +352,21 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 
 	if (err) {
 		drm_terminate(ctx);
+	} else {
+		pub->win.fn = (struct window_fn) {
+			.title = null_function,
+			.fullscreen = null_function,
+			.resize = null_function,
+			.poll = null_function,
+			.swap_buffers = drm_swap_buffers,
+			.terminate = drm_terminate,
+		};
 	}
 	return err;
 }
 
-void drm_offscreen_terminate(struct drm_offscreen *ctx) {
+static void drm_offscreen_terminate(void *ctxv) {
+	struct drm_offscreen *ctx = ctxv;
 	egl_offscreen_terminate(ctx->egl_display);
 	if (ctx->device) {
 		gbm_device_destroy(ctx->device);
@@ -364,7 +376,8 @@ void drm_offscreen_terminate(struct drm_offscreen *ctx) {
 	}
 }
 
-const char * drm_offscreen_init(struct drm_offscreen *ctx) {
+const char * drm_offscreen_init(struct drm_offscreen *ctx,
+window_fn_ctx_t *terminate) {
 	*ctx = (struct drm_offscreen){0};
 
 	ctx->fd = get_device_fd();
@@ -375,12 +388,14 @@ const char * drm_offscreen_init(struct drm_offscreen *ctx) {
 	const char *err = NULL;
 	ctx->device = gbm_create_device(ctx->fd);
 	if (ctx->device) {
-		err = egl_offscreen_init(&ctx->egl_display, ctx->device);
+		err = egl_offscreen_init(&ctx->egl_display, NULL, ctx->device);
 	} else {
 		err = "Failed to create GBM device.";
 	}
 	if (err) {
 		drm_offscreen_terminate(ctx);
+	} else {
+		*terminate = drm_offscreen_terminate;
 	}
 	return err;
 }

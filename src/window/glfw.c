@@ -151,7 +151,8 @@ const int action, const int mode) {
 	}
 }
 
-void glfw_fullscreen(struct glfw_context *glfw, const bool is_fullscreen) {
+static void glfw_fullscreen(void *ctx, const int is_fullscreen) {
+	struct glfw_context *glfw = ctx;
 	struct window_geom *geom = &glfw->geom;
 	if (is_fullscreen) {
 		glfwSetWindowMonitor(glfw->window, NULL,
@@ -167,6 +168,31 @@ void glfw_fullscreen(struct glfw_context *glfw, const bool is_fullscreen) {
 		glfwSetWindowMonitor(glfw->window, monitor, 0, 0,
 			mode->width, mode->height, mode->refreshRate);
 	}
+}
+
+static void glfw_set_title(void *ctx, const char *title) {
+	struct glfw_context *glfw = ctx;
+	glfwSetWindowTitle(glfw->window, title);
+}
+
+static void glfw_resize(void *ctx, const int w, const int h) {
+	struct glfw_context *glfw = ctx;
+	glfwSetWindowSize(glfw->window, w, h);
+}
+
+static void glfw_poll(void *ctx) {
+	(void)ctx;
+	glfwPollEvents();
+}
+
+static void glfw_swap_buffers(void *ctx) {
+	struct glfw_context *glfw = ctx;
+	glfwSwapBuffers(glfw->window);
+}
+
+static void glfw_terminate(void *ctx) {
+	(void)ctx;
+	glfwTerminate();
 }
 
 const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
@@ -234,5 +260,18 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	glfwSetScrollCallback(window, callback_scroll);
 	glfwSetKeyCallback(window, callback_key);
 	glfwSwapInterval(1);
+
+	int w, h;
+	glfwGetFramebufferSize(window, &w, &h);
+	window_size_update(pub, w, h);
+
+	pub->win.fn = (struct window_fn) {
+		.title = glfw_set_title,
+		.fullscreen = glfw_fullscreen,
+		.resize = glfw_resize,
+		.poll = glfw_poll,
+		.swap_buffers = glfw_swap_buffers,
+		.terminate = glfw_terminate,
+	};
 	return NULL;
 }

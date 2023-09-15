@@ -46,6 +46,8 @@ struct wayland {
 	struct wl_egl_window *egl_window;
 	struct xdg_surface *xdg_surf;
 	struct xdg_toplevel *toplevel;
+
+	struct egl egl;
 };
 
 struct wayland_offscreen {
@@ -53,23 +55,9 @@ struct wayland_offscreen {
 	EGLDisplay egl_display;
 };
 
-void wayland_terminate(struct wayland *wl);
-
-void wayland_set_title(const struct wayland *wl, const char *title);
-
-void wayland_swap_buffers(struct wayland *wl);
-
-void wayland_poll(struct wayland *wl, int msecs);
-
-void wayland_fullscreen(struct wayland *wl, bool is_fullscreen);
-
-enum trit wayland_resize(struct wayland *wl, int32_t w, int32_t h);
-
 const char * wayland_init(struct wayland *wl, struct window_public *pub);
 
-
-void wayland_offscreen_terminate(struct wayland_offscreen *wl);
-
-const char * wayland_offscreen_init(struct wayland_offscreen *wl);
+const char * wayland_offscreen_init(struct wayland_offscreen *wl,
+window_fn_ctx_t *terminate);
 
 #endif /* WU_WAYLAND */
