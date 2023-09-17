@@ -367,10 +367,12 @@ const struct program_mode *mode) {
 static enum wu_error from_path(const char *name) {
 	size_t start_idx;
 	errno = 0;
+	const watch_t start = watch_look();
 	struct file_list entries = {
 		.dynamic = true,
 		.name = fs_filter_sort(name, &entries.nr, &start_idx),
 	};
+	watch_report("Filenames sorted", start);
 
 	enum wu_error result;
 	if (entries.name) {

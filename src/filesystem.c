@@ -21,24 +21,29 @@
 #include "dec.h"
 #include "filesystem.h"
 
-struct lenstr {
-	uint16_t len;
-	uint8_t str[];
-};
+/* Though ICU recommends using direct collation over sorting keys unless many
+ * comparisons are done, the crossover point for sorting turns out to be at
+ * about a few hundred filenames, which is a rather common case.
+
+ * To store the keys quickly and compactly we use memory pools.
+ * Calling malloc() and then free() for each key would likely not be
+ * efficient, and growing a single memory area would invalidate all
+ * keys on realloc(). */
 
 // https://web.archive.org/web/20210414144035/http://site.icu-project.org/charts/collation-icu4c48-glibc
-static const size_t EXPAND_FACTOR = 4;
+
+static const size_t EXPAND_FACTOR = 5;
 static const size_t POOL_SIZE = 1 << 14;
 
 struct keypool {
-	/* We use memory pools to store sorting keys quickly and compactly.
-	 * Since it's not possible to know the key size before-hand, using
-	 * malloc on each would be wasteful and slow.
-	 * Since we store pointers to the keys, using a single memory area
-	 * would invalidate them on realloc. */
 	struct wugrow grow;
-	size_t used; // Space used on the current buffer
 	unsigned char **buf;
+	size_t used; // Space used on the current buffer
+};
+
+struct lenstr {
+	uint16_t len;
+	uint8_t str[];
 };
 
 struct fs_dir {
@@ -84,7 +89,7 @@ static bool fs_path_set_dir(struct fs_path *path, const struct wuptr dir) {
 	return false;
 }
 
-bool set_path(struct fs_path *path, const struct wuptr name, bool with_dir) {
+static bool set_path(struct fs_path *path, const struct wuptr name, bool with_dir) {
 	const unsigned char *slash = memrchr(name.ptr, '/', name.len);
 	if (slash) {
 		++slash;
@@ -168,12 +173,13 @@ static bool is_regular_file(DIR *dp, const struct dirent *entry) {
 
 static struct lenstr * pool_getptr(struct keypool *pool, const size_t reserve) {
 	struct wugrow *pg = &pool->grow;
-	if (reserve > POOL_SIZE - pool->used) {
+	if (pool->used >= POOL_SIZE || reserve >= POOL_SIZE - pool->used) {
 		if (!wugrow_recheck(pg)) {
 			return NULL;
 		}
 		pool->buf = pg->ptr;
-		pool->buf[pg->pos] = malloc(POOL_SIZE);
+		const size_t size = zumax(reserve, POOL_SIZE);
+		pool->buf[pg->pos] = malloc(size);
 		if (!pool->buf[pg->pos]) {
 			return NULL;
 		}
@@ -187,7 +193,7 @@ static struct lenstr * keygen(struct keypool *pool, const struct wuptr *file,
 struct collator *icu) {
 	struct lenstr *ptr;
 	const size_t sptr = sizeof(*ptr);
-	const size_t count = file->len * EXPAND_FACTOR + sptr;
+	const size_t count = sptr + file->len * EXPAND_FACTOR;
 	ptr = pool_getptr(pool, count);
 	if (!ptr) {
 		return NULL;
