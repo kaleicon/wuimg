@@ -106,8 +106,8 @@ endforeach
 
 window_map = {
 	'window_wayland': ['wayland-client', 'wayland-egl', 'xkbcommon'],
-	'window_glfw': ['glfw3'],
 	'window_drm': ['gbm', 'libdrm'],
+	'window_glfw': ['glfw3'],
 }
 window_dep_list = []
 window_src_list = []
@@ -140,6 +140,21 @@ dep_list += [cc.find_library('m', required : false),
 	dependency('uchardet')]
 window_dep_list += [dependency('libarchive'),
 	dependency('epoxy')]
+
+if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
+	wayland_scanner = find_program('wayland-scanner')
+	protocol_names = ['xdg-shell']
+	type = [['private-code', '.c'], ['client-header', '.h']]
+	foreach p : protocol_names
+		foreach t : type
+			name = '-'.join([p, t[0]])
+			path = '/usr/share/wayland-protocols/stable/%/%.xml'.replace('%', p)
+			window_src_list += custom_target(name,
+				output : [name + t[1]],
+				command : [wayland_scanner, t[0], path, '@OUTPUT@'])
+		endforeach
+	endforeach
+endif
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
 dec_comptime = executable('dec_comptime', 'dec_comptime.c')
@@ -184,21 +199,6 @@ src_list += [custom_target('dec_maps',
 	'raster/strip.c',
 	'raster/unpack.c',
 	'raster/wuimg.c']
-
-if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
-	wayland_scanner = find_program('wayland-scanner')
-	protocol_names = ['xdg-shell']
-	type = [['private-code', '.c'], ['client-header', '.h']]
-	foreach p : protocol_names
-		foreach t : type
-			name = '-'.join([p, t[0]])
-			path = '/usr/share/wayland-protocols/stable/%/%.xml'.replace('%', p)
-			window_src_list += custom_target(name,
-				output : [name + t[1]],
-				command : [wayland_scanner, t[0], path, '@OUTPUT@'])
-		endforeach
-	endforeach
-endif
 
 window_enable = configure_file(output : 'window_enable.def', configuration : window_enable)
 window_src_list += ['display.c',
