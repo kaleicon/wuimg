@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: 0BSD
 #include <errno.h>
-#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -366,8 +365,6 @@ const struct program_mode *mode) {
 }
 
 static enum wu_error from_path(const char *name) {
-	setlocale(LC_COLLATE, "");
-
 	size_t start_idx;
 	errno = 0;
 	struct file_list entries = {
