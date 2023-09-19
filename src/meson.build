@@ -31,6 +31,7 @@ fmt_map = {
 		'wpx',
 		'xbm',
 		'xcursor',
+		'xwd',
 		'xyz'
 	],
 

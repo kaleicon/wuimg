@@ -493,6 +493,11 @@ static struct fmt_ext ext_map[] = {
 	{"xbm", fmt_xbm},
 #endif
 
+#ifdef WU_ENABLE_XWD
+	{"dmp", fmt_xwd},
+	{"xwd", fmt_xwd},
+#endif
+
 #ifdef WU_ENABLE_XYZ
 	{"xyz", -1},
 #endif

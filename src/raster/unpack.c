@@ -167,6 +167,11 @@ const size_t n) {
 	strip_common(dst, src, n, 1, op_unpack, 0);
 }
 
+static void strip_unpack_xor1(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t n) {
+	strip_common(dst, src, n, 1, op_unpack, 0xff);
+}
+
 static void strip_invert(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n, const uint8_t bytedepth, const enum pix_attr attr) {
 	if (attr == pix_inverted) {
@@ -318,14 +323,22 @@ const enum unpack_op op) {
 	switch (op) {
 	case op_noop: break;
 	case op_unpack:
-		if (attr == pix_normal) {
+		switch (attr) {
+		case pix_normal:
 			switch (bitdepth) {
-			case 1: strip_unpack1(dst, src, n); break;
-			case 2: strip_unpack2(dst, src, n); break;
-			case 4: strip_unpack4(dst, src, n); break;
-			default: strip_sm_unpack(dst, src, n, bitdepth, attr);
+			case 1: strip_unpack1(dst, src, n); return;
+			case 2: strip_unpack2(dst, src, n); return;
+			case 4: strip_unpack4(dst, src, n); return;
 			}
+			break;
+		case pix_inverted:
+			switch (bitdepth) {
+			case 1: strip_unpack_xor1(dst, src, n); return;
+			}
+			break;
+		default: return;
 		}
+		strip_sm_unpack(dst, src, n, bitdepth, attr);
 		break;
 	case op_expand:
 		switch (attr) {
@@ -435,8 +448,8 @@ const enum unpack_op op) {
 	case pix_signed:
 	case pix_inverted:
 		switch (op) {
-		case op_noop:
-		case op_unpack: break;
+		case op_noop: break;
+		case op_unpack:
 		case op_expand:
 			if (bitdepth % 8) {
 				outdepth = get_unpackdepth(bitdepth);

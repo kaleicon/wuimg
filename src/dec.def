@@ -138,6 +138,10 @@ WUDEC(xbm)
 WUDEC(xcursor)
 #endif
 
+#ifdef WU_ENABLE_XWD
+WUDEC(xwd)
+#endif
+
 #ifdef WU_ENABLE_XYZ
 WUDEC(xyz)
 #endif
