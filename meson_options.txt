@@ -23,6 +23,7 @@ option('webp', type : 'feature', description : 'via libwebp and libwebpdemux')
 
 option('avs', type : 'feature')
 option('bmz', type : 'feature', description : 'GSD engine compressed BMP, requires DIB')
+option('c64', type : 'feature', description : 'C64 image formats')
 option('dib', type : 'feature', description : 'DIB family (BMP, ICO, and CUR)')
 option('dpx', type : 'feature')
 option('farbfeld', type : 'feature')

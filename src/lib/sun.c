@@ -7,22 +7,9 @@
 
 #include "misc/file.h"
 #include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "sun.h"
-
-// Strangely faster than memccpy
-static size_t memccpy_cur(uint8_t *restrict dst,
-const uint8_t *restrict src, const uint8_t c, size_t dst_len, size_t src_len) {
-	const uint8_t *end = memchr(src, c, src_len);
-	if (end) {
-		src_len = (size_t)(end - src);
-	}
-	if (dst_len < src_len) {
-		src_len = dst_len;
-	}
-	memcpy(dst, src, src_len);
-	return src_len;
-}
 
 static size_t run_length_loop(unsigned char *restrict dst, const size_t dst_len,
 const unsigned char *restrict rle, const size_t rle_len) {

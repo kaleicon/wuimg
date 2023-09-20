@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "misc/math.h"
 #include "misc/mem.h"
 
 uint8_t memcycle(uint8_t *dst, const size_t pos) {
@@ -103,6 +104,17 @@ void * memdup(const void *s, size_t n) {
 		memcpy(d, s, n);
 	}
 	return d;
+}
+
+size_t memccpy_cur(unsigned char *restrict dst,
+const unsigned char *restrict src, const unsigned char c, size_t dst_len,
+size_t src_len) {
+	const size_t n = zumin(dst_len, src_len);
+	const unsigned char *end = memccpy(dst, src, c, zumin(dst_len, src_len));
+	if (end) {
+		return (size_t)(end - dst - 1);
+	}
+	return n;
 }
 
 #ifndef _GNU_SOURCE

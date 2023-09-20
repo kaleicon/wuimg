@@ -7,6 +7,10 @@
 WUDEC(avs)
 #endif
 
+#ifdef WU_ENABLE_C64
+WUDEC(c64)
+#endif
+
 #ifdef WU_ENABLE_DIB
 WUDEC(bmp)
 WUDEC(dib)

@@ -2,6 +2,7 @@
 fmt_map = {
 	'internal': [
 		'avs',
+		'c64',
 		'dib',
 		'dpx',
 		'farbfeld',

@@ -319,6 +319,14 @@ static struct fmt_ext ext_map[] = {
 	{"mbfavs", fmt_avs},
 #endif
 
+#ifdef WU_ENABLE_C64
+	{"gig", fmt_c64},
+	{"gg", fmt_c64},
+	{"koa", fmt_c64},
+	{"kla", fmt_c64},
+	{"ocp", fmt_c64},
+#endif
+
 #ifdef WU_ENABLE_DIB
 	{"bmp", -1},
 	{"bmp24", -1},
@@ -327,8 +335,8 @@ static struct fmt_ext ext_map[] = {
 	{"ico", fmt_ico},
 #ifdef WU_ENABLE_BMZ
 	{"bmz", -1},
-#endif
-#endif
+#endif // WU_ENABLE_BMZ
+#endif // WU_ENABLE_DIB
 
 #ifdef WU_ENABLE_DPX
 	{"dpx", -1},
