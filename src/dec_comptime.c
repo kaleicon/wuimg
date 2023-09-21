@@ -420,6 +420,15 @@ static struct fmt_ext ext_map[] = {
 	{"pi", -1},
 #endif
 
+#ifdef WU_ENABLE_DEGAS
+	{"pi1", fmt_degas},
+	{"pi2", fmt_degas},
+	{"pi3", fmt_degas},
+	{"pc1", fmt_degas},
+	{"pc2", fmt_degas},
+	{"pc3", fmt_degas},
+#endif
+
 #ifdef WU_ENABLE_PIC
 	{"jpc", -1},
 #endif

@@ -42,7 +42,7 @@ size_t mac_decode(const struct mac_desc *desc, struct wuimg *main);
 
 size_t mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats);
 
-void mac_get_sizes(struct wuimg *main, struct wuimg *pats);
+enum wu_error mac_get_sizes(struct wuimg *main, struct wuimg *pats);
 
 enum wu_error mac_open_file(struct mac_desc *desc, FILE *ifp);
 

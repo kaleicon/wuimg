@@ -39,7 +39,7 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 	}
 
 	struct mac_desc desc;
-	const enum wu_error st = mac_open_file(&desc, infile->ifp);
+	enum wu_error st = mac_open_file(&desc, infile->ifp);
 	if (st != wu_ok) {
 		return st;
 	}
@@ -55,7 +55,10 @@ enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
 		return wu_alloc_error;
 	}
 
-	mac_get_sizes(img, desc.has_patterns ? img + 1 : NULL);
+	st = mac_get_sizes(img, desc.has_patterns ? img + 1 : NULL);
+	if (st != wu_ok) {
+		return st;
+	}
 
 	if (infile->nr == 2) {
 		if (!mac_patterns_load(&desc, img + 1)) {

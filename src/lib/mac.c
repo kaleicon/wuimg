@@ -3,38 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "misc/decomp.h"
 #include "misc/endian.h"
 #include "misc/file.h"
 #include "misc/math.h"
 #include "raster/fmt.h"
 #include "mac.h"
 
-static const size_t RLE_PAD = 129;
-
 time_t mac_time_to_unix(const mac_time_t time) {
 	return (time_t)time - 2082844800;
-}
-
-static size_t rle_decode(uint8_t *restrict out, const size_t dims,
-const int8_t *restrict rle, const size_t rle_len) {
-	size_t p = 0;
-	size_t i = 0;
-	while (i < rle_len - 1 && p < dims) {
-		const signed char run = rle[i];
-		++i;
-		size_t cnt;
-		if (run < 0) {
-			cnt = (size_t)(1 - run);
-			memset(out + p, (unsigned char)rle[i], cnt);
-			++i;
-		} else {
-			cnt = 1 + (size_t)run;
-			memcpy(out + p, rle + i, cnt);
-			i += cnt;
-		}
-		p += cnt;
-	}
-	return p;
 }
 
 static size_t get_rle_len(const struct mac_desc *desc, const size_t dims) {
@@ -50,9 +27,9 @@ size_t mac_decode(const struct mac_desc *desc, struct wuimg *main) {
 	const size_t dst_len = wuimg_size(main);
 	const size_t rle_len = get_rle_len(desc, dst_len);
 	if (rle_len && wuimg_alloc_noverify(main)) {
-		int8_t *rle = malloc(rle_len + RLE_PAD);
+		int8_t *rle = malloc(rle_len);
 		if (rle) {
-			written = rle_decode(main->data, dst_len, rle,
+			written = decomp_pack_bits(main->data, dst_len, rle,
 				fread(rle, 1, rle_len, desc->ifp));
 			free(rle);
 		}
@@ -68,19 +45,22 @@ size_t mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats) {
 	return 0;
 }
 
-void mac_get_sizes(struct wuimg *main, struct wuimg *pats) {
+enum wu_error mac_get_sizes(struct wuimg *main, struct wuimg *pats) {
 	main->w = 576;
 	main->h = 720;
 	main->channels = 1;
 	main->bitdepth = 1;
 	main->attr = pix_inverted;
-	if (pats) {
+	enum wu_error st = wuimg_verify(main);
+	if (st == wu_ok && pats) {
 		pats->w = 8;
 		pats->h = 8*38;
 		pats->channels = 1;
 		pats->bitdepth = 1;
 		pats->attr = pix_inverted;
+		st = wuimg_verify(pats);
 	}
+	return st;
 }
 
 static enum wu_error read_mac_header(unsigned char header[static 4],

@@ -77,6 +77,10 @@ WUDEC(pgx)
 WUDEC(pi)
 #endif
 
+#ifdef WU_ENABLE_DEGAS
+WUDEC(degas)
+#endif
+
 #ifdef WU_ENABLE_PIC
 WUDEC(pic)
 #endif

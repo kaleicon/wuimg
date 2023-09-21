@@ -3,6 +3,7 @@ fmt_map = {
 	'internal': [
 		'avs',
 		'c64',
+		'degas',
 		'dib',
 		'dpx',
 		'farbfeld',
@@ -182,6 +183,7 @@ src_list += [custom_target('dec_maps',
 
 	'misc/bit.c',
 	'misc/common.c',
+	'misc/decomp.c',
 	'misc/endian.c',
 	'misc/file.c',
 	'misc/math.c',
