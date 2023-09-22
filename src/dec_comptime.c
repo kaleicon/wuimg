@@ -629,7 +629,7 @@ static struct fmt_ext ext_map[] = {
 #endif
 };
 
-/* Mime types. Useful for .desktop files. */
+/* Mime types. To be used in .desktop files, someday in the future... */
 static const char *mime_image_map[] = {
 #ifdef WU_ENABLE_DIB
 	"bmp", "x-bmp",
@@ -734,7 +734,7 @@ static const char *mime_application_map[] = {
 	NULL, // Silence pedantic warnings
 };
 
-/* These are different from the ones in dec_fmtmap_base.c */
+/* These two functions are a bit different from the ones in dec.c */
 static int quine_fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 	const struct fmt_magic *restrict magic1 = m1;
 	const struct fmt_magic *restrict magic2 = m2;
@@ -773,27 +773,65 @@ static void print_include(const char *file) {
 	fprintf(stdout, "#include %s\n", file);
 }
 
-static int dec_headers(void) {
-	print_include("\"wudefs.h\"");
-	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
-		printf("extern const struct image_fn %.8s_fn;", name_map[i]);
+static int print_fmt_ext(size_t *min_len, size_t *max_len) {
+	qsort(ext_map, ARRAY_LEN(ext_map), sizeof(*ext_map), quine_fextcmp);
+
+	print_map_def("ext");
+	for (size_t i = 0; i < ARRAY_LEN(ext_map); ++i) {
+		if (i && !memcmp(ext_map[i].ext, ext_map[i-1].ext, sizeof(ext_map->ext))) {
+			if (ext_map[i].id != -1 || ext_map[i-1].id != -1) {
+				fputs("Conflicting extensions", stderr);
+				return 1;
+			}
+			continue;
+		}
+		fputs("{{", stdout);
+		const size_t outlen =  print_hex(ext_map[i].ext,
+			sizeof(ext_map->ext));
+		fprintf(stdout, "},%d},", ext_map[i].id);
+
+		if (outlen < *min_len) {
+			*min_len = outlen;
+		}
+		if (outlen > *max_len) {
+			*max_len = outlen;
+		}
 	}
-	fputc('\n', stdout);
+	fputs("};", stdout);
 	return 0;
 }
 
-static int mapsort(void) {
+static int print_fmt_magic(size_t *min_len, size_t *max_len) {
 	qsort(magic_map, ARRAY_LEN(magic_map), sizeof(*magic_map),
 		quine_fmaskmagiccmp);
-	qsort(ext_map, ARRAY_LEN(ext_map), sizeof(*ext_map), quine_fextcmp);
 
-	/* Output of dec_headers() */
-	print_include("\"dec_fn.h\"");
+	print_map_def("magic");
+	for (size_t i = 0; i < ARRAY_LEN(magic_map); ++i) {
+		if (i && !memcmp(magic_map + i, magic_map + i-1, sizeof(*magic_map))) {
+			fputs("Conflicting magic sequences", stderr);
+			return 1;
+		}
+		fputs("{.and_mask = {", stdout);
+		const size_t bytes_len = sizeof(magic_map->bytes);
+		const size_t outlen = print_hex(magic_map[i].and_mask,
+			bytes_len);
 
-	/* Struct maps definition string */
-	fwrite(fmt_structs, 1, sizeof(fmt_structs) - 1, stdout);
+		fputs("}, .bytes = {", stdout);
+		print_hex(magic_map[i].bytes, bytes_len);
+		fprintf(stdout, "}, .id = %d},", magic_map[i].id);
 
-	/* The maps proper */
+		if (outlen < *min_len) {
+			*min_len = outlen;
+		}
+		if (outlen > *max_len) {
+			*max_len = outlen;
+		}
+	}
+	fputs("};", stdout);
+	return 0;
+}
+
+static void print_fmt_desc(void) {
 	print_map_def("desc");
 	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
 		fputs("{{", stdout);
@@ -805,63 +843,51 @@ static int mapsort(void) {
 		fputs("},", stdout);
 	}
 	fputs("};", stdout);
+}
 
-	size_t max_mag_len = 0;
+static int mapsort(void) {
+	/* Output of dec_headers() */
+	print_include("\"dec_fn.h\"");
+
+	/* Struct maps definition string */
+	fwrite(fmt_structs, 1, sizeof(fmt_structs) - 1, stdout);
+
+	/* The maps proper */
+	print_fmt_desc();
+
 	size_t min_mag_len = SIZE_MAX;
-	print_map_def("magic");
-	for (size_t i = 0; i < ARRAY_LEN(magic_map); ++i) {
-		if (i && !memcmp(magic_map + i, magic_map + i-1, sizeof(*magic_map))) {
-			continue;
-		}
-		fputs("{{", stdout);
-		const size_t bytes_len = sizeof(magic_map->bytes);
-		const size_t outlen = print_hex(magic_map[i].and_mask,
-			bytes_len);
-
-		fputs("},{", stdout);
-		print_hex(magic_map[i].bytes, bytes_len);
-		fprintf(stdout, "},%d},", magic_map[i].id);
-
-		if (outlen > max_mag_len) {
-			max_mag_len = outlen;
-		}
-		if (outlen < min_mag_len) {
-			min_mag_len = outlen;
-		}
+	size_t max_mag_len = 0;
+	int err = print_fmt_magic(&min_mag_len, &max_mag_len);
+	if (err) {
+		return err;
 	}
-	fputs("};", stdout);
 
-	size_t max_ext_len = 0;
 	size_t min_ext_len = SIZE_MAX;
-	print_map_def("ext");
-	for (size_t i = 0; i < ARRAY_LEN(ext_map); ++i) {
-		if (i && !memcmp(ext_map + i, ext_map + i-1, sizeof(*ext_map))) {
-			continue;
-		}
-		fputs("{{", stdout);
-		const size_t outlen =  print_hex(ext_map[i].ext,
-			sizeof(ext_map->ext));
-		fprintf(stdout, "},%d},", ext_map[i].id);
-
-		if (outlen > max_ext_len) {
-			max_ext_len = outlen;
-		}
-		if (outlen < min_ext_len) {
-			min_ext_len = outlen;
-		}
+	size_t max_ext_len = 0;
+	err = print_fmt_ext(&min_ext_len, &max_ext_len);
+	if (err) {
+		return err;
 	}
-	fputs("};", stdout);
 
 	fprintf(stdout,
-		"static const size_t MAX_MAG_LEN = %zu;"
 		"static const size_t MIN_MAG_LEN = %zu;"
-		"static const size_t MAX_EXT_LEN = %zu;"
-		"static const size_t MIN_EXT_LEN = %zu;",
-		max_mag_len, min_mag_len,
-		max_ext_len, min_ext_len);
+		"static const size_t MAX_MAG_LEN = %zu;"
+		"static const size_t MIN_EXT_LEN = %zu;"
+		"static const size_t MAX_EXT_LEN = %zu;",
+		min_mag_len, max_mag_len,
+		min_ext_len, max_ext_len);
 
 	/* Include the rest of the file */
 	fputs("\n#include \"dec.c\"\n", stdout);
+	return 0;
+}
+
+static int dec_headers(void) {
+	print_include("\"wudefs.h\"");
+	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
+		printf("extern const struct image_fn %.8s_fn;", name_map[i]);
+	}
+	fputc('\n', stdout);
 	return 0;
 }
 
