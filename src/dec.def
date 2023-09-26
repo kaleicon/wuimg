@@ -36,6 +36,10 @@ WUDEC(g00)
 WUDEC(hg3)
 #endif
 
+#ifdef WU_ENABLE_ILBM
+WUDEC(ilbm)
+#endif
+
 #ifdef WU_ENABLE_MAC
 WUDEC(mac)
 #endif

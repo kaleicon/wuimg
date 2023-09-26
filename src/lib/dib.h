@@ -3,6 +3,7 @@
 #define LIB_BMP
 
 #include "misc/common.h"
+#include "misc/endian.h"
 #include "misc/wustr.h"
 #include "raster/color.h"
 #include "raster/pal.h"
@@ -64,7 +65,6 @@ enum dib_rendering_intent {
 	dib_gm_images = 1 << 3,
 };
 
-#define FOURCC(a, b, c, d) ((a << 24) | (b << 16) | (c << 8) | (d))
 enum dib_lcs_type {
 	dib_lcs_calibrated_rgb = 0,
 	dib_lcs_srgb = FOURCC('s', 'R', 'G', 'B'),

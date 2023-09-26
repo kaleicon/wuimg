@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: 0BSD
 #include "misc/bit.h"
-#include "misc/endian.h"
 #include "misc/file.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"

@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define FOURCC(a, b, c, d) ((a << 24) | (b << 16) | (c << 8) | (d))
+
 enum endianness {
 	big_endian = 0,
 	little_endian = 1,

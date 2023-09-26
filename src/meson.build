@@ -9,6 +9,7 @@ fmt_map = {
 		'farbfeld',
 		'g00',
 		'hg3',
+		'ilbm',
 		'mac',
 		'mag',
 		'maki',
