@@ -79,12 +79,6 @@ static void error_cleanup(struct window_context *window, const char *err) {
 }
 
 bool window_setup(struct window_context *window) {
-	struct wu_conf *conf = &window->pub.image.conf;
-	if (!conf->initial_size.w || !conf->initial_size.h) {
-		conf->initial_size.w = 640;
-		conf->initial_size.h = 480;
-	}
-
 	const char *err = "No display available";
 	const bool wayland = getenv("WAYLAND_DISPLAY");
 	if (wayland && !getenv("WU_GLFW")) {
@@ -98,7 +92,7 @@ bool window_setup(struct window_context *window) {
 #endif
 	}
 
-	if (wayland || getenv("DISPLAY") /* Xorg */) {
+	if (wayland || getenv("DISPLAY") /* X11 */) {
 #ifdef WU_ENABLE_WINDOW_GLFW
 		window->backend = "GLFW";
 		err = glfw_setup(&window->ctx.glfw, &window->pub);

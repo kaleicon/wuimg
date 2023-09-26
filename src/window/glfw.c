@@ -207,20 +207,6 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	pub->win.refresh_nsec = (unsigned)(1000000000/video->refreshRate);
 
 	struct wu_conf *conf = &pub->image.conf;
-	int width = (int)conf->initial_size.w;
-	int height = (int)conf->initial_size.h;
-	if (!width || !height) {
-		int default_w = 640;
-		int default_h = 480;
-		default_w = video->width;
-		default_h = video->height;
-		if (!width) {
-			width = default_w;
-		}
-		if (!height) {
-			height = default_h;
-		}
-	}
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, WU_GL_MAJOR);
@@ -240,8 +226,8 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	glfwWindowHintString(GLFW_X11_CLASS_NAME, WU_CANON_NAME);
 #endif
 
-	GLFWwindow *window = glfwCreateWindow(width, height, WU_CANON_NAME,
-		NULL, NULL);
+	GLFWwindow *window = glfwCreateWindow((int)conf->initial_size.w,
+		(int)conf->initial_size.h, WU_CANON_NAME, NULL, NULL);
 	if (!window) {
 		return "Couldn't create GLFW window";
 	}

@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pwd.h>
-#include <sys/mman.h>
 
 #include "conf.h"
 #include "term.h"
@@ -14,17 +13,16 @@
 #include "misc/file.h"
 #include "misc/mparser.h"
 
+static const unsigned DEFAULT_MAX = USHRT_MAX / 4;
+
 struct wu_conf conf_default(void) {
-	const unsigned default_max = USHRT_MAX / 4;
 	return (struct wu_conf) {
-		.fb = {default_max, default_max},
-		.max_img_size = default_max,
+		.fb = {DEFAULT_MAX, DEFAULT_MAX},
+		.max_img_size = DEFAULT_MAX,
 
 		// Window
 		.initial_size = {640, 480},
-
 		.bg = {0x33, 0x33, 0x33, 0x66},
-
 		.bg_src = bg_metadata,
 
 		// JPEG
@@ -41,6 +39,16 @@ struct wu_conf conf_default(void) {
 		.webp_fast_upsamp = true,
 		.webp_use_homegrown_renderer = true,
 	};
+}
+
+static struct wu_conf sanitize_conf(struct wu_conf conf) {
+	if (conf.initial_size.w < 1 || conf.initial_size.h < 1) {
+		conf.initial_size = (struct display_dims){640, 480};
+	}
+	if (conf.max_img_size < 1) {
+		conf.max_img_size = DEFAULT_MAX;
+	}
+	return conf;
 }
 
 static long read_xint(struct mparser *tp, bool *ok) {
@@ -209,7 +217,7 @@ struct wu_conf conf_load(void) {
 	ok = parse_config_file(&conf, &tp);
 	file_unmap(&mm);
 	if (ok) {
-		return conf;
+		return sanitize_conf(conf);
 	}
 	term_line_put("Failed to parse config file. Using defaults.", stderr);
 	return conf_default();
