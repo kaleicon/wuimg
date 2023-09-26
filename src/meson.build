@@ -189,7 +189,7 @@ src_list += [custom_target('dec_maps',
 	'misc/file.c',
 	'misc/math.c',
 	'misc/mem.c',
-	'misc/memparser.c',
+	'misc/mparser.c',
 	'misc/wustr.c',
 
 	'raster/cicp.c',

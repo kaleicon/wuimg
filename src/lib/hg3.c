@@ -127,7 +127,7 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	*/
 
 	// The tag ID has already been read, so substract 8 from the offsets
-	struct mp_parser mp = desc->image;
+	struct mparser mp = desc->image;
 	const uint8_t *tag = mp_next_slice(&mp, 32);
 	if (!tag) {
 		return false;
@@ -262,13 +262,13 @@ enum wu_error hg3_next_image(struct hg3_desc *desc) {
 
 	const struct wuptr m = mp_next_remaining(&desc->mp, len);
 	if (m.len > STDINFO_LEN + 8) {
-		desc->image = mp_parser_mem(m.len, m.ptr);
+		desc->image = mp_mem(m.len, m.ptr);
 		return wu_ok;
 	}
 	return wu_unexpected_eof;
 }
 
-enum wu_error hg3_open(struct hg3_desc *desc, const struct mp_parser mp) {
+enum wu_error hg3_open(struct hg3_desc *desc, const struct mparser mp) {
 	/* Overall structure:
 		Header
 		ImageEntry

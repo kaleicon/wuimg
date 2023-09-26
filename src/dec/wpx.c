@@ -20,7 +20,7 @@ const struct wu_conf *wuconf, struct wpx_bmp_desc *desc) {
 static enum wu_error wbm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct wpx_bmp_desc desc;
-	enum wu_error st = wpx_bmp_open(&desc, mp_parser_map(infile->map));
+	enum wu_error st = wpx_bmp_open(&desc, mp_map(infile->map));
 	if (st == wu_ok) {
 		tree_bud_leaf_u(&infile->metadata, "Depth", desc.depth);
 		struct wuimg *img = alloc_sub_images(infile, 1);
@@ -109,7 +109,7 @@ const struct wu_conf *wuconf) {
 	if (desc) {
 		infile->dec_state = desc;
 		infile->events = ev_subcycle;
-		st = wpx_ia2_open(desc, mp_parser_map(infile->map));
+		st = wpx_ia2_open(desc, mp_map(infile->map));
 		if (st == wu_ok) {
 			st = wpx_ia2_parse(desc);
 			if (st == wu_ok) {

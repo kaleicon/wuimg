@@ -103,22 +103,22 @@ size_t xbm_decode(const struct xbm_desc *desc, struct wuimg *img) {
 }
 
 static bool read_type(struct xbm_desc *desc, struct wuimg *img,
-struct mp_parser *tp, const struct xbm_define define[static 4]) {
+struct mparser *tp, const struct xbm_define define[static 4]) {
 	if (!define[0].found || !define[1].found
 	|| define[0].d < 1 || define[1].d < 1) {
 		return false;
 	}
 
-	struct wuptr word = mp_get_word(tp);
+	struct wuptr word = mp_next_word(tp);
 	if (!wuptr_eq_str(word, "static")) {
 		return false;
 	}
 
 	mp_skip_space(tp);
-	word = mp_get_word(tp);
+	word = mp_next_word(tp);
 	if (wuptr_eq_str(word, "unsigned")) {
 		mp_skip_space(tp);
-		word = mp_get_word(tp);
+		word = mp_next_word(tp);
 	}
 
 	if (wuptr_eq_str(word, "char")) {
@@ -130,7 +130,7 @@ struct mp_parser *tp, const struct xbm_define define[static 4]) {
 	}
 
 	mp_skip_space(tp);
-	word = mp_get_word(tp);
+	word = mp_next_word(tp);
 	if (wuptr_suffix_str(word, "_bits[]")) {
 		int c = mp_next_nonspace(tp);
 		if (c == '=') {
@@ -156,10 +156,10 @@ struct mp_parser *tp, const struct xbm_define define[static 4]) {
 	return false;
 }
 
-static bool match_num(struct mp_parser *tp, struct xbm_define *define) {
+static bool match_num(struct mparser *tp, struct xbm_define *define) {
 	mp_skip_blank(tp);
 	long val;
-	if (!mp_get_int(tp, sizeof(val) * 2, &val)) {
+	if (!mp_scan_int(tp, sizeof(val) * 2, &val)) {
 		return false;
 	}
 	if (mp_next_char(tp) != '\n') {
@@ -170,15 +170,15 @@ static bool match_num(struct mp_parser *tp, struct xbm_define *define) {
 	return true;
 }
 
-static bool parse_define(struct xbm_desc *desc, struct mp_parser *tp,
+static bool parse_define(struct xbm_desc *desc, struct mparser *tp,
 struct xbm_define define[static 4]) {
-	struct wuptr word = mp_get_word(tp);
+	struct wuptr word = mp_next_word(tp);
 	if (!isblank(mp_next_char(tp)) || !wuptr_eq_str(word, "define")) {
 		return false;
 	}
 
 	mp_skip_blank(tp);
-	word = mp_get_word(tp);
+	word = mp_next_word(tp);
 	if (!isblank(mp_next_char(tp))) {
 		return false;
 	}
@@ -215,7 +215,7 @@ const unsigned char end, size_t len) {
 	return ch;
 }
 
-static bool skip_comment(struct xbm_desc *desc, struct mp_parser *tp) {
+static bool skip_comment(struct xbm_desc *desc, struct mparser *tp) {
 	const unsigned char *base = tp->mem + tp->pos - 1;
 	unsigned char end;
 	switch (mp_next_char(tp)) {
@@ -238,9 +238,9 @@ static bool skip_comment(struct xbm_desc *desc, struct mp_parser *tp) {
 }
 
 enum wu_error xbm_parse_header(struct xbm_desc *desc, struct wuimg *img,
-const struct mp_parser mp) {
+const struct mparser mp) {
 	desc->tp = mp;
-	struct mp_parser *tp = &desc->tp;
+	struct mparser *tp = &desc->tp;
 
 	desc->comment.len = 0;
 	desc->name.len = 0;

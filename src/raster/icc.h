@@ -5,12 +5,12 @@
 #include <lcms2.h>
 #include <lcms2_plugin.h>
 
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 struct icc_profile {
 	cmsHPROFILE in;
 	cmsHTRANSFORM transform;
-	struct mp_parser mp;
+	struct mparser mp;
 	struct _cms_io_handler io;
 };
 

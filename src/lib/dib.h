@@ -152,7 +152,7 @@ struct bmz_desc {
 
 void bmz_cleanup(struct bmz_desc *desc);
 
-enum wu_error bmz_open(struct bmz_desc *desc, struct mp_parser mp);
+enum wu_error bmz_open(struct bmz_desc *desc, struct mparser mp);
 #endif /* WU_ENABLE_BMZ */
 
 #endif /* LIB_BMP */

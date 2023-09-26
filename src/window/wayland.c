@@ -13,7 +13,7 @@
 #include <linux/input-event-codes.h>
 
 #include "misc/math.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 #include "window/wayland.h"
 
 struct wayland_listeners {
@@ -340,9 +340,9 @@ static void set_cursor(struct wayland *wl) {
 	const char *env_size = getenv("XCURSOR_SIZE");
 	if (env_size) {
 		const size_t max_digits = 3;
-		struct mp_parser tp = mp_parser_mem(max_digits, env_size);
+		struct mparser tp = mp_mem(max_digits, env_size);
 		long tmp;
-		if (env_size[mp_get_uint(&tp, max_digits, &tmp)] == 0 && tmp) {
+		if (env_size[mp_scan_uint(&tp, max_digits, &tmp)] == 0 && tmp) {
 			size = imin((int32_t)tmp, 256);
 		}
 	}

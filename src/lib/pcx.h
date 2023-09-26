@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 #include "raster/wuimg.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 enum pcx_version {
 	pcx_ver25 = 0,
@@ -17,7 +17,7 @@ enum pcx_version {
 };
 
 struct pcx_desc {
-	struct mp_parser mp;
+	struct mparser mp;
 	size_t rle_len;
 
 	enum pcx_version version:8;
@@ -37,11 +37,11 @@ enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img);
 
 enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img);
 
-enum wu_error pcx_open_file(struct pcx_desc *desc, struct mp_parser mp);
+enum wu_error pcx_open_file(struct pcx_desc *desc, struct mparser mp);
 
 
 struct dcx_desc {
-	struct mp_parser mp;
+	struct mparser mp;
 	size_t nr;
 	uint32_t *off;
 };
@@ -51,6 +51,6 @@ void dcx_free(struct dcx_desc *desc);
 enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
 uint32_t i);
 
-enum wu_error dcx_open_file(struct dcx_desc *desc, struct mp_parser mp);
+enum wu_error dcx_open_file(struct dcx_desc *desc, struct mparser mp);
 
 #endif /* LIB_PCX */

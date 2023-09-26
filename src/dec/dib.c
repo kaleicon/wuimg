@@ -111,7 +111,7 @@ const struct image_fn ico_fn = {.dec = ico_dec, .callback = ico_callback};
 #ifdef WU_ENABLE_BMZ
 enum wu_error bmz_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	struct bmz_desc desc;
-	enum wu_error st = bmz_open(&desc, mp_parser_map(infile->map));
+	enum wu_error st = bmz_open(&desc, mp_map(infile->map));
 	if (st == wu_ok) {
 		st = dib_common(infile, wuconf, &desc.bmp);
 		bmz_cleanup(&desc);

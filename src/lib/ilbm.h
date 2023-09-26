@@ -51,7 +51,7 @@ struct ilbm_desc {
 	ilbm_callback_t text_callback;
 	void *restrict usr_ptr;
 
-	struct mp_parser mp;
+	struct mparser mp;
 	struct wuptr body;
 	struct raster_pal *pal;
 	struct ilbm_tiny tiny;
@@ -84,6 +84,6 @@ enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img);
 void ilbm_set_callbacks(struct ilbm_desc *desc, ilbm_callback_t callback,
 ilbm_callback_t text_callback, void *restrict usr_ptr);
 
-enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mp_parser mp);
+enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mparser mp);
 
 #endif /* LIB_ILBM */

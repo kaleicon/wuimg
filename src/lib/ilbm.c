@@ -602,7 +602,7 @@ ilbm_callback_t tcb, void *restrict usr_ptr) {
 	desc->usr_ptr = usr_ptr;
 }
 
-enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mp_parser mp) {
+enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mparser mp) {
 	/* IFF structure:
 		Offset  Size    Name
 		0       u8      ChunkID[4]   // "FORM" in this case

@@ -11,7 +11,7 @@
 #include "misc/file.h"
 #include "misc/math.h"
 #include "misc/mem.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 #include "raster/fmt.h"
 #include "raster/strip.h"
 #include "lib/pnm.h"
@@ -113,7 +113,7 @@ void *restrict dst, const size_t dims) {
 	if (src) {
 		len = file_tail(src, 1, len, desc->ifp);
 		src[len] = 's'; // Sentinel
-		struct mp_parser mp = mp_parser_mem(len, src);
+		struct mparser mp = mp_mem(len, src);
 
 		const long range = (desc->scale.pnm > UCHAR_MAX)
 			? USHRT_MAX : UCHAR_MAX;
@@ -122,7 +122,7 @@ void *restrict dst, const size_t dims) {
 		mp_skip_space_unsafe(&mp);
 		do {
 			long val;
-			if (!mp_get_uint(&mp, digits, &val)
+			if (!mp_scan_uint(&mp, digits, &val)
 			|| val > desc->scale.pnm) {
 				break;
 			}

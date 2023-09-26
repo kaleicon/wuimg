@@ -69,7 +69,7 @@ const struct wu_conf *wuconf) {
 	}
 	infile->dec_state = desc;
 
-	enum wu_error st = ilbm_open(desc, mp_parser_map(infile->map));
+	enum wu_error st = ilbm_open(desc, mp_map(infile->map));
 	if (st != wu_ok) {
 		return st;
 	}

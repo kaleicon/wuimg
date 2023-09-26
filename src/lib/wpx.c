@@ -340,7 +340,7 @@ static bool section_is_uncompressed(const struct wpx_section *section) {
 	return section->fmt == 0x80 || !section->comp_size;
 }
 
-static size_t get_section_data(const struct mp_parser *mp,
+static size_t get_section_data(const struct mparser *mp,
 const struct wpx_section *section, void *restrict dst, const size_t dst_len,
 const uint8_t quant_size, const size_t stride) {
 	struct wuptr src;
@@ -438,7 +438,7 @@ static struct wpx_section * process_section(struct wpx_section *s) {
 }
 
 static enum wu_error load_section_dir(struct wpx_dir *dir,
-struct mp_parser *mp, const uint8_t min_sections) {
+struct mparser *mp, const uint8_t min_sections) {
 	const uint8_t *buf = mp_next_slice(mp, 8);
 	if (buf) {
 		dir->count = buf[6];
@@ -507,7 +507,7 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img) {
 	return wuimg_verify(img);
 }
 
-enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct mp_parser mp) {
+enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct mparser mp) {
 	*desc = (struct wpx_bmp_desc) {
 		.mp = mp,
 		.raster_idx = -1,
@@ -523,7 +523,7 @@ struct wpx_bmp_desc *frame, const uint32_t i) {
 	if (i < desc->frames.nr) {
 		const size_t pos = desc->base + desc->frames.val[i];
 		if (pos < desc->mp.len) {
-			return wpx_bmp_open(frame, mp_parser_mem(
+			return wpx_bmp_open(frame, mp_mem(
 				desc->mp.len - pos, desc->mp.mem + pos
 			));
 		}
@@ -656,7 +656,7 @@ enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc) {
 	return wu_ok;
 }
 
-enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct mp_parser mp) {
+enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct mparser mp) {
 	*desc = (struct wpx_ia2_desc) {
 		.mp = mp,
 	};

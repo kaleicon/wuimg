@@ -3,7 +3,7 @@
 #define LIB_TLG
 
 #include "raster/wuimg.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 enum tlg_version {
 	tlg_v5 = '5',
@@ -11,7 +11,7 @@ enum tlg_version {
 };
 
 struct tlg_desc {
-	struct mp_parser mp;
+	struct mparser mp;
 	bool tagged_data;
 	enum tlg_version version:8;
 	uint32_t block_height;

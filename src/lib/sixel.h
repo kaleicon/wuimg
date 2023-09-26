@@ -3,7 +3,7 @@
 #include <stdbool.h>
 
 #include "raster/wuimg.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 enum sixel_background_color {
 	sixel_set_to_bg = 0,
@@ -11,7 +11,7 @@ enum sixel_background_color {
 };
 
 struct sixel_desc {
-	struct mp_parser tp;
+	struct mparser tp;
 	size_t data_end;
 
 	enum sixel_background_color p2;

@@ -3,7 +3,7 @@
 #define LIB_PDT
 
 #include "raster/wuimg.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 enum pdt_version {
 	pdt10 = '0',
@@ -11,7 +11,7 @@ enum pdt_version {
 };
 
 struct pdt_desc {
-	struct mp_parser mp;
+	struct mparser mp;
 	enum pdt_version version;
 	uint32_t mask_offset;
 	const uint8_t *pal;

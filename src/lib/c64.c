@@ -45,7 +45,7 @@ const struct c64_mem_offsets *off) {
 	}
 }
 
-static bool contiguous_mem(struct mp_parser *mp, const size_t adv,
+static bool contiguous_mem(struct mparser *mp, const size_t adv,
 struct c64_mem_offsets *off) {
 	mp_next_slice(mp, adv);
 	off->bitmap = mp_next_slice(mp, BITMAP_LEN);
@@ -56,7 +56,7 @@ struct c64_mem_offsets *off) {
 }
 
 static bool gg_decode(uint8_t *restrict dst, const size_t dst_len,
-const struct mp_parser rle, struct wuimg *img, struct c64_mem_offsets *off) {
+const struct mparser rle, struct wuimg *img, struct c64_mem_offsets *off) {
 	const uint8_t RLE_FLAG = 0xfe;
 	size_t d = 0;
 	size_t r = 0;
@@ -78,7 +78,7 @@ const struct mp_parser rle, struct wuimg *img, struct c64_mem_offsets *off) {
 		d += count;
 	}
 	if (d == dst_len) {
-		struct mp_parser mp = mp_parser_mem(dst_len, dst);
+		struct mparser mp = mp_mem(dst_len, dst);
 		if (contiguous_mem(&mp, 2, off)) {
 			multicolor_expand(img->data, off);
 			return true;
@@ -87,10 +87,10 @@ const struct mp_parser rle, struct wuimg *img, struct c64_mem_offsets *off) {
 	return false;
 }
 
-bool c64_decode(const struct mp_parser *mp_orig, struct wuimg *img) {
+bool c64_decode(const struct mparser *mp_orig, struct wuimg *img) {
 	bool ok = false;
 	if (wuimg_alloc_noverify(img)) {
-		struct mp_parser mp = *mp_orig;
+		struct mparser mp = *mp_orig;
 		struct c64_mem_offsets off;
 		switch (mp.len) {
 		case c64_koa:
@@ -186,7 +186,7 @@ static enum wu_error multicolor_settings(struct wuimg *img) {
 	return wu_alloc_error;
 }
 
-enum wu_error c64_guess(const struct mp_parser *mp, struct wuimg *img) {
+enum wu_error c64_guess(const struct mparser *mp, struct wuimg *img) {
 	bool ok = false;
 	switch (mp->len) {
 	case c64_koa:

@@ -22,7 +22,7 @@ const struct pix_rgba8 cur) {
 	memcpy(seen + hash_pxl(cur), &cur, sizeof(cur));
 }
 
-size_t qoi_decode(const struct mp_parser *mp, struct wuimg *img) {
+size_t qoi_decode(const struct mparser *mp, struct wuimg *img) {
 	const size_t dst_len = wuimg_size(img);
 	// Add 1 byte of padding so we can use a faster 4-byte memcpy
 	img->data = malloc(dst_len + (bool)(img->channels == 3));
@@ -98,7 +98,7 @@ size_t qoi_decode(const struct mp_parser *mp, struct wuimg *img) {
 	return d;
 }
 
-enum wu_error qoi_parse(struct mp_parser *mp, struct wuimg *img) {
+enum wu_error qoi_parse(struct mparser *mp, struct wuimg *img) {
 	/* QOI header (after magic bytes):
 		Offset  Size    Name
 		0       u32     Width
@@ -125,7 +125,7 @@ enum wu_error qoi_parse(struct mp_parser *mp, struct wuimg *img) {
 	return wu_invalid_header;
 }
 
-enum wu_error qoi_open(struct mp_parser *mp) {
+enum wu_error qoi_open(struct mparser *mp) {
 	const uint8_t magic[4] = "qoif";
 	return fmt_sigcmp_mem(magic, sizeof(magic), mp);
 }

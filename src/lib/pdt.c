@@ -188,7 +188,7 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 
 enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *map) {
 	*desc = (struct pdt_desc) {
-		.mp = mp_parser_map(*map),
+		.mp = mp_map(*map),
 	};
 	const uint8_t *buf = mp_next_slice(&desc->mp, 8);
 	if (buf) {

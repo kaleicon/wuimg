@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "misc/math.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 static long tonum(const long c) {
 	return c - '0';
@@ -22,16 +22,22 @@ static long toxnum(const long c) {
 	return tonum(c);
 }
 
-static bool bndchk(const struct mp_parser *mp) {
+static bool bndchk(const struct mparser *mp) {
 	return mp->pos < mp->len;
 }
 
-static unsigned char curc(const struct mp_parser *mp) {
+static unsigned char curc(const struct mparser *mp) {
 	return mp->mem[mp->pos];
 }
 
+static void mp_skip_nonspace(struct mparser *mp) {
+	while (bndchk(mp) && !isspace(curc(mp))) {
+		++mp->pos;
+	}
+}
 
-size_t mp_skip_space_unsafe(struct mp_parser *mp) {
+
+size_t mp_skip_space_unsafe(struct mparser *mp) {
 	size_t k = 0;
 	while (isspace(curc(mp))) {
 		++mp->pos;
@@ -40,13 +46,13 @@ size_t mp_skip_space_unsafe(struct mp_parser *mp) {
 	return k;
 }
 
-unsigned char mp_next_char_unsafe(struct mp_parser *mp) {
+unsigned char mp_next_char_unsafe(struct mparser *mp) {
 	const unsigned char c = curc(mp);
 	++mp->pos;
 	return c;
 }
 
-size_t mp_get_uint_unsafe(struct mp_parser *mp, long *val) {
+size_t mp_scan_uint_unsafe(struct mparser *mp, long *val) {
 	*val = 0;
 	const size_t start = mp->pos;
 	while (isdigit(curc(mp))) {
@@ -56,13 +62,13 @@ size_t mp_get_uint_unsafe(struct mp_parser *mp, long *val) {
 }
 
 
-void mp_skip_blank(struct mp_parser *mp) {
+void mp_skip_blank(struct mparser *mp) {
 	while (bndchk(mp) && isblank(curc(mp))) {
 		++mp->pos;
 	}
 }
 
-size_t mp_skip_space(struct mp_parser *mp) {
+size_t mp_skip_space(struct mparser *mp) {
 	size_t k = 0;
 	while (bndchk(mp) && isspace(curc(mp))) {
 		++mp->pos;
@@ -71,13 +77,7 @@ size_t mp_skip_space(struct mp_parser *mp) {
 	return k;
 }
 
-void mp_skip_nonspace(struct mp_parser *mp) {
-	while (bndchk(mp) && !isspace(curc(mp))) {
-		++mp->pos;
-	}
-}
-
-void mp_skip_line(struct mp_parser *mp) {
+void mp_skip_line(struct mparser *mp) {
 	const unsigned char *loc = memchr(mp->mem + mp->pos, '\n',
 		mp->len - mp->pos);
 	if (loc) {
@@ -87,31 +87,37 @@ void mp_skip_line(struct mp_parser *mp) {
 	}
 }
 
-int mp_next_char(struct mp_parser *mp) {
+int mp_next_char(struct mparser *mp) {
 	if (bndchk(mp)) {
 		return mp_next_char_unsafe(mp);
 	}
 	return EOF;
 }
 
-int mp_next_nonblank(struct mp_parser *mp) {
+int mp_next_nonblank(struct mparser *mp) {
 	mp_skip_blank(mp);
 	return mp_next_char(mp);
 }
 
-int mp_next_nonspace(struct mp_parser *mp) {
+int mp_next_nonspace(struct mparser *mp) {
 	mp_skip_space(mp);
 	return mp_next_char(mp);
 }
 
-struct wuptr mp_next_remaining(struct mp_parser *mp, const size_t len) {
+struct wuptr mp_next_word(struct mparser *mp) {
+	const size_t start = mp->pos;
+	mp_skip_nonspace(mp);
+	return wuptr_mem(mp->mem + start, mp->pos - start);
+}
+
+struct wuptr mp_next_remaining(struct mparser *mp, const size_t len) {
 	const size_t rem = zumin(mp->len - mp->pos, len);
 	const struct wuptr wp = wuptr_mem(mp->mem + mp->pos, rem);
 	mp->pos += rem;
 	return wp;
 }
 
-const uint8_t * mp_next_slice(struct mp_parser *mp, const size_t len) {
+const uint8_t * mp_next_slice(struct mparser *mp, const size_t len) {
 	if (mp->len - mp->pos >= len) {
 		const uint8_t *slice = mp->mem + mp->pos;
 		mp->pos += len;
@@ -120,13 +126,7 @@ const uint8_t * mp_next_slice(struct mp_parser *mp, const size_t len) {
 	return NULL;
 }
 
-struct wuptr mp_get_word(struct mp_parser *mp) {
-	const size_t start = mp->pos;
-	mp_skip_nonspace(mp);
-	return wuptr_mem(mp->mem + start, mp->pos - start);
-}
-
-size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val) {
+size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val) {
 	digits = zumin(digits, mp->len - mp->pos);
 	*val = 0;
 	size_t k = 0;
@@ -142,20 +142,20 @@ size_t mp_get_uint(struct mp_parser *mp, size_t digits, long *val) {
 	return k;
 }
 
-size_t mp_get_int(struct mp_parser *mp, size_t digits, long *val) {
+size_t mp_scan_int(struct mparser *mp, size_t digits, long *val) {
 	bool sign = false;
 	if (curc(mp) == '-') {
 		++mp->pos;
 		sign = true;
 	}
-	const size_t k = mp_get_uint(mp, digits, val);
+	const size_t k = mp_scan_uint(mp, digits, val);
 	if (sign) {
 		*val = -*val;
 	}
 	return k;
 }
 
-size_t mp_get_xint(struct mp_parser *mp, size_t digits, long *val) {
+size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val) {
 	const uint8_t *pre = mp_next_slice(mp, 2);
 	bool hex = false;
 	if (pre) {
@@ -180,10 +180,10 @@ size_t mp_get_xint(struct mp_parser *mp, size_t digits, long *val) {
 		}
 		return k;
 	}
-	return mp_get_uint(mp, digits, val);
+	return mp_scan_uint(mp, digits, val);
 }
 
-struct wuptr mp_remaining_at(const struct mp_parser *mp, const size_t pos,
+struct wuptr mp_remaining_at(const struct mparser *mp, const size_t pos,
 const size_t len) {
 	return (struct wuptr) {
 		.ptr = mp->mem + pos,
@@ -191,7 +191,7 @@ const size_t len) {
 	};
 }
 
-const uint8_t * mp_slice_at(const struct mp_parser *mp, const size_t pos,
+const uint8_t * mp_slice_at(const struct mparser *mp, const size_t pos,
 const size_t len) {
 	if (pos <= mp->len && mp->len - pos >= len) {
 		return mp->mem + pos;
@@ -199,13 +199,13 @@ const size_t len) {
 	return NULL;
 }
 
-struct mp_parser mp_parser_mem(const size_t len, const void *mem) {
-	return (struct mp_parser) {
+struct mparser mp_mem(const size_t len, const void *mem) {
+	return (struct mparser) {
 		.len = len,
 		.mem = mem,
 	};
 }
 
-struct mp_parser mp_parser_map(const struct map_info mm) {
-	return mp_parser_mem(mm.len, mm.data);
+struct mparser mp_map(const struct map_info mm) {
+	return mp_mem(mm.len, mm.data);
 }

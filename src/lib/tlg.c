@@ -94,7 +94,7 @@ const uint8_t ch) {
 }
 
 static size_t decode_blocks(const struct tlg_desc *desc, struct wuimg *img,
-struct dict *dict, struct mp_parser *mp) {
+struct dict *dict, struct mparser *mp) {
 	/* TLG v5 data stream:
 		Offset  Type    Name
 		0       struct  Blocks[BlockCount][Channels]
@@ -139,7 +139,7 @@ struct dict *dict, struct mp_parser *mp) {
 }
 
 static size_t decode_v5(const struct tlg_desc *desc, struct wuimg *img,
-struct mp_parser *mp) {
+struct mparser *mp) {
 	size_t w = 0;
 	if (wuimg_alloc_noverify(img)) {
 		struct dict *dict = calloc(1, sizeof(*dict));
@@ -152,7 +152,7 @@ struct mp_parser *mp) {
 }
 
 size_t tlg_decode(const struct tlg_desc *desc, struct wuimg *img) {
-	struct mp_parser mp = desc->mp;
+	struct mparser mp = desc->mp;
 	switch (desc->version) {
 	case tlg_v5: return decode_v5(desc, img, &mp);
 	case tlg_v6: break;
@@ -243,7 +243,7 @@ enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct map_info *map) {
 	const unsigned char sds[] = {'.', '0', 0, 's', 'd', 's', 0x1a};
 	const unsigned char raw[] = {'.', '0', 0, 'r', 'a', 'w', 0x1a};
 
-	desc->mp = mp_parser_map(*map);
+	desc->mp = mp_map(*map);
 	const size_t siglen = sizeof(tlg) + sizeof(sds) + 1;
 	const uint8_t *magic = mp_next_slice(&desc->mp, siglen);
 	if (magic) {

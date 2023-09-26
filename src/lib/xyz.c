@@ -7,7 +7,7 @@
 #include "raster/fmt.h"
 #include "xyz.h"
 
-size_t xyz_decode(const struct mp_parser *mp, struct wuimg *img) {
+size_t xyz_decode(const struct mparser *mp, struct wuimg *img) {
 	/* XYZ is simply a deflate stream, containing an RGB palette and the
 	 * index data.
 	 * Although zlib allows us to pause decoding to switch output buffers,
@@ -39,7 +39,7 @@ size_t xyz_decode(const struct mp_parser *mp, struct wuimg *img) {
 	return 0;
 }
 
-enum wu_error xyz_parse(struct mp_parser *mp, struct wuimg *img) {
+enum wu_error xyz_parse(struct mparser *mp, struct wuimg *img) {
 	const uint8_t *header = mp_next_slice(mp, 4);
 	if (header) {
 		img->w = buf_endian16(header, little_endian);
@@ -52,7 +52,7 @@ enum wu_error xyz_parse(struct mp_parser *mp, struct wuimg *img) {
 	return wu_unexpected_eof;
 }
 
-enum wu_error xyz_open(struct mp_parser *mp) {
+enum wu_error xyz_open(struct mparser *mp) {
 	const unsigned char magic[] = {'X', 'Y', 'Z', '1'};
 	return fmt_sigcmp_mem(magic, sizeof(magic), mp);
 }

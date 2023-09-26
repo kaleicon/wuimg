@@ -12,7 +12,7 @@
 #include "term.h"
 #include "misc/common.h"
 #include "misc/file.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 struct wu_conf conf_default(void) {
 	const unsigned default_max = USHRT_MAX / 4;
@@ -43,14 +43,14 @@ struct wu_conf conf_default(void) {
 	};
 }
 
-static long read_xint(struct mp_parser *tp, bool *ok) {
+static long read_xint(struct mparser *tp, bool *ok) {
 	long val;
-	*ok = mp_get_xint(tp, 5, &val);
+	*ok = mp_scan_xint(tp, 5, &val);
 	return val;
 }
 
-static bool read_bool(struct mp_parser *tp, bool *ok) {
-	struct wuptr val = mp_get_word(tp);
+static bool read_bool(struct mparser *tp, bool *ok) {
+	struct wuptr val = mp_next_word(tp);
 	if (wuptr_eq_str(val, "true")) {
 		return true;
 	} else if (wuptr_eq_str(val, "false")) {
@@ -60,10 +60,10 @@ static bool read_bool(struct mp_parser *tp, bool *ok) {
 	return false;
 }
 
-static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
+static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 	while (tp->pos < tp->len) {
 		mp_skip_space(tp);
-		struct wuptr key = mp_get_word(tp);
+		struct wuptr key = mp_next_word(tp);
 		if (key.len == 0 || key.ptr[0] == '#') {
 			mp_skip_line(tp);
 			continue;
@@ -92,7 +92,7 @@ static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 				bg[i] = (unsigned char)read_xint(tp, &ok);
 			}
 		} else if (wuptr_eq_str(key, "bg_src")) {
-			struct wuptr val = mp_get_word(tp);
+			struct wuptr val = mp_next_word(tp);
 			mp_skip_blank(tp);
 			if (wuptr_eq_str(val, "default")) {
 				conf->bg_src = bg_default;
@@ -118,7 +118,7 @@ static bool parse_config_file(struct wu_conf *conf, struct mp_parser *tp) {
 			conf->raw_prefer_thumbnail = read_bool(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "svg_redraw")) {
-			struct wuptr val = mp_get_word(tp);
+			struct wuptr val = mp_next_word(tp);
 			mp_skip_blank(tp);
 			if (wuptr_eq_str(val, "never")) {
 				conf->svg_redraw = svg_never;
@@ -205,7 +205,7 @@ struct wu_conf conf_load(void) {
 		return conf;
 	}
 
-	struct mp_parser tp = mp_parser_map(mm);
+	struct mparser tp = mp_map(mm);
 	ok = parse_config_file(&conf, &tp);
 	file_unmap(&mm);
 	if (ok) {

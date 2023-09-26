@@ -1181,7 +1181,7 @@ void bmz_cleanup(struct bmz_desc *desc) {
 	free(desc->buf);
 }
 
-enum wu_error bmz_open(struct bmz_desc *desc, struct mp_parser mp) {
+enum wu_error bmz_open(struct bmz_desc *desc, struct mparser mp) {
 	const uint8_t magic[4] = {'Z', 'L', 'C', '3'};
 	enum wu_error st = fmt_sigcmp_mem(magic, sizeof(magic), &mp);
 	if (st == wu_ok) {

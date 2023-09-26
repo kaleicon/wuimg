@@ -59,7 +59,7 @@ const struct wu_conf *wuconf) {
 static enum wu_error pcx_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct pcx_desc desc;
-	enum wu_error err = pcx_open_file(&desc, mp_parser_map(infile->map));
+	enum wu_error err = pcx_open_file(&desc, mp_map(infile->map));
 	if (err == wu_ok) {
 		struct wuimg *img = alloc_sub_images(infile, 1);
 		err = (img) ? common_pcx(&desc, img, wuconf) : wu_alloc_error;
@@ -101,7 +101,7 @@ const struct wu_conf *wuconf) {
 
 	infile->dec_state = desc;
 	infile->events = ev_subcycle;
-	const enum wu_error st = dcx_open_file(desc, mp_parser_map(infile->map));
+	const enum wu_error st = dcx_open_file(desc, mp_map(infile->map));
 	if (st == wu_ok) {
 		return alloc_sub_images(infile, desc->nr) ? wu_ok : wu_alloc_error;
 	}

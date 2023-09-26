@@ -6,7 +6,7 @@
 
 #include "raster/wuimg.h"
 #include "misc/wustr.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 
 enum xbm_type {
 	xbm_x11 = 1,
@@ -14,7 +14,7 @@ enum xbm_type {
 };
 
 struct xbm_desc {
-	struct mp_parser tp;
+	struct mparser tp;
 
 	long x_hot, y_hot;
 	bool has_hotspot;
@@ -27,6 +27,6 @@ struct xbm_desc {
 size_t xbm_decode(const struct xbm_desc *desc, struct wuimg *img);
 
 enum wu_error xbm_parse_header(struct xbm_desc *desc, struct wuimg *img,
-struct mp_parser mp);
+struct mparser mp);
 
 #endif /* LIB_XBM */

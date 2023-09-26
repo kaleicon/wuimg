@@ -27,7 +27,7 @@ enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 
 	struct xbm_desc desc;
 	const enum wu_error st = xbm_parse_header(&desc, img,
-		mp_parser_map(infile->map));
+		mp_map(infile->map));
 	if (st) {
 		return st;
 	}

@@ -83,15 +83,15 @@ int_fast16_t comp[static 3], const enum sixel_colorspace pu) {
 	}
 }
 
-static void read_color(struct mp_parser *tp, struct sixel_colormap *map) {
+static void read_color(struct mparser *tp, struct sixel_colormap *map) {
 	long idx;
-	mp_get_uint_unsafe(tp, &idx);
+	mp_scan_uint_unsafe(tp, &idx);
 	if (mp_next_char_unsafe(tp) == ';') {
 		enum sixel_colorspace pu = mp_next_char_unsafe(tp);
 		long tmp[3] = {0};
 		for (size_t i = 0; i < ARRAY_LEN(tmp); ++i) {
 			++tp->pos;
-			mp_get_uint_unsafe(tp, tmp + i);
+			mp_scan_uint_unsafe(tp, tmp + i);
 		}
 		normalize_color(map->map.color + idx, tmp, pu);
 	} else {
@@ -100,7 +100,7 @@ static void read_color(struct mp_parser *tp, struct sixel_colormap *map) {
 	map->active = map->map.color[idx];
 }
 
-static bool validate_color(struct mp_parser *tp) {
+static bool validate_color(struct mparser *tp) {
 	/* Format:
 	 * (select color entry) '#' Pc
 	 * (set color value)    '#' Pc ; Pu ; Px ; Py ; Pz
@@ -114,7 +114,7 @@ static bool validate_color(struct mp_parser *tp) {
 	 * Note that the 'set' form leaves Pc as the active color. That was
 	 * a fun bug to hunt. */
 	long idx;
-	if (!mp_get_uint(tp, 3, &idx) || idx > UCHAR_MAX) {
+	if (!mp_scan_uint(tp, 3, &idx) || idx > UCHAR_MAX) {
 		return false;
 	}
 	if (mp_next_char(tp) == ';') {
@@ -134,7 +134,7 @@ static bool validate_color(struct mp_parser *tp) {
 			const long max =
 				(i == 0 && pu == sixel_hls) ? 360 : 100;
 			long val;
-			if (!mp_get_uint(tp, 3, &val) || val > max) {
+			if (!mp_scan_uint(tp, 3, &val) || val > max) {
 				return false;
 			}
 		}
@@ -220,7 +220,7 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 	struct sixel_colormap map;
 	xterm_colormap_init(&map);
 
-	struct mp_parser tp = (struct mp_parser) {
+	struct mparser tp = (struct mparser) {
 		.mem = desc->tp.mem,
 		.len = desc->data_end,
 		.pos = desc->tp.pos,
@@ -240,7 +240,7 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 			break;
 		case graphics_repeat_introducer:
 			;long repeat;
-			mp_get_uint_unsafe(&tp, &repeat);
+			mp_scan_uint_unsafe(&tp, &repeat);
 			c = mp_next_char_unsafe(&tp);
 
 			line = y*img->w;
@@ -268,7 +268,7 @@ struct wuimg *img) {
 	 * dimensions. No other way around it. */
 	size_t row_width = 0;
 	size_t height = 0;
-	struct mp_parser tp = desc->tp; // Local copy
+	struct mparser tp = desc->tp; // Local copy
 	for (bool end = false; !end;) {
 		const int c = mp_next_char(&tp);
 		switch (c) {
@@ -288,7 +288,7 @@ struct wuimg *img) {
 			break;
 		case graphics_repeat_introducer:
 			;long repeat;
-			if (!mp_get_uint(&tp, 5, &repeat)) {
+			if (!mp_scan_uint(&tp, 5, &repeat)) {
 				return wu_decoding_error;
 			}
 
@@ -332,7 +332,7 @@ struct wuimg *img) {
 	return wu_decoding_error;
 }
 
-static enum wu_error get_raster_attributes(struct mp_parser *tp,
+static enum wu_error get_raster_attributes(struct mparser *tp,
 unsigned int raster[4]) {
 	/* Format: '"' Pan ; Pad ; Ph ; Pv
 	 * Pan (aspect numerator) is the vertical aspect ratio. Required.
@@ -366,7 +366,7 @@ unsigned int raster[4]) {
 	return wu_invalid_header;
 }
 
-static enum wu_error dcs_parse(struct mp_parser *tp,
+static enum wu_error dcs_parse(struct mparser *tp,
 unsigned char macro[3]) {
 	int num_len = 0;
 	for (size_t i = 0; i < 3;) {
@@ -403,7 +403,7 @@ struct wuimg *img) {
 	 * P3 is the horizontal grid size, the distance between two pixels.
 	 *     I don't know its range.
 	 * Any of these components may be omitted. */
-	struct mp_parser *tp = &desc->tp;
+	struct mparser *tp = &desc->tp;
 
 	unsigned char macro[3] = {0};
 	enum wu_error status = dcs_parse(tp, macro);
@@ -465,7 +465,7 @@ struct wuimg *img) {
 	return calc_dimensions(desc, img);
 }
 
-static int skip_csi(struct mp_parser *tp) {
+static int skip_csi(struct mparser *tp) {
 	const int max_chars = 12;
 	bool prev_escape = true;
 	int c = 0;
@@ -485,8 +485,8 @@ static int skip_csi(struct mp_parser *tp) {
 
 enum wu_error sixel_open_mem(struct sixel_desc *desc,
 const struct map_info *map) {
-	desc->tp = mp_parser_map(*map);
-	struct mp_parser *tp = &desc->tp;
+	desc->tp = mp_map(*map);
+	struct mparser *tp = &desc->tp;
 
 	/* The sixel format begins with the Device Control String, which might
 	 * come in single-byte and two-byte form. And since it is basically a

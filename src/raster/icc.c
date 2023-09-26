@@ -13,7 +13,7 @@ void icc_profile_free(struct icc_profile *icc) {
 
 static cmsUInt32Number read_fn(struct _cms_io_handler *io, void *buf,
 const cmsUInt32Number size, const cmsUInt32Number nmemb) {
-	struct mp_parser *mp = io->stream;
+	struct mparser *mp = io->stream;
 	const void *block = mp_next_slice(mp, size*nmemb);
 	if (block) {
 		memcpy(buf, block, size*nmemb);
@@ -23,7 +23,7 @@ const cmsUInt32Number size, const cmsUInt32Number nmemb) {
 }
 
 static cmsBool seek_fn(struct _cms_io_handler *io, const cmsUInt32Number off) {
-	struct mp_parser *mp = io->stream;
+	struct mparser *mp = io->stream;
 	if (off <= mp->len) {
 		mp->pos = off;
 		return true;
@@ -32,13 +32,13 @@ static cmsBool seek_fn(struct _cms_io_handler *io, const cmsUInt32Number off) {
 }
 
 static cmsBool close_fn(struct _cms_io_handler *io) {
-	struct mp_parser *mp = io->stream;
+	struct mparser *mp = io->stream;
 	free((void *)mp->mem);
 	return true;
 }
 
 static cmsUInt32Number tell_fn(struct _cms_io_handler *io) {
-	const struct mp_parser *mp = io->stream;
+	const struct mparser *mp = io->stream;
 	return (cmsUInt32Number)mp->pos;
 }
 
@@ -61,7 +61,7 @@ const size_t len) {
 bool icc_profile_mem_own(struct icc_profile *icc, void *data,
 const size_t len) {
 	init_profile();
-	icc->mp = mp_parser_mem(len, data);
+	icc->mp = mp_mem(len, data);
 	icc->io = (struct _cms_io_handler) {
 		.stream = &icc->mp,
 		//.ContextID = icc->ctx,

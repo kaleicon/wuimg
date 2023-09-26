@@ -346,7 +346,7 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 		buf_endian16(header2 + 4, little_endian));
 }
 
-enum wu_error pcx_open_file(struct pcx_desc *desc, const struct mp_parser mp) {
+enum wu_error pcx_open_file(struct pcx_desc *desc, const struct mparser mp) {
 	/* PCX header:
 		Offset  Size    Name
 		0	BYTE	IdentifierByte; // Always 0x0A
@@ -385,7 +385,7 @@ void dcx_free(struct dcx_desc *desc) {
 enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
 const uint32_t i) {
 	if (i < dcx->nr) {
-		return pcx_open_file(pcx, mp_parser_mem(
+		return pcx_open_file(pcx, mp_mem(
 			dcx->off[i + 1] - dcx->off[i],
 			dcx->mp.mem + dcx->off[i]
 		));
@@ -393,7 +393,7 @@ const uint32_t i) {
 	return wu_invalid_params;
 }
 
-enum wu_error dcx_open_file(struct dcx_desc *d, const struct mp_parser mp) {
+enum wu_error dcx_open_file(struct dcx_desc *d, const struct mparser mp) {
 	/* Why would anyone use the most device dependent file format ever for
 	 * sending documents is beyond me.
 

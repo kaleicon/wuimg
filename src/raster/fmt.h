@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 #include "misc/endian.h"
-#include "misc/memparser.h"
+#include "misc/mparser.h"
 #include "raster/pal.h"
 #include "raster/wuimg.h"
 
@@ -23,7 +23,7 @@ enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,
 enum fmt_pal_type type, size_t entries);
 
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig, size_t size,
-struct mp_parser *mp);
+struct mparser *mp);
 
 enum wu_error fmt_sigcmp(const unsigned char *restrict sig, size_t size,
 FILE *ifp);
