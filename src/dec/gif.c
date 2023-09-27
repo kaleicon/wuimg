@@ -274,7 +274,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 		const bool valid_frame = wuimg_frame_set(img, i,
 			(size_t)desc->Left, (size_t)desc->Top,
 			(size_t)desc->Width, (size_t)desc->Height,
-			gcb->DelayTime * 10,
+			gcb->DelayTime, 100,
 			gcb->TransparentColor == NO_TRANSPARENT_COLOR);
 		if (!valid_frame) {
 			return wu_invalid_header;

@@ -127,7 +127,7 @@ struct webp_state *ds) {
 		return wu_decoding_error;
 	}
 
-	img->frames->f[ds->idx].msec = msec - ds->anim.l.prev_msec;
+	img->frames->f[ds->idx].sec = (float)(msec - ds->anim.l.prev_msec) / 1000;
 	ds->anim.l.prev_msec = msec;
 	img->data = buf;
 	++ds->idx;
@@ -231,7 +231,7 @@ static enum wu_error gather_info(struct wuimg *img, WebPIterator *iter) {
 		const bool valid = wuimg_frame_set(img, i,
 			(size_t)iter->x_offset, (size_t)iter->y_offset,
 			(size_t)iter->width, (size_t)iter->height,
-			iter->duration,
+			iter->duration, 1000,
 			iter->blend_method == WEBP_MUX_NO_BLEND);
 		if (!valid) {
 			return wu_alloc_error;

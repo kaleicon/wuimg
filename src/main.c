@@ -81,7 +81,7 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 			wustr_print(&infile->errors, stdout);
 		}
 	}
-	nanosec_report(what, diff);
+	nanosec_report(what, diff, report_normal);
 	return result;
 }
 
@@ -372,7 +372,7 @@ static enum wu_error from_path(const char *name) {
 		.dynamic = true,
 		.name = fs_filter_sort(name, &entries.nr, &start_idx),
 	};
-	watch_report("Filenames sorted", start);
+	watch_report("Filenames sorted", start, report_whocares);
 
 	enum wu_error result;
 	if (entries.name) {

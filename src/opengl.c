@@ -409,7 +409,7 @@ const unsigned char *data) {
 		unpack_or_copy_strip(map + outstride*y, data + instride*y,
 			w, img->bitdepth, img->attr, op);
 	}
-	watch_report("Unpacked", start);
+	watch_report("Unpacked", start, report_detail);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
@@ -431,7 +431,7 @@ const size_t w, const size_t h, const unsigned char *data) {
 		strip_scale(map + outstride*y, data + instride*y, w, info,
 			img->attr);
 	}
-	watch_report("Scaled", start);
+	watch_report("Scaled", start, report_detail);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
@@ -684,7 +684,7 @@ cmsHPROFILE out) {
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	tex_cms(size);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-	watch_report("icc lut created", start);
+	watch_report("icc lut created", start, report_detail);
 	return true;
 }
 

@@ -195,11 +195,10 @@ static enum trit set_crng(struct ilbm_desc *desc, struct wuimg *img) {
 	if (pal) {
 		struct image_frames *frames = wuimg_frames_init(img, crng->cnt);
 		if (frames) {
-			const int msecs = (int)(crng->secs * 1000);
 			for (size_t i = 0; i < crng->cnt; ++i) {
 				frames->f[i] = (struct frame_info) {
 					.w = img->w, .h = img->h,
-					.msec = msecs,
+					.sec = crng->secs,
 					.keyframe = true,
 				};
 			}

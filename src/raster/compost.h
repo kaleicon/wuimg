@@ -9,7 +9,7 @@
 struct frame_info {
 	size_t x, y;
 	size_t w, h;
-	int msec;
+	float sec;
 	bool keyframe;
 };
 

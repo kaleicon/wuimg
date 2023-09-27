@@ -108,10 +108,9 @@ static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 				 * to get the duration of a tick. */
 				const uint32_t num = ds->info.animation.tps_numerator;
 				const uint32_t den = ds->info.animation.tps_denominator;
-				const int msec = (int)(
-					(size_t)den*1000*header.duration / num);
+				const long duration = den*header.duration;
 				wuimg_frame_set(img, (size_t)ds->idx, 0, 0,
-					img->w, img->h, msec, false);
+					img->w, img->h, duration, num, false);
 			}
 			break;
 		case JXL_DEC_FULL_IMAGE:

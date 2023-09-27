@@ -134,7 +134,7 @@ struct raster_pal * wuimg_palette_init(struct wuimg *img);
 int wuimg_frame_prev_keyframe(struct wuimg *img, int current, int i);
 
 bool wuimg_frame_set(struct wuimg *img, size_t i, size_t x, size_t y, size_t w,
-size_t h, int msec, bool opaque);
+size_t h, long sec_num, long sec_den, bool opaque);
 
 size_t wuimg_frames_nr(const struct wuimg *img);
 

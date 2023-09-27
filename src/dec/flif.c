@@ -111,7 +111,8 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 			f->f[i] = (struct frame_info) {
 				.w = img->w,
 				.h = img->h,
-				.msec = (int)flif_image_get_frame_delay(frame),
+				.sec = (float)flif_image_get_frame_delay(frame)
+					/ 1000,
 			};
 		}
 		infile->events = ev_frame;

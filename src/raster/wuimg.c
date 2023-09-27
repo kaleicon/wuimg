@@ -378,11 +378,11 @@ int wuimg_frame_prev_keyframe(struct wuimg *img, const int current, int i) {
 }
 
 bool wuimg_frame_set(struct wuimg *img, const size_t i, const size_t x,
-const size_t y, const size_t w, const size_t h, const int msec,
-const bool opaque) {
+const size_t y, const size_t w, const size_t h, const long sec_num,
+const long sec_den, const bool opaque) {
 	img->frames->f[i] = (struct frame_info) {
 		.x = x, .y = y, .w = w, .h = h,
-		.msec = msec,
+		.sec = (float)sec_num / (float)sec_den,
 		.keyframe = (opaque && !x && !y && w == img->w && h == img->h),
 	};
 	return compost_bounds_check(img->w, img->h, img->frames->f + i);

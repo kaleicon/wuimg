@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: 0BSD
+#include <stdbool.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "misc/common.h"
 
@@ -123,13 +123,30 @@ int second) {
 		+ second;
 }
 
-void nanosec_report(const char *ocurrence, const watch_t elapsed) {
-	fprintf(stderr, "%s in %" PRIu64 " ns\n", ocurrence, elapsed);
+void nanosec_report(const char *ocurrence, const watch_t elapsed,
+const enum report_level level) {
+	int verbose = 0;
+	const char *v = getenv("WU_TIMING");
+	if (v) {
+		verbose = atoi(v);
+	}
+	if (verbose >= level) {
+		fprintf(stderr, "%s in %" PRIu64 " ns\n", ocurrence, elapsed);
+	}
 }
 
 watch_t watch_look(void) {
+	const clockid_t cl =
+#if _POSIX_CPUTIME > 0
+	CLOCK_PROCESS_CPUTIME_ID
+#elif _POSIX_MONOTONIC_CLOCK > 0
+	CLOCK_MONOTONIC
+#else
+	CLOCK_REALTIME
+#endif
+	;
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	clock_gettime(cl, &ts);
 	return (watch_t)(ts.tv_sec * 1000000000 + ts.tv_nsec);
 }
 
@@ -137,9 +154,10 @@ watch_t watch_elapsed(const watch_t start) {
 	return watch_look() - start;
 }
 
-watch_t watch_report(const char *ocurrence, const watch_t start) {
+watch_t watch_report(const char *ocurrence, const watch_t start,
+const enum report_level level) {
 	const watch_t end = watch_look();
-	nanosec_report(ocurrence, end - start);
+	nanosec_report(ocurrence, end - start, level);
 	return end;
 }
 

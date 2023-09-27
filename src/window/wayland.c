@@ -328,9 +328,9 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
-//	const watch_t start = watch_report();
+	const watch_t start = watch_look();
 	draw_cursor(data, width, height);
-//	watch_report("Cursor generated", start);
+	watch_report("Cursor generated", start, report_whocares);
 	munmap(data, (size_t)dims);
 	return buf;
 }

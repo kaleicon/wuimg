@@ -74,7 +74,7 @@ const bool print_draw_time) {
 	if (window_draw(window)) {
 		draw_time = gl_clock_query(&window->pub.gl);
 		if (print_draw_time) {
-			nanosec_report("Drawn", draw_time);
+			nanosec_report("Drawn", draw_time, report_info);
 		}
 	}
 
@@ -129,7 +129,7 @@ struct window_context *window, double remaining) {
 static double min_time(const struct wuimg *img, const struct wu_state *state) {
 	struct image_frames *frames = img->frames;
 	if (frames) {
-		return fmax(frames->f[state->frame].msec / 1000.0, 1.0 / 30);
+		return fmax(frames->f[state->frame].sec, 1.0 / 30);
 	}
 	return 0;
 }
@@ -218,6 +218,6 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 	if (tr) {
 		term_noncanon_start(tr);
 	}
-	watch_report("Display set", start);
+	watch_report("Display set", start, report_info);
 	return true;
 }
