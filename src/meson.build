@@ -70,7 +70,7 @@ pkg_map = {
 	'jpegls': ['charls'],
 	'jpegxl': ['libjxl', 'libjxl_threads'],
 	'svg': ['librsvg-2.0'],
-	'webp': ['libwebpdemux']
+	'webp': ['libwebpdecoder', 'libwebpdemux']
 }
 dep_list = []
 src_list = []
