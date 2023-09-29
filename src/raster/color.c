@@ -127,7 +127,7 @@ const double div) {
 
 	 * where cutoff is where the output becomes 0, as tipped off by the
 	 * else branch. This means that any valid input to the corresponding
-	 * EOTF will be positive, it's cutoff 0, and so a branch is not needed.
+	 * EOTF will be positive, its cutoff 0, and so a branch is not needed.
 	 * Thus the EOTF ought to be:
 
 		return pow(10, (comp - 1) * div)
