@@ -68,7 +68,7 @@ struct color_space {
 const char * color_space_type_str(const struct color_space *cs);
 
 bool color_space_to_linear_sRGB(const struct color_space *cs,
-struct color_convert *conv, enum pix_layout layout);
+struct color_convert *conv, enum pix_layout layout, bool maybe_yuv);
 
 cmsHTRANSFORM color_icc_transform(struct color_space *cs, cmsHPROFILE out);
 

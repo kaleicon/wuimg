@@ -632,18 +632,22 @@ const struct color_space *cs) {
 }
 
 static bool gen_mat(struct mat3 *in, double off[static 3],
-const struct color_space *cs) {
+const struct color_space *cs, const bool assume_yuv) {
 	double b, r;
 	switch (cs->matrix) {
 	case cicp_matrix_rgb:
 		gen_mat_simple(in, off, cs->limited, simple_mat_rgb);
 		return true;
+	case cicp_matrix_unspecified:
+		if (!assume_yuv) {
+			gen_mat_simple(in, off, cs->limited, simple_mat_rgb);
+			return true;
+		}
+		// fallthrough
 	case cicp_matrix_bt709_6:
 		b = .0722;
 		r = .2126;
 		break;
-	case cicp_matrix_unspecified:
-		return false;
 	case cicp_matrix_fcc_title_47:
 		b = .11;
 		r = .3;
@@ -687,13 +691,13 @@ const struct color_space *cs) {
 }
 
 static void color_mat_gen(const struct color_space *cs,
-struct mat43f *dst, const enum pix_layout layout) {
+struct mat43f *dst, const enum pix_layout layout, const bool assume_yuv) {
 	struct mat43 swz = {0}; // Swizzling and input offsets
 	struct mat3 cm;
 	double *offsets = swz.m + 3*3;
 	if (layout == pix_gray) {
 		gen_mat_simple(&cm, offsets, cs->limited, simple_mat_gray);
-	} else if (!gen_mat(&cm, offsets, cs)) {
+	} else if (!gen_mat(&cm, offsets, cs, assume_yuv)) {
 		gen_mat_simple(&cm, offsets, cs->limited, simple_mat_rgb);
 	}
 
@@ -772,8 +776,8 @@ static bool is_linear_rgb(const enum cicp_matrix matrix) {
 }
 
 bool color_space_to_linear_sRGB(const struct color_space *cs,
-struct color_convert *conv, const enum pix_layout layout) {
-	color_mat_gen(cs, &conv->nonlinear, layout);
+struct color_convert *conv, const enum pix_layout layout, const bool maybe_yuv) {
+	color_mat_gen(cs, &conv->nonlinear, layout, maybe_yuv);
 	if (!set_eotf(cs, &conv->eotf)) {
 		eotf_sRGB(&conv->eotf);
 	}

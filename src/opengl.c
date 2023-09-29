@@ -693,8 +693,9 @@ static void set_cms(struct gl_context *context, struct wuimg *img) {
 	const struct gl_uni *uni = &context->uni;
 
 	struct color_convert conv;
+	const bool is_planar = img->mode == image_mode_planar;
 	const bool spacewalk = color_space_to_linear_sRGB(cs, &conv,
-		(img->mode == image_mode_planar) ? img->layout : pix_rgba);
+		is_planar ? img->layout : pix_rgba, is_planar);
 	glUniformMatrix4x3fv(uni->mat.nonlinear, 1, GL_FALSE, conv.nonlinear.m);
 
 	enum gl_cms_mode {
