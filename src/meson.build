@@ -78,7 +78,9 @@ dec_enable = configuration_data()
 
 foreach cat, fmts : fmt_map
 	foreach f : fmts
-		state = get_option(f)
+		state = get_option(f).disable_auto_if(
+			cat == 'external' and get_option('disable_external')
+		)
 		deps = []
 		if f in pkg_map
 			foreach lib : pkg_map[f]

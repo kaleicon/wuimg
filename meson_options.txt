@@ -37,6 +37,7 @@ option('xcursor', type : 'feature')
 option('xwd', type : 'feature')
 option('xyz', type : 'feature', description : 'RPG Maker image')
 
+option('disable_external', type : 'boolean', value : false, description : 'Disable all external formats')
 option('avif', type : 'feature', description : 'via libavif')
 option('flif', type : 'feature', description : 'via libflif')
 option('gif', type : 'feature', description : 'via libgif')
