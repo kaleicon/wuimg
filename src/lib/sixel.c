@@ -267,6 +267,9 @@ struct wuimg *img) {
 	/* We must do a pass over the whole stream to know the image
 	 * dimensions. No other way around it. */
 	size_t row_width = 0;
+	bool partial_line = false; /* Keep track of whether the latest line
+		will be written to. row_width is not reliable for that, as
+		graphics_carriage_return may set it to 0 just at the end. */
 	size_t height = 0;
 	struct mparser tp = desc->tp; // Local copy
 	for (bool end = false; !end;) {
@@ -278,6 +281,7 @@ struct wuimg *img) {
 			end = true;
 			break;
 		case graphics_new_line:
+			partial_line = false;
 			++height;
 			// fallthrough
 		case graphics_carriage_return:
@@ -296,6 +300,7 @@ struct wuimg *img) {
 				return wu_decoding_error;
 			}
 			row_width += (size_t)repeat;
+			partial_line = true;
 			break;
 		case color_introducer:
 			if (!validate_color(&tp)) {
@@ -307,6 +312,7 @@ struct wuimg *img) {
 		default:
 			if (issixel(c)) {
 				++row_width;
+				partial_line = true;
 			} else if (c >= 0x80) {
 				end = true;
 			} else {
@@ -319,10 +325,7 @@ struct wuimg *img) {
 		img->w = row_width;
 	}
 	if (img->w) {
-		if (row_width) {
-			++height;
-		}
-		height *= LINE_HEIGHT;
+		height = (height + partial_line) * LINE_HEIGHT;
 		if (height > img->h) {
 			img->h = height;
 		}
