@@ -326,7 +326,8 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 		spaces, &desc->rast.w, spaces + 1, &desc->rast.h, newline);
 	if (match == EOF) {
 		return wu_unexpected_eof;
-	} else if (match != 8 || !depth || memchk(spaces, ' ', sizeof(spaces))
+	} else if (match != 8 || !depth || depth > 32
+	|| memchk(spaces, ' ', sizeof(spaces))
 	|| (strcmp(newline, "\n") && strcmp(newline, "\r\n")) ) {
 		return wu_invalid_header;
 	}
@@ -365,70 +366,100 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 	return setup_desc(desc);
 }
 
-static enum wu_error skip_line(FILE *ifp) {
-	for (;;) {
-		switch (getc(ifp)) {
-		case '\n': return wu_ok;
-		case EOF: return wu_unexpected_eof;
+static enum wu_error scan_ul(FILE *ifp, unsigned long *ret,
+const unsigned long maxval) {
+	char buf[64];
+	if (fscanf(ifp, "%63s", buf) > 0) {
+		if (strchr(buf, '-')) {
+			return wu_invalid_header;
 		}
+		char *endptr;
+		*ret = strtoul(buf, &endptr, 10);
+		if (*endptr == 0) {
+			if (*ret <= maxval) {
+				return wu_ok;
+			}
+			return wu_int_overflow;
+		}
+		return wu_invalid_header;
 	}
 	return wu_unexpected_eof;
 }
 
-static enum wu_error read_pam_token(FILE *ifp, const char *fmt,
-void *where, const bool is_set) {
-	if (!is_set) {
-		unsigned char newline;
-		switch (fscanf(ifp, fmt, where, &newline)) {
-		case 2:
-			if (newline == '\n') {
-				return wu_ok;
-			}
-			break;
-		case EOF:
-			return wu_unexpected_eof;
+static enum wu_error scan_f(FILE *ifp, float *ret) {
+	char buf[64];
+	if (fscanf(ifp, "%63s", buf) > 0) {
+		if (strchr(buf, 'x') || strchr(buf, 'X')) {
+			return wu_invalid_header;
 		}
+		char *endptr;
+		*ret = strtof(buf, &endptr);
+		if (*endptr == 0) {
+			return wu_ok;
+		}
+		return wu_invalid_header;
+	}
+	return wu_unexpected_eof;
+}
+
+static enum wu_error next_is_newline(FILE *ifp) {
+	switch (getc(ifp)) {
+	case '\n': return wu_ok;
+	case EOF: return wu_unexpected_eof;
 	}
 	return wu_invalid_header;
+}
+
+static enum wu_error skip_line(FILE *ifp) {
+	enum wu_error st;
+	do {
+		st = next_is_newline(ifp);
+	} while (st == wu_invalid_header);
+	return st;
 }
 
 static enum wu_error match_pam_token(struct pnm_desc *desc, const char *token,
 bool *finished) {
-	if (token[0] == '#') {
+	unsigned long maxval;
+	enum wu_error st;
+	if (token[0] == '#' || !strcmp("TUPLTYPE", token)) {
 		return skip_line(desc->ifp);
-	} else if (!strcmp("WIDTH", token)) {
-		return read_pam_token(desc->ifp, " %zu%c", &desc->rast.w, desc->rast.w);
-	} else if (!strcmp("HEIGHT", token)) {
-		return read_pam_token(desc->ifp, " %zu%c", &desc->rast.h, desc->rast.h);
+	} else if (!strcmp("WIDTH", token) || !strcmp("HEIGHT", token)) {
+		maxval = SIZE_MAX;
 	} else if (!strcmp("DEPTH", token)) {
-		return read_pam_token(desc->ifp, " %hhu%c", &desc->rast.channels,
-			desc->rast.channels);
+		maxval = UCHAR_MAX;
 	} else if (!strcmp("MAXVAL", token)) {
-		return read_pam_token(desc->ifp, " %hu%c", &desc->scale.pnm,
-			desc->scale.pnm);
-	} else if (!strcmp("TUPLTYPE", token)) {
-		return skip_line(desc->ifp);
+		maxval = USHRT_MAX;
 	} else if (!strcmp("ENDHDR", token)) {
-		switch (getc(desc->ifp)) {
-		case EOF: return wu_unexpected_eof;
-		case '\n':
-			*finished = true;
-			return wu_ok;
-		}
+		*finished = true;
+		return next_is_newline(desc->ifp);
+	} else {
+		return wu_invalid_header;
 	}
-	return wu_invalid_header;
+	unsigned long val;
+	st = scan_ul(desc->ifp, &val, maxval);
+	if (st == wu_ok) {
+		switch (token[0]) {
+		case 'W': desc->rast.w = (size_t)val; break;
+		case 'H': desc->rast.h = (size_t)val; break;
+		case 'D': desc->rast.channels = (uint8_t)val; break;
+		case 'M': desc->scale.pnm = (unsigned)val; break;
+		}
+		return next_is_newline(desc->ifp);
+	}
+	return st;
 }
 
 static enum wu_error parse_arbitrary_map(struct pnm_desc *desc) {
-	char token[10];
 	bool finished = false;
-	enum wu_error status;
-	while (!finished) {
+	do {
+		char token[10];
 		switch (fscanf(desc->ifp, "%9s", token)) {
 		case 1:
-			status = match_pam_token(desc, token, &finished);
-			if (status != wu_ok) {
-				return status;
+			;const enum wu_error st = match_pam_token(desc, token,
+				&finished);
+			if (st != wu_ok) {
+				return st;
 			}
 			break;
 		case EOF:
@@ -436,19 +467,22 @@ static enum wu_error parse_arbitrary_map(struct pnm_desc *desc) {
 		default:
 			return wu_invalid_header;
 		}
-	}
+	} while (!finished);
 	return setup_desc(desc);
 }
 
-static enum wu_error skip_any_junk(struct pnm_desc *desc) {
+static enum wu_error skip_any_junk(struct pnm_desc *desc, bool *space) {
 	for (bool comment = false;;) {
 		const int c = getc(desc->ifp);
-		if (!comment) {
+		if (c == EOF) {
+			return wu_unexpected_eof;
+		} else if (!comment) {
 			if (c == '#') {
 				comment = true;
 			} else if (isspace(c)) {
+				*space = true;
 				continue;
-			} else if (isdigit(c) || c == '-') {
+			} else if (isdigit(c) || c == '-' || c == '+') {
 				ungetc(c, desc->ifp);
 				return wu_ok;
 			} else {
@@ -456,8 +490,6 @@ static enum wu_error skip_any_junk(struct pnm_desc *desc) {
 			}
 		} else if (c == '\n') {
 			comment = false;
-		} else if (c == EOF) {
-			return wu_unexpected_eof;
 		}
 	}
 }
@@ -475,45 +507,55 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 		break;
 	}
 
+	bool read_float = false;
+	switch (desc->type) {
+	case pnm_color_pfm: case pnm_gray_pfm:
+	case pnm_color_phm: case pnm_gray_phm:
+		read_float = true;
+		break;
+	default: break;
+	}
+
 	for (int seen = 0; seen < fields; ++seen) {
-		const enum wu_error status = skip_any_junk(desc);
+		bool space = false;
+		const enum wu_error status = skip_any_junk(desc, &space);
 		if (status != wu_ok) {
 			return status;
+		} else if (seen > 0 && !space) {
+			return wu_invalid_header;
 		}
 
-		int result;
-		switch (seen) {
-		case 0:
-			result = fscanf(desc->ifp, "%zu", &desc->rast.w);
-			break;
-		case 1:
-			result = fscanf(desc->ifp, "%zu", &desc->rast.h);
-			break;
-		case 2:
-			switch (desc->type) {
-			case pnm_color_pfm: case pnm_gray_pfm:
-			case pnm_color_phm: case pnm_gray_phm:
-				result = fscanf(desc->ifp, "%f", &desc->scale.pfm);
-				break;
-			default:
-				result = fscanf(desc->ifp, "%u", &desc->scale.pnm);
+		unsigned long val;
+		enum wu_error st;
+		bool parse_float = read_float && seen == 2;
+		if (seen == 2) {
+			if (parse_float) {
+				st = scan_f(desc->ifp, &desc->scale.pfm);
+			} else {
+				st = scan_ul(desc->ifp, &val, USHRT_MAX);
 			}
-			break;
+		} else {
+			st = scan_ul(desc->ifp, &val, SIZE_MAX);
+		}
+		if (st != wu_ok) {
+			return st;
+		} else if (!parse_float) {
+			switch (seen) {
+			case 0: desc->rast.w = (size_t)val; break;
+			case 1: desc->rast.h = (size_t)val; break;
+			case 2: desc->scale.pnm = (unsigned)val; break;
+			}
 		}
 
-		if (result != 1) {
-			return (result == EOF)
-				? wu_unexpected_eof : wu_invalid_header;
-		}
 	}
 
-	int c;
-	while ((c = getc(desc->ifp)) != EOF) {
-		if (c == '\n') {
-			return setup_desc(desc);
-		}
+	const int c = getc(desc->ifp);
+	if (c == EOF) {
+		return wu_unexpected_eof;
+	} else if (isspace(c)) {
+		return setup_desc(desc);
 	}
-	return wu_unexpected_eof;
+	return wu_invalid_header;
 }
 
 enum wu_error pnm_parse_header(struct pnm_desc *desc) {
@@ -543,7 +585,10 @@ const unsigned char next_char) {
 
 enum wu_error pnm_open_file(struct pnm_desc *desc, FILE *ifp,
 const bool maybe_mtv) {
-	*desc = (struct pnm_desc) {.ifp = ifp};
+	*desc = (struct pnm_desc) {
+		.ifp = ifp,
+		.endian = big_endian,
+	};
 
 	unsigned char magic[3];
 	if (fread(magic, sizeof(magic), 1, ifp)) {
