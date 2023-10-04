@@ -27,17 +27,19 @@ uint32_t bit_advn(const void *stream, size_t *pos, size_t n);
 void bitstrm_seek(struct bitstrm *bs, size_t n);
 
 
+bool bitstrm_msb_next(struct bitstrm *bs);
+
+uint32_t bitstrm_msb_adv(struct bitstrm *bs, size_t n);
+
 uint32_t bitstrm_msb_peek_max25(const struct bitstrm *bs, uint8_t n);
 
 uint32_t bitstrm_msb_peek_high25(const struct bitstrm *bs);
 
 uint32_t bitstrm_msb_peek_32(const struct bitstrm *bs);
 
+uint32_t bitstrm_msb_adv_max25(struct bitstrm *bs, uint8_t n);
+
 uint32_t bitstrm_msb_gamma_zero(struct bitstrm *bs);
-
-bool bitstrm_msb_next(struct bitstrm *bs);
-
-uint32_t bitstrm_msb_adv(struct bitstrm *bs, size_t n);
 
 
 bool bitstrm_lsb_next(struct bitstrm *bs);

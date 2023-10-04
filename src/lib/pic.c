@@ -62,10 +62,9 @@ static void init_cache(struct pic_cache *cache) {
 }
 
 static void read_cached_color(uint8_t *restrict dst, struct pic_cache *cache,
-struct bitstrm *bs, const uint8_t ch) {
+const uint8_t ch, const uint8_t idx) {
 	/* Read an index from the stream, and if it's different from the
 	 * current first node, make it the new first. */
-	const uint8_t idx = (uint8_t)bitstrm_msb_adv(bs, 7);
 	const uint8_t first = cache->first;
 	struct pic_cache_node *n = cache->n;
 	if (first != idx) {
@@ -100,16 +99,18 @@ struct pic_cache *cache, const uint8_t ch) {
 
 static void read_grb(uint8_t dst[static 3], const struct pic_bits *bits,
 struct bitstrm *bs) {
-	uint32_t grb[3];
+	const uint32_t b = bitstrm_msb_peek_high25(bs);
+	const uint8_t s_off = bits->s_off;
+	bitstrm_seek(bs, 32 - s_off);
+
+	const uint32_t s = (b >> s_off) & 1;
 	for (size_t i = 0; i < ARRAY_LEN(bits->grb); ++i) {
-		grb[i] = bitstrm_msb_adv(bs, bits->grb[i]);
-	};
-	const uint32_t s = bits->s ? bitstrm_msb_adv(bs, bits->s) : 0;
-	for (size_t i = 0; i < ARRAY_LEN(bits->grb); ++i) {
+		const uint8_t off = bits->grb[i].off;
+		const uint32_t col = (b >> off) & bit_set32(bits->grb[i].depth);
 		dst[i] = (uint8_t)(
-			(((grb[i] << bits->s) | s) * bits->mul[i]) >> 8
+			(((col << bits->s) | s) * bits->grb[i].mul) >> 8
 		);
-	};
+	}
 }
 
 static void read_color(uint8_t *restrict dst, const struct pic_desc *desc,
@@ -119,10 +120,12 @@ struct bitstrm *bs, const uint8_t ch) {
 		read_grb(dst, &desc->bits, bs);
 		break;
 	case 2: // Tiled, 15-bits (pack_x555), 12-bits (pack_x444)
-		*(uint16_t *)dst = (uint16_t)bitstrm_msb_adv(bs, desc->depth);
+		*(uint16_t *)dst = (uint16_t)bitstrm_msb_adv_max25(bs,
+			desc->depth);
 		break;
 	case 1: // Paletted
-		dst[0] = (uint8_t)bitstrm_msb_adv(bs, desc->bits.grb[0]);
+		dst[0] = (uint8_t)bitstrm_msb_adv_max25(bs,
+			desc->bits.grb[0].depth);
 		break;
 	}
 }
@@ -130,9 +133,12 @@ struct bitstrm *bs, const uint8_t ch) {
 static void read_img_color(uint8_t dst[static 3], const struct pic_desc *desc,
 struct bitstrm *bs, struct pic_cache *cache, const uint8_t ch) {
 	if (cache) {
-		if (bitstrm_msb_next(bs)) {
-			read_cached_color(dst, cache, bs, ch);
+		const uint32_t b = bitstrm_msb_peek_max25(bs, 8);
+		if (b & 0x80) {
+			bitstrm_seek(bs, 8);
+			read_cached_color(dst, cache, ch, b & 0x7f);
 		} else {
+			bitstrm_seek(bs, 1);
 			read_color(dst, desc, bs, ch);
 			cache_add_color(dst, cache, ch);
 		}
@@ -144,31 +150,34 @@ struct bitstrm *bs, struct pic_cache *cache, const uint8_t ch) {
 static void chain_expand(uint8_t *restrict ptr, struct bitstrm *bs,
 const uint8_t ch, int x, int y, const int w, const int limit, uint8_t *mask) {
 	/* Replicates the current color downwards, with a variable x offset
-		0b11    +1x
-		0b10     0x
-		0b01    -1x
-		0b000    stop
-		0b0011  +2x
-		0b0010  -2x
+		11    +1x
+		10     0x
+		01    -1x
+		000    stop
+		0011  +2x
+		0010  -2x
 	*/
 	const int src = y * w + x;
 	for (;;) {
-		switch (bitstrm_msb_adv(bs, 2)) {
-		case 3: ++x; break;
-		case 2: break;
-		case 1: --x; break;
-		case 0:
-			if (bitstrm_msb_next(bs)) {
-				if (bitstrm_msb_next(bs)) {
-					x += 2;
-				} else {
-					x -= 2;
-				}
-			} else {
-				return;
-			}
+		uint8_t read = 2;
+		switch (bitstrm_msb_peek_max25(bs, 4)) {
+		case 0: case 1:
+			bitstrm_seek(bs, 3);
+			return;
+		case 2:
+			x -= 2; read = 4;
+			break;
+		case 3:
+			x += 2; read = 4;
+			break;
+		case 4: case 5: case 6: case 7:
+			x -= 1;
+			break;
+		case 12: case 13: case 14: case 15:
+			x += 1;
 			break;
 		}
+		bitstrm_seek(bs, read);
 		++y;
 		const int dst = y * w + iclamp(x, 0, w);
 		if (dst >= limit) {
@@ -188,11 +197,13 @@ static uint32_t read_len_code(struct bitstrm *bs) {
 		1110xxx 15-30
 	 * And so on, and so on
 	*/
-	unsigned b = 1;
-	while (b < 29 && bitstrm_msb_next(bs)) {
-		++b;
-	}
-	return bit_set32(b) + bitstrm_msb_adv(bs, b);
+	uint32_t bits = bitstrm_msb_peek_32(bs);
+	const uint32_t z = bit_clz32(~bits) + 1;
+	bs->pos += z;
+	const uint32_t val = bit_set32(z)
+		+ (bitstrm_msb_peek_32(bs) >> (32 - z));
+	bitstrm_seek(bs, z);
+	return val;
 }
 
 static bool decode_data(const struct pic_desc *desc, uint8_t *restrict dst,
@@ -200,7 +211,7 @@ const int w, const int limit, const uint8_t ch, struct bitstrm *bs,
 uint8_t *mask, struct pic_cache *cache) {
 	for (int i = -1; bs->pos < bs->len;) {
 		i += (int)read_len_code(bs);
-		if (i < limit) {
+		if ((unsigned)i < (unsigned)limit) {
 			read_img_color(dst + i*ch, desc, bs, cache, ch);
 			mask[i/8] |= 1 << (i%8);
 			if (bitstrm_msb_next(bs)) {
@@ -251,11 +262,9 @@ size_t pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 
 	const bool use_cache = desc->depth > 8 && desc->type != pic_type_mac;
 
-	/* Allocate a single buffer with the data at the start and the other
-	 * structures at the end to serve as padding. */
 	struct pic_cache *cache = NULL;
-	const size_t pad = zumax(12, mask_size + use_cache * sizeof(*cache));
-	uint8_t *data = malloc(comp_size + pad);
+	uint8_t *data = malloc(comp_size + mask_size
+		+ use_cache * sizeof(*cache));
 	bool ok = false;
 	if (data) {
 		const size_t read = fread(data, 1, comp_size, desc->ifp);
@@ -281,8 +290,9 @@ size_t pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 
 static bool load_pal(const struct pic_desc *desc, struct wuimg *img) {
 	const struct pic_bits *b = &desc->bits;
-	const uint8_t pal_depth = (uint8_t)(b->grb[0] + b->grb[1] + b->grb[2]
-		+ b->s);
+	const uint8_t pal_depth = (uint8_t)(
+		b->grb[0].depth + b->grb[1].depth + b->grb[2].depth + b->s
+	);
 	const size_t entries = 1 << desc->depth;
 	const size_t len = strip_base(entries, pal_depth);
 	uint8_t *buf = (uint8_t *)(img->u.palette + 1) - len;
@@ -301,11 +311,24 @@ static bool load_pal(const struct pic_desc *desc, struct wuimg *img) {
 
 static void calc_mul(struct pic_bits *bits, const uint8_t shared) {
 	bits->s = shared;
+	uint8_t off = 32;
 	for (size_t i = 0; i < ARRAY_LEN(bits->grb); ++i) {
-		const uint32_t depth = bits->grb[i] + bits->s;
+		off -= bits->grb[i].depth;
+		bits->grb[i].off = off;
+		const uint32_t depth = bits->grb[i].depth + bits->s;
 		const uint32_t maxval = bit_set32(depth);
-		bits->mul[i] = (uint16_t)((UCHAR_MAX << 8) / maxval + 1);
+		bits->grb[i].mul = (uint16_t)((UCHAR_MAX << 8) / maxval + 1);
 	}
+	bits->s_off = off - bits->s;
+}
+
+static struct pic_bits grb_bits_init(const uint8_t g, const uint8_t r,
+const uint8_t b) {
+	return (struct pic_bits) {
+		.grb = {
+			{g, 0, 0}, {r, 0, 0}, {b, 0, 0}
+		},
+	};
 }
 
 static bool extra_fields(uint8_t *restrict buf, struct pic_desc *desc,
@@ -447,18 +470,14 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		img->ratio = (float)((w / hr) / (h / 400.0));
 		switch (bd) {
 		case 8:
-			desc->bits = (struct pic_bits) {
-				.grb = {3,3,2},
-			};
+			desc->bits = grb_bits_init(3, 3, 2);
 			img->attr = pix_pack_332;
 			break;
 		case 12:
 			uni_bits = 4;
 			break;
 		case 16:
-			desc->bits = (struct pic_bits) {
-				.grb = {6,5,5},
-			};
+			desc->bits = grb_bits_init(6, 5, 5);
 			break;
 		default:
 			return wu_invalid_header;
@@ -543,7 +562,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	} else {
 		if (uni_bits) {
 			for (size_t i = 0; i < ARRAY_LEN(desc->bits.grb); ++i) {
-				desc->bits.grb[i] = uni_bits;
+				desc->bits.grb[i].depth = uni_bits;
 			}
 		}
 		calc_mul(&desc->bits, shared_bits);
@@ -551,7 +570,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			if (!load_pal(desc, img)) {
 				return wu_unexpected_eof;
 			}
-			desc->bits.grb[0] = desc->depth;
+			desc->bits.grb[0].depth = desc->depth;
 		}
 		img->channels = (img->mode == image_mode_palette) ? 1 : 3;
 		img->bitdepth = 8;
