@@ -19,7 +19,8 @@ uint32_t bit_advn(const void *stream, size_t *pos, size_t n);
 
 
 struct bitstrm {
-	uint8_t end[16];
+	uint8_t end[15];
+	bool eof;
 	const uint8_t *buf;
 	size_t pos;
 	size_t len;

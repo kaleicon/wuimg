@@ -209,7 +209,7 @@ static uint32_t read_len_code(struct bitstrm *bs) {
 static bool decode_data(const struct pic_desc *desc, uint8_t *restrict dst,
 const int w, const int limit, const uint8_t ch, struct bitstrm *bs,
 uint8_t *mask, struct pic_cache *cache) {
-	for (int i = -1; bs->pos < bs->len;) {
+	for (int i = -1; !bs->eof;) {
 		i += (int)read_len_code(bs);
 		if ((unsigned)i < (unsigned)limit) {
 			read_img_color(dst + i*ch, desc, bs, cache, ch);

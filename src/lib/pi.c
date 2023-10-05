@@ -212,7 +212,7 @@ static size_t bt_decode_loop(uint8_t *restrict output, const size_t dims,
 struct bitstrm *bs, const size_t width, uint8_t *restrict table,
 const unsigned depth) {
 	size_t i = 0;
-	for (uint8_t prev = 0; i < dims - 1 && bs->pos < bs->len; prev = output[i-1]) {
+	for (uint8_t prev = 0; i < dims - 1 && !bs->eof; prev = output[i-1]) {
 		size_t dt[2];
 		if (depth == 1 << 4) {
 			dt[0] = read_4bit_delta(bs);

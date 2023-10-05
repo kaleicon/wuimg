@@ -122,7 +122,7 @@ uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
 			}
 			d += size;
 			copy = !copy;
-			if (bs.pos >= bs.len) {
+			if (bs.eof) {
 				break;
 			}
 			size = bitstrm_lsb_gamma_one(&bs);

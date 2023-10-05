@@ -65,11 +65,11 @@ uint32_t bit_advn(const void *stream, size_t *pos, size_t n) {
 	return bits;
 }
 
-
 void bitstrm_seek(struct bitstrm *bs, size_t n) {
 	const size_t max_peek = 33 + 32 + 8; // max peek in *_gamma_*()
 	bs->pos += n;
 	if (bs->pos + max_peek >= bs->len) {
+		bs->eof = bs->buf == bs->end;
 		const size_t m = bs->len/8 - bs->pos/8;
 		memmove(bs->end, bs->buf + bs->pos/8, m);
 		memset(bs->end + m, 0, sizeof(bs->end) - m);
