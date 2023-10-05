@@ -254,7 +254,7 @@ size_t pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 	/* Allocate a single buffer with the data at the start and the other
 	 * structures at the end to serve as padding. */
 	struct pic_cache *cache = NULL;
-	const size_t pad = zumax(8, mask_size + use_cache * sizeof(*cache));
+	const size_t pad = zumax(12, mask_size + use_cache * sizeof(*cache));
 	uint8_t *data = malloc(comp_size + pad);
 	bool ok = false;
 	if (data) {

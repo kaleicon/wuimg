@@ -29,6 +29,8 @@ uint16_t buf_endian16(const void *data, enum endianness e);
 
 uint32_t buf_endian32(const void *data, enum endianness e);
 
+uint64_t buf_endian64(const void *data, enum endianness e);
+
 float buf_endianf32(const void *data, enum endianness e);
 
 /* Swaps `n` data words in place if `e` doesn't match the processor's

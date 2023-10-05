@@ -87,76 +87,12 @@ end_repeat:
 	return i + cnt*2;
 }
 
-#ifndef EXACT_BITS
-static uint32_t current_dword(const struct bitstrm *bs, const bool full_bits) {
-	size_t i = bs->pos / 8;
-	size_t o = bs->pos % 8;
-	const uint32_t f = buf_endian32(bs->buf + i, big_endian) << o;
-	if (full_bits) {
-		return f | (unsigned)(bs->buf[i+4] >> (8 - o));
-	}
-	return f;
-}
-
-static uint16_t current_word(const struct bitstrm *bs, const bool full_bits) {
-	size_t i = bs->pos / 8;
-	size_t o = bs->pos % 8;
-	const uint16_t f = (uint16_t)(buf_endian16(bs->buf + i, big_endian) << o);
-	if (full_bits) {
-		return f | (uint16_t)(bs->buf[i+2] >> (8 - o));
-	}
-	return f;
-}
-#endif // EXACT_BITS
-
-static uint32_t read_repeat_cnt(struct bitstrm *bs) {
-#ifdef EXACT_BITS
-	return bitstrm_msb_gamma(bs, 0);
-#else
-	/* Gamma bit encoding:
-		Coding  Range
-		0       1
-		10x     2-3
-		110xx   4-7
-		1110xxx 8-15
-	 * and so on and so on. */
-
-	uint_fast32_t seq_len = 0;
-	const uint32_t mask = 1U << 31;
-	const uint32_t repeat = current_dword(bs, true);
-	while ((repeat << seq_len) & mask && seq_len < 31) {
-		++seq_len;
-	}
-
-	bs->pos += seq_len;
-	// The beginning zero is included
-	const uint32_t payload = current_dword(bs, true);
-	bs->pos += seq_len + 1;
-	return (payload | mask) >> (31 - seq_len);
-#endif
-}
-
 static enum pi_repeat_src read_repeat_loc(struct bitstrm *bs) {
 	/* Location codes: 00, 01, 10, 110, 111 */
-#ifdef EXACT_BITS
-	const uint32_t bits = bitstrm_msb_adv(bs, 2);
-	switch (bits) {
-	case 0: case 1: case 2:
-		return bits;
-	}
-	return (bits << 1) | bitstrm_msb_next(bs);
-#else
-	const uint_fast32_t word = current_word(bs, false) >> 13;
-	uint8_t diff;
-	switch (word) {
-	case 0: case 1: case 2: case 3: case 4: case 5:
-		diff = 2; break;
-	default:
-		diff = 3;
-	}
-	bs->pos += diff;
-	return (enum pi_repeat_src)(word >> (3 - diff));
-#endif
+	const uint32_t bits = bitstrm_msb_peek_max25(bs, 3);
+	const uint8_t diff = (bits > 5) ? 3 : 2;
+	bitstrm_seek(bs, diff);
+	return (enum pi_repeat_src)(bits >> (3 - diff));
 }
 
 static size_t read_8bit_delta(struct bitstrm *bs) {
@@ -204,7 +140,7 @@ static size_t read_8bit_delta(struct bitstrm *bs) {
 		return bitstrm_msb_adv(bs, sh) | (1U << sh);
 	}
 #else
-	const uint32_t word = current_dword(bs, false);
+	const uint32_t word = bitstrm_msb_peek_high25(bs);
 	uint32_t read, xor;
 	if (word >= 0x01U << (32 - 1)) {        //       1x
 		read = 2; xor = 0x01 << 1;
@@ -223,7 +159,7 @@ static size_t read_8bit_delta(struct bitstrm *bs) {
 	} else {                                //      00x----
 		read = 3; xor = 0x01 << 1;
 	}
-	bs->pos += read;
+	bitstrm_seek(bs, read);
 	return (word >> (32 - read)) ^ xor;
 #endif
 }
@@ -251,9 +187,9 @@ static size_t read_4bit_delta(struct bitstrm *bs) {
 		return bitstrm_msb_adv(bs, sh) | (1U << sh);
 	}
 #else
-	const uint32_t word = current_word(bs, false);
+	const uint32_t word = bitstrm_msb_peek_high25(bs);
 	uint32_t read, xor;
-	switch (word >> 13) {
+	switch (word >> 29) {
 	case 0: case 1:
 		read = 3; xor = 0x02;
 		break;
@@ -267,8 +203,8 @@ static size_t read_4bit_delta(struct bitstrm *bs) {
 		read = 2; xor = 0x02;
 		break;
 	}
-	bs->pos += read;
-	return (word >> (16 - read)) ^ xor;
+	bitstrm_seek(bs, read);
+	return (word >> (32 - read)) ^ xor;
 #endif
 }
 
@@ -299,7 +235,7 @@ const unsigned depth) {
 				if (loc[cur] == loc[!cur]) {
 					break;
 				}
-				size_t cnt = read_repeat_cnt(bs)
+				size_t cnt = bitstrm_msb_gamma_zero(bs)
 					- (i == 2);
 				if (cnt*2 + i > dims) {
 					break;
@@ -323,15 +259,13 @@ size_t pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 		const unsigned colors = (1 << desc->depth);
 		const unsigned table_size = colors*colors;
 		const size_t bslen = max_bitstream_size(desc->ifp, dims);
-		const size_t pad = 9; // Skip some bounds checks.
-		void *buf = malloc(table_size + bslen + pad);
+		void *buf = malloc(table_size + bslen);
 		if (buf) {
 			uint8_t *restrict delta_table = buf;
 			uint8_t *restrict bitstream = delta_table + table_size;
 
 			init_delta_table(delta_table, colors);
 			const size_t read = fread(bitstream, 1, bslen, desc->ifp);
-			memset(bitstream + read, 0, pad);
 
 			struct bitstrm bs = bitstrm_from_bytes(bitstream, read);
 			written = bt_decode_loop(img->data, dims, &bs, img->w,

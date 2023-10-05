@@ -61,6 +61,21 @@ uint32_t buf_endian32(const void *data, const enum endianness e) {
 		: d[3] << 24 | d[2] << 16 | d[1] << 8 | d[0]);
 }
 
+uint64_t buf_endian64(const void *data, const enum endianness e) {
+	const uint8_t *d = data;
+	uint64_t ret = 0;
+	if (e == big_endian) {
+		for (size_t i = 0; i < sizeof(ret); ++i) {
+			ret |= (uint64_t)d[i] << ((64-8) - i*8);
+		}
+	} else {
+		for (size_t i = 0; i < sizeof(ret); ++i) {
+			ret |= (uint64_t)d[i] << (i*8);
+		}
+	}
+	return ret;
+}
+
 float buf_endianf32(const void *data, const enum endianness e) {
 	const union int_real f = {.bytes = buf_endian32(data, e)};
 	return f.real;
