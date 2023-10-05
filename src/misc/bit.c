@@ -4,24 +4,37 @@
 #include "bit.h"
 #include "endian.h"
 
-uint32_t bit_clz32(uint32_t bits) {
-	const uint8_t mul[] = {
-		31, 22, 30, 21, 18, 10, 29, 2, 20, 17, 15, 13, 9, 6, 28, 1,
-		23, 19, 11, 3, 16, 14, 7, 24, 12, 4, 8, 25, 5, 26, 27, 0
-	};
-	bits |= bits >> 1;
-	bits |= bits >> 2;
-	bits |= bits >> 4;
-	bits |= bits >> 8;
-	bits |= bits >> 16;
-	return mul[ (bits * 0x07c4acdd) >> 27 ];
+static uint32_t bit_rev32(uint32_t b) {
+	b = (b & 0xaaaaaaaa) >> 1 | (b & 0x55555555) << 1;
+	b = (b & 0xcccccccc) >> 2 | (b & 0x33333333) << 2;
+	b = (b & 0xf0f0f0f0) >> 4 | (b & 0x0f0f0f0f) << 4;
+	b = (b & 0xff00ff00) >> 8 | (b & 0x00ff00ff) << 8;
+	return (b >> 16 | b << 16);
 }
 
+static uint32_t bit_ctz32(uint32_t bits) {
+	uint32_t n = sizeof(bits)*8;
+	while (bits) {
+		--n;
+		bits <<= 1;
+	}
+	return n;
+}
+
+uint32_t bit_clz32(uint32_t bits) {
+	uint32_t n = sizeof(bits)*8;
+	while (bits) {
+		--n;
+		bits >>= 1;
+	}
+	return n;
+}
 
 uint32_t bit_set32(const uint32_t bits) {
 	const uint32_t ones = ~0u;
 	return ones >> (sizeof(ones)*8 - bits);
 }
+
 
 uint32_t bit_getn(const void *stream, const size_t pos, size_t n) {
 	const uint32_t mask = (1u << n) - 1;
@@ -54,7 +67,7 @@ uint32_t bit_advn(const void *stream, size_t *pos, size_t n) {
 
 
 void bitstrm_seek(struct bitstrm *bs, size_t n) {
-	const size_t max_peek = 32 + 32 + 8; // max peek in msb_gamma()
+	const size_t max_peek = 33 + 32 + 8; // max peek in *_gamma_*()
 	bs->pos += n;
 	if (bs->pos + max_peek >= bs->len) {
 		const size_t m = bs->len/8 - bs->pos/8;
@@ -126,21 +139,32 @@ uint32_t bitstrm_msb_gamma_zero(struct bitstrm *bs) {
 bool bitstrm_lsb_next(struct bitstrm *bs) {
 	const uint8_t byte = bs->buf[bs->pos/8];
 	const bool bit = (byte >> (bs->pos%8)) & 1;
-	++bs->pos;
+	bitstrm_seek(bs, 1);
 	return bit;
 }
 
-uint32_t bitstrm_lsb_gamma(struct bitstrm *bs, const bool delim) {
-	size_t count = 0;
-	while (bitstrm_lsb_next(bs) != delim && count < 31) {
-		++count;
-	}
-	uint32_t word = 1;
-	while (count) {
-		word = (word << 1) | bitstrm_lsb_next(bs);
-		--count;
-	}
-	return word;
+static uint32_t bitstrm_lsb_peek_32(struct bitstrm *bs) {
+	size_t i = bs->pos / 8;
+	size_t o = bs->pos % 8;
+	const uint32_t f = buf_endian32(bs->buf + i, little_endian);
+	return (uint32_t)bs->buf[i+4] << 1 << (31 - o) | f >> o;
+}
+
+uint32_t bitstrm_lsb_gamma_one(struct bitstrm *bs) {
+	/* LSB Gamma bit encoding (1 delimited):
+		Range   Coding
+		1            1
+		2-3        x10
+		4-7      xx100
+		8-15   xxx1000
+	 * There's a caveat... The encoded bits have to be reversed.
+	*/
+	const uint32_t bits = bitstrm_lsb_peek_32(bs);
+	const uint32_t z = bit_ctz32(bits);
+	bs->pos += z+1;
+	const uint32_t val = bitstrm_lsb_peek_32(bs);
+	bitstrm_seek(bs, z);
+	return 1u << z | bit_rev32(val) >> 1 >> (31 - z);
 }
 
 

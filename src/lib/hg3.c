@@ -7,7 +7,7 @@
 #include "raster/fmt.h"
 #include "hg3.h"
 
-/* Format documentation (mostly complete):
+/* Format documentation:
 https://github.com/trigger-segfault/TriggersTools.CatSystem2/wiki/HG%E2%80%903-Image
 https://github.com/trigger-segfault/TriggersTools.CatSystem2/wiki/HG%E2%80%90X-ProcessImage
 */
@@ -19,73 +19,92 @@ static uint32_t biject(const uint32_t val) {
 	return ((val & ~repl) >> 1) ^ ((val & repl) * 0xff);
 }
 
-static void plane_mix(uint32_t *data, const uint8_t *restrict plane,
+static void plane_mix(uint32_t *dst, const uint8_t *restrict plane,
 const size_t plane_len) {
 	/* The recipe is
 	 *  1) Read a byte from each of the four planes
-	 *  2) Split each byte into 4 2-bit groups
-	 *  3) Place each group into a byte, highest group in the highest byte,
-	 *     first planes into highest bits. Example:
+	 *  2) Split each byte into 4 2-bit group.
+	 *  3) Place each group into the bytes of a 32-bit word. Highest
+	 *     group in the highest byte, first planes into highest bits.
+	 *     Example:
+	        Plane0: 11010011
+	        Output: 11000000 01000000 00000000 11000000
+	        -       Byte 3   Byte 2   Byte 1   Byte 0
 
-		Plane0: 11010011
-		Output: 11000000 01000000 00000000 11000000
-		-       Byte 3   Byte 2   Byte 1   Byte 0
-
-		Plane1: 01110101
-		Output: 11010000 01110000 00010000 11010000
-		-       Byte 3   Byte 2   Byte 1   Byte 0
+	        Plane1: 01110101
+	        Output: 11010000 01110000 00010000 11010000
+	        -       Byte 3   Byte 2   Byte 1   Byte 0
 
 	 *  4) For each resulting byte, if it's odd, do (255 - byte/2), else,
-	 *     byte/2.
-	 *  5) Write in little-endian order to the output buffer. The result is
-	 *     an image in BGR/BGRA order.
-	 * Note that we use a faster algorithm here, that outputs in BGRA
-	 * order on big-endian, and in ARGB order on little-endian. This is
-	 * accounted for when setting the image layout in hg3_parse_image(). */
+	 *     byte/2. This converts from a zigzag signed encoding to two's
+	 *     complement.
+	 *  5) Write in little-endian order to the output buffer. The result
+	 *     should be in BGR/BGRA logical order... Though I've never tested
+	 *     any three-channel images. */
 
-	const uint32_t mult = (1 << 30) | (1 << 20) | (1 << 10) | (1 << 0);
-	const uint32_t repl = 0xc0c0c0c0;
+	const uint32_t repl = (1 << 30) | (1 << 20) | (1 << 10) | (1 << 0);
+	const uint32_t mask = 0xc0c0c0c0;
 	for (size_t pos = 0; pos < plane_len; ++pos) {
 		uint32_t val = 0;
 		for (uint8_t z = 0; z < 4; ++z) {
-			val |= ((plane[z*plane_len + pos] * mult) & repl) >> (z*2);
+			val |= ((plane[z*plane_len + pos] * repl) & mask) >> (z*2);
 		}
-		data[pos] = biject(val);
+		/* Channel order becomes ARGB/BRGB in the code above on
+		 * little-endian machines, so reverse again. */
+		dst[pos] = endian32(biject(val), big_endian);
 	}
 }
 
-static void decode_delta(struct wuimg *img, const uint8_t *restrict src,
-const size_t src_len) {
-	plane_mix((uint32_t *)img->data, src, src_len/4);
+static size_t multi_add(uint8_t *bytes, size_t pos, const size_t diff,
+const size_t limit) {
+	/* If the stars align, add 4 bytes at a time. */
+	if (diff % 4 == 0 && pos + 10 < limit) {
+		while (pos % 4) {
+			bytes[pos] += bytes[pos - diff];
+			++pos;
+		}
 
+		const uint32_t mask = 0x80808080;
+		uint32_t *dword = (uint32_t *)bytes;
+		size_t dpos = pos/4;
+		while (dpos < limit/4) {
+			const uint32_t d = dword[dpos];
+			const uint32_t s = dword[dpos - diff/4];
+			const uint32_t sum = (d & ~mask) + (s & ~mask);
+			dword[dpos] = sum ^ (d & mask) ^ (s & mask);
+			++dpos;
+		}
+		pos = dpos*4;
+	}
+	while (pos < limit) {
+		bytes[pos] += bytes[pos - diff];
+		++pos;
+	}
+	return pos;
+}
+
+static void decode_delta(struct wuimg *img, const size_t img_size) {
 	const uint8_t ch = img->channels;
 	const size_t stride = img->w * ch;
-	for (size_t x = ch; x < stride; ++x) {
-		img->data[x] += img->data[x - ch];
-	}
-	for (size_t y = 1; y < img->h; ++y) {
-		for (size_t x = 0; x < stride; ++x) {
-			img->data[stride*y + x] += img->data[stride*(y-1) + x];
-		}
-	}
+
+	/* For the first row, add the previous pixel to the current one. For
+	 * the rest, add from the pixel above. */
+	multi_add(img->data, multi_add(img->data, ch, ch, stride),
+		stride, img_size);
 }
 
-static uint8_t * decode_data(uint8_t *restrict ext, const size_t ext_len,
-uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len, bool *dont_free) {
+static uint8_t * decode_zrle(uint8_t *restrict ext, const size_t ext_len,
+uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
 	struct bitstrm bs = bitstrm_from_bytes(ctrl, ctrl_len);
 
 	bool copy = bitstrm_lsb_next(&bs);
-	const size_t stream_len = bitstrm_lsb_gamma(&bs, 1);
+	const size_t stream_len = bitstrm_lsb_gamma_one(&bs);
 	if (stream_len != data_len) {
 		return NULL;
 	}
 
-	if (bs.pos >= bs.len) {
-		return NULL;
-	}
-	size_t size = bitstrm_lsb_gamma(&bs, 1);
-	if (copy && size == data_len) {
-		*dont_free = true;
+	size_t size = bitstrm_lsb_gamma_one(&bs);
+	if (copy && size >= data_len) {
 		return ext;
 	}
 
@@ -106,7 +125,7 @@ uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len, bool *dont_free)
 			if (bs.pos >= bs.len) {
 				break;
 			}
-			size = bitstrm_lsb_gamma(&bs, 1);
+			size = bitstrm_lsb_gamma_one(&bs);
 		}
 	}
 	return data;
@@ -144,9 +163,8 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 		return false;
 	}
 
-	const size_t gamma_pad = 4;
 	size_t uncomp_size = extent_orig + ctrl_orig;
-	uint8_t *buf = malloc((size_t)uncomp_size + gamma_pad);
+	uint8_t *buf = malloc((size_t)uncomp_size);
 	if (!buf) {
 		return false;
 	}
@@ -156,24 +174,24 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	uint8_t *ctrl = buf + extent_orig;
 	uncompress(ctrl, &ctrl_orig, zctrl.ptr, zctrl.len);
 	uncomp_size = extent_orig + ctrl_orig;
-	const uint8_t disrupt_gamma = 0xaa; // 10101010
-	memset(buf + uncomp_size, disrupt_gamma, gamma_pad);
 
-	const size_t data_len = wuimg_size(img);
-	bool dont_free = false;
-	uint8_t *data = decode_data(extent, extent_orig, ctrl, ctrl_orig,
-		data_len, &dont_free);
-	if (!dont_free) {
+	const size_t img_size = wuimg_size(img);
+	uint8_t *planes = decode_zrle(extent, extent_orig, ctrl, ctrl_orig,
+		img_size);
+	if (planes != buf) {
 		free(buf);
 	}
 
 	bool ok = false;
-	if (data) {
+	if (planes) {
 		if (wuimg_alloc_noverify(img)) {
-			decode_delta(img, data, data_len);
+			/* Not sure what's supposed to happen if the image
+			 * size is not a multiple of 4. */
+			plane_mix((uint32_t *)img->data, planes, img_size/4);
+			decode_delta(img, img_size);
 			ok = true;
 		}
-		free(data);
+		free(planes);
 	}
 	return ok;
 }
@@ -199,7 +217,7 @@ enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img) {
 	default: return wu_invalid_header;
 	}
 	img->bitdepth = 8;
-	img->layout = (which_end() == little_endian) ? pix_argb : pix_bgra;
+	img->layout = pix_bgra;
 	img->mirror = true;
 	img->alpha = buf_endian32(stdinfo + 44, little_endian)
 		? alpha_unassociated : alpha_ignore;
