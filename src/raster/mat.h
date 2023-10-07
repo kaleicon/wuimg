@@ -20,6 +20,10 @@ struct mat43 {
 	double m[4*3];
 };
 
+struct mat2i {
+	int m[2*2];
+};
+
 void vec_mul_mat(double *restrict out, const double *restrict v1,
 const double *restrict m2, int len, int w2);
 
@@ -28,6 +32,9 @@ const double *restrict m2, int len, int h1, int w2);
 
 void mat_mul_tofloat(float *restrict out, const double *restrict m1,
 const double *restrict m2, int len, int h1, int w2);
+
+void mati_mul(int *restrict out, const int *restrict m1,
+const int *restrict m2, int len, int h1, int w2);
 
 bool mat3_invert(struct mat3 *restrict dst, const struct mat3 *restrict src);
 

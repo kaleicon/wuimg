@@ -60,21 +60,22 @@ void wuimg_aspect_ratio(struct wuimg *img, const int num, const int den) {
 }
 
 void wuimg_exif_orientation(struct wuimg *img, const int orientation) {
-	int m;
-	int r;
-	switch (orientation) {
-	case 1: m = 0; r = 0; break;
-	case 2: m = 1; r = 2; break;
-	case 3: m = 0; r = 2; break;
-	case 4: m = 1; r = 0; break;
-	case 5: m = 1; r = 3; break;
-	case 6: m = 0; r = 1; break;
-	case 7: m = 1; r = 1; break;
-	case 8: m = 0; r = 3; break;
-	default: return;
+	// https://www.awaresystems.be/imaging/tiff/tifftags/orientation.html
+	bool m;
+	uint8_t r;
+	switch (orientation) { //      1st row / 1st column
+	case 1: m = 0; r = 0; break; //    Top / left
+	case 2: m = 1; r = 2; break; //    Top / right
+	case 3: m = 0; r = 2; break; // Bottom / right
+	case 4: m = 1; r = 0; break; // Bottom / left
+	case 5: m = 1; r = 3; break; //   Left / top
+	case 6: m = 0; r = 1; break; //  Right / top
+	case 7: m = 1; r = 1; break; //  Right / bottom
+	case 8: m = 0; r = 3; break; //   Left / bottom
+	default: return; // Reserved
 	}
-	img->mirror = img->mirror ^ m;
-	img->rotate = (img->rotate + r) & 0x03;
+	img->mirror = m;
+	img->rotate = r;
 }
 
 static void find_better_alignment(struct wuimg *img) {

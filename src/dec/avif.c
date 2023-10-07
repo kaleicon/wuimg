@@ -53,12 +53,16 @@ static void get_transforms(struct wuimg *img, const avifImage *avif) {
 	if (avif->transformFlags & AVIF_TRANSFORM_PASP) {
 		img->ratio = (float)avif->pasp.hSpacing / (float)avif->pasp.vSpacing;
 	}
+	// It just so happened that we did everything opposite from AVIF.
 	if (avif->transformFlags & AVIF_TRANSFORM_IROT) {
-		img->rotate = avif->irot.angle;
+		// AVIF uses counter-clockwise quarter turns.
+		img->rotate = 2 ^ avif->irot.angle;
 	}
 	if (avif->transformFlags & AVIF_TRANSFORM_IMIR) {
+		/* AVIF distinguishes between vertical and horizontal
+		 * mirroring, and it's applied after rotation. */
 		img->mirror = true;
-		img->rotate ^= avif->imir.mode << 1;
+		img->rotate ^= (uint8_t)((avif->imir.mode ^ (img->rotate & 1)) << 1);
 	}
 }
 

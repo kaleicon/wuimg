@@ -74,7 +74,7 @@ struct wuimg {
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
 
-	unsigned char rotate;
+	unsigned char rotate; // Clockwise quarter turns
 	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate
 	enum alpha_interpretation alpha:2;
 

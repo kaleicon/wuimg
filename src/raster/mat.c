@@ -30,6 +30,7 @@ const double *restrict m2, const int len, const int w2) {
 	}
 }
 
+
 void mat_mul(double *restrict out, const double *restrict m1,
 const double *restrict m2, const int len, const int h1, const int w2) {
 	for (int y = 0; y < h1; ++y) {
@@ -37,12 +38,38 @@ const double *restrict m2, const int len, const int h1, const int w2) {
 	}
 }
 
+
 void mat_mul_tofloat(float *restrict out, const double *restrict m1,
 const double *restrict m2, const int len, const int h1, const int w2) {
 	for (int y = 0; y < h1; ++y) {
 		vec_mul_mat_tofloat(out + y*w2, m1 + y*len, m2, len, w2);
 	}
 }
+
+
+static int doti(const int *restrict row, const int *restrict col,
+const int len, const int col_stride) {
+	int acc = 0;
+	for (int x = 0; x < len; ++x) {
+		acc += row[x] * col[x*col_stride];
+	}
+	return acc;
+}
+
+static void vec_mul_mati(int *restrict out, const int *restrict v1,
+const int *restrict m2, const int len, const int w2) {
+	for (int x = 0; x < w2; ++x) {
+		out[x] = doti(v1, m2 + x, len, w2);
+	}
+}
+
+void mati_mul(int *restrict out, const int *restrict m1,
+const int *restrict m2, const int len, const int h1, const int w2) {
+	for (int y = 0; y < h1; ++y) {
+		vec_mul_mati(out + y*w2, m1 + y*len, m2, len, w2);
+	}
+}
+
 
 static double fms(const double x, const double y, const double z) {
 	return fma(x, y, -z);

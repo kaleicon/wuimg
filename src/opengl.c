@@ -163,8 +163,8 @@ static void fix_aspect_ratio(struct mat3f *mat, struct gl_context *context,
 const int rotate) {
 	/* Scale the image to its natural size and aspect ratio, taking
 	 * rotation into account.
-	 * 'horz' and 'vert' should always be greater than 1, so that all
-	 * pixels are visible at 1x. */
+	 * 'horz' and 'vert' should always be greater than 1, so that no
+	 * pixels are hidden at 1x. */
 	const float horz = fmaxf(context->tex.ratio, 1);
 	const float vert = fmaxf(1/context->tex.ratio, 1);
 
@@ -185,37 +185,46 @@ static void calc_fit_zoom(struct gl_context *context) {
 }
 
 static int bool_to_sign(const bool val) {
-	return val ? 1 : -1;
+	return (val << 1) - 1;
 }
 
-static GLfloat hard_math(const int rotate) {
-	return (GLfloat)( (rotate & 1) * bool_to_sign(rotate & 2) );
+static int hard_math(const int rotate) {
+	return (rotate & 1) * bool_to_sign(rotate & 2);
 }
 
-static void set_mirrot(struct mat3f *mat, const int rotate, const bool mirror) {
-	// Do some hard math to apply both rotation and mirroring
-	const GLfloat cosy = hard_math(rotate - 1);
-	const GLfloat sinner = hard_math(rotate);
-	/* GL textures are bottom-up, so we negate mirror_mult to flip to
+static struct mat2i mat_mirrot(const int rotate, const bool mirror) {
+	const int cosy = hard_math(rotate - 1);
+	const int sinner = hard_math(rotate);
+	const int mirror_mul = bool_to_sign(mirror);
+	return (struct mat2i) {{
+		cosy, sinner,
+		sinner * mirror_mul, -cosy * mirror_mul
+	}};
+}
+
+static void set_mirrot(struct mat3f *dst, const struct gl_image_info *tex,
+const struct wu_state *state) {
+	/* GL textures are bottom-up, so negate mirror here to flip to
 	 * top-down without anyone knowing. */
-	const GLfloat mirror_mult = (GLfloat)-bool_to_sign(mirror);
-
-	mat->m[0] = cosy;
-	mat->m[1] = sinner;
-	mat->m[3] = sinner * mirror_mult;
-	mat->m[4] = cosy * -mirror_mult;
+	const struct mat2i image = mat_mirrot(tex->rotate, !tex->mirror);
+	const struct mat2i user = mat_mirrot(state->rotate, state->mirror);
+	struct mat2i final;
+	mati_mul(final.m, image.m, user.m, 2, 2, 2);
+	dst->m[0] = (GLfloat)final.m[0];
+	dst->m[1] = (GLfloat)final.m[1];
+	dst->m[3] = (GLfloat)final.m[2];
+	dst->m[4] = (GLfloat)final.m[3];
 }
 
 static void matrix_update(struct gl_context *context,
 const struct wu_state *state) {
 	struct mat3f mat = {0};
 
-	const int rot = context->tex.rotate + state->rotate;
-	set_mirrot(&mat, rot, context->tex.mirror ^ state->mirror);
-	fix_aspect_ratio(&mat, context, rot);
+	set_mirrot(&mat, &context->tex, state);
+	fix_aspect_ratio(&mat, context, context->tex.rotate + state->rotate);
 
 	/* Offsets are measured in pixels, but for the matrix a doubling is
-	 * needed for some reason. */
+	 * needed for some reason I've lost track of. */
 	const float scale = 2;
 	/* Using exact integer offsets causes ugly artifacts when rendering.
 	 * We add a fraction of a pixel to fix this. */

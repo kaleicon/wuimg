@@ -352,8 +352,10 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 	img->bitdepth = 8;
 	img->layout = pix_bgra;
 	img->alpha = attr_bits ? alpha_unassociated : alpha_ignore;
-	img->rotate = (img_desc >> 3) & 0x02;
-	img->mirror = !(img_desc >> 5);
+	const bool h_flip = img_desc & 0x10;
+	const bool v_flip = img_desc & 0x20;
+	img->rotate ^= h_flip << 1;
+	img->mirror = (h_flip ^ v_flip ^ 1) & 1;
 
 	switch (depth) {
 	case 8:
