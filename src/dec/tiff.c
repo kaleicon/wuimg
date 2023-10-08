@@ -103,6 +103,8 @@ struct wuimg *img) {
 	return st;
 }
 
+
+
 static void single_tile(unsigned char *restrict dst,
 const struct tile_info *tiles, const size_t width, const size_t height,
 const size_t dst_stride, const enum pix_attr attr, const enum unpack_op op,
@@ -191,25 +193,6 @@ const struct tiff_info *info) {
 	return wu_ok;
 }
 
-static void get_colorspace(TIFF *tif, struct wuimg *img) {
-	uint32_t len;
-	void *data;
-	if (TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &data) == 1) {
-		color_space_set_icc_copy(&img->cs, data, len);
-		return;
-	}
-
-	float *w;
-	if (TIFFGetField(tif, TIFFTAG_WHITEPOINT, &w) == 1) {
-		color_space_set_primaries_whitepoint(&img->cs, w[0], w[1]);
-	}
-	float *rgb;
-	if (TIFFGetField(tif, TIFFTAG_PRIMARYCHROMATICITIES, &rgb) == 1) {
-		color_space_set_primaries_rgb(&img->cs,
-			rgb[0], rgb[1], rgb[2], rgb[3], rgb[4], rgb[5]);
-	}
-}
-
 static struct raster_pal * load_palette(TIFF *tif, struct wuimg *img,
 uint16_t bps) {
 	uint16_t *red, *green, *blue;
@@ -221,11 +204,75 @@ uint16_t bps) {
 				pal->color[i].r = (unsigned char)(red[i] >> 8);
 				pal->color[i].g = (unsigned char)(green[i] >> 8);
 				pal->color[i].b = (unsigned char)(blue[i] >> 8);
+				pal->color[i].a = 0xff;
 			}
 		}
 		return pal;
 	}
 	return NULL;
+}
+
+static enum wu_error get_color_info(TIFF *tif, struct wuimg *img,
+const struct tiff_info *info) {
+	uint16_t cnt;
+	uint16_t *types;
+	if (TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &cnt, &types) == 1 && cnt == 1) {
+		switch (types[0]) {
+		case EXTRASAMPLE_UNASSALPHA:
+			img->alpha = alpha_unassociated;
+			break;
+		case EXTRASAMPLE_ASSOCALPHA:
+			img->alpha = alpha_associated;
+			break;
+		}
+	}
+
+	if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
+		img->attr = pix_float;
+	} else if (info->sfmt == SAMPLEFORMAT_INT) {
+		img->attr = pix_signed;
+	}
+
+	switch (info->photometric) {
+	case PHOTOMETRIC_MINISWHITE:
+		img->attr = pix_inverted;
+		break;
+	case PHOTOMETRIC_PALETTE:
+		if (!load_palette(tif, img, info->bps)) {
+			return wu_alloc_error;
+		}
+		break;
+	case PHOTOMETRIC_YCBCR:
+		img->cs.matrix = cicp_matrix_bt601_7;
+		img->cs.limited = true;
+		break;
+	case PHOTOMETRIC_SEPARATED:
+		img->attr = pix_inverted;
+		img->alpha = alpha_key;
+		break;
+	}
+
+	uint32_t len;
+	void *data;
+	if (TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &data) == 1) {
+		return color_space_set_icc_copy(&img->cs, data, len)
+			? wu_ok : wu_alloc_error;
+	}
+
+	float *w;
+	if (TIFFGetField(tif, TIFFTAG_WHITEPOINT, &w) == 1) {
+		color_space_set_primaries_whitepoint(&img->cs, w[0], w[1]);
+	}
+	float *rgb;
+	if (TIFFGetField(tif, TIFFTAG_PRIMARYCHROMATICITIES, &rgb) == 1) {
+		color_space_set_primaries_rgb(&img->cs,
+			rgb[0], rgb[1], rgb[2], rgb[3], rgb[4], rgb[5]);
+	}
+	float *refbw;
+	if (TIFFGetField(tif, TIFFTAG_REFERENCEBLACKWHITE, &refbw) == 1) {
+		img->cs.limited = refbw[0] >= 15.0;
+	}
+	return wu_ok;
 }
 
 static enum wu_error nih_decode(TIFF *tif, struct wuimg *img,
@@ -244,46 +291,18 @@ struct tiff_info *info) {
 		return wu_alloc_error;
 	}
 
-	switch (info->photometric) {
-	case PHOTOMETRIC_MINISWHITE:
-		img->attr = pix_inverted;
-		break;
-	case PHOTOMETRIC_PALETTE:
-		if (!load_palette(tif, img, info->bps)) {
-			return wu_alloc_error;
-		}
-		img->alpha = alpha_ignore;
-		break;
-	case PHOTOMETRIC_YCBCR:
-		img->cs.matrix = cicp_matrix_bt601_7;
-		img->cs.limited = true;
-		break;
-	}
-	get_colorspace(tif, img);
-	if (info->sfmt == SAMPLEFORMAT_IEEEFP) {
-		img->attr = pix_float;
-	} else if (info->sfmt == SAMPLEFORMAT_INT) {
-		img->attr = pix_signed;
-	}
+	uint16_t orientation;
+	TIFFGetFieldDefaulted(tif, TIFFTAG_ORIENTATION, &orientation);
+	wuimg_exif_orientation(img, orientation);
 
-	uint16_t cnt;
-	uint16_t *types;
-	if (TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &cnt, &types) == 1 && cnt == 1) {
-		switch (types[0]) {
-		case EXTRASAMPLE_UNASSALPHA:
-			img->alpha = alpha_unassociated;
-			break;
-		case EXTRASAMPLE_ASSOCALPHA:
-			img->alpha = alpha_associated;
-			break;
-		}
-	}
-
-	const enum wu_error st = wuimg_alloc(img);
+	enum wu_error st = get_color_info(tif, img, info);
 	if (st == wu_ok) {
-		return (info->is_tiled)
-			? read_tiles(tif, img, info, op)
-			: read_strips(tif, img, info);
+		st = wuimg_alloc(img);
+		if (st == wu_ok) {
+			return (info->is_tiled)
+				? read_tiles(tif, img, info, op)
+				: read_strips(tif, img, info);
+		}
 	}
 	return st;
 }
@@ -304,10 +323,6 @@ static bool check_support(const struct tiff_info *info) {
 		}
 		break;
 	case PHOTOMETRIC_YCBCR:
-		if (info->is_tiled) {
-			return false;
-		}
-		// fallthrough
 	case PHOTOMETRIC_RGB:
 		if (info->spp > 4) {
 			return false;
@@ -315,6 +330,11 @@ static bool check_support(const struct tiff_info *info) {
 		break;
 	case PHOTOMETRIC_PALETTE:
 		if (info->spp != 1 || info->bps > 8) {
+			return false;
+		}
+		break;
+	case PHOTOMETRIC_SEPARATED: // CMYK
+		if (info->spp != 4) {
 			return false;
 		}
 		break;
