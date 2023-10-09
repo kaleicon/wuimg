@@ -14,6 +14,10 @@
 
 #include "tga.h"
 
+/*
+https://web.archive.org/web/20230729203913/https://www.dca.fee.unicamp.br/~martino/disciplinas/ea978/tgaffs.pdf
+*/
+
 struct tga_ratio {
 	uint16_t num, den;
 };
@@ -123,23 +127,52 @@ struct raster_pal * tga_take_extra_palette(struct tga_desc *desc) {
 
 enum wu_error tga_parse_stamp(const struct tga_desc *desc,
 struct wuimg *main, struct wuimg *stamp) {
-	uint8_t buf[2];
+	uint8_t dims[2];
 	fseek(desc->ifp, desc->meta.stamp_offset, SEEK_SET);
-	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+	if (!fread(dims, sizeof(dims), 1, desc->ifp)) {
 		return wu_unexpected_eof;
 	}
 
 	if (wuimg_clone(stamp, main)) {
-		stamp->w = buf[0];
-		stamp->h = buf[1];
+		stamp->w = dims[0];
+		stamp->h = dims[1];
 		return wuimg_verify(stamp);
 	}
 	return wu_alloc_error;
 }
 
 static bool read_extension_area(struct tga_desc *desc, struct wuimg *img) {
+	/* Extension area:
+		Offset  Size    Name
+		0       WORD    ExtensionSize          // Must be 495
+		2       CHAR    AuthorName[41]
+		43      CHAR    AuthorComment[324]
+		367     WORD    StampMonth
+		369     WORD    StampDay
+		371     WORD    StampYeat
+		373     WORD    StampHour
+		375     WORD    StampMinute
+		377     WORD    StampSecond
+		379     CHAR    JobName[41]
+		420     WORD    JobHour
+		422     WORD    JobMinute
+		424     WORD    JobSecond
+		426     CHAR    SoftwareID[41]
+		467     WORD    VersionNumber
+		469     CHAR    VersionLetter
+		470     DWORD   KeyColor               // BGRA order
+		474     WORD    PixelRatioWidth
+		476     WORD    PixelRatioHeight
+		478     WORD    GammaNum
+		480     WORD    GammaDen
+		482     DWORD   ColorCorrectionOffset
+		486     DWORD   PostageStampOffset
+		490     DWORD   ScanLineOffset
+		494     BYTE    AlphaAttribute
+		495
+	*/
 	struct tga_metadata *meta = &desc->meta;
-	unsigned char buf[24];
+	unsigned char buf[28];
 
 	const uint16_t area_len = 495;
 	size_t len = 1;
@@ -192,12 +225,14 @@ static bool read_extension_area(struct tga_desc *desc, struct wuimg *img) {
 		return false;
 	}
 
-	if (!fread(buf, 23, 1, desc->ifp)) {
+	if (!fread(buf, 28, 1, desc->ifp)) {
 		return false;
 	}
-	meta->software.version_letter = (char)buf[0];
-	meta->software.version_number = buf_endian16(buf + 1, little_endian);
+	meta->software.version_number = buf_endian16(buf, little_endian);
+	meta->software.version_letter = (char)buf[2];
 	memcpy(&meta->key_color, buf + 3, sizeof(meta->key_color));
+	pix_layout_swizzle(&meta->key_color, 1, sizeof(meta->key_color),
+		pix_bgra);
 
 	wuimg_aspect_ratio(img, buf_endian16(buf + 7, little_endian),
 		buf_endian16(buf + 9, little_endian));
@@ -209,8 +244,21 @@ static bool read_extension_area(struct tga_desc *desc, struct wuimg *img) {
 	if (gamma.num && gamma.den) {
 		color_space_set_gamma(&img->cs, (double)gamma.num / gamma.den);
 	}
-	//meta->color_offset = buf_endian16(buf + 15, little_endian);
-	meta->stamp_offset = buf_endian16(buf + 19, little_endian);
+	meta->color_correction_offset = buf_endian16(buf + 15, little_endian);
+	meta->stamp_offset = buf_endian32(buf + 19, little_endian);
+
+	switch (buf[27]) {
+	case 0: // No alpha
+	case 3: // Useful alpha data
+		break;
+	case 1: // Undefined non-essential alpha data
+	case 2: // Undefined essential alpha data
+		img->alpha = alpha_ignore;
+		break;
+	case 4: // Pre-multiplied alpha
+		img->alpha = alpha_associated;
+		break;
+	}
 	return true;
 }
 
@@ -224,7 +272,8 @@ bool tga_parse_footer(struct tga_desc *desc, struct wuimg *img) {
 	*/
 	unsigned char footer[26];
 	if (file_tail(footer, sizeof(footer), 1, desc->ifp)) {
-		const char sig[] = "TRUEVISION-XFILE."; // null is important
+		// ending null is important
+		const char sig[] = "TRUEVISION-XFILE.";
 		if (!memcmp(footer + 8, sig, sizeof(sig))) {
 			const unsigned int extension_off = buf_endian32(footer,
 				little_endian);

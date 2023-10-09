@@ -22,18 +22,19 @@ struct tga_metadata {
 
 	struct tga_job {
 		char name[41];
-		unsigned short hour, minute, second;
+		uint16_t hour, minute, second;
 	} job;
 
 	struct tga_software {
 		char id[41];
 		char version_letter;
-		unsigned short version_number;
+		uint16_t version_number;
 	} software;
 
 	struct pix_rgba8 key_color;
 
-	unsigned int stamp_offset;
+	uint32_t color_correction_offset;
+	uint32_t stamp_offset;
 };
 
 enum tga_image_type {
@@ -48,8 +49,8 @@ enum tga_image_type {
 
 struct tga_colormap {
 	struct raster_pal *extra_pal;
-	unsigned int offset, len;
-	unsigned char depth;
+	uint16_t offset, len;
+	uint8_t depth;
 };
 
 struct tga_desc {
