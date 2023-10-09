@@ -407,8 +407,8 @@ const struct wuptr data) {
 		10      u8      Compression
 		11      u8      _Padding
 		12      u16     TransparentColor
-		14      u8      XAspect
-		15      u8      YAspect
+		14      u8      XPixelAspect
+		15      u8      YPixelAspect
 		16      u16     PageWidth
 		18      u16     PageHeight
 		20

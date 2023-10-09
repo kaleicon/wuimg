@@ -92,12 +92,8 @@ static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
 		tree_bud_leaves(eros, frame, ARRAY_LEN(frame));
 	}
 
-	char buf[sizeof(s->horz_aspect) * 2 * 3];
-	int w = snprintf(buf, sizeof(buf), "%u:%u", s->horz_aspect,
-		s->vert_aspect);
-	tree_add_leaf_utf8_len(tree, "Aspect ratio", wuptr_mem(buf, (size_t)w));
-
-	w = snprintf(buf, sizeof(buf), "%.3g x %.3g mm", s->w_mm, s->h_mm);
+	char buf[32];
+	int w = snprintf(buf, sizeof(buf), "%.3g x %.3g mm", s->w_mm, s->h_mm);
 	tree_add_leaf_utf8_len(tree, "Size", wuptr_mem(buf, (size_t)w));
 }
 

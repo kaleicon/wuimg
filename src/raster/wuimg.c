@@ -53,9 +53,10 @@ struct wu_tree * wuimg_get_metadata(struct wuimg *img) {
 	return img->metadata;
 }
 
-void wuimg_aspect_ratio(struct wuimg *img, const int num, const int den) {
-	if (num && den) {
-		img->ratio = (float)num / (float)den;
+void wuimg_aspect_ratio(struct wuimg *img, const unsigned h_size,
+const unsigned v_size) {
+	if (h_size && v_size) {
+		img->ratio = (float)h_size / (float)v_size;
 	}
 }
 

@@ -400,7 +400,7 @@ unsigned char macro[3]) {
 enum wu_error sixel_calc_parameters(struct sixel_desc *desc,
 struct wuimg *img) {
 	/* Format (after DCS): P1 ; P2 ; P3 ; 'q'
-	 * P1 is the pixel vertical aspect ratio, in range 0-9.
+	 * P1 is the pixel vertical aspect ratio, in range 0-9. 2 if omitted.
 	 * P2 is whether 0 pixels are set to the background color or not
 	 *     modified. In range 0-2.
 	 * P3 is the horizontal grid size, the distance between two pixels.
@@ -414,8 +414,8 @@ struct wuimg *img) {
 		return status;
 	}
 
-	unsigned pan = 0;
-	unsigned pad = 1;
+	unsigned pan = 2; // Vertical size
+	unsigned pad = 1; // Horizontal size
 	switch (macro[0]) {
 	case 2:
 		pan = 5;
@@ -464,7 +464,7 @@ struct wuimg *img) {
 	}
 	img->channels = 4;
 	img->bitdepth = 8;
-	wuimg_aspect_ratio(img, (int)pan, (int)pad);
+	wuimg_aspect_ratio(img, pad, pan);
 	return calc_dimensions(desc, img);
 }
 

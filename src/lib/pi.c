@@ -14,6 +14,9 @@
 
 /* Documented in
 https://mooncore.eu/bunny/txt/pi-pic.htm
+
+ * Spec (in japanese)
+https://mooncore.eu/bunny/txt/pitech.txt
 */
 
 // Enable to use slightly slower but clearly correct code.
@@ -277,7 +280,7 @@ size_t pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 }
 
 static enum wu_error validate_header(struct pi_desc *desc, struct wuimg *img,
-uint8_t pixel_x, uint8_t pixel_y, const uint8_t bitdepth, const uint16_t width,
+uint8_t ratio_x, uint8_t ratio_y, const uint8_t bitdepth, const uint16_t width,
 const uint16_t height) {
 	switch (bitdepth) {
 	case 4: case 8:
@@ -297,7 +300,9 @@ const uint16_t height) {
 	img->h = height;
 	img->channels = 1;
 	img->bitdepth = 8;
-	wuimg_aspect_ratio(img, pixel_y, pixel_x);
+	/* According to Google Translate, "dots are multiplied by n/m in the
+	 * vertical direction", so swap parameter order. */
+	wuimg_aspect_ratio(img, ratio_y, ratio_x);
 
 	desc->depth = bitdepth;
 	return wu_ok;
@@ -309,8 +314,8 @@ enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img) {
 		0       VAR     Comment[];      // 0x1a then 0x00 terminated
 
 		--      BYTE    ModeByte;       // Unreliable palette indicator
-		+1      BYTE    PixelX;         // Aspect ratio numerator
-		+2      BYTE    PixelY;
+		+1      BYTE    ScreenRatioNum;
+		+2      BYTE    ScreenRatioDen;
 		+3      BYTE    BitDepth;       // 4 or 8
 		+4      BYTE[4] SaverModelSig;  // Compressor model
 		+8      WORD    SaverDataSize;

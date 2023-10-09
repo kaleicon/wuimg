@@ -459,7 +459,7 @@ const uint32_t colors) {
 			desc->pal_entries = 1 << desc->depth;
 		}
 	}
-	wuimg_aspect_ratio(img, (int)vert_res, (int)horz_res);
+	wuimg_aspect_ratio(img, vert_res, horz_res);
 	return wu_ok;
 }
 

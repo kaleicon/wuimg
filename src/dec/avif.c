@@ -51,7 +51,7 @@ static void get_colorspace(struct wuimg *img, const avifImage *avif) {
 
 static void get_transforms(struct wuimg *img, const avifImage *avif) {
 	if (avif->transformFlags & AVIF_TRANSFORM_PASP) {
-		img->ratio = (float)avif->pasp.hSpacing / (float)avif->pasp.vSpacing;
+		wuimg_aspect_ratio(img, avif->pasp.hSpacing, avif->pasp.vSpacing);
 	}
 	// It just so happened that we did everything opposite from AVIF.
 	if (avif->transformFlags & AVIF_TRANSFORM_IROT) {

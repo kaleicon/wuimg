@@ -85,7 +85,11 @@ struct wuimg {
 		struct image_planes *planes;
 	} u;
 
-	float ratio; // Pixel ratio (horizontal_size/vertical_size)
+	/* Pixel ratio, the result of horizontal_size/vertical_size.
+	 * For a square that is N pixels tall, its width must be N/ratio
+	 * pixels for it to look square. */
+	float ratio;
+
 	float dec_scale;
 
 	struct color_space cs;
@@ -99,7 +103,7 @@ const char * wu_error_message(enum wu_error err);
 
 struct wu_tree * wuimg_get_metadata(struct wuimg *img);
 
-void wuimg_aspect_ratio(struct wuimg *img, int num, int den);
+void wuimg_aspect_ratio(struct wuimg *img, unsigned h_size, unsigned v_size);
 
 void wuimg_exif_orientation(struct wuimg *img, int orientation);
 

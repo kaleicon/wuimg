@@ -277,10 +277,10 @@ const uint8_t i) {
 
 enum wu_error dpx_set_image(const struct dpx_desc *desc, struct wuimg *img,
 const uint8_t i) {
-	const struct dpx_generic_image *src = &desc->generic.image;
-	img->w = src->w;
-	img->h = src->h;
-	const uint8_t o = src->orientation;
+	const struct dpx_generic_image *image = &desc->generic.image;
+	img->w = image->w;
+	img->h = image->h;
+	const uint8_t o = image->orientation;
 	if (o <= 0x07) {
 		img->rotate = (o << 1) & 2;
 		img->rotate |= (o >> 2) & 1;
@@ -288,7 +288,7 @@ const uint8_t i) {
 		img->mirror ^= (o >> 1) & 1;
 	}
 
-	const struct dpx_element *elem = src->elem + i;
+	const struct dpx_element *elem = image->elem + i;
 	if (elem->rle) {
 		return wu_unsupported_feature;
 	}
@@ -299,7 +299,7 @@ const uint8_t i) {
 	img->attr = elem->attr;
 	img->channels = nfo.ch;
 	img->layout = nfo.layout;
-	img->bitdepth = src->bitdepth;
+	img->bitdepth = image->bitdepth;
 	wuimg_align(img, 4);
 	switch (img->bitdepth) {
 	case 10:
@@ -310,11 +310,14 @@ const uint8_t i) {
 			img->bitdepth = 16;
 		}
 	}
-	img->cs.transfer = dpx_to_cicp_transfer(src->oetf);
-	img->cs.primaries = dpx_to_cicp_primaries(src->primaries);
+	img->cs.transfer = dpx_to_cicp_transfer(image->oetf);
+	img->cs.primaries = dpx_to_cicp_primaries(image->primaries);
 	if (nfo.ycbcr) {
-		img->cs.matrix = guess_matrix(src->primaries);
+		img->cs.matrix = guess_matrix(image->primaries);
 	}
+
+	const struct dpx_generic_source *src = &desc->generic.src;
+	wuimg_aspect_ratio(img, src->horz_aspect, src->vert_aspect);
 	return wuimg_verify(img);
 }
 
