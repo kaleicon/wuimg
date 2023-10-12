@@ -7,6 +7,7 @@
 #include "wudefs.h"
 
 struct heif_state {
+	struct heif_init_params params;
 	struct heif_context *ctx;
 	struct heif_decoding_options *opts;
 	heif_item_id *hids;
@@ -31,6 +32,7 @@ static void clean_heif_state(struct image_file *infile) {
 	if (ds->ctx) {
 		heif_context_free(ds->ctx);
 	}
+	heif_deinit();
 }
 
 static void read_block(const struct heif_image_handle* handle,
@@ -79,12 +81,7 @@ struct wuimg *img) {
 
 static void set_colorspace(struct color_space *cs,
 struct heif_color_profile_nclx *nclx) {
-	color_space_set_primaries(cs,
-		nclx->color_primary_white_x, nclx->color_primary_white_y,
-		nclx->color_primary_red_x, nclx->color_primary_red_y,
-		nclx->color_primary_green_x, nclx->color_primary_green_y,
-		nclx->color_primary_blue_x, nclx->color_primary_blue_y);
-//	cs->primaries = nclx->color_primaries;
+	cs->primaries = (enum cicp_primaries)nclx->color_primaries;
 	cs->transfer = (enum cicp_transfer)nclx->transfer_characteristics;
 	cs->matrix = (enum cicp_matrix)nclx->matrix_coefficients;
 	cs->limited = !nclx->full_range_flag;
@@ -123,10 +120,33 @@ const struct heif_image *himg) {
 	}
 }
 
+static enum wu_error deduce_alignment(struct wuimg *img, const int bpl[static 4],
+const size_t scanline[static 4], const uint8_t comps) {
+	align_t max = 0;
+	for (uint8_t z = 0; z < comps; ++z) {
+		const align_t align = strip_alignment((size_t)bpl[z],
+			scanline[z], img->bitdepth);
+		if (align < 0) {
+			return wu_invalid_header;
+		} else if (align > max) {
+			max = align;
+		}
+	}
+	for (uint8_t z = 0; z < comps; ++z) {
+		const size_t expect = strip_length(scanline[z], img->bitdepth,
+			max);
+		if (expect != (size_t)bpl[z]) {
+			return wu_unsupported_feature;
+		}
+	}
+	img->align_sh = max;
+	return wu_ok;
+}
+
 static enum wu_error get_planar_image(struct wuimg *img,
-struct heif_image *himg, const enum heif_chroma chroma, const bool alpha,
-int *bpl) {
-	const enum heif_colorspace cs = heif_image_get_colorspace(himg);
+struct heif_image *himg, const enum heif_chroma chroma,
+const enum heif_colorspace cs, const bool alpha, int bpl[static 4],
+size_t scanlines[static 4]) {
 	const enum heif_channel mono_chs[] = {heif_channel_Y, heif_channel_Alpha};
 	const enum heif_channel color_chs[] = {
 		(cs == heif_colorspace_RGB) ? heif_channel_R : heif_channel_Y,
@@ -153,6 +173,10 @@ int *bpl) {
 		}
 	}
 
+	if (cs == heif_colorspace_YCbCr) {
+		img->cs.matrix = cicp_matrix_bt601_7;
+	}
+
 	struct image_planes *planes = wuimg_plane_init(img);
 	if (!planes) {
 		return wu_alloc_error;
@@ -172,20 +196,18 @@ int *bpl) {
 	const enum wu_error st = wuimg_verify(img);
 	if (st == wu_ok) {
 		for (uint8_t c = 0; c < img->channels; ++c) {
-			int bytes_per_line;
 			struct plane_info *p = planes->p + c;
 			p->ptr = heif_image_get_plane(himg, chs[c],
-				&bytes_per_line);
-			if (c == 0) {
-				*bpl = bytes_per_line;
-			}
+				bpl + c);
+			scanlines[c] = (size_t)heif_image_get_width(
+				himg, chs[c]);
 		}
 	}
 	return st;
 }
 
 static enum wu_error get_interleaved_image(struct wuimg *img,
-struct heif_image *himg, const bool alpha, int *bpl) {
+struct heif_image *himg, const bool alpha, int *bpl, size_t *scanline) {
 	const enum heif_channel hch = heif_channel_interleaved;
 	const int depth = heif_image_get_bits_per_pixel_range(himg, hch);
 
@@ -196,6 +218,7 @@ struct heif_image *himg, const bool alpha, int *bpl) {
 	if (st == wu_ok) {
 		img->data = heif_image_get_plane(himg, hch, bpl);
 	}
+	*scanline = img->w * img->channels;
 	return st;
 }
 
@@ -203,6 +226,9 @@ static enum wu_error get_image(struct image_file *infile,
 const struct wu_conf *wuconf, const size_t i) {
 	struct heif_state *ds = infile->dec_state;
 	struct wuimg *img = infile->sub_img + i;
+	if (img->borrowed) {
+		return wu_no_change;
+	}
 
 	struct heif_image_handle *handle;
 	struct heif_error herr = heif_context_get_image_handle(ds->ctx,
@@ -212,14 +238,18 @@ const struct wu_conf *wuconf, const size_t i) {
 		return wu_decoding_error;
 	}
 
-	img->alpha = heif_image_handle_is_premultiplied_alpha(handle)
-		? alpha_associated : alpha_unassociated;
+	const bool has_alpha = heif_image_handle_has_alpha_channel(handle);
+	if (has_alpha) {
+		img->alpha = heif_image_handle_is_premultiplied_alpha(handle)
+			? alpha_associated : alpha_unassociated;
+	}
 
 	read_metadata(handle, img);
 
-	const bool has_alpha = heif_image_handle_has_alpha_channel(handle);
-	herr = heif_decode_image(handle, ds->himgs + i,
-		heif_colorspace_undefined, heif_chroma_undefined, ds->opts);
+	enum heif_colorspace colorspace = heif_colorspace_undefined;
+	enum heif_chroma chroma = heif_chroma_undefined;
+	herr = heif_decode_image(handle, ds->himgs + i, colorspace, chroma,
+		ds->opts);
 	heif_image_handle_release(handle);
 	if (herr.code != heif_error_Ok) {
 		image_file_strerror_append(infile, herr.message);
@@ -234,12 +264,16 @@ const struct wu_conf *wuconf, const size_t i) {
 	}
 	img->borrowed = true;
 
-	get_color_profile(&img->cs, himg);
+	if (false) {
+		get_color_profile(&img->cs, himg);
+	}
 
-	const enum heif_chroma chroma = heif_image_get_chroma_format(himg);
+	colorspace = heif_image_get_colorspace(himg);
+	chroma = heif_image_get_chroma_format(himg);
 	enum wu_error st = wu_invalid_params;
-	int bytes_per_line;
-	size_t scanline;
+	uint8_t comps = 0;
+	int bytes_per_line[4];
+	size_t scanlines[4];
 	switch (chroma) {
 	case heif_chroma_undefined:
 		return wu_invalid_params;
@@ -247,22 +281,19 @@ const struct wu_conf *wuconf, const size_t i) {
 	case heif_chroma_420:
 	case heif_chroma_422:
 	case heif_chroma_444:
-		st = get_planar_image(img, himg, chroma, has_alpha,
-			&bytes_per_line);
-		scanline = img->w;
+		st = get_planar_image(img, himg, chroma, colorspace, has_alpha,
+			bytes_per_line, scanlines);
+		comps = img->channels;
 		break;
 	default:
-		st = get_interleaved_image(img, himg, has_alpha, &bytes_per_line);
-		scanline = img->w * img->channels;
+		st = get_interleaved_image(img, himg, has_alpha,
+			bytes_per_line, scanlines);
+		comps = 1;
 		break;
 	}
 	if (st == wu_ok) {
-		img->align_sh = strip_alignment((size_t)bytes_per_line,
-			scanline, img->bitdepth);
-		if (img->align_sh < 0) {
-			return wu_invalid_header;
-		}
-		if (img->mode == image_mode_planar) {
+		st = deduce_alignment(img, bytes_per_line, scanlines, comps);
+		if (st == wu_ok && img->mode == image_mode_planar) {
 			wuimg_plane_resolve(img);
 		}
 	}
@@ -290,10 +321,15 @@ const struct wu_conf *wuconf) {
 
 	infile->dec_state = ds;
 	infile->events = ev_subcycle;
+	struct heif_error herr = heif_init(&ds->params);
+	if (herr.code != heif_error_Ok) {
+		image_file_strerror_append(infile, herr.message);
+		return wu_open_error;
+	}
 
 	ds->ctx = heif_context_alloc();
-	struct heif_error herr = heif_context_read_from_memory_without_copy(
-		ds->ctx, infile->map.data, infile->map.len, NULL);
+	herr = heif_context_read_from_memory_without_copy(ds->ctx,
+		infile->map.data, infile->map.len, NULL);
 	if (herr.code != heif_error_Ok) {
 		image_file_strerror_append(infile, herr.message);
 		return wu_open_error;
