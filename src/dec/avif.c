@@ -62,7 +62,9 @@ static void get_transforms(struct wuimg *img, const avifImage *avif) {
 		/* AVIF distinguishes between vertical and horizontal
 		 * mirroring, and it's applied after rotation. */
 		img->mirror = true;
-		img->rotate ^= (uint8_t)((avif->imir.mode ^ (img->rotate & 1)) << 1);
+		img->rotate ^= (uint8_t)(
+			(avif->imir.axis ^ (img->rotate & 1)) << 1
+		);
 	}
 }
 
