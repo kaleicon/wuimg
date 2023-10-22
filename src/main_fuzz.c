@@ -30,20 +30,12 @@ int main(void) {
 	unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 	while (__AFL_LOOP(1 << 14)) {
 		const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
-		image.file.ifp = fmemopen(buf, (size_t)len, "r");
-		if (!image.file.ifp) {
-			return 1;
-		}
-		image.file.map = (struct map_info) {
-			.data = buf,
-			.len = (size_t)len,
-		};
+		dec_src_mem(&image, wuptr_mem(buf, len), NULL, NULL);
 		enum wu_error err;
 		do {
 			struct wuimg *img;
 			err = dec_iter(&image, &img);
 		} while (err == wu_ok);
-		image.file.map = (struct map_info){0};
 		dec_free_image(&image);
 		image_reset(&image);
 	}

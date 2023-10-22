@@ -43,7 +43,9 @@ struct image_file {
 
 	struct pix_rgba8 bg;
 
-	enum image_event events;
+	enum image_event events:8;
+	bool keep_file;
+	bool keep_map;
 	void *restrict dec_state; // Used by decoder for callbacks
 
 	struct wustr errors;

@@ -58,21 +58,16 @@ int file_unmap(struct map_info *mm) {
 	return munmap((void *)mm->data, mm->len);
 }
 
-static bool map_common(struct map_info *mm, const int fd, const off_t end) {
-	const size_t len = (size_t)end;
-	void *data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
-	*mm = (struct map_info) {
-		.len = len,
-		.data = data,
-	};
-	return data != MAP_FAILED;
-}
-
-bool file_map(struct map_info *mm, FILE *ifp) {
-	fseek(ifp, 0, SEEK_END);
-	return map_common(mm, fileno(ifp), ftello(ifp));
-}
-
 bool file_map_fd(struct map_info *mm, const int fd) {
-	return map_common(mm, fd, lseek(fd, 0, SEEK_END));
+	const off_t end = lseek(fd, 0, SEEK_END);
+	if (end >= 0) {
+		const size_t len = (size_t)end;
+		void *data = mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0);
+		*mm = (struct map_info) {
+			.len = len,
+			.data = data,
+		};
+		return data != MAP_FAILED;
+	}
+	return false;
 }

@@ -21,8 +21,6 @@ struct map_info {
 
 int file_unmap(struct map_info *mm);
 
-bool file_map(struct map_info *mm, FILE *ifp);
-
 bool file_map_fd(struct map_info *mm, int fd);
 
 #endif /* WU_FILE */

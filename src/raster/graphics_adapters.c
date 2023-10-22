@@ -4,61 +4,90 @@
 #include "misc/math.h"
 #include "raster/graphics_adapters.h"
 
-static void interleave_pal1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const size_t h, const uint8_t planes, const size_t row_len) {
-	for (size_t y = 0; y < h; ++y) {
-		const uint8_t *s = src + row_len*y;
+static uint32_t interleave_value(const uint8_t *src, const uint8_t planes,
+const size_t stride, const size_t x) {
+	uint32_t val = 0;
+	for (uint8_t z = 0; z < planes; ++z) {
+		const uint8_t byte = src[x/8 + stride*z];
+		val |= (uint32_t)((bool)(byte & (0x80 >> (x%8))) << z);
+	}
+	return val;
+}
+
+void bitplane_interleave(void *restrict dst, const uint8_t *restrict src,
+const size_t w, const uint8_t planes, const size_t plane_stride) {
+	switch ((planes - 1) / 8) {
+	case 0:
+		;uint8_t *da = dst;
 		for (size_t x = 0; x < w; ++x) {
-			int val = 0;
-			for (uint8_t z = 0; z < planes; ++z) {
-				const uint8_t byte = s[row_len*h*z + x/8];
-				val |= (bool)(byte & (0x80 >> (x%8))) << z;
-			}
-			dst[x + w*y] = (uint8_t)val;
+			da[x] = (uint8_t)interleave_value(src, planes,
+				plane_stride, x);
+		}
+		break;
+	case 1:
+		;uint16_t *db = dst;
+		for (size_t x = 0; x < w; ++x) {
+			db[x] = (uint16_t)interleave_value(src, planes,
+				plane_stride, x);
+		}
+		break;
+	case 2: case 3:
+		;uint32_t *dc = dst;
+		for (size_t x = 0; x < w; ++x) {
+			dc[x] = interleave_value(src, planes, plane_stride, x);
+		}
+		break;
+	}
+}
+
+void bitplane_interleave_row(void *restrict dst, const uint8_t *restrict src,
+const size_t w, const uint8_t planes, const align_t align) {
+	bitplane_interleave(dst, src, w, planes, strip_length(w, 1, align));
+}
+
+void bitplane_interleave_plane(uint8_t *restrict dst,
+const uint8_t *restrict src, const size_t w, const uint8_t planes,
+const align_t align, const size_t h) {
+	const size_t stride = strip_length(w, 1, align);
+	for (size_t y = 0; y < h; ++y) {
+		const uint8_t *s = src + stride*y;
+		for (size_t x = 0; x < w; ++x) {
+			dst[x + w*y] = (uint8_t)interleave_value(s, planes,
+				stride*h, x);
 		}
 	}
 }
 
 static void interleave_nopal1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const size_t h, const uint8_t planes, const size_t row_len) {
-	for (uint8_t y = 0; y < h; ++y) {
-		const uint8_t *s = src + row_len*y;
-		uint8_t *d = dst + w*planes*y;
-		for (uint8_t z = 0; z < planes; ++z) {
-			for (size_t x = 0; x < w; ++x) {
-				const uint8_t byte = s[row_len*h*z + x/8];
-				d[x + z] = (byte & (0x80 >> (x%8)))
-					? 0xff : 0x00;
-			}
+const size_t w, const uint8_t planes, const size_t row_len) {
+	for (uint8_t z = 0; z < planes; ++z) {
+		for (size_t x = 0; x < w; ++x) {
+			const uint8_t byte = src[row_len*z + x/8];
+			dst[x + z] = (byte & (0x80 >> (x%8)))
+				? 0xff : 0x00;
 		}
 	}
 }
 
-static void interleave8(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const uint8_t ch, const size_t row_len) {
-	for (size_t z = 0; z < ch; ++z) {
-		strip_spread(dst + z, src + row_len*z, w, ch);
-	}
-}
-
-/* Interleaves bitplanes, each 'h' rows in size. For row-interleaving,
- * must be called with h = 1 on a loop. */
 void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const size_t h, const uint8_t ch, const uint8_t bitdepth,
-const align_t align, const bool paletted) {
-	const size_t row_len = strip_length(w, bitdepth, align);
-	switch (bitdepth) {
-	case 1:
-		if (paletted) {
-			interleave_pal1(dst, src, w, h, ch, row_len);
-		} else {
-			interleave_nopal1(dst, src, w, h, ch, row_len);
+const size_t w, const uint8_t planes, const align_t align, const bool paletted) {
+	const size_t row_len = strip_length(w, 1, align);
+	if (paletted) {
+		bitplane_interleave(dst, src, w, planes, row_len);
+	} else {
+		interleave_nopal1(dst, src, w, planes, row_len);
+	}
+}
+
+void bitplane_interleave_pack(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t w, const uint8_t planes, const align_t align) {
+	const size_t stride = strip_length(w, 1, align);
+	for (size_t x = 0; x < w; ++x) {
+		for (size_t z = 0; z < planes; ++z) {
+			const size_t pos = (x*planes + z);
+			const uint8_t byte = src[x/8 + stride*z];
+			dst[pos/8] |= ((byte >> (7 - x%8)) & 0x01) << (pos%8);
 		}
-		break;
-	case 8:
-		// Only used by PCX.
-		interleave8(dst, src, w, ch, row_len);
-		break;
 	}
 }
 

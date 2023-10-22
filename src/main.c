@@ -114,14 +114,16 @@ const struct write_args *args) {
 	}
 
 	enum wu_error status = wu_ok;
-	image.name = entries->name[0];
-	if (!strcmp("-", image.name)) {
-		image.name = "stdin"; // Save the user some trouble
-		image.file.ifp = save_stdin();
-		if (!image.file.ifp) {
+	if (!strcmp("-", entries->name[0])) {
+		FILE *stdin_cpy = save_stdin();
+		if (!stdin_cpy) {
 			term_line_put("Failed to save stdin", stderr);
 			status = wu_open_error;
+		} else {
+			dec_src_file(&image, stdin_cpy, "stdin", false);
 		}
+	} else {
+		dec_src_filename(&image, entries->name[0]);
 	}
 
 	if (status == wu_ok) {
@@ -148,46 +150,44 @@ const struct test_mode_args args) {
 	size_t failures = 0;
 	watch_t grand_total = 0;
 	for (size_t i = 0; i < entries->nr; ++i) {
-		watch_t sum = 0;
-		image.name = entries->name[i];
-		for (unsigned int j = 0; j < args.warmup + args.iters; ++j) {
-			const bool counting = (j >= args.warmup);
-			image_reset(&image);
+		watch_t watch = 0;
+		const unsigned its = args.warmup + args.iters;
 
-			const watch_t start = watch_look();
+		result = wu_ok;
+		for (unsigned int j = 0; j < its && result == wu_ok; ++j) {
+			if (j == args.warmup) {
+				watch = watch_look();
+			}
+
+			image_reset(&image);
+			dec_src_filename(&image, entries->name[i]);
 			do {
 				struct wuimg *img;
 				result = dec_iter(&image, &img);
 			} while (result == wu_ok);
-			const watch_t spent = watch_elapsed(start);
 
 			if (result == wu_no_change) {
 				result = wu_ok;
 			}
-			if (args.metadata && result == wu_ok && !j) {
+			if (args.metadata && result == wu_ok && j == 0) {
 				putchar('\n');
 				image_file_print(&image.file, 3);
 			}
 			dec_free_image(&image);
-
-			if (result != wu_ok) {
-				break;
-			} else if (counting) {
-				sum += spent;
-			}
 		}
 
 		if (result == wu_ok) {
-			printf("Average: %" PRIu64 " ", sum / args.iters);
+			const watch_t taken = watch_elapsed(watch);
+			grand_total += taken;
+			printf("Average: %" PRIu64 " ", taken / args.iters);
 		} else {
 			printf("Error: %s ", wu_error_message(result));
 			++failures;
 		}
-		puts(image.name);
-
-		grand_total += sum;
+		puts(entries->name[i]);
 	}
 	putchar('\n');
+
 	if (entries->nr * args.iters > 1) {
 		printf("Total: %" PRIu64 "\n", grand_total);
 	}
@@ -237,8 +237,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		printf(", %s/%s\n", archive_name, entry->name);
 
 		image_reset(image);
-		image->name = entry->name;
-		image->file.ifp = entry->tmp;
+		dec_src_file(image, entry->tmp, entry->name, true);
 
 		bool free_entry = false;
 		result = decode_with_stats(image);
@@ -253,7 +252,6 @@ static enum wu_error run_with_archive(const char *archive_name) {
 			free_entry = true;
 		}
 
-		image->file.ifp = NULL;
 		dec_free_image(image);
 		if (free_entry) {
 			extract_file_free(entry);
@@ -295,37 +293,36 @@ const bool interpret_stdin) {
 		}
 		pos_print((size_t)idx, entries);
 		image_reset(image);
-		image->name = entries->name[idx];
 
 		bool free_entry = false;
-		if (interpret_stdin && !strcmp("-", image->name)) {
+		const char *name = entries->name[idx];
+		if (interpret_stdin && !strcmp("-", name)) {
 			if (!stdin_tmp) {
 				stdin_tmp = save_stdin();
 			}
 			if (stdin_tmp) {
 				rewind(stdin_tmp);
-				image->file.ifp = stdin_tmp;
+				dec_src_file(image, stdin_tmp, name, true);
 			} else {
 				free_entry = true;
 			}
+		} else {
+			dec_src_filename(image, name);
 		}
 
 		if (!free_entry) {
 			result = decode_with_stats(image);
 			if (result == wu_ok) {
 				const bool ok = display_loop(&window, remaining == 1);
-				if (!ok) {
-					free_entry = true;
-				} else if (event->rm == trit_true) {
+				if (event->rm == trit_true) {
 					unlink(image->name);
 					puts("File deleted.");
 					free_entry = true;
+				} else {
+					free_entry = !ok;
 				}
 			} else {
 				free_entry = true;
-			}
-			if (image->file.ifp == stdin_tmp) {
-				image->file.ifp = NULL;
 			}
 			dec_free_image(image);
 		}

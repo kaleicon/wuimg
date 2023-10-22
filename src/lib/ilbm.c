@@ -36,12 +36,13 @@ const int frame) {
 
 static size_t interleave_bitplanes(const struct ilbm_desc *desc,
 struct wuimg *img, uint8_t *restrict dst, const struct wuptr body,
-const uint8_t planes, const size_t instride) {
-	const size_t rows = body.len / instride;
+const uint8_t planes) {
+	const size_t outstride = img->w * (desc->ham ? 1 : img->channels);
+	const size_t instride = strip_length(img->w, 1, 1) * desc->planes;
+	const size_t rows = zumin(body.len / instride, img->h);
 	for (size_t y = 0; y < rows; ++y) {
-		vga_interleave(dst + y*img->w, body.ptr + y*instride,
-			img->w, 1, planes, 1, 1,
-			desc->pal || img->mode == image_mode_palette);
+		bitplane_interleave_row(dst + y*outstride,
+			body.ptr + y*instride, img->w, planes, 1);
 	}
 	return 1;
 }
@@ -85,13 +86,12 @@ const size_t offset) {
 }
 
 static size_t expand_body(const struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr body, const size_t instride) {
+const struct wuptr body) {
 	size_t offset = 0;
 	if (desc->ham) {
 		offset = wuimg_size(img) - img->w*img->h;
 	}
-	interleave_bitplanes(desc, img, img->data + offset, body, desc->planes,
-		instride);
+	interleave_bitplanes(desc, img, img->data + offset, body, desc->planes);
 	if (desc->ham) {
 		expand_ham(desc, img, offset);
 	}
@@ -99,14 +99,14 @@ const struct wuptr body, const size_t instride) {
 }
 
 static size_t decompress_ilbm(const struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr body, const size_t instride) {
-	const size_t upack_len = instride * img->h;
+const struct wuptr body) {
+	const size_t upack_len = strip_length(img->w, 1, 1) * desc->planes * img->h;
 	uint8_t *upack = malloc(upack_len);
 	if (upack) {
 		const size_t w = decomp_pack_bits(upack, upack_len,
 			(int8_t *)body.ptr, body.len);
 		if (w) {
-			expand_body(desc, img, wuptr_mem(upack, w), instride);
+			expand_body(desc, img, wuptr_mem(upack, w));
 		}
 		free(upack);
 		return w;
@@ -124,13 +124,11 @@ const struct wuptr body) {
 	}
 	switch (desc->format) {
 	case ilbm_format_ilbm:
-		;const size_t instride = strip_length(img->w, 1, 1)
-			* desc->planes;
 		switch (desc->compression) {
 		case ilbm_compression_none:
-			return expand_body(desc, img, body, instride);
+			return expand_body(desc, img, body);
 		case ilbm_compression_packbits:
-			return decompress_ilbm(desc, img, body, instride);
+			return decompress_ilbm(desc, img, body);
 		}
 		break;
 	case ilbm_format_pbm:
@@ -263,7 +261,9 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 				}
 			}
 		} else {
-			img->used_bits = desc->planes;
+			if (desc->planes < 8) {
+				img->used_bits = desc->planes;
+			}
 		}
 	}
 	return wuimg_verify(img);
@@ -348,7 +348,7 @@ const struct wuptr data) {
 	*/
 	(void)img;
 	const size_t colors = data.len/3;
-	if (desc->pal || data.len % 3 || colors > 256) {
+	if (desc->pal || desc->planes > 8 || data.len % 3 || colors > 256) {
 		return wu_invalid_header;
 	}
 	desc->colors = (unsigned)colors;
@@ -428,10 +428,23 @@ const struct wuptr data) {
 			return wu_invalid_header;
 		}
 		img->align_sh = 1;
-	} else if (!desc->planes) { // Colormap-only file
-		return wu_ok;
-	} else if (desc->planes > 8) {
-		return wu_unsupported_feature;
+	} else {
+		switch (desc->planes) {
+		case 0: // A colormap-only file
+			return wu_ok;
+		case 1: case 2: case 3: case 4:
+		case 5: case 6: case 7: case 8:
+			break;
+		case 24: case 32:
+			img->channels = 4;
+			img->layout = which_end() == little_endian
+				? pix_rgba : pix_abgr;
+			img->alpha = desc->planes == 24
+				? alpha_ignore : alpha_unassociated;
+			break;
+		default:
+			return wu_invalid_header;
+		}
 	}
 
 	switch (desc->masking) {
@@ -561,16 +574,9 @@ enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
 			break;
 		}
 
-		switch (chunk) {
-		case ilbm_chunk_body:
+		if (chunk == ilbm_chunk_body) {
 			desc->body = data;
 			return tidy_up(desc, img);
-		case ilbm_chunk_bmhd:
-			if (bmhd_found) {
-				return wu_invalid_header;
-			}
-			bmhd_found = true;
-			break;
 		}
 		if (data.len < len) {
 			return wu_unexpected_eof;
@@ -578,6 +584,14 @@ enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
 		const struct ilbm_chunk_def *def = search_chunk_def(chunk);
 		if (def) {
 			if (def->essential) {
+				if (chunk == ilbm_chunk_bmhd) {
+					if (bmhd_found) {
+						return wu_invalid_header;
+					}
+					bmhd_found = true;
+				} else if (!bmhd_found) {
+					return wu_invalid_header;
+				}
 				st = def->fn.img(desc, img, data);
 			} else {
 				st = def->fn.m(desc, chunk, data);

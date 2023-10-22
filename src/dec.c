@@ -40,13 +40,21 @@ static int fextcmp(const void *restrict e1, const void *restrict e2) {
 	return memcmp(ext1, ext2->ext, MAX_EXT_LEN);
 }
 
-static const struct fmt_magic * search_magic(FILE *ifp) {
+static const struct fmt_magic * search_magic(struct image_file *infile) {
 	unsigned char magic[sizeof(magic_map->bytes)] = {0};
-	if (fread(magic, 1, MAX_MAG_LEN, ifp) >= MIN_MAG_LEN) {
-		return bsearch(magic, magic_map, ARRAY_LEN(magic_map),
-			sizeof(*magic_map), fmaskmagiccmp);
+	size_t read = 0;
+	if (infile->map.data) {
+		read = zumin(infile->map.len, MAX_MAG_LEN);
+		memcpy(magic, infile->map.data, read);
+	} else if (infile->ifp) {
+		read = fread(magic, 1, MAX_MAG_LEN, infile->ifp);
 	}
-	return NULL;
+
+	if (read < MIN_MAG_LEN) {
+		return NULL;
+	}
+	return bsearch(magic, magic_map, ARRAY_LEN(magic_map),
+		sizeof(*magic_map), fmaskmagiccmp);
 }
 
 static const struct fmt_ext * search_extension(const struct wuptr name) {
@@ -55,9 +63,9 @@ static const struct fmt_ext * search_extension(const struct wuptr name) {
 		return NULL;
 	}
 	const uint8_t *end = name.ptr + name.len;
-	const uint8_t *ext = memrchr(end - max_check, '.', max_check - 1);
-	if (ext) {
-		++ext;
+	const uint8_t *dot = memrchr(end - max_check, '.', max_check - 1);
+	if (dot) {
+		const uint8_t *ext = dot + 1;
 		const size_t len = (size_t)(end - ext);
 		if (len >= MIN_EXT_LEN) {
 			uint8_t l_ext[sizeof(ext_map->ext)] = {0};
@@ -71,7 +79,7 @@ static const struct fmt_ext * search_extension(const struct wuptr name) {
 	return NULL;
 }
 
-static const struct fmt_desc * fmtmap_identify_file(struct image_context *image) {
+static const struct fmt_desc * fmtmap_identify(struct image_context *image) {
 	/* Some formats must be handled specially (i.e. RAW formats which are
 	 * actually TIFF), so we search by extension first.
 	 * Formats that should be identified by their magic sequence will
@@ -83,7 +91,7 @@ static const struct fmt_desc * fmtmap_identify_file(struct image_context *image)
 		}
 	}
 
-	const struct fmt_magic *magic = search_magic(image->file.ifp);
+	const struct fmt_magic *magic = search_magic(&image->file);
 	if (magic) {
 		return desc_map + magic->id;
 	}
@@ -95,9 +103,18 @@ bool fmtmap_known_extension(const struct wuptr filename) {
 	return (bool)search_extension(filename);
 }
 
-enum wu_error dec_callback_manual(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-enum image_event event, const struct image_fn *fn) {
+
+void dec_free_image(struct image_context *image) {
+	if (image->file.dec_state) {
+		image->fn->callback(&image->file, &image->conf, &image->state, 0);
+	}
+	image_file_free(&image->file);
+}
+
+enum wu_error dec_callback(struct image_context *image,
+enum image_event event) {
+	struct image_file *infile = &image->file;
+	struct wu_state *state = &image->state;
 	if (event != ev_end) {
 		event &= infile->events;
 		switch (event) {
@@ -112,35 +129,34 @@ enum image_event event, const struct image_fn *fn) {
 			break;
 		}
 	}
-	const enum wu_error status = fn->callback(infile, wuconf, state, event);
+	const enum wu_error status = image->fn->callback(infile, &image->conf,
+		state, event);
 	if (status == wu_ok) {
 		image_file_normalize(infile);
 	}
 	return status;
 }
 
-enum wu_error dec_callback(struct image_context *image,
-const enum image_event event) {
-	return dec_callback_manual(&image->file, &image->conf, &image->state,
-		event, image->fn);
-}
-
-void dec_free_image(struct image_context *image) {
-	if (image->file.dec_state) {
-		image->fn->callback(&image->file, &image->conf, &image->state, 0);
+static enum wu_error init_metadata(struct image_file *infile,
+const struct fmt_desc *fmt, const int fd) {
+	struct wu_tree *metadata = &infile->metadata;
+	if (!tree_sow(metadata, "Metadata")) {
+		return wu_alloc_error;
 	}
-	image_file_free(&image->file);
-}
 
-static void stat_metadata(struct wu_tree *tree, const int fd) {
+	if (fmt) {
+		tree_add_leaf_utf8_limit(metadata, "Format",
+			WUPTR_ARRAY(fmt->name));
+	}
+
 	struct stat sb;
 	if (fstat(fd, &sb) != 0) {
-		return;
+		return wu_ok;
 	}
 
-	struct wu_tree *meta = tree_add_branch(tree, "Stats");
-	if (!meta) {
-		return;
+	struct wu_tree *fdmeta = tree_add_branch(metadata, "Stats");
+	if (!fdmeta) {
+		return wu_alloc_error;
 	}
 
 	const struct wu_tree_sap sap[] = {
@@ -150,77 +166,89 @@ static void stat_metadata(struct wu_tree *tree, const int fd) {
 		{"Last status change", {wu_leaf_time,
 			{.time = sb.st_ctim.tv_sec}}},
 	};
-	tree_bud_leaves(meta, sap, ARRAY_LEN(sap));
+	tree_bud_leaves(fdmeta, sap, ARRAY_LEN(sap));
+	return wu_ok;
 }
 
-static enum wu_error dec_decode_common(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const struct image_fn *fn) {
-	enum wu_error st = fn->dec(infile, wuconf);
-	if (st == wu_ok) {
-		if (infile->events & ev_subcycle) {
-			st = dec_callback_manual(infile, wuconf, state,
-				ev_subcycle, fn);
-			if (st == wu_no_change) {
-				st = wu_ok;
-			}
-		}
-		if (st == wu_ok) {
-			image_file_normalize(infile);
-		}
+static void errno_append(struct image_file *infile, const int n) {
+	if (n) {
+		image_file_strerror_append(infile, strerror(n));
 	}
-	return st;
 }
 
-enum wu_error dec_decode_manual(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const struct image_fn *fn) {
-	struct wu_tree *metadata = &infile->metadata;
-	if (tree_sow(metadata, "Metadata")) {
-		return dec_decode_common(infile, wuconf, state, fn);
-	}
-	return wu_alloc_error;
-}
-
-enum wu_error dec_decode(struct image_context *image) {
+static enum wu_error actually_open(struct image_context *image) {
 	struct image_file *infile = &image->file;
-	if (!infile->ifp) {
+	struct map_info *map = &infile->map;
+	if (!infile->ifp && !map->data) {
+		if (!image->name) {
+			fatal_bug("dec_decode()",
+				"No data source for image_context");
+		}
 		errno = 0;
 		infile->ifp = fopen(image->name, "rb");
 		if (!infile->ifp) {
-			if (errno) {
-				image_file_strerror_append(infile, strerror(errno));
-			}
+			errno_append(infile, errno);
 			return wu_open_error;
 		}
 	}
 
-	errno = 0;
-	const struct fmt_desc *fmt = fmtmap_identify_file(image);
-	if (!fmt) {
-		if (errno) {
-			image_file_strerror_append(infile, strerror(errno));
-			return wu_open_error;
+	const struct fmt_desc *fmt = NULL;
+	if (!image->fn) {
+		errno = 0;
+		fmt = fmtmap_identify(image);
+		if (!fmt) {
+			errno_append(infile, errno);
+			return wu_unexpected_eof;
 		}
-		return wu_unknown_file_type;
+		image->fn = fmt->fn;
 	}
-	image->fn = fmt->fn;
-	struct wu_tree *metadata = &infile->metadata;
-	if (!tree_sow(metadata, "Metadata")) {
-		return wu_alloc_error;
-	}
-	tree_add_leaf_utf8_limit(metadata, "Format", WUPTR_ARRAY(fmt->name));
-	stat_metadata(metadata, fileno(infile->ifp));
-	if (image->fn->mmap) {
-		if (!infile->map.data && !file_map(&infile->map, infile->ifp)) {
-			return wu_open_error;
+
+	int fd = -1;
+	if (infile->ifp) {
+		fd = fileno(infile->ifp);
+		if (image->fn->mmap) {
+			if (!map->data) {
+				errno = 0;
+				if (!file_map_fd(map, fd)) {
+					errno_append(infile, errno);
+					return wu_open_error;
+				}
+			}
+		} else {
+			rewind(infile->ifp);
+			fflush(infile->ifp); /* tmpfiles require this */
 		}
 	} else {
-		fseek(infile->ifp, 0, SEEK_SET);
-		fflush(infile->ifp); /* tmpfiles require this */
+		if (!image->fn->mmap) {
+			errno = 0;
+			infile->ifp = fmemopen((uint8_t *)map->data, map->len,
+				"rb");
+			if (!infile->ifp) {
+				errno_append(infile, errno);
+				return wu_alloc_error; // ???
+			}
+		}
 	}
-	return dec_decode_common(infile, &image->conf, &image->state,
-		image->fn);
+	return init_metadata(infile, fmt, fd);
+}
+
+enum wu_error dec_decode(struct image_context *image) {
+	enum wu_error st = actually_open(image);
+	if (st == wu_ok) {
+		struct image_file *infile = &image->file;
+		const struct wu_conf *conf = &image->conf;
+		st = image->fn->dec(infile, conf);
+		if (st == wu_ok) {
+			image_file_normalize(infile);
+			if (infile->events & ev_subcycle) {
+				st = dec_callback(image, ev_subcycle);
+				if (st == wu_no_change) {
+					st = wu_ok;
+				}
+			}
+		}
+	}
+	return st;
 }
 
 enum wu_error dec_iter(struct image_context *image,
@@ -255,6 +283,29 @@ struct wuimg **cur_img) {
 	}
 	return wu_no_change;
 }
+
+void dec_src_mem(struct image_context *image, const struct wuptr data,
+const char *name, const struct image_fn *fn) {
+	image->name = name;
+	image->file.map = (struct map_info) {
+		.data = data.ptr,
+		.len = data.len,
+	};
+	image->file.keep_map = true;
+	image->fn = fn;
+}
+
+void dec_src_file(struct image_context *image, FILE *ifp, const char *name,
+const bool keep_file) {
+	image->name = name;
+	image->file.ifp = ifp;
+	image->file.keep_file = keep_file;
+}
+
+void dec_src_filename(struct image_context *image, const char *filename) {
+	image->name = filename;
+}
+
 
 static void write_max(const void *ptr, const size_t max) {
 	fwrite(ptr, 1, strnlen(ptr, max), stdout);

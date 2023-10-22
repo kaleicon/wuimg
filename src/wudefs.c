@@ -120,10 +120,10 @@ void image_file_free(struct image_file *file) {
 	free(file->dec_state);
 	wustr_free(&file->errors);
 	tree_unroot(&file->metadata);
-	if (file->map.data) {
+	if (file->map.data && !file->keep_map) {
 		file_unmap(&file->map);
 	}
-	if (file->ifp) {
+	if (file->ifp && !file->keep_file) {
 		fclose(file->ifp);
 	}
 }
@@ -169,7 +169,9 @@ enum image_event image_frame_cycle(struct image_context *image, int steps) {
 }
 
 void image_reset(struct image_context *image) {
+	image->name = NULL;
 	image->file = (struct image_file){0};
 	image->state.idx = 0;
 	image->state.frame = 0;
+	image->fn = NULL;
 }

@@ -40,18 +40,30 @@ static enum wu_error pcx_unpack_interleave(struct wuimg *img) {
 	const bool has_pal = (img->mode == image_mode_palette);
 	const size_t comps = (has_pal) ? 1 : img->channels;
 
-	const size_t instride = strip_length(img->w, img->bitdepth,
-		img->align_sh) * img->channels;
 	const size_t outstride = img->w * comps;
 	unsigned char *dst = malloc(outstride * img->h);
 	if (!dst) {
 		return wu_alloc_error;
 	}
+	const size_t plane_stride = strip_length(img->w, img->bitdepth,
+		img->align_sh);
+	const size_t row_stride = plane_stride * img->channels;
+	const size_t instride = row_stride;
+	const unsigned char *src = img->data;
 
-	for (size_t y = 0; y < img->h; ++y) {
-		vga_interleave(dst + y*outstride, img->data + y*instride,
-			img->w, 1, img->channels, img->bitdepth, img->align_sh,
-			has_pal);
+	if (img->bitdepth == 1) {
+		for (size_t y = 0; y < img->h; ++y) {
+			vga_interleave(dst + y*outstride, src + y*instride,
+				img->w, img->channels, img->align_sh, has_pal);
+		}
+	} else {
+		for (size_t y = 0; y < img->h; ++y) {
+			for (size_t z = 0; z < img->channels; ++z) {
+				strip_spread(dst + y*outstride + z,
+					src + y*row_stride + plane_stride*z,
+					img->w, img->channels);
+			}
+		}
 	}
 
 	free(img->data);
@@ -283,7 +295,7 @@ const uint16_t palette_type) {
 	img->channels = planes;
 	img->bitdepth = bitdepth;
 	img->align_sh = strip_alignment(bytes_per_line, img->w, img->bitdepth);
-	if (img->align_sh < 0 || (1 << img->align_sh) > 8) {
+	if (img->align_sh < 0 || img->align_sh > 3) {
 		return wu_invalid_header;
 	}
 
