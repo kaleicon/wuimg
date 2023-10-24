@@ -437,9 +437,8 @@ const struct wuptr data) {
 			break;
 		case 24: case 32:
 			img->channels = 4;
-			img->layout = which_end() == little_endian
-				? pix_rgba : pix_abgr;
-			img->alpha = desc->planes == 24
+			img->layout = pix_rgba;
+			img->alpha = (desc->planes == 24)
 				? alpha_ignore : alpha_unassociated;
 			break;
 		default:

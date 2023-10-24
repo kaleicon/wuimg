@@ -100,7 +100,7 @@ static size_t st_decomp(const struct degas_desc *desc, struct wuimg *img) {
 			const size_t instride = strip_length(img->w, 1, 1)
 				* planes;
 			for (size_t y = 0; y < 200; ++y) {
-				bitplane_interleave_row(img->data + outstride*y,
+				bitplane_interleave_row8(img->data + outstride*y,
 					unpack + instride*y, img->w, planes, 1);
 			}
 			free(unpack);

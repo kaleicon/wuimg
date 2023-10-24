@@ -37,11 +37,8 @@ const char * pcx_version_string(const enum pcx_version ver) {
 }
 
 static enum wu_error pcx_unpack_interleave(struct wuimg *img) {
-	const bool has_pal = (img->mode == image_mode_palette);
-	const size_t comps = (has_pal) ? 1 : img->channels;
-
-	const size_t outstride = img->w * comps;
-	unsigned char *dst = malloc(outstride * img->h);
+	const size_t outstride = strip_length(img->w * img->channels, img->bitdepth, 0);
+	unsigned char *dst = calloc(outstride, img->h);
 	if (!dst) {
 		return wu_alloc_error;
 	}
@@ -53,8 +50,9 @@ static enum wu_error pcx_unpack_interleave(struct wuimg *img) {
 
 	if (img->bitdepth == 1) {
 		for (size_t y = 0; y < img->h; ++y) {
-			vga_interleave(dst + y*outstride, src + y*instride,
-				img->w, img->channels, img->align_sh, has_pal);
+			bitplane_interleave_pack(dst + y*outstride,
+				src + y*instride, img->w, img->channels,
+				img->align_sh);
 		}
 	} else {
 		for (size_t y = 0; y < img->h; ++y) {
@@ -68,9 +66,9 @@ static enum wu_error pcx_unpack_interleave(struct wuimg *img) {
 
 	free(img->data);
 	img->data = dst;
-	if (has_pal) {
+	if (img->mode == image_mode_palette) {
+		img->bitdepth = img->channels;
 		img->channels = 1;
-		img->bitdepth = 8;
 	}
 	img->align_sh = 0;
 	return wu_ok;

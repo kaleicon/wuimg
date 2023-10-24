@@ -6,20 +6,17 @@
 
 #include "raster/strip.h"
 
-void vga_interleave(uint8_t *restrict dst, const uint8_t *restrict src,
-size_t w, uint8_t planes, align_t align, bool paletted);
-
-void bitplane_interleave(void *restrict dst, const uint8_t *restrict src,
-size_t w, uint8_t planes, size_t plane_stride);
-
-void bitplane_interleave_plane(uint8_t *restrict dst,
-const uint8_t *restrict src, size_t w, uint8_t planes, align_t align, size_t h);
+void bitplane_interleave_row8(uint8_t *restrict dst, const uint8_t *restrict src,
+size_t w, uint8_t planes, align_t align);
 
 void bitplane_interleave_row(void *restrict dst, const uint8_t *restrict src,
 size_t w, uint8_t planes, align_t align);
 
-void bitplane_interleave_pack(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w, const uint8_t planes, const align_t align);
+void bitplane_interleave_plane(uint8_t *restrict dst,
+const uint8_t *restrict src, size_t w, uint8_t planes, align_t align, size_t h);
+
+void bitplane_interleave_pack(uint8_t *restrict dst,
+const uint8_t *restrict src, size_t w, uint8_t planes, align_t align);
 
 void v9958_ykj_to_grb(upack1555_t *dst, const uint8_t *restrict src,
 size_t dwords, const struct raster_pal *yae);

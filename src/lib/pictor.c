@@ -49,17 +49,8 @@ const char * pictor_video_mode(const struct pictor_desc *desc) {
 
 static void pictor_interleave(const struct pictor_desc *desc,
 struct wuimg *img, const unsigned char *restrict src) {
-/*	const size_t instride = strip_length(img->w, 1, 0);
-	const size_t outstride = wuimg_stride(img);
-	for (size_t y = 0; y < img->h; ++y) {
-		bitplane_interleave(img->data + outstride*y,
-			src + instride*y, img->w, desc->planes,
-			instride * img->h);
-	}*/
 	bitplane_interleave_plane(img->data, src, img->w, desc->planes, 0,
 		img->h);
-//	vga_interleave(img->data, src, img->w, img->h, desc->planes, 1,
-//		img->align_sh, img->mode == image_mode_palette);
 }
 
 static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
