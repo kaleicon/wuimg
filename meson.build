@@ -14,6 +14,7 @@ add_project_arguments(
 
 	# Needed by the ultra-convenient null_function
 	'-Wno-strict-prototypes',
+	'-Wno-missing-field-initializers',
 
 	language : 'c')
 if cc.get_id() == 'gcc'

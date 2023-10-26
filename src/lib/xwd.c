@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 #include "misc/common.h"
+#include "misc/math.h"
 #include "raster/fmt.h"
 
 #include "xwd.h"
-
 /* Some definitions after digging through many X headers. May be wrong:
  * - XYBitmap means a 1-bit min-is-white image. XYPixmap means a planar image
  *   ZPixmap means an image with interleaved channels.
@@ -67,13 +67,14 @@ static uint8_t rev_bits(int b) {
 size_t xwd_decode(const struct xwd_desc *desc, struct wuimg *img) {
 	size_t read = 0;
 	if (wuimg_alloc_noverify(img)) {
-		read = fmt_load_raster(img, desc->ifp, desc->byte_endian);
-		if (read) {
+		if (desc->bf.enable) {
+			read = bitfield_unpack_from_file(&desc->bf, img, desc->ifp);
+		} else {
+			read = fmt_load_raster(img, desc->ifp, desc->byte_endian);
 			if (img->bitdepth == 1 && desc->bit_endian == little_endian) {
 				// Reverse bit order
-				const size_t bytes = wuimg_size(img);
 				uint8_t *data = img->data;
-				for (size_t i = 0; i < bytes; ++i) {
+				for (size_t i = 0; i < read; ++i) {
 					data[i] = rev_bits(data[i]);
 				}
 			}
@@ -135,7 +136,7 @@ static enum wu_error validate_header(struct xwd_desc *desc, struct wuimg *img,
 const enum xwd_format format, const uint32_t depth, const uint32_t xoffset,
 const uint32_t byte_order, const uint32_t bit_align, const uint32_t bit_order,
 const uint32_t pix_align, const uint32_t bpp,
-const enum xwd_visual_class visual_class) {
+const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 	switch (bit_align) {
 	case 8: case 16: case 32: break;
 	default: return wu_invalid_header;
@@ -185,29 +186,26 @@ const enum xwd_visual_class visual_class) {
 		case 8: break;
 		default: return wu_invalid_header;
 		}
-		if (bpp != depth) {
+		if (depth > bpp) {
 			return wu_invalid_header;
 		}
 		img->channels = 1;
 		img->bitdepth = (uint8_t)bpp;
 		if (paletted) {
 			wuimg_palette_init(img);
+		} else {
+			img->used_bits = (uint8_t)depth;
 		}
 		break;
 	case xwd_true_color: case xwd_direct_color:
 		switch (bpp) {
 		case 16:
 			switch (depth) {
-			case 15: break;
-			case 16:
-				// FIXME: Requires pix_pack_565
-				return wu_unsupported_feature;
+			case 15: case 16: break;
 			default: return wu_invalid_header;
 			}
-			// TODO: Test
 			img->channels = 1;
 			img->bitdepth = 16;
-			img->attr = pix_pack_1555;
 			break;
 		case 24:
 			if (bpp != depth) {
@@ -223,16 +221,19 @@ const enum xwd_visual_class visual_class) {
 			case 24: case 32: break;
 			default: return wu_invalid_header;
 			}
-			switch (desc->byte_endian) {
-			case big_endian: img->layout = pix_argb; break;
-			case little_endian: img->layout = pix_bgra; break;
-			}
 			break;
 		default:
 			return wu_invalid_header;
 		}
+
+		if (!bitfield_load(&desc->bf, img, mask, 3, (uint8_t)bpp, desc->byte_endian)) {
+			return wu_invalid_header;
+		}
+		bitfield_reduce(&desc->bf, img);
 		break;
 	}
+	desc->bpp = (uint8_t)bpp;
+	desc->depth = (uint8_t)depth;
 	desc->visual = visual_class;
 	img->alpha = alpha_ignore;
 	return wu_ok;
@@ -276,7 +277,7 @@ enum wu_error xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	img->h = header[3];
 	enum wu_error st = validate_header(desc, img, header[0],
 		header[1], header[4], header[5], header[6], header[7],
-		header[8], header[9], header[11]);
+		header[8], header[9], header[11], header + 12);
 	if (st != wu_ok) {
 		return st;
 	}
@@ -295,7 +296,8 @@ enum wu_error xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 		return st;
 	}
 
-	if (wuimg_stride(img) != header[10]) {
+	const size_t stride = strip_length(img->w, desc->bpp, img->align_sh);
+	if (stride != header[10]) {
 		return wu_invalid_header;
 	}
 
@@ -323,9 +325,9 @@ enum wu_error xwd_open(struct xwd_desc *desc, FILE *ifp) {
 			case xwd_x11: break;
 			default: return wu_unknown_file_type;
 			}
-			desc->version = (uint8_t)header[1];
 			*desc = (struct xwd_desc) {
 				.ifp = ifp,
+				.version = (uint8_t)header[1],
 				.win.name.len = header[0] - 100,
 			};
 			return wu_ok;

@@ -194,6 +194,7 @@ src_list += [custom_target('dec_maps',
 	'misc/mparser.c',
 	'misc/wustr.c',
 
+	'raster/bitfield.c',
 	'raster/cicp.c',
 	'raster/color.c',
 	'raster/compost.c',

@@ -17,8 +17,6 @@ struct ico_buf {
 	unsigned char *buf;
 };
 
-static const uint32_t BITFIELD_SHIFT = 16;
-
 static bool valid_os2_2x(const uint32_t size) {
 	if (size >= dib_os2_2x_bitmap_header_min && size <= dib_os2_2x_bitmap_header) {
 		return size % 4 == 0 || size == 42 || size == 46;
@@ -100,7 +98,7 @@ static size_t rle_loop4(unsigned char *restrict dst, const size_t dst_len,
 const unsigned char *restrict src, const size_t src_len, const size_t scan_len) {
 	size_t i = 0;
 	size_t o = 0;
-	do {
+	while (o < dst_len && i < src_len) {
 		const unsigned char repeat = src[i];
 		const unsigned char marker = src[i+1];
 		i += 2;
@@ -143,7 +141,7 @@ const unsigned char *restrict src, const size_t src_len, const size_t scan_len) 
 				i += run_bytes;
 			}
 		}
-	} while (o < dst_len && i < src_len);
+	}
 	return o;
 }
 
@@ -152,7 +150,7 @@ const size_t dst_len, unsigned char *restrict src, const size_t src_len,
 const size_t scan_len, const unsigned char pix_size) {
 	size_t i = 0;
 	size_t o = 0;
-	do {
+	while (o < dst_len && i + pix_size < src_len) {
 		const unsigned char repeat = src[i];
 		++i;
 		if (repeat) {
@@ -193,88 +191,50 @@ const size_t scan_len, const unsigned char pix_size) {
 				i += run_bytes;
 			}
 		}
-	} while (o < dst_len && i + pix_size < src_len);
+	}
 	return o;
 }
 
-static bool rle_decode(const struct dib_desc *desc, struct wuimg *img,
-unsigned char *restrict rle, const size_t read) {
-	const size_t rle_len = read & (~1u); // len should be even
-	if (rle_len && wuimg_alloc_noverify(img)) {
+static size_t rle_decode(const struct dib_desc *desc, struct wuimg *img) {
+	uint8_t *rle = malloc(desc->size);
+	size_t w = 0;
+	if (rle) {
+		const size_t read = fread(rle, 1, desc->size, desc->ifp);
+		const size_t rle_len = read & (~1u); // len should be even
 		const size_t row = wuimg_stride(img);
 		const size_t dst_len = row * img->h;
 		if (desc->compression == dib_4bit_rle) {
-			return rle_loop4(img->data, dst_len, rle, rle_len, row);
+			w = rle_loop4(img->data, dst_len, rle, rle_len, row);
+		} else {
+			w = rle_loop(img->data, dst_len, rle, rle_len, row,
+				img->channels);
 		}
-		return rle_loop(img->data, dst_len, rle, rle_len, row,
-			img->channels);
+		free(rle);
 	}
-	return false;
-}
-
-static uint32_t expand_bits(const uint32_t word, const struct dib_bitfield *p) {
-	return (((word >> p->shift) & p->mask) * p->scale) >> BITFIELD_SHIFT;
-}
-
-static bool bitfield_decode(const struct dib_desc *desc, struct wuimg *img,
-uint8_t *restrict src) {
-	if (!wuimg_alloc_noverify(img)) {
-		return false;
-	}
-	const uint8_t bytes = (img->bitdepth > 8) ? 2 : 1;
-	const uint8_t ch = (img->channels == 4) ? 4 : 3; // putting both helps perf.
-
-	const size_t stride = strip_length(img->w, desc->depth, 2);
-	for (size_t y = 0; y < img->h; ++y) {
-		const uint8_t *s = src + y*stride;
-		for (size_t x = 0; x < img->w; ++x) {
-			const uint32_t word = (desc->depth == 32)
-				? endian32(((uint32_t *)s)[x], little_endian)
-				: endian16(((uint16_t *)s)[x], little_endian);
-
-			const size_t o = y * img->w + x;
-			for (size_t k = 0; k < ch; ++k) {
-				const uint32_t v = expand_bits(word, desc->bf + k);
-				if (bytes == 2) {
-					((uint16_t *)img->data)[o*ch + k] = (uint16_t)v;
-				} else {
-					img->data[o*ch + k] = (uint8_t)v;
-				}
-			}
-		}
-	}
-	return true;
+	return w;
 }
 
 bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
-	bool ok = false;
-	void *src = malloc(desc->size);
-	if (src) {
-		const size_t read = fread(src, 1, desc->size, desc->ifp);
+	size_t w = 0;
+	if (wuimg_alloc_noverify(img)) {
 		switch ((int)desc->compression) {
 		case dib_no_compression:
-			if (desc->depth == 16) {
-				endian_loop16(src, little_endian, read/2);
-			}
-			img->data = src;
-			src = NULL;
-			ok = true;
+			w = fmt_load_raster(img, desc->ifp, little_endian);
 			break;
 		case dib_8bit_rle:
 		case dib_4bit_rle:
 		case os2_24bit_rle:
-			ok = rle_decode(desc, img, src, read);
+			w = rle_decode(desc, img);
 			break;
 		case dib_bitfield:
-			ok = bitfield_decode(desc, img, src);
+			w = bitfield_unpack_from_file(&desc->bf, img, desc->ifp);
 			break;
 		}
-		free(src);
-		if (ok) {
+		if (w) {
 			return dib_get_colorspace(desc, &img->cs);
 		}
 	}
-	return ok;
+	return w;
 }
 
 static enum wu_error load_pal(struct dib_desc *desc, struct wuimg *img,
@@ -381,67 +341,20 @@ static enum wu_error load_mask(struct dib_desc *desc, struct wuimg *img,
 uint8_t *buf) {
 	uint8_t ch = desc->type < dib_v3_info_header ? 3 : 4;
 	const uint32_t mask[4] = {
-		// Switch mask to BGRA order for consistency
-		buf_endian32(buf + 2*4, little_endian),
-		buf_endian32(buf + 1*4, little_endian),
 		buf_endian32(buf, little_endian),
+		buf_endian32(buf + 1*4, little_endian),
+		buf_endian32(buf + 2*4, little_endian),
 		buf_endian32(buf + 3*4, little_endian)
 	};
 	if (!buf[3]) {
 		ch = 3;
 	}
-
-	struct dib_bitfield *bf = desc->bf;
-	uint32_t xor_acc = 0;
-	unsigned maxdepth = 0;
-	for (uint8_t i = 0; i < ch; ++i) {
-		uint32_t rem = mask[i];
-		if (!rem) {
-			bf[i] = (struct dib_bitfield){0};
-			continue;
-		}
-
-		unsigned zeroes = 0;
-		while (!(rem & 1)) {
-			rem >>= 1;
-			++zeroes;
-		}
-
-		bf[i].shift = zeroes;
-		bf[i].mask = rem;
-
-		unsigned ones = 0;
-		while ((rem & 1)) {
-			rem >>= 1;
-			++ones;
-		}
-
-		// Mask bits must be continous and non-overlapping
-		if (rem || (xor_acc & mask[i])) {
-			return wu_invalid_header;
-		}
-		xor_acc ^= mask[i];
-
-		if (ones > maxdepth) {
-			maxdepth = ones;
-		}
+	if (bitfield_load(&desc->bf, img, mask, ch, desc->depth, little_endian)) {
+		img->layout = pix_rgba;
+		bitfield_reduce(&desc->bf, img);
+		return wu_ok;
 	}
-	if (maxdepth > desc->depth / 2) {
-		return wu_invalid_header;
-	}
-
-	const bool high_depth = maxdepth > 8;
-	const unsigned target = high_depth ? USHRT_MAX : UCHAR_MAX;
-	for (int i = 0; i < ch; ++i) {
-		if (bf[i].mask) {
-			bf[i].scale = (target << BITFIELD_SHIFT) / bf[i].mask + 1;
-		}
-	}
-
-	img->channels = ch;
-	img->bitdepth = high_depth ? 16 : 8;
-	img->align_sh = 0;
-	return wu_ok;
+	return wu_invalid_header;
 }
 
 static enum wu_error validate_common(struct dib_desc *desc, struct wuimg *img,
@@ -803,7 +716,7 @@ struct wuimg *img) {
 	}
 
 	desc->type = (enum dib_type)hsize;
-	wuimg_align(img, 4);
+	img->align_sh = 2;
 	img->layout = pix_bgra;
 
 	enum wu_error status;

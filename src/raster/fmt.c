@@ -2,17 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "misc/file.h"
 #include "misc/math.h"
 #include "raster/fmt.h"
 
 size_t fmt_load_raster(struct wuimg *img, FILE *ifp, const enum endianness e) {
-	const size_t read = fread(img->data, 1, wuimg_size(img), ifp);
-	switch (img->bitdepth) {
-	case 16: endian_loop16((uint16_t *)img->data, e, read/2); break;
-	case 32: endian_loop32((uint32_t *)img->data, e, read/4); break;
-	case 64: endian_loop64((uint64_t *)img->data, e, read/8); break;
-	}
-	return read;
+	return file_endian_read(img->data, wuimg_size(img), ifp, img->bitdepth, e);
 }
 
 enum wu_error fmt_load_pal_planar(FILE *ifp, struct raster_pal *pal,

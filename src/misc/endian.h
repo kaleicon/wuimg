@@ -27,6 +27,8 @@ float endianf32(uint32_t val, enum endianness e);
 
 uint16_t buf_endian16(const void *data, enum endianness e);
 
+uint32_t buf_endian24(const void *data, enum endianness e);
+
 uint32_t buf_endian32(const void *data, enum endianness e);
 
 uint64_t buf_endian64(const void *data, enum endianness e);
@@ -40,6 +42,8 @@ float buf_endianf32(const void *data, enum endianness e);
  * array in big-endian order to a file, an unconditional call to
  * endian_loopN(data, big_endian, n) suffices. */
 void endian_loop16(uint16_t *data, enum endianness e, size_t n);
+
+void endian_loop24(uint8_t *data, enum endianness e, size_t n);
 
 void endian_loop32(uint32_t *data, enum endianness e, size_t n);
 

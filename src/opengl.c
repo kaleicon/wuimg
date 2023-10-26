@@ -329,14 +329,6 @@ const GLenum access) {
 	return glMapBuffer(GL_PIXEL_UNPACK_BUFFER, access);
 }
 
-static enum pix_layout layout_equiv(const enum pix_layout l1,
-const enum pix_layout l2) {
-	uint8_t swz[] = {0,1,2,3};
-	pix_layout_swizzle(swz, 1, sizeof(swz), l1);
-	pix_layout_swizzle(swz, 1, sizeof(swz), l2);
-	return (enum pix_layout)PIX_LAYOUT_PACK(swz[0], swz[1], swz[2], swz[3]);
-}
-
 static void palette_parameters(const bool enable) {
 	tex_active(gl_tex_pal);
 	GLint level;
@@ -593,7 +585,7 @@ const struct wuimg *img) {
 		params->in_fmt = GL_RGB5_A1;
 		params->fmt = GL_BGRA;
 		params->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
-		params->layout = layout_equiv(pix_bgra, params->layout);
+		params->layout = pix_layout_mul(pix_bgra, params->layout);
 		return NULL;
 	case pix_float:
 		switch (bd) {
@@ -615,7 +607,7 @@ const struct wuimg *img) {
 				const enum pix_layout meta = which_end() == little_endian
 					? PIX_LAYOUT_PACK(3, 0, 1, 2)
 					: PIX_LAYOUT_PACK(2, 1, 0, 3);
-				params->layout = layout_equiv(meta, params->layout);
+				params->layout = pix_layout_mul(meta, params->layout);
 				return NULL;
 			} else if (bd == 4) {
 				params->in_fmt = GL_RGBA4;
@@ -624,7 +616,7 @@ const struct wuimg *img) {
 				const enum pix_layout meta = which_end() == little_endian
 					? PIX_LAYOUT_PACK(1, 2, 3, 0)
 					: PIX_LAYOUT_PACK(3, 0, 1, 2);
-				params->layout = layout_equiv(meta, params->layout);
+				params->layout = pix_layout_mul(meta, params->layout);
 				return NULL;
 			}
 		}

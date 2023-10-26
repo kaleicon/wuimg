@@ -51,10 +51,14 @@ struct pix_rgba8 {
 
 const char * pix_attr_str(enum pix_attr attr);
 
+enum pix_layout pix_layout_pack(uint8_t l1, uint8_t l2, uint8_t l3, uint8_t l4);
+
 uint8_t pix_layout_offset(enum pix_layout layout, enum pix_color color);
 
 void pix_layout_swizzle(void *buf, size_t size, size_t nmemb,
 enum pix_layout layout);
+
+enum pix_layout pix_layout_mul(enum pix_layout l1, enum pix_layout l2);
 
 void pix_layout_print(enum pix_layout layout, FILE *out);
 

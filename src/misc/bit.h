@@ -6,6 +6,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+uint32_t bit_ctz32(uint32_t bits);
+
+uint32_t bit_cto32(uint32_t bits);
+
 uint32_t bit_clz32(uint32_t bits);
 
 uint32_t bit_set32(uint32_t bits);

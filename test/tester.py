@@ -112,6 +112,7 @@ ENCODERS = (
 		("tiff", None),
 		("webp", {"-lossless": range(0, 2)}),
 		("xbm", None),
+		("xwd", None),
 	)),
 
 	("imagemagick", encode_imagemagick, (
@@ -145,6 +146,7 @@ ENCODERS = (
 			"-define": ("quantum:polarity=min-is-white", "quantum:polarity=min-is-black")}),
 		("wbmp", None),
 		("xbm", None),
+		("xwd", None),
 	)),
 )
 

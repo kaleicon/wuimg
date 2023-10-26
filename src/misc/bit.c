@@ -12,11 +12,20 @@ static uint32_t bit_rev32(uint32_t b) {
 	return (b >> 16 | b << 16);
 }
 
-static uint32_t bit_ctz32(uint32_t bits) {
+uint32_t bit_ctz32(uint32_t bits) {
 	uint32_t n = sizeof(bits)*8;
 	while (bits) {
 		--n;
 		bits <<= 1;
+	}
+	return n;
+}
+
+uint32_t bit_cto32(uint32_t bits) {
+	uint32_t n = 0;
+	while (bits & 1) {
+		++n;
+		bits >>= 1;
 	}
 	return n;
 }

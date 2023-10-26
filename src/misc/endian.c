@@ -54,6 +54,13 @@ uint16_t buf_endian16(const void *data, const enum endianness e) {
 		: d[1] << 8 | d[0]);
 }
 
+uint32_t buf_endian24(const void *data, const enum endianness e) {
+	const uint8_t *d = data;
+	return (uint32_t)(e == big_endian
+		? d[0] << 16 | d[1] << 8 | d[2]
+		: d[2] << 16 | d[1] << 8 | d[0]);
+}
+
 uint32_t buf_endian32(const void *data, const enum endianness e) {
 	const uint8_t *d = data;
 	return (uint32_t)(e == big_endian
@@ -85,6 +92,16 @@ void endian_loop16(uint16_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
 		for (size_t i = 0; i < n; ++i) {
 			data[i] = endian16(data[i], e);
+		}
+	}
+}
+
+void endian_loop24(uint8_t *data, const enum endianness e, const size_t n) {
+	if (e != which_end()) {
+		for (size_t i = 0; i < n; ++i) {
+			const uint8_t tmp = data[i*3];
+			data[i*3] = data[i*3+2];
+			data[i*3+2] = tmp;
 		}
 	}
 }

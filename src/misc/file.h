@@ -5,7 +5,11 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include "misc/endian.h"
 #include "wustr.h"
+
+size_t file_endian_read(void *restrict dst, size_t size, FILE *ifp,
+size_t word_depth, enum endianness e);
 
 bool file_read_pi_comm(struct wustr *comm, FILE *ifp);
 

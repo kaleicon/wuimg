@@ -5,9 +5,15 @@
 
 static void meta(const void *restrict ptr, struct wu_tree *meta) {
 	const struct xwd_desc *desc = ptr;
-	tree_add_leaf(meta, "Version", xwd_version_str(desc->version), NULL);
-	tree_add_leaf(meta, "Format", xwd_format_str(desc->format), NULL);
-	tree_add_leaf(meta, "Visual", xwd_visual_str(desc->visual), NULL);
+	tree_add_leaf_utf8(meta, "Version", xwd_version_str(desc->version));
+	tree_add_leaf_utf8(meta, "Format", xwd_format_str(desc->format));
+	tree_add_leaf_utf8(meta, "Visual", xwd_visual_str(desc->visual));
+	const struct wu_tree_sap pix[] = {
+		{"Pixel size", {wu_leaf_unsigned, {.u = desc->bpp}}},
+		{"Pixel depth", {wu_leaf_unsigned, {.u = desc->depth}}},
+	};
+	tree_bud_leaves(meta, pix, ARRAY_LEN(pix));
+
 	struct wu_tree *win = tree_add_branch(meta, "Window");
 	if (win) {
 		const struct wu_tree_sap w[] = {

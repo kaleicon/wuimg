@@ -5,6 +5,7 @@
 #include "misc/common.h"
 #include "misc/endian.h"
 #include "misc/wustr.h"
+#include "raster/bitfield.h"
 #include "raster/color.h"
 #include "raster/pal.h"
 #include "raster/wuimg.h"
@@ -38,12 +39,6 @@ enum dib_type {
 	dib_os2_2x_bitmap_header = 64,
 	dib_v4_header = 108,
 	dib_v5_header = 124,
-};
-
-struct dib_bitfield {
-	uint32_t shift;
-	uint32_t mask;
-	uint32_t scale;
 };
 
 typedef uint32_t dib_cie_t;
@@ -91,7 +86,7 @@ struct dib_desc {
 	enum dib_order order:8;
 	enum dib_compression compression:8;
 	uint32_t pal_entries;
-	struct dib_bitfield bf[4];
+	struct bitfield bf;
 	struct dib_lcs lcs;
 
 	size_t size;
