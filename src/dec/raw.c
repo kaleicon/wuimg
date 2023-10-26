@@ -60,6 +60,7 @@ static void raw_state_free(struct image_file *infile) {
 	libraw_close(rs->data);
 }
 
+#ifdef WU_ENABLE_JPEG
 static enum wu_error copy_jpeg(struct image_file *infile,
 const struct raw_state *rs, const struct image_context *jpeg) {
 	struct wuimg *img = infile->sub_img;
@@ -80,7 +81,6 @@ const struct raw_state *rs, const struct image_context *jpeg) {
 static enum wu_error decode_jpeg(struct image_file *infile,
 struct raw_state *rs, struct wu_state *state,
 const enum image_event ev) {
-#ifdef WU_ENABLE_JPEG
 	const int raws = (int)rs->raw.count;
 	struct image_context *jpeg = &rs->jpeg;
 
@@ -96,11 +96,8 @@ const enum image_event ev) {
 		}
 	}
 	return status;
-#else
-	(void)infile; (void)rs; (void)state; (void)ev;
-	return wu_unknown_file_type;
-#endif
 }
+#endif
 
 static enum wu_error raw_decode(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state) {
@@ -136,12 +133,16 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 		img->borrowed = true;
 		return wuimg_verify(img);
 	} else if (rs->thumb_type == raw_thumb_jpeg) {
+#ifdef WU_ENABLE_JPEG
 		const enum wu_error status = decode_jpeg(infile, rs, state, 0);
 		if (status != wu_ok) {
 			image_file_strerror_append(infile, "Failed to "
 				"decode JPEG thumbnail");
 			return status;
 		}
+#else
+		return wu_unknown_file_type;
+#endif
 	}
 	return wu_ok;
 }
