@@ -79,16 +79,6 @@ void wuimg_exif_orientation(struct wuimg *img, const int orientation) {
 	img->rotate = r;
 }
 
-static void find_better_alignment(struct wuimg *img) {
-	if (img->mode == image_mode_planar) {
-		return;
-	}
-	const size_t w = img->w * img->channels;
-	if (strip_padding(w, img->bitdepth, img->align_sh) < 8) {
-		img->align_sh = 3;
-	}
-}
-
 static size_t subsamp_dim(const size_t dim, struct plane_dim *s) {
 	if (s->subsamp > 1) {
 		return (dim + (s->subsamp - 1)) / s->subsamp;
@@ -109,12 +99,24 @@ static size_t plane_calc_size(struct wuimg *img, const size_t i) {
 	return p->size;
 }
 
+static void find_better_alignment(struct wuimg *img) {
+	if (img->mode == image_mode_planar) {
+		return;
+	}
+	const size_t w = img->w * img->channels;
+	if (strip_padding(w, img->bitdepth, img->align_sh) < 8) {
+		img->align_sh = 3;
+	}
+}
+
 static const char * geom_verify(const uint8_t ch, const uint8_t bitdepth,
-const enum pix_attr attr, const bool paletted) {
+const align_t align, const enum pix_attr attr, const bool paletted) {
 	if (!ch) {
 		return "Channel number must not be zero";
 	} else if (!bitdepth) {
 		return "Bitdepth must not be zero";
+	} else if (align < 0) {
+		return "Invalid alignment";
 	}
 
 	if (paletted) {
@@ -122,48 +124,42 @@ const enum pix_attr attr, const bool paletted) {
 			return "Paletted images must use 1 channel";
 		} else if (bitdepth > 8) {
 			return "Paletted images must not use more than 8 bits";
-		} else {
-			switch (attr) {
-			case pix_normal:
-			case pix_inverted:
-				break;
-			case pix_signed:
-				return "Paletted images can't use signed indices";
-			case pix_float:
-				return "Paletted images can't use floats";
-			case pix_pack_332:
-				return "Paletted images can't use 332 packing";
-			case pix_pack_1555:
-				return "Paletted images can't use 1555 packing";
-			default:
-				return "Undefined pixel attribute in paletted image";
-			}
 		}
-	} else {
-		const int depth = ch * bitdepth;
 		switch (attr) {
 		case pix_normal:
-		case pix_signed:
 		case pix_inverted:
+			return NULL;
+		case pix_signed:
+			return "Paletted images can't use signed indices";
 		case pix_float:
-			break;
+			return "Paletted images can't use floats";
 		case pix_pack_332:
-			if (depth != 8) {
-				return "pix_pack_332 must be set with 1"
-					"channel and 8 bits";
-			}
-			break;
+			return "Paletted images can't use 332 packing";
 		case pix_pack_1555:
-			if (depth != 16) {
-				return "pix_pack_1555 must be set with 1"
-					"channel and 16 bits";
-			}
-			break;
-		default:
-			return "Undefined pixel attribute";
+			return "Paletted images can't use 1555 packing";
 		}
+		return "Undefined pixel attribute in paletted image";
 	}
-	return NULL;
+	switch (attr) {
+	case pix_normal:
+	case pix_signed:
+	case pix_inverted:
+	case pix_float:
+		return NULL;
+	case pix_pack_332:
+		if (ch != 1 || bitdepth != 8) {
+			return "pix_pack_332 must be set with 1 channel"
+				" and 8 bits";
+		}
+		return NULL;
+	case pix_pack_1555:
+		if (ch * bitdepth != 16) { // FIXME: Enforce intended values
+			return "pix_pack_1555 must be set with 1 channel"
+				" and 16 bits";
+		}
+		return NULL;
+	}
+	return "Undefined pixel attribute";
 }
 
 static bool test_overflow_common(size_t w, const size_t h, const uint8_t ch,
@@ -203,26 +199,17 @@ static bool test_overflow(struct wuimg *img) {
 
 enum wu_error wuimg_verify(struct wuimg *img) {
 	const char *err_msg = geom_verify(img->channels, img->bitdepth,
-		img->attr, img->mode == image_mode_palette);
+		img->align_sh, img->attr, img->mode == image_mode_palette);
 	if (err_msg) {
-		fatal_bug("Bad image", err_msg);
+		fatal_bug(__func__, err_msg);
 	}
-	switch (img->attr) {
-	case pix_pack_332:
-		img->channels = 1;
-		img->bitdepth = 8;
-		break;
-	case pix_pack_1555:
+
+	if (img->attr == pix_pack_1555) {
 		img->channels = 1;
 		img->bitdepth = 16;
-		break;
-	default:
-		break;
 	}
 	if (img->align_sh > 3) {
 		find_better_alignment(img);
-	} else if (img->align_sh < 0) {
-		return wu_invalid_params;
 	}
 
 	if (!test_overflow(img)) {

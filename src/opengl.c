@@ -11,8 +11,6 @@
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
-//#define WU_DEBUG_GL
-
 /* GLSL variables */
 #define ATTR_POS "pos"
 
@@ -751,7 +749,7 @@ struct wuimg *img) {
 
 	const char *errmsg = set_upload_params(&params, img);
 	if (errmsg) {
-		fputs(errmsg, stderr);
+		fatal_bug(__func__, errmsg);
 		return gl_upload_fail;
 	}
 
@@ -944,7 +942,6 @@ static GLuint setup_shader(const char *shader_code, const GLenum type) {
 		GL_COMPILE_STATUS);
 }
 
-#ifdef WU_DEBUG_GL
 static void debug_print(GLenum source, GLenum type, GLuint id, GLenum severity,
 GLsizei len, const GLchar *message, const void *user_data) {
 	(void)source;
@@ -954,19 +951,19 @@ GLsizei len, const GLchar *message, const void *user_data) {
 	(void)user_data;
 	print_gl_message(message, len);
 }
-#endif /* WU_DEBUG_GL */
 
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
-#ifdef WU_DEBUG_GL
-	fprintf(stderr, "vendor: %s\n"
-		"renderer: %s\n"
-		"version: %s\n"
-		"shading: %s\n",
-		glGetString(GL_VENDOR), glGetString(GL_RENDERER),
-		glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
-	glDebugMessageCallback(debug_print, NULL);
-	glEnable(GL_DEBUG_OUTPUT);
-#endif /* WU_DEBUG_GL */
+	const bool is_debug = getenv("WU_DEBUG");
+	if (is_debug) {
+		fprintf(stderr, "vendor: %s\n"
+			"renderer: %s\n"
+			"version: %s\n"
+			"shading: %s\n",
+			glGetString(GL_VENDOR), glGetString(GL_RENDERER),
+			glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
+		glDebugMessageCallback(debug_print, NULL);
+		glEnable(GL_DEBUG_OUTPUT);
+	}
 
 	const char vs[] =
 		"#version 330 core\n"
@@ -1181,9 +1178,9 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 
 	GLuint mts;
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint *)&mts);
-#ifdef WU_DEBUG_GL
-	fprintf(stderr, "Texture size limit: %u\n", mts);
-#endif
+	if (is_debug) {
+		fprintf(stderr, "Texture size limit: %u\n", mts);
+	}
 	if (wuconf->max_img_size) {
 		wuconf->max_img_size = umin(wuconf->max_img_size, mts);
 	} else {
