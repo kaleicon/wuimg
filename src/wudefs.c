@@ -117,7 +117,6 @@ void image_file_error_append(struct image_file *file, const enum wu_error st) {
 void image_file_free(struct image_file *file) {
 	wuimg_free_range(file->sub_img, 0, file->nr);
 	free(file->sub_img);
-	free(file->dec_state);
 	wustr_free(&file->errors);
 	tree_unroot(&file->metadata);
 	if (file->map.data && !file->keep_map) {

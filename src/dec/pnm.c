@@ -4,16 +4,17 @@
 #include "wudefs.h"
 #include "lib/pnm.h"
 
+static void pnm_end(struct image_file *infile) {
+	free(infile->dec_state);
+}
+
 static enum wu_error pnm_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf;
-	if (ev == ev_subcycle) {
-		const size_t i = (size_t)state->idx;
-		struct wuimg *img = infile->sub_img + i;
-		return pnm_decode(infile->dec_state, img, i)
-			? wu_ok : wu_decoding_error;
-	}
-	return wu_no_change;
+	(void)wuconf; (void)ev;
+	const size_t i = (size_t)state->idx;
+	struct wuimg *img = infile->sub_img + i;
+	return pnm_decode(infile->dec_state, img, i)
+		? wu_ok : wu_decoding_error;
 }
 
 static enum wu_error pnm_dec(struct image_file *infile,
@@ -40,4 +41,8 @@ const struct wu_conf *wuconf) {
 	return wu_alloc_error;
 }
 
-const struct image_fn pnm_fn = {.dec = pnm_dec, .callback = pnm_callback};
+const struct image_fn pnm_fn = {
+	.dec = pnm_dec,
+	.callback = pnm_callback,
+	.end = pnm_end,
+};

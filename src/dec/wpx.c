@@ -35,6 +35,11 @@ const struct wu_conf *wuconf) {
 }
 
 
+static void wia_end(struct image_file *infile) {
+	wpx_ia2_cleanup(infile->dec_state);
+	free(infile->dec_state);
+}
+
 static enum wu_error frame_decode(struct wpx_ia2_desc *desc, struct wuimg *img,
 const struct wu_conf *wuconf, const uint32_t i) {
 	struct wpx_bmp_desc frame;
@@ -48,13 +53,10 @@ const struct wu_conf *wuconf, const uint32_t i) {
 
 static enum wu_error wia_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	(void)ev;
 	struct wpx_ia2_desc *desc = infile->dec_state;
-	if (ev == ev_subcycle) {
-		struct wuimg *img = infile->sub_img + state->idx;
-		return frame_decode(desc, img, wuconf, (uint32_t)state->idx);
-	}
-	wpx_ia2_cleanup(desc);
-	return wu_no_change;
+	struct wuimg *img = infile->sub_img + state->idx;
+	return frame_decode(desc, img, wuconf, (uint32_t)state->idx);
 }
 
 static void add_list(struct wu_tree *tree, const char *branch_name,
@@ -124,5 +126,9 @@ const struct wu_conf *wuconf) {
 }
 
 const struct image_fn wbm_fn = {.mmap = true, .dec = wbm_dec};
-const struct image_fn wia_fn = {.mmap = true,
-	.dec = wia_dec, .callback = wia_callback};
+const struct image_fn wia_fn = {
+	.mmap = true,
+	.dec = wia_dec,
+	.callback = wia_callback,
+	.end = wia_end,
+};

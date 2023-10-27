@@ -33,6 +33,10 @@ struct tile_info {
 	tsize_t len;
 };
 
+static void tiff_end(struct image_file *infile) {
+	TIFFCleanup(infile->dec_state);
+}
+
 static void get_metadata_tags(TIFF *tif, struct wuimg *img) {
 	struct tifftag {
 		ttag_t tag;
@@ -436,22 +440,16 @@ const struct wu_conf *wuconf, TIFF *tif, struct wuimg *img, const tdir_t i) {
 	return status;
 }
 
-enum wu_error tiff_callback(struct image_file *infile,
+static enum wu_error tiff_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	(void)ev;
 	TIFF *tif = infile->dec_state;
-	if (ev) {
-		const tdir_t idx = (tdir_t)state->idx;
-		struct wuimg *img = infile->sub_img + idx;
-		return get_dir(infile, wuconf, tif, img, idx);
-	} else {
-		TIFFCleanup(tif);
-		infile->dec_state = NULL;
-		return wu_ok;
-	}
-	return wu_no_change;
+	const tdir_t idx = (tdir_t)state->idx;
+	struct wuimg *img = infile->sub_img + idx;
+	return get_dir(infile, wuconf, tif, img, idx);
 }
 
-enum wu_error tiff_dec(struct image_file *infile,
+static enum wu_error tiff_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	const int fd = fileno(infile->ifp);
@@ -467,4 +465,8 @@ const struct wu_conf *wuconf) {
 		? wu_ok : wu_alloc_error;
 }
 
-const struct image_fn tiff_fn = {.dec = tiff_dec, .callback = tiff_callback};
+const struct image_fn tiff_fn = {
+	.dec = tiff_dec,
+	.callback = tiff_callback,
+	.end = tiff_end,
+};

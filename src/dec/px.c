@@ -3,18 +3,20 @@
 #include "misc/math.h"
 #include "lib/px.h"
 
-enum wu_error px_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf;
-	if (ev == ev_subcycle) {
-		const uint32_t idx = (uint32_t)state->idx;
-		struct wuimg *img = infile->sub_img + idx;
-		return px_decode(infile->dec_state, img, idx);
-	}
-	return wu_no_change;
+static void px_end(struct image_file *infile) {
+	free(infile->dec_state);
 }
 
-enum wu_error px_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error px_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	(void)wuconf; (void)ev;
+	const uint32_t idx = (uint32_t)state->idx;
+	struct wuimg *img = infile->sub_img + idx;
+	return px_decode(infile->dec_state, img, idx);
+}
+
+static enum wu_error px_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct px_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		infile->dec_state = desc;
@@ -33,4 +35,8 @@ enum wu_error px_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	return wu_alloc_error;
 }
 
-const struct image_fn px_fn = {.dec = px_dec, .callback = px_callback};
+const struct image_fn px_fn = {
+	.dec = px_dec,
+	.callback = px_callback,
+	.end = px_end,
+};

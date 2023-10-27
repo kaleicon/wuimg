@@ -47,7 +47,7 @@ static enum wu_error raw_error_to_wu(struct image_file *infile, const int err) {
 	return wu_unknown_error;
 }
 
-static void raw_state_free(struct image_file *infile) {
+static void raw_end(struct image_file *infile) {
 	struct raw_state *rs = infile->dec_state;
 	for (size_t i = 0; i < rs->raw.count; ++i) {
 		libraw_dcraw_clear_mem(rs->raw.proc[i]);
@@ -58,6 +58,7 @@ static void raw_state_free(struct image_file *infile) {
 		infile->nr -= rs->jpeg.file.nr;
 	}
 	libraw_close(rs->data);
+	free(rs);
 }
 
 #ifdef WU_ENABLE_JPEG
@@ -147,22 +148,18 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 	return wu_ok;
 }
 
-enum wu_error raw_callback(struct image_file *infile,
+static enum wu_error raw_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
 	struct raw_state *rs = infile->dec_state;
-	enum wu_error status = wu_no_change;
-	if (ev) {
-		const int raws = (int)rs->raw.count;
-		if (state->idx >= raws && rs->jpeg.file.nr) {
-			status = decode_jpeg(infile, rs, state, ev);
-		} else {
-			status = raw_decode(infile, wuconf, state);
-		}
-	} else {
-		raw_state_free(infile);
+	const int raws = (int)rs->raw.count;
+#ifdef WU_ENABLE_JPEG
+	if (state->idx >= raws && rs->jpeg.file.nr) {
+		return decode_jpeg(infile, rs, state, ev);
 	}
-	return status;
+#endif
+	(void)ev;
+	return raw_decode(infile, wuconf, state);
 }
 
 static unsigned char convert_rotate(const int flip) {
@@ -307,7 +304,8 @@ const struct wu_conf *wuconf, struct raw_state *rs) {
 	return wu_ok;
 }
 
-enum wu_error raw_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error raw_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct raw_state *rs = calloc(1, sizeof(*rs));
 	if (!rs) {
 		return wu_alloc_error;
@@ -317,5 +315,9 @@ enum wu_error raw_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	return raw_setup(infile, wuconf, rs);
 }
 
-const struct image_fn raw_fn = {.mmap = true,
-	.dec = raw_dec, .callback = raw_callback};
+const struct image_fn raw_fn = {
+	.mmap = true,
+	.dec = raw_dec,
+	.callback = raw_callback,
+	.end = raw_end,
+};

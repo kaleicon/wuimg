@@ -16,9 +16,10 @@ struct svg_state {
 	float dec_scale;
 };
 
-static void clean_svg_state(struct image_file *infile) {
+static void svg_end(struct image_file *infile) {
 	struct svg_state *ds = infile->dec_state;
 	g_object_unref(ds->handle);
+	free(ds);
 }
 
 static float limit_zoom(const float zoom, const RsvgRectangle *viewport,
@@ -109,17 +110,16 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 	return wu_no_change;
 }
 
-enum wu_error svg_callback(struct image_file *infile,
+static enum wu_error svg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
 	if (event & ev_scale) {
 		return svg_rescale(infile, wuconf, state);
 	}
-	clean_svg_state(infile);
-	return wu_ok;
+	return wu_no_change;
 }
 
-enum wu_error svg_dec(struct image_file *infile,
+static enum wu_error svg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct svg_state *ds = calloc(sizeof(*ds), 1);
 	if (!ds) {
@@ -169,5 +169,9 @@ const struct wu_conf *wuconf) {
 	return err;
 }
 
-const struct image_fn svg_fn = {.mmap = true,
-	.dec = svg_dec, .callback = svg_callback};
+const struct image_fn svg_fn = {
+	.mmap = true,
+	.dec = svg_dec,
+	.callback = svg_callback,
+	.end = svg_end,
+};

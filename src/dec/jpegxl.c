@@ -13,12 +13,13 @@ struct jpegxl_state {
 	JxlPixelFormat fmt;
 };
 
-static void cleanup_jpegxl(struct image_file *infile) {
+static void jpegxl_end(struct image_file *infile) {
 	struct jpegxl_state *ds = infile->dec_state;
 	if (ds->runner) {
 		JxlResizableParallelRunnerDestroy(ds->runner);
 	}
 	JxlDecoderDestroy(ds->jd);
+	free(ds);
 }
 
 static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
@@ -153,12 +154,8 @@ static enum wu_error get_frame(struct image_file *infile, int idx) {
 
 static enum wu_error jpegxl_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf;
-	if (ev) {
-		return get_frame(infile, state->frame);
-	}
-	cleanup_jpegxl(infile);
-	return wu_ok;
+	(void)wuconf; (void)ev;
+	return get_frame(infile, state->frame);
 }
 
 static enum wu_error gather_info(struct image_file *infile,
@@ -272,5 +269,9 @@ const struct wu_conf *wuconf) {
 	return err;
 }
 
-const struct image_fn jpegxl_fn = {.mmap = true,
-	.dec = jpegxl_dec, .callback = jpegxl_callback};
+const struct image_fn jpegxl_fn = {
+	.mmap = true,
+	.dec = jpegxl_dec,
+	.callback = jpegxl_callback,
+	.end = jpegxl_end,
+};

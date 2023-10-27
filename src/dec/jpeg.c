@@ -53,10 +53,11 @@ static void jerror_exit(struct jpeg_common_struct *dinfo) {
 	longjmp(js->jmp, wu_decoding_error);
 }
 
-static void clean_jpeg_state(struct image_file *infile) {
+static void jpeg_end(struct image_file *infile) {
 	struct jpeg_state *js = infile->dec_state;
 	jpeg_destroy_decompress(&js->dinfo);
 	free(js->soi_offsets);
+	free(js);
 }
 
 static long marker_len(FILE *f, int first_byte) {
@@ -405,18 +406,14 @@ const struct wu_conf *wuconf, const int i) {
 	return status;
 }
 
-enum wu_error jpeg_callback(struct image_file *infile,
+static enum wu_error jpeg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
-	if (ev) {
-		return decode_img(infile, wuconf, state->idx);
-	} else {
-		clean_jpeg_state(infile);
-	}
-	return wu_no_change;
+	(void)ev;
+	return decode_img(infile, wuconf, state->idx);
 }
 
-enum wu_error jpeg_dec(struct image_file *infile,
+static enum wu_error jpeg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	if (alloc_sub_images(infile, 1)) {
@@ -438,4 +435,8 @@ const struct wu_conf *wuconf) {
 	return wu_alloc_error;
 }
 
-const struct image_fn jpeg_fn = {.dec = jpeg_dec, .callback = jpeg_callback};
+const struct image_fn jpeg_fn = {
+	.dec = jpeg_dec,
+	.callback = jpeg_callback,
+	.end = jpeg_end,
+};

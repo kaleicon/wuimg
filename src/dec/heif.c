@@ -15,7 +15,7 @@ struct heif_state {
 	heif_item_id primary_id;
 };
 
-static void clean_heif_state(struct image_file *infile) {
+static void heif_end(struct image_file *infile) {
 	struct heif_state *ds = infile->dec_state;
 	if (ds->himgs) {
 		for (size_t i = 0; i < infile->nr; ++i) {
@@ -33,6 +33,7 @@ static void clean_heif_state(struct image_file *infile) {
 		heif_context_free(ds->ctx);
 	}
 	heif_deinit();
+	free(ds);
 }
 
 static void read_block(const struct heif_image_handle* handle,
@@ -222,8 +223,12 @@ struct heif_image *himg, const bool alpha, int *bpl, size_t *scanline) {
 	return st;
 }
 
-static enum wu_error get_image(struct image_file *infile,
-const struct wu_conf *wuconf, const size_t i) {
+static enum wu_error heif_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event ev) {
+	(void)ev;
+	const size_t i = (size_t)state->idx;
+
 	struct heif_state *ds = infile->dec_state;
 	struct wuimg *img = infile->sub_img + i;
 	if (img->borrowed) {
@@ -300,18 +305,7 @@ const struct wu_conf *wuconf, const size_t i) {
 	return st;
 }
 
-enum wu_error heif_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev) {
-	if (ev) {
-		return get_image(infile, wuconf, (size_t)state->idx);
-	} else {
-		clean_heif_state(infile);
-	}
-	return wu_no_change;
-}
-
-enum wu_error heif_dec(struct image_file *infile,
+static enum wu_error heif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct heif_state *ds = calloc(sizeof(*ds), 1);
@@ -354,8 +348,12 @@ const struct wu_conf *wuconf) {
 	return wu_ok;
 }
 
-const struct image_fn heif_fn = {.mmap = true,
-	.dec = heif_dec, .callback = heif_callback};
+const struct image_fn heif_fn = {
+	.mmap = true,
+	.dec = heif_dec,
+	.callback = heif_callback,
+	.end = heif_end,
+};
 #ifndef WU_ENABLE_AVIF
 const struct image_fn avif_fn = heif_fn;
 #endif

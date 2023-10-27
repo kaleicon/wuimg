@@ -59,11 +59,12 @@ static enum wu_error map_error_to_wu(const int e) {
 	return wu_unknown_error;
 }
 
-static void clean_gif_state(struct image_file *infile) {
+static void gif_end(struct image_file *infile) {
 	struct gif_state *ds = infile->dec_state;
 	DGifCloseFile(ds->gif_file, NULL);
 	free(ds->previous.buf);
 	free(ds->gcb);
+	free(ds);
 }
 
 static void copy_stride(unsigned char *restrict out,
@@ -187,8 +188,10 @@ static enum wu_error gif_dec_frame(struct wuimg *img, struct gif_state *ds) {
 	return wu_ok;
 }
 
-static enum wu_error gif_frame_iter(struct image_file *infile,
-const struct wu_state *state) {
+static enum wu_error gif_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event event) {
+	(void)wuconf; (void)event;
 	struct gif_state *ds = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
 	if (ds->idx != state->frame) {
@@ -201,17 +204,6 @@ const struct wu_state *state) {
 		}
 	}
 	return wu_ok;
-}
-
-enum wu_error gif_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event event) {
-	(void)wuconf;
-	if (event == ev_frame) {
-		return gif_frame_iter(infile, state);
-	}
-	clean_gif_state(infile);
-	return wu_no_change;
 }
 
 static int read_extensions(const int count, ExtensionBlock *ext,
@@ -389,4 +381,6 @@ enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	return gif_dec_frame(img, ds);
 }
 
-const struct image_fn gif_fn = {.dec = gif_dec, .callback = gif_callback};
+const struct image_fn gif_fn = {
+	.dec = gif_dec, .callback = gif_callback, .end = gif_end,
+};

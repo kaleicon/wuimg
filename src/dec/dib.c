@@ -59,6 +59,11 @@ const struct image_fn bmp_fn = {.dec = bmp_dec};
 const struct image_fn dib_fn = {.dec = dib_dec};
 
 
+static void ico_end(struct image_file *infile) {
+	ico_cleanup(infile->dec_state);
+	free(infile->dec_state);
+}
+
 static enum wu_error wrap_ico(struct wuimg *img, const struct wu_conf *wuconf,
 struct ico_desc *desc, const uint16_t idx) {
 	const enum wu_error st = ico_set_image(desc, img, idx);
@@ -71,19 +76,16 @@ struct ico_desc *desc, const uint16_t idx) {
 	return st;
 }
 
-enum wu_error ico_callback(struct image_file *infile,
+static enum wu_error ico_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	if (ev) {
-		const uint16_t idx = (uint16_t)state->idx;
-		struct wuimg *img = infile->sub_img + idx;
-		return wrap_ico(img, wuconf, infile->dec_state, idx);
-	} else {
-		ico_cleanup(infile->dec_state);
-	}
-	return wu_no_change;
+	(void)ev;
+	const uint16_t idx = (uint16_t)state->idx;
+	struct wuimg *img = infile->sub_img + idx;
+	return wrap_ico(img, wuconf, infile->dec_state, idx);
 }
 
-enum wu_error ico_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error ico_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct ico_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
@@ -104,7 +106,11 @@ enum wu_error ico_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	return wu_alloc_error;
 }
 
-const struct image_fn ico_fn = {.dec = ico_dec, .callback = ico_callback};
+const struct image_fn ico_fn = {
+	.dec = ico_dec,
+	.callback = ico_callback,
+	.end = ico_end,
+};
 
 
 #include "dec_enable.def"

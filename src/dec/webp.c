@@ -48,7 +48,7 @@ struct webp_state {
 	} anim;
 };
 
-static void clean_webp_state(struct image_file *infile) {
+static void webp_end(struct image_file *infile) {
 	struct webp_state *ds = infile->dec_state;
 	switch (ds->anim_render) {
 	case webp_homegrown:
@@ -64,6 +64,7 @@ static void clean_webp_state(struct image_file *infile) {
 	}
 
 	WebPFreeDecBuffer(&ds->config.output);
+	free(ds);
 }
 
 static void rewind_webp_state(struct webp_state *ds, struct wuimg *img,
@@ -210,15 +211,11 @@ struct wu_state *state) {
 	return wu_ok;
 }
 
-enum wu_error webp_callback(struct image_file *infile,
+static enum wu_error webp_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	(void)wuconf;
-	if (event == ev_frame) {
-		return webp_frame_iter(infile, state);
-	}
-	clean_webp_state(infile);
-	return wu_ok;
+	(void)wuconf; (void)event;
+	return webp_frame_iter(infile, state);
 }
 
 static enum wu_error gather_info(struct wuimg *img, WebPIterator *iter) {
@@ -394,7 +391,7 @@ bool use_homegrown) {
 	tree_add_leaf_utf8(tree, "Compression", fmt);
 }
 
-enum wu_error webp_dec(struct image_file *infile,
+static enum wu_error webp_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct webp_state *ds = calloc(1, sizeof(*ds));
 	if (!ds) {
@@ -445,7 +442,6 @@ const struct wu_conf *wuconf) {
 		}
 	} else {
 		status = single_image_decode(img, ds);
-		clean_webp_state(infile);
 		if (status != VP8_STATUS_OK) {
 			const char *msg;
 			err = map_status(status, &msg);
@@ -455,5 +451,9 @@ const struct wu_conf *wuconf) {
 	return err;
 }
 
-const struct image_fn webp_fn = {.mmap = true,
-	.dec = webp_dec, .callback = webp_callback};
+const struct image_fn webp_fn = {
+	.mmap = true,
+	.dec = webp_dec,
+	.callback = webp_callback,
+	.end = webp_end,
+};

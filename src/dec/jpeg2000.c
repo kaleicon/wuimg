@@ -191,13 +191,8 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 	return st;
 }
 
-enum wu_error jpeg2000_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev) {
-	(void)wuconf; (void)state; (void)ev;
+static void jpeg2000_end(struct image_file *infile) {
 	opj_image_destroy(infile->dec_state);
-	infile->dec_state = NULL;
-	return wu_ok;
 }
 
 enum wu_error jp2_dec(struct image_file *infile, const struct wu_conf *wuconf) {
@@ -208,5 +203,5 @@ enum wu_error j2k_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_J2K);
 }
 
-const struct image_fn jp2_fn = {.dec = jp2_dec, .callback = jpeg2000_callback};
-const struct image_fn j2k_fn = {.dec = j2k_dec, .callback = jpeg2000_callback};
+const struct image_fn jp2_fn = {.dec = jp2_dec, .end = jpeg2000_end};
+const struct image_fn j2k_fn = {.dec = j2k_dec, .end = jpeg2000_end};

@@ -68,6 +68,11 @@ const struct wu_conf *wuconf) {
 }
 
 
+static void dcx_end(struct image_file *infile) {
+	dcx_free(infile->dec_state);
+	free(infile->dec_state);
+}
+
 static enum wu_error get_dcx_image(struct dcx_desc *desc, struct wuimg *img,
 const struct wu_conf *wuconf, const uint32_t idx) {
 	struct pcx_desc pcx;
@@ -80,15 +85,11 @@ const struct wu_conf *wuconf, const uint32_t idx) {
 
 static enum wu_error dcx_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	(void)ev;
 	struct dcx_desc *desc = infile->dec_state;
-	if (ev) {
-		const uint32_t idx = (uint32_t)state->idx;
-		struct wuimg *img = infile->sub_img + idx;
-		return get_dcx_image(desc, img, wuconf, idx);
-	} else {
-		dcx_free(desc);
-	}
-	return wu_ok;
+	const uint32_t idx = (uint32_t)state->idx;
+	struct wuimg *img = infile->sub_img + idx;
+	return get_dcx_image(desc, img, wuconf, idx);
 }
 
 static enum wu_error dcx_dec(struct image_file *infile,
@@ -109,5 +110,9 @@ const struct wu_conf *wuconf) {
 }
 
 const struct image_fn pcx_fn = {.mmap = true, .dec = pcx_dec};
-const struct image_fn dcx_fn = {.mmap = true,
-	.dec = dcx_dec, .callback = dcx_callback};
+const struct image_fn dcx_fn = {
+	.mmap = true,
+	.dec = dcx_dec,
+	.callback = dcx_callback,
+	.end = dcx_end,
+};

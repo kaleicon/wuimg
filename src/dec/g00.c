@@ -2,12 +2,9 @@
 #include "lib/g00.h"
 #include "wudefs.h"
 
-enum wu_error g00_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev) {
-	(void)wuconf; (void)state; (void)ev;
+static void g00_end(struct image_file *infile) {
 	g00_cleanup(infile->dec_state, infile->sub_img);
-	return wu_ok;
+	free(infile->dec_state);
 }
 
 static enum wu_error decode(struct image_file *infile,
@@ -45,4 +42,7 @@ enum wu_error g00_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	return wu_alloc_error;
 }
 
-const struct image_fn g00_fn = {.dec = g00_dec, .callback = g00_callback};
+const struct image_fn g00_fn = {
+	.dec = g00_dec,
+	.end = g00_end,
+};

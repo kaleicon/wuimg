@@ -7,16 +7,8 @@
 #include "misc/common.h"
 #include "misc/math.h"
 
-struct avif_state {
-	avifDecoder *dec;
-	uint32_t idx;
-};
-
-static void clean_avif_state(struct image_file *infile) {
-	struct avif_state *ds = infile->dec_state;
-	if (ds->dec) {
-		avifDecoderDestroy(ds->dec);
-	}
+static void avif_end(struct image_file *infile) {
+	avifDecoderDestroy(infile->dec_state);
 }
 
 static void read_metadata_item(struct wuimg *img, const avifRWData *meta,
@@ -69,9 +61,8 @@ static void get_transforms(struct wuimg *img, const avifImage *avif) {
 }
 
 static enum wu_error dec_subimg(struct image_file *infile,
-const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx,
-struct avif_state *ds) {
-	avifDecoder *dec = ds->dec;
+const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx) {
+	avifDecoder *dec = infile->dec_state;
 
 	const avifResult res = avifDecoderNthImage(dec, idx);
 	if (res != AVIF_RESULT_OK) {
@@ -150,20 +141,14 @@ struct avif_state *ds) {
 
 static enum wu_error avif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	if (ev) {
-		const uint32_t idx = (uint32_t)state->idx;
-		struct wuimg *img = infile->sub_img + idx;
-		struct avif_state *ds = infile->dec_state;
-		return dec_subimg(infile, wuconf, img, idx, ds);
-	} else {
-		clean_avif_state(infile);
-	}
-	return wu_no_change;
+	(void)ev;
+	const uint32_t idx = (uint32_t)state->idx;
+	struct wuimg *img = infile->sub_img + idx;
+	return dec_subimg(infile, wuconf, img, idx);
 }
 
 static enum wu_error decode_map(struct image_file *infile,
-struct avif_state *ds, avifResult *res) {
-	avifDecoder *dec = ds->dec;
+avifDecoder *dec, avifResult *res) {
 	//dec->strictFlags = AVIF_STRICT_DISABLED;
 	dec->maxThreads = (int)num_cpus();
 	*res = avifDecoderSetIOMemory(dec, infile->map.data, infile->map.len);
@@ -181,25 +166,23 @@ struct avif_state *ds, avifResult *res) {
 static enum wu_error avif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct avif_state *ds = calloc(1, sizeof(*ds));
-	if (ds) {
-		ds->dec = avifDecoderCreate();
-		if (ds->dec) {
-			infile->dec_state = ds;
-			infile->events = ev_subcycle;
-			avifResult res;
-			const enum wu_error st = decode_map(infile, ds,
-				&res);
-			if (res != AVIF_RESULT_OK) {
-				image_file_strerror_append(infile,
-					ds->dec->diag.error);
-			}
-			return st;
+	avifDecoder *dec = avifDecoderCreate();
+	if (dec) {
+		infile->dec_state = dec;
+		infile->events = ev_subcycle;
+		avifResult res;
+		const enum wu_error st = decode_map(infile, dec, &res);
+		if (res != AVIF_RESULT_OK) {
+			image_file_strerror_append(infile, dec->diag.error);
 		}
-		free(ds);
+		return st;
 	}
 	return wu_alloc_error;
 }
 
-const struct image_fn avif_fn = {.mmap = true,
-	.dec = avif_dec, .callback = avif_callback};
+const struct image_fn avif_fn = {
+	.mmap = true,
+	.dec = avif_dec,
+	.callback = avif_callback,
+	.end = avif_end,
+};

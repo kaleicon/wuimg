@@ -144,17 +144,20 @@ const struct dpx_desc *desc, const uint8_t idx) {
 	return st;
 }
 
-enum wu_error dpx_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	if (ev) {
-		const uint8_t idx = (uint8_t)state->idx;
-		struct wuimg *img = infile->sub_img + idx;
-		return dec_wrap(img, wuconf, infile->dec_state, idx);
-	}
-	return wu_no_change;
+static void dpx_end(struct image_file *infile) {
+	free(infile->dec_state);
 }
 
-enum wu_error dpx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error dpx_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+	(void)ev;
+	const uint8_t idx = (uint8_t)state->idx;
+	struct wuimg *img = infile->sub_img + idx;
+	return dec_wrap(img, wuconf, infile->dec_state, idx);
+}
+
+static enum wu_error dpx_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct dpx_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
@@ -174,4 +177,8 @@ enum wu_error dpx_dec(struct image_file *infile, const struct wu_conf *wuconf) {
 	return wu_alloc_error;
 }
 
-const struct image_fn dpx_fn = {.dec = dpx_dec, .callback = dpx_callback};
+const struct image_fn dpx_fn = {
+	.dec = dpx_dec,
+	.callback = dpx_callback,
+	.end = dpx_end,
+};

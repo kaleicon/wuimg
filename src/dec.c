@@ -106,7 +106,7 @@ bool fmtmap_known_extension(const struct wuptr filename) {
 
 void dec_free_image(struct image_context *image) {
 	if (image->file.dec_state) {
-		image->fn->callback(&image->file, &image->conf, &image->state, 0);
+		image->fn->end(&image->file);
 	}
 	image_file_free(&image->file);
 }
@@ -115,19 +115,17 @@ enum wu_error dec_callback(struct image_context *image,
 enum image_event event) {
 	struct image_file *infile = &image->file;
 	struct wu_state *state = &image->state;
-	if (event != ev_end) {
-		event &= infile->events;
-		switch (event) {
-		case ev_end:
+	event &= infile->events;
+	switch (event) {
+	case ev_none:
+		return wu_no_change;
+	case ev_subcycle:
+		if (infile->sub_img[state->idx].data) {
 			return wu_no_change;
-		case ev_subcycle:
-			if (infile->sub_img[state->idx].data) {
-				return wu_no_change;
-			}
-			break;
-		default:
-			break;
 		}
+		break;
+	default:
+		break;
 	}
 	const enum wu_error status = image->fn->callback(infile, &image->conf,
 		state, event);

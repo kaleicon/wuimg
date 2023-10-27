@@ -23,7 +23,7 @@ struct wu_state {
 };
 
 enum image_event {
-	ev_end = 0,
+	ev_none = 0,
 	ev_subcycle = 1,
 	ev_frame = 1 << 1,
 	ev_upscale = 1 << 2,
@@ -55,11 +55,13 @@ typedef enum wu_error (*fmt_dec_t)(struct image_file *infile,
 	const struct wu_conf *wuconf);
 typedef enum wu_error (*fmt_callback_t)(struct image_file *infile,
 	const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev);
+typedef void (*fmt_end_t)(struct image_file *infile);
 
 struct image_fn {
 	bool mmap;
 	fmt_dec_t dec;
 	fmt_callback_t callback;
+	fmt_end_t end;
 };
 
 struct image_context {

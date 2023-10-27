@@ -12,11 +12,12 @@ struct flif_state {
 		size_t buffer_size_bytes);
 };
 
-static void clean_flif_state(struct image_file *infile) {
+static void flif_end(struct image_file *infile) {
 	struct flif_state *ds = infile->dec_state;
 	if (ds->dec) {
 		flif_destroy_decoder(ds->dec);
 	}
+	free(ds);
 }
 
 static enum wu_error decode_frame(struct wuimg *img, FLIF_IMAGE *frame,
@@ -28,17 +29,13 @@ struct flif_state *ds) {
 	return wu_ok;
 }
 
-enum wu_error flif_callback(struct image_file *infile,
+static enum wu_error flif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf;
-	if (ev == ev_frame) {
-		struct flif_state *ds = infile->dec_state;
-		FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec,
-			(size_t)state->frame);
-		return decode_frame(infile->sub_img, frame, ds);
-	}
-	clean_flif_state(infile);
-	return wu_no_change;
+	(void)wuconf; (void)ev;
+	struct flif_state *ds = infile->dec_state;
+	FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec,
+		(size_t)state->frame);
+	return decode_frame(infile->sub_img, frame, ds);
 }
 
 static void read_metadata(struct wu_tree *tree, FLIF_IMAGE *frame) {
@@ -122,7 +119,7 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 	return decode_frame(img, frame, ds);
 }
 
-enum wu_error flif_dec(struct image_file *infile,
+static enum wu_error flif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct flif_state *ds = calloc(1, sizeof(*ds));
 	if (!ds) {
@@ -139,5 +136,9 @@ const struct wu_conf *wuconf) {
 	return wu_decoding_error;
 }
 
-const struct image_fn flif_fn = {.mmap = true,
-	.dec = flif_dec, .callback = flif_callback};
+const struct image_fn flif_fn = {
+	.mmap = true,
+	.dec = flif_dec,
+	.callback = flif_callback,
+	.end = flif_end,
+};

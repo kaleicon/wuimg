@@ -35,6 +35,11 @@ static void add_metadata(const struct ilbm_desc *desc, struct wu_tree *meta) {
 	}
 }
 
+static void ilbm_end(struct image_file *infile) {
+	ilbm_cleanup(infile->dec_state);
+	free(infile->dec_state);
+}
+
 static enum wu_error ilbm_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
@@ -50,14 +55,13 @@ const enum image_event ev) {
 				: ilbm_decode_main(desc, img);
 			return ok ? wu_ok : wu_decoding_error;
 		}
-		return wu_no_change;
+		break;
 	case ev_frame:
 		ilbm_palette_cycle(desc, img->u.palette, state->frame);
 		return wu_ok;
-	default:
-		ilbm_cleanup(desc);
+	default: break;
 	}
-	return wu_ok;
+	return wu_no_change;
 }
 
 static enum wu_error ilbm_dec(struct image_file *infile,
@@ -99,5 +103,9 @@ const struct wu_conf *wuconf) {
 	return wu_ok;
 }
 
-const struct image_fn ilbm_fn = {.mmap = true,
-	.dec = ilbm_dec, .callback = ilbm_callback};
+const struct image_fn ilbm_fn = {
+	.mmap = true,
+	.dec = ilbm_dec,
+	.callback = ilbm_callback,
+	.end = ilbm_end,
+};
