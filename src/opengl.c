@@ -565,10 +565,6 @@ static GLenum type_lut(const unsigned depth_log, const enum pix_attr attr) {
 	return 0;
 }
 
-static unsigned bitdepth_log(const uint8_t bd) {
-	return ulog2(uclamp(bd, 8, 32)*2 - 1) - 3;
-}
-
 static const char * set_upload_params(struct gl_upload_params *params,
 const struct wuimg *img) {
 	const uint8_t ch = params->comps;
@@ -639,7 +635,7 @@ const struct wuimg *img) {
 		return "Invalid pix attribute";
 	}
 
-	const unsigned depth = bitdepth_log(bd);
+	const unsigned depth = bit_min_wordsize_log2(umin(bd, 32));
 	params->in_fmt = in_fmt_lut(depth, ch);
 	params->fmt = fmt_lut(ch);
 	params->type = type_lut(depth, img->attr);
@@ -810,7 +806,7 @@ struct wu_state *state, const struct wuimg *img) {
 	r->ch = get_render_channels(img);
 	r->bd = (img->bitdepth > 8) ? 16 : 8;
 
-	const unsigned depth_log = bitdepth_log(r->bd);
+	const unsigned depth_log = bit_min_wordsize_log2(umin(r->bd, 32));
 	r->fmt = fmt_lut(r->ch);
 	r->type = type_lut(depth_log, pix_normal);
 	r->len = strip_base(r->w * r->ch, r->bd);

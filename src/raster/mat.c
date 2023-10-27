@@ -101,13 +101,13 @@ bool mat3_invert(struct mat3 *restrict dst, const struct mat3 *restrict src) {
 	out[8] = in[3*0 + 0] * in[3*1 + 1] - in[3*0 + 1] * in[3*1 + 0];*/
 
 	const double determinant = dot(in, out, 3, 3);
-	if (float_ce(determinant, 0)) {
-		return false;
+	if (isnormal(determinant)) {
+		for (size_t i = 0; i < ARRAY_LEN(dst->m); ++i) {
+			out[i] *= 1/determinant;
+		}
+		return true;
 	}
-	for (size_t i = 0; i < ARRAY_LEN(dst->m); ++i) {
-		out[i] *= 1/determinant;
-	}
-	return true;
+	return false;
 }
 
 void matf_identity(float *mat, const size_t w, const size_t h) {

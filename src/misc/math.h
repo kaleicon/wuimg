@@ -6,9 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-bool float_ce(double f1, double f2);
-
-float fclampf(float x, float min, float max);
+size_t zuceildiv(const size_t x, const size_t y);
 
 long lmod(long val, long max);
 
@@ -34,7 +32,7 @@ int imax(int x, int y);
 
 int imin(int x, int y);
 
-unsigned uclamp(unsigned n, unsigned min, unsigned max);
+float fclampf(float x, float min, float max);
 
 int iclamp(int n, int min, int max);
 

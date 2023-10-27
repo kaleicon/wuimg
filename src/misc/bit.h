@@ -6,6 +6,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+uint8_t bit_min_wordsize_log2(unsigned bits);
+
+size_t bit_min_wordsize_bits(unsigned bits);
+
 uint32_t bit_ctz32(uint32_t bits);
 
 uint32_t bit_cto32(uint32_t bits);

@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "base.h"
-#include "misc/math.h"
 
 static unsigned char * window_key_get_map(struct window_keymap *held_keys) {
 	return held_keys->map - WINDOW_KEYSTART;
@@ -41,8 +40,9 @@ const int h) {
 }
 
 void window_scroll_axis(struct window_cursor_axis *axis, const double offset) {
-	if (fpclassify(offset) == FP_NORMAL) {
-		axis->scroll = (float)(axis->scroll + offset);
+	const float off = (float)offset;
+	if (isnormal(off)) {
+		axis->scroll += off;
 	}
 }
 
@@ -56,12 +56,11 @@ const double y) {
 	struct window_common *win = &pub->win;
 	struct wu_state *state = &pub->image.state;
 	if (win->pressed) {
-		const double zoom = 1 / state->zoom;
-		const double x_diff = (x - win->cur.x.pos) * zoom;
-		const double y_diff = (y - win->cur.y.pos) * zoom;
-		if (!float_ce(0, x_diff) || !float_ce(0, y_diff)) {
-			state->x_offset += (float)x_diff;
-			state->y_offset += (float)y_diff;
+		const float x_diff = ((float)x - win->cur.x.pos) / state->zoom;
+		const float y_diff = ((float)y - win->cur.y.pos) / state->zoom;
+		if (isnormal(x_diff) || isnormal(y_diff)) {
+			state->x_offset += x_diff;
+			state->y_offset += y_diff;
 			pub->event.image = ev_move;
 		}
 	}

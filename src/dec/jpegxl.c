@@ -3,6 +3,7 @@
 #include <jxl/resizable_parallel_runner.h>
 
 #include "wudefs.h"
+#include "misc/bit.h"
 #include "misc/math.h"
 
 struct jpegxl_state {
@@ -175,8 +176,9 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 			}
 			img->channels = (uint8_t)(ds->info.num_color_channels
 				+ (bool)ds->info.alpha_bits);
-			img->bitdepth = (uint8_t)(1 <<
-				ulog2(uclamp(ds->info.bits_per_sample, 8, 32) * 2 - 1));
+			img->bitdepth = (uint8_t)(bit_min_wordsize_bits(
+				umin(ds->info.bits_per_sample, 32)
+			));
 			if (img->bitdepth > 8 && ds->info.exponent_bits_per_sample) {
 				img->attr = pix_float;
 			}

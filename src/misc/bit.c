@@ -3,6 +3,7 @@
 
 #include "bit.h"
 #include "endian.h"
+#include "math.h"
 
 static uint32_t bit_rev32(uint32_t b) {
 	b = (b & 0xaaaaaaaa) >> 1 | (b & 0x55555555) << 1;
@@ -42,6 +43,15 @@ uint32_t bit_clz32(uint32_t bits) {
 uint32_t bit_set32(const uint32_t bits) {
 	const uint32_t ones = ~0u;
 	return ones >> (sizeof(ones)*8 - bits);
+}
+
+
+uint8_t bit_min_wordsize_log2(const unsigned bits) {
+	return (uint8_t)(ulog2(umax(bits, 8) - 1) - 2);
+}
+
+size_t bit_min_wordsize_bits(const unsigned bits) {
+	return 8u << bit_min_wordsize_log2(bits);
 }
 
 

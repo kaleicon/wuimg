@@ -8,6 +8,7 @@
 #include "wudefs.h"
 #include "metadata.h"
 #include "misc/common.h"
+#include "misc/math.h"
 #include "raster/unpack.h"
 
 struct tiff_info {
@@ -136,8 +137,8 @@ const struct tiff_info *info, const enum unpack_op op) {
 	}
 
 	const uint32_t comps = info->spp / info->planes;
-	tiles.per_row = ((uint32_t)img->w + tiles.width - 1) / tiles.width;
-	tiles.per_col = ((uint32_t)img->h + tiles.height - 1) / tiles.height;
+	tiles.per_row = (uint32_t)zuceildiv(img->w, tiles.width);
+	tiles.per_col = (uint32_t)zuceildiv(img->h, tiles.height);
 	tiles.end_width = (uint32_t)img->w - tiles.width * (tiles.per_row - 1);
 	tiles.stride = strip_base(tiles.width * comps, (uint8_t)info->bps);
 	tiles.end_stride = strip_base(tiles.end_width * comps,

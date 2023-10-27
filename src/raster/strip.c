@@ -127,7 +127,7 @@ const size_t width, const struct scale_info info, const enum pix_attr attr) {
 		}
 		return;
 	case pix_inverted:
-		xor = ~xor;
+		xor = ~0u;
 		break;
 	case pix_normal:
 		if (!info.scale) {

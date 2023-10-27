@@ -164,7 +164,7 @@ static enum wu_error read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
 	/* TLG v5 header (after common header):
 		Offset  Type    Name
 		0       u32     BlockHeight
-		4       u32     BlockSizes[(Height - 1) / BlockHeight + 1]
+		4       u32     BlockSizes[ceildiv(Height, BlockHeight)]
 	*/
 
 	const uint8_t *header = mp_next_slice(&desc->mp, 4);
@@ -179,7 +179,7 @@ static enum wu_error read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
 
 	/* BlockSizes are repeated in the data stream, so they can safely be
 	 * skipped. */
-	const size_t blocks = (img->h - 1) / desc->block_height + 1;
+	const size_t blocks = zuceildiv(img->h, desc->block_height);
 	return mp_next_slice(&desc->mp, blocks * 4)
 		? wu_ok : wu_unexpected_eof;
 }

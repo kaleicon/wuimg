@@ -120,7 +120,7 @@ void *restrict dst, const size_t dims) {
 		const long scale = (range << 16) / desc->scale.pnm + 1;
 		const size_t digits = 5;
 		mp_skip_space_unsafe(&mp);
-		do {
+		while (cnt < dims) {
 			long val;
 			if (!mp_scan_uint(&mp, digits, &val)
 			|| val > desc->scale.pnm) {
@@ -136,7 +136,10 @@ void *restrict dst, const size_t dims) {
 				out[cnt] = (unsigned char)(val);
 			}
 			++cnt;
-		} while (cnt < dims && mp_skip_space_unsafe(&mp));
+			if (!mp_skip_space_unsafe(&mp)) {
+				break;
+			}
+		}
 		free(src);
 	}
 	return cnt;
@@ -213,8 +216,8 @@ const size_t i) {
 /* Header parsing */
 
 static size_t count_images(struct pnm_desc *desc) {
-	const size_t len = file_remaining(desc->ifp);
-	return len ? zumax(1, len / wuimg_size(&desc->rast)) : 0;
+	const size_t total = file_remaining(desc->ifp);
+	return zuceildiv(total, wuimg_size(&desc->rast));
 }
 
 static enum wu_error setup_desc(struct pnm_desc *desc) {
@@ -244,7 +247,7 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		is_half = true;
 		// fallthrough
 	case pnm_color_pfm: case pnm_gray_pfm:
-		if (fpclassify(desc->scale.pfm) != FP_NORMAL) {
+		if (!isnormal(desc->scale.pfm)) {
 			return wu_invalid_header;
 		}
 		desc->rast.bitdepth = is_half ? 16 : 32;
@@ -362,7 +365,7 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 
 	desc->sign = (sign[1] == '-');
 	desc->scale.pnm = bit_set32(depth);
-	desc->rast.bitdepth = (unsigned char)(2 << ulog2(umax(depth, 8) - 1));
+	desc->rast.bitdepth = (unsigned char)bit_min_wordsize_bits(depth);
 	return setup_desc(desc);
 }
 
