@@ -54,16 +54,19 @@ const int code, const float dt, const bool shift) {
 
 	// Delete
 	case 'D':
-		if (!shift && event->rm == trit_false) {
-			event->rm = trit_what;
+		if (!shift && event->rm == rm_no) {
+			event->rm = rm_ask;
 			term_line_temp("Delete file?"
 				" (D to confirm, u to dismiss)");
-		} else if (shift && event->rm == trit_what) {
-			event->rm = trit_true;
+		} else if (shift && event->rm == rm_ask) {
+			event->rm = rm_yes;
 		}
 		return repeat_none;
 	// Abort delete
 	case 'U':
+		if (event->rm == rm_ask) {
+			event->rm = rm_no;
+		}
 		event->program = 0;
 		term_line_clear();
 		return repeat_none;

@@ -113,7 +113,7 @@ struct window_context *window, double remaining) {
 			}
 		}
 
-		if (event->cycle || event->program || event->rm == trit_true) {
+		if (event->cycle || event->program || event->rm == rm_yes) {
 			break;
 		} else if (event->image) {
 			window->pub.gl.update = gl_update_matrix;
@@ -134,13 +134,15 @@ static double min_time(const struct wuimg *img, const struct wu_state *state) {
 	return 0;
 }
 
-bool display_loop(struct window_context *window, const bool single_file) {
+bool display_loop(struct window_context *window, const bool single_file,
+const bool allow_delete) {
 	struct image_context *image = &window->pub.image;
 	struct image_file *infile = &image->file;
 	struct wu_state *state = &window->pub.image.state;
 	struct wu_event *event = &window->pub.event;
 
 	*event = (struct wu_event){
+		.rm = allow_delete ? rm_no : rm_disable,
 		.image = ev_subcycle, // for init only, not passed to image
 	};
 
@@ -174,7 +176,7 @@ bool display_loop(struct window_context *window, const bool single_file) {
 		remaining = idle_display(image, window, remaining);
 
 		if ((!single_file && event->cycle)
-		|| event->program || event->rm == trit_true) {
+		|| event->program || event->rm == rm_yes) {
 			break;
 		} else if (event->image) {
 			if (event->image & infile->events) {

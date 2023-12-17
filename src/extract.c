@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: 0BSD
-#include <errno.h>
 #include <locale.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include <archive.h>
 #include <archive_entry.h>
 
+#include "misc/common.h"
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "misc/wustr.h"
@@ -13,29 +14,35 @@
 #include "extract.h"
 #include "term.h"
 
-void extract_iter_free(struct extract_iter *iter) {
-	for (size_t i = 0; i < iter->grow.pos; ++i) {
-		free(iter->entry[i].name);
-		if (iter->entry[i].tmp) {
-			fclose(iter->entry[i].tmp);
-		}
+static bool open_archive(struct extract_iter *iter) {
+	iter->ra = archive_read_new();
+	if (!iter->ra) {
+		return false;
 	}
-	free(iter->entry);
+	archive_read_support_filter_all(iter->ra);
+	archive_read_support_format_all(iter->ra);
+	iter->idx = -1;
+	lseek(iter->fd, 0, SEEK_SET);
+	return archive_read_open_fd(iter->ra, iter->fd, BUFSIZ) == ARCHIVE_OK;
+}
+
+void extract_free(struct extract_iter *iter) {
+	free(iter->name);
+	if (iter->cur) {
+		fclose(iter->cur);
+	}
 	if (iter->ra) {
 		archive_read_free(iter->ra);
 	}
-}
-
-void extract_file_free(struct extract_file *entry) {
-	free(entry->name);
-	fclose(entry->tmp);
-	entry->name = NULL;
-	entry->tmp = NULL;
+	close(iter->fd);
 }
 
 static bool tmp_extract(FILE *tmp, struct archive *r,
 struct archive_entry *entry) {
+	rewind(tmp);
+	fflush(tmp);
 	const int fd = fileno(tmp);
+	ftruncate(fd, 0);
 	if (archive_read_data_into_fd(r, fd) != ARCHIVE_FATAL) {
 		struct timespec times[2];
 		if (archive_entry_atime_is_set(entry)) {
@@ -58,7 +65,7 @@ struct archive_entry *entry) {
 	return false;
 }
 
-static bool ok_case(struct extract_iter *iter, struct archive_entry *entry) {
+static enum trit get_entry(struct extract_iter *iter, struct archive_entry *entry) {
 	const struct wuptr name = wuptr_str(archive_entry_pathname(entry));
 	const bool regular_and_probably_nonempty =
 		( AE_IFREG == (archive_entry_filetype(entry) & AE_IFMT) )
@@ -68,38 +75,18 @@ static bool ok_case(struct extract_iter *iter, struct archive_entry *entry) {
 		);
 
 	if (regular_and_probably_nonempty && fmtmap_known_extension(name)) {
-		errno = 0;
-		FILE *tmp = tmpfile();
-		if (!tmp) {
-			perror("Failed to create temp file");
-			return false;
+		if (!tmp_extract(iter->cur, iter->ra, entry)) {
+			return trit_false;
 		}
-
-		if (tmp_extract(tmp, iter->ra, entry)) {
-			if (!wugrow_recheck(&iter->grow)) {
-				fclose(tmp);
-				return false;
-			}
-			iter->entry = iter->grow.ptr;
-
-			char *nname = memdup(name.ptr, name.len + 1);
-			if (!nname) {
-				fclose(tmp);
-				return false;
-			}
-			iter->entry[iter->grow.pos] = (struct extract_file) {
-				.name = nname,
-				.tmp = tmp,
-			};
-			++iter->grow.pos;
-		} else {
-			fclose(tmp);
-		}
+		free(iter->name);
+		iter->name = memdup(name.ptr, name.len + 1);
+		++iter->idx;
+		iter->total = lmax(iter->total, iter->idx + 1);
 	}
-	return true;
+	return trit_true;
 }
 
-static bool next_archive_entry(struct extract_iter *iter) {
+static enum trit next_entry(struct extract_iter *iter) {
 	struct archive_entry *entry;
 	const int r = archive_read_next_header(iter->ra, &entry);
 	switch (r) {
@@ -108,53 +95,59 @@ static bool next_archive_entry(struct extract_iter *iter) {
 			archive_error_string(iter->ra), stderr);
 		// fallthrough
 	case ARCHIVE_OK:
-		return ok_case(iter, entry);
+		return get_entry(iter, entry);
 	case ARCHIVE_RETRY:
 		break;
 	case ARCHIVE_FATAL:
 		term_line_key_val("libarchive error",
 			archive_error_string(iter->ra), stderr);
-		// fallthrough
+		return trit_false;
 	case ARCHIVE_EOF:
+		return trit_what;
+	}
+	return trit_true;
+}
+
+bool extract_file(struct extract_iter *iter, long idx) {
+	if (iter->seen_it_all) {
+		idx = lmod(idx, iter->total);
+	}
+	if (iter->idx == idx) {
+		rewind(iter->cur);
+		return true;
+	} else if (iter->idx > idx) {
 		archive_read_free(iter->ra);
-		iter->ra = NULL;
-		return r == ARCHIVE_EOF;
+		open_archive(iter);
+	}
+	while (idx < 0 || iter->idx < idx) {
+		switch (next_entry(iter)) {
+		case trit_false:
+			return false;
+		case trit_true:
+			continue;
+		case trit_what:
+			iter->seen_it_all = true;
+			if (iter->total < 1) {
+				return false;
+			} else if (idx >= 0) {
+				return extract_file(iter, idx);
+			}
+			break;
+		}
+		break;
 	}
 	return true;
 }
 
-struct extract_file * extract_file_get(struct extract_iter *iter, long idx) {
-	while (iter->ra && (idx < 0 || (size_t)idx >= iter->grow.pos)) {
-		if (!next_archive_entry(iter)) {
-			return NULL;
-		}
-	}
-
-	if (iter->grow.pos) {
-		idx = lmod(idx, (long)iter->grow.pos);
-		struct extract_file *file = iter->entry + idx;
-		if (file->tmp) {
-			rewind(file->tmp);
-		}
-		return file;
-	}
-	return NULL;
-}
-
-bool extract_iter_init(struct extract_iter *iter, const char *filename) {
+bool extract_init(struct extract_iter *iter, const char *filename) {
 	setlocale(LC_CTYPE, "");
 	*iter = (struct extract_iter) {
-		.ra = archive_read_new(),
-		.grow = wugrow_init(sizeof(*iter->entry)),
+		.cur = tmpfile(),
+		.fd = open(filename, O_RDONLY),
 	};
-	if (iter->ra) {
-		archive_read_support_filter_all(iter->ra);
-		archive_read_support_format_all(iter->ra);
-		if (archive_read_open_filename(iter->ra, filename, BUFSIZ)
-		== ARCHIVE_OK) {
-			return true;
-		}
-		archive_read_free(iter->ra);
+	if (iter->fd >= 0 && iter->cur && open_archive(iter)) {
+		return true;
 	}
+	extract_free(iter);
 	return false;
 }

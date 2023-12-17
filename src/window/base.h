@@ -23,7 +23,12 @@ struct window_keymap {
 
 struct wu_event {
 	int cycle;
-	enum trit rm:8;
+	enum rm_status {
+		rm_no = 0,
+		rm_disable,
+		rm_ask,
+		rm_yes,
+	} rm:8;
 	enum wu_program_event {
 		wu_program_none = 0,
 		wu_program_exit,

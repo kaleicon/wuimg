@@ -198,7 +198,7 @@ const struct test_mode_args args) {
 
 static enum wu_error run_with_archive(const char *archive_name) {
 	struct extract_iter iter;
-	if (!extract_iter_init(&iter, archive_name)) {
+	if (!extract_init(&iter, archive_name)) {
 		fprintf(stderr, "Failed to open %s\n", archive_name);
 		return wu_open_error;
 	}
@@ -215,58 +215,39 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	struct image_context *image = &window.pub.image;
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
-	size_t deleted = 0;
 	long idx = 0;
-	long direction = 1;
-	do {
-		struct extract_file *entry = extract_file_get(&iter, idx);
-		if (!entry) {
-			break;
-		} else if (!entry->tmp) {
-			idx += direction;
-			continue;
-		}
-		idx = lmod(idx, (long)iter.grow.pos);
+//	long direction = 1;
+	while (event->program != wu_program_exit && extract_file(&iter, idx)) {
+		idx = lmod(iter.idx, iter.total);
 
-		printf("%ld/", idx + 1);
-		if (iter.ra) {
-			putchar('?');
-		} else {
-			printf("%zu", iter.grow.pos);
-		}
-		printf(", %s/%s\n", archive_name, entry->name);
+		printf("%ld/%ld%s, %s/%s\n", idx + 1, iter.total,
+			iter.seen_it_all ? "" : "?", archive_name, iter.name);
 
 		image_reset(image);
-		dec_src_file(image, entry->tmp, entry->name, true);
+		dec_src_file(image, iter.cur, iter.name, true);
 
-		bool free_entry = false;
+		bool next_entry = false;
 		result = decode_with_stats(image);
 		if (result == wu_ok) {
-			const bool sole_entry = iter.ra
-				? false : (iter.grow.pos == 1);
-			const bool ok = display_loop(&window, sole_entry);
-			if (!ok || event->rm == trit_true) {
-				free_entry = true;
+			if (!display_loop(&window, false, false)) {
+				next_entry = true;
 			}
 		} else {
-			free_entry = true;
+			next_entry = true;
 		}
 
 		dec_free_image(image);
-		if (free_entry) {
-			extract_file_free(entry);
-			++deleted;
+		if (next_entry) {
 			event->cycle = 1;
 		}
 		putchar('\n');
 
 		idx += event->cycle;
-		direction = lsign(event->cycle);
-	} while (event->program != wu_program_exit
-	&& (iter.ra || deleted < iter.grow.pos));
+//		direction = lsign(event->cycle);
+	}
 
 	display_end(&window, &tr);
-	extract_iter_free(&iter);
+	extract_free(&iter);
 	return result;
 }
 
@@ -313,8 +294,9 @@ const bool interpret_stdin) {
 		if (!free_entry) {
 			result = decode_with_stats(image);
 			if (result == wu_ok) {
-				const bool ok = display_loop(&window, remaining == 1);
-				if (event->rm == trit_true) {
+				const bool ok = display_loop(&window,
+					remaining == 1, true);
+				if (event->rm == rm_yes) {
 					unlink(image->name);
 					puts("File deleted.");
 					free_entry = true;

@@ -9,23 +9,20 @@
 
 #include "misc/wustr.h"
 
-struct extract_file {
-	char *name;
-	FILE *tmp;
-};
-
 struct extract_iter {
 	struct archive *ra;
-	struct wugrow grow;
-	struct extract_file *entry;
+	FILE *cur;
+	char *name;
+	long idx;
+	long total;
+	int fd;
+	bool seen_it_all;
 };
 
-void extract_iter_free(struct extract_iter *iter);
+void extract_free(struct extract_iter *iter);
 
-void extract_file_free(struct extract_file *entry);
+bool extract_file(struct extract_iter *iter, long idx);
 
-struct extract_file * extract_file_get(struct extract_iter *iter, long idx);
-
-bool extract_iter_init(struct extract_iter *iter, const char *filename);
+bool extract_init(struct extract_iter *iter, const char *filename);
 
 #endif /* WU_EXTRACT */
