@@ -1,0 +1,185 @@
+                                     wuimg
+                              Frugal image viewer
+
+wu is a minimalistic but not barebones image viewer. It aims for comfort,
+speed, accurate color rendering, and format documentation/preservation.
+
+wu is meant as a terminal companion, so launching from one is recommended.
+
+
+Features
+--------
+* Few keybindings
+* No graphical elements besides the image; all status text goes to stdout
+* Displays EXIF, XMP, and format-specific metadata
+* Support for embedded ICC profiles and format-specific colorspaces
+  * At the moment, images are converted to sRGB for display
+* Can browse archives, via libarchive
+* Doesn't modify the original file when rotating!
+* Runs on Wayland, DRM/KMS, and X11
+
+
+Supported formats
+-----------------
+Over 40 format families are supported, ranging from the common to the niche.
+Here is a representative but not exhaustive listing:
+* Well-known:
+  * BMP and ICO
+  * GIF
+  * JPEG
+  * PNG
+  * SVG
+  * TGA
+  * TIFF
+* 21st century:
+  * AVIF and HEIF
+  * JPEG-XL
+  * WEBP
+* Legacy:
+  * ILBM
+  * MAKI and MAG
+  * MSX-BASIC
+  * PCX
+  * Yanagisawa's Pi and PIC
+* Specialty:
+  * RAW camera formats
+  * Sixel
+* Uncompressed:
+  * DPX
+  * Farbfeld
+  * The whole PNM extended family (including PAM, Pfm, Xv thumbnail, and MTV)
+* Video-games/Visual novels:
+  * RealLive's G00 and PDT
+  * PSX's TIM
+
+See the files under 'dec/' or run 'meson configure' for a full list. Files
+under 'lib/' are our home-made decoders, which usually document the format
+in some way.
+
+As archives are supported, CBZ/CB7 are also viewable.
+
+
+Prerequisites
+-------------
+For building you'll need
+* meson
+* A C and C++ compiler (both GCC and Clang work fine, others... probably not)
+
+and at a very minimum the development files for
+* libarchive
+* libepoxy
+* libexiv2
+* libicu
+* liblcms2
+* libuchardet
+
+Window backends and image decoders can be enabled or disabled independently.
+The default is to compile them if the required dev files are detected, so
+usually no further configuration is needed beyond having them installed.
+
+For window backends you need:
+* Wayland
+  * libwayland
+  * libxkbcommon
+  * wayland-protocols
+* DRM/KMS
+  * libdrm
+  * libgbm
+* X11
+  * libglfw3
+
+For image decoding:
+* libavif
+* libflif
+* libgif
+* libheif
+* libjbig
+* libjpeg
+* libopenjp2 (JPEG2000)
+* libcharls (JPEG-LS)
+* libjxl
+* liblerc
+* libpng
+* libraw
+* librsvg
+* libtiff
+* libwebp and libwebpdemux
+
+To actually run the program you'll need
+* Linux (it might work on other POSIX systems, I don't know)
+* OpenGL 3.3
+* 128MB of RAM minimum, 256MB recommended
+
+
+Compiling
+---------
+Pick a good name for a build directory and run
+
+	meson BUILDDIR
+
+This will by default enable as many formats as possible. In case you want to
+explicitely disable or enable some (like for, say, fast fuzzing because you
+don't trust me or the C language in general), run something like
+
+	meson configure -D png=disabled -D maki=enabled BUILDDIR
+
+You may also add `--auto-features disable` to disable everything by default.
+
+Once you're ready, just run
+
+	meson install -C BUILDDIR
+
+A lone executable `wu` will be produced, and copied to whatever location meson
+uses as default. This might require root privileges though. To set a different
+location, do
+
+	meson configure --prefix PREFIX BUILDDIR
+
+beforehand so that it's installed to $PREFIX/bin/ from then on. A good
+candidate is '~/.local' if that's on your $PATH.
+
+That's it. Run 'wu -h' to get some help text. The help screen is short (it
+may actually fit into your screen) and contains all the information you need.
+
+
+Usage
+-----
+Three keys you need to remember: 'q' to quit, 'n' to go to the next image, and
+'p' for the previous one.
+
+Commands:
+	`wu [FILE|DIR]` for viewing.
+	`wu -h` for command-line usage
+	`wu -k` for a list of keybindings
+
+
+Configuration
+-------------
+All done through a 'key = value #comment' file that must be located at
+"$XDG_CONFIG_HOME/wu.conf" or "$HOME/.config/wu.conf". 'key' has to be a member
+of the wu_conf struct, which is defined at 'conf.h' with plenty of comments.
+You should take a look at it.
+
+Example:
+-------------------------------------------------------------------------------
+# Comment                     # A comment.
+magnify_under = 128           # (unsigned) int. An (unsigned) integer.
+initial_size = 1280 720       # struct. Specified in order.
+bg = 0xcc 0x66 0x99 0x33      # array. Specified in order.
+bg_source = metadata          # enum. Specified as the value name sans prefix
+no_window_decorations = true  # bool. Specified as 'true' or 'false'. Don't you
+                              # try to cheat using 0 or 1.
+-------------------------------------------------------------------------------
+
+
+Party tricks
+------------
+Have a weird file from the twentieth century, and want to use it in a modern
+environment?
+
+	wu w weird.pi  # Writes to 'weird.pi.pam'
+
+Same, but you'd rather keep it in a more compact format?
+
+	wu w -s weird.pi | convert - weird.png   # using imagemagick, or...
+	wu w -s weird.pi | pamtopng > weird.png  # using netpbm
