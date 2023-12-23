@@ -6,6 +6,7 @@
 
 #include "wudefs.h"
 #include "opengl.h"
+#include "term.h"
 
 #define WINDOW_KEYSTART ' '
 #define WINDOW_KEYEND ('Z' + 1)
@@ -24,8 +25,8 @@ struct window_keymap {
 struct wu_event {
 	int cycle;
 	enum rm_status {
-		rm_no = 0,
-		rm_disable,
+		rm_never,
+		rm_no,
 		rm_ask,
 		rm_yes,
 	} rm:8;
@@ -75,6 +76,7 @@ struct window_public {
 	struct window_common win;
 	struct timespec timer;
 	struct image_context image;
+	struct term_queue term;
 	struct wu_event event;
 	struct window_keymap held_keys;
 };

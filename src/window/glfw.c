@@ -143,12 +143,11 @@ const int action, const int mode) {
 	case GLFW_KEY_7: case GLFW_KEY_KP_7: event = '7'; break;
 	case GLFW_KEY_8: case GLFW_KEY_KP_8: event = '8'; break;
 	case GLFW_KEY_9: case GLFW_KEY_KP_9: event = '9'; break;
+	default: return;
 	}
 
-	if (event) {
-		struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-		window_key_add(&glfw->pub->held_keys, keyact, event, shift);
-	}
+	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
+	window_key_add(&glfw->pub->held_keys, keyact, event, shift);
 }
 
 static void glfw_fullscreen(void *ctx, const int is_fullscreen) {

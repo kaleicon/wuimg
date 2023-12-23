@@ -14,9 +14,9 @@ void window_key_lift(struct window_keymap *held_keys) {
 
 void window_key_add(struct window_keymap *held_keys,
 const enum key_action action, int code, const bool shift) {
-	held_keys->shift = shift;
 	code = toupper(code);
 	if (code >= WINDOW_KEYSTART && code < WINDOW_KEYEND) {
+		held_keys->shift = shift;
 		unsigned char *map = window_key_get_map(held_keys);
 		if (!map[code] || action == key_release) {
 			map[code] = (uint8_t)action;

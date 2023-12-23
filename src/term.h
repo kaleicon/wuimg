@@ -14,10 +14,15 @@ struct term_restore {
 	cc_t vtime;
 };
 
+struct term_queue {
+	unsigned char buf[16];
+	size_t used;
+};
+
 void term_print_escaped(const unsigned char *restrict data, size_t len,
 bool is_utf8, FILE *stream);
 
-size_t term_event_read(unsigned char *output, size_t len);
+unsigned char term_queue_next(struct term_queue *t);
 
 void term_indent(size_t indent, FILE *out);
 

@@ -417,9 +417,7 @@ const uint32_t state) {
 		if (!c) {
 			c = convert_by_codepoint(wl->kb.state, key);
 		}
-		if (c) {
-			window_key_add(&wl->pub->held_keys, keyact, c, shift);
-		}
+		window_key_add(&wl->pub->held_keys, keyact, c, shift);
 	}
 }
 

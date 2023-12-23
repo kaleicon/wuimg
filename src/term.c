@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: 0BSD
 #include <ctype.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <unistd.h>
 
 #include "term.h"
-#include "misc/wustr.h"
+#include "misc/math.h"
 
 static size_t graph_len(const unsigned char *str, size_t len) {
 	while (len) {
@@ -55,54 +56,63 @@ const bool is_utf8, FILE *stream) {
 	}
 }
 
-size_t term_event_read(unsigned char *output, const size_t len) {
-	const unsigned char esc_seq[] = {0x1b, '['};
-	const unsigned char shift_mod[] = {'1', ';', '2'};
-
-	const ssize_t r = read(STDIN_FILENO, output, len);
-	if (r < 1) {
-		return 0;
-	}
-
-	const size_t read = (size_t)r;
-	size_t i = 0;
-	size_t written = 0;
-	while (i < read) {
-		if (output[i] == esc_seq[0]) {
-			// No idea how all sequences end, so bail out if
-			// unknown.
-			if (i + 1 >= read && output[i+1] != esc_seq[1]) {
-				break;
-			}
-			i += sizeof(esc_seq);
-
-			bool shift = false;
-			if (i + sizeof(shift_mod) < read
-			&& !memcmp(output + i, shift_mod, sizeof(shift_mod)) ) {
-				shift = true;
-				i += sizeof(shift_mod);
-			}
-
-			unsigned char c;
-			switch (output[i]) {
-			case 'A': c = shift ? 'K' : 'k'; break;
-			case 'B': c = shift ? 'J' : 'j'; break;
-			case 'C': c = shift ? 'L' : 'l'; break;
-			case 'D': c = shift ? 'H' : 'h'; break;
-			case 'F': c = '='; break;
-			case 'H': c = shift ? '1' : '0'; break;
-			default: return written;
-			}
-			output[written] = c;
-		} else if (isprint(output[i])) {
-			output[written] = output[i];
-		} else {
+static size_t char_run(struct term_queue *t, size_t i, uint8_t start,
+uint8_t end) {
+	size_t len = 0;
+	while (i < t->used) {
+		if (t->buf[i] < start || t->buf[i] > end) {
 			break;
 		}
 		++i;
-		++written;
+		++len;
 	}
-	return written;
+	return len;
+}
+
+unsigned char term_queue_next(struct term_queue *t) {
+	if (t->used < sizeof(t->buf) / 2) {
+		t->used += (size_t)read(STDIN_FILENO, t->buf + t->used,
+			sizeof(t->buf) - t->used);
+		if (!t->used) {
+			return 0;
+		}
+	}
+
+	unsigned char c = 0;
+	size_t i = 0;
+	const unsigned char esc_seq[] = {0x1b, '['};
+	const unsigned char shift_mod[] = {'1', ';', '2'};
+	if (t->buf[i] == esc_seq[0]) {
+		++i;
+		if (t->used > 2 && t->buf[i] == esc_seq[1]) {
+			++i;
+
+			const size_t params = char_run(t, i, 0x30, 0x3f);
+			const bool shift = params == sizeof(shift_mod)
+				&& !memcmp(t->buf + i, shift_mod, sizeof(shift_mod));
+			i += params;
+
+			const size_t middle = char_run(t, i, 0x20, 0x2f);
+			i += middle;
+			if (!middle && i < t->used) {
+				switch (t->buf[i]) {
+				case 'A': c = shift ? 'K' : 'k'; break;
+				case 'B': c = shift ? 'J' : 'j'; break;
+				case 'C': c = shift ? 'L' : 'l'; break;
+				case 'D': c = shift ? 'H' : 'h'; break;
+				case 'F': c = '='; break;
+				case 'H': c = shift ? '1' : '0'; break;
+				}
+			}
+		}
+	} else {
+		c = t->buf[i];
+	}
+	i = zumin(i + 1, t->used);
+
+	memmove(t->buf, t->buf + i, t->used - i);
+	t->used -= i;
+	return c;
 }
 
 void term_indent(size_t indent, FILE *out) {

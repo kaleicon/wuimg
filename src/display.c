@@ -88,12 +88,8 @@ const bool print_draw_time) {
 	nanosleep(&tm, NULL);
 
 	window_poll(window);
-	unsigned char tk[8];
-	const size_t read = term_event_read(tk, sizeof(tk));
-	for (size_t i = 0; i < read; ++i) {
-		window_key_add(&window->pub.held_keys, key_external,
-			tk[i], isupper(tk[i]));
-	}
+	const unsigned char ev = term_queue_next(&window->pub.term);
+	window_key_add(&window->pub.held_keys, key_external, ev, isupper(ev));
 	return event_exec(window);
 }
 
@@ -142,7 +138,7 @@ const bool allow_delete) {
 	struct wu_event *event = &window->pub.event;
 
 	*event = (struct wu_event){
-		.rm = allow_delete ? rm_no : rm_disable,
+		.rm = allow_delete ? rm_no : rm_never,
 		.image = ev_subcycle, // for init only, not passed to image
 	};
 
