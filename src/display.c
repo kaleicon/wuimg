@@ -41,7 +41,7 @@ static bool update_texture(struct image_context *image,
 struct gl_context *gl, const bool reset) {
 	struct wu_state *state = &image->state;
 	struct wuimg *img = image->file.sub_img + state->idx;
-	switch (gl_texture_upload(gl, img)) {
+	switch (gl_texture_upload(gl, img, &image->conf)) {
 	case gl_upload_fail:
 		term_line_put("Failed to upload to texture.", stderr);
 		return false;

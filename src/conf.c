@@ -15,6 +15,11 @@
 
 static const unsigned DEFAULT_MAX = USHRT_MAX / 4;
 
+struct enum_str {
+	const char *str;
+	unsigned char val;
+};
+
 struct wu_conf conf_default(void) {
 	return (struct wu_conf) {
 		.fb = {DEFAULT_MAX, DEFAULT_MAX},
@@ -68,6 +73,19 @@ static bool read_bool(struct mparser *tp, bool *ok) {
 	return false;
 }
 
+static unsigned char read_enum(struct mparser *tp, bool *ok,
+const struct enum_str *e, const size_t len) {
+	struct wuptr val = mp_next_word(tp);
+	mp_skip_blank(tp);
+	for (size_t i = 0; i < len; ++i) {
+		if (wuptr_eq_str(val, e[i].str)) {
+			return e[i].val;
+		}
+	}
+	*ok = false;
+	return 0;
+}
+
 static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 	while (tp->pos < tp->len) {
 		mp_skip_space(tp);
@@ -100,17 +118,20 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 				bg[i] = (unsigned char)read_xint(tp, &ok);
 			}
 		} else if (wuptr_eq_str(key, "bg_src")) {
-			struct wuptr val = mp_next_word(tp);
-			mp_skip_blank(tp);
-			if (wuptr_eq_str(val, "default")) {
-				conf->bg_src = bg_default;
-			} else if (wuptr_eq_str(val, "metadata")) {
-				conf->bg_src = bg_metadata;
-			} else {
-				ok = false;
-			}
+			const struct enum_str e[] = {
+				{"default", bg_default},
+				{"metadata", bg_metadata},
+			};
+			conf->bg_src = read_enum(tp, &ok, e, ARRAY_LEN(e));
 		} else if (wuptr_eq_str(key, "no_window_decorations")) {
 			conf->no_window_decorations = read_bool(tp, &ok);
+		} else if (wuptr_eq_str(key, "heed_pixel_ratio")) {
+			const struct enum_str e[] = {
+				{"always", heed_always},
+				{"pretty", heed_pretty},
+				{"never", heed_never},
+			};
+			conf->heed_pixel_ratio = read_enum(tp, &ok, e, ARRAY_LEN(e));
 
 		} else if (wuptr_eq_str(key, "jpeg_fast_dct")) {
 			conf->jpeg_fast_dct = read_bool(tp, &ok);
@@ -126,17 +147,12 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 			conf->raw_prefer_thumbnail = read_bool(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "svg_redraw")) {
-			struct wuptr val = mp_next_word(tp);
-			mp_skip_blank(tp);
-			if (wuptr_eq_str(val, "never")) {
-				conf->svg_redraw = svg_never;
-			} else if (wuptr_eq_str(val, "upscale")) {
-				conf->svg_redraw = svg_upscale;
-			} else if (wuptr_eq_str(val, "scale")) {
-				conf->svg_redraw = svg_scale;
-			} else {
-				ok = false;
-			}
+			const struct enum_str e[] = {
+				{"never", svg_never},
+				{"upscale", svg_upscale},
+				{"scale", svg_scale},
+			};
+			conf->svg_redraw = read_enum(tp, &ok, e, ARRAY_LEN(e));
 
 		} else if (wuptr_eq_str(key, "webp_bypass_filtering")) {
 			conf->webp_bypass_filtering = read_bool(tp, &ok);
@@ -172,7 +188,7 @@ static int try_path(const char *dirname, const char *filename) {
 	int fd = -1;
 	if (dirname && dirname[0] == '/') {
 		const int dir = open(dirname, O_RDONLY | O_DIRECTORY);
-		if (dir != -1) {
+		if (dir >= 0) {
 			fd = openat(dir, filename, O_RDONLY);
 			close(dir);
 		}
@@ -182,13 +198,13 @@ static int try_path(const char *dirname, const char *filename) {
 
 static int get_config_fd(void) {
 	int fd = try_path(getenv("XDG_CONFIG_HOME"), "wu.conf");
-	if (fd != -1) {
+	if (fd >= 0) {
 		return fd;
 	}
 
 	const char config_wu[] = ".config/wu.conf";
 	fd = try_path(getenv("HOME"), config_wu);
-	if (fd != -1) {
+	if (fd >= 0) {
 		return fd;
 	}
 
@@ -199,22 +215,25 @@ static int get_config_fd(void) {
 	return fd;
 }
 
+static bool open_config(struct map_info *mm) {
+	bool ok = false;
+	const int fd = get_config_fd();
+	if (fd >= 0) {
+		ok = file_map_fd(mm, fd);
+		close(fd);
+	}
+	return ok;
+}
+
 struct wu_conf conf_load(void) {
 	struct wu_conf conf = conf_default();
-	const int fd = get_config_fd();
-	if (fd == -1) {
-		return conf;
-	}
-
 	struct map_info mm;
-	bool ok = file_map_fd(&mm, fd);
-	close(fd);
-	if (!ok) {
+	if (!open_config(&mm)) {
 		return conf;
 	}
 
 	struct mparser tp = mp_map(mm);
-	ok = parse_config_file(&conf, &tp);
+	const bool ok = parse_config_file(&conf, &tp);
 	file_unmap(&mm);
 	if (ok) {
 		return sanitize_conf(conf);

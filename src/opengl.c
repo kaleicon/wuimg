@@ -50,6 +50,8 @@
 #define EOTF_PQ "1"
 #define EOTF_HLG "2"
 
+static const float VISUAL_EPSILON = 0x1p-16;
+
 enum gl_mag_filter {
 	gl_mag_linear = GL_LINEAR,
 	gl_mag_nearest = GL_NEAREST,
@@ -150,7 +152,6 @@ static void tex_2d_mag(const enum gl_mag_filter filter) {
 }
 
 static void set_mag_filter(const unsigned is_subsamp, const bool good) {
-	(void)is_subsamp;
 	for (enum gl_tex_unit i = gl_tex_img; i <= gl_tex_plane_alpha; ++i) {
 		tex_active(i);
 		tex_2d_mag((good || ((is_subsamp >> i) & 1))
@@ -236,7 +237,8 @@ const struct wu_state *state) {
 
 	if (context->tex.mode != image_mode_palette) {
 		set_mag_filter(context->tex.subsamp,
-			1.01 < state->zoom && state->zoom < 1.99);
+			1.0f + VISUAL_EPSILON < state->zoom
+			&& state->zoom < 2.0f - VISUAL_EPSILON);
 	}
 }
 
@@ -724,8 +726,27 @@ static void set_cms(struct gl_context *context, struct wuimg *img) {
 	glUniform1i(uni->mode.cms, mode);
 }
 
+static bool close_to_int(const float n) {
+	float _int;
+	const float frac = modff(n < 1.0f ? 1.0f/n : n, &_int);
+	return frac < VISUAL_EPSILON || frac > (1.0 - VISUAL_EPSILON);
+}
+
+static float get_pixel_ratio(struct wuimg *img, const struct wu_conf *wuconf) {
+	switch (wuconf->heed_pixel_ratio) {
+	case heed_always: return img->ratio;
+	case heed_pretty:
+		if (img->mode != image_mode_palette || close_to_int(img->ratio)) {
+			return img->ratio;
+		}
+		break;
+	case heed_never: break;
+	}
+	return 1;
+}
+
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
-struct wuimg *img) {
+struct wuimg *img, const struct wu_conf *wuconf) {
 	if (img->channels > 4) {
 		fprintf(stderr, "Number of color channels unsupported (%d given)\n",
 			img->channels);
@@ -759,7 +780,7 @@ struct wuimg *img) {
 	context->tex.rotate = img->rotate;
 	context->tex.mirror = img->mirror;
 	context->tex.alpha = img->alpha;
-	context->tex.ratio = img->ratio;
+	context->tex.ratio = get_pixel_ratio(img, wuconf);
 	context->update = gl_update_matrix;
 	set_alpha_ops(context);
 	if (context->tex.w != (float)img->w || context->tex.h != (float)img->h) {

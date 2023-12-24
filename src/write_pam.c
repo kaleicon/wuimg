@@ -126,7 +126,7 @@ struct write_out *out, const char *outdir, struct fs_path *path) {
 
 static const char * write_sub_img(struct write_writer *writer,
 const struct write_args *args, struct wu_state *state,
-struct wuimg *img) {
+struct wuimg *img, const struct wu_conf *wuconf) {
 	FILE *ofp;
 	if (args->stdout) {
 		ofp = stdout;
@@ -138,7 +138,7 @@ struct wuimg *img) {
 	const char *err_msg = NULL;
 	if (ofp) {
 		struct gl_context *gl = &writer->gl;
-		if (gl_texture_upload(gl, img) != gl_upload_fail) {
+		if (gl_texture_upload(gl, img, wuconf) != gl_upload_fail) {
 			struct gl_reader reader;
 		 	if (gl_reader_set(gl, &reader, state, img)) {
 				err_msg = pam_write(gl, &reader, state, ofp);
@@ -167,7 +167,7 @@ struct write_writer *writer, const struct write_args *args) {
 		if (set_out_dir(image, &writer->out, args->outdir, &path)) {
 			do {
 				const char *msg = write_sub_img(writer, args,
-					&image->state, img);
+					&image->state, img, &image->conf);
 				if (msg) {
 					term_line_put(msg, stderr);
 				}
