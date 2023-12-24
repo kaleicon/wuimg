@@ -137,7 +137,7 @@ bool image_cur_is_anim(const struct image_context *image) {
 }
 
 enum image_event image_zoom(struct image_context *image, float new_zoom) {
-	const float max = 32.0f;
+	const float max = 1 << WU_SCALING_POW;
 	const float min = 1.0f/max;
 
 	enum image_event ev = 0;

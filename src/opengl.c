@@ -46,8 +46,6 @@
 #define EOTF_PQ "1"
 #define EOTF_HLG "2"
 
-static const GLint WU_MIPMAP_MAX = 6;
-
 enum gl_mag_filter {
 	gl_mag_linear = GL_LINEAR,
 	gl_mag_nearest = GL_NEAREST,
@@ -337,13 +335,13 @@ static void palette_parameters(const bool enable) {
 		// Set size so that bitdepths < 8 work correctly
 		tex_2d(GL_RGBA, 256, 1, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	} else {
-		level = WU_MIPMAP_MAX;
+		level = WU_SCALING_POW;
 		min = gl_min_linear;
 		tex_2d_null();
 	}
 	tex_filter(GL_TEXTURE_2D, level, min, gl_mag_nearest);
 	tex_active(gl_tex_img);
-	tex_filter(GL_TEXTURE_2D, WU_MIPMAP_MAX, min, gl_mag_nearest);
+	tex_filter(GL_TEXTURE_2D, WU_SCALING_POW, min, gl_mag_nearest);
 }
 
 static void planar_disable(const enum gl_tex_unit start) {
@@ -881,7 +879,7 @@ const GLint *samps) {
 static void setup_texture2d(const GLint idx, const GLuint *texs,
 const GLint *samps) {
 	enable_bind_tex(idx, texs, samps, GL_TEXTURE_2D);
-	tex_filter(GL_TEXTURE_2D, WU_MIPMAP_MAX, gl_min_linear, gl_mag_nearest);
+	tex_filter(GL_TEXTURE_2D, WU_SCALING_POW, gl_min_linear, gl_mag_nearest);
 }
 
 static bool get_uniforms(const GLuint program, GLint *uni,

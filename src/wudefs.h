@@ -9,6 +9,8 @@
 #include "misc/wustr.h"
 #include "raster/wuimg.h"
 
+#define WU_SCALING_POW 6
+
 struct wu_state {
 	int idx;
 	int frame;
