@@ -4,10 +4,6 @@
 #include "wudefs.h"
 #include "lib/pnm.h"
 
-static void pnm_end(struct image_file *infile) {
-	free(infile->dec_state);
-}
-
 static enum wu_error pnm_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
 	(void)wuconf; (void)ev;
@@ -44,5 +40,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn pnm_fn = {
 	.dec = pnm_dec,
 	.callback = pnm_callback,
-	.end = pnm_end,
+	.end = image_file_free_end,
 };

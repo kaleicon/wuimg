@@ -16,9 +16,6 @@ enum fmt_pal_type {
 
 size_t fmt_load_raster(struct wuimg *img, FILE *ifp, enum endianness e);
 
-enum wu_error fmt_load_pal_planar(FILE *ifp, struct raster_pal *pal,
-enum fmt_pal_type type, size_t entries);
-
 enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,
 enum fmt_pal_type type, size_t entries);
 

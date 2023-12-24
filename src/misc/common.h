@@ -40,6 +40,8 @@ watch_t watch_elapsed(watch_t start);
 watch_t watch_report(const char *ocurrence, watch_t start,
 enum report_level level);
 
+uint8_t short_opt(const char *opt);
+
 long num_cpus(void);
 
 void fatal_bug(const char *name, const char *msg);

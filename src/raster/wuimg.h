@@ -90,8 +90,6 @@ struct wuimg {
 	 * pixels for it to look square. */
 	float ratio;
 
-	float dec_scale;
-
 	struct color_space cs;
 	struct image_frames *frames;
 

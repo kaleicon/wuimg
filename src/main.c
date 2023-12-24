@@ -116,11 +116,11 @@ const struct write_args *args) {
 	enum wu_error status = wu_ok;
 	if (!strcmp("-", entries->name[0])) {
 		FILE *stdin_cpy = save_stdin();
-		if (!stdin_cpy) {
+		if (stdin_cpy) {
+			dec_src_file(&image, stdin_cpy, "stdin", false);
+		} else {
 			term_line_put("Failed to save stdin", stderr);
 			status = wu_open_error;
-		} else {
-			dec_src_file(&image, stdin_cpy, "stdin", false);
 		}
 	} else {
 		dec_src_filename(&image, entries->name[0]);
@@ -216,8 +216,8 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	long idx = 0;
-//	long direction = 1;
 	while (event->program != wu_program_exit && extract_file(&iter, idx)) {
+		const int direction = lsign(event->cycle);
 		idx = lmod(iter.idx, iter.total);
 
 		printf("%ld/%ld%s, %s/%s\n", idx + 1, iter.total,
@@ -226,24 +226,17 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		image_reset(image);
 		dec_src_file(image, iter.cur, iter.name, true);
 
-		bool next_entry = false;
 		result = decode_with_stats(image);
-		if (result == wu_ok) {
-			if (!display_loop(&window, false, false)) {
-				next_entry = true;
-			}
-		} else {
-			next_entry = true;
-		}
-
+		const bool next_entry =
+			result != wu_ok || !display_loop(&window, false, false);
 		dec_free_image(image);
+
 		if (next_entry) {
-			event->cycle = 1;
+			event->cycle = direction;
 		}
 		putchar('\n');
 
 		idx += event->cycle;
-//		direction = lsign(event->cycle);
 	}
 
 	display_end(&window, &tr);
@@ -267,8 +260,8 @@ const bool interpret_stdin) {
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	size_t remaining = entries->nr;
-	long direction = 1;
-	do {
+	while (event->program != wu_program_exit && remaining) {
+		const int direction = lsign(event->cycle);
 		while (!entries->name[idx]) {
 			idx = lmod(idx + direction, (long)entries->nr);
 		}
@@ -294,14 +287,12 @@ const bool interpret_stdin) {
 		if (!free_entry) {
 			result = decode_with_stats(image);
 			if (result == wu_ok) {
-				const bool ok = display_loop(&window,
+				free_entry = !display_loop(&window,
 					remaining == 1, true);
-				if (event->rm == rm_yes) {
+				if (event->rm == rm_yes && !free_entry) {
 					unlink(image->name);
 					puts("File deleted.");
 					free_entry = true;
-				} else {
-					free_entry = !ok;
 				}
 			} else {
 				free_entry = true;
@@ -317,8 +308,7 @@ const bool interpret_stdin) {
 		putchar('\n');
 
 		idx = lmod(idx + event->cycle, (long)entries->nr);
-		direction = lsign(event->cycle);
-	} while (event->program != wu_program_exit && remaining);
+	}
 
 	display_end(&window, &tr);
 	if (stdin_tmp) {
@@ -460,25 +450,19 @@ static int test_args(const int argc, char **argv, struct test_mode_args *args) {
 	};
 	int read = 0;
 	while (read < argc - 1) {
-		const char *arg = argv[read];
-		if (arg[0] == '-' && arg[1] && !arg[2]) {
-			unsigned int *ptr;
-			switch (arg[1]) {
-			case 't': ptr = &args->iters; break;
-			case 'w': ptr = &args->warmup; break;
-			case 'm': args->metadata = true; ++read; continue;
-			default: return read;
-			}
-			// %c doesn't match null bytes
-			int tmp;
-			char last;
-			if (sscanf(argv[read+1], "%d%c", &tmp, &last) == 1
-			&& tmp > 0) {
-				*ptr = (unsigned)tmp;
-				read += 2;
-			} else {
-				break;
-			}
+		unsigned int *ptr;
+		switch (short_opt(argv[read])) {
+		case 't': ptr = &args->iters; break;
+		case 'w': ptr = &args->warmup; break;
+		case 'm': args->metadata = true; ++read; continue;
+		default: return read;
+		}
+
+		struct mparser mp = mp_mem(strlen(argv[read+1]), argv[read+1]);
+		long tmp;
+		if (mp_scan_uint_unsafe(&mp, &tmp) && !mp_next_char_unsafe(&mp)) {
+			*ptr = (unsigned)tmp;
+			read += 2;
 		} else {
 			break;
 		}
@@ -539,24 +523,18 @@ int main(const int argc, char *argv[]) {
 	int read = 1;
 	read += get_mode(argc - read, argv + read, &mode);
 	if (read > argc) {
-		term_line_put("BUG: Excess arguments read.", stderr);
-		return 1;
+		fatal_bug(__func__, "Excess arguments read.");
 	}
-
-	if (read != argc && !strcmp("--", argv[read])) {
+	if (read < argc && !strcmp("--", argv[read])) {
 		++read;
 	}
 
 	const size_t remaining = (size_t)(argc - read);
 	if (mode.type == guess) {
-		if (remaining) {
-			if (remaining > 1 || !strcmp("-", argv[read])) {
-				mode.type = sole;
-			} else {
-				mode.type = directory;
-			}
-		} else {
+		if (!remaining || (remaining == 1 && strcmp("-", argv[read]))) {
 			mode.type = directory;
+		} else {
+			mode.type = sole;
 		}
 	}
 
@@ -575,17 +553,14 @@ int main(const int argc, char *argv[]) {
 	case writeout:
 		return from_argv(remaining, argv + read, &mode);
 	case directory:
-		if (!remaining) {
-			return from_path("");
-		}
-		return from_path(argv[read]);
+		return from_path(remaining ? argv[read] : "");
 	case archive:
 		if (!remaining) {
 			break;
 		}
 		return run_with_archive(argv[read]);
 	case guess:
-		term_line_put("BUG: Unreachable case reached. Well done.", stderr);
+		fatal_bug(__func__, "Unreachable case reached. Well done.");
 		return 1;
 	}
 	term_line_put("ERROR: Expected at least one path.", stderr);

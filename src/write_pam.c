@@ -212,26 +212,21 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 	int idx = 0;
 	*args = (struct write_args){0};
 	while (idx < argc) {
-		const char *arg = argv[idx];
-		if (arg[0] == '-' && arg[1] && !arg[2]) {
-			switch (arg[1]) {
-			case 'd':
-				if (idx + 1 >= argc) {
-					return idx;
-				}
-				++idx;
-				args->outdir = argv[idx];
-				break;
-			case 'f': args->overwrite = true; break;
-			case 's': args->stdout = true; break;
-			case 'z': args->null = true; break;
-			default:
+		switch (short_opt(argv[idx])) {
+		case 'd':
+			if (idx + 1 >= argc) {
 				return idx;
 			}
 			++idx;
-		} else {
+			args->outdir = argv[idx];
 			break;
+		case 'f': args->overwrite = true; break;
+		case 's': args->stdout = true; break;
+		case 'z': args->null = true; break;
+		default:
+			return idx;
 		}
+		++idx;
 	}
 	return idx;
 }

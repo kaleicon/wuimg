@@ -144,10 +144,6 @@ const struct dpx_desc *desc, const uint8_t idx) {
 	return st;
 }
 
-static void dpx_end(struct image_file *infile) {
-	free(infile->dec_state);
-}
-
 static enum wu_error dpx_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
 	(void)ev;
@@ -180,5 +176,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn dpx_fn = {
 	.dec = dpx_dec,
 	.callback = dpx_callback,
-	.end = dpx_end,
+	.end = image_file_free_end,
 };

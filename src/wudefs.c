@@ -6,13 +6,16 @@
 #include "misc/math.h"
 #include "wudefs.h"
 
+void image_file_free_end(struct image_file *infile) {
+	free(infile->dec_state);
+}
+
 static void wuimg_free_range(struct wuimg *img, const size_t start,
 const size_t end) {
 	for (size_t i = start; i < end; ++i) {
 		wuimg_free(img + i);
 	}
 }
-
 
 struct wuimg * realloc_sub_images(struct image_file *file, const size_t nr) {
 	if (nr < 1) {

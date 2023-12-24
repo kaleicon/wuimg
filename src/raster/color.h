@@ -4,8 +4,8 @@
 
 #include "cicp.h"
 #include "icc.h"
-#include "mat.h"
 #include "pix.h"
+#include "misc/mat.h"
 
 enum color_transfer_fn {
 	color_transfer_linear_gamma,

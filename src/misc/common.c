@@ -161,6 +161,10 @@ const enum report_level level) {
 	return end;
 }
 
+uint8_t short_opt(const char *opt) {
+	return (opt[0] == '-' && opt[1] && !opt[2]) ? (uint8_t)opt[1] : 0;
+}
+
 long num_cpus(void) {
 #if defined(_SC_NPROCESSORS_ONLN)
 	return sysconf(_SC_NPROCESSORS_ONLN); // Linux

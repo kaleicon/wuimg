@@ -10,28 +10,6 @@ size_t fmt_load_raster(struct wuimg *img, FILE *ifp, const enum endianness e) {
 	return file_endian_read(img->data, wuimg_size(img), ifp, img->bitdepth, e);
 }
 
-enum wu_error fmt_load_pal_planar(FILE *ifp, struct raster_pal *pal,
-const enum fmt_pal_type type, const size_t entries) {
-	enum wu_error err = wu_alloc_error;
-	const size_t planes = (size_t)type;
-	unsigned char *buf = malloc(entries * planes);
-	if (buf) {
-		if (fread(buf, entries * planes, 1, ifp)) {
-			for (size_t i = 0; i < entries; ++i) {
-				pal->color[i].r = buf[i];
-				pal->color[i].g = buf[i + entries];
-				pal->color[i].b = buf[i + entries*2];
-				pal->color[i].a = 0xff;
-			}
-			err = wu_ok;
-		} else {
-			err = wu_unexpected_eof;
-		}
-		free(buf);
-	}
-	return err;
-}
-
 enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,
 const enum fmt_pal_type type, const size_t entries) {
 	const size_t elen = (size_t)type;

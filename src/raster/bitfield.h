@@ -14,7 +14,7 @@ struct bitfield_comp {
 struct bitfield {
 	uint8_t word_size;
 	bool enable;
-	enum endianness endian;
+	enum endianness endian:8;
 	struct bitfield_comp comp[4];
 };
 

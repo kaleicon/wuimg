@@ -75,13 +75,24 @@ size_t sun_decode(const struct sun_desc *desc, struct wuimg *img) {
 
 static enum wu_error interleave_colormap(struct sun_desc *desc,
 struct wuimg *img) {
-	struct raster_pal *map = wuimg_palette_init(img);
-	if (map) {
-		const size_t entries = 1 << img->bitdepth;
-		return fmt_load_pal_planar(desc->ifp, map, fmt_pal_rgb,
-			entries);
+	uint8_t buf[256*3];
+	if (fread(buf, sizeof(buf), 1, desc->ifp)) {
+		struct raster_pal *map = wuimg_palette_init(img);
+		if (map) {
+			const size_t entries = 1 << img->bitdepth;
+			for (size_t i = 0; i < entries; ++i) {
+				map->color[i] = (struct pix_rgba8) {
+					.r = buf[i],
+					.g = buf[i + entries],
+					.b = buf[i + entries*2],
+					.a = 0xff,
+				};
+			}
+			return wu_ok;
+		}
+		return wu_alloc_error;
 	}
-	return wu_alloc_error;
+	return wu_unexpected_eof;
 }
 
 static enum wu_error validate_header(struct sun_desc *desc, struct wuimg *img,

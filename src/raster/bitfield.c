@@ -55,23 +55,21 @@ FILE *ifp) {
 	const size_t outsize = wuimg_size(img);
 	const size_t insize = strip_length(img->w, bf->word_size*8, img->align_sh)
 		* img->h;
-	const bool newbuf = insize > outsize;
-	uint8_t *src;
-	if (newbuf) {
-		src = malloc(insize);
-		if (!src) {
+
+	uint8_t *buf = NULL;
+	uint8_t *src = img->data + outsize - insize;
+	if (insize > outsize) {
+		buf = malloc(insize);
+		if (!buf) {
 			return 0;
 		}
-	} else {
-		src = img->data + outsize - insize;
+		src = buf;
 	}
 
 	const size_t read = fread(src, 1, insize, ifp);
 	bitfield_unpack(bf, img, src, img->align_sh);
 
-	if (newbuf) {
-		free(src);
-	}
+	free(buf);
 	return read;
 }
 

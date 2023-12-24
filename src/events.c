@@ -170,9 +170,7 @@ const int code, const float dt, const bool shift) {
 		return repeat_none;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
-		;const struct wuimg *img = image_cur_sub_img(image);
-		event->image = image_zoom(image,
-			(float)(code - '0') * (1/img->dec_scale));
+		event->image = image_zoom(image, (float)(code - '0'));
 		return repeat_none;
 	}
 	return repeat_fixed;

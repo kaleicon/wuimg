@@ -17,7 +17,6 @@ unsigned char fuzz_buf[1024000];
 
 __AFL_FUZZ_INIT()
 
-//int main(const int argc, char *argv[]) {
 int main(void) {
 	struct image_context image = {
 		.conf = conf_default(),

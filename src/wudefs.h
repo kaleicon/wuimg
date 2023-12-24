@@ -77,6 +77,8 @@ struct image_context {
 	const struct image_fn *fn;
 };
 
+void image_file_free_end(struct image_file *infile);
+
 
 struct wuimg * realloc_sub_images(struct image_file *file, size_t nr);
 

@@ -3,10 +3,6 @@
 #include "misc/math.h"
 #include "lib/px.h"
 
-static void px_end(struct image_file *infile) {
-	free(infile->dec_state);
-}
-
 static enum wu_error px_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
 	(void)wuconf; (void)ev;
@@ -38,5 +34,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn px_fn = {
 	.dec = px_dec,
 	.callback = px_callback,
-	.end = px_end,
+	.end = image_file_free_end,
 };

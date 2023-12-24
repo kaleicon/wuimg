@@ -237,9 +237,6 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 	if (img->ratio == 0) {
 		img->ratio = 1;
 	}
-	if (img->dec_scale == 0) {
-		img->dec_scale = 1;
-	}
 	return wu_ok;
 }
 
@@ -540,9 +537,6 @@ static size_t print_dimensions(const struct wuimg *img) {
 
 	const size_t memsize = wuimg_size(img);
 	printf("= %zu bytes", memsize);
-	if (img->dec_scale != 1) {
-		printf(", %.2fx original", img->dec_scale);
-	}
 	putchar('\n');
 	return memsize;
 }

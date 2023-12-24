@@ -34,9 +34,13 @@
 #define COLOR_PALETTE "1"
 #define COLOR_PLANAR "2"
 
-#define ALPHA_MULTIPLY "0"
-#define ALPHA_NO_MULTIPLY "1"
-#define ALPHA_UNMULTIPLY "2"
+#define ALPHA_COLOR_MULTIPLY "0"
+#define ALPHA_COLOR_NO_MULTIPLY "1"
+#define ALPHA_COLOR_UNMULTIPLY "2"
+
+#define ALPHA_BG_NONE "0"
+#define ALPHA_BG_ONE "1"
+#define ALPHA_BG_CHECKERS "2"
 
 #define CMS_NONE "0"
 #define CMS_SPACEWALK "1"
@@ -1074,17 +1078,17 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"}"
 
 			"switch (" UNI_MODE_ALPHA "[0]) {"
-			"case " ALPHA_MULTIPLY ": color.rgb *= color.aaa; break;"
-			"case " ALPHA_NO_MULTIPLY ": break;"
-			"case " ALPHA_UNMULTIPLY ":"
+			"case " ALPHA_COLOR_MULTIPLY ": color.rgb *= color.aaa; break;"
+			"case " ALPHA_COLOR_NO_MULTIPLY ": break;"
+			"case " ALPHA_COLOR_UNMULTIPLY ":"
 				"if (color.a != 0.0) {"
 					"color.rgb /= color.aaa; break;"
 				"}"
 				"break;"
 			"}"
 			"switch (" UNI_MODE_ALPHA "[1]) {"
-			"case 2: gen_check_pattern();" // fallthrough
-			"case 1: color.a = 1.0;"
+			"case " ALPHA_BG_CHECKERS ": gen_check_pattern();" // fallthrough
+			"case " ALPHA_BG_ONE ": color.a = 1.0;"
 			"}"
 
 			"for (int i = 0; i < 3; ++i) {"

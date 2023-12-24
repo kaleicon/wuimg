@@ -3,8 +3,8 @@
 #include <math.h>
 
 #include "misc/common.h"
+#include "misc/mat.h"
 #include "misc/math.h"
-#include "raster/mat.h"
 #include "raster/unpack.h"
 
 static double dot(const double *restrict row, const double *restrict col,
@@ -88,17 +88,6 @@ bool mat3_invert(struct mat3 *restrict dst, const struct mat3 *restrict src) {
 				in[m + p] * in[n + o]);
 		}
 	}
-/*	out[0] = in[3*1 + 1] * in[3*2 + 2] - in[3*1 + 2] * in[3*2 + 1];
-	out[1] = in[3*2 + 1] * in[3*0 + 2] - in[3*2 + 2] * in[3*0 + 1];
-	out[2] = in[3*0 + 1] * in[3*1 + 2] - in[3*0 + 2] * in[3*1 + 1];
-
-	out[3] = in[3*1 + 2] * in[3*2 + 0] - in[3*1 + 0] * in[3*2 + 2];
-	out[4] = in[3*2 + 2] * in[3*0 + 0] - in[3*2 + 0] * in[3*0 + 2];
-	out[5] = in[3*0 + 2] * in[3*1 + 0] - in[3*0 + 0] * in[3*1 + 2];
-
-	out[6] = in[3*1 + 0] * in[3*2 + 1] - in[3*1 + 1] * in[3*2 + 0];
-	out[7] = in[3*2 + 0] * in[3*0 + 1] - in[3*2 + 1] * in[3*0 + 0];
-	out[8] = in[3*0 + 0] * in[3*1 + 1] - in[3*0 + 1] * in[3*1 + 0];*/
 
 	const double determinant = dot(in, out, 3, 3);
 	if (isnormal(determinant)) {
