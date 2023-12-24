@@ -282,18 +282,28 @@ int fs_get_parent_dir(struct fs_path *path, const char *str, bool must_exist) {
 	if (name.len) {
 		errno = 0;
 		dfd = open_dirfd(str);
-		if (dfd != -1) {
-			fs_path_set_dir(path, name);
+		if (dfd >= 0) {
+			if (!fs_path_set_dir(path, name)) {
+				close(dfd);
+				return -1;
+			}
 		} else if (errno == ENOTDIR || !must_exist) {
 			errno = 0;
 			if (fs_path_set_path(path, name)) {
 				dfd = open_dirfd(path->parent.str[0]
 					? (char *)path->parent.str : ".");
+				if (dfd < 0) {
+					fs_path_free(path);
+					return dfd;
+				}
 			}
 		}
 	} else {
 		dfd = open_dirfd(".");
-		fs_path_set_empty_dir(path);
+		if (dfd >= 0 && !fs_path_set_empty_dir(path)) {
+			close(dfd);
+			return -1;
+		}
 	}
 	return dfd;
 }
@@ -302,7 +312,7 @@ static bool get_files(struct fs_dir *dir, const char *name,
 struct fs_entry *init_key) {
 	const int dfd = fs_get_parent_dir(&dir->path, name, true);
 	bool status = false;
-	if (dfd != -1) {
+	if (dfd >= 0) {
 		DIR *dp = fdopendir(dfd);
 		if (dp) {
 			struct collator icu = {
@@ -318,8 +328,8 @@ struct fs_entry *init_key) {
 		} else {
 			close(dfd);
 		}
+		fs_path_free(&dir->path);
 	}
-	fs_path_free(&dir->path);
 	return status;
 }
 

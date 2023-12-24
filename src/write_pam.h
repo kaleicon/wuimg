@@ -17,12 +17,6 @@ struct write_writer {
 	struct window_offscreen window;
 	struct gl_context gl;
 	struct gl_reader reader;
-	struct write_out {
-		size_t base_len;
-		int dirfd;
-		bool with_idx;
-		char name[256];
-	} out;
 };
 
 void write_writer_terminate(struct write_writer *writer);
