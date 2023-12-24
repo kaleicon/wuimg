@@ -132,6 +132,10 @@ struct wuimg * image_cur_sub_img(const struct image_context *image) {
 	return image->file.sub_img + image->state.idx;
 }
 
+bool image_cur_is_anim(const struct image_context *image) {
+	return image->file.events & (ev_frame | ev_time);
+}
+
 enum image_event image_zoom(struct image_context *image, float new_zoom) {
 	const float max = 32.0f;
 	const float min = 1.0f/max;
@@ -172,5 +176,6 @@ void image_reset(struct image_context *image) {
 	image->file = (struct image_file){0};
 	image->state.idx = 0;
 	image->state.frame = 0;
+	image->state.time = 0;
 	image->fn = NULL;
 }

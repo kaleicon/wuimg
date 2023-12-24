@@ -38,8 +38,7 @@ void display_end(struct window_context *window, const struct term_restore *tr) {
 }
 
 static bool update_texture(struct image_context *image,
-struct window_context *window, const bool reset) {
-	struct gl_context *gl = &window->pub.gl;
+struct gl_context *gl, const bool reset) {
 	struct wu_state *state = &image->state;
 	struct wuimg *img = image->file.sub_img + state->idx;
 	switch (gl_texture_upload(gl, img)) {
@@ -59,11 +58,6 @@ struct window_context *window, const bool reset) {
 		break;
 	case gl_upload_same_size:
 		break;
-	}
-
-	if (!state->anim_playing) {
-		fprintf(stderr, "Frame %d uploaded in %" PRIu64 " ns\n",
-			state->frame, gl_clock_query(gl));
 	}
 	return true;
 }
@@ -93,19 +87,19 @@ const bool print_draw_time) {
 	return event_exec(window);
 }
 
-static double idle_display(struct image_context *image,
-struct window_context *window, double remaining) {
+static void idle_display(struct image_context *image,
+struct window_context *window, const double next_frame) {
 	struct wu_event *event = &window->pub.event;
 	struct wu_state *state = &window->pub.image.state;
 
 	for (bool first = true;; first = false) {
-		event->image = 0;
+		event->image = ev_time;
 		const double ellapsed = draw_rest_poll(window,
 			!state->anim_playing && first);
 		if (state->anim_playing && window->pub.win.focused) {
-			remaining -= ellapsed;
-			if (remaining <= 0) {
-				event->image = image_frame_cycle(image, 1);
+			state->time += (float)ellapsed;
+			if (state->time >= next_frame && image_frame_cycle(image, 1)) {
+				event->image = ev_frame;
 			}
 		}
 
@@ -119,7 +113,6 @@ struct window_context *window, double remaining) {
 			}
 		}
 	}
-	return remaining;
 }
 
 static double min_time(const struct wuimg *img, const struct wu_state *state) {
@@ -127,7 +120,7 @@ static double min_time(const struct wuimg *img, const struct wu_state *state) {
 	if (frames) {
 		return fmax(frames->f[state->frame].sec, 1.0 / 30);
 	}
-	return 0;
+	return INFINITY;
 }
 
 bool display_loop(struct window_context *window, const bool single_file,
@@ -146,30 +139,40 @@ const bool allow_delete) {
 	window_set_title(window, image->name);
 
 	bool all_ok = true;
-	double remaining = 0;
+	double next_frame = INFINITY;
 	for (bool upload = true, first_iter = true;;) {
 		if (upload) {
-			const struct wuimg *img = infile->sub_img + state->idx;
 			if (event->image & ev_subcycle) {
-				state->anim_playing = wuimg_frames_nr(img) > 1;
+				state->anim_playing = image_cur_is_anim(image);
+				state->time = 0;
 			}
 
-			all_ok = update_texture(image, window, first_iter);
+			struct gl_context *gl = &window->pub.gl;
+			all_ok = update_texture(image, gl, first_iter);
 			if (!all_ok) {
 				break;
 			}
+
 			image_file_free_if_single(infile);
 
+			if (first_iter) {
+				clock_gettime(CLOCK_MONOTONIC, &window->pub.timer);
+				first_iter = false;
+			}
+
+			const struct wuimg *img = infile->sub_img + state->idx;
 			if (state->anim_playing) {
-				const double display_time = min_time(img, state);
-				remaining = fmax(0, remaining + display_time);
+				next_frame = state->time + min_time(img, state);
+			} else {
+				fprintf(stderr,
+					"Frame %d uploaded in %" PRIu64 " ns\n",
+					state->frame, gl_clock_query(gl));
 			}
 			upload = false;
-			first_iter = false;
 			event->image = 0;
 		}
 
-		remaining = idle_display(image, window, remaining);
+		idle_display(image, window, next_frame);
 
 		if ((!single_file && event->cycle)
 		|| event->program || event->rm == rm_yes) {

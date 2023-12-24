@@ -15,19 +15,20 @@ void ilbm_cleanup(struct ilbm_desc *desc) {
 }
 
 void ilbm_palette_cycle(const struct ilbm_desc *desc, struct raster_pal *pal,
-const int frame) {
-	/* FIXME: Should be time-dependant. */
+const double time) {
 	const struct raster_pal *src_pal = desc->pal;
 	for (size_t cycle = 0; cycle < desc->crng.len; ++cycle) {
 		const struct ilbm_crng *crng = desc->crng.crng + cycle;
 		if (!crng->active) {
 			continue;
 		}
+
 		const size_t cnt = crng->cnt;
-		size_t i = (size_t)frame % cnt;
+		size_t i = (size_t)(time/crng->secs) % cnt;
 		if (crng->reverse) {
 			i = cnt - i;
 		}
+
 		const uint8_t low = crng->low;
 		memcpy(pal->color + low + i, src_pal->color + low, (cnt - i)*4);
 		memcpy(pal->color + low, src_pal->color + low + cnt - i, i*4);
@@ -162,50 +163,6 @@ size_t ilbm_decode_main(const struct ilbm_desc *desc, struct wuimg *img) {
 	return ilbm_decode(desc, img, desc->body);
 }
 
-static enum trit set_crng(struct ilbm_desc *desc, struct wuimg *img) {
-	/* FIXME: Render more than just the first range
-
-	 * Also, open questions:
-	 * - Are overlapping ranges valid?
-	 * - Does it work with Extra Half Brite? If so, and since we simulate
-	 *   half brightness with extra entries, will it imply shuffling both
-	 *   halves of the palette?
-	 * - What about HAM?
-	 * This all sounds too much like demoscene material. Perhaps we should
-	 * leave those up to emulators.
-	*/
-
-	if (!desc->crng.active_nr) {
-		return trit_false;
-	}
-	const struct ilbm_crng *crng = NULL;
-	for (uint8_t i = 0; i < desc->crng.len; ++i) {
-		if (desc->crng.crng[i].active) {
-			crng = desc->crng.crng + i;
-			break;
-		}
-	}
-	if (!crng) {
-		return trit_false;
-	}
-	struct raster_pal *pal = wuimg_palette_set(img,
-		memdup(desc->pal, sizeof(*pal)));
-	if (pal) {
-		struct image_frames *frames = wuimg_frames_init(img, crng->cnt);
-		if (frames) {
-			for (size_t i = 0; i < crng->cnt; ++i) {
-				frames->f[i] = (struct frame_info) {
-					.w = img->w, .h = img->h,
-					.sec = crng->secs,
-					.keyframe = true,
-				};
-			}
-			return trit_true;
-		}
-	}
-	return trit_what;
-}
-
 static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 	if (desc->planes == 0) {
 		if (desc->colors == 0) {
@@ -221,16 +178,14 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		if (desc->pal) {
 			struct raster_pal *pal = desc->pal;
 			if (!desc->ham) {
-				switch (set_crng(desc, img)) {
-				case trit_false:
+				if (desc->crng.active_nr) {
+					wuimg_palette_set(img,
+						memdup(pal, sizeof(*pal)));
+				} else {
 					wuimg_palette_set(img, pal);
 					desc->pal = NULL;
-					break;
-				case trit_true:
-					break;
-				case trit_what:
-					return wu_alloc_error;
 				}
+
 				if (desc->extra_half_brite) {
 					for (size_t i = 0; i < 32; ++i) {
 						pal->color[i+32] = (struct pix_rgba8) {
@@ -312,7 +267,7 @@ const struct wuptr data) {
 	(void)img;
 	const uint16_t ACTIVE = 0x1;
 	const uint16_t REVERSE = 0x2;
-	const float TO_SECS = 273.0f + 2.0f/30;
+	const float TO_SECS = 273.0f + 1.0f/15;
 	if (data.len == 8) {
 		struct ilbm_crng_array *crng = &desc->crng;
 		if (crng->len < ARRAY_LEN(crng->crng)) {

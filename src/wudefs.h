@@ -20,6 +20,8 @@ struct wu_state {
 	float zoom;
 	float x_offset;
 	float y_offset;
+
+	double time;
 };
 
 enum image_event {
@@ -31,6 +33,7 @@ enum image_event {
 	ev_scale = ev_upscale | ev_downscale,
 	ev_move = 1 << 4,
 	ev_mirrot = 1 << 5,
+	ev_time = 1 << 6,
 };
 
 struct image_file {
@@ -93,6 +96,8 @@ void image_file_free(struct image_file *file);
 
 
 struct wuimg * image_cur_sub_img(const struct image_context *image);
+
+bool image_cur_is_anim(const struct image_context *image);
 
 enum image_event image_zoom(struct image_context *image, float new_zoom);
 

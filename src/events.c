@@ -103,11 +103,8 @@ const int code, const float dt, const bool shift) {
 		state->anim_playing = false;
 		break;
 	case ' ':
-		if (wuimg_frames_nr(image_cur_sub_img(image)) > 1) {
-			state->anim_playing = !state->anim_playing;
-		} else {
-			state->anim_playing = false;
-		}
+		state->anim_playing = image_cur_is_anim(image)
+			? !state->anim_playing : false;
 		return repeat_none;
 
 	// Image movement
@@ -216,9 +213,6 @@ static double key_events(struct window_context *window, const double secs) {
 			map[key] = 0;
 			break;
 		case repeat_fixed:
-//			if (map[key] == 255) {
-//				map[key] = 255 - 7;
-//			}
 			break;
 		case repeat_smooth: break;
 		}

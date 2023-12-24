@@ -48,16 +48,15 @@ const enum image_event ev) {
 	struct wuimg *img = infile->sub_img;
 	switch (ev) {
 	case ev_subcycle:
-		;const size_t idx = (size_t)state->idx;
-		if (!img[idx].data) {
-			const bool ok = idx
+		if (!img[state->idx].data) {
+			const bool ok = state->idx
 				? ilbm_decode_tiny(desc, img, img + 1)
 				: ilbm_decode_main(desc, img);
 			return ok ? wu_ok : wu_decoding_error;
 		}
 		break;
-	case ev_frame:
-		ilbm_palette_cycle(desc, img->u.palette, state->frame);
+	case ev_time:
+		ilbm_palette_cycle(desc, img->u.palette, state->time);
 		return wu_ok;
 	default: break;
 	}
@@ -99,7 +98,7 @@ const struct wu_conf *wuconf) {
 		realloc_sub_images(infile, 2);
 	}
 	add_metadata(desc, &infile->metadata);
-	infile->events = ev_subcycle | ev_frame;
+	infile->events = ev_subcycle | (desc->crng.active_nr ? ev_time : 0);
 	return wu_ok;
 }
 

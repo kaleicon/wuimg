@@ -22,8 +22,8 @@ struct ilbm_crng {
 struct ilbm_crng_array {
 	uint8_t len;
 	uint8_t active_nr;
-	struct ilbm_crng crng[16]; /* The most I've seen are 16, and even then
-		they seem mostly placeholders. */
+	struct ilbm_crng crng[16]; /* The most I've seen are 16, usually with
+		placeholders. */
 };
 
 enum ilbm_masking {
@@ -70,7 +70,7 @@ struct ilbm_desc {
 void ilbm_cleanup(struct ilbm_desc *desc);
 
 void ilbm_palette_cycle(const struct ilbm_desc *desc, struct raster_pal *pal,
-int frame);
+double time);
 
 size_t ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
 struct wuimg *tiny);
