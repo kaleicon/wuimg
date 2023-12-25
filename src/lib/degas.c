@@ -4,7 +4,7 @@
 #include "misc/endian.h"
 #include "misc/math.h"
 #include "raster/graphics_adapters.h"
-
+#include "raster/unpack.h"
 
 #include "lib/degas.h"
 
@@ -169,7 +169,7 @@ enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img) {
 	struct raster_pal *pal = wuimg_palette_init(img);
 	if (pal) {
 		const uint8_t depth = 8;
-		const struct scale_info sc = strip_scale_info(0x07, depth);
+		const struct scale_info sc = repack_scale_info(0x07, depth);
 		for (size_t i = 0; i < 16; ++i) {
 			uint8_t rgb[3] = {
 				src[i*2],

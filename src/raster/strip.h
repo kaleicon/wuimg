@@ -8,13 +8,6 @@
 #include "raster/pix.h"
 #include "raster/pal.h"
 
-struct scale_info {
-	uint8_t bitdepth;
-	bool scale;
-	uint32_t add;
-	uint64_t mul;
-};
-
 struct sewing_clothe {
 	uint8_t *ptr;
 	size_t stride;
@@ -41,12 +34,6 @@ size_t strip_length(size_t width, uint8_t bitdepth, align_t alignment);
 size_t strip_padding(size_t width, uint8_t bitdepth, align_t alignment);
 
 align_t strip_alignment(size_t stride, size_t width, uint8_t bitdepth);
-
-
-void strip_scale(void *dst, const void *src, size_t width,
-struct scale_info scaler, enum pix_attr attr);
-
-struct scale_info strip_scale_info(uint32_t maxval, uint8_t outdepth);
 
 
 /* Copies 'width' bytes from 'src' to 'dst', with 'ch' bytes of spacing */

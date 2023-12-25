@@ -24,4 +24,17 @@ uint8_t unpack_depth(uint8_t bitdepth, enum pix_attr attr, enum unpack_op op);
 size_t unpack_stride(size_t n, uint8_t bitdepth, enum pix_attr attr,
 enum unpack_op op);
 
+
+struct scale_info {
+	uint8_t bitdepth;
+	bool scale;
+	uint32_t add;
+	uint64_t mul;
+};
+
+void repack_scale(void *dst, const void *src, size_t width,
+struct scale_info info, enum pix_attr attr);
+
+struct scale_info repack_scale_info(uint32_t maxval, uint8_t outdepth);
+
 #endif // COMMON_UNPACK

@@ -425,13 +425,13 @@ const size_t w, const size_t h, const unsigned char *data) {
 	const size_t outstride = strip_length(w, img->bitdepth, out_align);
 	const size_t mapsize = outstride * h;
 
-	const struct scale_info info = strip_scale_info(
+	const struct scale_info info = repack_scale_info(
 		bit_set32(img->used_bits), img->bitdepth);
 
 	unsigned char *map = map_unpack_buffer(pix_buf, mapsize, GL_READ_ONLY);
 	const watch_t start = watch_look();
 	for (size_t y = 0; y < h; ++y) {
-		strip_scale(map + outstride*y, data + instride*y, w, info,
+		repack_scale(map + outstride*y, data + instride*y, w, info,
 			img->attr);
 	}
 	watch_report("Scaled", start, report_detail);

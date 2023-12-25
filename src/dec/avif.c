@@ -6,6 +6,7 @@
 #include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/math.h"
+#include "raster/unpack.h"
 
 static void avif_end(struct image_file *infile) {
 	avifDecoderDestroy(infile->dec_state);
@@ -134,12 +135,12 @@ const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx) {
 		src[i] = wuptr_mem(avif->alphaPlane, avif->alphaRowBytes);
 	}
 
-	const struct scale_info si = strip_scale_info(
+	const struct scale_info si = repack_scale_info(
 		bit_set32((uint32_t)avif->depth), img->bitdepth);
 	for (uint8_t z = 0; z < img->channels; ++z) {
 		struct plane_info *p = planes->p + z;
 		for (size_t y = 0; y < p->h; ++y) {
-			strip_scale(p->ptr + p->stride*y,
+			repack_scale(p->ptr + p->stride*y,
 				src[z].ptr + src[z].len*y, p->w, si, pix_normal);
 		}
 	}

@@ -13,7 +13,7 @@
 #include "misc/mem.h"
 #include "misc/mparser.h"
 #include "raster/fmt.h"
-#include "raster/strip.h"
+#include "raster/unpack.h"
 #include "lib/pnm.h"
 
 const char * pnm_type_str(const enum pnm_type type) {
@@ -93,8 +93,8 @@ const size_t dims) {
 	default:
 		switch (desc->bytedepth) {
 		case 1:
-			strip_scale(dst, dst, dims,
-				strip_scale_info(desc->scale.pnm, 8),
+			repack_scale(dst, dst, dims,
+				repack_scale_info(desc->scale.pnm, 8),
 				desc->sign ? pix_signed : pix_normal);
 			break;
 		case 2: scale_16(desc, dst, dims); break;

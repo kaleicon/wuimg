@@ -3,7 +3,7 @@
 
 #include "misc/bit.h"
 #include "misc/common.h"
-#include "raster/strip.h"
+#include "raster/unpack.h"
 #include "wudefs.h"
 
 static void monkey_trouble_handler(const char *msg, void *userdata) {
@@ -97,12 +97,12 @@ static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 	if (st == wu_ok) {
 		img->borrowed = true;
 		for (uint8_t z = 0; z < img->channels; ++z) {
-			const struct scale_info scaler = strip_scale_info(
+			const struct scale_info scaler = repack_scale_info(
 				bit_set32(comps[z].prec), img->bitdepth);
 			const enum pix_attr attr = comps[z].sgnd
 				? pix_signed : pix_normal;
 			p[z].ptr = (uint8_t *)comps[z].data;
-			strip_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,
+			repack_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,
 				scaler, attr);
 		}
 	}

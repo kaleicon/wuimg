@@ -278,42 +278,38 @@ static void strip_pack64f_32f(float *dst, const double *src, const size_t len) {
 
 
 // Irregular packings
-static void expand1555(const upack1555_t word, uint8_t *dst) {
+static void strip_expand1555(uint8_t *restrict dst,
+const upack1555_t *restrict src, const size_t w) {
 	const uint8_t mask = (1 << 5) - 1;
 	const uint8_t p = 6;
 	const uint16_t scale = (UCHAR_MAX << p) / mask + 1;
 
-	for (int n = 0; n < 3; ++n) {
-		const int m = n*5;
-		dst[n] = (uint8_t)( (scale * (word & (mask << m))) >> (p+m) );
+	for (size_t x = 0; x < w; ++x) {
+		const upack1555_t word = src[x];
+		for (int n = 0; n < 3; ++n) {
+			const int m = n*5;
+			dst[x*4 + (size_t)n] = (uint8_t)(
+				(scale * (word & (mask << m))) >> (p+m)
+			);
+		}
+		dst[x*4 + 3] = (word >> 15) ? 0xff : 0x00;
 	}
-	dst[3] = (word >> 15) ? 0xff : 0x00;
-}
-
-static void strip_expand1555(uint8_t *restrict dst,
-const upack1555_t *restrict src, const size_t n) {
-	for (size_t x = 0; x < n; ++x) {
-		expand1555(src[x], dst + x*4);
-	}
-}
-
-static void expand332(const int byte, uint8_t *dst) {
-	const int rgscale = (UCHAR_MAX << 7) / 0x07 + 1;
-	const int bscale = 0xff / 3;
-
-	const int r = byte >> 5;
-	const int g = (byte >> 2) & 0x07;
-	const int b = byte & 0x03;
-
-	dst[0] = (unsigned char)((r * rgscale) >> 7);
-	dst[1] = (unsigned char)((g * rgscale) >> 7);
-	dst[2] = (unsigned char)(b * bscale);
 }
 
 static void strip_expand332(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n) {
-	for (size_t x = 0; x < n; ++x) {
-		expand332(src[x], dst + x*3);
+const size_t w) {
+	const int rgscale = (UCHAR_MAX << 7) / 0x07 + 1;
+	const int bscale = 0xff / 3;
+
+	for (size_t x = 0; x < w; ++x) {
+		const uint8_t byte = src[x];
+		const int r = byte >> 5;
+		const int g = (byte >> 2) & 0x07;
+		const int b = byte & 0x03;
+
+		dst[x*3] = (uint8_t)((r * rgscale) >> 7);
+		dst[x*3 + 1] = (uint8_t)((g * rgscale) >> 7);
+		dst[x*3 + 2] = (uint8_t)(b * bscale);
 	}
 }
 
@@ -490,4 +486,98 @@ const enum pix_attr attr, const enum unpack_op op) {
 		return strip_base(n, outdepth);
 	}
 	return 0;
+}
+
+
+// Convert signed to unsigned and scale
+static uint64_t ams(int32_t c, uint32_t add, uint64_t mul, uint8_t shr) {
+	return (((uint32_t)c + add) * mul) >> shr;
+}
+static void design8(uint8_t *dst, const int8_t *src, const size_t w,
+const uint64_t mul, const uint32_t add) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint8_t)ams(src[x], (uint8_t)add, (uint16_t)mul, 8);
+	}
+}
+static void design16(uint16_t *dst, const int16_t *src, const size_t w,
+const uint64_t mul, const uint32_t add) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint16_t)ams(src[x], (uint16_t)add, (uint32_t)mul, 16);
+	}
+}
+static void design32(uint32_t *dst, const int32_t *src, const size_t w,
+const uint64_t mul, const uint32_t add) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint32_t)ams(src[x], add, mul, 32);
+	}
+}
+
+// Scale
+static uint64_t msx(uint32_t c, uint64_t mul, uint8_t shr, uint32_t xor) {
+	return ((c * mul) >> shr) ^ xor;
+}
+static void scale8(uint8_t *dst, const uint8_t *src, const size_t w,
+const uint64_t mul, const uint32_t xor) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint8_t)msx(src[x], (uint16_t)mul, 8, xor);
+	}
+}
+static void scale16(uint16_t *dst, const uint16_t *src, const size_t w,
+const uint64_t mul, const uint32_t xor) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint16_t)msx(src[x], (uint32_t)mul, 16, xor);
+	}
+}
+static void scale32(uint32_t *dst, const uint32_t *src, const size_t w,
+const uint64_t mul, const uint32_t xor) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint32_t)msx(src[x], mul, 32, xor);
+	}
+}
+
+void repack_scale(void *dst, const void *src, const size_t width,
+const struct scale_info info, const enum pix_attr attr) {
+	const uint64_t mul = info.mul;
+	const uint8_t shr = info.bitdepth;
+	uint32_t xor = 0;
+	switch (attr) {
+	case pix_signed:
+		;const uint32_t add = info.add;
+		switch (shr) {
+		case 8: design8(dst, src, width, mul, add); break;
+		case 16: design16(dst, src, width, mul, add); break;
+		case 32: design32(dst, src, width, mul, add); break;
+		}
+		return;
+	case pix_inverted:
+		xor = ~0u;
+		break;
+	case pix_normal:
+		if (!info.scale) {
+			memmove(dst, src, width * (shr/8));
+			return;
+		}
+		break;
+	case pix_float:
+	case pix_pack_332:
+	case pix_pack_1555:
+		return;
+	}
+
+	switch (shr) {
+	case 8: scale8(dst, src, width, mul, xor); break;
+	case 16: scale16(dst, src, width, mul, xor); break;
+	case 32: scale32(dst, src, width, mul, xor); break;
+	}
+}
+
+struct scale_info repack_scale_info(const uint32_t maxval,
+const uint8_t outdepth) {
+	const uint32_t range = bit_set32(outdepth);
+	return (struct scale_info) {
+		.bitdepth = outdepth,
+		.scale = maxval != range,
+		.add = maxval/2 + 1,
+		.mul = ((uint64_t)range << outdepth) / maxval + 1,
+	};
 }
