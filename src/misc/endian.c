@@ -1,5 +1,26 @@
 // SPDX-License-Identifier: 0BSD
+#include <string.h>
+
 #include "misc/endian.h"
+
+static uint16_t swap16(const uint16_t val) {
+	return (uint16_t)(val << 8 | val >> 8);
+}
+
+static uint32_t swap32(const uint32_t val) {
+	return (uint32_t)(val << 24
+		| (val & 0x00ff00) << 8
+		| (val & 0xff0000) >> 8
+		| val >> 24);
+}
+
+static uint64_t swap64(const uint64_t val) {
+	uint64_t ret = 0;
+	for (size_t i = 0; i < sizeof(ret); ++i) {
+		ret |= ((val >> i*8) & 0xff) << (56 - i*8);
+	}
+	return ret;
+}
 
 enum endianness which_end(void) {
 	/* This is not UB after C99, except for traps representations, so it
@@ -12,34 +33,11 @@ enum endianness which_end(void) {
 }
 
 uint16_t endian16(const uint16_t val, const enum endianness e) {
-	const enum endianness native = which_end();
-	if (native != e) {
-		return (uint16_t)(val << 8 | val >> 8);
-	}
-	return val;
+	return e == which_end() ? val : swap16(val);
 }
 
 uint32_t endian32(const uint32_t val, const enum endianness e) {
-	const enum endianness native = which_end();
-	if (native != e) {
-		return (uint32_t)(val << 24
-			| (val & 0x00ff00) << 8
-			| (val & 0xff0000) >> 8
-			| val >> 24);
-	}
-	return val;
-}
-
-static uint64_t endian64(const uint64_t val, const enum endianness e) {
-	const enum endianness native = which_end();
-	if (native != e) {
-		uint64_t ret = 0;
-		for (size_t i = 0; i < sizeof(ret); ++i) {
-			ret |= ((val >> i*8) & 0xff) << (56 - i*8);
-		}
-		return ret;
-	}
-	return val;
+	return e == which_end() ? val : swap32(val);
 }
 
 float endianf32(const uint32_t val, const enum endianness e) {
@@ -91,7 +89,7 @@ float buf_endianf32(const void *data, const enum endianness e) {
 void endian_loop16(uint16_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
 		for (size_t i = 0; i < n; ++i) {
-			data[i] = endian16(data[i], e);
+			data[i] = swap16(data[i]);
 		}
 	}
 }
@@ -109,7 +107,7 @@ void endian_loop24(uint8_t *data, const enum endianness e, const size_t n) {
 void endian_loop32(uint32_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
 		for (size_t i = 0; i < n; ++i) {
-			data[i] = endian32(data[i], e);
+			data[i] = swap32(data[i]);
 		}
 	}
 }
@@ -117,7 +115,7 @@ void endian_loop32(uint32_t *data, const enum endianness e, const size_t n) {
 void endian_loop64(uint64_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
 		for (size_t i = 0; i < n; ++i) {
-			data[i] = endian64(data[i], e);
+			data[i] = swap64(data[i]);
 		}
 	}
 }

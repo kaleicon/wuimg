@@ -36,71 +36,27 @@ const char * pnm_type_str(const enum pnm_type type) {
 	return "???";
 }
 
-static void scale_32(const struct pnm_desc *desc, uint32_t *dst,
-const size_t dims) {
-	const unsigned maxval = desc->scale.pnm;
-	if (maxval == UINT_MAX && !desc->sign) {
-		endian_loop32(dst, desc->endian, dims);
-	} else {
-		const uint64_t mul = ((uint64_t)UINT_MAX << 32) / maxval + 1;
-		const uint64_t add = (desc->sign) ? maxval/2 + 1 : 0;
-		for (size_t i = 0; i < dims; ++i) {
-			const uint64_t val = (endian32(dst[i], desc->endian) + add) * mul;
-			dst[i] = (uint32_t)(val >> 32);
-		}
-	}
-}
-
-static void scale_16(const struct pnm_desc *desc, uint16_t *dst,
-const size_t dims) {
-	const unsigned maxval = desc->scale.pnm;
-	if (maxval == USHRT_MAX && !desc->sign) {
-		endian_loop16(dst, desc->endian, dims);
-	} else {
-		const uint32_t mul = ((uint32_t)USHRT_MAX << 16) / maxval + 1;
-		const uint32_t add = (desc->sign) ? maxval/2 + 1 : 0;
-		for (size_t i = 0; i < dims; ++i) {
-			const uint32_t val = (endian16(dst[i], desc->endian) + add) * mul;
-			dst[i] = (uint16_t)(val >> 16);
-		}
-	}
-}
-
-static void pfm_decode(const struct pnm_desc *desc, union int_real *out,
-const size_t dims) {
-	if (desc->scale.pfm == 1.0f) {
-		endian_loop32(&out->bytes, desc->endian, dims);
-	} else {
-		for (size_t i = 0; i < dims; ++i) {
-			out[i].real = endianf32(out[i].bytes, desc->endian)
-				* desc->scale.pfm;
-		}
-	}
-}
-
 static size_t scale_raster(const struct pnm_desc *desc, void *restrict dst,
 const size_t dims) {
 	switch (desc->type) {
 	case pnm_color_pfm:
 	case pnm_gray_pfm:
-		pfm_decode(desc, dst, dims);
+		if (desc->scale.pfm != 1.0f) {
+			float *out = dst;
+			for (size_t i = 0; i < dims; ++i) {
+				out[i] *= desc->scale.pfm;
+			}
+		}
 		break;
 	case pnm_color_phm:
 	case pnm_gray_phm:
 		// FIXME: Support f16 scaling.
-		endian_loop16(dst, desc->endian, dims);
 		break;
 	default:
-		switch (desc->bytedepth) {
-		case 1:
-			repack_scale(dst, dst, dims,
-				repack_scale_info(desc->scale.pnm, 8),
-				desc->sign ? pix_signed : pix_normal);
-			break;
-		case 2: scale_16(desc, dst, dims); break;
-		case 4: scale_32(desc, dst, dims); break;
-		}
-		break;
+		;const uint8_t depth = desc->bytedepth * 8;
+		repack_scale(dst, dst, dims,
+			repack_scale_info(desc->scale.pnm, depth),
+			desc->sign ? pix_signed : pix_normal);
 	}
 	return dims;
 }
@@ -210,7 +166,7 @@ const size_t i) {
 		break;
 	}
 	return scale_raster(desc, dst,
-		fread(dst, desc->bytedepth, elems, desc->ifp));
+		fmt_load_raster(img, desc->ifp, desc->endian));
 }
 
 /* Header parsing */

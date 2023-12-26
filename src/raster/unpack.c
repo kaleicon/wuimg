@@ -554,7 +554,9 @@ const struct scale_info info, const enum pix_attr attr) {
 		break;
 	case pix_normal:
 		if (!info.scale) {
-			memmove(dst, src, width * (shr/8));
+			if (dst != src) {
+				memcpy(dst, src, shr/8 * width);
+			}
 			return;
 		}
 		break;

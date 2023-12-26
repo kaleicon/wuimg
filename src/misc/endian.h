@@ -25,6 +25,7 @@ uint32_t endian32(uint32_t val, enum endianness e);
 
 float endianf32(uint32_t val, enum endianness e);
 
+
 uint16_t buf_endian16(const void *data, enum endianness e);
 
 uint32_t buf_endian24(const void *data, enum endianness e);
