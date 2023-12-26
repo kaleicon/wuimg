@@ -8,6 +8,8 @@ static void meta(const void *restrict ptr, struct wu_tree *meta) {
 	tree_add_leaf_utf8(meta, "Version", xwd_version_str(desc->version));
 	tree_add_leaf_utf8(meta, "Format", xwd_format_str(desc->format));
 	tree_add_leaf_utf8(meta, "Visual", xwd_visual_str(desc->visual));
+	tree_add_leaf_utf8(meta, "Byte endian", endian_str(desc->byte_endian));
+	tree_add_leaf_utf8(meta, "Bit endian", endian_str(desc->bit_endian));
 	const struct wu_tree_sap pix[] = {
 		{"Pixel size", {wu_leaf_unsigned, {.u = desc->bpp}}},
 		{"Pixel depth", {wu_leaf_unsigned, {.u = desc->depth}}},

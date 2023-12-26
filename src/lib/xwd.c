@@ -192,6 +192,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		img->channels = 1;
 		img->bitdepth = (uint8_t)bpp;
 		if (paletted) {
+			img->attr = pix_normal;
 			wuimg_palette_init(img);
 		} else {
 			img->used_bits = (uint8_t)depth;
@@ -200,6 +201,8 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 	case xwd_true_color: case xwd_direct_color:
 		switch (bpp) {
 		case 16:
+			/* Technically, we shouldn't care about the depth, as
+			 * we extract according to the masks. */
 			switch (depth) {
 			case 15: case 16: break;
 			default: return wu_invalid_header;
@@ -243,21 +246,21 @@ enum wu_error xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	/* XWD header (after HeaderSize and Version):
 		Offset  Type    Name
 		0       u32     Format
-		4       u32     Depth       // Image bit depth
+		4       u32     Depth       // Image bit depth, or meaningful bits
 		8       u32     Width
 		12      u32     Height
-		16      u32     XOffset
+		16      u32     XOffset     // X offset in bits. For Bitmaps
 		20      u32     ByteOrder   // Endianness of words
-		24      u32     BitAlign    // Bit alignment of scanline, for Bitmaps
+		24      u32     BitAlign    // Bit alignment of scanline. For Bitmaps
 		28      u32     BitOrder    // Endianness of bits. For XYBitmap
-		32      u32     PixAlign    // Bit alignment of scanline, for Pixmaps
-		36      u32     BPP         // Stored bits per pixel
+		32      u32     PixAlign    // Bit alignment of scanline. For Pixmaps
+		36      u32     BPP         // Bits used by each pixel
 		40      u32     LineBytes
 		44      u32     VisualClass
-		48      u32     RGBMasks[3] // Masks for True/Direct color.
+		48      u32     RGBMasks[3] // Masks for True/Direct color
 		60      u32     BitsPerRGB  // Bits used by each mask
-		64      u32     CMEntries   // Num of colormap entries... unused
-		68      u32     NColors     // Actual num of colormap entries
+		64      u32     CMEntries   // Nb of used colors in colormap? Unused
+		68      u32     NColors     // Nb of colormap entries
 		72      u32     WindowW
 		76      u32     WindowH
 		80      u32     WindowX

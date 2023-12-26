@@ -127,8 +127,9 @@ const align_t align, const enum pix_attr attr, const bool paletted) {
 		}
 		switch (attr) {
 		case pix_normal:
-		case pix_inverted:
 			return NULL;
+		case pix_inverted:
+			return "Paletted images can't used inverted indices";
 		case pix_signed:
 			return "Paletted images can't use signed indices";
 		case pix_float:

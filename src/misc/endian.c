@@ -22,6 +22,14 @@ static uint64_t swap64(const uint64_t val) {
 	return ret;
 }
 
+const char * endian_str(const enum endianness e) {
+	switch (e) {
+	case big_endian: return "Big endian";
+	case little_endian: return "Little endian";
+	}
+	return "???";
+}
+
 enum endianness which_end(void) {
 	/* This is not UB after C99, except for traps representations, so it
 	 * may be troublesome still, but there don't seem to be alternatives. */

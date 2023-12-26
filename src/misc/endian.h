@@ -17,6 +17,8 @@ union int_real {
         float real;
 };
 
+const char * endian_str(enum endianness e);
+
 enum endianness which_end(void);
 
 uint16_t endian16(uint16_t val, enum endianness e);
