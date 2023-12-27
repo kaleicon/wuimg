@@ -15,6 +15,11 @@ static void callback_focus(GLFWwindow *wnd, const int focused) {
 	glfw->pub->win.focused = focused;
 }
 
+static void callback_damage(GLFWwindow *wnd) {
+	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
+	glfw->pub->gl.update = gl_update_redraw;
+}
+
 static void callback_framebuffer(GLFWwindow *wnd, const int w, const int h) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
 	window_size_update(glfw->pub, w, h);
@@ -239,6 +244,7 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 
 	glfwSetWindowCloseCallback(window, callback_close);
 	glfwSetWindowFocusCallback(window, callback_focus);
+	glfwSetWindowRefreshCallback(window, callback_damage);
 	glfwSetFramebufferSizeCallback(window, callback_framebuffer);
 	glfwSetCursorPosCallback(window, callback_cursor_pos);
 	glfwSetMouseButtonCallback(window, callback_cursor_button);
