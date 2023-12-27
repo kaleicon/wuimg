@@ -4,7 +4,16 @@
 
 #include "base.h"
 
-static unsigned char * window_key_get_map(struct window_keymap *held_keys) {
+double window_timer_update(struct window_public *pub) {
+	const struct timespec start = pub->timer;
+	clock_gettime(CLOCK_MONOTONIC, &pub->timer);
+
+	const double nanos_per_sec = 1000000000;
+	return (double)(pub->timer.tv_sec - start.tv_sec)
+		+ (double)(pub->timer.tv_nsec - start.tv_nsec) / nanos_per_sec;
+}
+
+unsigned char * window_keymap_map(struct window_keymap *held_keys) {
 	return held_keys->map - WINDOW_KEYSTART;
 }
 
@@ -17,7 +26,7 @@ const enum key_action action, int code, const bool shift) {
 	code = toupper(code);
 	if (code >= WINDOW_KEYSTART && code < WINDOW_KEYEND) {
 		held_keys->shift = shift;
-		unsigned char *map = window_key_get_map(held_keys);
+		unsigned char *map = window_keymap_map(held_keys);
 		if (!map[code] || action == key_release) {
 			map[code] = (uint8_t)action;
 		}

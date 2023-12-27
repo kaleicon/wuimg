@@ -33,8 +33,8 @@ void window_fullscreen(struct window_context *window) {
 	window->pub.win.fullscreen = !fs;
 }
 
-void window_poll(struct window_context *window) {
-	window->pub.win.fn.poll(&window->ctx);
+void window_poll(struct window_context *window, const long nsecs) {
+	window->pub.win.fn.poll(&window->ctx, nsecs);
 	if (sig_should_close) {
 		window->pub.event.program = wu_program_exit;
 	}
@@ -65,7 +65,7 @@ void window_postgl_setup(struct window_context *window) {
 	sigaction(SIGHUP, &ign, NULL);
 	sigaction(SIGPIPE, &ign, NULL);
 
-	window_poll(window);
+	window_poll(window, 0);
 	window->pub.win.focused = true;
 }
 

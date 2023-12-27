@@ -184,9 +184,10 @@ static void glfw_resize(void *ctx, const int w, const int h) {
 	glfwSetWindowSize(glfw->window, w, h);
 }
 
-static void glfw_poll(void *ctx) {
+static void glfw_poll(void *ctx, const long nsecs) {
 	(void)ctx;
-	glfwPollEvents();
+//	glfwPollEvents();
+	glfwWaitEventsTimeout((double)nsecs / 1000000000);
 }
 
 static void glfw_swap_buffers(void *ctx) {

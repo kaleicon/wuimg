@@ -16,7 +16,7 @@
 
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 
-void drm_terminate(void *ctxv) {
+static void drm_terminate(void *ctxv) {
 	struct drm_context *ctx = ctxv;
 	eglTerminate(ctx->egl.display);
 
@@ -104,7 +104,7 @@ unsigned int _usec, void *data) {
 	*flipped = true;
 }
 
-void drm_swap_buffers(void *ctxv) {
+static void drm_swap_buffers(void *ctxv) {
 	struct drm_context *ctx = ctxv;
 	egl_swap(&ctx->egl);
 

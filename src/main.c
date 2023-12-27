@@ -63,28 +63,6 @@ static int lsign(const long i) {
 	return i < 0 ? -1 : 1;
 }
 
-static enum wu_error decode_with_stats(struct image_context *image) {
-	const watch_t start = watch_look();
-	const enum wu_error result = dec_decode(image);
-	const watch_t diff = watch_elapsed(start);
-
-	const struct image_file *infile = &image->file;
-	const char *what = "Failed";
-	if (result == wu_ok) {
-		image_file_print(infile, 1);
-		what = "Decoded";
-	} else {
-		term_line_key_val("Decoding error",
-			wu_error_message(result), stdout);
-		if (infile->errors.str) {
-			fputs("Library message: ", stdout);
-			wustr_print(&infile->errors, stdout);
-		}
-	}
-	nanosec_report(what, diff, report_normal);
-	return result;
-}
-
 static void pos_print(const size_t i, const struct file_list *entries) {
 	printf("%zu/%zu, %s\n", i+1, entries->nr, entries->name[i]);
 }
@@ -166,12 +144,17 @@ const struct test_mode_args args) {
 				result = dec_iter(&image, &img);
 			} while (result == wu_ok);
 
-			if (result == wu_no_change) {
+			switch (result) {
+			case wu_no_change:
 				result = wu_ok;
-			}
-			if (args.metadata && result == wu_ok && j == 0) {
-				putchar('\n');
-				image_file_print(&image.file, 3);
+				// fallthrough
+			case wu_ok:
+				if (args.metadata && j == 0) {
+					putchar('\n');
+					image_file_print(&image.file, 3);
+				}
+				break;
+			default: break;
 			}
 			dec_free_image(&image);
 		}
@@ -225,17 +208,12 @@ static enum wu_error run_with_archive(const char *archive_name) {
 
 		image_reset(image);
 		dec_src_file(image, iter.cur, iter.name, true);
-
-		result = decode_with_stats(image);
-		const bool next_entry =
-			result != wu_ok || !display_loop(&window, false, false);
+		result = display_loop(&window, true, false);
 		dec_free_image(image);
-
-		if (next_entry) {
+		putchar('\n');
+		if (result != wu_ok) {
 			event->cycle = direction;
 		}
-		putchar('\n');
-
 		idx += event->cycle;
 	}
 
@@ -285,21 +263,16 @@ const bool interpret_stdin) {
 		}
 
 		if (!free_entry) {
-			result = decode_with_stats(image);
-			if (result == wu_ok) {
-				free_entry = !display_loop(&window,
-					remaining == 1, true);
-				if (event->rm == rm_yes && !free_entry) {
-					unlink(image->name);
-					puts("File deleted.");
-					free_entry = true;
-				}
-			} else {
+			result = display_loop(&window, remaining > 1, true);
+			dec_free_image(image);
+			if (result != wu_ok) {
+				free_entry = true;
+			} else if (event->rm == rm_yes) {
+				unlink(image->name);
+				puts("File deleted.");
 				free_entry = true;
 			}
-			dec_free_image(image);
 		}
-
 		if (free_entry) {
 			list_remove_entry(entries, idx);
 			--remaining;

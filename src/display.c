@@ -13,6 +13,28 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 
+static enum wu_error decode_with_stats(struct image_context *image) {
+	const watch_t start = watch_look();
+	const enum wu_error result = dec_decode(image);
+	const watch_t diff = watch_elapsed(start);
+
+	const struct image_file *infile = &image->file;
+	const char *what = "Failed";
+	if (result == wu_ok) {
+		image_file_print(infile, 1);
+		what = "Decoded";
+	} else {
+		term_line_key_val("Decoding error",
+			wu_error_message(result), stdout);
+		if (infile->errors.str) {
+			fputs("Library message: ", stdout);
+			wustr_print(&infile->errors, stdout);
+		}
+	}
+	nanosec_report(what, diff, report_normal);
+	return result;
+}
+
 static void set_background_color(const struct image_context *image) {
 	const struct wu_conf *conf = &image->conf;
 	if (conf->bg_src != bg_default) {
@@ -37,14 +59,14 @@ void display_end(struct window_context *window, const struct term_restore *tr) {
 	}
 }
 
-static bool update_texture(struct image_context *image,
+static enum wu_error update_texture(struct image_context *image,
 struct gl_context *gl, const bool reset) {
 	struct wu_state *state = &image->state;
 	struct wuimg *img = image->file.sub_img + state->idx;
 	switch (gl_texture_upload(gl, img, &image->conf)) {
 	case gl_upload_fail:
 		term_line_put("Failed to upload to texture.", stderr);
-		return false;
+		return wu_display_error;
 	case gl_upload_success:
 		if (reset) {
 			const float min = (float)(image->conf.magnify_under /
@@ -59,7 +81,7 @@ struct gl_context *gl, const bool reset) {
 	case gl_upload_same_size:
 		break;
 	}
-	return true;
+	return wu_ok;
 }
 
 static double draw_rest_poll(struct window_context *window,
@@ -81,21 +103,20 @@ const bool print_draw_time) {
 	};
 	nanosleep(&tm, NULL);
 
-	window_poll(window);
+	window_poll(window, 0);
 	const unsigned char ev = term_queue_next(&window->pub.term);
 	window_key_add(&window->pub.held_keys, key_external, ev, isupper(ev));
 	return event_exec(window);
 }
 
-static void idle_display(struct image_context *image,
-struct window_context *window, const double next_frame) {
+static bool idle_display(struct image_context *image,
+struct window_context *window, const double next_frame, const bool allow_cycle) {
 	struct wu_event *event = &window->pub.event;
 	struct wu_state *state = &window->pub.image.state;
 
-	for (bool first = true;; first = false) {
+	for (bool print_time = true;; print_time = !state->anim_playing) {
 		event->image = ev_time;
-		const double ellapsed = draw_rest_poll(window,
-			!state->anim_playing && first);
+		const double ellapsed = draw_rest_poll(window, print_time);
 		if (state->anim_playing && window->pub.win.focused) {
 			state->time += (float)ellapsed;
 			if (state->time >= next_frame && image_frame_cycle(image, 1)) {
@@ -103,8 +124,9 @@ struct window_context *window, const double next_frame) {
 			}
 		}
 
-		if (event->cycle || event->program || event->rm == rm_yes) {
-			break;
+		if ((allow_cycle && event->cycle)
+		|| event->program || event->rm == rm_yes) {
+			return true;
 		} else if (event->image) {
 			window->pub.gl.update = gl_update_matrix;
 			if (event->image & image->file.events
@@ -113,6 +135,7 @@ struct window_context *window, const double next_frame) {
 			}
 		}
 	}
+	return false;
 }
 
 static double min_time(const struct wuimg *img, const struct wu_state *state) {
@@ -123,9 +146,14 @@ static double min_time(const struct wuimg *img, const struct wu_state *state) {
 	return INFINITY;
 }
 
-bool display_loop(struct window_context *window, const bool single_file,
-const bool allow_delete) {
+enum wu_error display_loop(struct window_context *window,
+const bool allow_cycle, const bool allow_delete) {
 	struct image_context *image = &window->pub.image;
+	enum wu_error err = decode_with_stats(image);
+	if (err != wu_ok) {
+		return err;
+	}
+
 	struct image_file *infile = &image->file;
 	struct wu_state *state = &window->pub.image.state;
 	struct wu_event *event = &window->pub.event;
@@ -138,9 +166,8 @@ const bool allow_delete) {
 	set_background_color(image);
 	window_set_title(window, image->name);
 
-	bool all_ok = true;
 	double next_frame = INFINITY;
-	for (bool upload = true, first_iter = true;;) {
+	for (bool upload = true, first_iter = true; err == wu_ok;) {
 		if (upload) {
 			if (event->image & ev_subcycle) {
 				state->anim_playing = image_cur_is_anim(image);
@@ -148,15 +175,15 @@ const bool allow_delete) {
 			}
 
 			struct gl_context *gl = &window->pub.gl;
-			all_ok = update_texture(image, gl, first_iter);
-			if (!all_ok) {
+			err = update_texture(image, gl, first_iter);
+			if (err != wu_ok) {
 				break;
 			}
 
 			image_file_free_if_single(infile);
 
 			if (first_iter) {
-				clock_gettime(CLOCK_MONOTONIC, &window->pub.timer);
+				window_timer_update(&window->pub);
 				first_iter = false;
 			}
 
@@ -172,31 +199,28 @@ const bool allow_delete) {
 			event->image = 0;
 		}
 
-		idle_display(image, window, next_frame);
-
-		if ((!single_file && event->cycle)
-		|| event->program || event->rm == rm_yes) {
+		if (idle_display(image, window, next_frame, allow_cycle)) {
 			break;
-		} else if (event->image) {
-			if (event->image & infile->events) {
-				const enum wu_error err = dec_callback(
-					image, event->image);
-				if (err == wu_ok) {
-					upload = true;
-				} else if (err != wu_no_change) {
-					term_line_key_val("Callback failed",
-						wu_error_message(err), stdout);
-					all_ok = false;
-					break;
-				}
-			}
-			if (event->image & (ev_subcycle | ev_frame)) {
+		} else if (event->image & infile->events) {
+			err = dec_callback(image, event->image);
+			switch (err) {
+			case wu_no_change:
+				upload = (event->image
+					& (ev_subcycle | ev_frame));
+				err = wu_ok;
+				break;
+			case wu_ok:
 				upload = true;
+				break;
+			default:
+				term_line_key_val("Callback failed",
+					wu_error_message(err), stdout);
+				break;
 			}
 		}
 	}
 	term_line_clear();
-	return all_ok;
+	return err;
 }
 
 bool display_setup(struct window_context *window, struct term_restore *tr) {

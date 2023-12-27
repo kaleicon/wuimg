@@ -16,10 +16,6 @@ enum event_repeat {
 	repeat_smooth = 2,
 };
 
-static unsigned char * get_map(struct window_keymap *held_keys) {
-	return held_keys->map - WINDOW_KEYSTART;
-}
-
 static enum event_repeat apply_event(struct window_context *window,
 const int code, const float dt, const bool shift) {
 	struct window_public *pub = &window->pub;
@@ -176,17 +172,18 @@ const int code, const float dt, const bool shift) {
 	return repeat_fixed;
 }
 
-static double key_events(struct window_context *window, const double secs) {
+static double key_events(struct window_context *window) {
 	struct window_keymap *held_keys = &window->pub.held_keys;
 	const bool shift = held_keys->shift;
 
-	float msecs = (float)(secs * 1000);
+	const double ellapsed = window_timer_update(&window->pub);
+	float msecs = (float)(fmax(ellapsed, 1.0/1000) * 1000);
 	const int inc = (int)msecs;
 	if (shift) {
 		msecs *= 2;
 	}
 
-	unsigned char *map = get_map(held_keys);
+	unsigned char *map = window_keymap_map(held_keys);
 	for (int key = WINDOW_KEYSTART; key < WINDOW_KEYEND; ++key) {
 		const unsigned char time = map[key];
 		float dt = 16 * (shift ? 2 : 1);
@@ -215,14 +212,7 @@ static double key_events(struct window_context *window, const double secs) {
 		case repeat_smooth: break;
 		}
 	}
-	return secs;
-}
-
-static double monoclock_diff(const struct timespec start,
-const struct timespec end) {
-	const double nanos_per_sec = 1000000000;
-	return (double)(end.tv_sec - start.tv_sec)
-		+ (double)(end.tv_nsec - start.tv_nsec) / nanos_per_sec;
+	return ellapsed;
 }
 
 double event_exec(struct window_context *window) {
@@ -238,10 +228,7 @@ double event_exec(struct window_context *window) {
 		pub->event.cycle = y_scroll;
 		cursor->y.scroll = 0;
 	}
-
-	const struct timespec start = pub->timer;
-	clock_gettime(CLOCK_MONOTONIC, &pub->timer);
-	return key_events(window, fmax(1.0/1000, monoclock_diff(start, pub->timer)));
+	return key_events(window);
 }
 
 void print_keys(void) {

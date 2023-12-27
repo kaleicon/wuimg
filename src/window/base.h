@@ -50,13 +50,14 @@ struct window_cursor {
 typedef void (*window_fn_title_t)(void *ctx, const char *title);
 typedef void (*window_fn_resize_t)(void *ctx, int w, int h);
 typedef void (*window_fn_fullscreen_t)(void *ctx, int enable);
+typedef void (*window_fn_poll_t)(void *ctx, long nsecs);
 typedef void (*window_fn_ctx_t)(void *ctx);
 
 struct window_fn {
 	window_fn_title_t title;
 	window_fn_resize_t resize;
 	window_fn_fullscreen_t fullscreen;
-	window_fn_ctx_t poll;
+	window_fn_poll_t poll;
 	window_fn_ctx_t swap_buffers;
 	window_fn_ctx_t terminate;
 };
@@ -80,6 +81,10 @@ struct window_public {
 	struct wu_event event;
 	struct window_keymap held_keys;
 };
+
+double window_timer_update(struct window_public *pub);
+
+unsigned char * window_keymap_map(struct window_keymap *held_keys);
 
 void window_key_lift(struct window_keymap *held_keys);
 
