@@ -235,7 +235,6 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 		if (!wuimg_frames_init(img, (size_t)(ds->idx + 1))) {
 			return wu_alloc_error;
 		}
-		infile->events = ev_frame;
 	}
 	st = wuimg_alloc(img);
 	if (st != wu_ok) {

@@ -177,7 +177,6 @@ const struct wu_conf *wuconf) {
 	avifDecoder *dec = avifDecoderCreate();
 	if (dec) {
 		infile->dec_state = dec;
-		infile->events = ev_subcycle;
 		avifResult res;
 		const enum wu_error st = decode_map(infile, dec, &res);
 		if (res != AVIF_RESULT_OK) {

@@ -50,7 +50,7 @@ struct wuimg * alloc_sub_images(struct image_file *file, const size_t nr) {
 }
 
 void image_file_free_if_single(struct image_file *file) {
-	if (!file->events && !file->dec_state && file->nr == 1) {
+	if (!file->dec_state && file->nr == 1) {
 		struct wuimg *img = file->sub_img;
 		if (!img->borrowed) {
 			free(img->data);
@@ -136,7 +136,16 @@ struct wuimg * image_cur_sub_img(const struct image_context *image) {
 }
 
 bool image_cur_is_anim(const struct image_context *image) {
-	return image->file.events & (ev_frame | ev_time);
+	const struct wuimg *img = image_cur_sub_img(image);
+	return img->evolving || img->frames;
+}
+
+enum image_event image_cur_events(const struct image_context *image) {
+	const struct wuimg *img = image_cur_sub_img(image);
+	return ev_subcycle
+		| (img->evolving ? ev_time : 0)
+		| (img->frames ? ev_frame : 0)
+		| (img->scalable ? ev_scale : 0);
 }
 
 enum image_event image_zoom(struct image_context *image, float new_zoom) {
@@ -162,8 +171,7 @@ enum image_event image_sub_cycle(struct image_context *image, int steps) {
 }
 
 enum image_event image_frame_cycle(struct image_context *image, int steps) {
-	const struct image_frames *frames =
-		image->file.sub_img[image->state.idx].frames;
+	const struct image_frames *frames = image_cur_sub_img(image)->frames;
 	if (frames) {
 		const int f = imod(image->state.frame + steps, (int)frames->nr);
 		if (f != image->state.frame) {

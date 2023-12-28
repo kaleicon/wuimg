@@ -428,7 +428,6 @@ const struct wu_conf *wuconf) {
 			js->soi_offsets = NULL;
 
 			jpeg_create_decompress(&js->dinfo);
-			infile->events = ev_subcycle;
 			return wu_ok;
 		}
 	}

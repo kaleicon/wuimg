@@ -236,9 +236,6 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 	if (!wuimg_frames_init(img, count)) {
 		return wu_alloc_error;
 	}
-	if (count > 1) {
-		infile->events = ev_frame;
-	}
 
 	ds->gcb = malloc(sizeof(*ds->gcb) * count);
 	if (!ds->gcb) {

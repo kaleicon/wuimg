@@ -158,7 +158,6 @@ const struct wu_conf *wuconf) {
 	struct dpx_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		infile->dec_state = desc;
-		infile->events = ev_subcycle;
 		enum wu_error st = dpx_open(desc, infile->ifp);
 		if (st == wu_ok) {
 			st = dpx_parse(desc);

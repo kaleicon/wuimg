@@ -178,7 +178,7 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		if (desc->pal) {
 			struct raster_pal *pal = desc->pal;
 			if (!desc->ham) {
-				if (desc->crng.active_nr) {
+				if (img->evolving) {
 					wuimg_palette_set(img,
 						memdup(pal, sizeof(*pal)));
 				} else {
@@ -264,7 +264,6 @@ const struct wuptr data) {
 	 * [1] Where 16384 is 1/60 of a second, 8192 is 1/30, etc.
 	*/
 
-	(void)img;
 	const uint16_t ACTIVE = 0x1;
 	const uint16_t REVERSE = 0x2;
 	const float TO_SECS = 273.0f + 1.0f/15;
@@ -289,6 +288,9 @@ const struct wuptr data) {
 			};
 			++crng->len;
 			crng->active_nr += active;
+			img->evolving |= active;
+		} else {
+			crng->too_many = true;
 		}
 		return wu_ok;
 	}

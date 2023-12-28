@@ -110,7 +110,8 @@ const bool print_draw_time) {
 }
 
 static bool idle_display(struct image_context *image,
-struct window_context *window, const double next_frame, const bool allow_cycle) {
+struct window_context *window, const double next_frame,
+const enum image_event evs, const bool allow_cycle) {
 	struct wu_event *event = &window->pub.event;
 	struct wu_state *state = &window->pub.image.state;
 
@@ -128,9 +129,10 @@ struct window_context *window, const double next_frame, const bool allow_cycle) 
 		|| event->program || event->rm == rm_yes) {
 			return true;
 		} else if (event->image) {
-			window->pub.gl.update = gl_update_matrix;
-			if (event->image & image->file.events
-			|| event->image & ev_subcycle) {
+			if (event->image & ~ev_time) {
+				window->pub.gl.update = gl_update_matrix;
+			}
+			if (event->image & evs) {
 				break;
 			}
 		}
@@ -167,11 +169,13 @@ const bool allow_cycle, const bool allow_delete) {
 	window_set_title(window, image->name);
 
 	double next_frame = INFINITY;
+	enum image_event evs = ev_subcycle;
 	for (bool upload = true, first_iter = true; err == wu_ok;) {
 		if (upload) {
 			if (event->image & ev_subcycle) {
 				state->anim_playing = image_cur_is_anim(image);
 				state->time = 0;
+				evs = image_cur_events(image);
 			}
 
 			struct gl_context *gl = &window->pub.gl;
@@ -188,7 +192,7 @@ const bool allow_cycle, const bool allow_delete) {
 			}
 
 			const struct wuimg *img = infile->sub_img + state->idx;
-			if (state->anim_playing) {
+			if (evs & ev_frame) {
 				next_frame = state->time + min_time(img, state);
 			} else {
 				fprintf(stderr,
@@ -199,14 +203,13 @@ const bool allow_cycle, const bool allow_delete) {
 			event->image = 0;
 		}
 
-		if (idle_display(image, window, next_frame, allow_cycle)) {
+		if (idle_display(image, window, next_frame, evs, allow_cycle)) {
 			break;
-		} else if (event->image & infile->events) {
+		} else if (event->image & evs) {
 			err = dec_callback(image, event->image);
 			switch (err) {
 			case wu_no_change:
-				upload = (event->image
-					& (ev_subcycle | ev_frame));
+				upload = event->image & (ev_subcycle | ev_frame);
 				err = wu_ok;
 				break;
 			case wu_ok:

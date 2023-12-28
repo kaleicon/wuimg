@@ -48,7 +48,6 @@ struct image_file {
 
 	struct pix_rgba8 bg;
 
-	enum image_event events:8;
 	bool keep_file;
 	bool keep_map;
 	void *restrict dec_state; // Used by decoder for callbacks
@@ -98,6 +97,8 @@ void image_file_error_append(struct image_file *file, enum wu_error status);
 
 void image_file_free(struct image_file *file);
 
+
+enum image_event image_cur_events(const struct image_context *image);
 
 struct wuimg * image_cur_sub_img(const struct image_context *image);
 

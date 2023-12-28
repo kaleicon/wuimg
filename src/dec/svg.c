@@ -81,10 +81,12 @@ static enum wu_error svg_render(struct wuimg *img, struct svg_state *ds) {
 	return wu_decoding_error;
 }
 
-static enum wu_error svg_rescale(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state) {
+static enum wu_error svg_callback(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event event) {
+	const bool first_render = event & ev_subcycle;
 	const float eps = 1.0f / (float)imin(wuconf->fb.w, wuconf->fb.h);
-	if (state->zoom <= 1 + eps) {
+	if (!first_render && state->zoom <= 1 + eps) {
 		if (wuconf->svg_redraw == svg_upscale || state->zoom >= 1 - eps) {
 			return wu_no_change;
 		}
@@ -93,12 +95,9 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 	struct svg_state *ds = infile->dec_state;
 
 	bool reached_limit = false;
-	const float new_zoom = limit_zoom(ds->dec_scale * state->zoom,
+	const float new_zoom = limit_zoom(
+		first_render ? 1 : ds->dec_scale * state->zoom,
 		&ds->viewport, wuconf->max_img_size, &reached_limit);
-	if (wuconf->svg_redraw == svg_upscale && reached_limit) {
-		infile->events = 0;
-	}
-
 	if (new_zoom > ds->dec_scale
 	|| (wuconf->svg_redraw == svg_scale && new_zoom != ds->dec_scale)) {
 		state->zoom = 1;
@@ -106,15 +105,6 @@ const struct wu_conf *wuconf, struct wu_state *state) {
 		state->y_offset *= new_zoom / ds->dec_scale;
 		ds->dec_scale = new_zoom;
 		return svg_render(infile->sub_img, ds);
-	}
-	return wu_no_change;
-}
-
-static enum wu_error svg_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event event) {
-	if (event & ev_scale) {
-		return svg_rescale(infile, wuconf, state);
 	}
 	return wu_no_change;
 }
@@ -147,26 +137,14 @@ const struct wu_conf *wuconf) {
 	}
 	img->channels = 4;
 	img->bitdepth = 8;
+	img->alpha = alpha_associated;
+	img->scalable = true;
 	/* Cairo renders in ARGB, which on little-endian means BGRA. */
 	switch (which_end()) {
 	case little_endian: img->layout = pix_bgra; break;
 	case big_endian: img->layout = pix_argb; break;
 	}
-	img->alpha = alpha_associated;
-
-	bool reached_limit = false;
-	ds->dec_scale = limit_zoom(1, &ds->viewport, wuconf->max_img_size,
-		&reached_limit);
-
-	const enum wu_error err = svg_render(img, ds);
-	if (err == wu_ok && !reached_limit) {
-		switch (wuconf->svg_redraw) {
-		case svg_upscale: infile->events = ev_upscale; break;
-		case svg_scale: infile->events = ev_scale; break;
-		default: break;
-		}
-	}
-	return err;
+	return wu_ok;
 }
 
 const struct image_fn svg_fn = {

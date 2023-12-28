@@ -90,7 +90,6 @@ const struct wu_conf *wuconf) {
 	struct ico_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		infile->dec_state = desc;
-		infile->events = ev_subcycle;
 		enum wu_error err = ico_open_file(desc, infile->ifp);
 		if (err == wu_ok) {
 			err = ico_parse_header(desc);

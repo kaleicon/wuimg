@@ -314,7 +314,6 @@ const struct wu_conf *wuconf) {
 	}
 
 	infile->dec_state = ds;
-	infile->events = ev_subcycle;
 	struct heif_error herr = heif_init(&ds->params);
 	if (herr.code != heif_error_Ok) {
 		image_file_strerror_append(infile, herr.message);

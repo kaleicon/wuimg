@@ -112,7 +112,6 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 					/ 1000,
 			};
 		}
-		infile->events = ev_frame;
 	}
 
 	read_metadata(&infile->metadata, frame);

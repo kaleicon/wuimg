@@ -16,8 +16,6 @@ const struct wu_conf *wuconf) {
 	struct px_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		infile->dec_state = desc;
-		infile->events = ev_subcycle;
-
 		const enum wu_error err = px_parse(desc, infile->ifp);
 		if (err == wu_ok) {
 			if (umax(desc->w, desc->h) > wuconf->max_img_size) {

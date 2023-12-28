@@ -18,7 +18,6 @@ const struct wu_conf *wuconf) {
 	struct pnm_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		infile->dec_state = desc;
-		infile->events = ev_subcycle;
 		enum wu_error st = pnm_open_file(desc, infile->ifp, true);
 		if (st == wu_ok) {
 			st = pnm_parse_header(desc);

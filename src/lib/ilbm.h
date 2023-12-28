@@ -22,6 +22,7 @@ struct ilbm_crng {
 struct ilbm_crng_array {
 	uint8_t len;
 	uint8_t active_nr;
+	bool too_many;
 	struct ilbm_crng crng[16]; /* The most I've seen are 16, usually with
 		placeholders. */
 };

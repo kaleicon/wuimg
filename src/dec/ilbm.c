@@ -91,6 +91,9 @@ const struct wu_conf *wuconf) {
 	st = ilbm_parse_header(desc, img);
 	if (st != wu_ok) {
 		return st;
+	} else if (desc->crng.too_many) {
+		image_file_strerror_append(infile,
+			"Excess color cycles ignored");
 	}
 	ilbm_parse_footer(desc);
 
@@ -98,7 +101,6 @@ const struct wu_conf *wuconf) {
 		realloc_sub_images(infile, 2);
 	}
 	add_metadata(desc, &infile->metadata);
-	infile->events = ev_subcycle | (desc->crng.active_nr ? ev_time : 0);
 	return wu_ok;
 }
 

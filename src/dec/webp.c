@@ -430,7 +430,6 @@ const struct wu_conf *wuconf) {
 
 	enum wu_error err = wu_ok;
 	if (ds->config.input.has_animation) {
-		infile->events = ev_frame;
 		img->channels = 4;
 		img->layout = pix_bgra;
 

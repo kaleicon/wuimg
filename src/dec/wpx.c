@@ -110,7 +110,6 @@ const struct wu_conf *wuconf) {
 	struct wpx_ia2_desc *desc = calloc(1, sizeof(*desc));
 	if (desc) {
 		infile->dec_state = desc;
-		infile->events = ev_subcycle;
 		st = wpx_ia2_open(desc, mp_map(infile->map));
 		if (st == wu_ok) {
 			st = wpx_ia2_parse(desc);

@@ -461,7 +461,6 @@ const struct wu_conf *wuconf) {
 	}
 
 	infile->dec_state = tif;
-	infile->events = ev_subcycle;
 	return alloc_sub_images(infile, TIFFNumberOfDirectories(tif))
 		? wu_ok : wu_alloc_error;
 }

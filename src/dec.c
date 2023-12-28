@@ -115,7 +115,7 @@ enum wu_error dec_callback(struct image_context *image,
 enum image_event event) {
 	struct image_file *infile = &image->file;
 	struct wu_state *state = &image->state;
-	event &= infile->events;
+	event &= image_cur_events(image);
 	switch (event) {
 	case ev_none:
 		return wu_no_change;
@@ -238,7 +238,7 @@ enum wu_error dec_decode(struct image_context *image) {
 		st = image->fn->dec(infile, conf);
 		if (st == wu_ok) {
 			image_file_normalize(infile);
-			if (infile->events & ev_subcycle) {
+			if (!infile->sub_img->data) {
 				st = dec_callback(image, ev_subcycle);
 				if (st == wu_no_change) {
 					st = wu_ok;

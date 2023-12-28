@@ -96,12 +96,14 @@ static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 	const enum wu_error st = wuimg_verify(img);
 	if (st == wu_ok) {
 		img->borrowed = true;
+		img->data = (uint8_t *)-1;
 		for (uint8_t z = 0; z < img->channels; ++z) {
-			const struct scale_info scaler = repack_scale_info(
-				bit_set32(comps[z].prec), img->bitdepth);
 			const enum pix_attr attr = comps[z].sgnd
 				? pix_signed : pix_normal;
 			p[z].ptr = (uint8_t *)comps[z].data;
+
+			const struct scale_info scaler = repack_scale_info(
+				bit_set32(comps[z].prec), img->bitdepth);
 			repack_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,
 				scaler, attr);
 		}

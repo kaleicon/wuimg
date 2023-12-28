@@ -79,6 +79,8 @@ struct wuimg {
 	enum alpha_interpretation alpha:2;
 
 	bool borrowed:1; // .data is not ours
+	bool evolving:1; // Data changes with time
+	bool scalable:1; // Image may be redrawn at a different resolution
 	enum image_mode mode:2;
 	union {
 		struct raster_pal *palette;
