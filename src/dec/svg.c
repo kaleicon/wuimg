@@ -10,125 +10,186 @@
 #include "misc/file.h"
 #include "misc/math.h"
 
-struct svg_state {
-	RsvgHandle *handle;
-	RsvgRectangle viewport;
-	float dec_scale;
-};
-
 static void svg_end(struct image_file *infile) {
-	struct svg_state *ds = infile->dec_state;
-	g_object_unref(ds->handle);
-	free(ds);
+	g_object_unref(infile->dec_state);
 }
 
-static float limit_zoom(const float zoom, const RsvgRectangle *viewport,
-unsigned int limit, bool *reached_limit) {
-	const unsigned int cairo_size_limit = 1 << 14;
-	const double flimit = (double)umin(limit, cairo_size_limit);
-
-	const double max = fmax(viewport->width, viewport->height) * zoom;
-	if (max > flimit) {
-		*reached_limit = true;
-		return (float)(zoom * (flimit / max));
-	}
-	return zoom;
+static enum wu_error handle_gerror(struct image_file *infile,
+GError *err, const enum wu_error val) {
+	image_file_strerror_append(infile, err->message);
+	g_error_free(err);
+	return val;
 }
 
-static enum wu_error svg_render(struct wuimg *img, struct svg_state *ds) {
-	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
-	const int width = (int)ceil((ds->viewport.width * ds->dec_scale));
-	const int height = (int)ceil((ds->viewport.height * ds->dec_scale));
-	const int stride = cairo_format_stride_for_width(format, width);
+static float get_mirror(const struct wu_state *state, const bool horizontal) {
+	return (state->mirror && (state->rotate & 1) == horizontal)
+		? -state->zoom : state->zoom;
+}
 
-	free(img->data);
-	img->data = calloc((size_t)(stride * height), 1);
-	if (!img->data) {
-		return wu_alloc_error;
+static enum wu_error render_document(struct image_file *infile, cairo_t *canvas,
+const RsvgRectangle *viewport) {
+	GError *err = NULL;
+	const bool success = rsvg_handle_render_document(infile->dec_state,
+		canvas, viewport, &err);
+	cairo_destroy(canvas);
+	if (!success) {
+		return handle_gerror(infile, err, wu_decoding_error);
 	}
-	cairo_surface_t *surf = cairo_image_surface_create_for_data(img->data,
+	return wu_ok;
+}
+
+static cairo_t * canvas_switcheroo(uint8_t *data, const cairo_format_t format,
+const int width, const int height, const int stride) {
+	cairo_surface_t *surf = cairo_image_surface_create_for_data(data,
 		format, width, height, stride);
 	if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
 		cairo_surface_destroy(surf);
-		return wu_alloc_error;
-	}
-
-	img->w = (size_t)width;
-	img->h = (size_t)height;
-	const enum wu_error st = wuimg_verify(img);
-	if (st != wu_ok) {
-		cairo_surface_destroy(surf);
-		return st;
+		return NULL;
 	}
 
 	cairo_t *canvas = cairo_create(surf);
 	cairo_surface_destroy(surf);
 	if (cairo_status(canvas) != CAIRO_STATUS_SUCCESS) {
 		cairo_destroy(canvas);
+		return NULL;
+	}
+	return canvas;
+}
+
+static enum wu_error adapt_to_window(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state,
+const enum image_event event) {
+	if ((unsigned)imax(wuconf->fb.w, wuconf->fb.h) > wuconf->max_img_size) {
+		// wtf
+		return wu_exceeds_size_limit;
+	}
+
+	struct wuimg *img = infile->sub_img;
+	const size_t prev_size = wuimg_size(img);
+
+	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
+	const int width = (int)wuconf->fb.w;
+	const int height = (int)wuconf->fb.h;
+	const int stride = cairo_format_stride_for_width(format, width);
+
+	img->w = (size_t)width;
+	img->h = (size_t)height;
+	img->align_sh = strip_alignment((size_t)stride, img->w * img->channels,
+		img->bitdepth);
+	const enum wu_error st = wuimg_verify(img);
+	if (st != wu_ok) {
+		return st;
+	}
+
+	const size_t size = wuimg_size(img);
+	if (size != prev_size) {
+		free(img->data);
+		img->data = calloc(size, 1);
+		if (!img->data) {
+			return wu_alloc_error;
+		}
+	} else {
+		memset(img->data, 0, size);
+	}
+
+	cairo_t *canvas = canvas_switcheroo(img->data, format, width, height,
+		stride);
+	if (!canvas) {
 		return wu_alloc_error;
 	}
 
-	cairo_scale(canvas, ds->dec_scale, ds->dec_scale);
-	const bool success = rsvg_handle_render_document(ds->handle, canvas,
-		&ds->viewport, NULL);
-	cairo_destroy(canvas);
-	if (success) {
-		fprintf(stderr, "Rendered @ %zu x %zu (%zu bytes), %.2fx original\n",
-			img->w, img->h, img->w * img->h * img->channels,
-			ds->dec_scale);
-		return wu_ok;
+	const double fbw = (double)wuconf->fb.w / 2.0;
+	const double fbh = (double)wuconf->fb.h / 2.0;
+	double x_scale = 1;
+	double y_scale = 1;
+	double x = fbw;
+	double y = fbh;
+	double rotate = 0;
+	const bool first_render = event & ev_subcycle;
+	if (!first_render) {
+		x_scale = get_mirror(state, 1),
+		y_scale = get_mirror(state, 0),
+		rotate = state->rotate * M_PI_2;
+		x = fbw + state->x_offset * x_scale;
+		y = fbh + state->y_offset * y_scale;
 	}
-	return wu_decoding_error;
+	const RsvgRectangle viewport = {
+		.x = -fbw,
+		.y = -fbh,
+		.width = (double)wuconf->fb.w,
+		.height = (double)wuconf->fb.h,
+	};
+
+	cairo_translate(canvas, x, y);
+	cairo_scale(canvas, x_scale, y_scale);
+	cairo_rotate(canvas, rotate);
+	return render_document(infile, canvas, &viewport);
+}
+
+static enum wu_error attempt_native(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	RsvgRectangle viewport;
+	if (rsvg_handle_get_intrinsic_size_in_pixels(infile->dec_state,
+	&viewport.width, &viewport.height)) {
+		viewport.x = 0;
+		viewport.y = 0;
+	} else if (!rsvg_handle_get_geometry_for_element(infile->dec_state,
+	NULL, NULL, &viewport, NULL)) {
+		viewport = (RsvgRectangle) {
+			.x = 0, .y = 0,
+			.width = 1280, .height = 1280,
+		};
+	}
+
+	const double mis = (double)wuconf->max_img_size;
+	double scale = fmin(1, mis / fmax(viewport.width, viewport.height));
+	viewport.x *= scale;
+	viewport.y *= scale;
+	viewport.width *= scale;
+	viewport.height *= scale;
+
+	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
+	const int width = (int)ceil(viewport.width);
+	const int height = (int)ceil(viewport.width);
+	const int stride = cairo_format_stride_for_width(format, width);
+
+	struct wuimg *img = infile->sub_img;
+	img->w = (size_t)width;
+	img->h = (size_t)height;
+	img->align_sh = strip_alignment((size_t)stride, img->w * img->channels,
+		img->bitdepth);
+	const enum wu_error st = wuimg_alloc(img);
+	if (st != wu_ok) {
+		return st;
+	}
+
+	cairo_t *canvas = canvas_switcheroo(img->data, format, width, height,
+		stride);
+	if (!canvas) {
+		return wu_alloc_error;
+	}
+	return render_document(infile, canvas, &viewport);
 }
 
 static enum wu_error svg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	const bool first_render = event & ev_subcycle;
-	const float eps = 1.0f / (float)imin(wuconf->fb.w, wuconf->fb.h);
-	if (!first_render && state->zoom <= 1 + eps) {
-		if (wuconf->svg_redraw == svg_upscale || state->zoom >= 1 - eps) {
-			return wu_no_change;
-		}
-	}
-
-	struct svg_state *ds = infile->dec_state;
-
-	bool reached_limit = false;
-	const float new_zoom = limit_zoom(
-		first_render ? 1 : ds->dec_scale * state->zoom,
-		&ds->viewport, wuconf->max_img_size, &reached_limit);
-	if (new_zoom > ds->dec_scale
-	|| (wuconf->svg_redraw == svg_scale && new_zoom != ds->dec_scale)) {
-		state->zoom = 1;
-		state->x_offset *= new_zoom / ds->dec_scale;
-		state->y_offset *= new_zoom / ds->dec_scale;
-		ds->dec_scale = new_zoom;
-		return svg_render(infile->sub_img, ds);
+	if (wuconf->svg_window_adapt) {
+		return adapt_to_window(infile, wuconf, state, event);
+	} else if (!infile->sub_img->data) {
+		return attempt_native(infile, wuconf);
 	}
 	return wu_no_change;
 }
 
 static enum wu_error svg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct svg_state *ds = calloc(sizeof(*ds), 1);
-	if (!ds) {
-		return wu_alloc_error;
-	}
-	infile->dec_state = ds;
-
-	ds->handle = rsvg_handle_new_from_data(infile->map.data,
-		infile->map.len, NULL);
-	if (!ds->handle) {
-		return wu_open_error;
-	}
-
-	ds->viewport.x = 0;
-	ds->viewport.y = 0;
-	if (!rsvg_handle_get_intrinsic_size_in_pixels(ds->handle,
-	&ds->viewport.width, &ds->viewport.height)) {
-		ds->viewport.width = (double)wuconf->fb.w;
-		ds->viewport.height = (double)wuconf->fb.h;
+	(void)wuconf;
+	GError *err = NULL;
+	infile->dec_state = rsvg_handle_new_from_data(infile->map.data,
+		infile->map.len, &err);
+	if (!infile->dec_state) {
+		return handle_gerror(infile, err, wu_open_error);
 	}
 
 	struct wuimg *img = alloc_sub_images(infile, 1);
@@ -138,7 +199,7 @@ const struct wu_conf *wuconf) {
 	img->channels = 4;
 	img->bitdepth = 8;
 	img->alpha = alpha_associated;
-	img->scalable = true;
+	img->scalable = wuconf->svg_window_adapt;
 	/* Cairo renders in ARGB, which on little-endian means BGRA. */
 	switch (which_end()) {
 	case little_endian: img->layout = pix_bgra; break;

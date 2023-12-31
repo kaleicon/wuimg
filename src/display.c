@@ -218,6 +218,8 @@ const bool allow_cycle, const bool allow_delete) {
 			default:
 				term_line_key_val("Callback failed",
 					wu_error_message(err), stdout);
+				fputs("Library message: ", stdout);
+				wustr_print(&infile->errors, stdout);
 				break;
 			}
 		}

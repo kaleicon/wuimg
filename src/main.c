@@ -80,10 +80,15 @@ static FILE * save_stdin(void) {
 	return tmp;
 }
 
+static struct wu_conf conv_conf(struct wu_conf conf) {
+	conf.svg_window_adapt = false;
+	return conf;
+}
+
 static enum wu_error convert_files(const struct file_list *entries,
 const struct write_args *args) {
 	struct image_context image = {
-		.conf = conf_load(),
+		.conf = conv_conf(conf_load()),
 	};
 
 	struct write_writer writer;
@@ -121,7 +126,7 @@ const struct test_mode_args args) {
 		args.iters, args.warmup);
 
 	struct image_context image = {
-		.conf = conf_load(),
+		.conf = conv_conf(conf_load()),
 	};
 
 	enum wu_error result = wu_ok;

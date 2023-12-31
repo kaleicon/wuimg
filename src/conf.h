@@ -71,11 +71,12 @@ struct wu_conf {
 		raw data. */
 
 	// SVG
-	enum svg_redraw_on { // If and when should the vector be redrawn.
-		svg_never = 0,
-		svg_upscale, // Only when zooming in.
-		svg_scale, // When zooming in and out. Crystal crispness always.
-	} svg_redraw:8;
+	bool svg_window_adapt; /* If true, render based on window size and
+		user interaction. This makes the image truly scalable, but
+		rotation and scaling will then depend on libcairo, which hasn't
+		been very reliable in that regard.
+		  If false, the image is rasterized once, and behaves like any
+		other image. */
 
 	// WEBP
 	bool webp_bypass_filtering; // Skip the filtering stage for lossy WebP.

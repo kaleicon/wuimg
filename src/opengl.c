@@ -204,11 +204,11 @@ static struct mat2i mat_mirrot(const int rotate, const bool mirror) {
 }
 
 static void set_mirrot(struct mat3f *dst, const struct gl_image_info *tex,
-const struct wu_state *state) {
+const int rotate, const bool mirror) {
 	/* GL textures are bottom-up, so negate mirror here to flip to
 	 * top-down without anyone knowing. */
 	const struct mat2i image = mat_mirrot(tex->rotate, !tex->mirror);
-	const struct mat2i user = mat_mirrot(state->rotate, state->mirror);
+	const struct mat2i user = mat_mirrot(rotate, mirror);
 	struct mat2i final;
 	mati_mul(final.m, image.m, user.m, 2, 2, 2);
 	dst->m[0] = (GLfloat)final.m[0];
@@ -219,10 +219,18 @@ const struct wu_state *state) {
 
 static void matrix_update(struct gl_context *context,
 const struct wu_state *state) {
+	const bool nt = context->tex.no_transform;
+
+	const int rotate = nt ? 0 : state->rotate;
+	const bool mirror = nt ? 0 : state->mirror;
+	const float zoom = nt ? 1 : state->zoom;
+	const float x = nt ? 0 : state->x_offset;
+	const float y = nt ? 0 : state->y_offset;
+
 	struct mat3f mat = {0};
 
-	set_mirrot(&mat, &context->tex, state);
-	fix_aspect_ratio(&mat, context, context->tex.rotate + state->rotate);
+	set_mirrot(&mat, &context->tex, rotate, mirror);
+	fix_aspect_ratio(&mat, context, context->tex.rotate + rotate);
 
 	/* Offsets are measured in pixels, but for the matrix a doubling is
 	 * needed for some reason I've lost track of. */
@@ -230,15 +238,15 @@ const struct wu_state *state) {
 	/* Using exact integer offsets causes ugly artifacts when rendering.
 	 * We add a fraction of a pixel to fix this. */
 	const float fix = 0.5f;
-	mat.m[6] = fmaf( state->x_offset, scale, fix) * context->pix_size[0];
-	mat.m[7] = fmaf(-state->y_offset, scale, fix) * context->pix_size[1];
-	mat.m[8] = 1 / state->zoom;
+	mat.m[6] = fmaf( x, scale, fix) * context->pix_size[0];
+	mat.m[7] = fmaf(-y, scale, fix) * context->pix_size[1];
+	mat.m[8] = 1 / zoom;
 	glUniformMatrix3fv(context->uni.mat.pos, 1, GL_FALSE, mat.m);
 
 	if (context->tex.mode != image_mode_palette) {
 		set_mag_filter(context->tex.subsamp,
-			1.0f + VISUAL_EPSILON < state->zoom
-			&& state->zoom < 2.0f - VISUAL_EPSILON);
+			1.0f + VISUAL_EPSILON < zoom
+			&& zoom < 2.0f - VISUAL_EPSILON);
 	}
 }
 
@@ -777,6 +785,7 @@ struct wuimg *img, const struct wu_conf *wuconf) {
 	}
 	gl_clock_end();
 
+	context->tex.no_transform = img->scalable;
 	context->tex.rotate = img->rotate;
 	context->tex.mirror = img->mirror;
 	context->tex.alpha = img->alpha;

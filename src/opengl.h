@@ -58,6 +58,7 @@ struct gl_context {
 		enum image_mode mode:8;
 		enum alpha_interpretation alpha:8;
 		unsigned subsamp:4;
+		bool no_transform:1;
 		bool mirror:1;
 		uint8_t rotate;
 		float fit_zoom;

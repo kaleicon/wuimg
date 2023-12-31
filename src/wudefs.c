@@ -145,7 +145,7 @@ enum image_event image_cur_events(const struct image_context *image) {
 	return ev_subcycle
 		| (img->evolving ? ev_time : 0)
 		| (img->frames ? ev_frame : 0)
-		| (img->scalable ? ev_scale : 0);
+		| (img->scalable ? ev_scale | ev_mirrot | ev_move : 0);
 }
 
 enum image_event image_zoom(struct image_context *image, float new_zoom) {

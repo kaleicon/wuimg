@@ -36,9 +36,6 @@ struct wu_conf conf_default(void) {
 		// TIFF
 		.tiff_use_homegrown_unpacker = true,
 
-		// SVG
-		.svg_redraw = svg_upscale,
-
 		// WEBP
 		.webp_bypass_filtering = true,
 		.webp_fast_upsamp = true,
@@ -146,13 +143,8 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 		} else if (wuptr_eq_str(key, "raw_prefer_thumbnail")) {
 			conf->raw_prefer_thumbnail = read_bool(tp, &ok);
 
-		} else if (wuptr_eq_str(key, "svg_redraw")) {
-			const struct enum_str e[] = {
-				{"never", svg_never},
-				{"upscale", svg_upscale},
-				{"scale", svg_scale},
-			};
-			conf->svg_redraw = read_enum(tp, &ok, e, ARRAY_LEN(e));
+		} else if (wuptr_eq_str(key, "svg_window_adapt")) {
+			conf->svg_window_adapt = read_bool(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "webp_bypass_filtering")) {
 			conf->webp_bypass_filtering = read_bool(tp, &ok);
