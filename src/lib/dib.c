@@ -219,15 +219,13 @@ bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 	if (wuimg_alloc_noverify(img)) {
 		switch ((int)desc->compression) {
 		case dib_no_compression:
+		case dib_bitfield:
 			w = fmt_load_raster(img, desc->ifp, little_endian);
 			break;
 		case dib_8bit_rle:
 		case dib_4bit_rle:
 		case os2_24bit_rle:
 			w = rle_decode(desc, img);
-			break;
-		case dib_bitfield:
-			w = bitfield_unpack_from_file(&desc->bf, img, desc->ifp);
 			break;
 		}
 		if (w) {
@@ -349,9 +347,13 @@ uint8_t *buf) {
 	if (!buf[3]) {
 		ch = 3;
 	}
-	if (bitfield_load(&desc->bf, img, mask, ch, desc->depth, little_endian)) {
-		img->layout = pix_rgba;
-		bitfield_reduce(&desc->bf, img);
+	struct bitfield *bf = wuimg_bitfield_init(img);
+	if (!bf) {
+		return wu_alloc_error;
+	}
+	if (bitfield_from_mask(bf, mask, ch, desc->depth, little_endian)) {
+//		img->layout = pix_rgba;
+//		bitfield_reduce(&desc->bf, img);
 		return wu_ok;
 	}
 	return wu_invalid_header;
@@ -468,7 +470,11 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 	switch (compression) {
 	case dib_no_compression:
 		if (depth == 16) {
-			img->attr = pix_pack_1555;
+			img->channels = 1;
+			img->bitdepth = 16;
+			if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
+				return wu_alloc_error;
+			}
 		}
 		break;
 	case dib_8bit_rle:

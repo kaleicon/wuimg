@@ -410,6 +410,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 
 	uint8_t uni_bits = 0;
 	uint8_t shared_bits = 0;
+	bool is_332 = false;
 
 	switch (desc->type) {
 	enum wu_error st;
@@ -460,7 +461,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 				return wu_invalid_header;
 			}
 			h *= 2;
-			img->attr = pix_pack_332;
+			is_332 = true;
 		}
 		/* According to the docs, images on the PC-88VA always cover
 		 * the whole screen, so the image ratio is whatever is needed
@@ -471,7 +472,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		switch (bd) {
 		case 8:
 			desc->bits = grb_bits_init(3, 3, 2);
-			img->attr = pix_pack_332;
+			is_332 = true;
 			break;
 		case 12:
 			uni_bits = 4;
@@ -548,17 +549,23 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	}
 
 	desc->depth = (uint8_t)bd;
-	if (img->attr == pix_pack_332) {
+	if (is_332) {
 		img->channels = 1;
 		img->bitdepth = 8;
+		img->layout = pix_layout_mul(img->layout, pix_bgra);
+		if (!wuimg_bitfield_init_from_id(img, 0x332)) {
+			return wu_alloc_error;
+		}
 	} else if (desc->depth == 12) {
 		img->channels = 4;
 		img->bitdepth = 4;
 	} else if (desc->depth == 15) {
 		img->channels = 1;
 		img->bitdepth = 16;
-		img->attr = pix_pack_1555;
 		img->layout = PIX_LAYOUT_PACK(1, 2, 0, 3); // why?
+		if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
+			return wu_alloc_error;
+		}
 	} else {
 		if (uni_bits) {
 			for (size_t i = 0; i < ARRAY_LEN(desc->bits.grb); ++i) {

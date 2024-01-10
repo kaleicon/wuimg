@@ -9,8 +9,6 @@ const char * pix_attr_str(const enum pix_attr attr) {
 	case pix_signed: return "signed";
 	case pix_inverted: return "inverted";
 	case pix_float: return "float";
-	case pix_pack_332: return "332";
-	case pix_pack_1555: return "1555";
 	}
 	return "???";
 }

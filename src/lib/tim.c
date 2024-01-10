@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "raster/bitfield.h"
 #include "raster/fmt.h"
 #include "raster/unpack.h"
 
@@ -26,7 +27,7 @@ size_t tim_decode(const struct tim_desc *desc, struct wuimg *img) {
 	size_t read = 0;
 	if (wuimg_alloc_noverify(img)) {
 		read = fread(img->data, 1, wuimg_size(img), desc->ifp);
-		if (img->attr == pix_pack_1555) {
+		if (img->mode == image_mode_bitfield) {
 			special_transparency_process((uint16_t *)img->data, read/2);
 		}
 	}
@@ -62,8 +63,9 @@ unsigned char header[static 12]) {
 		}
 
 		special_transparency_process(buf, colors);
-		unpack_strip(pal, buf, colors, 16, pix_pack_1555,
-			op_expand, NULL);
+		struct bitfield bf;
+		bitfield_from_id(&bf, 0x1555, 16, 0);
+		bitfield_unpack(&bf, pal, buf, colors);
 	}
 	return wu_ok;
 }
@@ -133,8 +135,8 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
 	} else {
 		img->channels = 1;
 		img->bitdepth = depth;
-		if (depth == 16) {
-			img->attr = pix_pack_1555;
+		if (depth == 16 && !wuimg_bitfield_init_from_id(img, 0x1555)) {
+			return wu_alloc_error;
 		}
 	}
 

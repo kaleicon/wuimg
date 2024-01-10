@@ -9,6 +9,7 @@
 #include "misc/file.h"
 #include "misc/math.h"
 #include "misc/mem.h"
+#include "raster/bitfield.h"
 #include "raster/fmt.h"
 #include "raster/unpack.h"
 
@@ -327,8 +328,9 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct wuimg *img) {
 		for (size_t i = 0; i < elems; ++i) {
 			wbuf[i] = endian16(wbuf[i], little_endian) ^ (1 << 15);
 		}
-		unpack_strip(pal, wbuf, elems, 16, pix_pack_1555, op_expand,
-			NULL);
+		struct bitfield bf;
+		bitfield_from_id(&bf, 0x1555, 16, 0);
+		bitfield_unpack(&bf, pal, wbuf, elems);
 		break;
 	case 24:
 		raster_pal_from_rgb8(pal, buf, elems);
@@ -416,7 +418,9 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 	case 15:
 	case 16:
 		img->bitdepth = 16;
-		img->attr = pix_pack_1555;
+		if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
+			return wu_alloc_error;
+		}
 		break;
 	case 24:
 	case 32:

@@ -67,16 +67,12 @@ static uint8_t rev_bits(int b) {
 size_t xwd_decode(const struct xwd_desc *desc, struct wuimg *img) {
 	size_t read = 0;
 	if (wuimg_alloc_noverify(img)) {
-		if (desc->bf.enable) {
-			read = bitfield_unpack_from_file(&desc->bf, img, desc->ifp);
-		} else {
-			read = fmt_load_raster(img, desc->ifp, desc->byte_endian);
-			if (img->bitdepth == 1 && desc->bit_endian == little_endian) {
-				// Reverse bit order
-				uint8_t *data = img->data;
-				for (size_t i = 0; i < read; ++i) {
-					data[i] = rev_bits(data[i]);
-				}
+		read = fmt_load_raster(img, desc->ifp, desc->byte_endian);
+		if (img->bitdepth == 1 && desc->bit_endian == little_endian) {
+			// Reverse bit order
+			uint8_t *data = img->data;
+			for (size_t i = 0; i < read; ++i) {
+				data[i] = rev_bits(data[i]);
 			}
 		}
 	}
@@ -229,10 +225,14 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 			return wu_invalid_header;
 		}
 
-		if (!bitfield_load(&desc->bf, img, mask, 3, (uint8_t)bpp, desc->byte_endian)) {
+		struct bitfield *bf = wuimg_bitfield_init(img);
+		if (!bf) {
+			return wu_alloc_error;
+		}
+		if (!bitfield_from_mask(bf, mask, 3, (uint8_t)bpp,
+		desc->byte_endian)) {
 			return wu_invalid_header;
 		}
-		bitfield_reduce(&desc->bf, img);
 		break;
 	}
 	desc->bpp = (uint8_t)bpp;

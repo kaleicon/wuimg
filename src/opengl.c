@@ -368,10 +368,12 @@ static void planar_disable(const enum gl_tex_unit start) {
 }
 
 static void switch_color_mode(struct gl_context *context,
-const enum image_mode new_mode) {
+enum image_mode new_mode) {
 	if (new_mode != context->tex.mode) {
 		switch (context->tex.mode) {
-		case image_mode_raw: break;
+		case image_mode_raw:
+		case image_mode_bitfield:
+			break;
 		case image_mode_palette:
 			palette_parameters(false);
 			break;
@@ -381,8 +383,16 @@ const enum image_mode new_mode) {
 			break;
 		}
 
-		if (new_mode == image_mode_palette) {
+		switch (new_mode) {
+		case image_mode_raw:
+		case image_mode_planar:
+			break;
+		case image_mode_palette:
 			palette_parameters(true);
+			break;
+		case image_mode_bitfield:
+			new_mode = image_mode_raw;
+			break;
 		}
 
 		context->tex.mode = new_mode;
@@ -394,13 +404,17 @@ static void gl_alignment(const align_t align) {
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1 << align);
 }
 
-static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
-const struct wuimg *img, const size_t w, const size_t h,
-const unsigned char *data, const struct remap_info *remap) {
+static void * unpack_upload(const GLuint pix_buf,
+const struct gl_upload_params *params, const struct wuimg *img, size_t w,
+const size_t h, const unsigned char *data) {
 	const align_t out_align = 2;
 	gl_alignment(out_align);
+	w *= params->comps;
+	const void *arg = params->op == op_bitfield
+		? img->u.bitfield : (void *)&params->remap;
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
-	const size_t outwidth = unpack_stride(w, img->bitdepth, img->attr, op);
+	const size_t outwidth = unpack_stride(w, img->bitdepth, img->attr,
+		params->op, arg);
 	if (!outwidth) {
 		fatal_bug("Upload error", "Unsupported raster format");
 	}
@@ -411,7 +425,7 @@ const unsigned char *data, const struct remap_info *remap) {
 	const watch_t start = watch_look();
 	for (size_t y = 0; y < h; ++y) {
 		unpack_strip(map + outstride*y, data + instride*y,
-			w, img->bitdepth, img->attr, op, remap);
+			w, img->bitdepth, img->attr, params->op, arg);
 	}
 	watch_report("Unpacked", start, report_detail);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
@@ -423,10 +437,8 @@ const struct gl_upload_params *params, const size_t w, const size_t h,
 const void *data) {
 	const GLuint pix_buf = context->pixel_unpack_buf;
 	bool bind_buffer = false;
-	const size_t elems = w * params->comps;
 	if (params->op != op_noop || img->align_sh > 3) {
-		data = unpack_upload(pix_buf, params->op, img, elems, h,
-			data, &params->remap);
+		data = unpack_upload(pix_buf, params, img, w, h, data);
 		bind_buffer = true;
 	} else {
 		gl_alignment(img->align_sh);
@@ -508,6 +520,7 @@ const struct gl_upload_params *params) {
 		tex_active(gl_tex_img);
 		// fallthrough
 	case image_mode_raw:
+	case image_mode_bitfield:
 		return tex_upload(context, img, params, img->w, img->h,
 			img->data);
 	case image_mode_planar:
@@ -546,20 +559,9 @@ static GLenum type_lut(const unsigned depth_log, const enum pix_attr attr) {
 
 static const char * set_upload_params(struct gl_upload_params *params,
 const struct wuimg *img) {
-	const uint8_t ch = params->comps;
+	uint8_t ch = params->comps;
 	uint8_t bd = img->bitdepth;
 	switch (img->attr) {
-	case pix_pack_332:
-		params->in_fmt = GL_R3_G3_B2;
-		params->fmt = GL_RGB;
-		params->type = GL_UNSIGNED_BYTE_3_3_2;
-		return NULL;
-	case pix_pack_1555:
-		params->in_fmt = GL_RGB5_A1;
-		params->fmt = GL_BGRA;
-		params->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
-		params->layout = pix_layout_mul(pix_bgra, params->layout);
-		return NULL;
 	case pix_float:
 		switch (bd) {
 		case 16: case 32:
@@ -592,6 +594,25 @@ const struct wuimg *img) {
 				params->layout = pix_layout_mul(meta, params->layout);
 				return NULL;
 			}
+		} else if (img->mode == image_mode_bitfield) {
+			const struct bitfield *bf = img->u.bitfield;
+			if (bf->id == 0x1555) {
+				params->in_fmt = GL_RGB5_A1;
+				params->fmt = GL_BGRA;
+				params->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
+				params->layout = pix_layout_mul(params->layout, pix_bgra);
+				return NULL;
+			} else if (bf->id == 0x332) {
+				params->in_fmt = GL_R3_G3_B2;
+				params->fmt = GL_RGB;
+				params->type = GL_UNSIGNED_BYTE_3_3_2;
+				params->layout = pix_layout_mul(params->layout, pix_bgra);
+				return NULL;
+			}
+			params->op = op_bitfield;
+			bd = bf->outdepth;
+			ch = bf->ch;
+			break;
 		}
 		// fallthrough
 	case pix_signed:
@@ -622,10 +643,10 @@ const struct wuimg *img) {
 		return "Invalid pix attribute";
 	}
 
-	const unsigned depth = bit_min_wordsize_log2(umin(bd, 32));
-	params->in_fmt = in_fmt_lut(depth, ch);
+	const unsigned depth_sh = bit_min_wordsize_log2(umin(bd, 32));
+	params->in_fmt = in_fmt_lut(depth_sh, ch);
 	params->fmt = fmt_lut(ch);
-	params->type = type_lut(depth, img->attr);
+	params->type = type_lut(depth_sh, img->attr);
 	return NULL;
 }
 
@@ -741,12 +762,17 @@ struct wuimg *img, const struct wu_conf *wuconf) {
 
 	struct gl_upload_params params = {.op = op_noop};
 	switch_color_mode(context, img->mode);
-	if (img->mode == image_mode_raw) {
+	switch (img->mode) {
+	case image_mode_raw:
+	case image_mode_bitfield:
 		params.layout = img->layout;
 		params.comps = img->channels;
-	} else {
+		break;
+	case image_mode_palette:
+	case image_mode_planar:
 		params.layout = pix_gray;
 		params.comps = 1;
+		break;
 	}
 
 	const char *errmsg = set_upload_params(&params, img);
@@ -787,14 +813,10 @@ const struct gl_reader *reader, void *restrict dst, const size_t row) {
 
 static unsigned char get_render_channels(const struct wuimg *img) {
 	unsigned char ch;
-	if (img->mode == image_mode_palette) {
-		ch = 4;
-	} else {
-		switch (img->attr) {
-		case pix_pack_332: ch = 3; break;
-		case pix_pack_1555: ch = 4; break;
-		default: ch = img->channels; break;
-		}
+	switch (img->mode) {
+	case image_mode_palette: ch = 4; break;
+	case image_mode_bitfield: ch = img->u.bitfield->ch; break;
+	default: ch = img->channels;
 	}
 	if (img->alpha & alpha_one
 	&& pix_layout_offset(img->layout, pix_alpha) < ch) {

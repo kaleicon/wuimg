@@ -6,22 +6,23 @@
 
 #include "pix.h"
 
+#include "bitfield.h"
+
 enum unpack_op {
 	op_noop = 0,
 	op_unpack,
 	op_expand,
 	op_pack,
 	op_remap,
+	op_bitfield,
 };
 
 void unpack_strip(void *restrict dst, const void *restrict src,
 size_t n, uint8_t bitdepth, enum pix_attr attr, enum unpack_op op,
 const void *arg);
 
-uint8_t unpack_depth(uint8_t bitdepth, enum pix_attr attr, enum unpack_op op);
-
 size_t unpack_stride(size_t n, uint8_t bitdepth, enum pix_attr attr,
-enum unpack_op op);
+enum unpack_op op, const void *arg);
 
 
 struct remap_info {

@@ -110,7 +110,7 @@ static void find_better_alignment(struct wuimg *img) {
 }
 
 static const char * geom_verify(const uint8_t ch, const uint8_t bitdepth,
-const align_t align, const enum pix_attr attr, const bool paletted) {
+const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 	if (!ch) {
 		return "Channel number must not be zero";
 	} else if (!bitdepth) {
@@ -119,48 +119,40 @@ const align_t align, const enum pix_attr attr, const bool paletted) {
 		return "Invalid alignment";
 	}
 
-	if (paletted) {
+	const char * bad_attr = "Undefined pixel attribute";
+	switch (mode) {
+	case image_mode_raw:
+	case image_mode_planar:
+		switch (attr) {
+		case pix_normal:
+		case pix_signed:
+		case pix_inverted:
+		case pix_float:
+			return NULL;
+		}
+		return bad_attr;
+	case image_mode_palette:
 		if (ch != 1) {
 			return "Paletted images must use 1 channel";
 		} else if (bitdepth > 8) {
 			return "Paletted images must not use more than 8 bits";
 		}
-		switch (attr) {
-		case pix_normal:
-			return NULL;
-		case pix_inverted:
-			return "Paletted images can't used inverted indices";
-		case pix_signed:
-			return "Paletted images can't use signed indices";
-		case pix_float:
-			return "Paletted images can't use floats";
-		case pix_pack_332:
-			return "Paletted images can't use 332 packing";
-		case pix_pack_1555:
-			return "Paletted images can't use 1555 packing";
+		break;
+	case image_mode_bitfield:
+		if (ch != 1) {
+			return "Bitfield images must use 1 channel";
 		}
-		return "Undefined pixel attribute in paletted image";
+		break;
 	}
 	switch (attr) {
 	case pix_normal:
-	case pix_signed:
+		return NULL;
 	case pix_inverted:
+	case pix_signed:
 	case pix_float:
-		return NULL;
-	case pix_pack_332:
-		if (ch != 1 || bitdepth != 8) {
-			return "pix_pack_332 must be set with 1 channel"
-				" and 8 bits";
-		}
-		return NULL;
-	case pix_pack_1555:
-		if (ch * bitdepth != 16) { // FIXME: Enforce intended values
-			return "pix_pack_1555 must be set with 1 channel"
-				" and 16 bits";
-		}
-		return NULL;
+		return "Only raw and planar images can use attributes";
 	}
-	return "Undefined pixel attribute";
+	return bad_attr;
 }
 
 static bool test_overflow_common(size_t w, const size_t h, const uint8_t ch,
@@ -200,15 +192,11 @@ static bool test_overflow(struct wuimg *img) {
 
 enum wu_error wuimg_verify(struct wuimg *img) {
 	const char *err_msg = geom_verify(img->channels, img->bitdepth,
-		img->align_sh, img->attr, img->mode == image_mode_palette);
+		img->align_sh, img->attr, img->mode);
 	if (err_msg) {
 		fatal_bug(__func__, err_msg);
 	}
 
-	if (img->attr == pix_pack_1555) {
-		img->channels = 1;
-		img->bitdepth = 16;
-	}
 	if (img->align_sh > 3) {
 		find_better_alignment(img);
 	}
@@ -222,8 +210,9 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 	}
 
 	if (!img->layout) {
-		if (img->mode == image_mode_palette || img->channels >= 3
-		|| img->attr == pix_pack_332 || img->attr == pix_pack_1555) {
+		if (img->mode == image_mode_palette
+		|| img->mode == image_mode_bitfield
+		|| img->channels >= 3) {
 			img->layout = pix_rgba;
 		} else {
 			img->layout = pix_gray;
@@ -300,11 +289,29 @@ enum wu_error wuimg_alloc(struct wuimg *img) {
 	return st;
 }
 
-static void set_img_mode(struct wuimg *img, const enum image_mode mode) {
+
+static void * set_img_mode(struct wuimg *img, const enum image_mode mode,
+void *restrict data) {
 	if (img->mode != image_mode_raw) {
 		fatal_bug("Bad image mode", "Image mode had been set previously");
 	}
 	img->mode = mode;
+	img->u.palette = data;
+	return data;
+}
+
+struct bitfield * wuimg_bitfield_init(struct wuimg *img) {
+	return set_img_mode(img, image_mode_bitfield,
+		calloc(1, sizeof(*img->u.bitfield)));
+}
+
+struct bitfield * wuimg_bitfield_init_from_id(struct wuimg *img,
+const enum bitfield_id id) {
+	struct bitfield *bf = wuimg_bitfield_init(img);
+	if (bf) {
+		bitfield_from_id(bf, id, img->bitdepth, 0);
+	}
+	return bf;
 }
 
 void wuimg_plane_position(struct wuimg *img, const int8_t horz,
@@ -334,26 +341,18 @@ const uint8_t vert) {
 }
 
 struct image_planes * wuimg_plane_init(struct wuimg *img) {
-	struct image_planes *planes = calloc(sizeof(*planes)
-		+ img->channels * sizeof(*planes->p), 1);
-	if (planes) {
-		img->u.planes = planes;
-		set_img_mode(img, image_mode_planar);
-	}
-	return planes;
+	return set_img_mode(img, image_mode_planar,
+		calloc(1, sizeof(*img->u.planes)
+			+ img->channels * sizeof(*img->u.planes->p)));
 }
 
 struct raster_pal * wuimg_palette_set(struct wuimg *img,
 struct raster_pal *pal) {
-	if (pal) {
-		set_img_mode(img, image_mode_palette);
-		img->u.palette = pal;
-	}
-	return pal;
+	return set_img_mode(img, image_mode_palette, pal);
 }
 
 struct raster_pal * wuimg_palette_init(struct wuimg *img) {
-	return wuimg_palette_set(img,  calloc(1, sizeof(struct raster_pal)));
+	return wuimg_palette_set(img, calloc(1, sizeof(*img->u.palette)));
 }
 
 int wuimg_frame_prev_keyframe(struct wuimg *img, const int current, int i) {
@@ -399,17 +398,28 @@ bool wuimg_clone(struct wuimg *dst, struct wuimg *src) {
 	dst->data = NULL;
 	dst->frames = NULL;
 	dst->mode = image_mode_raw;
-	dst->cs = color_space_ref(&src->cs);
 	dst->metadata = NULL;
+	bool ok = false;
 	switch (src->mode) {
-	case image_mode_raw: break;
+	case image_mode_raw:
+		ok = true;
+		break;
 	case image_mode_palette:
-		return wuimg_palette_set(dst,
+		ok = wuimg_palette_set(dst,
 			memdup(src->u.palette, sizeof(*src->u.palette)));
+		break;
 	case image_mode_planar:
-		return wuimg_plane_init(dst);
+		ok = wuimg_plane_init(dst);
+		break;
+	case image_mode_bitfield:
+		ok = set_img_mode(dst, image_mode_bitfield,
+			memdup(src->u.bitfield, sizeof(*src->u.bitfield)));
+		break;
 	}
-	return true;
+	if (ok) {
+		dst->cs = color_space_ref(&src->cs);
+	}
+	return ok;
 }
 
 void wuimg_free(struct wuimg *img) {
@@ -417,6 +427,9 @@ void wuimg_free(struct wuimg *img) {
 		free(img->data);
 	}
 	switch (img->mode) {
+	case image_mode_bitfield:
+		free(img->u.bitfield);
+		break;
 	case image_mode_planar:
 		free(img->u.planes);
 		break;
@@ -528,6 +541,7 @@ static size_t print_dimensions(const struct wuimg *img) {
 	case image_mode_raw: break;
 	case image_mode_palette: mode_str = " (paletted)"; break;
 	case image_mode_planar: mode_str = " (planar)"; break;
+	case image_mode_bitfield: mode_str = " (bitfield)"; break;
 	}
 
 	printf("%zu x %zu x %d%s x %d ",

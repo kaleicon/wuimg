@@ -244,42 +244,6 @@ static void strip_pack64f_32f(float *dst, const double *src, const size_t len) {
 }
 
 
-// Irregular packings
-static void strip_expand1555(uint8_t *restrict dst,
-const upack1555_t *restrict src, const size_t w) {
-	const uint8_t mask = (1 << 5) - 1;
-	const uint8_t p = 6;
-	const uint16_t scale = (UCHAR_MAX << p) / mask + 1;
-
-	for (size_t x = 0; x < w; ++x) {
-		const upack1555_t word = src[x];
-		for (int n = 0; n < 3; ++n) {
-			const int m = n*5;
-			dst[x*4 + (size_t)n] = (uint8_t)(
-				(scale * (word & (mask << m))) >> (p+m)
-			);
-		}
-		dst[x*4 + 3] = (word >> 15) ? 0xff : 0x00;
-	}
-}
-
-static void strip_expand332(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t w) {
-	const int rgscale = (UCHAR_MAX << 7) / 0x07 + 1;
-	const int bscale = 0xff / 3;
-
-	for (size_t x = 0; x < w; ++x) {
-		const uint8_t byte = src[x];
-		const int r = byte >> 5;
-		const int g = (byte >> 2) & 0x07;
-		const int b = byte & 0x03;
-
-		dst[x*3] = (uint8_t)((r * rgscale) >> 7);
-		dst[x*3 + 1] = (uint8_t)((g * rgscale) >> 7);
-		dst[x*3 + 2] = (uint8_t)(b * bscale);
-	}
-}
-
 void unpack_strip(void *restrict dst, const void *restrict src,
 const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
 const enum unpack_op op, const void *arg) {
@@ -337,16 +301,7 @@ const enum unpack_op op, const void *arg) {
 				break;
 			}
 			break;
-		case pix_float: break;
-		case pix_pack_332:
-			if (bitdepth == 8) {
-				strip_expand332(dst, src, n);
-			}
-			break;
-		case pix_pack_1555:
-			if (bitdepth == 16) {
-				strip_expand1555(dst, src, n);
-			}
+		case pix_float:
 			break;
 		}
 		break;
@@ -366,14 +321,14 @@ const enum unpack_op op, const void *arg) {
 				strip_pack64f_32f(dst, src, n);
 			}
 			break;
-		case pix_pack_332:
-		case pix_pack_1555:
-			break;
 		}
 		break;
 	case op_remap:
 		;const struct remap_info *nfo = arg;
 		remap_scale(dst, src, n, *nfo);
+		break;
+	case op_bitfield:
+		bitfield_unpack(arg, dst, src, n);
 		break;
 	}
 }
@@ -385,8 +340,8 @@ static uint8_t get_unpackdepth(const uint8_t depth) {
 	return 0;
 }
 
-uint8_t unpack_depth(const uint8_t bitdepth, const enum pix_attr attr,
-const enum unpack_op op) {
+static uint8_t unpack_depth(const uint8_t bitdepth, const enum pix_attr attr,
+const enum unpack_op op, const void *arg) {
 	switch (op) {
 	case op_noop:
 		return bitdepth;
@@ -401,16 +356,6 @@ const enum unpack_op op) {
 			}
 			return bitdepth;
 		case pix_float:
-			break;
-		case pix_pack_332:
-			if (op == op_expand && bitdepth == 8) {
-				return 24;
-			}
-			break;
-		case pix_pack_1555:
-			if (op == op_expand && bitdepth == 16) {
-				return 32;
-			}
 			break;
 		}
 		break;
@@ -428,21 +373,21 @@ const enum unpack_op op) {
 				return 32;
 			}
 			break;
-		default: break;
 		}
 		break;
 	case op_remap:
-		switch (bitdepth) {
-		case 8: case 16: case 32: return bitdepth;
-		}
-		break;
+		;const struct remap_info *info = arg;
+		return (uint8_t)(8 << info->depth_sh);
+	case op_bitfield:
+		;const struct bitfield *bf = arg;
+		return bf->outdepth * bf->ch;
 	}
 	return 0;
 }
 
 size_t unpack_stride(const size_t n, const uint8_t bitdepth,
-const enum pix_attr attr, const enum unpack_op op) {
-	uint8_t outdepth = unpack_depth(bitdepth, attr, op);
+const enum pix_attr attr, const enum unpack_op op, const void *arg) {
+	uint8_t outdepth = unpack_depth(bitdepth, attr, op, arg);
 	if (outdepth) {
 		return strip_base(n, outdepth);
 	}
@@ -537,7 +482,7 @@ const struct remap_info info) {
 			case 1: scale16(dst, src, n, mul, var); break;
 			case 2: scale32(dst, src, n, mul, var); break;
 			}
-		default:
+		case pix_float:
 			break;
 		}
 	} else {
@@ -552,7 +497,7 @@ const struct remap_info info) {
 			strip_invert(dst, src, n, (uint8_t)(8 << depth),
 				info.attr);
 			break;
-		default:
+		case pix_float:
 			break;
 		}
 	}
@@ -574,7 +519,8 @@ const uint8_t outdepth, const enum pix_attr attr) {
 	case pix_signed:
 		info.var = maxval/2 + 1;
 		break;
-	default: break;
+	case pix_normal: case pix_float:
+		break;
 	}
 
 	if (info.exact) {

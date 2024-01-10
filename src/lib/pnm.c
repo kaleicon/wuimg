@@ -197,7 +197,10 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 			return wu_invalid_header;
 		}
 		desc->rast.bitdepth = 8;
-		desc->rast.attr = pix_pack_332;
+		desc->rast.layout = pix_bgra;
+		if (!wuimg_bitfield_init_from_id(&desc->rast, 0x332)) {
+			return wu_alloc_error;
+		}
 		break;
 	case pnm_color_phm: case pnm_gray_phm:
 		is_half = true;

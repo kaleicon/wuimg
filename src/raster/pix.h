@@ -35,8 +35,6 @@ enum pix_attr {
 	pix_signed,
 	pix_inverted,
 	pix_float,
-	pix_pack_332,
-	pix_pack_1555,
 };
 
 typedef uint16_t upack1555_t;

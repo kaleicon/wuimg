@@ -8,6 +8,7 @@
 #include "conf.h"
 #include "wutree.h"
 #include "raster/alpha.h"
+#include "raster/bitfield.h"
 #include "raster/color.h"
 #include "raster/compost.h"
 #include "raster/pix.h"
@@ -53,8 +54,9 @@ struct image_planes {
 
 enum image_mode {
 	image_mode_raw = 0,
-	image_mode_palette = 1,
-	image_mode_planar = 2,
+	image_mode_palette,
+	image_mode_planar,
+	image_mode_bitfield,
 };
 
 struct image_frames {
@@ -85,6 +87,7 @@ struct wuimg {
 	union {
 		struct raster_pal *palette;
 		struct image_planes *planes;
+		struct bitfield *bitfield;
 	} u;
 
 	/* Pixel ratio, the result of horizontal_size/vertical_size.
@@ -119,6 +122,12 @@ size_t wuimg_size(const struct wuimg *img);
 bool wuimg_alloc_noverify(struct wuimg *img);
 
 enum wu_error wuimg_alloc(struct wuimg *img);
+
+
+struct bitfield * wuimg_bitfield_init(struct wuimg *img);
+
+struct bitfield * wuimg_bitfield_init_from_id(struct wuimg *img,
+enum bitfield_id id);
 
 
 size_t wuimg_plane_resolve(struct wuimg *img);
