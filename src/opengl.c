@@ -77,6 +77,7 @@ struct gl_upload_params {
 	enum pix_layout layout:8;
 	enum unpack_op op:8;
 	uint8_t comps;
+	struct remap_info remap;
 };
 
 const char * gl_strerror(const GLenum error) {
@@ -393,56 +394,26 @@ static void gl_alignment(const align_t align) {
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1 << align);
 }
 
-static size_t calc_map_outstride(const struct wuimg *img, const size_t w,
-const enum unpack_op op, const int8_t align_sh) {
-	if (op == op_noop) {
-		return strip_length(w, img->bitdepth, align_sh);
-	}
-	const size_t outstride = unpack_stride(w, img->bitdepth, img->attr, op);
-	if (!outstride) {
-		fatal_bug("Upload error", "Unsupported raster format");
-	}
-	return strip_length(outstride, 8, align_sh);
-}
-
 static void * unpack_upload(const GLuint pix_buf, const enum unpack_op op,
 const struct wuimg *img, const size_t w, const size_t h,
-const unsigned char *data) {
+const unsigned char *data, const struct remap_info *remap) {
 	const align_t out_align = 2;
 	gl_alignment(out_align);
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
-	const size_t outstride = calc_map_outstride(img, w, op, out_align);
+	const size_t outwidth = unpack_stride(w, img->bitdepth, img->attr, op);
+	if (!outwidth) {
+		fatal_bug("Upload error", "Unsupported raster format");
+	}
+	const size_t outstride = strip_length(outwidth, 8, out_align);
 
 	unsigned char *map = map_unpack_buffer(pix_buf, outstride * h,
 		GL_READ_ONLY);
 	const watch_t start = watch_look();
 	for (size_t y = 0; y < h; ++y) {
-		unpack_or_copy_strip(map + outstride*y, data + instride*y,
-			w, img->bitdepth, img->attr, op);
+		unpack_strip(map + outstride*y, data + instride*y,
+			w, img->bitdepth, img->attr, op, remap);
 	}
 	watch_report("Unpacked", start, report_detail);
-	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-	return 0;
-}
-
-static void * scale_upload(const GLuint pix_buf, const struct wuimg *img,
-const size_t w, const size_t h, const unsigned char *data) {
-	const align_t out_align = 2;
-	gl_alignment(out_align);
-	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
-	const size_t outstride = strip_length(w, img->bitdepth, out_align);
-	const size_t mapsize = outstride * h;
-
-	const struct scale_info info = repack_scale_info(
-		bit_set32(img->used_bits), img->bitdepth);
-
-	unsigned char *map = map_unpack_buffer(pix_buf, mapsize, GL_READ_ONLY);
-	const watch_t start = watch_look();
-	for (size_t y = 0; y < h; ++y) {
-		repack_scale(map + outstride*y, data + instride*y, w, info,
-			img->attr);
-	}
-	watch_report("Scaled", start, report_detail);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	return 0;
 }
@@ -453,13 +424,9 @@ const void *data) {
 	const GLuint pix_buf = context->pixel_unpack_buf;
 	bool bind_buffer = false;
 	const size_t elems = w * params->comps;
-	if (img->used_bits != img->bitdepth) {
-		data = scale_upload(pix_buf, img, elems, h, data);
-		bind_buffer = true;
-	} else if (params->op != op_noop || img->attr == pix_inverted ||
-	img->attr == pix_signed || img->align_sh > 3) {
+	if (params->op != op_noop || img->align_sh > 3) {
 		data = unpack_upload(pix_buf, params->op, img, elems, h,
-			data);
+			data, &params->remap);
 		bind_buffer = true;
 	} else {
 		gl_alignment(img->align_sh);
@@ -629,17 +596,25 @@ const struct wuimg *img) {
 		// fallthrough
 	case pix_signed:
 	case pix_inverted:
-		switch (bd) {
-		case 8: case 16: case 32:
-			break;
-		default:
-			if (bd > 16) {
-				params->op = op_pack;
-				bd = 16;
-			} else if (img->mode == image_mode_palette) {
-				params->op = op_unpack;
-			} else {
-				params->op = op_expand;
+		if (img->used_bits != bd) {
+			params->op = op_remap;
+			params->remap = remap_scale_info(
+				bit_set32(img->used_bits), bd, img->attr);
+		} else {
+			switch (bd) {
+			case 8: case 16: case 32:
+				params->op = img->attr == pix_normal
+					? op_noop : op_unpack;
+				break;
+			default:
+				if (bd > 16) {
+					params->op = op_pack;
+					bd = 16;
+				} else if (img->mode == image_mode_palette) {
+					params->op = op_unpack;
+				} else {
+					params->op = op_expand;
+				}
 			}
 		}
 		break;

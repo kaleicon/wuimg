@@ -127,5 +127,5 @@ const int i) {
 }
 
 void float_from_double(float *dst, const double *src, const size_t len) {
-	unpack_strip(dst, src, len, 64, pix_float, op_pack);
+	unpack_strip(dst, src, len, 64, pix_float, op_pack, NULL);
 }

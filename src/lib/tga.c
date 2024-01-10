@@ -327,7 +327,8 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct wuimg *img) {
 		for (size_t i = 0; i < elems; ++i) {
 			wbuf[i] = endian16(wbuf[i], little_endian) ^ (1 << 15);
 		}
-		unpack_strip(pal, wbuf, elems, 16, pix_pack_1555, op_expand);
+		unpack_strip(pal, wbuf, elems, 16, pix_pack_1555, op_expand,
+			NULL);
 		break;
 	case 24:
 		raster_pal_from_rgb8(pal, buf, elems);

@@ -54,9 +54,9 @@ const size_t dims) {
 		break;
 	default:
 		;const uint8_t depth = desc->bytedepth * 8;
-		repack_scale(dst, dst, dims,
-			repack_scale_info(desc->scale.pnm, depth),
-			desc->sign ? pix_signed : pix_normal);
+		remap_scale(dst, dst, dims,
+			remap_scale_info(desc->scale.pnm, depth,
+				desc->sign ? pix_signed : pix_normal));
 	}
 	return dims;
 }
@@ -166,7 +166,7 @@ const size_t i) {
 		break;
 	}
 	return scale_raster(desc, dst,
-		fmt_load_raster(img, desc->ifp, desc->endian));
+		fmt_load_raster(img, desc->ifp, desc->endian) / desc->bytedepth);
 }
 
 /* Header parsing */

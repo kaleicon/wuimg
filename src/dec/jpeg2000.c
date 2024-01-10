@@ -102,10 +102,10 @@ static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 				? pix_signed : pix_normal;
 			p[z].ptr = (uint8_t *)comps[z].data;
 
-			const struct scale_info scaler = repack_scale_info(
-				bit_set32(comps[z].prec), img->bitdepth);
-			repack_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,
-				scaler, attr);
+			const struct remap_info scaler = remap_scale_info(
+				bit_set32(comps[z].prec), img->bitdepth, attr);
+			remap_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,
+				scaler);
 		}
 	}
 	return st;

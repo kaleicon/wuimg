@@ -4,7 +4,6 @@
 #include "misc/endian.h"
 #include "misc/math.h"
 #include "raster/graphics_adapters.h"
-#include "raster/unpack.h"
 
 #include "lib/degas.h"
 
@@ -168,8 +167,8 @@ enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img) {
 
 	struct raster_pal *pal = wuimg_palette_init(img);
 	if (pal) {
-		const uint8_t depth = 8;
-		const struct scale_info sc = repack_scale_info(0x07, depth);
+		const uint8_t sh = 8;
+		const int scale = (0xff << sh) / 0x07 + 1;
 		for (size_t i = 0; i < 16; ++i) {
 			uint8_t rgb[3] = {
 				src[i*2],
@@ -177,8 +176,8 @@ enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img) {
 				src[i*2 + 1],
 			};
 			for (size_t n = 0; n < sizeof(rgb); ++n) {
-				rgb[n] = (uint8_t)(((rgb[n] & 7) * sc.mul)
-					>> depth);
+				rgb[n] = (uint8_t)(((rgb[n] & 7) * scale)
+					>> sh);
 			}
 			pal->color[i] = (struct pix_rgba8) {
 				.r = rgb[0],

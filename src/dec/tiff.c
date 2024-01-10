@@ -116,8 +116,7 @@ const size_t dst_stride, const enum pix_attr attr, const enum unpack_op op,
 const uint16_t bps) {
 	for (size_t h = 0; h < height; ++h) {
 		const unsigned char *src = tiles->buf + tiles->stride * h;
-		unpack_or_copy_strip(dst, src, width, (uint8_t)bps,
-			attr, op);
+		unpack_strip(dst, src, width, (uint8_t)bps, attr, op, NULL);
 		dst += dst_stride;
 	}
 }
@@ -167,7 +166,7 @@ const struct tiff_info *info, const enum unpack_op op) {
 		}
 	}
 	free(tiles.buf);
-	if (op != op_noop && img->attr == pix_inverted) {
+	if (op != op_noop) {
 		img->attr = pix_normal;
 	}
 	return wu_ok;

@@ -7,53 +7,20 @@
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
-// Unpack 2^n-bits onto u8
-static void unpack4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-	switch (nr) {
-	case 2:
-		dst[1] = byte & 0x0f;
-		// fallthrough
-	case 1:
-		dst[0] = (uint8_t)(byte >> 4);
-	}
-}
-
-static void unpack2(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-	switch (nr) {
-	case 4:
-		dst[3] = byte & 0x03;
-		// fallthrough
-	case 3:
-		dst[2] = (byte >> 2) & 0x03;
-		// fallthrough
-	case 2:
-		dst[1] = (byte >> 4) & 0x03;
-		// fallthrough
-	case 1:
-		dst[0] = (uint8_t)(byte >> 6);
-	}
-}
-
-static void unpack1(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-	for (size_t i = 0; i < nr; ++i) {
-		dst[i] = (byte >> (7 - i)) & 0x01;
-	}
-}
-
 // Expand 2^n-bit to 8-bit
-static void expand4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-	const int s = 0xff / 0x0f;
+static void expand4(const uint_fast8_t byte, uint8_t *dst, const size_t nr,
+const uint8_t s) {
 	switch (nr) {
 	case 2:
 		dst[1] = (uint8_t)( (byte & 0x0f) * s );
 		// fallthrough
 	case 1:
-		dst[0] = (uint8_t)( (byte >> 4) * s);
+		dst[0] = (uint8_t)( (byte >> 4) * s );
 	}
 }
 
-static void expand2(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-	const int_fast32_t s = 0xff / 0x03;
+static void expand2(const uint_fast8_t byte, uint8_t *dst, const size_t nr,
+const uint8_t s) {
 	switch (nr) {
 	case 4:
 		dst[3] = (uint8_t)( (byte & 0x03) * s );
@@ -70,9 +37,10 @@ static void expand2(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
 	}
 }
 
-static void expand1(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
+static void expand1(const uint_fast8_t byte, uint8_t *dst, const size_t nr,
+const uint8_t s) {
 	for (size_t i = 0; i < nr; ++i) {
-		dst[i] = (byte & (0x80 >> i)) ? 0xff : 0x00;
+		dst[i] = (byte & (0x80 >> i)) ? s : 0x00;
 	}
 }
 
@@ -82,20 +50,19 @@ const size_t nr, const enum unpack_op action, const size_t bitdepth) {
 	switch (action) {
 	case op_unpack:
 		switch (bitdepth) {
-		case 1: unpack1(byte, dst, nr); break;
-		case 2: unpack2(byte, dst, nr); break;
-		case 4: unpack4(byte, dst, nr); break;
+		case 1: expand1(byte, dst, nr, 1); break;
+		case 2: expand2(byte, dst, nr, 1); break;
+		case 4: expand4(byte, dst, nr, 1); break;
 		}
 		break;
 	case op_expand:
 		switch (bitdepth) {
-		case 1: expand1(byte, dst, nr); break;
-		case 2: expand2(byte, dst, nr); break;
-		case 4: expand4(byte, dst, nr); break;
+		case 1: expand1(byte, dst, nr, 0xff); break;
+		case 2: expand2(byte, dst, nr, 0xff / 0x03); break;
+		case 4: expand4(byte, dst, nr, 0xff / 0x0f); break;
 		}
 		break;
-	case op_noop:
-	case op_pack:
+	default:
 		break;
 	}
 }
@@ -315,9 +282,11 @@ const size_t w) {
 
 void unpack_strip(void *restrict dst, const void *restrict src,
 const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
-const enum unpack_op op) {
+const enum unpack_op op, const void *arg) {
 	switch (op) {
-	case op_noop: break;
+	case op_noop:
+		memcpy(dst, src, strip_base(n, bitdepth));
+		break;
 	case op_unpack:
 		switch (attr) {
 		case pix_normal:
@@ -328,8 +297,15 @@ const enum unpack_op op) {
 			}
 			break;
 		case pix_inverted:
+		case pix_signed:
 			switch (bitdepth) {
 			case 1: strip_unpack_xor1(dst, src, n); return;
+			default:
+				if (bitdepth % 8 == 0) {
+					strip_invert(dst, src, n, bitdepth/8, attr);
+					return;
+				}
+				break;
 			}
 			break;
 		default: return;
@@ -395,24 +371,10 @@ const enum unpack_op op) {
 			break;
 		}
 		break;
-	}
-}
-
-void unpack_or_copy_strip(void *restrict dst, const void *restrict src,
-const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
-const enum unpack_op op) {
-	if (op == op_noop) {
-		const size_t len = strip_base(n, bitdepth);
-		switch (attr) {
-		case pix_signed:
-		case pix_inverted:
-			strip_invert(dst, src, len, bitdepth/8, pix_inverted);
-			break;
-		default:
-			memcpy(dst, src, len);
-		}
-	} else {
-		unpack_strip(dst, src, n, bitdepth, attr, op);
+	case op_remap:
+		;const struct remap_info *nfo = arg;
+		remap_scale(dst, src, n, *nfo);
+		break;
 	}
 }
 
@@ -425,58 +387,57 @@ static uint8_t get_unpackdepth(const uint8_t depth) {
 
 uint8_t unpack_depth(const uint8_t bitdepth, const enum pix_attr attr,
 const enum unpack_op op) {
-	uint8_t outdepth = 0;
-	switch (attr) {
-	case pix_normal:
-		switch (op) {
-		case op_noop: break;
-		case op_unpack:
-		case op_expand:
-			outdepth = get_unpackdepth(bitdepth);
-			break;
-		case op_pack:
-			if (bitdepth > 16) {
-				outdepth = 16;
-			}
-			break;
-		}
-		break;
-	case pix_signed:
-	case pix_inverted:
-		switch (op) {
-		case op_noop: break;
-		case op_unpack:
-		case op_expand:
+	switch (op) {
+	case op_noop:
+		return bitdepth;
+	case op_unpack:
+	case op_expand:
+		switch (attr) {
+		case pix_normal:
+		case pix_signed:
+		case pix_inverted:
 			if (bitdepth % 8) {
-				outdepth = get_unpackdepth(bitdepth);
-			} else {
-				outdepth = bitdepth;
+				return get_unpackdepth(bitdepth);
+			}
+			return bitdepth;
+		case pix_float:
+			break;
+		case pix_pack_332:
+			if (op == op_expand && bitdepth == 8) {
+				return 24;
 			}
 			break;
-		case op_pack:
+		case pix_pack_1555:
+			if (op == op_expand && bitdepth == 16) {
+				return 32;
+			}
+			break;
+		}
+		break;
+	case op_pack:
+		switch (attr) {
+		case pix_normal:
+		case pix_signed:
+		case pix_inverted:
 			if (bitdepth > 16) {
-				outdepth = 16;
+				return 16;
 			}
 			break;
+		case pix_float:
+			if (bitdepth == 64) {
+				return 32;
+			}
+			break;
+		default: break;
 		}
 		break;
-	case pix_float:
-		if (op == op_pack && bitdepth == 64) {
-			outdepth = 32;
-		}
-		break;
-	case pix_pack_332:
-		if (op == op_expand && bitdepth == 8) {
-			outdepth = 24;
-		}
-		break;
-	case pix_pack_1555:
-		if (op == op_expand && bitdepth == 16) {
-			outdepth = 32;
+	case op_remap:
+		switch (bitdepth) {
+		case 8: case 16: case 32: return bitdepth;
 		}
 		break;
 	}
-	return outdepth;
+	return 0;
 }
 
 size_t unpack_stride(const size_t n, const uint8_t bitdepth,
@@ -535,51 +496,91 @@ const uint64_t mul, const uint32_t xor) {
 	}
 }
 
-void repack_scale(void *dst, const void *src, const size_t width,
-const struct scale_info info, const enum pix_attr attr) {
-	const uint64_t mul = info.mul;
-	const uint8_t shr = info.bitdepth;
-	uint32_t xor = 0;
-	switch (attr) {
-	case pix_signed:
-		;const uint32_t add = info.add;
-		switch (shr) {
-		case 8: design8(dst, src, width, mul, add); break;
-		case 16: design16(dst, src, width, mul, add); break;
-		case 32: design32(dst, src, width, mul, add); break;
-		}
-		return;
-	case pix_inverted:
-		xor = ~0u;
-		break;
-	case pix_normal:
-		if (!info.scale) {
-			if (dst != src) {
-				memcpy(dst, src, shr/8 * width);
-			}
-			return;
-		}
-		break;
-	case pix_float:
-	case pix_pack_332:
-	case pix_pack_1555:
-		return;
+static void exact_mul(uint32_t *dst, const uint32_t *src, const size_t w,
+const uint32_t mul, const uint8_t depth) {
+	const size_t items = w >> (2 - depth);
+	const size_t remain = w - (items << depth);
+	for (size_t x = 0; x < items; ++x) {
+		dst[x] = src[x] * mul;
 	}
-
-	switch (shr) {
-	case 8: scale8(dst, src, width, mul, xor); break;
-	case 16: scale16(dst, src, width, mul, xor); break;
-	case 32: scale32(dst, src, width, mul, xor); break;
+	if (remain) {
+		uint32_t tmp = 0;
+		memcpy(&tmp, src, remain);
+		tmp *= mul;
+		memcpy(dst + items, &tmp, remain);
 	}
 }
 
-struct scale_info repack_scale_info(const uint32_t maxval,
-const uint8_t outdepth) {
+void remap_scale(void *dst, const void *src, const size_t n,
+const struct remap_info info) {
+	const uint8_t depth = info.depth_sh;
+	const uint64_t mul = info.mul;
+	const uint32_t var = info.var;
+	if (info.scale) {
+		switch (info.attr) {
+		case pix_signed:
+			switch (depth) {
+			case 0: design8(dst, src, n, mul, var); break;
+			case 1: design16(dst, src, n, mul, var); break;
+			case 2: design32(dst, src, n, mul, var); break;
+			}
+			return;
+		case pix_normal:
+			if (info.exact) {
+				exact_mul(dst, src, n, var, depth);
+				return;
+			}
+			// fallthrough
+		case pix_inverted:
+			switch (depth) {
+			case 0: scale8(dst, src, n, mul, var); break;
+			case 1: scale16(dst, src, n, mul, var); break;
+			case 2: scale32(dst, src, n, mul, var); break;
+			}
+		default:
+			break;
+		}
+	} else {
+		switch (info.attr) {
+		case pix_normal:
+			if (dst != src) {
+				memcpy(dst, src, n << depth);
+			}
+			break;
+		case pix_signed:
+		case pix_inverted:
+			strip_invert(dst, src, n, (uint8_t)(8 << depth),
+				info.attr);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+struct remap_info remap_scale_info(const uint32_t maxval,
+const uint8_t outdepth, const enum pix_attr attr) {
 	const uint32_t range = bit_set32(outdepth);
-	return (struct scale_info) {
-		.bitdepth = outdepth,
-		.scale = maxval != range,
-		.add = maxval/2 + 1,
-		.mul = ((uint64_t)range << outdepth) / maxval + 1,
+	struct remap_info info = (struct remap_info) {
+		.scale = range != maxval,
+		.exact = range % maxval == 0 && attr == pix_normal,
+		.depth_sh = bit_min_wordsize_log2(outdepth),
+		.attr = attr,
 	};
+	switch (attr) {
+	case pix_inverted:
+		info.var = ~(uint32_t)0;
+		break;
+	case pix_signed:
+		info.var = maxval/2 + 1;
+		break;
+	default: break;
+	}
+
+	if (info.exact) {
+		info.var = range / maxval;
+	} else {
+		info.mul = ((uint64_t)range << outdepth) / maxval + 1;
+	}
+	return info;
 }

@@ -63,7 +63,7 @@ unsigned char header[static 12]) {
 
 		special_transparency_process(buf, colors);
 		unpack_strip(pal, buf, colors, 16, pix_pack_1555,
-			op_expand);
+			op_expand, NULL);
 	}
 	return wu_ok;
 }
