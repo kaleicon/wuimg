@@ -7,7 +7,19 @@
 #include "raster/fmt.h"
 
 size_t fmt_load_raster(struct wuimg *img, FILE *ifp, const enum endianness e) {
-	return file_endian_read(img->data, wuimg_size(img), ifp, img->bitdepth, e);
+	if (e == which_end()) {
+		return fread(img->data, 1, wuimg_size(img), ifp);
+	}
+	const size_t w = zumax(img->w, img->h);
+	const size_t h = zumin(img->w, img->h);
+	const size_t stride = strip_length(w * img->channels, img->bitdepth,
+		img->align_sh);
+	size_t acc = 0;
+	for (size_t y = 0; y < h; ++y) {
+		void *row = img->data + stride*y;
+		acc += file_endian_read(row, stride, ifp, img->bitdepth, e);
+	}
+	return acc;
 }
 
 enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,
