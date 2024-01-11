@@ -77,7 +77,7 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
 		|
 		|       Bits    Name
 		|       0-2     Bitmap type:
-		|               000: 4bpp
+		|               000: 4bpp  // Least significant nibble first
 		|               001: 8bpp
 		|               010: 16bpp // A1_B5G5R5[1], MSB to LSB
 		|               011: 24bpp // R8G8B8
