@@ -28,11 +28,7 @@ const int code, const float dt, const bool shift) {
 	switch (code) {
 	// Exit
 	case 'Q':
-		event->program = wu_program_exit;
-		break;
-	// Reload file
-	case 'R':
-		event->program = wu_program_reload_file;
+		event->exit = true;
 		break;
 
 	// Fullscreen
@@ -63,7 +59,6 @@ const int code, const float dt, const bool shift) {
 		if (event->rm == rm_ask) {
 			event->rm = rm_no;
 		}
-		event->program = 0;
 		term_line_clear();
 		return repeat_none;
 
@@ -246,9 +241,6 @@ void print_keys(void) {
 		"\t\tPrint unabreviatted metadata. For 'm', display the full\n"
 		"\t\thierarchy but omit fields that would occupy more than a\n"
 		"\t\tline or two of text. For 'M', omit nothing.\n"
-
-		"\tr\n"
-		"\t\tReload current file.\n"
 
 		"\td\n"
 		"\t\tPrompt to delete the current file. 'D' to confirm, 'u'\n"

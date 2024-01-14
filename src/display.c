@@ -126,7 +126,7 @@ const enum image_event evs, const bool allow_cycle) {
 		}
 
 		if ((allow_cycle && event->cycle)
-		|| event->program || event->rm == rm_yes) {
+		|| event->exit || event->rm == rm_yes) {
 			return true;
 		} else if (event->image) {
 			if (event->image & ~ev_time) {

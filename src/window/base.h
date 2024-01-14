@@ -30,11 +30,7 @@ struct wu_event {
 		rm_ask,
 		rm_yes,
 	} rm:8;
-	enum wu_program_event {
-		wu_program_none = 0,
-		wu_program_exit,
-		wu_program_reload_file,
-	} program:8;
+	bool exit;
 	enum image_event image:8;
 };
 

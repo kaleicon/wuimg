@@ -207,8 +207,6 @@ static uint8_t convert_by_position(struct xkb_state *state, const uint32_t key) 
 	case KEY_N: return 'N';
 	case KEY_P: return 'P';
 
-	case KEY_R: case KEY_F5: return 'R';
-
 	case KEY_D: return 'D';
 	case KEY_U: return 'U';
 
@@ -382,7 +380,7 @@ const int32_t w, const int32_t h, struct wl_array *states) {
 static void toplevel_close(void *data, struct xdg_toplevel *toplevel) {
 	(void)toplevel;
 	struct wayland *wl = data;
-	wl->pub->event.program = wu_program_exit;
+	wl->pub->event.exit = true;
 }
 
 static void surface_configure(void *data, struct xdg_surface *surface,

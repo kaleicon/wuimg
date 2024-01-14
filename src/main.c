@@ -204,7 +204,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	long idx = 0;
-	while (event->program != wu_program_exit && extract_file(&iter, idx)) {
+	while (!event->exit && extract_file(&iter, idx)) {
 		const int direction = lsign(event->cycle);
 		idx = lmod(iter.idx, iter.total);
 
@@ -243,7 +243,7 @@ const bool interpret_stdin) {
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	size_t remaining = entries->nr;
-	while (event->program != wu_program_exit && remaining) {
+	while (!event->exit && remaining) {
 		const int direction = lsign(event->cycle);
 		while (!entries->name[idx]) {
 			idx = lmod(idx + direction, (long)entries->nr);

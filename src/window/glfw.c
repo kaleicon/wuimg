@@ -7,7 +7,7 @@
 
 static void callback_close(GLFWwindow *wnd) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	glfw->pub->event.program = wu_program_exit;
+	glfw->pub->event.exit = true;
 }
 
 static void callback_focus(GLFWwindow *wnd, const int focused) {
@@ -101,10 +101,6 @@ const int action, const int mode) {
 		event = shift ? ':' : '.';
 		break;
 	case GLFW_KEY_SPACE: event = ' '; break;
-
-	case GLFW_KEY_R: case GLFW_KEY_F5:
-		event = 'R';
-		break;
 
 	case GLFW_KEY_D:
 		event = 'D';

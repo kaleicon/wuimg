@@ -35,9 +35,7 @@ void window_fullscreen(struct window_context *window) {
 
 void window_poll(struct window_context *window, const long nsecs) {
 	window->pub.win.fn.poll(&window->ctx, nsecs);
-	if (sig_should_close) {
-		window->pub.event.program = wu_program_exit;
-	}
+	window->pub.event.exit |= sig_should_close;
 }
 
 void window_adapt(struct window_context *window) {
