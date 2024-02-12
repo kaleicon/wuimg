@@ -4,7 +4,7 @@
 #include "rast_utils.h"
 #include "lib/xcursor.h"
 
-enum wu_error xcursor_dec(struct image_file *infile,
+static enum wu_error xcursor_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct xcursor_desc desc;
 	enum wu_error st = xcursor_open_file(&desc, infile->ifp);

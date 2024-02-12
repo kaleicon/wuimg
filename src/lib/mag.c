@@ -144,7 +144,8 @@ size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 			const uint8_t c = act[x];
 			for (size_t i = 0; i < 2; ++i) {
 				const size_t pos = n*2 + i;
-				uint8_t xx, yy;
+				uint8_t xx = 00;
+				uint8_t yy = 00;
 				switch ((c >> (4 - i*4)) & 0x0f) {
 				case 0:
 					dst[pos] = c_pos < color_len

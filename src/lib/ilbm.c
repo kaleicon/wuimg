@@ -8,7 +8,7 @@
 
 #include "lib/ilbm.h"
 
-const uint8_t HAM_CH = 3; // Output channels for HAM
+static const uint8_t HAM_CH = 3; // Output channels for HAM
 
 void ilbm_cleanup(struct ilbm_desc *desc) {
 	free(desc->pal);
@@ -105,7 +105,7 @@ const struct wuptr body) {
 	uint8_t *upack = malloc(upack_len);
 	if (upack) {
 		const size_t w = decomp_pack_bits(upack, upack_len,
-			(int8_t *)body.ptr, body.len);
+			(const int8_t *)body.ptr, body.len);
 		if (w) {
 			expand_body(desc, img, wuptr_mem(upack, w));
 		}
@@ -140,7 +140,7 @@ const struct wuptr body) {
 			return 1;
 		case ilbm_compression_packbits:
 			return decomp_pack_bits(img->data, size,
-				(int8_t *)body.ptr, body.len);
+				(const int8_t *)body.ptr, body.len);
 		}
 		break;
 	}

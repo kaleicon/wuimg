@@ -5,13 +5,13 @@
 
 #include "c64.h"
 
-const size_t RAM_LEN = 0x3e8;
-const size_t BITMAP_LEN = RAM_LEN << 3;
-const size_t BG_LEN = 1;
-const size_t TOTAL_LEN = BITMAP_LEN + RAM_LEN*2 + BG_LEN + 2;
+static const size_t RAM_LEN = 0x3e8;
+static const size_t BITMAP_LEN = RAM_LEN << 3;
+static const size_t BG_LEN = 1;
+static const size_t TOTAL_LEN = BITMAP_LEN + RAM_LEN*2 + BG_LEN + 2;
 
-const size_t WIDTH = 160;
-const size_t HEIGHT = 200;
+static const size_t WIDTH = 160;
+static const size_t HEIGHT = 200;
 
 enum c64_fmt_sizes {
 	c64_koa = 10003,

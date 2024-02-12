@@ -37,8 +37,8 @@ struct wu_emb_str {
 union wu_leaf_val {
 	struct wu_branch branch;
 	struct wu_emb_str s;
-	unsigned long u;
-	long d;
+	uint64_t u;
+	int64_t d;
 	double f;
 	time_t time;
 	bool b;
@@ -69,7 +69,7 @@ bool tree_add_leaf_utf8_len(struct wu_tree *par, const char *name,
 struct wuptr value);
 
 bool tree_add_leaf_utf8_limit(struct wu_tree *par, const char *name,
-struct wuptr value);//const char *value, size_t len);
+struct wuptr value);
 
 bool tree_add_leaf_utf8(struct wu_tree *par, const char *name,
 const char *value);

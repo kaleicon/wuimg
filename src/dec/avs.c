@@ -2,7 +2,8 @@
 #include "rast_utils.h"
 #include "lib/avs.h"
 
-enum wu_error avs_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error avs_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return rast_trivial_fread(infile, wuconf, avs_open_file);
 }
 

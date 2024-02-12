@@ -33,7 +33,8 @@ struct wu_tree *tree) {
 	}
 }
 
-enum wu_error mac_dec(struct image_file *infile, const struct wu_conf *conf) {
+static enum wu_error mac_dec(struct image_file *infile,
+const struct wu_conf *conf) {
 	if (conf->max_img_size < 720) {
 		return wu_exceeds_size_limit;
 	}

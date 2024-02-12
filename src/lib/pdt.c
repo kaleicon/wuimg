@@ -118,8 +118,8 @@ size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img) {
 	uint8_t color_ch = (desc->version == pdt10) ? 3 : 1;
 
 	struct sewing_machine sew;
-	strip_sew_init(&sew, img->data, (struct raster_pal *)desc->pal, img->w,
-		img->h, color_ch, img->align_sh, desc->mask_offset);
+	strip_sew_init(&sew, img->data, (const struct raster_pal *)desc->pal,
+		img->w, img->h, color_ch, img->align_sh, desc->mask_offset);
 
 	size_t written = pick_decode(sew.color.ptr, sew.color.len,
 		desc->mp.mem + desc->mp.pos, desc->mp.len - desc->mp.pos,

@@ -115,7 +115,8 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 	return wu_ok;
 }
 
-enum wu_error tga_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error tga_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct tga_desc desc;
 	const enum wu_error err = dec_wrapper(infile, wuconf, &desc);
 	tga_cleanup(&desc);

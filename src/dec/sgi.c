@@ -19,7 +19,8 @@ static enum wu_error open(void *restrict ptr, struct image_file *infile) {
 	return sgi_open_file(ptr, infile->ifp);
 }
 
-enum wu_error sgi_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sgi_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct sgi_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
 		dec, NULL);

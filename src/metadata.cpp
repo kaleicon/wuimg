@@ -24,6 +24,12 @@ static void read_any(Datum meta, struct wu_tree *tree) {
 
 		if (meta->count() == 1) {
 			switch (meta->typeId()) {
+			case Exiv2::TypeId::signedLongLong:
+			case Exiv2::TypeId::unsignedLong:
+				if (sizeof(branch->leaf.val.d) < 8) {
+					break;
+				}
+				// fallthrough
 			case Exiv2::TypeId::unsignedByte:
 			case Exiv2::TypeId::unsignedShort:
 			case Exiv2::TypeId::signedByte:

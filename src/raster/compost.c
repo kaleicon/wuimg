@@ -47,8 +47,8 @@ const void *restrict src, const struct frame_info *fr) {
 	size_t dst_pos = (fr->y * w + fr->x) * ch;
 	size_t src_pos = 0;
 	for (size_t i = 0; i < fr->h; ++i) {
-		blend_row((uint8_t *)dst + dst_pos, (uint8_t *)src + src_pos,
-			fr->w, ch);
+		blend_row((uint8_t *)dst + dst_pos,
+			(const uint8_t *)src + src_pos, fr->w, ch);
 		dst_pos += w * ch;
 		src_pos += fr->w * 4;
 	}
@@ -59,8 +59,8 @@ const void *restrict src, const struct frame_info *fr) {
 	size_t dst_pos = (fr->y * w + fr->x) * ch;
 	size_t src_pos = 0;
 	for (size_t i = 0; i < fr->h; ++i) {
-		memcpy((uint8_t *)dst + dst_pos, (uint8_t *)src + src_pos,
-			fr->w * ch);
+		memcpy((uint8_t *)dst + dst_pos,
+			(const uint8_t *)src + src_pos, fr->w * ch);
 		dst_pos += w * ch;
 		src_pos += fr->w * ch;
 	}

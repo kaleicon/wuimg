@@ -17,7 +17,8 @@ static enum wu_error open(void *ptr, struct image_file *infile) {
 	return tlg_open_mem(ptr, &infile->map);
 }
 
-enum wu_error tlg_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error tlg_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct tlg_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
 		dec, NULL);

@@ -59,7 +59,7 @@ const size_t nmemb) {
 void memwordset(void *restrict dst, const void *restrict src,
 const size_t size, const size_t nmemb) {
 	switch (size) {
-	case 1: memset(dst, *((uint8_t *)src), nmemb); break;
+	case 1: memset(dst, *((const uint8_t *)src), nmemb); break;
 	case 2: u16_set(dst, src, nmemb); break;
 	case 3: u24_set(dst, src, nmemb); break;
 	case 4: u32_set(dst, src, nmemb); break;

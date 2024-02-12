@@ -142,7 +142,7 @@ void term_line_key_val(const char *key, const char *val, FILE *out) {
 	fputc('\n', out);
 }
 
-const char CLEAR_LINE[] = "\x1b[K";
+static const char CLEAR_LINE[] = "\x1b[K";
 void term_line_temp(const char *text) {
 	fputs(CLEAR_LINE, stdout);
 	fputs(text, stdout);

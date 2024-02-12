@@ -203,8 +203,8 @@ const size_t n, const uint8_t bitdepth, const enum pix_attr attr) {
 static inline uint16_t select_wordpack(const void *src, const size_t x,
 const uint8_t bitdepth) {
 	switch (bitdepth) {
-	case 32: return (uint16_t)( ((uint32_t *)src)[x] >> (32 - 16) );
-	case 64: return (uint16_t)( ((uint64_t *)src)[x] >> (64 - 16) );
+	case 32: return (uint16_t)( ((const uint32_t *)src)[x] >> (32 - 16) );
+	case 64: return (uint16_t)( ((const uint64_t *)src)[x] >> (64 - 16) );
 	}
 	return (uint16_t)bit_getn(src, x*bitdepth, 16);
 }

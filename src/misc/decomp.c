@@ -14,7 +14,7 @@ const signed char *restrict src, const size_t src_len) {
 			if (d + cnt > dst_len) {
 				break;
 			}
-			memset(dst + d, ((unsigned char *)src)[s], cnt);
+			memset(dst + d, ((const unsigned char *)src)[s], cnt);
 			++s;
 		} else {
 			cnt = (size_t)(1 + run);

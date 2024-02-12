@@ -20,21 +20,20 @@ void bitfield_unpack(const struct bitfield *bf, void *restrict dst,
 const void *restrict src, const size_t w) {
 	const uint8_t wd = bf->word_size - 1;
 	for (size_t x = 0; x < w; ++x) {
-		uint32_t word;
+		uint32_t word = 0;
 		switch (wd) {
 		case 0:
-			word = ((uint8_t *)src)[x];
+			word = ((const uint8_t *)src)[x];
 			break;
 		case 1:
-			word = ((uint16_t *)src)[x];
+			word = ((const uint16_t *)src)[x];
 			break;
 		case 2:
-			word = 0;
-			memcpy(&word, (uint8_t *)src + x*3, 3);
+			memcpy(&word, (const uint8_t *)src + x*3, 3);
 			word >>= (which_end() == big_endian) ? 8 : 0;
 			break;
 		case 3:
-			word = ((uint32_t *)src)[x];
+			word = ((const uint32_t *)src)[x];
 			break;
 		}
 

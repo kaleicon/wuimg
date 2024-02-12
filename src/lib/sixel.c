@@ -184,7 +184,7 @@ static void xterm_colormap_init(struct sixel_colormap *map) {
 	cube[0] = 0;
 	for (size_t i = 1; i < ARRAY_LEN(cube); ++i) {
 		cube[i] = (unsigned char)(0x37 + 0x28 * i);
-	};
+	}
 
 	struct pix_rgba8 *pal = map->map.color;
 	map->active = pal[0];
@@ -229,9 +229,9 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 	size_t y = 0;
 	// We've already validated the data so we can omit most checks.
 	while (tp.pos < tp.len) {
+		size_t line = y*img->w;;
 		unsigned char c = mp_next_char_unsafe(&tp);
 		switch (c) {
-		size_t line;
 		case graphics_new_line:
 			y += LINE_HEIGHT;
 			// fallthrough
@@ -243,7 +243,6 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 			mp_scan_uint_unsafe(&tp, &repeat);
 			c = mp_next_char_unsafe(&tp);
 
-			line = y*img->w;
 			const size_t pixs = (size_t)repeat;
 			write_color(dst + line + x, &map, img->w, c, pixs);
 			x += pixs;
@@ -254,7 +253,6 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 		MACRO_CASE_SPACE
 			break;
 		default:
-			line = y*img->w;
 			write_color(dst + line + x, &map, img->w, c, 1);
 			++x;
 		}

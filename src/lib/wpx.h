@@ -29,7 +29,7 @@ enum wpx_section_id {
 struct wpx_section {
 	enum wpx_section_id id:8;
 	uint8_t fmt;
-	uint16_t __pad;
+	uint16_t _pad;
 	uint32_t offset;
 	uint32_t decomp_size;
 	uint32_t comp_size;

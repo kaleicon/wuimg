@@ -82,7 +82,7 @@ size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 		mask[i] = v;
 	}
 
-	const uint8_t *pxl = (uint8_t *)(flag_b + b_pos);
+	const uint8_t *pxl = (const uint8_t *)(flag_b + b_pos);
 	size_t p_pos = 0;
 	for (size_t y = 0; y < MAKI_H; ++y) {
 		const uint16_t *mask_row = mask + y/4 * row_len/4;

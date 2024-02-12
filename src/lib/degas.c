@@ -27,19 +27,19 @@
 http://www.bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0904.pdf
 */
 
-const size_t VIDEO_RAM = 32000;
+static const size_t VIDEO_RAM = 32000;
 
-const uint8_t ST_LOW_DEPTH = 4;
-const size_t ST_LOW_HEIGHT = 200;
-const size_t ST_LOW_WIDTH = VIDEO_RAM * (8/ST_LOW_DEPTH) / ST_LOW_HEIGHT;
+static const uint8_t ST_LOW_DEPTH = 4;
+static const size_t ST_LOW_HEIGHT = 200;
+static const size_t ST_LOW_WIDTH = VIDEO_RAM * (8/ST_LOW_DEPTH) / ST_LOW_HEIGHT;
 
-const uint8_t ST_MEDIUM_DEPTH = 2;
-const size_t ST_MEDIUM_HEIGHT = 200;
-const size_t ST_MEDIUM_WIDTH = VIDEO_RAM * (8/ST_MEDIUM_DEPTH) / ST_MEDIUM_HEIGHT;
+static const uint8_t ST_MEDIUM_DEPTH = 2;
+static const size_t ST_MEDIUM_HEIGHT = 200;
+static const size_t ST_MEDIUM_WIDTH = VIDEO_RAM * (8/ST_MEDIUM_DEPTH) / ST_MEDIUM_HEIGHT;
 
-const uint8_t ST_HIGH_DEPTH = 1;
-const size_t ST_HIGH_HEIGHT = 400;
-const size_t ST_HIGH_WIDTH = VIDEO_RAM * (8/ST_HIGH_DEPTH) / ST_HIGH_HEIGHT;
+static const uint8_t ST_HIGH_DEPTH = 1;
+static const size_t ST_HIGH_HEIGHT = 400;
+static const size_t ST_HIGH_WIDTH = VIDEO_RAM * (8/ST_HIGH_DEPTH) / ST_HIGH_HEIGHT;
 
 const char * degas_res_str(const enum degas_res res) {
 	switch (res) {

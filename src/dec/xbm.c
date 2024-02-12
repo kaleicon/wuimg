@@ -19,7 +19,8 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 	}
 }
 
-enum wu_error xbm_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error xbm_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct wuimg *img = alloc_sub_images(infile, 1);
 	if (!img) {
 		return wu_alloc_error;

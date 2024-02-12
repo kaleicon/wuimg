@@ -56,7 +56,8 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 	return st;
 }
 
-enum wu_error jbig_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error jbig_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct jbg_dec_state state;
 	jbg_dec_init(&state);
 	unsigned char *why_isnt_it_const = (unsigned char *)infile->map.data;

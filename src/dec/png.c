@@ -235,7 +235,7 @@ const struct wu_conf *wuconf, struct png_state *png) {
 	return wu_ok;
 }
 
-enum wu_error png_dec(struct image_file *infile,
+static enum wu_error png_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct png_state png = {0};
 	png.png = png_create_read_struct(PNG_LIBPNG_VER_STRING,

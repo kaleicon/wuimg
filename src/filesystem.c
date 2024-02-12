@@ -118,7 +118,7 @@ static bool fs_path_set_path(struct fs_path *path, const struct wuptr name) {
 	return set_path(path, name, true);
 }
 
-void keypool_free(struct keypool *pool) {
+static void keypool_free(struct keypool *pool) {
 	for (size_t i = 0; i < pool->grow.pos; ++i) {
 		free(pool->buf[i]);
 	}

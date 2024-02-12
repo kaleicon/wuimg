@@ -9,7 +9,7 @@
 
 struct g00_part_loc {
 	uint32_t offset;
-	uint32_t __len;
+	uint32_t len;
 };
 
 static const size_t G00_BLOCK_SIZE = 5*2 + 41*2;
@@ -173,12 +173,12 @@ const size_t written) {
 
 		const uint16_t block_count = buf_endian16(part + 2, little_endian);
 		const uint8_t *block = part + G00_PART_SIZE;
-		if ((void *)block >= data_end) {
+		if ((const void *)block >= data_end) {
 			continue;
 		}
 		for (uint16_t b = 0; b < block_count; ++b) {
 			const uint8_t *rast = block + G00_BLOCK_SIZE;
-			if ((void *)rast >= data_end) {
+			if ((const void *)rast >= data_end) {
 				break;
 			}
 			const struct frame_info fr = {
@@ -192,7 +192,7 @@ const size_t written) {
 			}
 
 			block = rast + fr.w * fr.h * 4;
-			if ((void *)block > data_end) { // Incomplete raster
+			if ((const void *)block > data_end) { // Incomplete raster
 				break;
 			}
 

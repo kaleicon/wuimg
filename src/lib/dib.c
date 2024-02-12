@@ -51,11 +51,11 @@ const char * dib_type_str(const struct dib_desc *desc) {
 	return "???";
 }
 
-double dib_cie_to_double(const dib_cie_t f) {
+static double dib_cie_to_double(const dib_cie_t f) {
 	return (double)f / (1 << 30);
 }
 
-double dib_gamma_to_double(const dib_gamma_t f) {
+static double dib_gamma_to_double(const dib_gamma_t f) {
 	return (double)f / (1 << 16);
 }
 

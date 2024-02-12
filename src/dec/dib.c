@@ -47,11 +47,13 @@ const struct wu_conf *wuconf, const bool is_bmp) {
 	return err;
 }
 
-enum wu_error bmp_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error bmp_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return decode_dib(infile, wuconf, true);
 }
 
-enum wu_error dib_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error dib_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return decode_dib(infile, wuconf, false);
 }
 
@@ -114,7 +116,8 @@ const struct image_fn ico_fn = {
 
 #include "dec_enable.def"
 #ifdef WU_ENABLE_BMZ
-enum wu_error bmz_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error bmz_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct bmz_desc desc;
 	enum wu_error st = bmz_open(&desc, mp_map(infile->map));
 	if (st == wu_ok) {

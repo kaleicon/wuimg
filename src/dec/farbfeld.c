@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/farbfeld.h"
 
-enum wu_error farbfeld_dec(struct image_file *infile,
+static enum wu_error farbfeld_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	return rast_trivial_fread(infile, wuconf, farbfeld_open_file);
 }

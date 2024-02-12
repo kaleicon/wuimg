@@ -27,7 +27,8 @@ const struct wu_conf *wuconf, struct g00_desc *desc) {
 	return g00_decode(desc, img) ? wu_ok : wu_decoding_error;
 }
 
-enum wu_error g00_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error g00_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct g00_desc *desc = malloc(sizeof(*desc));
 	if (desc) {
 		const enum wu_error st = decode(infile, wuconf, desc);

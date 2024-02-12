@@ -487,7 +487,7 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 			return wu_invalid_header;
 		}
 
-		unsigned long val;
+		unsigned long val = 0;
 		enum wu_error st;
 		bool parse_float = read_float && seen == 2;
 		if (seen == 2) {

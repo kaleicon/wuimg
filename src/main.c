@@ -349,7 +349,6 @@ static enum wu_error from_path(const char *name) {
 #define ARCHIVE_MODE "archive"
 #define WRITE_MODE "write"
 #define TEST_MODE "test"
-#define STDIN_MODE "-"
 
 static void print_help(void) {
 	puts("Usage:\n"

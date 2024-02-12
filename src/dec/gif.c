@@ -291,7 +291,8 @@ static int dgif_input_fn(GifFileType *gif_file, GifByteType *out, int len) {
 	return (int)fread(out, 1, (size_t)len, ifp);
 }
 
-enum wu_error gif_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error gif_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	struct gif_state *ds = calloc(1, sizeof(*ds));
 	if (!ds) {
 		return wu_alloc_error;

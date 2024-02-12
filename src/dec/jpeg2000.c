@@ -197,11 +197,13 @@ static void jpeg2000_end(struct image_file *infile) {
 	opj_image_destroy(infile->dec_state);
 }
 
-enum wu_error jp2_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error jp2_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_JP2);
 }
 
-enum wu_error j2k_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error j2k_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_J2K);
 }
 

@@ -29,7 +29,7 @@ static enum wu_error open(void *restrict desc, struct image_file *infile) {
 	return mag_open(desc, infile->ifp);
 }
 
-enum wu_error mag_dec(struct image_file *infile,
+static enum wu_error mag_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct mag_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc,

@@ -473,7 +473,7 @@ static void print_colorspace_data(const struct color_space *cs) {
 		printf("   Gamma: %f %f %f\n", prof->gamma.r, prof->gamma.g,
 			prof->gamma.b);
 		puts("   Primaries:");
-		const struct color_xy *p = (struct color_xy *)&prof->pri;
+		const struct color_xy *p = (const struct color_xy *)&prof->pri;
 		const char *n[4] = {"White", "Red", "Green", "Blue"};
 		for (size_t i = 0; i < 4; ++i) {
 			printf("    %s: %f, %f\n", n[i], p[i].x, p[i].y);

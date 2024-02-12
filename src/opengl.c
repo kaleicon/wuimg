@@ -411,7 +411,7 @@ const size_t h, const unsigned char *data) {
 	gl_alignment(out_align);
 	w *= params->comps;
 	const void *arg = params->op == op_bitfield
-		? img->u.bitfield : (void *)&params->remap;
+		? (const void *)img->u.bitfield : (const void *)&params->remap;
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
 	const size_t outwidth = unpack_stride(w, img->bitdepth, img->attr,
 		params->op, arg);

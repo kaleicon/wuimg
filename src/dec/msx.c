@@ -26,31 +26,40 @@ const struct wu_conf *wuconf, const enum msx_screen mode) {
 }
 
 // Not my proudest achievement.
-enum wu_error sc2_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc2_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen2);
 }
-enum wu_error sc3_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc3_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen3);
 }
-enum wu_error sc4_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc4_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen4);
 }
-enum wu_error sc5_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc5_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen5);
 }
-enum wu_error sc6_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc6_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen6);
 }
-enum wu_error sc7_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc7_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen7);
 }
-enum wu_error sc8_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc8_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen8);
 }
-enum wu_error sc10_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc10_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen10);
 }
-enum wu_error sc12_dec(struct image_file *infile, const struct wu_conf *wuconf) {
+static enum wu_error sc12_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
 	return sc_common(infile, wuconf, msx_screen12);
 }
 const struct image_fn sc2_fn = {.dec = sc2_dec};

@@ -22,7 +22,7 @@ static enum wu_error open(void *restrict desc, struct image_file *infile) {
 	return maki_open(desc, infile->ifp);
 }
 
-enum wu_error maki_dec(struct image_file *infile,
+static enum wu_error maki_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct maki_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
