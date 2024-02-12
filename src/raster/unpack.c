@@ -443,8 +443,9 @@ const uint64_t mul, const uint32_t xor) {
 
 static void exact_mul(uint32_t *dst, const uint32_t *src, const size_t w,
 const uint32_t mul, const uint8_t depth) {
-	const size_t items = w >> (2 - depth);
-	const size_t remain = w - (items << depth);
+	const size_t div = 2 - depth;
+	const size_t items = w >> div;
+	const size_t remain = w - (items << div);
 	for (size_t x = 0; x < items; ++x) {
 		dst[x] = src[x] * mul;
 	}
