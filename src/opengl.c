@@ -238,9 +238,9 @@ const struct wu_state *state) {
 	const float scale = 2;
 	/* Using exact integer offsets causes ugly artifacts when rendering.
 	 * We add a fraction of a pixel to fix this. */
-	const float fix = 0.5f;
-	mat.m[6] = fmaf( x, scale, fix) * context->pix_size[0];
-	mat.m[7] = fmaf(-y, scale, fix) * context->pix_size[1];
+	const float fix = 0x1p-16;
+	mat.m[6] = fmaf( x * context->pix_size[0], scale, fix);
+	mat.m[7] = fmaf(-y * context->pix_size[1], scale, fix);
 	mat.m[8] = 1 / zoom;
 	glUniformMatrix3fv(context->uni.mat.pos, 1, GL_FALSE, mat.m);
 
