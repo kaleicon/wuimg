@@ -572,6 +572,7 @@ static struct fmt_ext ext_map[] = {
 	{"jps", -1},
 	{"mpo", -1},
 	{"thm", -1},
+	{"tn3", -1},
 #endif
 
 #ifdef WU_ENABLE_JPEG2000
