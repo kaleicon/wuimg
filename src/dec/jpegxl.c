@@ -3,13 +3,16 @@
 #include <jxl/resizable_parallel_runner.h>
 
 #include "wudefs.h"
+#include "metadata.h"
 #include "misc/bit.h"
 #include "misc/math.h"
 
 struct jpegxl_state {
 	JxlDecoder *jd;
+	struct wustr box;
 	void *runner;
 	int idx;
+	enum metadata_type pending;
 	JxlBasicInfo info;
 	JxlPixelFormat fmt;
 };
@@ -20,7 +23,46 @@ static void jpegxl_end(struct image_file *infile) {
 		JxlResizableParallelRunnerDestroy(ds->runner);
 	}
 	JxlDecoderDestroy(ds->jd);
+	wustr_free(&ds->box);
 	free(ds);
+}
+
+static void process_metadata(struct image_file *infile,
+struct jpegxl_state *ds) {
+	if (ds->pending) {
+		if (JxlDecoderReleaseBoxBuffer(ds->jd) == 0) {
+			standard_metadata(ds->pending, ds->box.str,
+				ds->box.len, &infile->metadata);
+		}
+		ds->pending = no_metadata;
+	}
+}
+
+static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
+	process_metadata(infile, ds);
+	;JxlBoxType type;
+	if (JxlDecoderGetBoxType(ds->jd, type, JXL_TRUE) == JXL_DEC_SUCCESS) {
+		enum metadata_type pending = no_metadata;
+		if (!memcmp(type, "Exif", sizeof(type))) {
+			pending = exif_metadata;
+		} else if (!memcmp(type, "xml ", sizeof(type))) {
+			pending = xmp_metadata;
+		} else {
+			if (!memcmp(type, "jbrd", sizeof(type))) {
+				tree_bud_leaf_bool(&infile->metadata,
+					"JPEG source", true);
+			}
+			return;
+		}
+
+		uint64_t size;
+		if (JxlDecoderGetBoxSizeRaw(ds->jd, &size) == JXL_DEC_SUCCESS
+		&& wustr_realloc(&ds->box, size)
+		&& JxlDecoderSetBoxBuffer(ds->jd, ds->box.str, ds->box.len)
+		== JXL_DEC_SUCCESS) {
+			ds->pending = pending;
+		}
+	}
 }
 
 static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
@@ -116,6 +158,7 @@ static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 			}
 			break;
 		case JXL_DEC_FULL_IMAGE:
+		case JXL_DEC_SUCCESS:
 			return wu_ok;
 		default:
 			return wu_decoding_error;
@@ -133,7 +176,7 @@ static void input_init(struct image_file *infile, struct jpegxl_state *ds) {
 static void rewind_anim(struct image_file *infile, struct jpegxl_state *ds) {
 	JxlDecoderRewind(ds->jd);
 	/* Supposedly SubscribeEvents is kept between rewinds, but that's a lie.
-	 * Took me a while to figure that one out. */
+	 * That was a fun bug to hunt. */
 	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE);
 	input_init(infile, ds);
 }
@@ -179,7 +222,7 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 			img->bitdepth = (uint8_t)(bit_min_wordsize_bits(
 				umin(ds->info.bits_per_sample, 32)
 			));
-			if (img->bitdepth > 8 && ds->info.exponent_bits_per_sample) {
+			if (ds->info.exponent_bits_per_sample) {
 				img->attr = pix_float;
 			}
 			img->alpha = ds->info.alpha_premultiplied
@@ -192,8 +235,8 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 		case JXL_DEC_COLOR_ENCODING:
 			set_colorspace(img, ds->jd);
 			break;
-		case JXL_DEC_JPEG_RECONSTRUCTION:
-			tree_bud_leaf_bool(&infile->metadata, "JPEG source", true);
+		case JXL_DEC_BOX:
+			read_metadata(infile, ds);
 			break;
 		case JXL_DEC_FRAME:
 			++ds->idx;
@@ -201,10 +244,11 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 			if (JxlDecoderGetFrameHeader(ds->jd, &header)
 			!= JXL_DEC_SUCCESS) {
 				return wu_invalid_params;
-			} else if (header.is_last) {
-				return wu_ok;
 			}
 			break;
+		case JXL_DEC_SUCCESS:
+			process_metadata(infile, ds);
+			return wu_ok;
 		default:
 			return wu_invalid_params;
 		}
@@ -223,8 +267,10 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 	JxlDecoderSetKeepOrientation(ds->jd, JXL_TRUE);
 	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_BASIC_INFO
 		| JXL_DEC_COLOR_ENCODING
-		| JXL_DEC_JPEG_RECONSTRUCTION
+		| JXL_DEC_BOX
 		| JXL_DEC_FRAME);
+	// TODO: requires growing buffers as data is decompressed
+	JxlDecoderSetDecompressBoxes(ds->jd, JXL_FALSE);
 
 	enum wu_error st = gather_info(infile, wuconf, ds);
 	if (st != wu_ok) {

@@ -127,6 +127,7 @@ const void *metadata, const size_t len, struct wu_tree *tree) {
 	bool st = false;
 	try {
 		switch (type) {
+		case no_metadata: break;
 		case exif_metadata:
 			st = read_exif((const unsigned char *)metadata, len, tree);
 			break;
@@ -139,6 +140,7 @@ const void *metadata, const size_t len, struct wu_tree *tree) {
 		}
 	} catch (...) {
 		switch (type) {
+		case no_metadata: break;
 		case exif_metadata: fputs(EXIF, stderr); break;
 		case xmp_metadata: fputs(XMP, stderr); break;
 		case iptc_metadata: fputs(IPTC, stderr); break;
