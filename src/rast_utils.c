@@ -49,8 +49,8 @@ const struct wu_conf *wuconf, rast_open_t open_fn) {
 			if (!wuimg_exceeds_limit(img, wuconf)) {
 				st = wuimg_alloc(img);
 				if (st == wu_ok) {
-					return fmt_load_raster(img, infile->ifp,
-						big_endian)
+					return fmt_load_raster_swap(img,
+						infile->ifp, big_endian)
 						? wu_ok : wu_unexpected_eof;
 				}
 				return st;

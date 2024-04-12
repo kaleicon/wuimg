@@ -6,20 +6,37 @@
 #include "misc/math.h"
 #include "raster/fmt.h"
 
-size_t fmt_load_raster(struct wuimg *img, FILE *ifp, const enum endianness e) {
-	if (e == which_end()) {
-		return fread(img->data, 1, wuimg_size(img), ifp);
+size_t fmt_load_raster(struct wuimg *img, FILE *ifp) {
+	return fread(img->data, 1, wuimg_size(img), ifp);
+}
+
+static bool will_swap(const enum endianness e, const uint8_t word_depth) {
+	if (e != which_end()) {
+		switch (word_depth) {
+		case 16: case 24: case 32: case 64: return true;
+		}
 	}
-	const size_t w = zumax(img->w, img->h);
-	const size_t h = zumin(img->w, img->h);
-	const size_t stride = strip_length(w * img->channels, img->bitdepth,
-		img->align_sh);
+	return false;
+}
+
+size_t fmt_load_raster_swap_depth(struct wuimg *img, FILE *ifp,
+const enum endianness e, const uint8_t word_depth) {
+	if (!will_swap(e, word_depth)) {
+		return fmt_load_raster(img, ifp);
+	}
+	const size_t stride = wuimg_stride(img);
+	const size_t l = zumax(stride, img->h);
+	const size_t s = zumin(stride, img->h);
 	size_t acc = 0;
-	for (size_t y = 0; y < h; ++y) {
-		void *row = img->data + stride*y;
-		acc += file_endian_read(row, stride, ifp, img->bitdepth, e);
+	for (size_t y = 0; y < s; ++y) {
+		void *row = img->data + l*y;
+		acc += file_endian_read_bytes(row, l, ifp, word_depth, e);
 	}
 	return acc;
+}
+
+size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, const enum endianness e) {
+	return fmt_load_raster_swap_depth(img, ifp, e, img->bitdepth);
 }
 
 enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,

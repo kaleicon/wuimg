@@ -5,7 +5,20 @@
 #include "endian.h"
 #include "math.h"
 
-static uint32_t bit_rev32(uint32_t b) {
+uint8_t bit_rev8(uint8_t b) {
+	b = (b & 0xaa) >> 1 | (b & 0x55) << 1;
+	b = (b & 0xcc) >> 2 | (b & 0x33) << 2;
+	return (uint8_t)(b >> 4 | b << 4);
+}
+
+uint16_t bit_rev16(uint16_t b) {
+	b = (b & 0xaaaa) >> 1 | (b & 0x5555) << 1;
+	b = (b & 0xcccc) >> 2 | (b & 0x3333) << 2;
+	b = (b & 0xf0f0) >> 4 | (b & 0x0f0f) << 4;
+	return (uint16_t)(b >> 8 | b << 8);
+}
+
+uint32_t bit_rev32(uint32_t b) {
 	b = (b & 0xaaaaaaaa) >> 1 | (b & 0x55555555) << 1;
 	b = (b & 0xcccccccc) >> 2 | (b & 0x33333333) << 2;
 	b = (b & 0xf0f0f0f0) >> 4 | (b & 0x0f0f0f0f) << 4;

@@ -162,7 +162,7 @@ size_t sgi_decode(const struct sgi_desc *desc, struct wuimg *img) {
 			return rle_decode(desc, img);
 		}
 		fseek(desc->ifp, 512, SEEK_SET);
-		return fmt_load_raster(img, desc->ifp, big_endian);
+		return fmt_load_raster_swap(img, desc->ifp, big_endian);
 	}
 	return 0;
 }

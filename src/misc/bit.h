@@ -10,6 +10,14 @@ uint8_t bit_min_wordsize_log2(unsigned bits);
 
 size_t bit_min_wordsize_bits(unsigned bits);
 
+
+uint8_t bit_rev8(uint8_t bits);
+
+uint16_t bit_rev16(uint16_t bits);
+
+uint32_t bit_rev32(uint32_t bits);
+
+
 uint32_t bit_ctz32(uint32_t bits);
 
 uint32_t bit_cto32(uint32_t bits);

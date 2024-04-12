@@ -220,7 +220,7 @@ bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 		switch ((int)desc->compression) {
 		case dib_no_compression:
 		case dib_bitfield:
-			w = fmt_load_raster(img, desc->ifp, little_endian);
+			w = fmt_load_raster_swap(img, desc->ifp, little_endian);
 			break;
 		case dib_8bit_rle:
 		case dib_4bit_rle:

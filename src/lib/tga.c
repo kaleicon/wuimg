@@ -43,7 +43,7 @@ void tga_cleanup(struct tga_desc *desc) {
 size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp) {
 	if (wuimg_alloc_noverify(stamp)) {
 		fseek(desc->ifp, desc->meta.stamp_offset + 2, SEEK_SET);
-		return fmt_load_raster(stamp, desc->ifp, little_endian);
+		return fmt_load_raster_swap(stamp, desc->ifp, little_endian);
 	}
 	return 0;
 }
@@ -110,7 +110,7 @@ size_t tga_decode(const struct tga_desc *desc, struct wuimg *img) {
 		case tga_colormap_data:
 		case tga_truecolor_data:
 		case tga_monochrome_data:
-			return fmt_load_raster(img, desc->ifp, little_endian);
+			return fmt_load_raster_swap(img, desc->ifp, little_endian);
 		case tga_colormap_rle:
 		case tga_truecolor_rle:
 		case tga_monochrome_rle:

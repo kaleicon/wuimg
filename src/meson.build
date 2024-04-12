@@ -14,6 +14,7 @@ fmt_map = {
 		'mag',
 		'maki',
 		'msx',
+		'pcf',
 		'pcx',
 		'pdt',
 		'pgx',

@@ -68,7 +68,7 @@ size_t sun_decode(const struct sun_desc *desc, struct wuimg *img) {
 		if (desc->type == sun_byte_encoded) {
 			return rle_decode(desc, img->data, wuimg_size(img));
 		}
-		return fmt_load_raster(img, desc->ifp, big_endian);
+		return fmt_load_raster(img, desc->ifp);
 	}
 	return 0;
 }
@@ -149,8 +149,8 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 
 	img->w = width;
 	img->h = height;
-	img->channels = (uint8_t)((bitdepth > 8) ? bitdepth / 8 : 1);
-	img->bitdepth = (uint8_t)((bitdepth > 8) ? 8 : bitdepth);
+	img->channels = (uint8_t)umax(bitdepth/8, 1);
+	img->bitdepth = (uint8_t)umin(bitdepth, 8);
 	img->align_sh = 1;
 
 	desc->type = type;

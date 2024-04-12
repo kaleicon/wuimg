@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+#include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/math.h"
 #include "raster/fmt.h"
@@ -57,22 +58,15 @@ void xwd_cleanup(struct xwd_desc *desc) {
 	wustr_free(&desc->win.name);
 }
 
-static uint8_t rev_bits(int b) {
-	b = ((b >> 4) & 0x0f) | ((b & 0x0f) << 4);
-	b = ((b >> 2) & 0x33) | ((b & 0x33) << 2);
-	b = ((b >> 1) & 0x55) | ((b & 0x55) << 1);
-	return (uint8_t)b;
-}
-
 size_t xwd_decode(const struct xwd_desc *desc, struct wuimg *img) {
 	size_t read = 0;
 	if (wuimg_alloc_noverify(img)) {
-		read = fmt_load_raster(img, desc->ifp, desc->byte_endian);
+		read = fmt_load_raster_swap(img, desc->ifp, desc->byte_endian);
 		if (img->bitdepth == 1 && desc->bit_endian == little_endian) {
 			// Reverse bit order
 			uint8_t *data = img->data;
 			for (size_t i = 0; i < read; ++i) {
-				data[i] = rev_bits(data[i]);
+				data[i] = bit_rev8(data[i]);
 			}
 		}
 	}

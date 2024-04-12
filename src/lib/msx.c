@@ -255,7 +255,7 @@ const long pal_offset) {
 
 	*/
 
-	const size_t read = fmt_load_raster(img, desc->ifp, little_endian);
+	const size_t read = fmt_load_raster(img, desc->ifp);
 	if (img->mode == image_mode_palette) {
 		read_pal_at(desc, pal_offset, img->u.palette, img->bitdepth,
 			false);

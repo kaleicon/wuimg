@@ -166,7 +166,7 @@ const size_t i) {
 		break;
 	}
 	return scale_raster(desc, dst,
-		fmt_load_raster(img, desc->ifp, desc->endian) / desc->bytedepth);
+		fmt_load_raster_swap(img, desc->ifp, desc->endian) / desc->bytedepth);
 }
 
 /* Header parsing */

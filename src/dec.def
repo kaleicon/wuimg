@@ -64,6 +64,10 @@ WUDEC(sc10)
 WUDEC(sc12)
 #endif
 
+#ifdef WU_ENABLE_PCF
+WUDEC(pcf)
+#endif
+
 #ifdef WU_ENABLE_PCX
 WUDEC(pcx)
 WUDEC(dcx)

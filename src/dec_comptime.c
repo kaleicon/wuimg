@@ -94,6 +94,10 @@ static struct fmt_magic magic_map[] = {
 
 #endif // WU_ENABLE_MSX
 
+#ifdef WU_ENABLE_PCF
+	{"\xff\xff\xff\xff", "\1fcp", fmt_pcf},
+#endif // WU_ENABLE_PCF
+
 #ifdef WU_ENABLE_PCX
 	// Second byte is version. Valid values are 0,2,3,4,5
 	{"\xff\xff\xff", "\x0a\x00\x01", fmt_pcx}, // 0
@@ -412,6 +416,10 @@ static struct fmt_ext ext_map[] = {
 	{"s1c", fmt_sc12}, // Alternate field of an SCC file
 	{"srs", fmt_sc12}, // Graph Saurus
 	{"yjk", fmt_sc12},
+#endif
+
+#ifdef WU_ENABLE_PCF
+	{"pcf", -1},
 #endif
 
 #ifdef WU_ENABLE_PCX

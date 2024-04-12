@@ -40,7 +40,7 @@ size_t mac_decode(const struct mac_desc *desc, struct wuimg *main) {
 size_t mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats) {
 	if (wuimg_alloc_noverify(pats)) {
 		fseek(desc->ifp, 4U + 128 * desc->has_macbin_header, SEEK_SET);
-		return fmt_load_raster(pats, desc->ifp, big_endian);
+		return fmt_load_raster(pats, desc->ifp);
 	}
 	return 0;
 }

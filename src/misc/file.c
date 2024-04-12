@@ -8,9 +8,9 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 
-size_t file_endian_read(void *restrict dst, const size_t size, FILE *ifp,
+size_t file_endian_read_bytes(void *restrict dst, const size_t bytes, FILE *ifp,
 const size_t word_depth, const enum endianness e) {
-	const size_t read = fread(dst, 1, size, ifp);
+	const size_t read = fread(dst, 1, bytes, ifp);
 	switch (word_depth) {
 	case 16: endian_loop16(dst, e, read/2); break;
 	case 24: endian_loop24(dst, e, read/3); break;
