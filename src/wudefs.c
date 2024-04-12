@@ -59,7 +59,8 @@ void image_file_free_if_single(struct image_file *file) {
 	}
 }
 
-void image_file_print(const struct image_file *file, const int verbosity) {
+void image_file_print(const struct image_file *file, const int verbosity,
+const bool unloaded_too) {
 	size_t max_x = 0;
 	size_t max_y = 0;
 	switch (verbosity) {
@@ -81,10 +82,18 @@ void image_file_print(const struct image_file *file, const int verbosity) {
 	printf("Contained sub-images: %zu\n", file->nr);
 
 	size_t overall_size = 0;
+	size_t not_loaded = 0;
 	for (size_t i = 0; i < file->nr; ++i) {
 		const struct wuimg *img = file->sub_img + i;
-		printf(" %zu/%zu: ", i+1, file->nr);
-		overall_size += wuimg_print(img, verbosity);
+		if (unloaded_too || wuimg_has_data(img)) {
+			printf(" %zu/%zu: ", i+1, file->nr);
+			overall_size += wuimg_print(img, verbosity);
+		} else {
+			++not_loaded;
+		}
+	}
+	if (not_loaded) {
+		printf("Sub-images not loaded: %zu\n", not_loaded);
 	}
 
 	if (file->nr > 1) {

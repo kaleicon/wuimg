@@ -85,7 +85,8 @@ struct wuimg * alloc_sub_images(struct image_file *file, size_t nr);
 
 void image_file_free_if_single(struct image_file *file);
 
-void image_file_print(const struct image_file *file, int verbosity);
+void image_file_print(const struct image_file *file, int verbosity,
+bool unloaded_too);
 
 void image_file_normalize(struct image_file *file);
 

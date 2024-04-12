@@ -453,6 +453,10 @@ void wuimg_clear(struct wuimg *img) {
 }
 
 
+bool wuimg_has_data(const struct wuimg *img) {
+	return img->data || (img->mode == image_mode_planar && img->u.planes);
+}
+
 static void print_colorspace_data(const struct color_space *cs) {
 	printf("  Colorspace:\n"
 		"   Type: %s\n"
@@ -535,7 +539,7 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 	}
 }
 
-static size_t print_dimensions(const struct wuimg *img) {
+static void print_dimensions(const struct wuimg *img, const size_t memsize) {
 	const char *mode_str = "";
 	switch (img->mode) {
 	case image_mode_raw: break;
@@ -549,33 +553,27 @@ static size_t print_dimensions(const struct wuimg *img) {
 	if (img->attr) {
 		printf("(%s) ", pix_attr_str(img->attr));
 	}
-
-	const size_t memsize = wuimg_size(img);
-	printf("= %zu bytes", memsize);
-	putchar('\n');
-	return memsize;
+	printf("= %zu bytes\n", memsize);
 }
 
 size_t wuimg_print(const struct wuimg *img, const int verbosity) {
-	if (verbosity < 1) {
-		return wuimg_size(img);
-	}
+	const size_t memsize = wuimg_size(img);
+	if (verbosity > 0) {
+		if (img->metadata) {
+			fputs("(*) ", stdout);
+		}
+		if (img->frames) {
+			printf("frames: %zu, ", img->frames->nr);
+		}
 
-	if (img->metadata) {
-		fputs("(*) ", stdout);
+		if (wuimg_has_data(img)) {
+			print_dimensions(img, memsize);
+		} else {
+			puts("Not loaded");
+		}
+		if (verbosity > 1) {
+			print_more_data(img, verbosity);
+		}
 	}
-	if (img->frames) {
-		printf("frames: %zu, ", img->frames->nr);
-	}
-
-	size_t size = 0;
-	if (img->data || (img->mode == image_mode_planar && img->u.planes)) {
-		size = print_dimensions(img);
-	} else {
-		puts("Not loaded");
-	}
-	if (verbosity > 1) {
-		print_more_data(img, verbosity);
-	}
-	return size;
+	return memsize;
 }

@@ -156,7 +156,7 @@ const struct test_mode_args args) {
 			case wu_ok:
 				if (args.metadata && j == 0) {
 					putchar('\n');
-					image_file_print(&image.file, 3);
+					image_file_print(&image.file, 3, true);
 				}
 				break;
 			default: break;
