@@ -223,8 +223,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		if (!bf) {
 			return wu_alloc_error;
 		}
-		if (!bitfield_from_mask(bf, mask, 3, (uint8_t)bpp,
-		desc->byte_endian)) {
+		if (!bitfield_from_mask(bf, mask, 3, (uint8_t)bpp)) {
 			return wu_invalid_header;
 		}
 		break;

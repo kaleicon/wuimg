@@ -562,51 +562,59 @@ const struct wuimg *img) {
 	uint8_t ch = params->comps;
 	uint8_t bd = img->bitdepth;
 	switch (img->attr) {
-	case pix_float:
-		switch (bd) {
-		case 16: case 32:
-			break;
-		case 64:
-			params->op = op_pack;
-			break;
-		default:
-			return "Invalid floating-point depth";
-		}
-		break;
 	case pix_normal:
+		/* LM: least-to-most significant order, ML: most-to-least.
+		 * OpenGL reads components in ML order within a machine word,
+		 * unless the type ends with _REV, then it's LM. */
 		if (ch == 4) {
+			/* We use ML order for raw images. However, we don't
+			 * care about machine words. */
 			if (bd == 8) {
 				params->in_fmt = GL_RGBA8;
 				params->fmt = GL_BGRA;
 				params->type = GL_UNSIGNED_INT_8_8_8_8;
-				const enum pix_layout meta = which_end() == little_endian
-					? PIX_LAYOUT_PACK(3, 0, 1, 2)
-					: PIX_LAYOUT_PACK(2, 1, 0, 3);
+				/* In big-endian, the component order "matches"
+				 * the memory layout, and so only swapping
+				 * R and B is needed.
+				 * Little-endian is just the reverse of
+				 * big-endian, which surprisingly is not ARGB,
+				 * but GBAR. */
+				const enum pix_layout meta = which_end() == big_endian
+					? pix_layout_pack(2, 1, 0, 3)
+					: pix_layout_pack(3, 0, 1, 2);
 				params->layout = pix_layout_mul(meta, params->layout);
 				return NULL;
 			} else if (bd == 4) {
 				params->in_fmt = GL_RGBA4;
 				params->fmt = GL_BGRA;
 				params->type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
-				const enum pix_layout meta = which_end() == little_endian
-					? PIX_LAYOUT_PACK(1, 2, 3, 0)
-					: PIX_LAYOUT_PACK(3, 0, 1, 2);
+				/* fmt is BGRA, so swap R and B, then reverse
+				 * for big-endian as the order is LM.
+				 * Little-endian is big-endian but with the
+				 * bytes (not nibbles!) swapped. */
+				const enum pix_layout meta = which_end() == big_endian
+					? pix_layout_pack(3, 0, 1, 2)
+					: pix_layout_pack(1, 2, 3, 0);
 				params->layout = pix_layout_mul(meta, params->layout);
 				return NULL;
 			}
 		} else if (img->mode == image_mode_bitfield) {
+			/* Bitfields are in LM order. */
 			const struct bitfield *bf = img->u.bitfield;
-			if (bf->id == 0x1555) {
+			if (bf->id == 0x1555 || bf->id == 0x555) {
 				params->in_fmt = GL_RGB5_A1;
 				params->fmt = GL_BGRA;
 				params->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
-				params->layout = pix_layout_mul(params->layout, pix_bgra);
+				/* 1_5_5_5_REV is in LM order too, but as the
+				 * format is GL_BGRA, swap R and B. */
+				params->layout = pix_layout_mul(pix_bgra, params->layout);
 				return NULL;
 			} else if (bf->id == 0x332) {
 				params->in_fmt = GL_R3_G3_B2;
 				params->fmt = GL_RGB;
 				params->type = GL_UNSIGNED_BYTE_3_3_2;
-				params->layout = pix_layout_mul(params->layout, pix_bgra);
+				// Reverse the first three components.
+				params->layout = pix_layout_mul(pix_bgra, params->layout);
 				return NULL;
 			}
 			params->op = op_bitfield;
@@ -637,6 +645,17 @@ const struct wuimg *img) {
 					params->op = op_expand;
 				}
 			}
+		}
+		break;
+	case pix_float:
+		switch (bd) {
+		case 16: case 32:
+			break;
+		case 64:
+			params->op = op_pack;
+			break;
+		default:
+			return "Invalid floating-point depth";
 		}
 		break;
 	default:

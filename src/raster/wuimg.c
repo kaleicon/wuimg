@@ -309,7 +309,7 @@ struct bitfield * wuimg_bitfield_init_from_id(struct wuimg *img,
 const enum bitfield_id id) {
 	struct bitfield *bf = wuimg_bitfield_init(img);
 	if (bf) {
-		bitfield_from_id(bf, id, img->bitdepth, 0);
+		bitfield_from_id(bf, id, img->bitdepth);
 	}
 	return bf;
 }
@@ -540,12 +540,17 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 }
 
 static void print_dimensions(const struct wuimg *img, const size_t memsize) {
+	char bf_str[4 + sizeof(uint16_t)*2];
 	const char *mode_str = "";
 	switch (img->mode) {
 	case image_mode_raw: break;
 	case image_mode_palette: mode_str = " (paletted)"; break;
 	case image_mode_planar: mode_str = " (planar)"; break;
-	case image_mode_bitfield: mode_str = " (bitfield)"; break;
+	case image_mode_bitfield:
+		snprintf(bf_str, sizeof(bf_str), " (%x)",
+			(uint16_t)img->u.bitfield->id);
+		mode_str = bf_str;
+		break;
 	}
 
 	printf("%zu x %zu x %d%s x %d ",

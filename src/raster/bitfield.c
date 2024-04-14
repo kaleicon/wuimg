@@ -49,6 +49,47 @@ const void *restrict src, const size_t w) {
 	}
 }
 
+static void get_mul(struct bitfield *bf) {
+	const uint32_t target = (uint32_t)(bf->outdepth > 8 ? USHRT_MAX : UCHAR_MAX)
+		<< BITFIELD_SHIFT;
+	for (uint8_t i = 0; i < bf->ch; ++i) {
+		if (bf->comp[i].and) {
+			bf->comp[i].mul = target / bf->comp[i].and + 1;
+		}
+	}
+}
+static struct bitfield init_bitfield(const uint8_t word_depth) {
+	return (struct bitfield) {
+		.word_size = word_depth/8,
+	};
+}
+
+void bitfield_from_id(struct bitfield *bf, const enum bitfield_id id,
+const uint8_t word_depth) {
+	*bf = init_bitfield(word_depth);
+	uint8_t z = 0;
+	uint8_t pos = 0;
+	uint8_t maxdepth = 0;
+	while (z < 4) {
+		const uint8_t ones = (id >> z*4) & 0xf;
+		if (!ones) {
+			break;
+		}
+		bf->comp[z].shr = pos;
+		bf->comp[z].and = bit_set32(ones);
+		if (ones > maxdepth) {
+			maxdepth = ones;
+		}
+		pos += ones;
+		++z;
+	}
+	const bool high_depth = maxdepth > 8;
+	bf->outdepth = high_depth ? 16 : 8;
+	bf->ch = z;
+	bf->id = id;
+	get_mul(bf);
+}
+
 static void key_swap(struct bf_key *restrict a, struct bf_key *restrict b) {
 	if (a->shr < b->shr) {
 		struct bf_key tmp = *a;
@@ -78,84 +119,6 @@ static void canon_form(struct bf_key canon[static 4], const struct bitfield *bf)
 	key_swap(canon + 1, canon + 2);
 }
 
-/*bool bitfield_reduce(struct bitfield *bf, struct wuimg *img) {
-	const uint8_t ch = bf->ch;
-	switch (ch) {
-	case 4:
-		switch (bf->word_size) {
-		case 4:
-			if (bf->id == 0x8888) {
-				return mod_img(bf, img, 4, 8, 0);
-			}
-			break;
-		case 2:
-			if (bf->id == 0x4444) {
-				return mod_img(bf, img, 4, 4, 0);
-			}
-			break;
-		}
-		break;
-	case 3:
-		switch (bf->word_size) {
-		case 3:
-			if (bf->id == 0x888) {
-				return mod_img(bf, img, 3, 8, 0);
-			}
-			break;
-		}
-		break;
-	}
-	img->channels = ch;
-	img->bitdepth = bf->outdepth;
-	return false;
-}
-*/
-static void get_mul(struct bitfield *bf) {
-	const uint32_t target = (uint32_t)(bf->outdepth > 8 ? USHRT_MAX : UCHAR_MAX)
-		<< BITFIELD_SHIFT;
-	for (uint8_t i = 0; i < bf->ch; ++i) {
-		if (bf->comp[i].and) {
-			bf->comp[i].mul = target / bf->comp[i].and + 1;
-		}
-	}
-}
-
-static struct bitfield init_bitfield(const uint8_t word_depth,
-const enum endianness endian) {
-	return (struct bitfield) {
-		.word_size = word_depth/8,
-		.enable = true,
-		.endian = endian,
-	};
-}
-
-void bitfield_from_id(struct bitfield *bf, const enum bitfield_id id,
-const uint8_t word_depth, const enum endianness endian) {
-	*bf = init_bitfield(word_depth, endian);
-	uint8_t z = 0;
-	uint8_t pos = 0;
-	uint8_t maxdepth = 0;
-	while (z < 4) {
-		const uint8_t ones = (id >> z*4) & 0xf;
-		if (!ones) {
-			break;
-		}
-		bf->comp[z].shr = pos;
-		bf->comp[z].and = bit_set32(ones);
-		if (ones > maxdepth) {
-			maxdepth = ones;
-		}
-		pos += ones;
-		++z;
-	}
-	const bool high_depth = maxdepth > 8;
-	bf->outdepth = high_depth ? 16 : 8;
-	bf->ch = z;
-	bf->id = id;
-	bf->layout = pix_rgba;
-	get_mul(bf);
-}
-
 static void get_id(struct bitfield *bf) {
 	struct bf_key k[ARRAY_LEN(bf->comp)] = {0};
 	canon_form(k, bf);
@@ -165,12 +128,11 @@ static void get_id(struct bitfield *bf) {
 		id |= (unsigned)k[z].ones << (bf->ch - 1 - z)*4;
 	}
 	bf->id = id;
-	bf->layout = pix_layout_pack(k[0].idx, k[1].idx, k[2].idx, k[3].idx);
 }
 
 bool bitfield_from_mask(struct bitfield *bf, const uint32_t *mask,
-const uint8_t ch, const uint8_t word_depth, const enum endianness endian) {
-	*bf = init_bitfield(word_depth, endian);
+const uint8_t ch, const uint8_t word_depth) {
+	*bf = init_bitfield(word_depth);
 	uint32_t xor_acc = 0;
 	uint32_t maxdepth = 0;
 	uint32_t totalbits = 0;

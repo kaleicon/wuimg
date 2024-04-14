@@ -14,16 +14,11 @@ enum pic_type {
 	pic_type_generic = 0xf,
 };
 
-struct pic_bits_grb {
-	uint8_t depth;
-	uint8_t off;
-	uint16_t mul;
-};
-
 struct pic_bits {
-	struct pic_bits_grb grb[3];
-	uint8_t s_off;
-	uint8_t s; // shared bit
+	uint8_t shared;
+	uint8_t uni;
+	uint8_t and;
+	uint16_t mul;
 };
 
 struct pic_desc {

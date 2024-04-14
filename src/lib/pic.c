@@ -12,9 +12,12 @@ https://mooncore.eu/bunny/txt/picfmt_e.txt
  * with some studying of
 https://github.com/DavidGriffith/xv/blob/master/xvpic.c
 
+ * This format has a lot of cases, but with some care it's manageable.
+
  * TODO:
- * · Test with 12-bit files
- * · Test with files of type Mac
+ * - Find 24-bit files
+ * - Find 12-bit files
+ * - Find files of type Mac
 */
 
 const char * pic_model_str(const enum pic_type type) {
@@ -99,34 +102,38 @@ struct pic_cache *cache, const uint8_t ch) {
 
 static void read_grb(uint8_t dst[static 3], const struct pic_bits *bits,
 struct bitstrm *bs) {
-	const uint32_t b = bitstrm_msb_peek_high25(bs);
-	const uint8_t s_off = bits->s_off;
-	bitstrm_seek(bs, 32 - s_off);
-
-	const uint32_t s = (b >> s_off) & 1;
-	for (size_t i = 0; i < ARRAY_LEN(bits->grb); ++i) {
-		const uint8_t off = bits->grb[i].off;
-		const uint32_t col = (b >> off) & bit_set32(bits->grb[i].depth);
+	uint32_t b = bitstrm_msb_adv_max25(bs,
+		(uint8_t)(bits->uni*3 + bits->shared));
+	const bool s = b & bits->shared;
+	for (uint32_t i = 0; i < 3; ++i) {
+		const uint32_t off = bits->uni * (2 - i) + bits->shared;
+		const uint32_t col = (b >> off) & bits->and;
 		dst[i] = (uint8_t)(
-			(((col << bits->s) | s) * bits->grb[i].mul) >> 8
+			(((col << bits->shared) | s) * bits->mul) >> 8
 		);
 	}
 }
 
 static void read_color(uint8_t *restrict dst, const struct pic_desc *desc,
 struct bitstrm *bs, const uint8_t ch) {
-	switch (ch) {
-	case 3: // 24-bits, 16-bits (intensity), pack_655
+	if (desc->bits.shared) { // 16-bits (intensity)
 		read_grb(dst, &desc->bits, bs);
-		break;
-	case 2: // Tiled, 15-bits (pack_x555), 12-bits (pack_x444)
-		*(uint16_t *)dst = (uint16_t)bitstrm_msb_adv_max25(bs,
-			desc->depth);
-		break;
-	case 1: // Paletted
-		dst[0] = (uint8_t)bitstrm_msb_adv_max25(bs,
-			desc->bits.grb[0].depth);
-		break;
+	} else {
+		const uint32_t b = bitstrm_msb_adv_max25(bs, desc->depth);
+		switch (ch) {
+		case 3: // 24-bits
+			dst[0] = (uint8_t)(b >> 16);
+			dst[1] = (uint8_t)(b >> 8);
+			dst[2] = (uint8_t)b;
+			break;
+		case 2: // 16-bits (tiled 332, pack_655, pack_x555)
+			// 12-bits (pack_x444)
+			*(uint16_t *)dst = (uint16_t)b;
+			break;
+		case 1: // 8-bits (332), 8- or 4-bits (paletted)
+			dst[0] = (uint8_t)b;
+			break;
+		}
 	}
 }
 
@@ -288,20 +295,18 @@ size_t pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 	return ok;
 }
 
-static bool load_pal(const struct pic_desc *desc, struct wuimg *img) {
+static bool load_pal(const struct pic_desc *desc, struct raster_pal *palette) {
 	const struct pic_bits *b = &desc->bits;
-	const uint8_t pal_depth = (uint8_t)(
-		b->grb[0].depth + b->grb[1].depth + b->grb[2].depth + b->s
-	);
+	const uint8_t pal_depth = (uint8_t)(b->uni*3 + b->shared);
 	const size_t entries = 1 << desc->depth;
 	const size_t len = strip_base(entries, pal_depth);
-	uint8_t *buf = (uint8_t *)(img->u.palette + 1) - len;
+	uint8_t *buf = (uint8_t *)(palette + 1) - len;
 	if (!fread(buf, len, 1, desc->ifp)) {
 		return false;
 	}
 
 	struct bitstrm bs = bitstrm_from_bytes(buf, len);
-	struct pix_rgba8 *pal = img->u.palette->color;
+	struct pix_rgba8 *pal = palette->color;
 	for (size_t i = 0; i < entries; ++i) {
 		read_grb((uint8_t *)(pal + i), b, &bs);
 		pal[i].a = 0xff;
@@ -309,26 +314,13 @@ static bool load_pal(const struct pic_desc *desc, struct wuimg *img) {
 	return true;
 }
 
-static void calc_mul(struct pic_bits *bits, const uint8_t shared) {
-	bits->s = shared;
-	uint8_t off = 32;
-	for (size_t i = 0; i < ARRAY_LEN(bits->grb); ++i) {
-		off -= bits->grb[i].depth;
-		bits->grb[i].off = off;
-		const uint32_t depth = bits->grb[i].depth + bits->s;
-		const uint32_t maxval = bit_set32(depth);
-		bits->grb[i].mul = (uint16_t)((UCHAR_MAX << 8) / maxval + 1);
-	}
-	bits->s_off = off - bits->s;
-}
-
-static struct pic_bits grb_bits_init(const uint8_t g, const uint8_t r,
-const uint8_t b) {
-	return (struct pic_bits) {
-		.grb = {
-			{g, 0, 0}, {r, 0, 0}, {b, 0, 0}
-		},
-	};
+static void calc_mul(struct pic_bits *bits, const uint8_t uni,
+const uint8_t shared) {
+	const uint32_t maxval = bit_set32((unsigned)(uni + shared));
+	bits->mul = (uint16_t)((UCHAR_MAX << 8) / maxval + 1);
+	bits->and = (uint8_t)bit_set32(uni);
+	bits->shared = shared;
+	bits->uni = uni;
 }
 
 static bool extra_fields(uint8_t *restrict buf, struct pic_desc *desc,
@@ -410,7 +402,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 
 	uint8_t uni_bits = 0;
 	uint8_t shared_bits = 0;
-	bool is_332 = false;
+	uint16_t bitfield = 0;
 
 	switch (desc->type) {
 	enum wu_error st;
@@ -422,8 +414,10 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		switch (bd) {
 		case 16:
 			shared_bits = 1;
-			// fallthrough
+			wuimg_aspect_ratio(img, 4, 3);
+			break;
 		case 15:
+			bitfield = 0x555;
 			wuimg_aspect_ratio(img, 4, 3);
 			break;
 		case 8:
@@ -431,9 +425,6 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			// fallthrough
 		case 4:
 			shared_bits = 1;
-			if (!wuimg_palette_init(img)) {
-				return wu_alloc_error;
-			}
 			break;
 		default:
 			return wu_invalid_header;
@@ -455,13 +446,24 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			break;
 		default: return wu_invalid_header;
 		}
+		switch (bd) {
+		case 8:
+			bitfield = 0x332;
+			break;
+		case 12: break;
+		case 16:
+			bitfield = 0x655;
+			break;
+		default:
+			return wu_invalid_header;
+		}
 		desc->tiled = desc->mode & 0x02;
 		if (desc->tiled) {
 			if (bd != 16) {
 				return wu_invalid_header;
 			}
 			h *= 2;
-			is_332 = true;
+			bitfield = 0x332;
 		}
 		/* According to the docs, images on the PC-88VA always cover
 		 * the whole screen, so the image ratio is whatever is needed
@@ -469,26 +471,12 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		 * is set. */
 		const double hr = (desc->mode & 0x01) ? 320.0 : 640.0;
 		img->ratio = (float)((w / hr) / (h / 400.0));
-		switch (bd) {
-		case 8:
-			desc->bits = grb_bits_init(3, 3, 2);
-			is_332 = true;
-			break;
-		case 12:
-			uni_bits = 4;
-			break;
-		case 16:
-			desc->bits = grb_bits_init(6, 5, 5);
-			break;
-		default:
-			return wu_invalid_header;
-		}
 		break;
 	case pic_type_fm_towns:
 		if (bd != 15) {
 			return wu_invalid_header;
 		}
-		uni_bits = 5;
+		bitfield = 0x555;
 		/* All the FM-TOWNS files I've found include extra header data
 		 * like 'Generic' does, with mode 0. The docs don't say
 		 * anything about this, so hopefully what follows is correct. */
@@ -507,7 +495,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		if (bd != 15) {
 			return wu_invalid_header;
 		}
-		uni_bits = 5;
+		bitfield = 0x555;
 		img->layout = pix_rgba;
 		break;
 	case pic_type_generic:
@@ -521,22 +509,16 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			uni_bits = buf[6];
 			if (!uni_bits || uni_bits > 8) {
 				return wu_invalid_header;
-			} else if (!wuimg_palette_init(img)) {
-				return wu_alloc_error;
 			}
 			break;
-		case 12:
-			uni_bits = 4;
+		case 12: case 24:
 			break;
 		case 15:
-			uni_bits = 5;
+			bitfield = 0x555;
 			break;
 		case 16:
 			uni_bits = 5;
 			shared_bits = 1;
-			break;
-		case 24:
-			uni_bits = 8;
 			break;
 		case 32:
 			return wu_unsupported_feature;
@@ -549,41 +531,34 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	}
 
 	desc->depth = (uint8_t)bd;
-	if (is_332) {
+	img->w = w;
+	img->h = h;
+	if (bitfield) {
 		img->channels = 1;
-		img->bitdepth = 8;
-		img->layout = pix_layout_mul(img->layout, pix_bgra);
-		if (!wuimg_bitfield_init_from_id(img, 0x332)) {
+		img->bitdepth = (bitfield == 0x332) ? 8 : 16;
+		img->layout = pix_layout_mul(pix_bgra, img->layout);
+		if (!wuimg_bitfield_init_from_id(img, bitfield)) {
 			return wu_alloc_error;
 		}
 	} else if (desc->depth == 12) {
 		img->channels = 4;
 		img->bitdepth = 4;
-	} else if (desc->depth == 15) {
-		img->channels = 1;
-		img->bitdepth = 16;
-		img->layout = PIX_LAYOUT_PACK(1, 2, 0, 3); // why?
-		if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
-			return wu_alloc_error;
-		}
 	} else {
-		if (uni_bits) {
-			for (size_t i = 0; i < ARRAY_LEN(desc->bits.grb); ++i) {
-				desc->bits.grb[i].depth = uni_bits;
-			}
-		}
-		calc_mul(&desc->bits, shared_bits);
-		if (img->mode == image_mode_palette) {
-			if (!load_pal(desc, img)) {
-				return wu_unexpected_eof;
-			}
-			desc->bits.grb[0].depth = desc->depth;
-		}
-		img->channels = (img->mode == image_mode_palette) ? 1 : 3;
+		img->channels = (desc->depth > 8) ? 3 : 1;
 		img->bitdepth = 8;
+		if (uni_bits) {
+			calc_mul(&desc->bits, uni_bits, shared_bits);
+			if (desc->depth <= 8) {
+				struct raster_pal *pal = wuimg_palette_init(img);
+				if (!pal) {
+					return wu_alloc_error;
+				} else if (!load_pal(desc, pal)) {
+					return wu_unexpected_eof;
+				}
+				desc->bits.shared = 0;
+			}
+		}
 	}
-	img->w = w;
-	img->h = h;
 	return wuimg_verify(img);
 }
 

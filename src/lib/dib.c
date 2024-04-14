@@ -351,9 +351,7 @@ uint8_t *buf) {
 	if (!bf) {
 		return wu_alloc_error;
 	}
-	if (bitfield_from_mask(bf, mask, ch, desc->depth, little_endian)) {
-//		img->layout = pix_rgba;
-//		bitfield_reduce(&desc->bf, img);
+	if (bitfield_from_mask(bf, mask, ch, desc->depth)) {
 		return wu_ok;
 	}
 	return wu_invalid_header;

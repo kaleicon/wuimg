@@ -64,7 +64,7 @@ unsigned char header[static 12]) {
 
 		special_transparency_process(buf, colors);
 		struct bitfield bf;
-		bitfield_from_id(&bf, 0x1555, 16, 0);
+		bitfield_from_id(&bf, 0x1555, 16);
 		bitfield_unpack(&bf, pal, buf, colors);
 	}
 	return wu_ok;

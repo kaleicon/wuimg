@@ -329,7 +329,7 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct wuimg *img) {
 			wbuf[i] = endian16(wbuf[i], little_endian) ^ (1 << 15);
 		}
 		struct bitfield bf;
-		bitfield_from_id(&bf, 0x1555, 16, 0);
+		bitfield_from_id(&bf, 0x1555, 16);
 		bitfield_unpack(&bf, pal, wbuf, elems);
 		break;
 	case 24:
