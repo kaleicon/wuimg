@@ -5,8 +5,11 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
-size_t zuceildiv(const size_t x, const size_t y);
+uint32_t uadd8_32(uint32_t x, uint32_t y);
+
+size_t zuceildiv(size_t x, size_t y);
 
 long lmod(long val, long max);
 

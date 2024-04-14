@@ -4,6 +4,7 @@
 
 #include "misc/endian.h"
 #include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/compost.h"
 #include "g00.h"
 
@@ -14,7 +15,6 @@ struct g00_part_loc {
 
 static const size_t G00_BLOCK_SIZE = 5*2 + 41*2;
 static const size_t G00_PART_SIZE = 2*2 + 8*4 + 20*4;
-static const size_t LZSS_PAD = 3 * 8;
 
 void g00_cleanup(struct g00_desc *desc, struct wuimg *img) {
 	switch (desc->version) {
@@ -32,12 +32,21 @@ void g00_cleanup(struct g00_desc *desc, struct wuimg *img) {
 	}
 }
 
+#define ENDSECTION (1 + 3*8)
 static size_t lzss_decomp(uint8_t *restrict dst, const size_t dst_len,
-const uint8_t *restrict src, const size_t src_len, const size_t elem_size,
+const uint8_t *restrict src, size_t src_len, const size_t elem_size,
 const size_t min_run) {
+	uint8_t alt[ENDSECTION*2];
 	size_t d = 0;
 	size_t s = 0;
-	while (d < dst_len && s < src_len - 1) {
+	while (d < dst_len) {
+		if (s + ENDSECTION > src_len) {
+			if (src == alt) {
+				break;
+			}
+			src = mem_bufswitch(src, &s, &src_len, alt,
+				sizeof(alt));
+		}
 		uint8_t flags = src[s];
 		++s;
 		for (int i = 0; i < 8; ++i, flags >>= 1) {
@@ -207,7 +216,7 @@ size_t g00_decode(struct g00_desc *desc, struct wuimg *img) {
 	size_t written = 0;
 	void *dst = malloc(desc->decomp_size);
 	if (dst) {
-		void *src = malloc(desc->comp_size + LZSS_PAD);
+		void *src = malloc(desc->comp_size);
 		if (src) {
 			const size_t read = fread(src, 1, desc->comp_size,
 				desc->ifp);

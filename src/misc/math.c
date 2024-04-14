@@ -2,6 +2,12 @@
 
 #include "misc/math.h"
 
+uint32_t uadd8_32(const uint32_t x, const uint32_t y) {
+	const uint32_t mask = 0x80808080;
+	const uint32_t sum = (x & ~mask) + (y & ~mask);
+	return sum ^ (x & mask) ^ (y & mask);
+}
+
 size_t zuceildiv(const size_t x, const size_t y) {
 	return (x + y - 1) / y;
 }

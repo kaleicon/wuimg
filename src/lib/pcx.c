@@ -15,7 +15,6 @@
 
 /* It's like this format was intelligently designed to be terrible. */
 
-static const size_t RLE_MAX_RUN = 0x3f;
 static const size_t VGA_PAL_LEN = 256*3;
 
 enum pcx_palette_source {
@@ -218,10 +217,10 @@ const unsigned char *restrict rle, const size_t rle_len) {
 		const unsigned char packet = rle[r];
 		++r;
 		if (packet >= mask) {
-			if (r >= rle_len) {
+			const size_t run_len = packet - mask;
+			if (r >= rle_len || d + run_len > dst_len) {
 				break;
 			}
-			const size_t run_len = packet - mask;
 			memset(dst + d, rle[r], run_len);
 			d += run_len;
 			++r;
@@ -236,8 +235,7 @@ const unsigned char *restrict rle, const size_t rle_len) {
 enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 	const size_t dims = strip_length(img->w, img->bitdepth, img->align_sh)
 		* img->channels * img->h;
-	// Add padding to save on a range check.
-	img->data = malloc(dims + RLE_MAX_RUN);
+	img->data = malloc(dims);
 	if (!img->data) {
 		return wu_alloc_error;
 	}

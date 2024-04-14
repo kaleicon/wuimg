@@ -9,16 +9,23 @@
 #include "raster/fmt.h"
 #include "pgx.h"
 
-static const size_t LZSS_PAD = 2 * 8 + 1;
-
+#define MAX_LZSS_READ (2*8 + 1)
 static size_t lzss_decomp(uint8_t *restrict unpack, const size_t unpack_len,
-const uint8_t *restrict pack, const size_t pack_len) {
+const uint8_t *restrict pack, size_t pack_len) {
 	/* Not to be confused with the GML_ARC LZSS algorithm, which requires
 	 * negating the input beforehand. */
 	const uint_fast16_t dict_mask = 0xfff;
 	size_t upos = 0;
 	size_t ppos = 0;
-	while (upos < unpack_len && ppos < pack_len) {
+	uint8_t end[MAX_LZSS_READ*2];
+	while (upos < unpack_len) {
+		if (ppos + MAX_LZSS_READ > pack_len) {
+			if (pack == end) {
+				break;
+			}
+			pack = mem_bufswitch(pack, &ppos, &pack_len, end,
+				sizeof(end));
+		}
 		uint8_t flags = pack[ppos];
 		++ppos;
 		for (size_t i = 0; i < 8; ++i, flags >>= 1) {
@@ -55,7 +62,7 @@ const uint8_t *restrict pack, const size_t pack_len) {
 size_t pgx_decode(const struct pgx_desc *desc, struct wuimg *img) {
 	size_t written = 0;
 	if (wuimg_alloc_noverify(img)) {
-		uint8_t *comp = malloc(desc->comp_size + LZSS_PAD);
+		uint8_t *comp = malloc(desc->comp_size);
 		if (comp) {
 			const size_t read = file_tail(comp, 1, desc->comp_size,
 				desc->ifp);

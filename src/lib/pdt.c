@@ -18,17 +18,25 @@ const char * pdt_version_str(const enum pdt_version version) {
 	return "???";
 }
 
+#define MAX_LZSS_READ (3*8 + 1)
 static inline size_t base_lzss(uint8_t *restrict dst, const size_t dst_len,
-const uint8_t *restrict src, const size_t src_len, const uint8_t ch,
+const uint8_t *restrict src, size_t src_len, const uint8_t ch,
 const uint32_t *off_table) {
 	size_t d = 0;
 	size_t s = 0;
+	uint8_t end[MAX_LZSS_READ * 2];
 	while (d < dst_len && s < src_len) {
+		if (s + MAX_LZSS_READ > src_len) {
+			if (src == end) {
+				break;
+			}
+			src = mem_bufswitch(src, &s, &src_len, end, sizeof(end));
+		}
 		int flags = src[s];
 		++s;
 		for (int i = 0; i < 8; ++i, flags <<= 1) {
 			if (flags & 0x80) {
-				if (src_len - s < ch || dst_len - d < ch) {
+				if (dst_len - d < ch) {
 					return d;
 				}
 				memcpy(dst + d, src + s, ch);
@@ -37,9 +45,6 @@ const uint32_t *off_table) {
 			} else {
 				size_t cnt, offset;
 				if (off_table) {
-					if (s >= src_len) {
-						return d;
-					}
 					const uint8_t tmp = src[s];
 					++s;
 					cnt = (tmp >> 4) + 2;
@@ -49,9 +54,6 @@ const uint32_t *off_table) {
 					offset = off_table[tmp & 0x0f];
 					memrepeat_or_zero(dst, d, offset, cnt);
 				} else {
-					if (src_len - s < 2) {
-						return d;
-					}
 					if (ch == 3) {
 						const size_t tmp = buf_endian16(
 							src + s, little_endian);
@@ -88,9 +90,8 @@ static size_t pal_decode(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len) {
 	uint32_t offs[0x10];
 	if (src_len > sizeof(offs)) {
-		memcpy(offs, src, sizeof(offs));
-		endian_loop32(offs, little_endian, ARRAY_LEN(offs));
 		for (size_t k = 0; k < ARRAY_LEN(offs); ++k) {
+			offs[k] = buf_endian32(src + k*4, little_endian);
 			if (!offs[k]) {
 				return 0;
 			}

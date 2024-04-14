@@ -4,6 +4,7 @@
 #include <zlib.h>
 
 #include "misc/bit.h"
+#include "misc/math.h"
 #include "raster/fmt.h"
 #include "hg3.h"
 
@@ -64,14 +65,11 @@ const size_t limit) {
 			++pos;
 		}
 
-		const uint32_t mask = 0x80808080;
 		uint32_t *dword = (uint32_t *)bytes;
 		size_t dpos = pos/4;
 		while (dpos < limit/4) {
-			const uint32_t d = dword[dpos];
-			const uint32_t s = dword[dpos - diff/4];
-			const uint32_t sum = (d & ~mask) + (s & ~mask);
-			dword[dpos] = sum ^ (d & mask) ^ (s & mask);
+			dword[dpos] = uadd8_32(dword[dpos],
+				dword[dpos - diff/4]);
 			++dpos;
 		}
 		pos = dpos*4;

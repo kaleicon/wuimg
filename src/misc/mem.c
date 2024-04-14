@@ -5,6 +5,16 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 
+uint8_t * mem_bufswitch(const uint8_t *restrict orig, size_t *restrict pos,
+size_t *restrict len, uint8_t *restrict alt, const size_t alt_len) {
+	const size_t diff = *len - *pos;
+	memcpy(alt, orig + *pos, diff);
+	memset(alt + diff, 0, alt_len - diff);
+	*pos = 0;
+	*len = alt_len;
+	return alt;
+}
+
 uint8_t memcycle(uint8_t *dst, const size_t pos) {
 	const uint8_t val = dst[pos];
 	memmove(dst + 1, dst, pos);

@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+uint8_t * mem_bufswitch(const uint8_t *restrict orig, size_t *restrict pos,
+size_t *restrict len, uint8_t *restrict alt, size_t alt_len);
+
 uint8_t memcycle(uint8_t *dst, size_t pos);
 
 void memtessel(void *restrict dst, const void *restrict src, size_t size,

@@ -29,6 +29,9 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 		}
 		++r;
 		if (packet & 0x80) {
+			if (r + len > rle_limit) {
+				return;
+			}
 			for (uint16_t i = 0; i < len; ++i) {
 				output[o] = endian16(rle[r], big_endian);
 				++o;
@@ -57,6 +60,9 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 		}
 		++r;
 		if (packet & 0x80) {
+			if (r + len > rle_limit) {
+				return;
+			}
 			memcpy(output + o, rle + r, len);
 			o += len;
 			r += len;
@@ -93,6 +99,8 @@ static bool check_offsets(struct rle_info *rle, const uint8_t bytedepth) {
 		if (len < min_len) {
 			return false;
 		} else if (offset > UINT32_MAX - len || offset + len > rle->total) {
+			return false;
+		} else if (offset % bytedepth || len % bytedepth) {
 			return false;
 		}
 		rle->row_offset[i] = offset/bytedepth;
@@ -135,8 +143,7 @@ static size_t rle_decode(const struct sgi_desc *desc, struct wuimg *img) {
 	if (rle.total) {
 		/* Just load the whole file so we don't have to subtract
 		 * offsets and all that jazz. */
-		const size_t padding = RLE_LEN_MASK * desc->bytedepth;
-		rle.buf = malloc(rle.total + padding);
+		rle.buf = malloc(rle.total);
 
 		if (rle.buf) {
 			fseek(desc->ifp, 0, SEEK_SET);

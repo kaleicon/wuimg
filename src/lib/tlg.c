@@ -5,6 +5,7 @@
 #include "tlg.h"
 #include "misc/endian.h"
 #include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/strip.h"
 
 struct dict {
@@ -20,50 +21,84 @@ const char * tlg_version_str(const enum tlg_version ver) {
 	return "???";
 }
 
-static size_t pixel_correlate(uint8_t *dst, const size_t w, const uint8_t ch,
-size_t y, const size_t y_limit) {
-	const size_t stride = w * ch;
+static size_t correlate4(uint32_t *dst, const size_t w, size_t y,
+const size_t y_limit) {
 	while (y < y_limit) {
-		uint8_t row_acc[4] = {0};
+		uint32_t row_acc = 0;
 		for (size_t x = 0; x < w; ++x) {
-			uint8_t *pix = dst + stride*y + x*ch;
-			pix[0] += pix[1];
-			pix[2] += pix[1];
-			for (uint8_t z = 0; z < ch; ++z) {
-				row_acc[z] += pix[z];
-				pix[z] = row_acc[z];
-				if (y) {
-					pix[z] += pix[z - (long)stride];
-				}
+			const size_t pos = w*y + x;
+			uint32_t pix = dst[pos];
+			uint32_t green;
+			if (which_end() == little_endian) {
+				green = ((pix >> 8) & 0xff) * 0x10001;
+			} else {
+				green = ((pix >> 16) & 0xff) * 0x1000100;
 			}
+			row_acc = uadd8_32(row_acc, uadd8_32(pix, green));
+			pix = uadd8_32(row_acc, y ? dst[pos - w] : 0);
+			dst[pos] = pix;
 		}
 		++y;
 	}
 	return y;
 }
 
+static size_t correlate3(uint8_t *dst, const size_t w, size_t y,
+const size_t y_limit) {
+	const uint8_t ch = 3;
+	const size_t stride = w * ch;
+	while (y < y_limit) {
+		uint32_t row_acc = 0;
+		for (size_t x = 0; x < w; ++x) {
+			const size_t d = stride*y + x*ch;
+			uint32_t pix = dst[d] << 16 | dst[d+1] << 8 | dst[d+2];
+			const uint32_t green = dst[d+1] * 0x10001;
+			row_acc = uadd8_32(row_acc, uadd8_32(pix, green));
+			const size_t dw = d - w;
+			pix = uadd8_32(row_acc, y
+				? dst[dw] << 16 | dst[dw+1] << 8 | dst[dw+2]
+				: 0);
+			dst[d] = (uint8_t)(pix >> 16);
+			dst[d+1] = (uint8_t)(pix >> 8);
+			dst[d+2] = (uint8_t)pix;
+		}
+		++y;
+	}
+	return y;
+}
+
+static size_t pixel_correlate(uint8_t *dst, const size_t w, size_t y,
+const size_t y_limit, const uint8_t ch) {
+	return (ch == 4)
+		? correlate4((uint32_t *)dst, w, y, y_limit)
+		: correlate3(dst, w, y, y_limit);
+}
+
+#define MAX_LZSS_READ (3*8 + 1)
 static void lzss_decomp_spread(uint8_t *restrict dst, const size_t dst_len,
-const uint8_t *restrict src, const size_t src_len, struct dict *dict,
+const uint8_t *restrict src, size_t src_len, struct dict *dict,
 const uint8_t ch) {
 	const uint16_t dict_mask = 0xfff;
 	size_t d = 0;
 	size_t s = 0;
-	while (d < dst_len && s < src_len) {
+	uint8_t end[MAX_LZSS_READ * 2];
+	while (d < dst_len) {
+		if (s + MAX_LZSS_READ > src_len) {
+			if (src == end) {
+				break;
+			}
+			src = mem_bufswitch(src, &s, &src_len, end,
+				sizeof(end));
+		}
 		uint8_t flags = src[s];
 		++s;
 		for (int i = 0; i < 8; ++i, flags >>= 1) {
 			if (flags & 1) {
-				if (s + 2 > src_len) {
-					return;
-				}
 				const uint16_t off_len = buf_endian16(src + s, little_endian);
 				s += 2;
 
 				uint16_t count = (off_len >> 12) + 3;
 				if (count == 0x12) {
-					if (s >= src_len) {
-						return;
-					}
 					count += src[s];
 					++s;
 				}
@@ -79,7 +114,7 @@ const uint8_t ch) {
 					++d;
 				}
 			} else {
-				if (d >= dst_len || s >= src_len) {
+				if (d >= dst_len) {
 					return;
 				}
 				dst[d*ch] = src[s];
@@ -132,8 +167,8 @@ struct dict *dict, struct mparser *mp) {
 					block.ptr, block.len, dict, img->channels);
 			}
 		}
-		y = pixel_correlate(img->data, img->w, img->channels, y,
-			y + strip_height);
+		y = pixel_correlate(img->data, img->w, y, y + strip_height,
+			img->channels);
 	} while (y < img->h);
 	return img->h;
 }
