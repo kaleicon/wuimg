@@ -68,7 +68,7 @@ static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
 static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
 	const JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
 	JxlColorEncoding enc;
-	if (JxlDecoderGetColorAsEncodedProfile(jd, NULL, target, &enc)
+	if (JxlDecoderGetColorAsEncodedProfile(jd, target, &enc)
 	== JXL_DEC_SUCCESS) {
 		switch (enc.color_space) {
 		case JXL_COLOR_SPACE_RGB:
@@ -97,11 +97,11 @@ static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
 	}
 
 	size_t icc_size;
-	if (JxlDecoderGetICCProfileSize(jd, NULL, target, &icc_size)
+	if (JxlDecoderGetICCProfileSize(jd, target, &icc_size)
 	== JXL_DEC_SUCCESS) {
 		void *icc = malloc(icc_size);
 		if (icc) {
-			if (JxlDecoderGetColorAsICCProfile(jd, NULL, target,
+			if (JxlDecoderGetColorAsICCProfile(jd, target,
 			icc, icc_size) == JXL_DEC_SUCCESS) {
 				color_space_set_icc_owned(&img->cs, icc,
 					icc_size);
