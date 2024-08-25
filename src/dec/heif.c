@@ -308,7 +308,7 @@ const enum image_event ev) {
 static enum wu_error heif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct heif_state *ds = calloc(sizeof(*ds), 1);
+	struct heif_state *ds = calloc(1, sizeof(*ds));
 	if (!ds) {
 		return wu_alloc_error;
 	}
@@ -330,8 +330,8 @@ const struct wu_conf *wuconf) {
 
 	struct wuimg *img = alloc_sub_images(infile,
 		(size_t)heif_context_get_number_of_top_level_images(ds->ctx));
-	ds->hids = malloc(sizeof(*ds->hids) * infile->nr);
-	ds->himgs = calloc(sizeof(*ds->himgs), infile->nr);
+	ds->hids = malloc(infile->nr * sizeof(*ds->hids));
+	ds->himgs = calloc(infile->nr, sizeof(*ds->himgs));
 	if (!img || !ds->hids || !ds->himgs) {
 		return wu_alloc_error;
 	}

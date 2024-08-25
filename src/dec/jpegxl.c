@@ -304,7 +304,7 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 static enum wu_error jpegxl_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	enum wu_error err = wu_alloc_error;
-	struct jpegxl_state *ds = calloc(sizeof(*ds), 1);
+	struct jpegxl_state *ds = calloc(1, sizeof(*ds));
 	if (ds) {
 		ds->jd = JxlDecoderCreate(NULL);
 		if (ds->jd) {
