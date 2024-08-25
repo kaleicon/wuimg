@@ -109,6 +109,7 @@ const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx) {
 	}
 	switch (avif->yuvChromaSamplePosition) {
 	case AVIF_CHROMA_SAMPLE_POSITION_UNKNOWN:
+	case AVIF_CHROMA_SAMPLE_POSITION_RESERVED:
 		break;
 	case AVIF_CHROMA_SAMPLE_POSITION_VERTICAL:
 		wuimg_plane_position(img, -1, 0);
