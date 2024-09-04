@@ -479,6 +479,10 @@ static struct fmt_ext ext_map[] = {
 	{"px", fmt_px},
 #endif
 
+#ifdef WU_ENABLE_Q4
+	{"q4", fmt_q4},
+#endif
+
 #ifdef WU_ENABLE_QOI
 	{"qoi", -1},
 #endif

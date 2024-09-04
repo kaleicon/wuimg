@@ -24,6 +24,7 @@ fmt_map = {
 		'pnm',
 		'prt',
 		'px',
+		'q4',
 		'qoi',
 		'sgi',
 		'sixel',

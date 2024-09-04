@@ -109,6 +109,10 @@ WUDEC(prt)
 WUDEC(px)
 #endif
 
+#ifdef WU_ENABLE_Q4
+WUDEC(q4)
+#endif
+
 #ifdef WU_ENABLE_QOI
 WUDEC(qoi)
 #endif
