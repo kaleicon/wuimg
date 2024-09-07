@@ -577,19 +577,22 @@ static double primary_z(const struct color_xy xy) {
 	return 1.0 - (xy.x + xy.y);
 }
 
+static void set_primaries_stride(double *vec, const struct color_xy xy,
+const size_t stride) {
+	vec[0] = xy.x;
+	vec[stride] = xy.y;
+	vec[stride*2] = primary_z(xy);
+}
+
 static void mat3_set_primaries(struct mat3 *out,
-const struct color_xy rgb[static 3]) {
-	for (size_t x = 0; x < 3; ++x) {
-		out->m[x] = rgb[x].x;
-		out->m[3+x] = rgb[x].y;
-		out->m[3*2+x] = primary_z(rgb[x]);
-	}
+const struct color_primaries *p) {
+	set_primaries_stride(out->m, p->r, 3);
+	set_primaries_stride(out->m+1, p->g, 3);
+	set_primaries_stride(out->m+2, p->b, 3);
 }
 
 static void vec3_set_primaries(double vec[static 3], const struct color_xy xy) {
-	vec[0] = xy.x;
-	vec[1] = xy.y;
-	vec[2] = primary_z(xy);
+	set_primaries_stride(vec, xy, 1);
 }
 
 static bool kb_kr_from_chroma(double *restrict kb, double *restrict kr,
@@ -633,7 +636,8 @@ const struct color_space *cs) {
 
 static bool gen_mat(struct mat3 *in, double off[static 3],
 const struct color_space *cs, const bool assume_yuv) {
-	double b, r;
+	double b = 0;
+	double r = 0;
 	switch (cs->matrix) {
 	case cicp_matrix_rgb:
 		gen_mat_simple(in, off, cs->limited, simple_mat_rgb);
@@ -730,7 +734,7 @@ static bool set_eotf(const struct color_space *cs, struct color_transfer *eotf) 
 }
 
 static void rgb_to_XYZ(struct mat3 *out, const struct color_primaries *pri) {
-	mat3_set_primaries(out, &pri->r);
+	mat3_set_primaries(out, pri);
 
 	struct mat3 inv;
 	mat3_invert(&inv, out);

@@ -301,11 +301,11 @@ size_t src_len, const uint8_t quant_size, const size_t stride) {
 	size_t d = quant_size;
 	size_t bitpos = 0;
 
-	struct wpx_transcriptor ts;
+	struct wpx_transcriptor ts = {0};
 	if (!init_transcriptor(&ts, section->fmt, quant_size, stride)) {
 		return 0;
 	}
-	struct wpx_retriever rt;
+	struct wpx_retriever rt = {0};
 	if (!init_retriever(&rt, section->fmt, src, &bitpos, src_len)) {
 		return 0;
 	}
