@@ -186,8 +186,8 @@ const uint8_t ch, int x, int y, const int w, const int limit, uint8_t *mask) {
 		}
 		bitstrm_seek(bs, read);
 		++y;
-		const int dst = y * w + iclamp(x, 0, w);
-		if (dst >= limit) {
+		const int dst = y * w + x;
+		if (dst < 0 || dst >= limit) {
 			return;
 		}
 		memcpy(ptr + dst*ch, ptr + src*ch, ch);
@@ -231,12 +231,25 @@ uint8_t *mask, struct pic_cache *cache) {
 		}
 	}
 
-	for (int i = 0, src = 0; i < limit; ++i) {
-		const bool set = (mask[i/8] >> (i%8)) & 1;
-		if (set) {
-			src = i;
+	int i = 0;
+	int src = 0;
+	while (i < limit && !mask[i/8]) {
+		i += 8;
+	}
+	while (i < limit) {
+		if (mask[i/8] || i + 8 > limit) {
+			for (int b = 0; b < 8 && i < limit; ++b) {
+				const bool set = (mask[i/8] >> (i%8)) & 1;
+				if (set) {
+					src = i;
+				} else {
+					memcpy(dst + i*ch, dst + src*ch, ch);
+				}
+				++i;
+			}
 		} else {
-			memcpy(dst + i*ch, dst + src*ch, ch);
+			memwordset(dst + i*ch, dst + src*ch, ch, 8);
+			i += 8;
 		}
 	}
 	return true;
@@ -459,6 +472,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		}
 		desc->tiled = desc->mode & 0x02;
 		if (desc->tiled) {
+			// Two 332-encoded pixels are packed into a 16bit word
 			if (bd != 16) {
 				return wu_invalid_header;
 			}
