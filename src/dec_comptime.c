@@ -123,6 +123,10 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff", "PIC", fmt_pic},
 #endif // WU_ENABLE_PIC
 
+#ifdef WU_ENABLE_PIC2
+	{"\xff\xff\xff", "P2DT", fmt_pic2},
+#endif // WU_ENABLE_PIC2
+
 #ifdef WU_ENABLE_PICTOR
 	{"\xff\xff", "\x34\x12", fmt_pictor},
 #endif // WU_ENABLE_PICTOR
@@ -449,8 +453,8 @@ static struct fmt_ext ext_map[] = {
 	{"pc3", fmt_degas},
 #endif
 
-#ifdef WU_ENABLE_PIC
-	{"jpc", -1},
+#ifdef WU_ENABLE_PIC2
+	{"p2", -1},
 #endif
 
 #if defined WU_ENABLE_PIC || defined WU_ENABLE_PICTOR

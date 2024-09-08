@@ -93,6 +93,10 @@ WUDEC(degas)
 WUDEC(pic)
 #endif
 
+#ifdef WU_ENABLE_PIC2
+WUDEC(pic2)
+#endif
+
 #ifdef WU_ENABLE_PICTOR
 WUDEC(pictor)
 #endif

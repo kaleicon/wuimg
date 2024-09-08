@@ -20,6 +20,7 @@ fmt_map = {
 		'pgx',
 		'pi',
 		'pic',
+		'pic2',
 		'pictor',
 		'pnm',
 		'prt',
