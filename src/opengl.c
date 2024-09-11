@@ -1040,8 +1040,8 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform vec2[8] " UNI_POSITIONING ";"
 
 		"void gen_check_pattern() {"
-			"vec2 d = floor(texcoord / fwidth(texcoord) * vec2(1/16.));"
-			"float bg = fract(dot(d, vec2(.5))) * .5 + .5;"
+			"ivec2 d = ivec2(gl_FragCoord.xy);"
+			"float bg = bool((d.x ^ d.y) & 16) ? .75 : .5;"
 			"color.rgb += vec3(bg - bg * color.a);"
 		"}"
 
