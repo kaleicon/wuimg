@@ -50,6 +50,7 @@ struct image_file {
 
 	bool keep_file;
 	bool keep_map;
+	bool stat;
 	void *restrict dec_state; // Used by decoder for callbacks
 
 	struct wustr errors;

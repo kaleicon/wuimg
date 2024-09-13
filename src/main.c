@@ -100,7 +100,7 @@ const struct write_args *args) {
 	if (!strcmp("-", entries->name[0])) {
 		FILE *stdin_cpy = save_stdin();
 		if (stdin_cpy) {
-			dec_src_file(&image, stdin_cpy, "stdin", false);
+			dec_src_file(&image, stdin_cpy, "stdin", false, false);
 		} else {
 			term_line_put("Failed to save stdin", stderr);
 			status = wu_open_error;
@@ -121,9 +121,14 @@ const struct write_args *args) {
 }
 
 static enum wu_error test_with(const struct file_list *entries,
-const struct test_mode_args args) {
-	printf("Testing %u times with %u extra runs for warmup.\n\n",
-		args.iters, args.warmup);
+struct test_mode_args args) {
+	if (args.metadata) {
+		args.warmup = 1;
+		args.iters = 0;
+	} else {
+		printf("Testing %u times with %u extra runs for warmup.\n\n",
+			args.iters, args.warmup);
+	}
 
 	struct image_context image = {
 		.conf = conv_conf(conf_load()),
@@ -133,46 +138,40 @@ const struct test_mode_args args) {
 	size_t failures = 0;
 	watch_t grand_total = 0;
 	for (size_t i = 0; i < entries->nr; ++i) {
-		watch_t watch = 0;
-		const unsigned its = args.warmup + args.iters;
+		watch_t taken = 0;
+		const unsigned it = args.warmup + args.iters;
 
 		result = wu_ok;
-		for (unsigned int j = 0; j < its && result == wu_ok; ++j) {
-			if (j == args.warmup) {
-				watch = watch_look();
-			}
-
+		for (unsigned j = 0; j < it && result == wu_ok; ++j) {
 			image_reset(&image);
 			dec_src_filename(&image, entries->name[i]);
+			const watch_t watch = watch_look();
 			do {
 				struct wuimg *img;
 				result = dec_iter(&image, &img);
 			} while (result == wu_ok);
-
-			switch (result) {
-			case wu_no_change:
+			if (result == wu_no_change) {
 				result = wu_ok;
-				// fallthrough
-			case wu_ok:
-				if (args.metadata && j == 0) {
-					putchar('\n');
+				if (args.metadata) {
 					image_file_print(&image.file, 3, true);
+				} else {
+					taken += watch_elapsed(watch) * (j >= args.warmup);
 				}
-				break;
-			default: break;
 			}
 			dec_free_image(&image);
 		}
 
 		if (result == wu_ok) {
-			const watch_t taken = watch_elapsed(watch);
-			grand_total += taken;
-			printf("Average: %" PRIu64 " ", taken / args.iters);
+			if (args.iters) {
+				grand_total += taken;
+				printf("Average: %" PRIu64 " %s\n",
+					taken / args.iters, entries->name[i]);
+			}
 		} else {
-			printf("Error: %s ", wu_error_message(result));
+			printf("Error in %s: %s\n", entries->name[i],
+				wu_error_message(result));
 			++failures;
 		}
-		puts(entries->name[i]);
 	}
 	putchar('\n');
 
@@ -212,7 +211,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 			iter.seen_it_all ? "" : "?", archive_name, iter.name);
 
 		image_reset(image);
-		dec_src_file(image, iter.cur, iter.name, true);
+		dec_src_file(image, iter.cur, iter.name, true, true);
 		result = display_loop(&window, true, false);
 		dec_free_image(image);
 		putchar('\n');
@@ -259,7 +258,7 @@ const bool interpret_stdin) {
 			}
 			if (stdin_tmp) {
 				rewind(stdin_tmp);
-				dec_src_file(image, stdin_tmp, name, true);
+				dec_src_file(image, stdin_tmp, name, true, false);
 			} else {
 				free_entry = true;
 			}
@@ -297,18 +296,22 @@ const bool interpret_stdin) {
 
 static enum wu_error from_argv(const size_t argc, char **argv,
 const struct program_mode *mode) {
-	struct file_list entries = {
-		.dynamic = false,
-		.nr = argc,
-		.name = argv,
-	};
+	if (argc) {
+		struct file_list entries = {
+			.dynamic = false,
+			.nr = argc,
+			.name = argv,
+		};
 
-	switch (mode->type) {
-	case test: return test_with(&entries, mode->arg.test);
-	case writeout: return convert_files(&entries, &mode->arg.write);
-	default: break;
+		switch (mode->type) {
+		case test: return test_with(&entries, mode->arg.test);
+		case writeout: return convert_files(&entries, &mode->arg.write);
+		default: break;
+		}
+		return run_with_list(&entries, 0, true);
 	}
-	return run_with_list(&entries, 0, true);
+	term_line_put("ERROR: No files given", stderr);
+	return 1;
 }
 
 static enum wu_error from_path(const char *name) {
@@ -391,7 +394,7 @@ static void print_help(void) {
 		"\t\twritten to stdout one per line.\n"
 
 		"\t" TEST_MODE " [switches]\n"
-		"\t\tMeasure decoding time for each FILE.\n"
+		"\t\tTry decoding each FILE, while measuring the elapsed time.\n"
 
 		"\n"
 		WRITE_MODE " switches:\n"
@@ -405,18 +408,18 @@ static void print_help(void) {
 		"\t\tWrite only the initial sub-image to stdout.\n"
 
 		"\t-z\n"
-		"\t\tUse null as line terminator for output filenames.\n"
+		"\t\tUse null as line terminator when printing filenames.\n"
 
 		"\n"
 		TEST_MODE " switches:\n"
-		"\t-t N\n"
+		"\t-n N\n"
 		"\t\tDecode each file N times. Default is 1.\n"
 
 		"\t-w N\n"
 		"\t\tDecode N times for warmup before measuring. Default is 0\n"
 
 		"\t-m\n"
-		"\t\tPrint full metadata for each file."
+		"\t\tPrint full metadata for each file. Decode only once."
 	);
 }
 
@@ -426,12 +429,13 @@ static int test_args(const int argc, char **argv, struct test_mode_args *args) {
 		.warmup = 0,
 	};
 	int read = 0;
-	while (read < argc - 1) {
+	while (read < argc) {
 		unsigned int *ptr;
 		switch (short_opt(argv[read])) {
-		case 't': ptr = &args->iters; break;
+		case 'n': ptr = &args->iters; break;
 		case 'w': ptr = &args->warmup; break;
 		case 'm': args->metadata = true; ++read; continue;
+		case 'h': return -1;
 		default: return read;
 		}
 
@@ -475,18 +479,24 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 		}
 
 		++read;
+		int r = 0;
 		switch (mode->type) {
 		case test:
-			read += test_args(argc - read, argv + read,
+			r = test_args(argc - read, argv + read,
 				&mode->arg.test);
 			break;
 		case writeout:
-			read += write_args(argc - read, argv + read,
+			r = write_args(argc - read, argv + read,
 				&mode->arg.write);
 			break;
 		default:
 			break;
 		}
+		if (r < 0) {
+			mode->type = help;
+			return 0;
+		}
+		read += r;
 	}
 	return read;
 }

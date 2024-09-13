@@ -141,6 +141,7 @@ def conv_file(cmd):
 def generate_images(args):
 	outpath = args.image.rpartition(".")[0]
 	if args.outdir:
+		os.makedirs(args.outdir, exist_ok=True)
 		outpath = os.path.join(args.outdir, os.path.basename(outpath))
 
 	def get_cmds(items):

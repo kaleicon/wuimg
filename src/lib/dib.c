@@ -490,6 +490,8 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 		if (desc->type < dib_info_header || (depth != 16 && depth != 32)) {
 			return wu_invalid_header;
 		}
+		img->channels = 1;
+		img->bitdepth = (unsigned char)depth;
 		break;
 	default:
 		return wu_invalid_header;
@@ -749,9 +751,10 @@ struct wuimg *img) {
 		break;
 	case dib_no_compression:
 		desc->size = size;
-		/* Depths 16 and 32 have padding bits that some images use as
-		 * alpha. However, images that follow the spec will have them
-		 * set to zero, and display as an empty image. */
+		/* Depths 16 and 32 have padding bits that some encoders use as
+		 * alpha. However, encoders that actually follow the spec will
+		 * have left them unset, which would then display as a empty
+		 * image. Hence, this. */
 		img->alpha = alpha_ignore;
 		break;
 	case dib_8bit_rle:

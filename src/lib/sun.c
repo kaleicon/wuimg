@@ -131,9 +131,7 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 
 	switch (bitdepth) {
 	case 1: case 4:
-		if (!cm_type) {
-			img->attr = pix_inverted;
-		}
+		img->attr = cm_type ? pix_normal : pix_inverted;
 		break;
 	case 8:
 		break;

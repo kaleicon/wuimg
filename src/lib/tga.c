@@ -407,7 +407,7 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 	const bool h_flip = img_desc & 0x10;
 	const bool v_flip = img_desc & 0x20;
 	img->rotate ^= h_flip << 1;
-	img->mirror = (h_flip ^ v_flip ^ 1) & 1;
+	img->mirror = (h_flip ^ v_flip ^ 1);
 
 	switch (depth) {
 	case 8:

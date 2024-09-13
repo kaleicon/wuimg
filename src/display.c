@@ -117,9 +117,9 @@ const enum image_event evs, const bool allow_cycle) {
 
 	for (bool print_time = true;; print_time = !state->anim_playing) {
 		event->image = ev_time;
-		const double ellapsed = draw_rest_poll(window, print_time);
+		const double elapsed = draw_rest_poll(window, print_time);
 		if (state->anim_playing && window->pub.win.focused) {
-			state->time += (float)ellapsed;
+			state->time += (float)elapsed;
 			if (state->time >= next_frame && image_frame_cycle(image, 1)) {
 				event->image = ev_frame;
 			}

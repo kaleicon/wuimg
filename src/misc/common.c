@@ -23,6 +23,7 @@ void rfc3339_format(time_t t, FILE *out) {
 	const long days_in_cycle = 365*400 + 97;
 	const long days_in_century = 365*100 + 24;
 	const long days_in_four_years = 365*4 + 1;
+	const long days_in_a_year = 365;
 
 	long greg_cycles = days / days_in_cycle;
 	days = days % days_in_cycle;
@@ -43,11 +44,11 @@ void rfc3339_format(time_t t, FILE *out) {
 	}
 	days -= leaps * days_in_four_years;
 
-	long years = days / 365;
+	long years = days / days_in_a_year;
 	if (years == 4) {
 		--years;
 	}
-	days -= years * 365;
+	days -= years * days_in_a_year;
 	years += 4*leaps + 100*centuries + 400*greg_cycles;
 
 	const unsigned char month_days[] = {

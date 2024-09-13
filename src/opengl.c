@@ -1112,7 +1112,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 				"}"
 			"}"
 
-			"color.rgb = (" UNI_MAT_NONLINEAR "* vec4(color.rgb, 1.0)).rgb;"
+			"color.rgb = (" UNI_MAT_NONLINEAR "* vec4(color.rgb, 1.0));"
 			"if (" UNI_MODE_CMS "==" CMS_LUT ") {"
 				"color.rgb = texture("
 					UNI_CMS_LUT ", color.rgb).rgb;"

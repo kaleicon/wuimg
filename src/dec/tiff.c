@@ -321,8 +321,12 @@ static bool check_support(const struct tiff_info *info) {
 	switch (info->photometric) {
 	case PHOTOMETRIC_MINISWHITE:
 	case PHOTOMETRIC_MINISBLACK:
-	case PHOTOMETRIC_MASK:
 		if (info->spp > 2) {
+			return false;
+		}
+		break;
+	case PHOTOMETRIC_MASK:
+		if (info->spp != 1 || info->bps != 1) {
 			return false;
 		}
 		break;

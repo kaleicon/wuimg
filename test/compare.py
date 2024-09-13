@@ -30,7 +30,7 @@ def run_compare_ffmpeg(infile, wu):
 		return "Decoding error"
 	elif ff.returncode != 0:
 		return "Comparison error (not supported?)"
-	pat = b"lavfi\.msad\.msad_avg=([0-9.]+)"
+	pat = b"lavfi.msad.msad_avg=([0-9.]+)"
 	m = re.search(pat, stdout)
 	if m:
 		return float(m.group(1))

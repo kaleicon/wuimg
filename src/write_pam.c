@@ -238,6 +238,7 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 		case 'f': args->overwrite = true; break;
 		case 's': args->stdout = true; break;
 		case 'z': args->null = true; break;
+		case 'h': return -1;
 		default:
 			return idx;
 		}

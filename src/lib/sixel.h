@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: 0BSD
+#ifndef LIB_SIXEL
+#define LIB_SIXEL
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -25,3 +27,5 @@ struct wuimg *img);
 
 enum wu_error sixel_open_mem(struct sixel_desc *desc,
 const struct map_info *map);
+
+#endif // LIB_SIXEL

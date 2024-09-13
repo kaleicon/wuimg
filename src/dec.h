@@ -25,7 +25,7 @@ void dec_src_mem(struct image_context *image, struct wuptr data,
 const char *name, const struct image_fn *fn);
 
 void dec_src_file(struct image_context *image, FILE *ifp, const char *name,
-bool keep_file);
+bool keep_file, bool stat_file);
 
 void dec_src_filename(struct image_context *image, const char *filename);
 

@@ -148,11 +148,11 @@ const struct fmt_desc *fmt, const int fd) {
 	}
 
 	struct stat sb;
-	if (fstat(fd, &sb) != 0) {
+	if (fstat(fd, &sb)) {
 		return wu_ok;
 	}
 
-	struct wu_tree *fdmeta = tree_add_branch(metadata, "Stats");
+	struct wu_tree *fdmeta = tree_add_branch(metadata, "Stat");
 	if (!fdmeta) {
 		return wu_alloc_error;
 	}
@@ -164,7 +164,7 @@ const struct fmt_desc *fmt, const int fd) {
 		{"Last status change", {wu_leaf_time,
 			{.time = sb.st_ctim.tv_sec}}},
 	};
-	tree_bud_leaves(fdmeta, sap, ARRAY_LEN(sap));
+	tree_bud_leaves(fdmeta, sap, infile->stat ? ARRAY_LEN(sap) : 1);
 	return wu_ok;
 }
 
@@ -294,14 +294,16 @@ const char *name, const struct image_fn *fn) {
 }
 
 void dec_src_file(struct image_context *image, FILE *ifp, const char *name,
-const bool keep_file) {
+const bool keep_file, const bool stat_file) {
 	image->name = name;
 	image->file.ifp = ifp;
 	image->file.keep_file = keep_file;
+	image->file.stat = stat_file;
 }
 
 void dec_src_filename(struct image_context *image, const char *filename) {
 	image->name = filename;
+	image->file.stat = true;
 }
 
 

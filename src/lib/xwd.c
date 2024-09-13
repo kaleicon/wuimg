@@ -179,11 +179,11 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		if (depth > bpp) {
 			return wu_invalid_header;
 		}
-		img->channels = 1;
-		img->bitdepth = (uint8_t)bpp;
 		if (paletted) {
 			img->attr = pix_normal;
-			wuimg_palette_init(img);
+			if (!wuimg_palette_init(img)) {
+				return wu_alloc_error;
+			}
 		} else {
 			img->used_bits = (uint8_t)depth;
 		}
@@ -197,19 +197,13 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 			case 15: case 16: break;
 			default: return wu_invalid_header;
 			}
-			img->channels = 1;
-			img->bitdepth = 16;
 			break;
 		case 24:
 			if (bpp != depth) {
 				return wu_invalid_header;
 			}
-			img->channels = 3;
-			img->bitdepth = 8;
 			break;
 		case 32:
-			img->channels = 4;
-			img->bitdepth = 8;
 			switch (depth) {
 			case 24: case 32: break;
 			default: return wu_invalid_header;
@@ -218,7 +212,6 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		default:
 			return wu_invalid_header;
 		}
-
 		struct bitfield *bf = wuimg_bitfield_init(img);
 		if (!bf) {
 			return wu_alloc_error;
@@ -231,6 +224,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 	desc->bpp = (uint8_t)bpp;
 	desc->depth = (uint8_t)depth;
 	desc->visual = visual_class;
+	img->bitdepth = desc->bpp;
 	img->alpha = alpha_ignore;
 	return wu_ok;
 }
@@ -271,6 +265,7 @@ enum wu_error xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	endian_loop32(header, big_endian, ARRAY_LEN(header));
 	img->w = header[2];
 	img->h = header[3];
+	img->channels = 1;
 	enum wu_error st = validate_header(desc, img, header[0],
 		header[1], header[4], header[5], header[6], header[7],
 		header[8], header[9], header[11], header + 12);

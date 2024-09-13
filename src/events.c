@@ -171,8 +171,8 @@ static double key_events(struct window_context *window) {
 	struct window_keymap *held_keys = &window->pub.held_keys;
 	const bool shift = held_keys->shift;
 
-	const double ellapsed = window_timer_update(&window->pub);
-	float msecs = (float)(fmax(ellapsed, 1.0/1000) * 1000);
+	const double elapsed = window_timer_update(&window->pub);
+	float msecs = (float)(fmax(elapsed, 1.0/1000) * 1000);
 	const int inc = (int)msecs;
 	if (shift) {
 		msecs *= 2;
@@ -181,7 +181,7 @@ static double key_events(struct window_context *window) {
 	unsigned char *map = window_keymap_map(held_keys);
 	for (int key = WINDOW_KEYSTART; key < WINDOW_KEYEND; ++key) {
 		const unsigned char time = map[key];
-		float dt = 16 * (shift ? 2 : 1);
+		float dt = (float)(16 << shift);
 		switch (time) {
 		case 0:
 			continue;
@@ -207,7 +207,7 @@ static double key_events(struct window_context *window) {
 		case repeat_smooth: break;
 		}
 	}
-	return ellapsed;
+	return elapsed;
 }
 
 double event_exec(struct window_context *window) {
