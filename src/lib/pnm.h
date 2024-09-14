@@ -44,7 +44,7 @@ struct pnm_desc {
 	unsigned char bytedepth;
 	enum pnm_type type:8;
 	enum endianness endian:8;
-	bool sign;
+	bool skip_scaling;
 };
 
 const char * pnm_type_str(enum pnm_type type);

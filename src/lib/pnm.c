@@ -37,13 +37,13 @@ const char * pnm_type_str(const enum pnm_type type) {
 }
 
 static size_t scale_raster(const struct pnm_desc *desc, void *restrict dst,
-const size_t dims) {
+const size_t elems) {
 	switch (desc->type) {
 	case pnm_color_pfm:
 	case pnm_gray_pfm:
 		if (desc->scale.pfm != 1.0f) {
 			float *out = dst;
-			for (size_t i = 0; i < dims; ++i) {
+			for (size_t i = 0; i < elems; ++i) {
 				out[i] *= desc->scale.pfm;
 			}
 		}
@@ -53,12 +53,14 @@ const size_t dims) {
 		// FIXME: Support f16 scaling.
 		break;
 	default:
-		;const uint8_t depth = desc->bytedepth * 8;
-		remap_scale(dst, dst, dims,
-			remap_scale_info(desc->scale.pnm, depth,
-				desc->sign ? pix_signed : pix_normal));
+		if (!desc->skip_scaling) {
+			const uint8_t depth = desc->bytedepth * 8;
+			remap_scale(dst, dst, elems,
+				remap_scale_info(desc->scale.pnm, depth,
+					desc->rast.attr));
+		}
 	}
-	return dims;
+	return elems;
 }
 
 static size_t plain_ppm_decode(const struct pnm_desc *restrict desc,
@@ -219,9 +221,15 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 			return wu_unsupported_feature;
 		}
 		break;
-	case pnm_plain_pgm: case pnm_plain_ppm:
 	case pnm_raw_pgm: case pnm_raw_ppm:
 	case pnm_pam:
+		;const uint32_t ones = bit_cto32(desc->scale.pnm);
+		if (desc->scale.pnm >> ones == 0) {
+			desc->rast.used_bits = (uint8_t)ones;
+			desc->skip_scaling = true;
+		}
+		// fallthrough
+	case pnm_plain_pgm: case pnm_plain_ppm:
 		if (!desc->scale.pnm || desc->scale.pnm > USHRT_MAX) {
 			return wu_invalid_header;
 		}
@@ -322,9 +330,10 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 		return wu_invalid_header;
 	}
 
-	desc->sign = (sign[1] == '-');
 	desc->scale.pnm = bit_set32(depth);
 	desc->rast.bitdepth = (unsigned char)bit_min_wordsize_bits(depth);
+	desc->rast.attr = (sign[1] == '-') ? pix_signed : pix_normal;
+	desc->rast.used_bits = (unsigned char)depth;
 	return setup_desc(desc);
 }
 
