@@ -2,7 +2,7 @@
 #ifndef COMMON_FUNCS
 #define COMMON_FUNCS
 
-#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <time.h>
 

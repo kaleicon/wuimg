@@ -23,15 +23,6 @@ enum gl_upload_status {
 	gl_upload_same_size,
 };
 
-struct gl_reader {
-	size_t len;
-	size_t w, h;
-	GLenum fmt;
-	GLenum type;
-	uint8_t ch;
-	uint8_t bd;
-};
-
 struct gl_context {
 	struct gl_uni {
 		struct gl_uni_mat {
@@ -91,10 +82,10 @@ void gl_clear_color(const uint8_t bg[static 4]);
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 struct wuimg *img, const struct wu_conf *wuconf);
 
-void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
-const struct gl_reader *reader, void *restrict dst, size_t row);
+void gl_reader_read_row(struct gl_context *context, const struct wuimg *out,
+struct wu_state *state, size_t row);
 
-bool gl_reader_set(struct gl_context *context, struct gl_reader *r,
+const char * gl_reader_set(struct gl_context *context, struct wuimg *out,
 struct wu_state *state, const struct wuimg *img);
 
 void gl_reader_unbind(void);
@@ -103,4 +94,4 @@ void gl_reader_bind(struct gl_context *context);
 
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
 
-#endif /* WU_OPENGL */
+#endif // WU_OPENGL

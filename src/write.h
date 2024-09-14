@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: 0BSD
-#ifndef WRITE_PAM
-#define WRITE_PAM
+#ifndef WU_WRITE
+#define WU_WRITE
 
 #include "wudefs.h"
 #include "window.h"
@@ -14,18 +14,17 @@ struct write_args {
 };
 
 struct write_writer {
+	bool gl_initialized;
+	struct wuimg out;
 	struct window_offscreen window;
 	struct gl_context gl;
-	struct gl_reader reader;
 };
 
 void write_writer_terminate(struct write_writer *writer);
 
-enum wu_error write_image(struct image_context *image,
-struct write_writer *writer, const struct write_args *args);
-
-bool write_writer_init(struct write_writer *writer, struct wu_conf *wuconf);
+bool write_image(struct image_context *image, struct write_writer *writer,
+const struct write_args *args);
 
 int write_args(int argc, char **argv, struct write_args *args);
 
-#endif /* WRITE_PAM */
+#endif // WU_WRITE

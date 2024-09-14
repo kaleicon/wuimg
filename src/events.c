@@ -4,11 +4,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "misc/math.h"
 #include "events.h"
 #include "term.h"
-#include "write_pam.h"
 #include "wudefs.h"
+#include "misc/math.h"
 
 enum event_repeat {
 	repeat_none = 0,

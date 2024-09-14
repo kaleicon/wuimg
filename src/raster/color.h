@@ -98,4 +98,6 @@ void color_space_unref(struct color_space *cs);
 
 struct color_space color_space_ref(struct color_space *orig);
 
+bool color_space_is_sRGB(const struct color_space *cs);
+
 #endif /* RASTER_COLOR */

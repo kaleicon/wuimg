@@ -10,7 +10,7 @@
 #include "events.h"
 #include "extract.h"
 #include "filesystem.h"
-#include "write_pam.h"
+#include "write.h"
 #include "misc/math.h"
 
 enum work_mode {
@@ -90,34 +90,34 @@ const struct write_args *args) {
 	struct image_context image = {
 		.conf = conv_conf(conf_load()),
 	};
-
-	struct write_writer writer;
-	if (!write_writer_init(&writer, &image.conf)) {
-		return wu_display_error;
-	}
-
-	enum wu_error status = wu_ok;
-	if (!strcmp("-", entries->name[0])) {
-		FILE *stdin_cpy = save_stdin();
-		if (stdin_cpy) {
+	FILE *stdin_cpy = NULL;
+	struct write_writer writer = {0};
+	size_t w = 0;
+	for (size_t i = 0; i < entries->nr; ++i) {
+		const char *name = entries->name[i];
+		if (!strcmp("-", name)) {
+			stdin_cpy = save_stdin();
+			if (!stdin_cpy) {
+				term_line_put("Failed to save stdin", stderr);
+				continue;
+			}
 			dec_src_file(&image, stdin_cpy, "stdin", false, false);
 		} else {
-			term_line_put("Failed to save stdin", stderr);
-			status = wu_open_error;
+			dec_src_filename(&image, name);
 		}
-	} else {
-		dec_src_filename(&image, entries->name[0]);
-	}
 
-	if (status == wu_ok) {
-		status = write_image(&image, &writer, args);
-	}
-	if (status != wu_ok) {
-		fprintf(stderr, "Failed to write %s: %s\n",
-			image.name, wu_error_message(status));
+		const bool no_prob = write_image(&image, &writer, args);
+		w += no_prob;
+		image_reset(&image);
+		if (args->stdout) {
+			break;
+		}
+		if (stdin_cpy) {
+			stdin_cpy = NULL;
+		}
 	}
 	write_writer_terminate(&writer);
-	return status;
+	return w != entries->nr;
 }
 
 static enum wu_error test_with(const struct file_list *entries,

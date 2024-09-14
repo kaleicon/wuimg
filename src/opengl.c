@@ -71,9 +71,13 @@ enum gl_tex_unit {
 	gl_tex_reader,
 };
 
-struct gl_upload_params {
+struct gl_tex_params {
 	GLint in_fmt;
 	GLenum fmt, type;
+};
+
+struct gl_upload_params {
+	struct gl_tex_params tex;
 	enum pix_layout layout:8;
 	enum unpack_op op:8;
 	uint8_t comps;
@@ -314,7 +318,8 @@ const GLsizei h, const GLenum fmt, const GLenum type, const void *ptr) {
 
 static void tex_2d_params(const struct gl_upload_params *p, const size_t w,
 const size_t h, const void *data) {
-	tex_2d(p->in_fmt, (GLsizei)w, (GLsizei)h, p->fmt, p->type, data);
+	tex_2d(p->tex.in_fmt, (GLsizei)w, (GLsizei)h, p->tex.fmt, p->tex.type,
+		data);
 	tex_2d_swizzle(p->layout);
 }
 
@@ -557,10 +562,21 @@ static GLenum type_lut(const unsigned depth_log, const enum pix_attr attr) {
 	return 0;
 }
 
+static struct gl_tex_params get_tex_params(const uint8_t bd, const uint8_t ch,
+const enum pix_attr attr) {
+	const unsigned depth_log = bit_min_wordsize_log2(umin(bd, 32));
+	return (struct gl_tex_params) {
+		.in_fmt = in_fmt_lut(depth_log, ch),
+		.fmt = fmt_lut(ch),
+		.type = type_lut(depth_log, attr),
+	};
+}
+
 static const char * set_upload_params(struct gl_upload_params *params,
 const struct wuimg *img) {
 	uint8_t ch = params->comps;
 	uint8_t bd = img->bitdepth;
+	struct gl_tex_params *tex = &params->tex;
 	switch (img->attr) {
 	case pix_normal:
 		/* LM: least-to-most significant order, ML: most-to-least.
@@ -570,9 +586,9 @@ const struct wuimg *img) {
 			/* We use ML order for raw images. However, we don't
 			 * care about machine words. */
 			if (bd == 8) {
-				params->in_fmt = GL_RGBA8;
-				params->fmt = GL_BGRA;
-				params->type = GL_UNSIGNED_INT_8_8_8_8;
+				tex->in_fmt = GL_RGBA8;
+				tex->fmt = GL_BGRA;
+				tex->type = GL_UNSIGNED_INT_8_8_8_8;
 				/* In big-endian, the component order "matches"
 				 * the memory layout, and so only swapping
 				 * R and B is needed.
@@ -585,9 +601,9 @@ const struct wuimg *img) {
 				params->layout = pix_layout_mul(meta, params->layout);
 				return NULL;
 			} else if (bd == 4) {
-				params->in_fmt = GL_RGBA4;
-				params->fmt = GL_BGRA;
-				params->type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
+				tex->in_fmt = GL_RGBA4;
+				tex->fmt = GL_BGRA;
+				tex->type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
 				/* fmt is BGRA, so swap R and B, then reverse
 				 * for big-endian as the order is LM.
 				 * Little-endian is big-endian but with the
@@ -602,17 +618,17 @@ const struct wuimg *img) {
 			/* Bitfields are in LM order. */
 			const struct bitfield *bf = img->u.bitfield;
 			if (bf->id == 0x1555 || bf->id == 0x555) {
-				params->in_fmt = GL_RGB5_A1;
-				params->fmt = GL_BGRA;
-				params->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
+				tex->in_fmt = GL_RGB5_A1;
+				tex->fmt = GL_BGRA;
+				tex->type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
 				/* 1_5_5_5_REV is in LM order too, but as the
 				 * format is GL_BGRA, swap R and B. */
 				params->layout = pix_layout_mul(pix_bgra, params->layout);
 				return NULL;
 			} else if (bf->id == 0x332) {
-				params->in_fmt = GL_R3_G3_B2;
-				params->fmt = GL_RGB;
-				params->type = GL_UNSIGNED_BYTE_3_3_2;
+				tex->in_fmt = GL_R3_G3_B2;
+				tex->fmt = GL_RGB;
+				tex->type = GL_UNSIGNED_BYTE_3_3_2;
 				// Reverse the first three components.
 				params->layout = pix_layout_mul(pix_bgra, params->layout);
 				return NULL;
@@ -662,10 +678,7 @@ const struct wuimg *img) {
 		return "Invalid pix attribute";
 	}
 
-	const unsigned depth_sh = bit_min_wordsize_log2(umin(bd, 32));
-	params->in_fmt = in_fmt_lut(depth_sh, ch);
-	params->fmt = fmt_lut(ch);
-	params->type = type_lut(depth_sh, img->attr);
+	*tex = get_tex_params(bd, ch, img->attr);
 	return NULL;
 }
 
@@ -821,53 +834,51 @@ struct wuimg *img, const struct wu_conf *wuconf) {
 	return gl_upload_same_size;
 }
 
-void gl_reader_read_row(struct gl_context *context, struct wu_state *state,
-const struct gl_reader *reader, void *restrict dst, const size_t row) {
+void gl_reader_read_row(struct gl_context *context, const struct wuimg *out,
+struct wu_state *state, const size_t row) {
 	state->y_offset = (float)row;
 	context->update = gl_update_matrix;
 	gl_draw(context, state);
-	glReadPixels(0, 0, (GLsizei)reader->w, 1, reader->fmt, reader->type,
-		dst);
+
+	const struct gl_tex_params tex = get_tex_params(out->bitdepth,
+		out->channels, out->attr);
+	glReadPixels(0, 0, (GLsizei)out->w, 1, tex.fmt, tex.type, out->data);
 }
 
-static unsigned char get_render_channels(const struct wuimg *img) {
-	unsigned char ch;
+static void get_render_channels(struct wuimg *out, const struct wuimg *img) {
 	switch (img->mode) {
-	case image_mode_palette: ch = 4; break;
-	case image_mode_bitfield: ch = img->u.bitfield->ch; break;
-	default: ch = img->channels;
+	case image_mode_palette:
+		out->channels = 4;
+		out->bitdepth = 8;
+		break;
+	case image_mode_bitfield:
+		out->channels = img->u.bitfield->ch;
+		out->bitdepth = img->u.bitfield->outdepth;
+		break;
+	default:
+		out->channels = img->channels;
+		out->bitdepth = (img->bitdepth > 8) ? 16 : 8;
 	}
-	if (img->alpha & alpha_one
-	&& pix_layout_offset(img->layout, pix_alpha) < ch) {
-		ch = (unsigned char)(ch - 1);
-	}
-	return ch;
+	const bool no_alpha = (img->alpha & alpha_one)
+		&& (pix_layout_offset(img->layout, pix_alpha) < img->channels);
+	out->channels -= no_alpha;
 }
 
-bool gl_reader_set(struct gl_context *context, struct gl_reader *r,
+const char * gl_reader_set(struct gl_context *context, struct wuimg *r,
 struct wu_state *state, const struct wuimg *img) {
 	context->tex.ratio = 1;
 
 	const bool swap = img->rotate & 1;
 	r->w = (swap) ? img->h : img->w;
 	r->h = (swap) ? img->w : img->h;
-	r->ch = get_render_channels(img);
-	r->bd = (img->bitdepth > 8) ? 16 : 8;
-
-	const unsigned depth_log = bit_min_wordsize_log2(umin(r->bd, 32));
-	r->fmt = fmt_lut(r->ch);
-	r->type = type_lut(depth_log, pix_normal);
-	r->len = strip_base(r->w * r->ch, r->bd);
-
-	const GLint in_fmt = in_fmt_lut(depth_log, r->ch);
+	r->attr = pix_normal;
+	get_render_channels(r, img);
 
 	tex_active(gl_tex_reader);
-	tex_2d(in_fmt, (GLsizei)r->w, 1, r->fmt, r->type, NULL);
+	const struct gl_tex_params tex = get_tex_params(r->bitdepth,
+		r->channels, r->attr);
+	tex_2d(tex.in_fmt, (GLsizei)r->w, 1, tex.fmt, tex.type, NULL);
 	tex_active(gl_tex_img);
-
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		return false;
-	}
 
 	state->zoom = 1;
 	state->rotate = 0;
@@ -881,7 +892,10 @@ struct wu_state *state, const struct wuimg *img) {
 	if (img->layout == pix_gray) {
 		tex_2d_swizzle(pix_rgba);
 	}
-	return true;
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		return "GL framebuffer not complete";
+	}
+	return NULL;
 }
 
 void gl_reader_unbind(void) {

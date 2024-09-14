@@ -980,3 +980,9 @@ struct color_space color_space_ref(struct color_space *orig) {
 	}
 	return *orig;
 }
+
+bool color_space_is_sRGB(const struct color_space *cs) {
+	return !cs->primaries && !cs->transfer
+		&& cs->matrix == cicp_matrix_rgb && !cs->limited
+		&& cs->type == color_profile_enum;
+}
