@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-#include <openjpeg-2.1/openjpeg.h>
+#include <openjpeg.h>
 
 #include "misc/bit.h"
 #include "misc/common.h"
