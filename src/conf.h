@@ -4,16 +4,13 @@
 
 #include <stdbool.h>
 
-struct display_dims {
-	int w, h;
-};
+#include "misc/common.h"
 
 struct wu_conf {
 	unsigned max_img_size; /* Max image size in either dimension. The
 		starting value will be capped to the texture size limit. */
 	unsigned magnify_under; /* Auto-magnify images under this size to an
 		integer multiple over it. */
-	struct display_dims fb; // Framebuffer dimensions. Not seteable.
 
 	// Window
 	struct display_dims initial_size; // Window size hint on startup.

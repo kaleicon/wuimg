@@ -59,8 +59,8 @@ const int width, const int height, const int stride) {
 static enum wu_error adapt_to_window(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	if ((unsigned)imax(wuconf->fb.w, wuconf->fb.h) > wuconf->max_img_size) {
-		// wtf
+	// wtf
+	if ((unsigned)imax(state->fb.w, state->fb.h) > wuconf->max_img_size) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -68,8 +68,8 @@ const enum image_event event) {
 	const size_t prev_size = wuimg_size(img);
 
 	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
-	const int width = (int)wuconf->fb.w;
-	const int height = (int)wuconf->fb.h;
+	const int width = state->fb.w;
+	const int height = state->fb.h;
 	const int stride = cairo_format_stride_for_width(format, width);
 
 	img->w = (size_t)width;
@@ -98,8 +98,8 @@ const enum image_event event) {
 		return wu_alloc_error;
 	}
 
-	const double fbw = (double)wuconf->fb.w / 2.0;
-	const double fbh = (double)wuconf->fb.h / 2.0;
+	const double fbw = (double)state->fb.w / 2.0;
+	const double fbh = (double)state->fb.h / 2.0;
 	double x_scale = 1;
 	double y_scale = 1;
 	double x = fbw;
@@ -116,8 +116,8 @@ const enum image_event event) {
 	const RsvgRectangle viewport = {
 		.x = -fbw,
 		.y = -fbh,
-		.width = (double)wuconf->fb.w,
-		.height = (double)wuconf->fb.h,
+		.width = (double)state->fb.w,
+		.height = (double)state->fb.h,
 	};
 
 	cairo_translate(canvas, x, y);

@@ -9,6 +9,10 @@
 #define WU_CANON_NAME "wu"
 #define ARRAY_LEN(arr) ( sizeof(arr) / sizeof(*arr) )
 
+struct display_dims {
+	int w, h;
+};
+
 enum trit {
 	trit_false = 0,
 	trit_true = 1,

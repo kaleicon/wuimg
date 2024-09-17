@@ -24,6 +24,8 @@ struct wu_state {
 	float y_offset;
 
 	double time;
+
+	struct display_dims fb;
 };
 
 enum image_event {

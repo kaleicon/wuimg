@@ -36,7 +36,7 @@ const enum key_action action, int code, const bool shift) {
 enum trit window_size_update(struct window_public *pub, const int w,
 const int h) {
 	if (w > 0 && h > 0) {
-		struct display_dims *fb = &pub->image.conf.fb;
+		struct display_dims *fb = &pub->image.state.fb;
 		if (fb->w != w || fb->h != h) {
 			fb->w = w;
 			fb->h = h;

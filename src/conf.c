@@ -9,7 +9,6 @@
 
 #include "conf.h"
 #include "term.h"
-#include "misc/common.h"
 #include "misc/file.h"
 #include "misc/mparser.h"
 
@@ -22,7 +21,6 @@ struct enum_str {
 
 struct wu_conf conf_default(void) {
 	return (struct wu_conf) {
-		.fb = {DEFAULT_MAX, DEFAULT_MAX},
 		.max_img_size = DEFAULT_MAX,
 
 		// Window
