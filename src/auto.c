@@ -43,6 +43,63 @@ const struct auto_desc farbfeld_desc = {
 	AUTO_READ(farbfeld_read),
 };
 
+/* Atari Falcon True Color family */
+// COKE
+static const struct auto_read coke_read[] = {
+	{auto_match, AUTO_CSTR("COKE format.")},
+	{'w', 2},
+	{'h', 2},
+	{auto_match, AUTO_CSTR("\x00\x12")}, // Offset to raster, always 0x0012
+};
+const struct auto_desc coke_desc = {
+	.channels = 1, .bitdepth = 16,
+	.layout = pix_bgra, .bitfield = 0x565,
+	.endian = big_endian,
+	AUTO_READ(coke_read),
+};
+// EggPaint
+static const struct auto_read eggpaint_read[] = {
+	{auto_match, AUTO_CSTR("TRUP")},
+	{'w', 2},
+	{'h', 2},
+};
+const struct auto_desc eggpaint_desc = {
+	.channels = 1, .bitdepth = 16,
+	.layout = pix_bgra, .bitfield = 0x565,
+	.endian = big_endian,
+	AUTO_READ(eggpaint_read),
+};
+// FTC (Falcon True Color)
+const struct auto_desc ftc_desc = {
+	.w = 384, .h = 240,
+	.channels = 1, .bitdepth = 16,
+	.layout = pix_bgra, .bitfield = 0x565,
+};
+// GodPaint
+static const struct auto_read god_read[] = {
+	{auto_skip, 2},
+	{'w', 2},
+	{'h', 2},
+};
+const struct auto_desc god_desc = {
+	.channels = 1, .bitdepth = 16,
+	.layout = pix_bgra, .bitfield = 0x565,
+	.endian = big_endian,
+	AUTO_READ(god_read),
+};
+// Spooky Sprites TRP
+static const struct auto_read trp_read[] = {
+	{auto_match, AUTO_CSTR("tru?")},
+	{'w', 2},
+	{'h', 2},
+};
+const struct auto_desc trp_desc = {
+	.channels = 1, .bitdepth = 16,
+	.layout = pix_bgra, .bitfield = 0x565,
+	.endian = big_endian,
+	AUTO_READ(trp_read),
+};
+
 enum wu_error auto_load(struct image_file *infile, const struct auto_desc *desc) {
 	struct wuimg *img = infile->sub_img;
 	const enum wu_error st = wuimg_alloc(img);
@@ -58,6 +115,7 @@ const uint32_t val) {
 	switch (dst) {
 	case auto_width: img->w = val; return;
 	case auto_height: img->h = val; return;
+	case auto_skip: return;
 	case auto_match:
 		break;
 	}
@@ -78,6 +136,11 @@ const struct auto_desc *desc) {
 	img->used_bits = desc->used_bits;
 	img->layout = desc->layout;
 	img->attr = desc->attr;
+	if (desc->bitfield) {
+		if (!wuimg_bitfield_init_from_id(img, desc->bitfield)) {
+			return wu_alloc_error;
+		}
+	}
 
 	if (desc->rlen) {
 		size_t read = 0;
@@ -85,7 +148,7 @@ const struct auto_desc *desc) {
 			read += desc->read[r].size;
 		}
 
-		uint8_t buf[16];
+		uint8_t buf[18];
 		if (read > sizeof(buf)) {
 			fatal_bug(__func__, "Buffer is too small");
 		}

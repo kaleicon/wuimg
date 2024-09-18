@@ -6,6 +6,7 @@
 
 enum auto_dst {
 	auto_match = 0,
+	auto_skip,
 	auto_width = 'w',
 	auto_height = 'h',
 };
@@ -23,6 +24,7 @@ struct auto_desc {
 	uint8_t used_bits;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
+	uint16_t bitfield;
 	enum endianness endian:8;
 	uint8_t rlen;
 	const struct auto_read *read;

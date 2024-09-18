@@ -58,6 +58,10 @@ static const short RAW_IF_PRESENT = -1;
 static struct fmt_magic magic_map[] = {
 	// Auto formats
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff", "farbfeld", fmt_farbfeld},
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"COKE format.", fmt_coke},
+	{"\xff\xff\xff\xff", "TRUP", fmt_eggpaint},
+	{"\xff\xff\xff\xff", "tru?", fmt_trp},
 
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
@@ -344,6 +348,12 @@ static struct fmt_ext ext_map[] = {
 	{"doo", fmt_doo},
 	// Farbfeld
 	{"ff", -1},
+	// Atari Falcon True Color family
+	{"tg1", -1},
+	{"trp", -1},
+	{"tru", -1},
+	{"ftc", fmt_ftc},
+	{"god", fmt_god},
 
 #ifdef WU_ENABLE_C64
 	{"gig", fmt_c64},
