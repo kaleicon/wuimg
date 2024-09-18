@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: 0BSD
 fmt_map = {
 	'internal': [
-		'avs',
 		'c64',
 		'degas',
 		'dib',
 		'dpx',
-		'farbfeld',
 		'g00',
 		'hg3',
 		'ilbm',
@@ -179,6 +177,7 @@ src_list += [custom_target('dec_maps',
 		depend_files : dec_enable,
 		command : [dec_comptime, '-h']),
 
+	'auto.c',
 	'conf.c',
 	'metadata.cpp',
 	'rast_utils.c',

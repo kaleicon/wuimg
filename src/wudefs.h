@@ -71,12 +71,21 @@ struct image_fn {
 	fmt_end_t end;
 };
 
+struct fmt_desc {
+	char name[8];
+	bool is_auto;
+	union {
+		const struct image_fn *fn;
+		const struct auto_desc *desc;
+	} dec;
+};
+
 struct image_context {
 	const char *name;
 	struct image_file file;
 	struct wu_state state;
 	struct wu_conf conf;
-	const struct image_fn *fn;
+	struct fmt_desc desc;
 };
 
 void image_file_free_end(struct image_file *infile);

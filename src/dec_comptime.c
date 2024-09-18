@@ -11,10 +11,7 @@
 // Produces a struct definition in string form, then in code
 #define EXP_STRING(exp) #exp; exp
 
-static const char fmt_structs[] = "struct fmt_desc {"
-	"const char name[8];"
-	"const struct image_fn *fn;"
-"};" EXP_STRING(
+static const char fmt_structs[] = EXP_STRING(
 	struct fmt_ext {
 		const char ext[6];
 		const short id;
@@ -27,18 +24,28 @@ static const char fmt_structs[] = "struct fmt_desc {"
 	};
 ) /* EXP_STRING fmt_structs end */
 
+// Format identifiers
 enum fmt_id {
 	fmt_unknown = -1,
 #define WUDEC(name) fmt_##name,
+#include "auto.def"
 #include "dec.def"
 #undef WUDEC
 };
 
+// Format names
 static const char name_map[][8] = {
 #define WUDEC(name) { #name },
+#include "auto.def"
 #include "dec.def"
 #undef WUDEC
 };
+
+const size_t AUTO_AMOUNT =
+#define WUDEC(_n) + 1
+#include "auto.def"
+#undef WUDEC
+;
 
 
 #if defined WU_ENABLE_RAW
@@ -49,6 +56,9 @@ static const short RAW_IF_PRESENT = -1;
 
 /* Be careful with masks. This array is sorted dumbly. */
 static struct fmt_magic magic_map[] = {
+	// Auto formats
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff", "farbfeld", fmt_farbfeld},
+
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
 #ifdef WU_ENABLE_BMZ
@@ -62,10 +72,6 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff" "\0\0\0\0" "\xff\x00\xff\xff",
 		"SDPX\0\0\0\0V\0.0", fmt_dpx},
 #endif // WU_ENABLE_DPX
-
-#ifdef WU_ENABLE_FARBFELD
-	{"\xff\xff\xff\xff" "\xff\xff\xff\xff", "farbfeld", fmt_farbfeld},
-#endif // WU_ENABLE_FARBFELD
 
 #ifdef WU_ENABLE_HG3
 	{"\xff\xff\xff\xff", "HG-3", fmt_hg3},
@@ -87,7 +93,8 @@ static struct fmt_magic magic_map[] = {
 
 #ifdef WU_ENABLE_MSX
 	/* You can generally tell whether a file is an MSX-BASIC format,
-	 * but you can rarely tell the screen mode it uses. */
+	 * but you can rarely tell the screen mode it uses without the
+	 * extension. */
 
 	// Graph saurus SR5
 	{"\xff\xff\xff\xff\xff\xff\xff", "\xfe\x00\x00\x00\x6a\x00\x00", fmt_sc5},
@@ -325,12 +332,14 @@ static struct fmt_magic magic_map[] = {
 
 
 /* File extensions. An enum is used where the format has no clear magic
- * sequence, or where it must be treated specially. Otherwise, use -1 */
+ * sequence, or where it must be treated specially. Otherwise, we use -1 */
 static struct fmt_ext ext_map[] = {
-#ifdef WU_ENABLE_AVS
+	// Auto formats
+	// AVS
 	{"avs", fmt_avs},
 	{"mbfavs", fmt_avs},
-#endif
+	// Farbfeld
+	{"ff", -1},
 
 #ifdef WU_ENABLE_C64
 	{"gig", fmt_c64},
@@ -338,6 +347,15 @@ static struct fmt_ext ext_map[] = {
 	{"koa", fmt_c64},
 	{"kla", fmt_c64},
 	{"ocp", fmt_c64},
+#endif
+
+#ifdef WU_ENABLE_DEGAS
+	{"pi1", fmt_degas},
+	{"pi2", fmt_degas},
+	{"pi3", fmt_degas},
+	{"pc1", fmt_degas},
+	{"pc2", fmt_degas},
+	{"pc3", fmt_degas},
 #endif
 
 #ifdef WU_ENABLE_DIB
@@ -353,10 +371,6 @@ static struct fmt_ext ext_map[] = {
 
 #ifdef WU_ENABLE_DPX
 	{"dpx", -1},
-#endif
-
-#ifdef WU_ENABLE_FARBFELD
-	{"ff", -1},
 #endif
 
 #ifdef WU_ENABLE_G00
@@ -444,15 +458,6 @@ static struct fmt_ext ext_map[] = {
 	{"pi", -1},
 #endif
 
-#ifdef WU_ENABLE_DEGAS
-	{"pi1", fmt_degas},
-	{"pi2", fmt_degas},
-	{"pi3", fmt_degas},
-	{"pc1", fmt_degas},
-	{"pc2", fmt_degas},
-	{"pc3", fmt_degas},
-#endif
-
 #ifdef WU_ENABLE_PIC2
 	{"p2", -1},
 #endif
@@ -514,6 +519,7 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_TGA
+	// TGA sometimes has a signature at the end. It depends on the version.
 	{"tga", fmt_tga},
 #endif
 
@@ -863,12 +869,18 @@ static int print_fmt_magic(size_t *min_len, size_t *max_len) {
 static void print_fmt_desc(void) {
 	print_map_def("desc");
 	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
-		fputs("{{", stdout);
+		fputs("{.name = {", stdout);
 		const int outlen = (int)print_hex(name_map[i],
 			sizeof(*name_map));
 		fputs("},", stdout);
 
-		fprintf(stdout, "&%.*s_fn", outlen, name_map[i]);
+		fprintf(stdout, ".is_auto = %s,", i < AUTO_AMOUNT ? "true" : "false");
+
+		const char *suf = i < AUTO_AMOUNT ? "desc" : "fn";
+		fprintf(stdout, ".dec.%s = &%.*s_%s",
+			suf, outlen, name_map[i], suf);
+
+		//fprintf(stdout, "&%.*s_fn", outlen, name_map[i]);
 		fputs("},", stdout);
 	}
 	fputs("};", stdout);
@@ -912,9 +924,13 @@ static int mapsort(void) {
 }
 
 static int dec_headers(void) {
+	const size_t name_len = sizeof(*name_map);
 	print_include("\"wudefs.h\"");
 	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
-		printf("extern const struct image_fn %.8s_fn;", name_map[i]);
+		const char *suf = i < AUTO_AMOUNT ? "desc" : "fn";
+		const char *type = i < AUTO_AMOUNT ? "auto_desc" : "image_fn";
+		printf("extern const struct %s %.*s_%s;",
+			type, (int)name_len, name_map[i], suf);
 	}
 	fputc('\n', stdout);
 	return 0;

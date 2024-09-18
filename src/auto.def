@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: 0BSD
+
+/* Enumerate formats for autodec */
+
+WUDEC(avs)
+WUDEC(farbfeld)

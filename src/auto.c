@@ -1,0 +1,111 @@
+#include "misc/common.h"
+#include "raster/fmt.h"
+#include "auto.h"
+
+#define AUTO_CSTR(arr) .size = (uint8_t)(sizeof(arr) - 1), .bytes = (const uint8_t *)arr
+
+#define AUTO_READ(rdesc) .rlen = (uint8_t)(ARRAY_LEN(rdesc)), .read = rdesc
+
+// AVS
+static const struct auto_read avs_read[] = {
+	{'w', 4},
+	{'h', 4},
+};
+const struct auto_desc avs_desc = {
+	.channels = 4, .bitdepth = 8, .layout = pix_argb,
+	.endian = big_endian,
+	AUTO_READ(avs_read),
+};
+
+// FARBFELD
+static const struct auto_read farbfeld_read[] = {
+	{auto_match, AUTO_CSTR("farbfeld")},
+	{'w', 4},
+	{'h', 4},
+};
+const struct auto_desc farbfeld_desc = {
+	.channels = 4, .bitdepth = 16,
+	.endian = big_endian,
+	AUTO_READ(farbfeld_read),
+};
+
+enum wu_error auto_load(struct image_file *infile, const struct auto_desc *desc) {
+	struct wuimg *img = infile->sub_img;
+	const enum wu_error st = wuimg_alloc(img);
+	if (st == wu_ok) {
+		return fmt_load_raster_swap(img, infile->ifp, desc->endian)
+			? wu_ok : wu_unexpected_eof;
+	}
+	return st;
+}
+
+static void set_value(struct wuimg *img, const enum auto_dst dst,
+const uint32_t val) {
+	switch (dst) {
+	case auto_width: img->w = val; return;
+	case auto_height: img->h = val; return;
+	case auto_match:
+		break;
+	}
+	fatal_bug(__func__, "Nowhere to put value");
+}
+
+enum wu_error auto_init(struct image_file *infile, const struct wu_conf *conf,
+const struct auto_desc *desc) {
+	struct wuimg *img = alloc_sub_images(infile, 1);
+	if (!img) {
+		return wu_alloc_error;
+	}
+
+	img->w = desc->w;
+	img->h = desc->h;
+	img->channels = desc->channels;
+	img->bitdepth = desc->bitdepth;
+	img->layout = desc->layout;
+
+	if (desc->rlen) {
+		size_t read = 0;
+		for (uint8_t r = 0; r < desc->rlen; ++r) {
+			read += desc->read[r].size;
+		}
+
+		uint8_t buf[16];
+		if (read > sizeof(buf)) {
+			fatal_bug(__func__, "Buffer is too small");
+		}
+
+		if (!fread(buf, read, 1, infile->ifp)) {
+			return wu_unexpected_eof;
+		}
+
+		size_t pos = 0;
+		for (uint8_t r = 0; r < desc->rlen; ++r) {
+			const struct auto_read *dr = desc->read + r;
+			if (dr->dst == auto_match) {
+				if (memcmp(buf + pos, dr->bytes, dr->size)) {
+					return wu_invalid_header;
+				}
+			} else {
+				uint32_t val;
+				switch (dr->size) {
+				case 1:
+					val = buf[pos];
+					break;
+				case 2:
+					val = buf_endian16(buf + pos, desc->endian);
+					break;
+				case 4:
+					val = buf_endian32(buf + pos, desc->endian);
+					break;
+				default:
+					fatal_bug(__func__, "Unexpected word size");
+					// Fix uninitialized warnings
+					return wu_invalid_params;
+				}
+				set_value(img, dr->dst, val);
+			}
+			pos += dr->size;
+		}
+	}
+	return wuimg_exceeds_limit(img, conf) ? wu_exceeds_size_limit : wu_ok;
+}

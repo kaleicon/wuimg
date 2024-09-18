@@ -197,5 +197,5 @@ void image_reset(struct image_context *image) {
 	image->state.idx = 0;
 	image->state.frame = 0;
 	image->state.time = 0;
-	image->fn = NULL;
+	image->desc = (struct fmt_desc){0};
 }

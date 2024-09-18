@@ -3,10 +3,6 @@
 /* Enumerate known formats
  * Format: WUDEC(base_name) */
 
-#ifdef WU_ENABLE_AVS
-WUDEC(avs)
-#endif
-
 #ifdef WU_ENABLE_C64
 WUDEC(c64)
 #endif
@@ -22,10 +18,6 @@ WUDEC(bmz)
 
 #ifdef WU_ENABLE_DPX
 WUDEC(dpx)
-#endif
-
-#ifdef WU_ENABLE_FARBFELD
-WUDEC(farbfeld)
 #endif
 
 #ifdef WU_ENABLE_G00
