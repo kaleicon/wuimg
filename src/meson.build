@@ -45,6 +45,7 @@ fmt_map = {
 		'gif',
 		'heif',
 		'jbig',
+		'jbig2',
 		'jpeg',
 		'jpeg2000',
 		'jpegls',
@@ -67,6 +68,7 @@ pkg_map = {
 	'hg3': ['zlib'],
 	'xyz': ['zlib'],
 
+	'jbig2': ['jbig2dec'],
 	'jpeg2000': ['libopenjp2'],
 	'jpegls': ['charls'],
 	'jpegxl': ['libjxl', 'libjxl_threads'],
@@ -85,7 +87,7 @@ foreach cat, fmts : fmt_map
 		deps = []
 		if f in pkg_map
 			foreach lib : pkg_map[f]
-				deps += dependency(lib, required : state)
+				deps += dependency(lib, required : false)
 			endforeach
 		elif cat == 'external'
 			deps += cc.find_library(f, required : state)

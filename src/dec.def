@@ -183,6 +183,10 @@ WUDEC(heif, "High Efficiency Image File Format")
 WUDEC(jbig, "JBIG")
 #endif
 
+#ifdef WU_ENABLE_JBIG2
+WUDEC(jbig2, "JBIG2")
+#endif
+
 #ifdef WU_ENABLE_JPEG
 WUDEC(jpeg, "JPEG")
 #endif

@@ -276,6 +276,11 @@ static struct fmt_magic magic_map[] = {
 		"\0\0\0\0" "ftypmsf1", fmt_heif},
 #endif // WU_ENABLE_HEIF
 
+#ifdef WU_ENABLE_JBIG2
+	{"\xff\xff\xff\xff\xff\xff\xff\xff", "\x97JB2\x0d\x0a\x1a\x0a",
+		fmt_jbig2},
+#endif // WU_ENABLE_JBIG2
+
 #ifdef WU_ENABLE_JPEG
 	/* In a well written JPEG, the third byte would be 0xff. Not all JPEG
 	 * files are well written. */
@@ -601,6 +606,10 @@ static struct fmt_ext ext_map[] = {
 	{"bie", fmt_jbig},
 	{"jbg", fmt_jbig},
 	{"jbig", fmt_jbig},
+#endif
+
+#ifdef WU_ENABLE_JBIG2
+	{"jb2", -1},
 #endif
 
 #ifdef WU_ENABLE_JPEG

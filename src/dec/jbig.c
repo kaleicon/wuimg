@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 #include <jbig.h>
 
-#include "misc/file.h"
-#include "raster/strip.h"
 #include "wudefs.h"
 
 struct out_info {
