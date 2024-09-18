@@ -21,6 +21,7 @@ struct auto_desc {
 	uint8_t channels;
 	uint8_t bitdepth;
 	enum pix_layout layout:8;
+	enum pix_attr attr:8;
 	enum endianness endian:8;
 	uint8_t rlen;
 	const struct auto_read *read;

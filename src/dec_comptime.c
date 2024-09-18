@@ -338,6 +338,8 @@ static struct fmt_ext ext_map[] = {
 	// AVS
 	{"avs", fmt_avs},
 	{"mbfavs", fmt_avs},
+	// DOO - Atari Doodle
+	{"doo", fmt_doo},
 	// Farbfeld
 	{"ff", -1},
 

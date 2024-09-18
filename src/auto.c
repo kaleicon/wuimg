@@ -17,6 +17,13 @@ const struct auto_desc avs_desc = {
 	AUTO_READ(avs_read),
 };
 
+// DOO - Atari Doodle
+const struct auto_desc doo_desc = {
+	.w = 640, .h = 400,
+	.channels = 1, .bitdepth = 1,
+	.attr = pix_inverted,
+};
+
 // FARBFELD
 static const struct auto_read farbfeld_read[] = {
 	{auto_match, AUTO_CSTR("farbfeld")},
@@ -62,6 +69,7 @@ const struct auto_desc *desc) {
 	img->channels = desc->channels;
 	img->bitdepth = desc->bitdepth;
 	img->layout = desc->layout;
+	img->attr = desc->attr;
 
 	if (desc->rlen) {
 		size_t read = 0;
