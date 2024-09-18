@@ -3,5 +3,6 @@
 /* Enumerate formats for autodec */
 
 WUDEC(avs)
+WUDEC(bru)
 WUDEC(doo)
 WUDEC(farbfeld)

@@ -17,6 +17,13 @@ const struct auto_desc avs_desc = {
 	AUTO_READ(avs_read),
 };
 
+// BRU - Degas Elite Brush
+const struct auto_desc bru_desc = {
+	.w = 8, .h = 8,
+	.channels = 1, .bitdepth = 8,
+	.used_bits = 1, .attr = pix_inverted,
+};
+
 // DOO - Atari Doodle
 const struct auto_desc doo_desc = {
 	.w = 640, .h = 400,
@@ -68,6 +75,7 @@ const struct auto_desc *desc) {
 	img->h = desc->h;
 	img->channels = desc->channels;
 	img->bitdepth = desc->bitdepth;
+	img->used_bits = desc->used_bits;
 	img->layout = desc->layout;
 	img->attr = desc->attr;
 

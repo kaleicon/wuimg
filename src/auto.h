@@ -20,6 +20,7 @@ struct auto_desc {
 	uint16_t w, h;
 	uint8_t channels;
 	uint8_t bitdepth;
+	uint8_t used_bits;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
 	enum endianness endian:8;
