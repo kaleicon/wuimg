@@ -349,8 +349,6 @@ static struct fmt_ext ext_map[] = {
 	{"mbfavs", fmt_avs},
 	// BRU - Degas Brush
 	{"bru", fmt_bru},
-	// DOO - Atari Doodle
-	{"doo", fmt_doo},
 	// Farbfeld
 	{"ff", -1},
 	// Atari Falcon True Color family
@@ -359,6 +357,9 @@ static struct fmt_ext ext_map[] = {
 	{"tru", -1},
 	{"ftc", fmt_ftc},
 	{"god", fmt_god},
+	// Atari ST High Resolution
+	{"da4", fmt_da4},
+	{"doo", fmt_doo},
 
 #ifdef WU_ENABLE_C64
 	{"gig", fmt_c64},

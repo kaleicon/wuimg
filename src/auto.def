@@ -5,7 +5,6 @@
 
 WUDEC(avs, "AVS X")
 WUDEC(bru, "Degas Brush")
-WUDEC(doo, "Atari Doodle")
 WUDEC(farbfeld, "farbfeld")
 
 // Atari Falcon True Color
@@ -14,3 +13,7 @@ WUDEC(ftc, "Falcon True Color")
 WUDEC(eggpaint, "EggPaint")
 WUDEC(god, "GodPaint")
 WUDEC(trp, "Spooky Sprites uncompressed")
+
+// Atari ST High Resolution
+WUDEC(da4, "PaintShop (Atari ST)")
+WUDEC(doo, "Atari Doodle")

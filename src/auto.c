@@ -24,13 +24,6 @@ const struct auto_desc bru_desc = {
 	.used_bits = 1, .attr = pix_inverted,
 };
 
-// DOO (Atari Doodle)
-const struct auto_desc doo_desc = {
-	.w = 640, .h = 400,
-	.channels = 1, .bitdepth = 1,
-	.attr = pix_inverted,
-};
-
 // FARBFELD
 static const struct auto_read farbfeld_read[] = {
 	{auto_match, AUTO_CSTR("farbfeld")},
@@ -98,6 +91,20 @@ const struct auto_desc trp_desc = {
 	.layout = pix_bgra, .bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(trp_read),
+};
+
+/* Atari ST High Resolution */
+// DA4 (PaintShop)
+const struct auto_desc da4_desc = {
+	.w = 640, .h = 800,
+	.channels = 1, .bitdepth = 1,
+	.attr = pix_inverted,
+};
+// DOO (Atari Doodle)
+const struct auto_desc doo_desc = {
+	.w = 640, .h = 400,
+	.channels = 1, .bitdepth = 1,
+	.attr = pix_inverted,
 };
 
 enum wu_error auto_load(struct image_file *infile, const struct auto_desc *desc) {
