@@ -24,7 +24,7 @@ const struct auto_desc bru_desc = {
 	.used_bits = 1, .attr = pix_inverted,
 };
 
-// DOO - Atari Doodle
+// DOO (Atari Doodle)
 const struct auto_desc doo_desc = {
 	.w = 640, .h = 400,
 	.channels = 1, .bitdepth = 1,

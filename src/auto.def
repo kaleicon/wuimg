@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: 0BSD
 
-/* Enumerate formats for autodec */
+/* Enumerate formats for autodec
+ * Format: WUDEC(base_name, description) */
 
-WUDEC(avs)
-WUDEC(bru)
-WUDEC(doo)
-WUDEC(farbfeld)
+WUDEC(avs, "AVS X")
+WUDEC(bru, "Degas Brush")
+WUDEC(doo, "Atari Doodle")
+WUDEC(farbfeld, "farbfeld")
 
 // Atari Falcon True Color
-WUDEC(coke)
-WUDEC(ftc)
-WUDEC(eggpaint)
-WUDEC(god)
-WUDEC(trp)
+WUDEC(coke, "COKE (Atari Falcon)")
+WUDEC(ftc, "Falcon True Color")
+WUDEC(eggpaint, "EggPaint")
+WUDEC(god, "GodPaint")
+WUDEC(trp, "Spooky Sprites uncompressed")

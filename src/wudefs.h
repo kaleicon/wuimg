@@ -73,6 +73,7 @@ struct image_fn {
 
 struct fmt_desc {
 	char name[8];
+	const char *description;
 	bool is_auto;
 	union {
 		const struct image_fn *fn;

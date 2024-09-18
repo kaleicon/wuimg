@@ -1,228 +1,225 @@
 // SPDX-License-Identifier: 0BSD
 
 /* Enumerate known formats
- * Format: WUDEC(base_name) */
+ * Format: WUDEC(base_name, description) */
 
 #ifdef WU_ENABLE_C64
-WUDEC(c64)
+WUDEC(c64, "KoalaPainter (KOA) and Advanced Art Studio (OCP)")
+#endif
+
+#ifdef WU_ENABLE_DEGAS
+WUDEC(degas, "DEGAS bitmaps")
 #endif
 
 #ifdef WU_ENABLE_DIB
-WUDEC(bmp)
-WUDEC(dib)
-WUDEC(ico)
+WUDEC(bmp, "Microsoft Bitmap")
+WUDEC(dib, "Microsoft DIB")
+WUDEC(ico, "Microsoft Icon")
 #ifdef WU_ENABLE_BMZ
-WUDEC(bmz)
+WUDEC(bmz, "GSD engine BMZ")
 #endif
 #endif
 
 #ifdef WU_ENABLE_DPX
-WUDEC(dpx)
+WUDEC(dpx, "Digital Picture Exchange")
 #endif
 
 #ifdef WU_ENABLE_G00
-WUDEC(g00)
+WUDEC(g00, "RealLive's G00")
 #endif
 
 #ifdef WU_ENABLE_HG3
-WUDEC(hg3)
+WUDEC(hg3, "CatSystem engine HG3")
 #endif
 
 #ifdef WU_ENABLE_ILBM
-WUDEC(ilbm)
+WUDEC(ilbm, "Interleaved Bitmap")
 #endif
 
 #ifdef WU_ENABLE_MAC
-WUDEC(mac)
+WUDEC(mac, "MacPaint")
 #endif
 
 #ifdef WU_ENABLE_MAG
-WUDEC(mag)
+WUDEC(mag, "MAG (MAKI02)")
 #endif
 
 #ifdef WU_ENABLE_MAKI
-WUDEC(maki)
+WUDEC(maki, "MAKIchan (MAKI01)")
 #endif
 
 #ifdef WU_ENABLE_MSX
-WUDEC(sc2)
-WUDEC(sc3)
-WUDEC(sc4)
-WUDEC(sc5)
-WUDEC(sc6)
-WUDEC(sc7)
-WUDEC(sc8)
-WUDEC(sc10)
-WUDEC(sc12)
+WUDEC(sc2, "MSX SCREEN 2")
+WUDEC(sc3, "MSX SCREEN 3")
+WUDEC(sc4, "MSX SCREEN 4")
+WUDEC(sc5, "MSX SCREEN 5")
+WUDEC(sc6, "MSX SCREEN 6")
+WUDEC(sc7, "MSX SCREEN 7")
+WUDEC(sc8, "MSX SCREEN 8")
+WUDEC(sc10, "MSX SCREEN 10")
+WUDEC(sc12, "MSX SCREEN 12")
 #endif
 
 #ifdef WU_ENABLE_PCF
-WUDEC(pcf)
+WUDEC(pcf, "PCF bitmap font")
 #endif
 
 #ifdef WU_ENABLE_PCX
-WUDEC(pcx)
-WUDEC(dcx)
+WUDEC(pcx, "PC Paintbrush's PCX")
+WUDEC(dcx, "Multi-image PCX")
 #endif
 
 #ifdef WU_ENABLE_PDT
-WUDEC(pdt)
+WUDEC(pdt, "RealLive's PDT")
 #endif
 
 #ifdef WU_ENABLE_PGX
-WUDEC(pgx)
+WUDEC(pgx, "Glib2 engine's PGX")
 #endif
 
 #ifdef WU_ENABLE_PI
-WUDEC(pi)
-#endif
-
-#ifdef WU_ENABLE_DEGAS
-WUDEC(degas)
+WUDEC(pi, "Yanagisawa's Pi")
 #endif
 
 #ifdef WU_ENABLE_PIC
-WUDEC(pic)
+WUDEC(pic, "Yanagisawa's PIC")
 #endif
 
 #ifdef WU_ENABLE_PIC2
-WUDEC(pic2)
+WUDEC(pic2, "Yanagisawa's PIC2")
 #endif
 
 #ifdef WU_ENABLE_PICTOR
-WUDEC(pictor)
+WUDEC(pictor, "PCPaint PICtor")
 #endif
 
 #ifdef WU_ENABLE_PNM
-WUDEC(pnm)
+WUDEC(pnm, "PNM format family")
 #endif
 
 #ifdef WU_ENABLE_PRT
-WUDEC(prt)
+WUDEC(prt, "Kid engine's PRT")
 #endif
 
 #ifdef WU_ENABLE_PX
-WUDEC(px)
+WUDEC(px, "Leaf's PX")
 #endif
 
 #ifdef WU_ENABLE_Q4
-WUDEC(q4)
+WUDEC(q4, "MAJYO's Q4 (XLD4)")
 #endif
 
 #ifdef WU_ENABLE_QOI
-WUDEC(qoi)
+WUDEC(qoi, "QuiteOK image")
 #endif
 
 #ifdef WU_ENABLE_SGI
-WUDEC(sgi)
+WUDEC(sgi, "Silicon Graphics Image")
 #endif
 
 #ifdef WU_ENABLE_SIXEL
-WUDEC(sixel)
+WUDEC(sixel, "Sixel")
 #endif
 
 #ifdef WU_ENABLE_SUN
-WUDEC(sun)
+WUDEC(sun, "Sun Raster")
 #endif
 
 #ifdef WU_ENABLE_TGA
-WUDEC(tga)
+WUDEC(tga, "Truevision TGA")
 #endif
 
 #ifdef WU_ENABLE_TIM
-WUDEC(tim)
+WUDEC(tim, "PlayStation image")
 #endif
 
 #ifdef WU_ENABLE_TLG
-WUDEC(tlg)
+WUDEC(tlg, "KiriKiri engine's image")
 #endif
 
 #ifdef WU_ENABLE_WBMP
-WUDEC(wbmp)
+WUDEC(wbmp, "Wireless Bitmap")
 #endif
 
 #ifdef WU_ENABLE_WPX
-WUDEC(wbm)
-WUDEC(wia)
+WUDEC(wbm, "Wild-Bug engine image")
+WUDEC(wia, "Wild-Bug image sequence")
 #endif
 
 #ifdef WU_ENABLE_XBM
-WUDEC(xbm)
+WUDEC(xbm, "X Bitmap")
 #endif
 
 #ifdef WU_ENABLE_XCURSOR
-WUDEC(xcursor)
+WUDEC(xcursor, "Xcursor")
 #endif
 
 #ifdef WU_ENABLE_XWD
-WUDEC(xwd)
+WUDEC(xwd, "X Window Dump")
 #endif
 
 #ifdef WU_ENABLE_XYZ
-WUDEC(xyz)
+WUDEC(xyz, "RPG Maker")
 #endif
 
 
-#ifdef WU_ENABLE_AVIF
-WUDEC(avif)
+#if defined WU_ENABLE_AVIF || defined WU_ENABLE_HEIF
+WUDEC(avif, "AV1 Image File Format")
 #endif
 
 #ifdef WU_ENABLE_FLIF
-WUDEC(flif)
+WUDEC(flif, "Free Lossless Image Format")
 #endif
 
 #ifdef WU_ENABLE_GIF
-WUDEC(gif)
+WUDEC(gif, "Graphics Interchange Format")
 #endif
 
 #ifdef WU_ENABLE_HEIF
-#ifndef WU_ENABLE_AVIF
-WUDEC(avif)
-#endif
-WUDEC(heif)
+WUDEC(heif, "High Efficiency Image File Format")
 #endif
 
 #ifdef WU_ENABLE_JBIG
-WUDEC(jbig)
+WUDEC(jbig, "JBIG")
 #endif
 
 #ifdef WU_ENABLE_JPEG
-WUDEC(jpeg)
+WUDEC(jpeg, "JPEG")
 #endif
 
 #ifdef WU_ENABLE_JPEG2000
-WUDEC(jp2)
-WUDEC(j2k)
+WUDEC(jp2, "JPEG 2000")
+WUDEC(j2k, "JPEG 2000 codestream")
 #endif
 
 #ifdef WU_ENABLE_JPEGLS
-WUDEC(jpegls)
+WUDEC(jpegls, "JPEG-LS")
 #endif
 
 #ifdef WU_ENABLE_JPEGXL
-WUDEC(jpegxl)
+WUDEC(jpegxl, "JPEG-XL")
 #endif
 
 #ifdef WU_ENABLE_LERC
-WUDEC(lerc)
+WUDEC(lerc, "Limited Error Raster Compression")
 #endif
 
 #ifdef WU_ENABLE_PNG
-WUDEC(png)
+WUDEC(png, "Portable Network Graphics")
 #endif
 
 #ifdef WU_ENABLE_RAW
-WUDEC(raw)
+WUDEC(raw, "Raw camera formats")
 #endif
 
 #ifdef WU_ENABLE_SVG
-WUDEC(svg)
+WUDEC(svg, "Scalable Vector Graphics")
 #endif
 
 #ifdef WU_ENABLE_TIFF
-WUDEC(tiff)
+WUDEC(tiff, "Tag Image File Format")
 #endif
 
 #ifdef WU_ENABLE_WEBP
-WUDEC(webp)
+WUDEC(webp, "WebP")
 #endif

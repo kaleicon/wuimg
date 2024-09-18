@@ -27,22 +27,27 @@ static const char fmt_structs[] = EXP_STRING(
 // Format identifiers
 enum fmt_id {
 	fmt_unknown = -1,
-#define WUDEC(name) fmt_##name,
+#define WUDEC(name, _d) fmt_##name,
 #include "auto.def"
 #include "dec.def"
 #undef WUDEC
 };
 
 // Format names
-static const char name_map[][8] = {
-#define WUDEC(name) { #name },
+struct fmt_info {
+	const char name[8];
+	const char *description;
+};
+
+static const struct fmt_info info_map[] = {
+#define WUDEC(name, description) { #name , description },
 #include "auto.def"
 #include "dec.def"
 #undef WUDEC
 };
 
 const size_t AUTO_AMOUNT =
-#define WUDEC(_n) + 1
+#define WUDEC(_n, _d) + 1
 #include "auto.def"
 #undef WUDEC
 ;
@@ -882,19 +887,21 @@ static int print_fmt_magic(size_t *min_len, size_t *max_len) {
 
 static void print_fmt_desc(void) {
 	print_map_def("desc");
-	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
+	for (size_t i = 0; i < ARRAY_LEN(info_map); ++i) {
 		fputs("{.name = {", stdout);
-		const int outlen = (int)print_hex(name_map[i],
-			sizeof(*name_map));
+		const int outlen = (int)print_hex(info_map[i].name,
+			sizeof(info_map->name));
 		fputs("},", stdout);
+
+		// FIXME: Escape quotes
+		fprintf(stdout, ".description = \"%s\",", info_map[i].description);
 
 		fprintf(stdout, ".is_auto = %s,", i < AUTO_AMOUNT ? "true" : "false");
 
 		const char *suf = i < AUTO_AMOUNT ? "desc" : "fn";
 		fprintf(stdout, ".dec.%s = &%.*s_%s",
-			suf, outlen, name_map[i], suf);
+			suf, outlen, info_map[i].name, suf);
 
-		//fprintf(stdout, "&%.*s_fn", outlen, name_map[i]);
 		fputs("},", stdout);
 	}
 	fputs("};", stdout);
@@ -938,13 +945,13 @@ static int mapsort(void) {
 }
 
 static int dec_headers(void) {
-	const size_t name_len = sizeof(*name_map);
+	const size_t name_len = sizeof(info_map->name);
 	print_include("\"wudefs.h\"");
-	for (size_t i = 0; i < ARRAY_LEN(name_map); ++i) {
+	for (size_t i = 0; i < ARRAY_LEN(info_map); ++i) {
 		const char *suf = i < AUTO_AMOUNT ? "desc" : "fn";
 		const char *type = i < AUTO_AMOUNT ? "auto_desc" : "image_fn";
 		printf("extern const struct %s %.*s_%s;",
-			type, (int)name_len, name_map[i], suf);
+			type, (int)name_len, info_map[i].name, suf);
 	}
 	fputc('\n', stdout);
 	return 0;

@@ -312,33 +312,44 @@ void dec_src_filename(struct image_context *image, const char *filename) {
 }
 
 
-static void write_max(const void *ptr, const size_t max) {
-	fwrite(ptr, 1, strnlen(ptr, max), stdout);
+static int infocmp(const void *p1, const void *p2) {
+	const struct fmt_desc *d1 = p1;
+	const struct fmt_desc *d2 = p2;
+	return memcmp(d1->name, d2->name, sizeof(d1->name));
 }
 
-static void put_sep(const size_t i, const size_t limit) {
-	fputs((i + 1 < limit) ? ", " : "\n\n", stdout);
+
+static void print_descs(FILE *out, const struct fmt_desc *sd) {
+	int max = (int)sizeof(desc_map->name);
+	for (size_t i = 0; i < ARRAY_LEN(desc_map); ++i) {
+		fprintf(out, "%.*s:\t%s\n", max, sd[i].name,
+			sd[i].description);
+	}
+	fputc('\n', out);
+}
+
+static void sort_and_print(FILE *out) {
+	struct fmt_desc *sd = memdup(desc_map, sizeof(desc_map));
+	if (sd) {
+		qsort(sd, ARRAY_LEN(desc_map), sizeof(*desc_map), infocmp);
+		print_descs(out, sd);
+		free(sd);
+	} else {
+		print_descs(out, desc_map);
+	}
 }
 
 void print_known_formats(void) {
-	printf("Known formats: %zu\n", ARRAY_LEN(desc_map));
-	for (size_t i = 0; i < ARRAY_LEN(desc_map); ++i) {
-		write_max(desc_map[i].name, sizeof(desc_map[i].name));
-		put_sep(i, ARRAY_LEN(desc_map));
-	}
+	FILE *out = stdout;
+	fprintf(out, "Known formats: %zu\n", ARRAY_LEN(desc_map));
+	sort_and_print(out);
 
-	printf("Known extensions: %zu\n", ARRAY_LEN(ext_map));
+	fprintf(out, "Known extensions: %zu\n", ARRAY_LEN(ext_map));
+	const int max = (int)sizeof(ext_map->ext);
 	for (size_t i = 0; i < ARRAY_LEN(ext_map); ++i) {
-		write_max(ext_map[i].ext, sizeof(ext_map[i].ext));
-		put_sep(i, ARRAY_LEN(ext_map));
+		fprintf(out, "%.*s%s", max, ext_map[i].ext,
+			(i + 1 < ARRAY_LEN(ext_map)) ? ", " : "\n\n");
 	}
 
-	printf("Known magic sequences: %zu\n", ARRAY_LEN(magic_map));
-	/*for (size_t i = 0; i < ARRAY_LEN(magic_map); ++i) {
-		printf(" %zu:", i);
-		for (size_t c = 0; c < sizeof(magic_map[i].bytes); ++c) {
-			printf(" %.2x", magic_map[i].bytes[c]);
-		}
-		putchar('\n');
-	}*/
+	fprintf(out, "Known magic sequences: %zu\n", ARRAY_LEN(magic_map));
 }
