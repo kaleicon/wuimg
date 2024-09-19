@@ -27,6 +27,7 @@ fmt_map = {
 		'qoi',
 		'sgi',
 		'sixel',
+		'spooky',
 		'sun',
 		'tga',
 		'tim',

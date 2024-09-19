@@ -121,6 +121,11 @@ WUDEC(sgi, "Silicon Graphics Image")
 WUDEC(sixel, "Sixel")
 #endif
 
+#ifdef WU_ENABLE_SPOOKY
+WUDEC(tre, "Spooky Sprites Run-Length Encoded")
+WUDEC(trs, "Spooky Sprites Sprite")
+#endif
+
 #ifdef WU_ENABLE_SUN
 WUDEC(sun, "Sun Raster")
 #endif

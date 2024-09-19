@@ -220,7 +220,9 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 	}
 	if (img->mode != image_mode_palette) {
 		const uint8_t a = pix_layout_offset(img->layout, pix_alpha);
-		if (a >= img->channels) {
+		const uint8_t ch = img->mode == image_mode_bitfield
+			? img->u.bitfield->ch : img->channels;
+		if (a >= ch) {
 			img->alpha = alpha_ignore;
 		}
 	}

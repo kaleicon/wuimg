@@ -182,6 +182,11 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff", "\x1bP", fmt_sixel},
 #endif // WU_ENABLE_SIXEL
 
+#ifdef WU_ENABLE_SPOOKY
+	{"\xff\xff\xff\xff", "tre1", fmt_tre},
+	{"\xff\xff\xff\xff", "TCSF", fmt_trs},
+#endif // WU_ENABLE_SPOOKY
+
 #ifdef WU_ENABLE_SUN
 	{"\xff\xff\xff\xff", "\x59\xa6\x6a\x95", fmt_sun},
 #endif // WU_ENABLE_SUN
@@ -531,6 +536,11 @@ static struct fmt_ext ext_map[] = {
 #ifdef WU_ENABLE_SIXEL
 	{"six", fmt_sixel},
 	{"sixel", fmt_sixel},
+#endif
+
+#ifdef WU_ENABLE_SPOOKY
+	{"tre", -1},
+	{"trs", -1},
 #endif
 
 #ifdef WU_ENABLE_SUN
