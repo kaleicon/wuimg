@@ -32,6 +32,10 @@ WUDEC(g00, "RealLive's G00")
 WUDEC(hg3, "CatSystem engine HG3")
 #endif
 
+#ifdef WU_ENABLE_IDSP
+WUDEC(idsp, "id Software Sprite")
+#endif
+
 #ifdef WU_ENABLE_ILBM
 WUDEC(ilbm, "Interleaved Bitmap")
 #endif

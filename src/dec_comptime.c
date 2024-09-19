@@ -86,6 +86,10 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff", "HG-3", fmt_hg3},
 #endif //WU_ENABLE_HG3
 
+#ifdef WU_ENABLE_IDSP
+	{"\xff\xff\xff\xff", "IDSP", fmt_idsp},
+#endif //WU_ENABLE_IDSP
+
 #ifdef WU_ENABLE_ILBM
 	{"\xff\xff\xff\xff\0\0\0\0\xff\xff\xff\xff", "FORM\0\0\0\0ILBM", fmt_ilbm},
 	{"\xff\xff\xff\xff\0\0\0\0\xff\xff\xff\xff", "FORM\0\0\0\0PBM ", fmt_ilbm},
@@ -409,6 +413,11 @@ static struct fmt_ext ext_map[] = {
 
 #ifdef WU_ENABLE_HG3
 	{"hg3", -1},
+#endif
+
+#ifdef WU_ENABLE_IDSP
+	{"spr", -1},
+	{"spr32", -1},
 #endif
 
 #ifdef WU_ENABLE_ILBM
