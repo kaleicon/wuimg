@@ -551,7 +551,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		img->channels = 1;
 		img->bitdepth = (bitfield == 0x332) ? 8 : 16;
 		img->layout = pix_layout_mul(pix_bgra, img->layout);
-		if (!wuimg_bitfield_init_from_id(img, bitfield)) {
+		if (!wuimg_bitfield_from_id(img, bitfield)) {
 			return wu_alloc_error;
 		}
 	} else if (desc->depth == 12) {

@@ -112,8 +112,7 @@ void wuimg_exif_orientation(struct wuimg *img, int orientation);
 
 enum wu_error wuimg_verify(struct wuimg *img);
 
-bool wuimg_exceeds_limit(const struct wuimg *img,
-const struct wu_conf *wuconf);
+bool wuimg_exceeds_limit(const struct wuimg *img, const struct wu_conf *wuconf);
 
 size_t wuimg_stride(const struct wuimg *img);
 
@@ -126,7 +125,7 @@ enum wu_error wuimg_alloc(struct wuimg *img);
 
 struct bitfield * wuimg_bitfield_init(struct wuimg *img);
 
-struct bitfield * wuimg_bitfield_init_from_id(struct wuimg *img,
+struct bitfield * wuimg_bitfield_from_id(struct wuimg *img,
 enum bitfield_id id);
 
 

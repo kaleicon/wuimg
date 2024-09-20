@@ -61,5 +61,5 @@ const struct image_fn trs_fn = {
 	.mmap = true,
 	.dec = trs_dec,
 	.callback = trs_callback,
-	.end = image_file_free_end,
+	.end = image_file_end,
 };

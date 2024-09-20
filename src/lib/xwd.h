@@ -3,7 +3,6 @@
 #define LIB_XWD
 
 #include "misc/endian.h"
-#include "raster/bitfield.h"
 #include "raster/wuimg.h"
 
 enum xwd_version {
@@ -36,7 +35,6 @@ struct xwd_window {
 struct xwd_desc {
 	FILE *ifp;
 	struct xwd_window win;
-	struct bitfield bf;
 	enum xwd_version version:8;
 	enum xwd_format format:8;
 	enum endianness byte_endian:8;

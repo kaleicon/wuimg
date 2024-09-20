@@ -135,7 +135,7 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
 	} else {
 		img->channels = 1;
 		img->bitdepth = depth;
-		if (depth == 16 && !wuimg_bitfield_init_from_id(img, 0x1555)) {
+		if (depth == 16 && !wuimg_bitfield_from_id(img, 0x1555)) {
 			return wu_alloc_error;
 		}
 	}

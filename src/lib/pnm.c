@@ -200,7 +200,7 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		}
 		desc->rast.bitdepth = 8;
 		desc->rast.layout = pix_bgra;
-		if (!wuimg_bitfield_init_from_id(&desc->rast, 0x332)) {
+		if (!wuimg_bitfield_from_id(&desc->rast, 0x332)) {
 			return wu_alloc_error;
 		}
 		break;

@@ -39,5 +39,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn pnm_fn = {
 	.dec = pnm_dec,
 	.callback = pnm_callback,
-	.end = image_file_free_end,
+	.end = image_file_end,
 };

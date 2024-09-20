@@ -175,5 +175,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn dpx_fn = {
 	.dec = dpx_dec,
 	.callback = dpx_callback,
-	.end = image_file_free_end,
+	.end = image_file_end,
 };

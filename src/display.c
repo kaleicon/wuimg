@@ -195,9 +195,8 @@ const bool allow_cycle, const bool allow_delete) {
 			if (evs & ev_frame) {
 				next_frame = state->time + min_time(img, state);
 			} else {
-				fprintf(stderr,
-					"Frame %d uploaded in %" PRIu64 " ns\n",
-					state->frame, gl_clock_query(gl));
+				nanosec_report("Frame uploaded in",
+					gl_clock_query(gl), report_detail);
 			}
 			upload = false;
 			event->image = 0;

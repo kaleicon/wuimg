@@ -18,6 +18,13 @@ enum c64_fmt_sizes {
 	c64_ocp = 10018,
 };
 
+struct c64_mem_offsets {
+	const uint8_t *restrict bitmap;
+	const uint8_t *restrict screen;
+	const uint8_t *restrict color;
+	const uint8_t *restrict bg;
+};
+
 static void multicolor_expand(uint8_t *restrict dst,
 const struct c64_mem_offsets *off) {
 	const uint8_t bg = *off->bg & 0x0f;

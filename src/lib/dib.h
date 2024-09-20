@@ -3,11 +3,8 @@
 #define LIB_BMP
 
 #include "misc/common.h"
-#include "misc/endian.h"
 #include "misc/wustr.h"
 #include "raster/bitfield.h"
-#include "raster/color.h"
-#include "raster/pal.h"
 #include "raster/wuimg.h"
 
 enum dib_os2_compression {

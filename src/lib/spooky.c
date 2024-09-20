@@ -71,7 +71,7 @@ static enum wu_error common_setup(struct wuimg *img, const bool alpha) {
 	img->channels = 1;
 	img->bitdepth = alpha ? 24 : 16;
 	img->layout = pix_bgra;
-	if (wuimg_bitfield_init_from_id(img, alpha << 12 | 0x565)) {
+	if (wuimg_bitfield_from_id(img, alpha << 12 | 0x565)) {
 		return wuimg_verify(img);
 	}
 	return wu_alloc_error;

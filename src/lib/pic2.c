@@ -326,7 +326,7 @@ const struct pic2_block *block, struct wuimg *img) {
 		img->channels = 1;
 		img->bitdepth = (b->depth > 5) ? 32 : 16;
 		img->layout = pix_bgra;
-		struct bitfield *bf = wuimg_bitfield_init_from_id(img,
+		struct bitfield *bf = wuimg_bitfield_from_id(img,
 			(b->depth * 0x111u) | 0x1000u);
 		if (!bf) {
 			return wu_alloc_error;

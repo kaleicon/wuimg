@@ -2,8 +2,6 @@
 #ifndef WU_EVENTS
 #define WU_EVENTS
 
-#include <stdbool.h>
-
 #include "window.h"
 
 double event_exec(struct window_context *window);

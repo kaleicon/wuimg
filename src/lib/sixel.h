@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 #ifndef LIB_SIXEL
 #define LIB_SIXEL
-#include <stdio.h>
-#include <stdbool.h>
-
 #include "raster/wuimg.h"
 #include "misc/mparser.h"
 

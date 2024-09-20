@@ -418,7 +418,7 @@ const uint16_t height, const uint8_t depth, const uint8_t img_desc) {
 	case 15:
 	case 16:
 		img->bitdepth = 16;
-		if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
+		if (!wuimg_bitfield_from_id(img, 0x1555)) {
 			return wu_alloc_error;
 		}
 		break;

@@ -89,7 +89,7 @@ foreach cat, fmts : fmt_map
 		deps = []
 		if f in pkg_map
 			foreach lib : pkg_map[f]
-				deps += dependency(lib, required : false)
+				deps += dependency(lib, required : state)
 			endforeach
 		elif cat == 'external'
 			deps += cc.find_library(f, required : state)
@@ -97,9 +97,7 @@ foreach cat, fmts : fmt_map
 
 		enable = true
 		foreach d : deps
-			if not d.found()
-				enable = false
-			endif
+			enable = enable and d.found()
 		endforeach
 
 		if state.require(enable).allowed()
@@ -130,11 +128,8 @@ foreach backend, libs : window_map
 	enable = true
 	foreach lib : libs
 		d = dependency(lib, required : state)
-		if d.found()
-			deps += d
-		else
-			enable = false
-		endif
+		deps += d
+		enable = enable and d.found()
 	endforeach
 
 	if state.require(enable).allowed()

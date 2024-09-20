@@ -6,7 +6,7 @@
 #include "misc/math.h"
 #include "wudefs.h"
 
-void image_file_free_end(struct image_file *infile) {
+void image_file_end(struct image_file *infile) {
 	free(infile->dec_state);
 }
 

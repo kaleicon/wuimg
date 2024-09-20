@@ -470,7 +470,7 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 		if (depth == 16) {
 			img->channels = 1;
 			img->bitdepth = 16;
-			if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
+			if (!wuimg_bitfield_from_id(img, 0x1555)) {
 				return wu_alloc_error;
 			}
 		}

@@ -32,5 +32,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn px_fn = {
 	.dec = px_dec,
 	.callback = px_callback,
-	.end = image_file_free_end,
+	.end = image_file_end,
 };

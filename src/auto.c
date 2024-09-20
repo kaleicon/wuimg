@@ -144,7 +144,7 @@ const struct auto_desc *desc) {
 	img->layout = desc->layout;
 	img->attr = desc->attr;
 	if (desc->bitfield) {
-		if (!wuimg_bitfield_init_from_id(img, desc->bitfield)) {
+		if (!wuimg_bitfield_from_id(img, desc->bitfield)) {
 			return wu_alloc_error;
 		}
 	}

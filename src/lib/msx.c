@@ -427,7 +427,7 @@ enum msx_screen mode) {
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 8;
 		img->layout = pix_layout_mul(img->layout, pix_bgra);
-		if (!wuimg_bitfield_init_from_id(img, 0x332)) {
+		if (!wuimg_bitfield_from_id(img, 0x332)) {
 			return wu_alloc_error;
 		}
 		pal_depth = 0;
@@ -438,7 +438,7 @@ enum msx_screen mode) {
 		img->w = 256;
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 16;
-		if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
+		if (!wuimg_bitfield_from_id(img, 0x1555)) {
 			return wu_alloc_error;
 		}
 		/* These screen modes render to a higher bitdepth, so ignore

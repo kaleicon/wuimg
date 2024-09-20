@@ -89,7 +89,7 @@ struct image_context {
 	struct fmt_desc desc;
 };
 
-void image_file_free_end(struct image_file *infile);
+void image_file_end(struct image_file *infile);
 
 
 struct wuimg * realloc_sub_images(struct image_file *file, size_t nr);

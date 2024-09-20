@@ -2,8 +2,6 @@
 #ifndef LIB_Q4
 #define LIB_Q4
 
-#include <stdio.h>
-
 #include "raster/wuimg.h"
 
 struct q4_desc {

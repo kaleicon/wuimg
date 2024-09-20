@@ -2,8 +2,6 @@
 #ifndef LIB_WPX
 #define LIB_WPX
 
-#include <stdio.h>
-
 #include "raster/wuimg.h"
 #include "misc/mparser.h"
 

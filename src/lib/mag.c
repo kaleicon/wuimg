@@ -398,7 +398,7 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 		img->w /= 8 / img->bitdepth;
 		img->bitdepth = 16;
 		img->alpha = alpha_ignore;
-		if (!wuimg_bitfield_init_from_id(img, 0x1555)) {
+		if (!wuimg_bitfield_from_id(img, 0x1555)) {
 			return wu_alloc_error;
 		}
 	}

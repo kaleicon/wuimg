@@ -2,7 +2,6 @@
 #ifndef LIB_PCX
 #define LIB_PCX
 
-#include <stdio.h>
 #include <stdbool.h>
 
 #include "raster/wuimg.h"

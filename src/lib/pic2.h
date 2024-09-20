@@ -2,8 +2,6 @@
 #ifndef LIB_PIC2
 #define LIB_PIC2
 
-#include <stdio.h>
-
 #include "raster/wuimg.h"
 
 enum pic2_id {

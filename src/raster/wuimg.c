@@ -307,7 +307,7 @@ struct bitfield * wuimg_bitfield_init(struct wuimg *img) {
 		calloc(1, sizeof(*img->u.bitfield)));
 }
 
-struct bitfield * wuimg_bitfield_init_from_id(struct wuimg *img,
+struct bitfield * wuimg_bitfield_from_id(struct wuimg *img,
 const enum bitfield_id id) {
 	struct bitfield *bf = wuimg_bitfield_init(img);
 	if (bf) {
