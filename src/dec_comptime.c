@@ -63,6 +63,11 @@ static const short RAW_IF_PRESENT = -1;
 static struct fmt_magic magic_map[] = {
 	// Auto formats
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff", "farbfeld", fmt_farbfeld},
+	/* 0x2c and 0x20 are the image dimensions, but they're always the same
+	 * so include them to make matching more robust. */
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\x01\x00\x01\x00\x2c\x00\x20\x00", fmt_hpicon},
+
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"COKE format.", fmt_coke},
 	{"\xff\xff\xff\xff", "TRUP", fmt_eggpaint},
@@ -365,6 +370,8 @@ static struct fmt_ext ext_map[] = {
 	{"bru", fmt_bru},
 	// Farbfeld
 	{"ff", -1},
+	// HP Palmtop Icon
+	{"icn", -1},
 	// Atari Falcon True Color family
 	{"tg1", -1},
 	{"trp", -1},

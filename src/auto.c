@@ -36,6 +36,18 @@ const struct auto_desc farbfeld_desc = {
 	AUTO_READ(farbfeld_read),
 };
 
+// HP Palmtop Icon
+static const struct auto_read hpicon_read[] = {
+	{auto_match, AUTO_CSTR("\x01\x00\x01\x00")},
+	{'w', 2},
+	{'h', 2},
+};
+const struct auto_desc hpicon_desc = {
+	.channels = 1, .bitdepth = 1,
+	.attr = pix_inverted, .endian = little_endian,
+	AUTO_READ(hpicon_read),
+};
+
 /* Atari Falcon True Color family */
 // COKE
 static const struct auto_read coke_read[] = {

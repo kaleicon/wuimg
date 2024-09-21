@@ -2,10 +2,10 @@
 
 /* Enumerate formats for autodec
  * Format: WUDEC(base_name, description) */
-
 WUDEC(avs, "AVS X")
 WUDEC(bru, "Degas Brush")
 WUDEC(farbfeld, "farbfeld")
+WUDEC(hpicon, "HP Palmtop Icon")
 
 // Atari Falcon True Color
 WUDEC(coke, "COKE (Atari Falcon)")
