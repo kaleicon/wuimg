@@ -60,6 +60,22 @@ const struct auto_desc hpicon_desc = {
 	AUTO_READ(hpicon_read),
 };
 
+// Nokia Logo Manager
+// TODO: Report logo type, multiple images
+static const struct auto_read nlm_read[] = {
+	{auto_match, AUTO_CSTR("NLM \x01")},
+	{auto_skip, 1}, // 0: Operator, 1: Caller, 2: Startup, 3: Picture image
+	{auto_match, AUTO_CSTR("\0")}, // Number of images - 1
+	{'w', 1},
+	{'h', 1},
+	{auto_match, AUTO_CSTR("\x01")}, // ???
+};
+const struct auto_desc nlm_desc = {
+	.channels = 1, .bitdepth = 1,
+	.attr = pix_inverted,
+	AUTO_READ(nlm_read),
+};
+
 /* Atari Falcon True Color family */
 // COKE
 static const struct auto_read coke_read[] = {

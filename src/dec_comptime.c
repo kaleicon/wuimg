@@ -68,6 +68,7 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff" "\xff\xff\xff", "B&W256", fmt_gemview},
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\x01\x00\x01\x00\x2c\x00\x20\x00", fmt_hpicon},
+	{"\xff\xff\xff\xff" "\xff\xf8", "NLM " "\x01\x00", fmt_nlm},
 
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"COKE format.", fmt_coke},
@@ -375,6 +376,8 @@ static struct fmt_ext ext_map[] = {
 	{"icn", -1},
 	// GEM View-Dither
 	{"dit", -1},
+	// Nokia Logo Manager
+	{"nlm", -1},
 
 	// Atari Falcon True Color family
 	{"tg1", -1},
