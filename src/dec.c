@@ -58,7 +58,8 @@ static const struct fmt_magic * search_magic(struct image_file *infile) {
 		sizeof(*magic_map), fmaskmagiccmp);
 }
 
-static const struct fmt_ext * search_extension(const struct wuptr name) {
+static const struct fmt_ext * search_extension(const struct wuptr name,
+uint8_t l_ext[static sizeof(ext_map->ext)]) {
 	const size_t max_check = zumin(name.len, MAX_EXT_LEN + 1 /* dot */);
 	if (!max_check) {
 		return NULL;
@@ -69,7 +70,6 @@ static const struct fmt_ext * search_extension(const struct wuptr name) {
 		const uint8_t *ext = dot + 1;
 		const size_t len = (size_t)(end - ext);
 		if (len >= MIN_EXT_LEN) {
-			uint8_t l_ext[sizeof(ext_map->ext)] = {0};
 			for (size_t i = 0; i < len; ++i) {
 				l_ext[i] = (uint8_t)tolower(ext[i]);
 			}
@@ -86,7 +86,8 @@ static const struct fmt_desc * fmtmap_identify(struct image_context *image) {
 	 * Formats that should be identified by their magic sequence will
 	 * return -1. */
 	if (image->name) {
-		const struct fmt_ext *ext = search_extension(wuptr_str(image->name));
+		const struct fmt_ext *ext = search_extension(wuptr_str(image->name),
+			image->file.ext);
 		if (ext && ext->id >= 0) {
 			return desc_map + ext->id;
 		}
@@ -101,7 +102,8 @@ static const struct fmt_desc * fmtmap_identify(struct image_context *image) {
 
 
 bool fmtmap_known_extension(const struct wuptr filename) {
-	return (bool)search_extension(filename);
+	uint8_t buf[sizeof(ext_map->ext)] = {0};
+	return (bool)search_extension(filename, buf);
 }
 
 

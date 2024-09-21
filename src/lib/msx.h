@@ -21,13 +21,18 @@ enum msx_screen {
 struct msx_desc {
 	FILE *ifp;
 	enum msx_screen mode;
+	bool is_alt_field;
 	bool compressed;
 	uint16_t end;
 };
 
+bool msx_mode_may_be_compressed(enum msx_screen mode);
+
+bool msx_mode_may_have_alternate_field(enum msx_screen mode);
+
 size_t msx_decode(const struct msx_desc *desc, struct wuimg *img);
 
 enum wu_error msx_parse(struct msx_desc *desc, struct wuimg *img, FILE *ifp,
-enum msx_screen mode);
+const uint8_t ext[static 3]);
 
 #endif /* LIB_MSX */

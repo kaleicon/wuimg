@@ -110,7 +110,7 @@ static struct fmt_magic magic_map[] = {
 	 * extension. */
 
 	// Graph saurus SR5
-	{"\xff\xff\xff\xff\xff\xff\xff", "\xfe\x00\x00\x00\x6a\x00\x00", fmt_sc5},
+	{"\xff\xff\xff\xff\xff\xff\xff", "\xfe\x00\x00\x00\x6a\x00\x00", fmt_msx},
 
 #endif // WU_ENABLE_MSX
 
@@ -442,37 +442,37 @@ static struct fmt_ext ext_map[] = {
 #endif
 
 #ifdef WU_ENABLE_MSX
-	{"sc2", fmt_sc2},
-	{"grp", fmt_sc2},
+	{"sc2", fmt_msx},
+	{"grp", fmt_msx},
 
-	{"sc3", fmt_sc3},
+	{"sc3", fmt_msx},
 
-	{"sc4", fmt_sc4},
+	{"sc4", fmt_msx},
 
-	{"sc5", fmt_sc5},
-	{"sr5", fmt_sc5}, // Graph Saurus
-	{"ge5", fmt_sc5},
+	{"sc5", fmt_msx},
+	{"sr5", fmt_msx}, // Graph Saurus
+	{"ge5", fmt_msx},
 
-	{"sc6", fmt_sc6},
-	{"s16", fmt_sc6}, // Alternate field of an SC7 file
-	{"sr6", fmt_sc6}, // Graph Saurus
+	{"sc6", fmt_msx},
+	{"s16", fmt_msx}, // Alternate field of an SC7 file
+	{"sr6", fmt_msx}, // Graph Saurus
 
-	{"sc7", fmt_sc7},
-	{"s17", fmt_sc7}, // Alternate field of an SC7 file
-	{"sr7", fmt_sc7}, // Graph Saurus
-	{"ge7", fmt_sc7},
+	{"sc7", fmt_msx},
+	{"s17", fmt_msx}, // Alternate field of an SC7 file
+	{"sr7", fmt_msx}, // Graph Saurus
+	{"ge7", fmt_msx},
 
-	{"sc8", fmt_sc8},
-	{"sr8", fmt_sc8},
-	{"ge8", fmt_sc8},
+	{"sc8", fmt_msx},
+	{"sr8", fmt_msx},
+	{"ge8", fmt_msx},
 
-	{"sca", fmt_sc10},
-	{"s1a", fmt_sc10}, // Alternate field of an SCA file
+	{"sca", fmt_msx},
+	{"s1a", fmt_msx}, // Alternate field of an SCA file
 
-	{"scc", fmt_sc12},
-	{"s1c", fmt_sc12}, // Alternate field of an SCC file
-	{"srs", fmt_sc12}, // Graph Saurus
-	{"yjk", fmt_sc12},
+	{"scc", fmt_msx},
+	{"s1c", fmt_msx}, // Alternate field of an SCC file
+	{"srs", fmt_msx}, // Graph Saurus
+	{"yjk", fmt_msx},
 #endif
 
 #ifdef WU_ENABLE_PCF

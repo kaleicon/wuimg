@@ -48,14 +48,15 @@ struct image_file {
 	struct wuimg *sub_img;
 	struct wu_tree metadata;
 
+	void *restrict dec_state; // Used by decoder for callbacks
+	struct wustr errors;
+
+	uint8_t ext[8];
 	struct pix_rgba8 bg;
 
 	bool keep_file;
 	bool keep_map;
 	bool stat;
-	void *restrict dec_state; // Used by decoder for callbacks
-
-	struct wustr errors;
 };
 
 typedef enum wu_error (*fmt_dec_t)(struct image_file *infile,

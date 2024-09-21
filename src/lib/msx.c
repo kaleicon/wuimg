@@ -41,6 +41,22 @@ static const size_t NAME_LEN = 0x100;
 static const size_t GAP_LEN = 0x500;
 static const size_t COLOR_LEN = 0x800;
 
+bool msx_mode_may_be_compressed(enum msx_screen mode) {
+	return mode == msx_screen7;
+}
+
+bool msx_mode_may_have_alternate_field(enum msx_screen mode) {
+	switch (mode) {
+	case msx_screen6:
+	case msx_screen7:
+	case msx_screen10:
+	case msx_screen12:
+		return true;
+	default: break;
+	}
+	return false;
+}
+
 static void set_msx_pal(struct raster_pal *pal, const uint8_t grb[static 30],
 const uint8_t depth, const bool is_yae) {
 	const int scale = ((is_yae ? 0x1f : 0xff) << 8) / 0x07 + 1;
@@ -49,7 +65,7 @@ const uint8_t depth, const bool is_yae) {
 	for (int i = 0; i < (1 << depth) - 1; ++i) {
 		const int hi = grb[i*2 + 1];
 		const int lo = grb[i*2];
-		// Preserve GRB order
+		// Preserve GRB order, because we can
 		pal->color[i+1] = (struct pix_rgba8) {
 			(uint8_t)((hi * scale) >> 8),
 			(uint8_t)(((lo >> 4) * scale) >> 8),
@@ -352,8 +368,34 @@ size_t msx_decode(const struct msx_desc *desc, struct wuimg *img) {
 	return 0;
 }
 
+static enum msx_screen mode_from_ext(const uint8_t ext[static 3]) {
+	switch (ext[2]) {
+	case msx_screen2:
+	case msx_screen3:
+	case msx_screen4:
+	case msx_screen5:
+	case msx_screen6:
+	case msx_screen7:
+	case msx_screen8:
+	case msx_screen10:
+	case msx_screen12:
+		return ext[2];
+	}
+	const uint8_t grp[][4] = {
+		{'g', 'r', 'p', msx_screen2},
+		{'s', 'r', 's', msx_screen12},
+		{'y', 'j', 'k', msx_screen12},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(grp); ++i) {
+		if (!memcmp(ext, grp[i], 3)) {
+			return grp[i][3];
+		}
+	}
+	return 0;
+}
+
 enum wu_error msx_parse(struct msx_desc *desc, struct wuimg *img, FILE *ifp,
-enum msx_screen mode) {
+const uint8_t ext[static 3]) {
 	/* MSX-BASIC header:
 		Offset  Size    Name
 		0       u8      Type         // 0xfe. 0xfd for graph-saurus rle
@@ -365,8 +407,12 @@ enum msx_screen mode) {
 
 	*desc = (struct msx_desc) {
 		.ifp = ifp,
-		.mode = mode,
+		.mode = mode_from_ext(ext),
+		.is_alt_field = ext[1] == '1',
 	};
+	if (!desc->mode) {
+		return wu_unknown_file_type;
+	}
 
 	uint8_t buf[7];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
@@ -441,12 +487,10 @@ enum msx_screen mode) {
 		if (!wuimg_bitfield_from_id(img, 0x1555)) {
 			return wu_alloc_error;
 		}
-		/* These screen modes render to a higher bitdepth, so ignore
-		 * the palette for now. */
+		/* These screen modes render to a higher bitdepth, so we'll
+		 * read the palette when it's needed. */
 		pal_depth = 0;
 		break;
-	default:
-		return wu_invalid_params;
 	}
 	if (desc->compressed) {
 		// I've only seen SR7 compressed files
