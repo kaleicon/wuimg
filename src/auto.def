@@ -4,6 +4,7 @@
  * Format: WUDEC(base_name, description) */
 WUDEC(avs, "AVS X")
 WUDEC(bru, "Degas Brush")
+WUDEC(gemview, "GEM View-Dither")
 WUDEC(farbfeld, "farbfeld")
 WUDEC(hpicon, "HP Palmtop Icon")
 

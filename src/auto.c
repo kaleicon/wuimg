@@ -36,6 +36,18 @@ const struct auto_desc farbfeld_desc = {
 	AUTO_READ(farbfeld_read),
 };
 
+// GEM View-Dither
+static const struct auto_read gemview_read[] = {
+	{auto_match, AUTO_CSTR("B&W256")},
+	{'w', 2},
+	{'h', 2},
+};
+const struct auto_desc gemview_desc = {
+	.channels = 1, .bitdepth = 8,
+	.endian = big_endian,
+	AUTO_READ(gemview_read),
+};
+
 // HP Palmtop Icon
 static const struct auto_read hpicon_read[] = {
 	{auto_match, AUTO_CSTR("\x01\x00\x01\x00")},
