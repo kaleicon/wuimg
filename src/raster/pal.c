@@ -14,6 +14,13 @@ void raster_pal_print(const struct raster_pal *cm) {
 	}
 }
 
+void raster_pal_cyclecopy(struct raster_pal *restrict dst,
+const struct raster_pal *restrict src, const size_t base, const size_t i,
+const size_t cnt) {
+	memcpy(dst->color + base + i, src->color + base, (cnt - i)*4);
+	memcpy(dst->color + base, src->color + base + cnt - i, i*4);
+}
+
 static uint8_t * expand_palette(const uint_fast8_t byte, uint8_t *restrict dst,
 const struct raster_pal *cm, const size_t items, const uint8_t bitdepth) {
 	const uint8_t ch = 4;

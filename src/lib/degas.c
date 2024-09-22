@@ -3,6 +3,7 @@
 #include "misc/decomp.h"
 #include "misc/endian.h"
 #include "misc/math.h"
+#include "misc/mem.h"
 #include "raster/graphics_adapters.h"
 
 #include "lib/degas.h"
@@ -27,7 +28,7 @@
 http://www.bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0904.pdf
 */
 
-static const size_t VIDEO_RAM = 32000;
+static const size_t VIDEO_RAM = 32000; // In bytes
 
 static const uint8_t ST_LOW_DEPTH = 4;
 static const size_t ST_LOW_HEIGHT = 200;
@@ -48,6 +49,72 @@ const char * degas_res_str(const enum degas_res res) {
 	case degas_res_high: return "High";
 	}
 	return "???";
+}
+
+void degas_free(struct degas_desc *desc) {
+	free(desc->crng_pal);
+}
+
+void degas_color_cycle(const struct degas_desc *desc, struct wuimg *img,
+const double time) {
+	for (uint8_t cycle = 0; cycle < ARRAY_LEN(desc->crng); ++cycle) {
+		const struct degas_crng *crng = desc->crng + cycle;
+		if (crng->active) {
+			const size_t cnt = crng->cnt;
+			size_t i = (size_t)(time/crng->secs) % cnt;
+			if (crng->reverse) {
+				i = cnt - i;
+			}
+			raster_pal_cyclecopy(img->u.palette, desc->crng_pal,
+				crng->lo, i, cnt);
+		}
+	}
+}
+
+enum elite_direction {
+	elite_left = 0, // from high to low I guess??
+	elite_off = 1,
+	elite_right = 2,
+};
+
+static void load_elite_crng(struct degas_desc *desc, struct wuimg *img) {
+	/* DEGAS Elite adds the following footer to normal DEGAS files:
+		Offset  Type    Name
+		0       u16     ColorAnimStart[4]
+		8       u16     ColorAnimEnd[4]
+		16      u16     AnimDirection[4]
+		24      u16     AnimDelay[4]
+		32
+	 * One may even find High Depth files like this, for whatever reason.
+	*/
+
+	uint16_t buf[4][4];
+	if (fread(buf, sizeof(buf), 1, desc->ifp)) {
+		const uint8_t depth = desc->res == degas_res_low
+			? ST_LOW_DEPTH : ST_MEDIUM_DEPTH;
+		const unsigned max = 1 << depth;
+		bool active = false;
+		for (size_t i = 0; i < 4; ++i) {
+			uint16_t lo = endian16(buf[0][i], big_endian);
+			uint16_t hi = endian16(buf[1][i], big_endian);
+			enum elite_direction direction = endian16(buf[2][i], big_endian);
+			uint16_t delay = endian16(buf[3][i], big_endian);
+			desc->crng[i] = (struct degas_crng) {
+				.lo = (uint8_t)lo,
+				.cnt = (uint8_t)(hi + 1 - lo),
+				.reverse = direction == elite_left,
+				.active = !(direction & 1) && lo < hi
+					&& hi < max && delay < 128,
+				.secs = (128 - delay) / 60.f,
+			};
+			active |= desc->crng[i].active;
+		}
+		if (active) {
+			desc->crng_pal = memdup(img->u.palette,
+				sizeof(*desc->crng_pal));
+			img->evolving |= (bool)desc->crng_pal;
+		}
+	}
 }
 
 static void st_interleave(struct wuimg *img, const uint16_t *src,
@@ -109,7 +176,7 @@ static size_t st_decomp(const struct degas_desc *desc, struct wuimg *img) {
 	return 0;
 }
 
-size_t degas_decode(const struct degas_desc *desc, struct wuimg *img) {
+size_t degas_decode(struct degas_desc *desc, struct wuimg *img) {
 	if (wuimg_alloc_noverify(img)) {
 		if (desc->compressed) {
 			return st_decomp(desc, img);
@@ -122,6 +189,9 @@ size_t degas_decode(const struct degas_desc *desc, struct wuimg *img) {
 			const size_t w = fread(ram, 1, VIDEO_RAM, desc->ifp);
 			st_interleave(img, ram, desc->res);
 			free(ram);
+			if (desc->is_elite) {
+				load_elite_crng(desc, img);
+			}
 			return w;
 		}
 	}
@@ -129,10 +199,11 @@ size_t degas_decode(const struct degas_desc *desc, struct wuimg *img) {
 }
 
 enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img) {
-	/* DEGAS header (after Flags):
+	/* DEGAS format (after Flags):
 		Offset  Type    Name
 		0       u16     Palette[16]
-		32
+		32      u16     ScreenMemory[16000]
+		32032
 	*/
 
 	uint8_t src[32];
@@ -142,7 +213,9 @@ enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img) {
 
 	const size_t size_limit = desc->compressed
 		? VIDEO_RAM*2 : VIDEO_RAM;
-	desc->size = zumin(file_remaining(desc->ifp), size_limit);
+	const size_t rem = file_remaining(desc->ifp);
+	desc->is_elite = !desc->compressed && rem + 34 == 32066;
+	desc->size = zumin(rem, size_limit);
 
 	img->channels = 1;
 	switch (desc->res) {
@@ -191,13 +264,12 @@ enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img) {
 	return wu_alloc_error;
 }
 
-enum wu_error degas_open(struct degas_desc *desc, FILE *ifp) {
+enum wu_error degas_init(struct degas_desc *desc, FILE *ifp) {
 	/* DEGAS header:
 		Offset  Type    Name
 		0       u16     Flags
 		2
 	*/
-	desc->ifp = ifp;
 	uint16_t flags;
 	if (fread(&flags, sizeof(flags), 1, ifp)) {
 		flags = endian16(flags, big_endian);
@@ -206,8 +278,11 @@ enum wu_error degas_open(struct degas_desc *desc, FILE *ifp) {
 		case degas_res_low:
 		case degas_res_medium:
 		case degas_res_high:
-			desc->res = res;
-			desc->compressed = flags & 0x8000;
+			*desc = (struct degas_desc) {
+				.ifp = ifp,
+				.res = res,
+				.compressed = flags & 0x8000,
+			};
 			return wu_ok;
 		}
 		return wu_unknown_file_type;

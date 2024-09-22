@@ -30,8 +30,9 @@ const double time) {
 		}
 
 		const uint8_t low = crng->low;
-		memcpy(pal->color + low + i, src_pal->color + low, (cnt - i)*4);
-		memcpy(pal->color + low, src_pal->color + low + cnt - i, i*4);
+		raster_pal_cyclecopy(pal, src_pal, low, i, cnt);
+//		memcpy(pal->color + low + i, src_pal->color + low, (cnt - i)*4);
+//		memcpy(pal->color + low, src_pal->color + low + cnt - i, i*4);
 	}
 }
 

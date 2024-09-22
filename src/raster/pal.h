@@ -10,6 +10,10 @@ struct raster_pal {
 
 void raster_pal_print(const struct raster_pal *cm);
 
+void raster_pal_cyclecopy(struct raster_pal *restrict dst,
+const struct raster_pal *restrict src, const size_t base, const size_t i,
+const size_t cnt);
+
 void raster_pal_expand(void *restrict dst, const uint8_t *restrict src,
 const struct raster_pal *cm, size_t width, uint8_t bitdepth);
 
