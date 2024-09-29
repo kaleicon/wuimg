@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "misc/file.h"
 #include "misc/math.h"
 #include "raster/fmt.h"
 
@@ -30,7 +29,14 @@ const enum endianness e, const uint8_t word_depth) {
 	size_t acc = 0;
 	for (size_t y = 0; y < s; ++y) {
 		void *row = img->data + l*y;
-		acc += file_endian_read_bytes(row, l, ifp, word_depth, e);
+		size_t read = fread(row, 1, l, ifp);
+		switch (word_depth) {
+		case 16: endian_loop16(row, e, read/2); break;
+		case 24: endian_loop24(row, e, read/3); break;
+		case 32: endian_loop32(row, e, read/4); break;
+		case 64: endian_loop64(row, e, read/8); break;
+		}
+		acc += read;
 	}
 	return acc;
 }

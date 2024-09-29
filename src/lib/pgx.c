@@ -1,37 +1,33 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-
-#include "misc/file.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "pgx.h"
 
-#define MAX_LZSS_READ (2*8 + 1)
-static size_t lzss_decomp(uint8_t *restrict unpack, const size_t unpack_len,
-const uint8_t *restrict pack, size_t pack_len) {
+static size_t lzss_decomp(uint8_t *restrict unpack, size_t ulen,
+const uint8_t *restrict pack, size_t plen) {
 	/* Not to be confused with the GML_ARC LZSS algorithm, which requires
 	 * negating the input beforehand. */
-	const uint_fast16_t dict_mask = 0xfff;
+	const uint16_t dict_mask = 0xfff;
 	size_t upos = 0;
 	size_t ppos = 0;
-	uint8_t end[MAX_LZSS_READ*2];
-	while (upos < unpack_len) {
-		if (ppos + MAX_LZSS_READ > pack_len) {
-			if (pack == end) {
+
+	uint8_t pend[(8*2 + 1) * 2];
+	const size_t max_lzss_read = sizeof(pend)/2;
+	for (;;) {
+		if (ppos + max_lzss_read > plen) {
+			if (pack == pend) {
 				break;
 			}
-			pack = mem_bufswitch(pack, &ppos, &pack_len, end,
-				sizeof(end));
+			pack = mem_bufswitch(pack, &ppos, &plen, pend,
+				sizeof(pend));
 		}
+
 		uint8_t flags = pack[ppos];
 		++ppos;
 		for (size_t i = 0; i < 8; ++i, flags >>= 1) {
 			if (flags & 1) {
-				if (upos >= unpack_len) {
-					break;
+				if (upos >= ulen) {
+					return upos;
 				}
 				unpack[upos] = pack[ppos];
 				++ppos;
@@ -41,16 +37,13 @@ const uint8_t *restrict pack, size_t pack_len) {
 				const uint8_t second = pack[ppos + 1];
 				ppos += 2;
 
-				const size_t dict_offset = (second & 0xf0U) << 4 | first;
 				const size_t count = 18 - (second & 0x0f);
-				size_t offset = (upos - 18 - dict_offset)
-					& dict_mask;
-				if (!offset) {
-					offset = dict_mask + 1;
-				}
-				if (upos + count >= unpack_len) {
+				if (upos + count > ulen) {
 					return upos;
 				}
+				const size_t dict_offset = (second & 0xf0u) << 4 | first;
+				const size_t offset = 1
+					+ ((upos - 19 - dict_offset) & dict_mask);
 				memrepeat_or_zero(unpack, upos, offset, count);
 				upos += count;
 			}
@@ -62,14 +55,10 @@ const uint8_t *restrict pack, size_t pack_len) {
 size_t pgx_decode(const struct pgx_desc *desc, struct wuimg *img) {
 	size_t written = 0;
 	if (wuimg_alloc_noverify(img)) {
-		uint8_t *comp = malloc(desc->comp_size);
-		if (comp) {
-			const size_t read = file_tail(comp, 1, desc->comp_size,
-				desc->ifp);
-			written = lzss_decomp(img->data, wuimg_size(img),
-				comp, read);
-			free(comp);
-		}
+		const uint8_t *comp = mp_slice_at(&desc->mp,
+			desc->mp.len - desc->comp_size, desc->comp_size);
+		written = lzss_decomp(img->data, wuimg_size(img),
+			comp, desc->comp_size);
 	}
 	return written;
 }
@@ -93,8 +82,8 @@ enum wu_error pgx_read_header(struct pgx_desc *desc, struct wuimg *img) {
 	 * way is to seek to -CompressedSize bytes from the end of the file.
 	*/
 
-	uint8_t buf[20];
-	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+	const uint8_t *buf = mp_next_slice(&desc->mp, 20);
+	if (!buf) {
 		return wu_unexpected_eof;
 	}
 
@@ -106,11 +95,13 @@ enum wu_error pgx_read_header(struct pgx_desc *desc, struct wuimg *img) {
 	img->alpha = buf_endian16(buf + 12, little_endian)
 		? alpha_unassociated : alpha_ignore;
 	desc->comp_size = buf_endian32(buf + 16, little_endian);
-	return wuimg_verify(img);
+	return desc->comp_size + 32 <= desc->mp.len
+		? wuimg_verify(img)
+		: wu_unexpected_eof;
 }
 
-enum wu_error pgx_open_file(struct pgx_desc *desc, FILE *ifp) {
-	desc->ifp = ifp;
+enum wu_error pgx_init(struct pgx_desc *desc, const struct map_info map) {
+	desc->mp = mp_map(map);
 	const unsigned char sig[] = {'P', 'G', 'X', 0};
-	return fmt_sigcmp(sig, sizeof(sig), ifp);
+	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
 }

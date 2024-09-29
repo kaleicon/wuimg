@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
 #include <stdbool.h>
 
-#include "raster/bitfield.h"
 #include "raster/fmt.h"
-#include "raster/unpack.h"
-
 #include "tim.h"
 
 static void special_transparency_process(uint16_t *buf, const size_t nmemb) {

@@ -2,8 +2,6 @@
 #include <ctype.h>
 
 #include "lib/pcx.h"
-#include "misc/file.h"
-#include "rast_utils.h"
 #include "wudefs.h"
 
 static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
@@ -62,7 +60,10 @@ const struct wu_conf *wuconf) {
 	enum wu_error err = pcx_open_file(&desc, mp_map(infile->map));
 	if (err == wu_ok) {
 		struct wuimg *img = alloc_sub_images(infile, 1);
-		err = (img) ? common_pcx(&desc, img, wuconf) : wu_alloc_error;
+		if (img) {
+			return common_pcx(&desc, img, wuconf);
+		}
+		return wu_alloc_error;
 	}
 	return err;
 }
@@ -73,23 +74,19 @@ static void dcx_end(struct image_file *infile) {
 	free(infile->dec_state);
 }
 
-static enum wu_error get_dcx_image(struct dcx_desc *desc, struct wuimg *img,
-const struct wu_conf *wuconf, const uint32_t idx) {
-	struct pcx_desc pcx;
-	enum wu_error st = dcx_set_file(desc, &pcx, idx);
-	if (st == wu_ok) {
-		return common_pcx(&pcx, img, wuconf);
-	}
-	return st;
-}
-
 static enum wu_error dcx_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
 	(void)ev;
 	struct dcx_desc *desc = infile->dec_state;
-	const uint32_t idx = (uint32_t)state->idx;
-	struct wuimg *img = infile->sub_img + idx;
-	return get_dcx_image(desc, img, wuconf, idx);
+	const uint32_t i = (uint32_t)state->idx;
+	struct wuimg *img = infile->sub_img + i;
+
+	struct pcx_desc pcx;
+	enum wu_error st = dcx_set_file(desc, &pcx, i);
+	if (st == wu_ok) {
+		return common_pcx(&pcx, img, wuconf);
+	}
+	return st;
 }
 
 static enum wu_error dcx_dec(struct image_file *infile,

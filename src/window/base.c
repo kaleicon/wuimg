@@ -26,9 +26,9 @@ const enum key_action action, int code, const bool shift) {
 	code = toupper(code);
 	if (code >= WINDOW_KEYSTART && code < WINDOW_KEYEND) {
 		held_keys->shift = shift;
-		unsigned char *map = window_keymap_map(held_keys);
-		if (!map[code] || action == key_release) {
-			map[code] = (uint8_t)action;
+		code -= WINDOW_KEYSTART;
+		if (!held_keys->map[code] || action == key_release) {
+			held_keys->map[code] = (uint8_t)action;
 		}
 	}
 }

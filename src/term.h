@@ -3,7 +3,6 @@
 #define WU_TERM
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdio.h>
 
 #include <termios.h>

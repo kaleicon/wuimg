@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdbool.h>
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 #include "misc/common.h"

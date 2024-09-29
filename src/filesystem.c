@@ -1,22 +1,16 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdlib.h>
-#include <string.h>
 #include <errno.h>
 
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <dirent.h>
-#include <limits.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <unicode/ucol.h>
 #include <unicode/uiter.h>
 
-#include "misc/common.h"
 #include "misc/math.h"
 #include "misc/mem.h"
-#include "misc/wustr.h"
 
 #include "dec.h"
 #include "filesystem.h"

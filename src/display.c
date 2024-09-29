@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: 0BSD
 #include <ctype.h>
-#include <math.h>
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
 
 #include "dec.h"
 #include "display.h"

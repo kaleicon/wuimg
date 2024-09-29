@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 #include "rast_utils.h"
 #include "lib/pic.h"
-#include "misc/common.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	const struct pic_desc *desc = ptr;

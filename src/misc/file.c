@@ -8,18 +8,6 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 
-size_t file_endian_read_bytes(void *restrict dst, const size_t bytes, FILE *ifp,
-const size_t word_depth, const enum endianness e) {
-	const size_t read = fread(dst, 1, bytes, ifp);
-	switch (word_depth) {
-	case 16: endian_loop16(dst, e, read/2); break;
-	case 24: endian_loop24(dst, e, read/3); break;
-	case 32: endian_loop32(dst, e, read/4); break;
-	case 64: endian_loop64(dst, e, read/8); break;
-	}
-	return read;
-}
-
 bool file_read_pi_comm(struct wustr *comm, FILE *ifp) {
 	const uint8_t eos = 0x00;
 	const uint8_t eoc = 0x1a;

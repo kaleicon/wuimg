@@ -2,6 +2,7 @@
 #ifndef RASTER_BITFIELD
 #define RASTER_BITFIELD
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "misc/endian.h"

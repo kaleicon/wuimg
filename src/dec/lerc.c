@@ -2,7 +2,6 @@
 #include <Lerc_c_api.h>
 
 #include "rast_utils.h"
-#include "misc/common.h"
 #include "misc/math.h"
 
 static enum wu_error map_lerc_to_wu(const lerc_status status,

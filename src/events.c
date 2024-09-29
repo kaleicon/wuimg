@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: 0BSD
-#include <ctype.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-
 #include "events.h"
 #include "term.h"
 #include "wudefs.h"

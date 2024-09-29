@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdlib.h>
-#include <string.h>
-
 #include "rast_utils.h"
 #include "lib/sixel.h"
 

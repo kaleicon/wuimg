@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: 0BSD
 #include "rast_utils.h"
-#include "misc/common.h"
 #include "lib/prt.h"
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {

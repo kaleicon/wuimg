@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: 0BSD
 #ifndef WUAUTO
 #define WUAUTO
 

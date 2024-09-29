@@ -2,7 +2,6 @@
 #include <string.h>
 
 #include "wudefs.h"
-#include "misc/file.h"
 #include "lib/wpx.h"
 
 static enum wu_error single_decode(struct wuimg *img,

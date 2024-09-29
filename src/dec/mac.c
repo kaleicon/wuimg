@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: 0BSD
 #include "lib/mac.h"
-#include "misc/common.h"
 #include "wudefs.h"
 
 static void read_macbin_metadata(const struct mac_binary_header *macbin,

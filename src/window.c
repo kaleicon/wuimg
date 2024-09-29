@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-#include <limits.h>
 #include <signal.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "term.h"
 #include "window.h"

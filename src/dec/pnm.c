@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: 0BSD
-#include <limits.h>
-
 #include "wudefs.h"
 #include "lib/pnm.h"
 
