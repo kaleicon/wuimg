@@ -167,16 +167,17 @@ static bool is_regular_file(DIR *dp, const struct dirent *entry) {
 
 static struct lenstr * pool_getptr(struct keypool *pool, const size_t reserve) {
 	struct wugrow *pg = &pool->grow;
-	if (pool->used >= POOL_SIZE || reserve >= POOL_SIZE - pool->used) {
+	if (reserve + pool->used >= POOL_SIZE) {
 		if (!wugrow_recheck(pg)) {
 			return NULL;
 		}
 		pool->buf = pg->ptr;
 		const size_t size = zumax(reserve, POOL_SIZE);
-		pool->buf[pg->pos] = malloc(size);
-		if (!pool->buf[pg->pos]) {
+		void *ptr = malloc(size);
+		if (!ptr) {
 			return NULL;
 		}
+		pool->buf[pg->pos] = ptr;
 		++pg->pos;
 		pool->used = 0;
 	}
@@ -187,8 +188,9 @@ static struct lenstr * keygen(struct keypool *pool, const struct wuptr *file,
 struct collator *icu) {
 	struct lenstr *ptr;
 	const size_t sptr = sizeof(*ptr);
-	const size_t count = sptr + file->len * EXPAND_FACTOR;
-	ptr = pool_getptr(pool, count);
+	const size_t count = file->len * EXPAND_FACTOR;
+	const size_t total = sptr + count;
+	ptr = pool_getptr(pool, total);
 	if (!ptr) {
 		return NULL;
 	}
@@ -199,7 +201,7 @@ struct collator *icu) {
 		state, ptr->str, (int32_t)count, &icu->err);
 	ptr->len = (uint16_t)written;
 
-	const size_t align = ((size_t)written + sptr - 1) / sptr * sptr;
+	const size_t align = (size_t)(written + written % 2);
 	pool->used += sptr + align;
 	return ptr;
 }
