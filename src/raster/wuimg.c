@@ -87,12 +87,18 @@ static size_t subsamp_dim(const size_t dim, struct plane_dim *s) {
 	return dim;
 }
 
+static bool bad_cosit(const struct plane_dim s) {
+	return s.cosit && s.subsamp != 2;
+}
+
 static size_t plane_calc_size(struct wuimg *img, const size_t i) {
 	struct plane_info *p = img->u.planes->p + i;
 	p->w = subsamp_dim(img->w, &p->x);
 	p->h = subsamp_dim(img->h, &p->y);
 	if (p->w < 1 || p->h < 1) {
 		return 0;
+	} else if (bad_cosit(p->x) || bad_cosit(p->y)) {
+		fatal_bug(__func__, "Cositing is only used for subsampling == 2");
 	}
 	p->stride = strip_length(p->w, img->bitdepth, img->align_sh);
 	p->size = strip_length(p->h, 8, img->u.planes->v_pad) * p->stride;
@@ -119,18 +125,16 @@ const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 		return "Invalid alignment";
 	}
 
-	const char * bad_attr = "Undefined pixel attribute";
 	switch (mode) {
 	case image_mode_raw:
 	case image_mode_planar:
-		switch (attr) {
-		case pix_normal:
-		case pix_signed:
-		case pix_inverted:
-		case pix_float:
-			return NULL;
+		if (attr == pix_float) {
+			switch (bitdepth) {
+			case 16: case 32: case 64: break;
+			default: return "Float depth must be 16, 32, or 64";
+			}
 		}
-		return bad_attr;
+		return NULL;
 	case image_mode_palette:
 		if (ch != 1) {
 			return "Paletted images must use 1 channel";
@@ -152,7 +156,7 @@ const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 	case pix_float:
 		return "Only raw and planar images can use attributes";
 	}
-	return bad_attr;
+	return "Undefined pixel attribute";
 }
 
 static bool test_overflow_common(size_t w, const size_t h, const uint8_t ch,
@@ -316,16 +320,20 @@ const enum bitfield_id id) {
 	return bf;
 }
 
-void wuimg_plane_position(struct wuimg *img, const int8_t horz,
-const int8_t vert) {
+static void set_cosit(struct plane_dim *s, const bool cosit) {
+	s->cosit = s->subsamp == 2 ? cosit : false;
+}
+
+void wuimg_plane_cosit(struct wuimg *img, const bool horz,
+const bool vert) {
 	struct plane_info *p = img->u.planes->p;
 	if (img->channels >= 2) {
 		if (img->channels >= 3) {
-			p[2].x.pos = horz;
-			p[2].y.pos = vert;
+			set_cosit(&p[2].x, horz);
+			set_cosit(&p[2].y, vert);
 		}
-		p[1].x.pos = horz;
-		p[1].y.pos = vert;
+		set_cosit(&p[1].x, horz);
+		set_cosit(&p[1].y, vert);
 	}
 }
 
@@ -512,13 +520,13 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 			for (int i = 0; i < img->channels; ++i) {
 				printf("   Plane %d:\n"
 					"    Subsampling: %d:%d\n"
-					"    Positioning: %d:%d\n"
+					"    Cositing: %d:%d\n"
 					"    Width: %zu\n"
 					"    Height: %zu\n"
 					"    Stride: %zu\n",
 					i,
 					p[i].x.subsamp, p[i].y.subsamp,
-					p[i].x.pos, p[i].y.pos,
+					p[i].x.cosit, p[i].y.cosit,
 					p[i].w, p[i].h, p[i].stride);
 			}
 		} else {
@@ -529,7 +537,7 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 			}
 			fputs("   Positioning: ", stdout);
 			for (int i = 0; i < img->channels; ++i) {
-				printf("%d:%d%c", p[i].x.pos, p[i].y.pos,
+				printf("%d:%d%c", p[i].x.cosit, p[i].y.cosit,
 					(i == img->channels - 1) ? '\n' : '/');
 			}
 		}

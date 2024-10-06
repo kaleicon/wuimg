@@ -330,6 +330,8 @@ const struct jpeg_decompress_struct *dinfo) {
 	planes->v_pad = align_from_int(DCTSIZE);
 	const jpeg_component_info *nfo = dinfo->comp_info;
 	for (uint8_t i = 0; i < img->channels; ++i) {
+		// Subsampling factors will be between [1, 4]
+		// Siting is always midpoint
 		const int xsamp = dinfo->max_h_samp_factor
 			/ nfo[i].h_samp_factor;
 		const int ysamp = dinfo->max_v_samp_factor

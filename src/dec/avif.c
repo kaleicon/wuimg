@@ -112,10 +112,10 @@ const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx) {
 	case AVIF_CHROMA_SAMPLE_POSITION_RESERVED:
 		break;
 	case AVIF_CHROMA_SAMPLE_POSITION_VERTICAL:
-		wuimg_plane_position(img, -1, 0);
+		wuimg_plane_cosit(img, true, false);
 		break;
 	case AVIF_CHROMA_SAMPLE_POSITION_COLOCATED:
-		wuimg_plane_position(img, -1, -1);
+		wuimg_plane_cosit(img, true, true);
 		break;
 	}
 

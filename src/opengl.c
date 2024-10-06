@@ -477,8 +477,8 @@ const struct plane_info *p) {
 	 * be to cover up to Y(2, 2), as on a 4x4 image. */
 	pos[0] = get_coord_mul(img->w, p->w, p->x.subsamp);
 	pos[1] = get_coord_mul(img->h, p->h, p->y.subsamp);
-	pos[2] = p->x.pos / 2.0f / (float)p->w;
-	pos[3] = p->y.pos / 2.0f / (float)p->h;
+	pos[2] = -p->x.cosit / 2.0f / (float)p->w;
+	pos[3] = -p->y.cosit / 2.0f / (float)p->h;
 }
 
 static bool planar_upload(struct gl_context *context,

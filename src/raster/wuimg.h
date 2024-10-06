@@ -35,8 +35,38 @@ enum wu_error {
 };
 
 struct plane_dim {
+	/* Subsampling factor. A ceil division of the image dimensions and
+	 * this returns the plane dimensions. */
 	uint8_t subsamp;
-	int8_t pos;
+
+	/* Sample cositing. Briefly explained, this is the issue of who is
+	 * chroma sitting with.
+	 *   Consider a luma row and a horizontally subsampled chroma row:
+	 *	Luma                Chroma
+	 *	+---+---+---+---+   +---+---+---+---+
+	 *	| 0 | 1 | 2 | 3 |   |   0   |   1   |
+	 *	+---+---+---+---+   +-------+-------+
+	 *   When chroma is cosited, it means the center of a chroma pixel
+	 * matches the position of a luma pixel (they are sitting together).
+	 *   For instance, sampling luma[0] requires sampling chroma[0],
+	 * luma[1] requires chroma[0.5] (that is, interpolating equally between
+	 * chroma[0] and chroma[1]), luma[2] requires chroma[1], and so on.
+	 *   This seems like the natural way to interpret chroma, but implies
+	 * that the chroma plane is offset by -0.5 pixels relative to luma.
+	 * If we draw their outlines, they don't overlap perfectly.
+	 *
+	 *   The other mode is midpoint (or center) positioning. Chroma pixels
+	 * sit midway between luma pixels. So chroma[0] would be where
+	 * luma[0.5] would be, chroma[1] with luma[2.5], etc. Seen the other
+	 * way, luma[0] samples chroma[-0.25] (the result of (0 - 0.5)/2, which
+	 * would get clamped to 0), luma[1] samples chroma[0.25], and luma[2]
+	 * samples chroma[0.75].
+	 *   With midpoint positioning, both plane outlines overlap perfectly,
+	 * and so it would seem like the natural way to interpret chroma.
+	 *   Cositing is only meaningful for subsampling factors == 2 (like
+	 * YUV422 and YUV420).
+	*/
+	bool cosit;
 };
 
 struct plane_info {
@@ -131,7 +161,7 @@ enum bitfield_id id);
 
 size_t wuimg_plane_resolve(struct wuimg *img);
 
-void wuimg_plane_position(struct wuimg *img, int8_t horz, int8_t vert);
+void wuimg_plane_cosit(struct wuimg *img, bool horz, bool vert);
 
 void wuimg_plane_subsamp(struct wuimg *img, uint8_t horz, uint8_t vert);
 

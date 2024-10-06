@@ -60,6 +60,11 @@ static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 	struct plane_info *p = planes->p;
 	const opj_image_comp_t *comps = jp2->comps;
 	for (uint8_t j = 0; j < img->channels; ++j) {
+		/* JP2 subsampling factors seem derived from the greatest
+		 * common divisor of all component dimensions. Scary. */
+		if (comps[j].dx > 0xff || comps[j].dy > 0xff) {
+			return wu_unsupported_feature;
+		}
 		p[j].x.subsamp = (unsigned char)comps[j].dx;
 		p[j].y.subsamp = (unsigned char)comps[j].dy;
 	}
