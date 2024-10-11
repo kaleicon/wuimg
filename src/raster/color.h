@@ -5,7 +5,6 @@
 #include "alpha.h"
 #include "cicp.h"
 #include "icc.h"
-#include "pix.h"
 #include "misc/mat.h"
 
 enum color_transfer_fn {
@@ -15,12 +14,19 @@ enum color_transfer_fn {
 };
 
 struct color_transfer {
-	enum color_transfer_fn fn;
+	enum color_transfer_fn fn:8;
+	bool srgb_input;
 	float args[5];
 };
 
+struct color_map {
+	float mul[4];
+	float add[4];
+};
+
 struct color_convert {
-	struct mat43f nonlinear;
+	struct color_map map;
+	struct mat3f nonlinear;
 	struct color_transfer eotf;
 	struct mat3f linear;
 };
@@ -69,7 +75,7 @@ struct color_space {
 const char * color_space_type_str(const struct color_space *cs);
 
 bool color_space_to_linear_sRGB(const struct color_space *cs,
-struct color_convert *conv, enum pix_layout layout, bool maybe_yuv);
+struct color_convert *conv, bool grayscale, bool maybe_yuv, double scale);
 
 cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,
 cmsUInt32Number in_fmt, cmsUInt32Number out_fmt);
@@ -99,7 +105,5 @@ double rx, double ry, double gx, double gy, double bx, double by);
 void color_space_unref(struct color_space *cs);
 
 struct color_space color_space_ref(struct color_space *orig);
-
-bool color_space_is_sRGB(const struct color_space *cs);
 
 #endif /* RASTER_COLOR */

@@ -39,6 +39,7 @@ struct gl_context {
 			GLint args;
 		} eotf;
 		GLint positioning;
+		GLint remap;
 	} uni;
 	GLuint pixel_unpack_buf;
 	GLuint timer;

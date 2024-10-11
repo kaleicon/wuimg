@@ -25,6 +25,7 @@
 #define UNI_EOTF_FN "eotf_fn"
 #define UNI_EOTF_ARGS "eotf_args"
 #define UNI_POSITIONING "posit"
+#define UNI_REMAP "remap"
 
 #define COLOR_RAW "0"
 #define COLOR_PALETTE "1"
@@ -731,8 +732,9 @@ static void set_cms(struct gl_context *context, const struct wuimg *img) {
 	struct color_convert conv;
 	const bool is_planar = img->mode == image_mode_planar;
 	const bool spacewalk = color_space_to_linear_sRGB(cs, &conv,
-		is_planar ? img->layout : pix_rgba, is_planar);
-	glUniformMatrix4x3fv(uni->mat.nonlinear, 1, GL_FALSE, conv.nonlinear.m);
+		img->layout == pix_gray, is_planar, 1);
+	glUniform4fv(uni->remap, 2, conv.map.mul);
+	glUniformMatrix3fv(uni->mat.nonlinear, 1, GL_FALSE, conv.nonlinear.m);
 
 	enum gl_cms_mode {
 		gl_cms_none,
@@ -1045,7 +1047,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform sampler2D " UNI_PLANE_ALPHA ";"
 		"uniform sampler3D " UNI_CMS_LUT ";"
 
-		"uniform mat4x3 " UNI_MAT_NONLINEAR ";"
+		"uniform mat3 " UNI_MAT_NONLINEAR ";"
 		"uniform mat3 " UNI_MAT_CMS ";"
 		"uniform int " UNI_MODE_COLOR ";"
 		"uniform int " UNI_MODE_CMS ";"
@@ -1053,6 +1055,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform int " UNI_EOTF_FN ";"
 		"uniform float[5] " UNI_EOTF_ARGS ";"
 		"uniform vec2[8] " UNI_POSITIONING ";"
+		"uniform vec4[2] " UNI_REMAP ";"
 
 		"void gen_check_pattern() {"
 			"ivec2 d = ivec2(gl_FragCoord.xy);"
@@ -1127,7 +1130,8 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 				"}"
 			"}"
 
-			"color.rgb = (" UNI_MAT_NONLINEAR "* vec4(color.rgb, 1.0));"
+			"color = color *" UNI_REMAP "[0] +" UNI_REMAP "[1];"
+			"color.rgb =" UNI_MAT_NONLINEAR "* color.rgb;"
 			"if (" UNI_MODE_CMS "==" CMS_LUT ") {"
 				"color.rgb = texture("
 					UNI_CMS_LUT ", color.rgb).rgb;"
@@ -1185,6 +1189,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		UNI_EOTF_FN,
 		UNI_EOTF_ARGS,
 		UNI_POSITIONING,
+		UNI_REMAP,
 	};
 	GLint samps[ARRAY_LEN(samps_name)];
 	GLint *uni = (GLint *)&context->uni;

@@ -92,6 +92,7 @@ static void eotf_sRGB(struct color_transfer *eotf) {
 	const double a = 1 + SRGB_ALPHA;
 	*eotf = (struct color_transfer) {
 		.fn = color_transfer_linear_gamma,
+		.srgb_input = true,
 		.args = {
 			0.04045f,
 			(float)(1/a),
@@ -132,8 +133,8 @@ const double div) {
 
 		return pow(10, (comp - 1) * div)
 
-	 * Let us remember that pow(x, y) is really exp2(log2(x) * y), and that
-	 * exp2 and log2 are typically hardware instructions. Thus it's really:
+	 * Let us remember that pow(x, y) is really exp2(log2(x) * y). Thus,
+	 * this is actually:
 
 		return exp2(log2(10) * (comp - 1) * div)
 
@@ -323,7 +324,8 @@ struct color_transfer *eotf) {
 }
 
 static const struct color_primaries * get_cicp_primaries(
-const enum cicp_primaries primaries, const enum cicp_matrix matrix) {
+const enum cicp_primaries primaries, const enum cicp_matrix matrix,
+const struct color_primaries *fallback) {
 	static const struct color_primaries system_m = {
 		.w = WHITE_C,
 		.r = {.67, .33},
@@ -408,38 +410,51 @@ const enum cicp_primaries primaries, const enum cicp_matrix matrix) {
 	case cicp_primaries_the_unidentified:
 		return &unidentified;
 	}
-	return NULL;
+	return fallback;
 }
 
 static const struct color_primaries * get_primaries(
-const struct color_space *cs) {
+const struct color_space *cs, const struct color_primaries *fallback) {
 	switch (cs->type) {
 	case color_profile_enum:
-		return get_cicp_primaries(cs->primaries, cs->matrix);
+		return get_cicp_primaries(cs->primaries, cs->matrix, fallback);
 	case color_profile_custom:
 		return &cs->desc->u.prof.pri;
 	case color_profile_icc:
 		break;
 	}
-	return NULL;
+	return fallback;
 }
 
-static double range_offset(const bool limited) {
-	return (limited) ? -1.0/16 : 0;
+static float range_offset(const bool limited) {
+	return (float)((limited) ? -1.0/16 : 0);
 }
 
-static double range_diff_scaler(const bool limited) {
-	return (limited) ? 255.0/(240-16) : 1.0;
+static float range_diff_scaler(const bool limited) {
+	return (float)((limited) ? 255.0/(240-16) : 1);
 }
 
-static double range_scaler(const bool limited) {
-	return (limited) ? 255.0/(235-16) : 1.0;
+static float range_scaler(const bool limited) {
+	return (float)((limited) ? 255.0/(235-16) : 1);
 }
 
-static void gen_mat_simple(struct mat3 *in, double off[static 3],
+static void set_scale(struct color_map *m, float lum_mul, float chr_mul,
+float lum_add, float chr_add) {
+	m->mul[0] = lum_mul;
+	m->mul[1] = chr_mul;
+	m->mul[2] = chr_mul;
+	m->add[0] = lum_add;
+	m->add[1] = chr_add;
+	m->add[2] = chr_add;
+}
+
+static void gen_mat_simple(struct mat3 *in, struct color_map *m,
 const bool limited, const enum simple_mat type) {
-	off[0] = off[1] = off[2] = range_offset(limited);
-	const double s = range_scaler(limited);
+	for (size_t i = 0; i < 3; ++i) {
+		m->mul[i] = range_scaler(limited);
+		m->add[i] = range_offset(limited);
+	}
+	const double s = 1;
 	switch (type) {
 	case simple_mat_rgb:
 		*in = (struct mat3) {
@@ -471,18 +486,16 @@ const bool limited, const enum simple_mat type) {
 	}
 }
 
-static void gen_mat_ycbcr(struct mat3 *in, double off[static 3],
+static void gen_mat_ycbcr(struct mat3 *in, struct color_map *map,
 const bool limited, const double b, const double r) {
-	const double lum = range_scaler(limited);
-	const double chr = range_diff_scaler(limited);
+	const double lum = 1;
 	const double mg = -1.0 + b + r; // minus green
 
-	const double two_b = fma(-2, b, 2) * chr; // 2 - 2*b
-	const double two_r = fma(-2, r, 2) * chr; // 2 - 2*r
+	const double two_b = fma(-2, b, 2); // 2 - 2*b
+	const double two_r = fma(-2, r, 2); // 2 - 2*r
 
-	off[0] = range_offset(limited);
-	off[1] = -.5;
-	off[2] = -.5;
+	set_scale(map, range_scaler(limited), range_diff_scaler(limited),
+		range_offset(limited), -.5);
 	*in = (struct mat3) {
 		.m = {
 			lum,   lum,            lum,
@@ -492,7 +505,7 @@ const bool limited, const double b, const double r) {
 	};
 }
 
-static void gen_mat_ydzdx(struct mat3 *in, double off[static 3],
+static void gen_mat_ydzdx(struct mat3 *in, struct color_map *m,
 const bool limited) {
 	/* SMPTE stuff is all paywalled, but H.273 gives us (all values
 	 * non-linear):
@@ -510,14 +523,13 @@ const bool limited) {
 	 * TODO: Test.
 	*/
 
-	const double s = range_scaler(limited);
-	const double d = range_diff_scaler(limited) * 2.0;
+	set_scale(m, range_scaler(limited), range_diff_scaler(limited) * 2,
+		range_offset(limited), -.5);
+	const double s = 1;
+	const double d = 2;
 	const double vz = 0.986566;
 	const double vx = 0.991902;
 
-	off[0] = range_offset(limited);
-	off[1] = -.5;
-	off[2] = -.5;
 	*in = (struct mat3) {
 		.m = { // out-X'    out-Y'  out-Z'
 			(s * vx),   s,      (s / vz), // in-Y
@@ -527,7 +539,7 @@ const bool limited) {
 	};
 }
 
-static void gen_mat_ictcp(struct mat3 *in, double off[static 3],
+static void gen_mat_ictcp(struct mat3 *in, struct color_map *m,
 const bool limited, const enum cicp_transfer transfer) {
 	/* ICtCp is derived by
 		LMS = RGB * mat
@@ -545,12 +557,10 @@ const bool limited, const enum cicp_transfer transfer) {
 			Ct = (3625*L' - 7465*M' + 3840*S') / 4096
 			Cp = (9500*L' - 9212*M' - 288*S') / 4096
 	*/
-	const double i = range_scaler(limited) / 2;
-	const double d = range_diff_scaler(limited) / 4096;
-
-	off[0] = range_offset(limited);
-	off[1] = -.5;
-	off[2] = -.5;
+	set_scale(m, range_scaler(limited)/2, range_diff_scaler(limited)/4096,
+		range_offset(limited), -.5);
+	const double i = 1;
+	const double d = 1;
 
 	struct mat3 from_lms;
 	if (transfer == cicp_transfer_smpte_st_2084) { // PQ
@@ -597,7 +607,7 @@ static void vec3_set_primaries(double vec[static 3], const struct color_xy xy) {
 
 static bool kb_kr_from_chroma(double *restrict kb, double *restrict kr,
 const struct color_space *cs) {
-	const struct color_primaries *p = get_primaries(cs);
+	const struct color_primaries *p = get_primaries(cs, NULL);
 	if (p) {
 		double w[3], r[3], g[3], b[3];
 		vec3_set_primaries(w, p->w);
@@ -634,17 +644,17 @@ const struct color_space *cs) {
 	return (bool)p;
 }
 
-static bool gen_mat(struct mat3 *in, double off[static 3],
+static bool gen_mat(struct mat3 *in, struct color_map *map,
 const struct color_space *cs, const bool assume_yuv) {
 	double b = 0;
 	double r = 0;
 	switch (cs->matrix) {
 	case cicp_matrix_rgb:
-		gen_mat_simple(in, off, cs->limited, simple_mat_rgb);
+		gen_mat_simple(in, map, cs->limited, simple_mat_rgb);
 		return true;
 	case cicp_matrix_unspecified:
 		if (!assume_yuv) {
-			gen_mat_simple(in, off, cs->limited, simple_mat_rgb);
+			gen_mat_simple(in, map, cs->limited, simple_mat_rgb);
 			return true;
 		}
 		// fallthrough
@@ -666,7 +676,7 @@ const struct color_space *cs, const bool assume_yuv) {
 		r = .212;
 		break;
 	case cicp_matrix_ycgco:
-		gen_mat_simple(in, off, cs->limited, simple_mat_ycgco);
+		gen_mat_simple(in, map, cs->limited, simple_mat_ycgco);
 		return true;
 	case cicp_matrix_bt2020_2_nonconstant:
 		b = .0593;
@@ -678,7 +688,7 @@ const struct color_space *cs, const bool assume_yuv) {
 		 * powerful enough for the task. TODO. */
 		return false;
 	case cicp_matrix_smpte_st_2085:
-		gen_mat_ydzdx(in, off, cs->limited);
+		gen_mat_ydzdx(in, map, cs->limited);
 		return true;
 	case cicp_matrix_chroma_derived_nonconstant:
 		if (!kb_kr_from_chroma(&b, &r, cs)) {
@@ -687,40 +697,41 @@ const struct color_space *cs, const bool assume_yuv) {
 		break;
 	case cicp_matrix_bt2100_2_ictcp:
 		/* Output is L'M'S' colorspace. */
-		gen_mat_ictcp(in, off, cs->limited, cs->transfer);
+		gen_mat_ictcp(in, map, cs->limited, cs->transfer);
 		return true;
 	}
-	gen_mat_ycbcr(in, off, cs->limited, b, r);
+	gen_mat_ycbcr(in, map, cs->limited, b, r);
 	return true;
 }
 
 static void color_mat_gen(const struct color_space *cs,
-struct mat43f *dst, const enum pix_layout layout, const bool assume_yuv) {
-	struct mat43 swz = {0}; // Swizzling and input offsets
+struct color_convert *conv, const bool grayscale, const bool assume_yuv,
+const double scale) {
 	struct mat3 cm;
-	double *offsets = swz.m + 3*3;
-	if (layout == pix_gray) {
-		gen_mat_simple(&cm, offsets, cs->limited, simple_mat_gray);
-	} else if (!gen_mat(&cm, offsets, cs, assume_yuv)) {
-		gen_mat_simple(&cm, offsets, cs->limited, simple_mat_rgb);
+	struct color_map *map = &conv->map;
+	if (grayscale) {
+		gen_mat_simple(&cm, map, cs->limited, simple_mat_gray);
+	} else if (!gen_mat(&cm, map, cs, assume_yuv)) {
+		gen_mat_simple(&cm, map, cs->limited, simple_mat_rgb);
 	}
 
-	uint8_t map[4];
-	pix_layout_invert(map, layout);
-	for (uint8_t i = 0; i < 3; ++i) {
-		const uint8_t y = map[pix_layout_offset(layout, i)];
-		swz.m[y*3 + i] = 1;
+	/* Input is meant to be offset then scaled. Optimize so we can use
+	 * fused-multiply-adds instead. */
+	for (size_t i = 0; i < 3; ++i) {
+		map->add[i] *= map->mul[i];
+		map->mul[i] *= (float)scale;
 	}
-	mat_mul_tofloat(dst->m, swz.m, cm.m, 3, 4, 3);
+	map->mul[3] = (float)scale;
+	map->add[3] = 0;
+	for (size_t i = 0; i < ARRAY_LEN(conv->nonlinear.m); ++i) {
+		conv->nonlinear.m[i] = (float)cm.m[i];
+	}
 }
 
 static bool set_eotf(const struct color_space *cs, struct color_transfer *eotf) {
 	switch (cs->type) {
 	case color_profile_enum:
-		if (set_cicp_eotf(cs->transfer, eotf)) {
-			return true;
-		}
-		break;
+		return set_cicp_eotf(cs->transfer, eotf);
 	case color_profile_custom:
 		if (!set_cicp_eotf(cs->transfer, eotf)) {
 			struct color_gamma *gamma = &cs->desc->u.prof.gamma;
@@ -779,21 +790,32 @@ static bool is_linear_rgb(const enum cicp_matrix matrix) {
 	return true;
 }
 
+static bool primaries_close_to_bt709(const struct color_primaries *pri) {
+	const double *p = (double *)pri;
+	const double *s = (double *)&SRGB_PRIMARIES;
+	// This is the max possible error introduced by PNG fixed point format
+	const double max_diff = 1.0/100000;
+	for (size_t i = 0; i < sizeof(*pri) / sizeof(*p); ++i) {
+		if (fabs(*p - *s) > max_diff) {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool color_space_to_linear_sRGB(const struct color_space *cs,
-struct color_convert *conv, const enum pix_layout layout, const bool maybe_yuv) {
-	color_mat_gen(cs, &conv->nonlinear, layout, maybe_yuv);
+struct color_convert *conv, const bool grayscale, const bool maybe_yuv,
+const double scale) {
+	color_mat_gen(cs, conv, grayscale, maybe_yuv, scale);
 	if (!set_eotf(cs, &conv->eotf)) {
 		eotf_sRGB(&conv->eotf);
 	}
 
-	const struct color_primaries *pri = get_primaries(cs);
-	if (!pri) {
-		pri = &SRGB_PRIMARIES;
-	}
-
-	if (is_linear_rgb(cs->matrix) && pri == &SRGB_PRIMARIES) {
+	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
+	if (is_linear_rgb(cs->matrix) && primaries_close_to_bt709(pri)) {
 		matf_identity(conv->linear.m, 3, 3);
 	} else {
+		conv->eotf.srgb_input = false;
 		struct mat3 out;
 		XYZ_to_rgb(&out, &SRGB_PRIMARIES);
 		if (cs->matrix == cicp_matrix_smpte_st_2085) {
@@ -856,14 +878,12 @@ const enum color_profile_type type) {
 		struct color_space_desc *desc = calloc(1, sizeof(*cs->desc));
 		if (desc) {
 			if (type == color_profile_custom) {
+				cs->transfer = 0;
 				set_transfer_triple(&desc->u.prof.gamma,
 					SRGB_GAMMA);
-				const struct color_primaries *pri =
-					get_cicp_primaries(cs->primaries, cs->matrix);
-				if (!pri) {
-					pri = &SRGB_PRIMARIES;
-				}
-				desc->u.prof.pri = *pri;
+				desc->u.prof.pri = *get_cicp_primaries(
+					cs->primaries, cs->matrix,
+					&SRGB_PRIMARIES);
 			}
 			cs->desc = desc;
 			cs->type = type;
@@ -976,10 +996,4 @@ struct color_space color_space_ref(struct color_space *orig) {
 		++orig->desc->refs;
 	}
 	return *orig;
-}
-
-bool color_space_is_sRGB(const struct color_space *cs) {
-	return !cs->primaries && !cs->transfer
-		&& cs->matrix == cicp_matrix_rgb && !cs->limited
-		&& cs->type == color_profile_enum;
 }
