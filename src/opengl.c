@@ -686,15 +686,17 @@ static void tex_cms(const size_t size) {
 	tex_active(gl_tex_img);
 }
 
-static bool set_icc_lut(const GLuint pix_buf, struct color_space *cs,
+static bool set_icc_lut(const GLuint pix_buf, const struct color_space *cs,
 cmsHPROFILE out) {
 	const watch_t start = watch_look();
-	cmsHTRANSFORM xfr = color_icc_transform(cs, out);
+	cmsHTRANSFORM xfr = color_icc_transform(cs, out, icc_fmt(3, 1, 0),
+		TYPE_RGB_16);
 	if (!xfr) {
 		return false;
 	}
 
-	const size_t size = 32;
+	const uint8_t bits = 5;
+	const size_t size = 1 << bits;
 	const size_t len = size*size*size;
 	const size_t items = len*3;
 	uint16_t *buf = map_unpack_buffer(pix_buf, items * sizeof(*buf),
@@ -704,9 +706,11 @@ cmsHPROFILE out) {
 		for (size_t g = 0; g < size; ++g) {
 			uint8_t *row = in + (b*size*size + g*size) * 3;
 			for (size_t r = 0; r < size; ++r) {
-				row[r*3] = (uint8_t)((r << 3) + (r >> 5));
-				row[r*3+1] = (uint8_t)((g << 3) + (g >> 5));
-				row[r*3+2] = (uint8_t)((b << 3) + (b >> 5));
+				const uint8_t shl = 8 - bits;
+				const uint8_t shr = bits - shl;
+				row[r*3] = (uint8_t)((r << shl) + (r >> shr));
+				row[r*3+1] = (uint8_t)((g << shl) + (g >> shr));
+				row[r*3+2] = (uint8_t)((b << shl) + (b >> shr));
 			}
 		}
 	}
@@ -715,12 +719,13 @@ cmsHPROFILE out) {
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	tex_cms(size);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	cmsDeleteTransform(xfr);
 	watch_report("icc lut created", start, report_detail);
 	return true;
 }
 
-static void set_cms(struct gl_context *context, struct wuimg *img) {
-	struct color_space *cs = &img->cs;
+static void set_cms(struct gl_context *context, const struct wuimg *img) {
+	const struct color_space *cs = &img->cs;
 	const struct gl_uni *uni = &context->uni;
 
 	struct color_convert conv;

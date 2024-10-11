@@ -2,10 +2,23 @@
 #include "icc.h"
 #include "term.h"
 
+cmsUInt32Number icc_fmt_colorspace(const uint8_t ch, const uint8_t bytedepth,
+const enum alpha_interpretation alpha, const uint8_t colorspace) {
+	const bool has_alpha = !(ch & 1);
+	return PREMUL_SH(alpha == alpha_associated)
+		| FLOAT_SH(bytedepth == 4)
+		| EXTRA_SH(has_alpha)
+		| COLORSPACE_SH(colorspace)
+		| CHANNELS_SH(ch - has_alpha)
+		| BYTES_SH(bytedepth);
+}
+
+cmsUInt32Number icc_fmt(const uint8_t ch, const uint8_t bytedepth,
+const enum alpha_interpretation alpha) {
+	return icc_fmt_colorspace(ch, bytedepth, alpha, PT_ANY);
+}
+
 void icc_profile_free(struct icc_profile *icc) {
-	if (icc->transform) {
-		cmsDeleteTransform(icc->transform);
-	}
 	if (icc->in) {
 		cmsCloseProfile(icc->in);
 	}

@@ -2,6 +2,7 @@
 #ifndef RASTER_COLOR
 #define RASTER_COLOR
 
+#include "alpha.h"
 #include "cicp.h"
 #include "icc.h"
 #include "pix.h"
@@ -70,7 +71,8 @@ const char * color_space_type_str(const struct color_space *cs);
 bool color_space_to_linear_sRGB(const struct color_space *cs,
 struct color_convert *conv, enum pix_layout layout, bool maybe_yuv);
 
-cmsHTRANSFORM color_icc_transform(struct color_space *cs, cmsHPROFILE out);
+cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,
+cmsUInt32Number in_fmt, cmsUInt32Number out_fmt);
 
 cmsHPROFILE color_icc_linear_sRGB(void);
 

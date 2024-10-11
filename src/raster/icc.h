@@ -6,13 +6,19 @@
 #include <lcms2_plugin.h>
 
 #include "misc/mparser.h"
+#include "raster/alpha.h"
 
 struct icc_profile {
 	cmsHPROFILE in;
-	cmsHTRANSFORM transform;
 	struct mparser mp;
 	struct _cms_io_handler io;
 };
+
+cmsUInt32Number icc_fmt_colorspace(uint8_t ch, uint8_t bytedepth,
+enum alpha_interpretation alpha, uint8_t colorspace);
+
+cmsUInt32Number icc_fmt(uint8_t ch, uint8_t bytedepth,
+enum alpha_interpretation alpha);
 
 void icc_profile_free(struct icc_profile *icc);
 

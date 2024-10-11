@@ -817,14 +817,11 @@ struct color_convert *conv, const enum pix_layout layout, const bool maybe_yuv) 
 	return (bool)pri;
 }
 
-cmsHTRANSFORM color_icc_transform(struct color_space *cs, cmsHPROFILE out) {
-	struct icc_profile *c = &cs->desc->u.icc;
-	if (!c->transform) {
-		c->transform = cmsCreateTransform(c->in,
-			(COLORSPACE_SH(PT_ANY)|CHANNELS_SH(3)|BYTES_SH(1)),
-			out, TYPE_RGB_16, INTENT_PERCEPTUAL, 0);
-	}
-	return c->transform;
+cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,
+const cmsUInt32Number in_fmt, const cmsUInt32Number out_fmt) {
+//	cmsUInt32Number colorspace = channels < 3 ? PT_GRAY : PT_RGB;
+	return cmsCreateTransform(cs->desc->u.icc.in, in_fmt,
+			out, out_fmt, INTENT_PERCEPTUAL, 0);
 }
 
 static cmsCIExyY primary_to_xyY(const struct color_xy xy) {
