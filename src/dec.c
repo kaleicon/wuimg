@@ -200,7 +200,7 @@ static enum wu_error actually_open(struct image_context *image) {
 		const struct fmt_desc *fmt = fmtmap_identify(image);
 		if (!fmt) {
 			errno_append(infile, errno);
-			return wu_unexpected_eof;
+			return wu_unknown_file_type;
 		}
 		image->desc = *fmt;
 	}
