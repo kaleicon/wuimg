@@ -158,7 +158,7 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 
 static enum wu_error decode_map(struct image_file *infile,
 avifDecoder *dec, avifResult *res) {
-	//dec->strictFlags = AVIF_STRICT_DISABLED;
+	dec->strictFlags = AVIF_STRICT_DISABLED;
 	dec->maxThreads = (int)num_cpus();
 	*res = avifDecoderSetIOMemory(dec, infile->map.data, infile->map.len);
 	if (*res != AVIF_RESULT_OK) {
