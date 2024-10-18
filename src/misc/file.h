@@ -12,6 +12,8 @@ size_t file_tail(void *buf, size_t size, size_t nmemb, FILE *ifp);
 
 size_t file_remaining(FILE *ifp);
 
+FILE * file_from_stdin(void);
+
 
 struct map_info {
 	size_t len;

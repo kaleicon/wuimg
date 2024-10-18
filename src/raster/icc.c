@@ -4,7 +4,7 @@
 
 cmsUInt32Number icc_fmt_colorspace(const uint8_t ch, const uint8_t bytedepth,
 const enum alpha_interpretation alpha, const uint8_t colorspace) {
-	const bool has_alpha = !(ch & 1);
+	const bool has_alpha = ch % 2 == 0;
 	return PREMUL_SH(alpha == alpha_associated)
 		| FLOAT_SH(bytedepth == 4)
 		| EXTRA_SH(has_alpha)

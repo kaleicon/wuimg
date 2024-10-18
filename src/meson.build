@@ -178,12 +178,16 @@ src_list += [custom_target('dec_maps',
 
 	'auto.c',
 	'conf.c',
+	'filesystem.c',
 	'metadata.cpp',
 	'rast_utils.c',
 	'term.c',
 	'utf8.c',
+	'write.c',
 	'wudefs.c',
 	'wutree.c',
+
+	'enc/pam.c',
 
 	'misc/bit.c',
 	'misc/common.c',
@@ -213,20 +217,18 @@ window_enable = configure_file(output : 'window_enable.def', configuration : win
 window_src_list += ['display.c',
 	'events.c',
 	'extract.c',
-	'filesystem.c',
 	'opengl.c',
-	'write.c',
-	'enc/pam.c',
 
 	'window.c',
 	'window/base.c',
 	'window/egl.c']
 
-wuview = executable('wu', ['main.c'] + src_list + window_src_list,
+executable('wu', ['main.c'] + src_list + window_src_list,
 	dependencies : dep_list + window_dep_list,
 	install : true)
-if get_option('compile_fuzzer')
-	wufuzz = executable('wu-fuzz', ['main_fuzz.c'] + src_list,
-		dependencies : dep_list,
-		install : true)
-endif
+executable('wuconv', ['main_wuconv.c', 'imgconv.c'] + src_list,
+	dependencies : dep_list,
+	build_by_default : false)
+executable('wufuzz', ['main_fuzz.c'] + src_list,
+	dependencies : dep_list,
+	build_by_default : false)

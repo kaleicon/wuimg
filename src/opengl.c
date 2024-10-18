@@ -771,8 +771,8 @@ static bool close_to_int(const float n) {
 	return frac < VISUAL_EPSILON || frac > (1.0 - VISUAL_EPSILON);
 }
 
-static float get_pixel_ratio(struct wuimg *img, const struct wu_conf *wuconf) {
-	switch (wuconf->heed_pixel_ratio) {
+static float get_pixel_ratio(const struct wuimg *img, const enum heed_ratio heed) {
+	switch (heed) {
 	case heed_always: return img->ratio;
 	case heed_pretty:
 		if (img->mode != image_mode_palette || close_to_int(img->ratio)) {
@@ -785,7 +785,7 @@ static float get_pixel_ratio(struct wuimg *img, const struct wu_conf *wuconf) {
 }
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
-struct wuimg *img, const struct wu_conf *wuconf) {
+const struct wuimg *img, const enum heed_ratio heed) {
 	if (img->channels > 4) {
 		fprintf(stderr, "Number of color channels unsupported (%d given)\n",
 			img->channels);
@@ -825,7 +825,7 @@ struct wuimg *img, const struct wu_conf *wuconf) {
 	context->tex.rotate = img->rotate;
 	context->tex.mirror = img->mirror;
 	context->tex.alpha = img->alpha;
-	context->tex.ratio = get_pixel_ratio(img, wuconf);
+	context->tex.ratio = get_pixel_ratio(img, heed);
 	context->update = gl_update_matrix;
 	set_alpha_ops(context);
 	if (context->tex.w != (float)img->w || context->tex.h != (float)img->h) {
@@ -837,92 +837,61 @@ struct wuimg *img, const struct wu_conf *wuconf) {
 	return gl_upload_same_size;
 }
 
-void gl_reader_read_row(struct gl_context *context, const struct wuimg *out,
-struct wu_state *state, const size_t row) {
-	state->y_offset = (float)row;
-	context->update = gl_update_matrix;
-	gl_draw(context, state);
-
-	const struct gl_tex_params tex = get_tex_params(out->bitdepth,
-		out->channels, out->attr);
-	glReadPixels(0, 0, (GLsizei)out->w, 1, tex.fmt, tex.type, out->data);
+void gl_reader_close(struct gl_reader_context *reader) {
+	free(reader->row);
 }
 
-static void get_render_channels(struct wuimg *out, const struct wuimg *img) {
-	switch (img->mode) {
-	case image_mode_palette:
-		out->channels = 4;
-		out->bitdepth = 8;
-		break;
-	case image_mode_bitfield:
-		out->channels = img->u.bitfield->ch;
-		out->bitdepth = img->u.bitfield->outdepth;
-		break;
-	default:
-		out->channels = img->channels;
-		out->bitdepth = (img->bitdepth > 8) ? 16 : 8;
+uint8_t * gl_reader_read_row(struct gl_reader_context *reader, const size_t y) {
+	reader->state.y_offset = (float)y;
+	reader->context.update = gl_update_matrix;
+	gl_draw(&reader->context, &reader->state);
+
+	const struct wuimg *dst = reader->dst;
+	const struct gl_tex_params tex = get_tex_params(dst->bitdepth,
+		dst->channels, pix_normal);
+	glReadPixels(0, 0, (GLsizei)dst->w, 1, tex.fmt, tex.type, reader->row);
+	return reader->row;
+}
+
+const char * gl_reader_set(struct gl_reader_context *reader,
+const struct wuimg *dst, const struct wuimg *src) {
+	// Alloc row first so that it's always safe to call gl_reader_close()
+	reader->row = malloc(wuimg_stride(dst));
+	if (!reader->row) {
+		return "Failed to allocate row memory";
 	}
-	const bool no_alpha = (img->alpha & alpha_one)
-		&& (pix_layout_offset(img->layout, pix_alpha) < img->channels);
-	out->channels -= no_alpha;
-}
 
-const char * gl_reader_set(struct gl_context *context, struct wuimg *r,
-struct wu_state *state, const struct wuimg *img) {
-	context->tex.ratio = 1;
-
-	const bool swap = img->rotate & 1;
-	r->w = (swap) ? img->h : img->w;
-	r->h = (swap) ? img->w : img->h;
-	r->attr = pix_normal;
-	get_render_channels(r, img);
+	reader->dst = dst;
+	const enum gl_upload_status st = gl_texture_upload(&reader->context, src,
+		heed_never);
+	if (st == gl_upload_fail) {
+		return "Failed to upload to texture";
+	}
 
 	tex_active(gl_tex_reader);
-	const struct gl_tex_params tex = get_tex_params(r->bitdepth,
-		r->channels, r->attr);
-	tex_2d(tex.in_fmt, (GLsizei)r->w, 1, tex.fmt, tex.type, NULL);
+	const struct gl_tex_params tex = get_tex_params(dst->bitdepth,
+		dst->channels, pix_normal);
+	tex_2d(tex.in_fmt, (GLsizei)dst->w, 1, tex.fmt, tex.type, NULL);
 	tex_active(gl_tex_img);
 
-	state->zoom = 1;
-	state->rotate = 0;
-	state->mirror = true;
-	struct display_dims dims = {
-		.w = (int)r->w,
-		.h = (int)r->h,
+	reader->state = (struct wu_state) {
+		.zoom = 1,
+		.rotate = 0,
+		.mirror = true,
 	};
-	gl_viewport(context, &dims);
+	struct display_dims dims = {
+		.w = (int)dst->w,
+		.h = (int)dst->h,
+	};
+	gl_viewport(&reader->context, &dims);
 
-	if (img->layout == pix_gray) {
+	/*if (dst->layout == pix_gray) {
 		tex_2d_swizzle(pix_rgba);
-	}
+	}*/
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 		return "GL framebuffer not complete";
 	}
 	return NULL;
-}
-
-void gl_reader_unbind(void) {
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glEnable(GL_BLEND);
-}
-
-void gl_reader_bind(struct gl_context *context) {
-	GLuint framebuffer;
-	glGenFramebuffers(1, &framebuffer);
-	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-
-	GLuint tex;
-	glGenTextures(1, &tex);
-	tex_active(gl_tex_reader);
-	glBindTexture(GL_TEXTURE_2D, tex);
-	tex_filter(GL_TEXTURE_2D, 0, gl_min_nearest, gl_mag_nearest);
-
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-		GL_TEXTURE_2D, tex, 0);
-	tex_active(gl_tex_img);
-
-	glDisable(GL_BLEND);
-	context->unmultiply = true;
 }
 
 static void enable_bind_tex(const GLint idx, const GLuint *texs,
@@ -1253,4 +1222,27 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 
 	glGenQueries(1, &context->timer);
 	return true;
+}
+
+bool gl_reader_init(struct gl_reader_context *reader, struct wu_conf *wuconf) {
+	if (gl_context_setup(&reader->context, wuconf)) {
+		GLuint framebuffer;
+		glGenFramebuffers(1, &framebuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+		GLuint tex;
+		glGenTextures(1, &tex);
+		tex_active(gl_tex_reader);
+		glBindTexture(GL_TEXTURE_2D, tex);
+		tex_filter(GL_TEXTURE_2D, 0, gl_min_nearest, gl_mag_nearest);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+			GL_TEXTURE_2D, tex, 0);
+		tex_active(gl_tex_img);
+
+		glDisable(GL_BLEND);
+		reader->context.unmultiply = true;
+		return true;
+	}
+	return false;
 }

@@ -62,4 +62,6 @@ void pix_layout_print(enum pix_layout layout, FILE *out);
 
 uint8_t pix_layout_invert(uint8_t map[static 4], enum pix_layout layout);
 
+uint8_t pix_layout_map(uint8_t map[static 4], enum pix_layout layout);
+
 #endif /* RASTER_PIX */

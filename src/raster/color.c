@@ -25,6 +25,11 @@ enum simple_mat {
 	simple_mat_ycgco,
 };
 
+struct color_map_double {
+	double mul[3];
+	double add[3];
+};
+
 const char * color_space_type_str(const struct color_space *cs) {
 	switch (cs->type) {
 	case color_profile_enum: return "Enum";
@@ -174,7 +179,7 @@ static void eotf_perceptual_quantization(struct color_transfer *eotf) {
 	const double inv_n = 32.0 / 2523.0;
 	const double c = 2392.0 / 128.0;
 	const double b = 2413.0 / 128.0;
-	const double a = c - b + 1;
+	const double a = 3424.0 / 4096.0;
 	*eotf = (struct color_transfer) {
 		.fn = color_transfer_pq,
 		.args = {
@@ -426,20 +431,20 @@ const struct color_space *cs, const struct color_primaries *fallback) {
 	return fallback;
 }
 
-static float range_offset(const bool limited) {
-	return (float)((limited) ? -1.0/16 : 0);
+static double range_offset(const bool limited) {
+	return (limited) ? -1.0/16 : 0;
 }
 
-static float range_diff_scaler(const bool limited) {
-	return (float)((limited) ? 255.0/(240-16) : 1);
+static double range_diff_scaler(const bool limited) {
+	return (limited) ? 255.0/(240-16) : 1;
 }
 
-static float range_scaler(const bool limited) {
-	return (float)((limited) ? 255.0/(235-16) : 1);
+static double range_scaler(const bool limited) {
+	return (limited) ? 255.0/(235-16) : 1;
 }
 
-static void set_scale(struct color_map *m, float lum_mul, float chr_mul,
-float lum_add, float chr_add) {
+static void lum_chroma_scale(struct color_map_double *m, double lum_mul,
+double chr_mul, double lum_add, double chr_add) {
 	m->mul[0] = lum_mul;
 	m->mul[1] = chr_mul;
 	m->mul[2] = chr_mul;
@@ -448,27 +453,26 @@ float lum_add, float chr_add) {
 	m->add[2] = chr_add;
 }
 
-static void gen_mat_simple(struct mat3 *in, struct color_map *m,
+static void gen_mat_simple(struct mat3 *in, struct color_map_double *m,
 const bool limited, const enum simple_mat type) {
 	for (size_t i = 0; i < 3; ++i) {
 		m->mul[i] = range_scaler(limited);
 		m->add[i] = range_offset(limited);
 	}
-	const double s = 1;
 	switch (type) {
 	case simple_mat_rgb:
 		*in = (struct mat3) {
 			.m = {
-				s, 0, 0,
-				0, s, 0,
-				0, 0, s,
+				1, 0, 0,
+				0, 1, 0,
+				0, 0, 1,
 			}
 		};
 		break;
 	case simple_mat_gray:
 		*in = (struct mat3) {
 			.m = {
-				s, s, s,
+				1, 1, 1,
 				0, 0, 0,
 				0, 0, 0,
 			}
@@ -477,16 +481,16 @@ const bool limited, const enum simple_mat type) {
 	case simple_mat_ycgco:
 		*in = (struct mat3) {
 			.m = {
-				s,  s,  s,
-				s,  0, -s,
-				-s, s, -s,
+				1,  1,  1,
+				1,  0, -1,
+				-1, 1, -1,
 			}
 		};
 		break;
 	}
 }
 
-static void gen_mat_ycbcr(struct mat3 *in, struct color_map *map,
+static void gen_mat_ycbcr(struct mat3 *in, struct color_map_double *map,
 const bool limited, const double b, const double r) {
 	const double lum = 1;
 	const double mg = -1.0 + b + r; // minus green
@@ -494,7 +498,7 @@ const bool limited, const double b, const double r) {
 	const double two_b = fma(-2, b, 2); // 2 - 2*b
 	const double two_r = fma(-2, r, 2); // 2 - 2*r
 
-	set_scale(map, range_scaler(limited), range_diff_scaler(limited),
+	lum_chroma_scale(map, range_scaler(limited), range_diff_scaler(limited),
 		range_offset(limited), -.5);
 	*in = (struct mat3) {
 		.m = {
@@ -505,7 +509,7 @@ const bool limited, const double b, const double r) {
 	};
 }
 
-static void gen_mat_ydzdx(struct mat3 *in, struct color_map *m,
+static void gen_mat_ydzdx(struct mat3 *in, struct color_map_double *m,
 const bool limited) {
 	/* SMPTE stuff is all paywalled, but H.273 gives us (all values
 	 * non-linear):
@@ -523,7 +527,7 @@ const bool limited) {
 	 * TODO: Test.
 	*/
 
-	set_scale(m, range_scaler(limited), range_diff_scaler(limited) * 2,
+	lum_chroma_scale(m, range_scaler(limited), range_diff_scaler(limited) * 2,
 		range_offset(limited), -.5);
 	const double s = 1;
 	const double d = 2;
@@ -539,7 +543,7 @@ const bool limited) {
 	};
 }
 
-static void gen_mat_ictcp(struct mat3 *in, struct color_map *m,
+static void gen_mat_ictcp(struct mat3 *in, struct color_map_double *m,
 const bool limited, const enum cicp_transfer transfer) {
 	/* ICtCp is derived by
 		LMS = RGB * mat
@@ -557,7 +561,7 @@ const bool limited, const enum cicp_transfer transfer) {
 			Ct = (3625*L' - 7465*M' + 3840*S') / 4096
 			Cp = (9500*L' - 9212*M' - 288*S') / 4096
 	*/
-	set_scale(m, range_scaler(limited)/2, range_diff_scaler(limited)/4096,
+	lum_chroma_scale(m, range_scaler(limited)/2, range_diff_scaler(limited)/4096,
 		range_offset(limited), -.5);
 	const double i = 1;
 	const double d = 1;
@@ -644,7 +648,7 @@ const struct color_space *cs) {
 	return (bool)p;
 }
 
-static bool gen_mat(struct mat3 *in, struct color_map *map,
+static bool gen_mat(struct mat3 *in, struct color_map_double *map,
 const struct color_space *cs, const bool assume_yuv) {
 	double b = 0;
 	double r = 0;
@@ -708,21 +712,21 @@ static void color_mat_gen(const struct color_space *cs,
 struct color_convert *conv, const bool grayscale, const bool assume_yuv,
 const double scale) {
 	struct mat3 cm;
-	struct color_map *map = &conv->map;
+	struct color_map_double map;
 	if (grayscale) {
-		gen_mat_simple(&cm, map, cs->limited, simple_mat_gray);
-	} else if (!gen_mat(&cm, map, cs, assume_yuv)) {
-		gen_mat_simple(&cm, map, cs->limited, simple_mat_rgb);
+		gen_mat_simple(&cm, &map, cs->limited, simple_mat_gray);
+	} else if (!gen_mat(&cm, &map, cs, assume_yuv)) {
+		gen_mat_simple(&cm, &map, cs->limited, simple_mat_rgb);
 	}
 
 	/* Input is meant to be offset then scaled. Optimize so we can use
 	 * fused-multiply-adds instead. */
 	for (size_t i = 0; i < 3; ++i) {
-		map->add[i] *= map->mul[i];
-		map->mul[i] *= (float)scale;
+		conv->map.mul[i] = (float)(map.mul[i] * scale);
+		conv->map.add[i] = (float)(map.add[i] * map.mul[i]);
 	}
-	map->mul[3] = (float)scale;
-	map->add[3] = 0;
+	conv->map.mul[3] = (float)scale;
+	conv->map.add[3] = 0;
 	for (size_t i = 0; i < ARRAY_LEN(conv->nonlinear.m); ++i) {
 		conv->nonlinear.m[i] = (float)cm.m[i];
 	}

@@ -61,7 +61,7 @@ Prerequisites
 -------------
 For building you'll need
 * meson
-* A C and C++ compiler (both GCC and Clang work fine, others... probably not)
+* A C and C++ compiler (both GCC and Clang work fine, no idea about others)
 
 and at a very minimum the development files for
 * libarchive
@@ -115,13 +115,22 @@ Pick a good name for a build directory and run
 
 	meson BUILDDIR
 
-This will by default enable as many formats as possible. In case you want to
+This will by default enable as many features as possible. In case you want to
 explicitely disable or enable some (like for, say, fast fuzzing because you
-don't trust me or the C language in general), run something like
+don't trust me or the C language in general), run some of the following:
 
+	# See available options
+	meson configure BUILDDIR
+
+	# Set features to enable/disable/auto-detect
 	meson configure -D png=disabled -D maki=enabled BUILDDIR
+	meson configure -D window_wayland=auto BUILDDIR
 
-You may also add `--auto-features disable` to disable everything by default.
+	# Disable all formats requiring external libraries
+	meson configure -D disable_external=true BUILDDIR
+
+	# Disable everything by default
+	meson configure --auto-features disabled BUILDDIR
 
 Once you're ready, just run
 
@@ -136,8 +145,14 @@ location, do
 beforehand so that it's installed to $PREFIX/bin/ from then on. A good
 candidate is '~/.local' if that's on your $PATH.
 
-That's it. Run 'wu -h' to get some help text. The help screen is short (it
-may actually fit into your screen) and contains all the information you need.
+That's it. Run 'wu -h' to get some help text. Its help screen is short (it
+may actually fit in your screen) and contains all the information you need.
+
+wu is able to convert images to PAM, but uses an OpenGL context for this. To
+build a pure-software converter with no dependencies on a windowing system, run
+
+	# Creates a binary at BUILDDIR/src/wuconv
+	meson compile -C BUILDDIR wuconv
 
 
 Usage

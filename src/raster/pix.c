@@ -69,3 +69,12 @@ uint8_t pix_layout_invert(uint8_t map[static 4], const enum pix_layout layout) {
 	}
 	return pos;
 }
+
+uint8_t pix_layout_map(uint8_t map[static 4], const enum pix_layout layout) {
+	uint8_t inv[4];
+	uint8_t n = pix_layout_invert(inv, layout);
+	for (uint8_t i = 0; i < n; ++i) {
+		map[i] = pix_layout_offset(layout, inv[i]);
+	}
+	return n;
+}

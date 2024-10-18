@@ -7,11 +7,24 @@
 #include "misc/math.h"
 #include "raster/unpack.h"
 
+void matf_mul(float *restrict out, const float *restrict m1,
+const float *restrict m2, const int len, const int h1, const int w2) {
+	for (int y = 0; y < h1; ++y) {
+		for (int x = 0; x < w2; ++x) {
+			float acc = m1[y*len] * m2[x];
+			for (int i = 1; i < len; ++i) {
+				acc = fmaf(m1[y*len + i], m2[x + i*w2], acc);
+			}
+			out[y*w2 + x] = acc;
+		}
+	}
+}
+
 static double dot(const double *restrict row, const double *restrict col,
 const int len, const int col_stride) {
 	double acc = row[0] * col[0];
-	for (int x = 1; x < len; ++x) {
-		acc = fma(row[x], col[x*col_stride], acc);
+	for (int i = 1; i < len; ++i) {
+		acc = fma(row[i], col[i*col_stride], acc);
 	}
 	return acc;
 }
@@ -46,27 +59,16 @@ const double *restrict m2, const int len, const int h1, const int w2) {
 	}
 }
 
-
-static int doti(const int *restrict row, const int *restrict col,
-const int len, const int col_stride) {
-	int acc = 0;
-	for (int x = 0; x < len; ++x) {
-		acc += row[x] * col[x*col_stride];
-	}
-	return acc;
-}
-
-static void vec_mul_mati(int *restrict out, const int *restrict v1,
-const int *restrict m2, const int len, const int w2) {
-	for (int x = 0; x < w2; ++x) {
-		out[x] = doti(v1, m2 + x, len, w2);
-	}
-}
-
 void mati_mul(int *restrict out, const int *restrict m1,
 const int *restrict m2, const int len, const int h1, const int w2) {
 	for (int y = 0; y < h1; ++y) {
-		vec_mul_mati(out + y*w2, m1 + y*len, m2, len, w2);
+		for (int x = 0; x < w2; ++x) {
+			int acc = m1[y*len] * m2[x];
+			for (int i = 1; i < len; ++i) {
+				acc += m1[y*len + i] * m2[x + i*w2];
+			}
+			out[y*w2 + x] = acc;
+		}
 	}
 }
 

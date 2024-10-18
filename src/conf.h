@@ -28,7 +28,7 @@ struct wu_conf {
 	enum heed_ratio {    // When to heed the image pixel ratio.
 		heed_always, // Always stretch the image.
 		heed_pretty, // Ignore when it would cause unsightly artifacts.
-		heed_never, // Never stretch the image.
+		heed_never,  // Never stretch the image.
 	} heed_pixel_ratio:8;
 
 	// JPEG
@@ -88,5 +88,7 @@ struct wu_conf {
 struct wu_conf conf_default(void);
 
 struct wu_conf conf_load(void);
+
+struct wu_conf conf_no_window(void);
 
 #endif /* WU_CONF */

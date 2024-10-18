@@ -4,10 +4,12 @@
 
 #include "raster/wuimg.h"
 
-size_t pam_write_row(const struct wuimg *out, FILE *ofp);
+size_t pam_write_row(uint8_t *restrict row, const struct wuimg *dst, FILE *ofp);
 
-void pam_write_header(const struct wuimg *out, FILE *ofp);
+void pam_write_header(const struct wuimg *dst, FILE *ofp);
 
-bool pam_can_cpy(struct wuimg *out, const struct wuimg *in);
+void pam_best_fit(struct wuimg *dst, const struct wuimg *src);
+
+bool pam_can_cpy(struct wuimg *dst, const struct wuimg *src);
 
 #endif // ENC_PAM

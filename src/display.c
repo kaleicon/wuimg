@@ -57,7 +57,7 @@ static enum wu_error update_texture(struct image_context *image,
 struct gl_context *gl, const bool reset) {
 	struct wu_state *state = &image->state;
 	struct wuimg *img = image->file.sub_img + state->idx;
-	switch (gl_texture_upload(gl, img, &image->conf)) {
+	switch (gl_texture_upload(gl, img, image->conf.heed_pixel_ratio)) {
 	case gl_upload_fail:
 		term_line_put("Failed to upload to texture.", stderr);
 		return wu_display_error;
@@ -243,4 +243,14 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 	}
 	watch_report("Display set", start, report_info);
 	return true;
+}
+
+const char * display_offscreen_setup(struct window_offscreen *window,
+struct gl_reader_context *reader, struct wu_conf *conf) {
+	if (window_offscreen_setup(window)) {
+		return gl_reader_init(reader, conf)
+			? NULL
+			: "Failed to set OpenGL renderer";
+	}
+	return "Failed to create window";
 }

@@ -24,6 +24,9 @@ struct mat2i {
 	int m[2*2];
 };
 
+void matf_mul(float *restrict out, const float *restrict m1,
+const float *restrict m2, int len, int h1, int w2);
+
 void vec_mul_mat(double *restrict out, const double *restrict v1,
 const double *restrict m2, int len, int w2);
 

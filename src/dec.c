@@ -341,17 +341,16 @@ static void sort_and_print(FILE *out) {
 	}
 }
 
-void print_known_formats(void) {
-	FILE *out = stdout;
-	fprintf(out, "Known formats: %zu\n", ARRAY_LEN(desc_map));
-	sort_and_print(out);
+void print_known_formats(FILE *ofp) {
+	fprintf(ofp, "Known formats: %zu\n", ARRAY_LEN(desc_map));
+	sort_and_print(ofp);
 
-	fprintf(out, "Known extensions: %zu\n", ARRAY_LEN(ext_map));
+	fprintf(ofp, "Known extensions: %zu\n", ARRAY_LEN(ext_map));
 	const int max = (int)sizeof(ext_map->ext);
 	for (size_t i = 0; i < ARRAY_LEN(ext_map); ++i) {
-		fprintf(out, "%.*s%s", max, ext_map[i].ext,
+		fprintf(ofp, "%.*s%s", max, ext_map[i].ext,
 			(i + 1 < ARRAY_LEN(ext_map)) ? ", " : "\n\n");
 	}
 
-	fprintf(out, "Known magic sequences: %zu\n", ARRAY_LEN(magic_map));
+	fprintf(ofp, "Known magic sequences: %zu\n", ARRAY_LEN(magic_map));
 }

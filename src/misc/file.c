@@ -53,6 +53,19 @@ size_t file_remaining(FILE *ifp) {
 	return (size_t)lmax(0, end - cur);
 }
 
+FILE * file_from_stdin(void) {
+	FILE *tmp = tmpfile();
+	if (tmp) {
+		unsigned char buf[BUFSIZ];
+		size_t read;
+		while ( (read = fread(buf, 1, sizeof(buf), stdin)) ) {
+			fwrite(buf, 1, read, tmp);
+		}
+		rewind(tmp);
+	}
+	return tmp;
+}
+
 
 int file_unmap(struct map_info *mm) {
 	return munmap((void *)mm->data, mm->len);

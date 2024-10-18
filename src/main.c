@@ -67,57 +67,39 @@ static void pos_print(const size_t i, const struct file_list *entries) {
 	printf("%zu/%zu, %s\n", i+1, entries->nr, entries->name[i]);
 }
 
-static FILE * save_stdin(void) {
-	FILE *tmp = tmpfile();
-	if (tmp) {
-		unsigned char buf[BUFSIZ];
-		size_t read;
-		while ( (read = fread(buf, 1, sizeof(buf), stdin)) ) {
-			fwrite(buf, 1, read, tmp);
-		}
-		rewind(tmp);
-	}
-	return tmp;
+static void conv_gl_close(void *ptr) {
+	gl_reader_close(ptr);
 }
-
-static struct wu_conf conv_conf(struct wu_conf conf) {
-	conf.svg_window_adapt = false;
-	return conf;
+static uint8_t * conv_get_row(void *ptr, size_t y) {
+	return gl_reader_read_row(ptr, y);
+}
+static const char * conv_set_image(void *ptr, const struct wuimg *dst,
+const struct wuimg *src) {
+	return gl_reader_set(ptr, dst, src);
 }
 
 static enum wu_error convert_files(const struct file_list *entries,
 const struct write_args *args) {
-	struct image_context image = {
-		.conf = conv_conf(conf_load()),
-	};
-	FILE *stdin_cpy = NULL;
-	struct write_writer writer = {0};
-	size_t w = 0;
-	for (size_t i = 0; i < entries->nr; ++i) {
-		const char *name = entries->name[i];
-		if (!strcmp("-", name)) {
-			stdin_cpy = save_stdin();
-			if (!stdin_cpy) {
-				term_line_put("Failed to save stdin", stderr);
-				continue;
-			}
-			dec_src_file(&image, stdin_cpy, "stdin", false, false);
-		} else {
-			dec_src_filename(&image, name);
-		}
-
-		const bool no_prob = write_image(&image, &writer, args);
-		w += no_prob;
-		image_reset(&image);
-		if (args->stdout) {
-			break;
-		}
-		if (stdin_cpy) {
-			stdin_cpy = NULL;
-		}
+	struct window_offscreen window = {0};
+	struct gl_reader_context reader = {0};
+	struct wu_conf conf = conf_no_window();
+	const char *err = display_offscreen_setup(&window, &reader, &conf);
+	if (err) {
+		term_line_key_val("Couldn't initialize offscreen context", err,
+			stderr);
+		return 1;
 	}
-	write_writer_terminate(&writer);
-	return w != entries->nr;
+
+	struct write_writer writer = {
+		.state = &reader,
+		.set_image = conv_set_image,
+		.get_row = conv_get_row,
+		.close = conv_gl_close,
+	};
+	const int r = write_filelist(args, &writer, (int)entries->nr,
+		entries->name, &conf);
+	window_offscreen_terminate(&window);
+	return r;
 }
 
 static enum wu_error test_with(const struct file_list *entries,
@@ -131,7 +113,7 @@ struct test_mode_args args) {
 	}
 
 	struct image_context image = {
-		.conf = conv_conf(conf_load()),
+		.conf = conf_no_window(),
 	};
 
 	enum wu_error result = wu_ok;
@@ -254,7 +236,7 @@ const bool interpret_stdin) {
 		const char *name = entries->name[idx];
 		if (interpret_stdin && !strcmp("-", name)) {
 			if (!stdin_tmp) {
-				stdin_tmp = save_stdin();
+				stdin_tmp = file_from_stdin();
 			}
 			if (stdin_tmp) {
 				rewind(stdin_tmp);
@@ -354,7 +336,7 @@ static enum wu_error from_path(const char *name) {
 #define TEST_MODE "test"
 
 static void print_help(void) {
-	puts("Usage:\n"
+	fputs("Usage:\n"
 		"\t" WU_CANON_NAME "\t(read images from \".\")\n"
 		"\t" WU_CANON_NAME " DIR\t(read from DIR)\n"
 		"\t" WU_CANON_NAME " FILE\t(read from the parent of FILE, starting with FILE)\n"
@@ -374,7 +356,7 @@ static void print_help(void) {
 		"\t\tPrint supported formats.\n"
 
 		"\n"
-		"Work modes (all exclusive, may be abbreviated):\n"
+		"Operation modes (all exclusive, may be abbreviated):\n"
 		"\t" DIRECTORY_MODE "\n"
 		"\t\tDisplay images from PATH if it is a directory, from its\n"
 		"\t\tparent if it is a file, or from the current directory if\n"
@@ -388,27 +370,15 @@ static void print_help(void) {
 		"\t\tDisplay any images inside FILE, which must be an archive\n"
 		"\t\tformat supported by libarchive.\n"
 
-		"\t" WRITE_MODE " [switches]\n"
-		"\t\tDecode FILE to FILE(_sub#:frame#).pam, with each sub-image\n"
-		"\t\tand animation frame on separate files. Output names are\n"
-		"\t\twritten to stdout one per line.\n"
-
 		"\t" TEST_MODE " [switches]\n"
 		"\t\tTry decoding each FILE, while measuring the elapsed time.\n"
 
-		"\n"
-		WRITE_MODE " switches:\n"
-		"\t-d OUTDIR\n"
-		"\t\tWrite files to OUTDIR instead of the file's parent.\n"
-
-		"\t-f\n"
-		"\t\tForce overwriting output file(s).\n"
-
-		"\t-s\n"
-		"\t\tWrite only the initial sub-image to stdout.\n"
-
-		"\t-z\n"
-		"\t\tUse null as line terminator when printing filenames.\n"
+		"\t" WRITE_MODE " [switches]\n"
+		"\t\tConvert each FILE to FILE(_sub#:frame#).pam, with sub-images\n"
+		"\t\tand animation frames on separate files. Output names are\n"
+		"\t\twritten to stdout.\n"
+		"\t\tThis converter uses an OpenGL context for rendering. Refer\n"
+		"\t\tto `wuconv` for a software renderer.\n"
 
 		"\n"
 		TEST_MODE " switches:\n"
@@ -419,8 +389,12 @@ static void print_help(void) {
 		"\t\tDecode N times for warmup before measuring. Default is 0\n"
 
 		"\t-m\n"
-		"\t\tPrint full metadata for each file. Decode only once."
+		"\t\tPrint full metadata for each file. Decode only once.\n"
+
+		"\n"
+		WRITE_MODE " switches:\n", stdout
 	);
+	fputs(write_switches, stdout);
 }
 
 static int test_args(const int argc, char **argv, struct test_mode_args *args) {
@@ -533,7 +507,7 @@ int main(const int argc, char *argv[]) {
 		print_keys();
 		return 0;
 	case formats:
-		print_known_formats();
+		print_known_formats(stdout);
 		return 0;
 	case sole:
 	case test:

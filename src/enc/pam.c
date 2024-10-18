@@ -6,12 +6,12 @@
 
 #include "pam.h"
 
-size_t pam_write_row(const struct wuimg *out, FILE *ofp) {
-	const size_t len = out->w * out->channels;
-	if (out->bitdepth == 16) {
-		endian_loop16((uint16_t *)out->data, big_endian, len);
+size_t pam_write_row(uint8_t *restrict row, const struct wuimg *dst, FILE *ofp) {
+	const size_t len = dst->w * dst->channels;
+	if (dst->bitdepth == 16) {
+		endian_loop16((uint16_t *)row, big_endian, len);
 	}
-	return fwrite(out->data, out->bitdepth/8, len, ofp);
+	return fwrite(row, dst->bitdepth/8, len, ofp);
 }
 
 static void write_tuple(const uint8_t ch, FILE *ofp) {
@@ -26,37 +26,38 @@ static void write_tuple(const uint8_t ch, FILE *ofp) {
 	fprintf(ofp, "TUPLTYPE %s\n", tupl);
 }
 
-void pam_write_header(const struct wuimg *out, FILE *ofp) {
-	const uint32_t maxval = bit_set32(out->used_bits);
+void pam_write_header(const struct wuimg *dst, FILE *ofp) {
+	const uint32_t maxval = bit_set32(dst->used_bits);
 	fprintf(ofp,
 		"P7\n"
 		"WIDTH %zu\n"
 		"HEIGHT %zu\n"
 		"DEPTH %hhu\n"
 		"MAXVAL %" PRIu16 "\n",
-		out->w, out->h, out->channels, (uint16_t)maxval);
-	write_tuple(out->channels, ofp);
+		dst->w, dst->h, dst->channels, (uint16_t)maxval);
+	write_tuple(dst->channels, ofp);
 	fputs("ENDHDR\n", ofp);
 }
 
-static bool unassociated_or_no_alpha(const struct wuimg *in) {
-	return in->alpha == alpha_unassociated
-		|| pix_layout_offset(in->layout, pix_alpha) >= in->channels;
-}
-
-bool pam_can_cpy(struct wuimg *out, const struct wuimg *in) {
-	if (in->mode == image_mode_raw && in->attr == pix_normal
-	&& in->rotate == 0 && !in->mirror && unassociated_or_no_alpha(in)
-	&& color_space_is_sRGB(&in->cs)) {
-		switch (in->bitdepth) {
-		case 8: case 16:
-			out->w = in->w;
-			out->h = in->h;
-			out->channels = in->channels;
-			out->bitdepth = in->bitdepth;
-			out->used_bits = in->used_bits;
-			return true;
-		}
+void pam_best_fit(struct wuimg *dst, const struct wuimg *src) {
+	dst->w = (src->rotate & 1) ? src->h : src->w;
+	dst->h = (src->rotate & 1) ? src->w : src->h;
+	switch (src->mode) {
+	case image_mode_raw:
+	case image_mode_planar:
+		dst->channels = src->channels;
+		dst->bitdepth = src->bitdepth > 8 ? 16 : 8;
+		break;
+	case image_mode_palette:
+		dst->channels = 4;
+		dst->bitdepth = 8;
+		break;
+	case image_mode_bitfield:
+		dst->channels = src->u.bitfield->ch;
+		dst->bitdepth = src->u.bitfield->outdepth;
+		break;
 	}
-	return false;
+//	dst->used_bits = src->bitdepth < dst->bitdepth && src->attr == pix_normal
+//		? src->used_bits : dst->bitdepth;
+	dst->alpha = alpha_unassociated;
 }

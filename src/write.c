@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: 0BSD
 #include <errno.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,106 +22,33 @@ struct write_path {
 	bool with_idx;
 };
 
-typedef void (*row_fn_t)(struct write_writer *write, struct wu_state *state,
-	struct wuimg *out, size_t y);
-
-
-void write_writer_terminate(struct write_writer *writer) {
-	if (writer->gl_initialized) {
-		window_offscreen_terminate(&writer->window);
+static size_t write_pam(const struct wuimg *dst, FILE *ofp,
+struct write_writer *writer) {
+	pam_write_header(dst, ofp);
+	size_t w = 0;
+	for (size_t y = 0; y < dst->h; ++y) {
+		w += pam_write_row(writer->get_row(writer->state, y), dst, ofp);
 	}
+	return w;
 }
 
-static void rowcpy(struct write_writer *write, struct wu_state *state,
-struct wuimg *in, size_t y) {
-	(void)state;
-	uint8_t *row = write->out.data;
-	memcpy(row, in->data + y*wuimg_stride(in), wuimg_stride(&write->out));
-
-	const bool swz = (in->channels >= 3 && in->layout != pix_rgba)
-		|| (in->channels < 3 && in->layout != pix_gray);
-	if (swz) {
-		const size_t pix_size = in->bitdepth/8 * in->channels;
-		for (size_t x = 0; x < in->w; ++x) {
-			uint8_t *d = row + x*pix_size;
-			pix_layout_swizzle(d, in->bitdepth/8, in->channels, in->layout);
-		}
-	}
-}
-
-static void get_gl_row(struct write_writer *write, struct wu_state *state,
-struct wuimg *in, size_t y) {
-	(void)in;
-	gl_reader_read_row(&write->gl, &write->out, state, y);
-}
-
-static void write_pam(struct write_writer *write, row_fn_t row_fn,
-struct wuimg *in, struct wu_state *state, FILE *ofp) {
-	struct wuimg *out = &write->out;
-	pam_write_header(out, ofp);
-	for (size_t y = 0; y < out->h; ++y) {
-		(*row_fn)(write, state, in, y);
-		pam_write_row(out, ofp);
-	}
-}
-
-static bool writer_gl_init(struct write_writer *writer,
-struct wu_conf *conf) {
-	if (!writer->gl_initialized) {
-		if (window_offscreen_setup(&writer->window)) {
-			if (gl_context_setup(&writer->gl, conf)) {
-				gl_reader_bind(&writer->gl);
-				writer->gl_initialized = true;
-				term_line_put("Initialized GL renderer", stderr);
-			} else {
-				write_writer_terminate(writer);
-			}
-		}
-	}
-	return writer->gl_initialized;
-}
-
-static const char * init_gl_renderer(struct write_writer *writer,
-struct wuimg *in, struct image_context *image) {
-	struct wu_conf *conf = &image->conf;
-	if (writer_gl_init(writer, conf)) {
-		if (gl_texture_upload(&writer->gl, in, conf) != gl_upload_fail) {
-			return gl_reader_set(&writer->gl, &writer->out,
-				&image->state, in);
-		}
-		return "Failed to upload to texture";
-	}
-	return "Failed to initialize GL renderer";
-}
-
-static const char * write_sub_img(struct write_writer *writer,
-struct image_context *image, struct wuimg *in, FILE *ofp) {
-	struct wuimg *out = &writer->out;
-	memset(out, 0, sizeof(*out));
-
+static const char * write_sub_img(const struct wuimg *src, FILE *ofp,
+struct write_writer *writer) {
 	const char *err_msg = NULL;
-	row_fn_t row_fn;
-	if (pam_can_cpy(out, in)) {
-		row_fn = rowcpy;
-	} else {
-		err_msg = init_gl_renderer(writer, in, image);
-		if (err_msg) {
-			return err_msg;
+	struct wuimg dst = {0};
+	pam_best_fit(&dst, src);
+	if (wuimg_verify(&dst) == wu_ok) {
+		const watch_t w = watch_look();
+		err_msg = writer->set_image(writer->state, &dst, src);
+		if (!err_msg) {
+			write_pam(&dst, ofp, writer);
+			watch_report("Converted", w, report_info);
 		}
-		row_fn = get_gl_row;
-	}
-
-	if (wuimg_verify(out) == wu_ok) {
-		out->data = malloc(wuimg_stride(out));
-		if (out->data) {
-			write_pam(writer, row_fn, in, &image->state, ofp);
-		} else {
-			err_msg = "Failed to allocate row memory";
-		}
+		writer->close(writer->state);
 	} else {
-		err_msg = "Image failed verification";
+		err_msg = "Output image failed verification. This is likely a"
+			" programmer oversight.";
 	}
-	wuimg_free(out);
 	return err_msg;
 }
 
@@ -209,15 +135,22 @@ const struct image_context *image) {
 	return false;
 }
 
-bool write_image(struct image_context *image, struct write_writer *writer,
-const struct write_args *args) {
+bool write_image(struct image_context *image, const struct write_args *args,
+struct write_writer *writer) {
+	struct wuimg *cur;
+	enum wu_error err = dec_iter(image, &cur);
+	if (err != wu_ok) {
+		dec_free_image(image);
+		fprintf(stderr, "Error while opening %s: %s\n", image->name,
+			wu_error_message(err));
+		return false;
+	}
+
 	struct write_path path;
-	bool all_ok = true;
 	errno = 0;
-	if (set_write_path(&path, args->outdir, image)) {
-		struct wuimg *cur;
-		enum wu_error err;
-		while (wu_ok == (err = dec_iter(image, &cur))) {
+	bool all_ok = set_write_path(&path, args->outdir, image);
+	if (all_ok) {
+		do {
 			FILE *ofp = get_file(args, &path, image, cur);
 			if (!ofp) {
 				print_write_error(&path, strerror(errno), stderr);
@@ -227,7 +160,7 @@ const struct write_args *args) {
 				}
 				continue;
 			}
-			const char *msg = write_sub_img(writer, image, cur, ofp);
+			const char *msg = write_sub_img(cur, ofp, writer);
 			fclose(ofp);
 			if (msg) {
 				print_write_error(&path, msg, stderr);
@@ -239,23 +172,69 @@ const struct write_args *args) {
 				print_write_path(&path, stdout);
 				fputc(args->null ? 0 : '\n', stdout);
 			}
-		}
+		} while (wu_ok == (err = dec_iter(image, &cur)));
 		switch (err) {
 		case wu_no_change: case wu_ok:
 			break;
 		default:
-			fprintf(stderr, "Error decoding %s: %s\n", image->name,
-				wu_error_message(err));
+			fprintf(stderr, "Error while processing %s: %s\n",
+				image->name, wu_error_message(err));
 			all_ok = false;
 		}
 		dec_free_image(image);
 		free_write_path(&path);
 	} else {
 		perror("Failed to open output directory");
-		all_ok = false;
 	}
 	return all_ok;
 }
+
+int write_filelist(const struct write_args *args, struct write_writer *writer,
+const int len, char **names, const struct wu_conf *conf) {
+	struct image_context image = {
+		.conf = conf ? *conf : conf_no_window(),
+	};
+
+	int ok = 0;
+	for (int i = 0; i < len; ++i) {
+		const char *name = names[i];
+		if (!strcmp("-", name)) {
+			FILE *stdin_cpy = file_from_stdin();
+			if (!stdin_cpy) {
+				term_line_put("Failed to save stdin", stderr);
+				continue;
+			}
+			dec_src_file(&image, stdin_cpy, "stdin", false, false);
+		} else {
+			dec_src_filename(&image, name);
+		}
+
+		ok += write_image(&image, args, writer);
+		image_reset(&image);
+		if (args->stdout) {
+			break;
+		}
+	}
+	return ok != len;
+}
+
+const char write_description[] =
+	"\tConvert each FILE to FILE(_sub#:frame#).pam, with sub-images\n"
+	"\tand animations frames on separate files. Output names are\n"
+	"\twritten to stdout.\n";
+
+const char write_switches[] =
+	"\t-d OUTDIR\n"
+	"\t\tWrite files to OUTDIR instead of the file's parent.\n"
+
+	"\t-f\n"
+	"\t\tForce overwriting output file(s).\n"
+
+	"\t-s\n"
+	"\t\tWrite only the initial sub-image to stdout.\n"
+
+	"\t-z\n"
+	"\t\tUse null as line terminator when printing filenames.\n";
 
 int write_args(const int argc, char **argv, struct write_args *args) {
 	int idx = 0;

@@ -17,14 +17,17 @@ add_project_arguments(
 	'-Wno-strict-prototypes',
 	'-Wno-missing-field-initializers',
 
+	'-fno-math-errno',
+	'-fno-trapping-math',
 	language : 'c')
 if cc.get_id() == 'gcc'
 	add_project_arguments(
 		'-Wformat-signedness',
 		'-Wstringop-overflow=4',
 		'-Wunsafe-loop-optimizations',
+
 		'-fallow-store-data-races',
-		'-fno-math-errno',
+		'-fno-signaling-nans',
 		language : 'c')
 endif
 

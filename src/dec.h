@@ -30,6 +30,6 @@ bool keep_file, bool stat_file);
 void dec_src_filename(struct image_context *image, const char *filename);
 
 
-void print_known_formats(void);
+void print_known_formats(FILE *ofp);
 
 #endif /* DEC */

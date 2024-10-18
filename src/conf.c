@@ -231,3 +231,9 @@ struct wu_conf conf_load(void) {
 	term_line_put("Failed to parse config file. Using defaults.", stderr);
 	return conf_default();
 }
+
+struct wu_conf conf_no_window(void) {
+	struct wu_conf conf = conf_load();
+	conf.svg_window_adapt = false;
+	return conf;
+}

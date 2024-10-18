@@ -80,18 +80,25 @@ bool gl_draw(struct gl_context *context, const struct wu_state *state);
 void gl_clear_color(const uint8_t bg[static 4]);
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
-struct wuimg *img, const struct wu_conf *wuconf);
-
-void gl_reader_read_row(struct gl_context *context, const struct wuimg *out,
-struct wu_state *state, size_t row);
-
-const char * gl_reader_set(struct gl_context *context, struct wuimg *out,
-struct wu_state *state, const struct wuimg *img);
-
-void gl_reader_unbind(void);
-
-void gl_reader_bind(struct gl_context *context);
+const struct wuimg *img, enum heed_ratio heed);
 
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
+
+
+struct gl_reader_context {
+	struct gl_context context;
+	struct wu_state state;
+	const struct wuimg *dst;
+	uint8_t *row;
+};
+
+void gl_reader_close(struct gl_reader_context *reader);
+
+uint8_t * gl_reader_read_row(struct gl_reader_context *reader, size_t y);
+
+const char * gl_reader_set(struct gl_reader_context *reader,
+const struct wuimg *dst, const struct wuimg *src);
+
+bool gl_reader_init(struct gl_reader_context *reader, struct wu_conf *wuconf);
 
 #endif // WU_OPENGL
