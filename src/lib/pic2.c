@@ -421,9 +421,8 @@ enum wu_error pic2_next_block(struct pic2_desc *desc, struct pic2_block *block) 
 			}
 			return wu_invalid_header;
 		default:
-			break;
+			return wu_samples_wanted;
 		}
-		return wu_unsupported_feature;
 	}
 	return wu_unexpected_eof;
 }
@@ -497,7 +496,7 @@ enum wu_error pic2_parse(struct pic2_desc *desc) {
 	if (depth > 24) {
 		return wu_invalid_header;
 	} else if (depth < 9 || depth % 3) {
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	}
 
 	desc->depth = (uint8_t)(depth / 3);
@@ -509,11 +508,8 @@ enum wu_error pic2_parse(struct pic2_desc *desc) {
 	desc->y_aspect = buf_endian16(head + 110, big_endian);
 
 	const uint16_t has_palette = buf_endian16(head + 94, big_endian);
-	switch (has_palette) {
-	case 0: break;
-	case 1:
-		return wu_unsupported_feature;
-	default: return wu_unsupported_feature;
+	if (has_palette) {
+		return wu_samples_wanted;
 	}
 
 	size_t size = buf_endian32(head + 102, big_endian);

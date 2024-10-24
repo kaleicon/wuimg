@@ -424,10 +424,10 @@ const struct wuptr data) {
 	switch (desc->compression) {
 	case ilbm_compression_none:
 	case ilbm_compression_packbits:
+		wuimg_aspect_ratio(img, data.ptr[14], data.ptr[15]);
 		return wu_ok;
 	}
-	wuimg_aspect_ratio(img, data.ptr[14], data.ptr[15]);
-	return wu_unsupported_feature;
+	return wu_samples_wanted;
 }
 
 typedef enum wu_error (*chunk_parser_img_t)(struct ilbm_desc *desc,

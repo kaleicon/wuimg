@@ -321,6 +321,7 @@ enum wu_error idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 
 	if (is_group) {
 		if (desc->version == idsp_half_life) {
+			return wu_invalid_header; // I think it's invalid
 		}
 		return wu_unsupported_feature;
 	}

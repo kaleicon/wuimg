@@ -44,20 +44,20 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	img->h = frame.height;
 	if (wuimg_exceeds_limit(img, wuconf)) {
 		return wu_exceeds_size_limit;
-	} else if (frame.component_count > 4 || frame.bits_per_sample > 16) {
+	} else if (frame.component_count > 4) {
 		return wu_unsupported_feature;
 	}
 	img->channels = (uint8_t)frame.component_count;
+	// JPEG-LS may use between 2 and 16 bps
 	img->bitdepth = (frame.bits_per_sample > 8) ? 16 : 8;
 	img->used_bits = (uint8_t)frame.bits_per_sample;
-	tree_bud_leaf_d(&infile->metadata, "Bitdepth", frame.bits_per_sample);
 
 	switch (mode) {
 	case CHARLS_INTERLEAVE_MODE_NONE:
 		wuimg_plane_init(img);
 		break;
 	case CHARLS_INTERLEAVE_MODE_LINE:
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	case CHARLS_INTERLEAVE_MODE_SAMPLE:
 		break;
 	default:

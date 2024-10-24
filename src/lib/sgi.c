@@ -215,8 +215,7 @@ const uint16_t channels, const uint32_t bitmap_type) {
 	case sgi_raw:
 		break;
 	case sgi_332:
-		// This could easily be supported, if we had any samples.
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	case sgi_colormap:
 	case sgi_colormap_define:
 		return wu_no_image_data;

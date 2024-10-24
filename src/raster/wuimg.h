@@ -25,6 +25,7 @@ enum wu_error {
 	wu_invalid_signature,
 	wu_invalid_header,
 	wu_unsupported_feature,
+	wu_samples_wanted,
 	wu_no_image_data,
 	wu_exceeds_size_limit,
 	wu_int_overflow,

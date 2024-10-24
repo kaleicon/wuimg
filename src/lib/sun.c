@@ -102,7 +102,7 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 	case sun_tiff:
 	case sun_iff:
 	case sun_experimental:
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	default:
 		return wu_invalid_header;
 	}
@@ -119,7 +119,7 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 		}
 		break;
 	case sun_raw_colormap:
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	default:
 		return wu_invalid_header;
 	}

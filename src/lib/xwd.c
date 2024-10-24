@@ -141,7 +141,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		wuimg_align(img, (uint8_t)(bit_align/8));
 		break;
 	case xwd_xypixmap:
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	case xwd_zpixmap:
 		wuimg_align(img, (uint8_t)(pix_align/8));
 		break;
@@ -151,7 +151,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 	desc->format = format;
 
 	if (xoffset) {
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	}
 
 	switch (byte_order) {
@@ -312,7 +312,7 @@ enum wu_error xwd_open(struct xwd_desc *desc, FILE *ifp) {
 		endian_loop32(header, big_endian, ARRAY_LEN(header));
 		if (header[0] >= 100) {
 			switch (header[1]) {
-			case xwd_x10: return wu_unsupported_feature;
+			case xwd_x10: return wu_samples_wanted;
 			case xwd_x11: break;
 			default: return wu_unknown_file_type;
 			}

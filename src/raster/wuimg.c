@@ -10,7 +10,8 @@
 const char * wu_error_message(const enum wu_error err) {
 	switch (err) {
 	case wu_no_change:
-		return "Nothing was done so nothing failed";
+		return "Nothing was done so nothing failed. "
+			"If you're reading this, it's a bug.";
 	case wu_ok:
 		return "All OK";
 	case wu_alloc_error:
@@ -26,9 +27,13 @@ const char * wu_error_message(const enum wu_error err) {
 	case wu_invalid_header:
 		return "Corrupted or invalid format header";
 	case wu_invalid_params:
-		return "Invalid decoding parameters. This is probably a bug!";
+		return "Invalid decoding parameters. "
+			"This is most likely a bug in our code.";
 	case wu_unsupported_feature:
 		return "Unsupported feature in image";
+	case wu_samples_wanted:
+		return "Format feature not supported due to a lack of samples."
+			" Please consider reporting this!";
 	case wu_no_image_data:
 		return "Header-only file with no image data";
 	case wu_exceeds_size_limit:

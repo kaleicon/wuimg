@@ -293,7 +293,7 @@ const uint16_t height) {
 	 * the bitstream may omit the 'process delta again' bit then, but I
 	 * don't have any samples to check that. Hence, this. */
 	if (width <= 2)  {
-		return wu_unsupported_feature;
+		return wu_samples_wanted;
 	}
 
 	img->w = width;

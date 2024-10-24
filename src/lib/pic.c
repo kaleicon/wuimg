@@ -535,7 +535,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			shared_bits = 1;
 			break;
 		case 32:
-			return wu_unsupported_feature;
+			return wu_samples_wanted;
 		default:
 			return wu_invalid_header;
 		}

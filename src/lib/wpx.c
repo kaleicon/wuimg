@@ -494,7 +494,7 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img) {
 	if (desc->mask_idx >= 0) {
 		if (desc->depth == 8 && !desc->pal) {
 			// Is this possible?
-			return wu_unsupported_feature;
+			return wu_samples_wanted;
 		}
 		img->channels = 4;
 	} else if (desc->pal) {

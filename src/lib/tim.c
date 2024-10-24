@@ -118,7 +118,7 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
 	case 1: depth = 8; break;
 	case 2: depth = 16; break;
 	case 3: depth = 24; break;
-	case 4: return wu_unsupported_feature;
+	case 4: return wu_samples_wanted;
 	default: return wu_invalid_header;
 	}
 

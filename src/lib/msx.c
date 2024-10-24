@@ -495,7 +495,7 @@ const uint8_t ext[static 3]) {
 	if (desc->compressed) {
 		// I've only seen SR7 compressed files
 		if (desc->mode != msx_screen7) {
-			return wu_unsupported_feature;
+			return wu_samples_wanted;
 		}
 	} else if (desc->end < min) {
 		return wu_invalid_header;
