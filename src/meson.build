@@ -34,6 +34,7 @@ fmt_map = {
 		'tim',
 		'tlg',
 		'wbmp',
+		'wgtspr',
 		'wpx',
 		'xbm',
 		'xcursor',

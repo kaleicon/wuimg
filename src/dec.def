@@ -142,6 +142,10 @@ WUDEC(tlg, "KiriKiri engine's image")
 WUDEC(wbmp, "Wireless Bitmap")
 #endif
 
+#ifdef WU_ENABLE_WGTSPR
+WUDEC(wgtspr, "WGT Sprite")
+#endif
+
 #ifdef WU_ENABLE_WPX
 WUDEC(wbm, "Wild-Bug engine image")
 WUDEC(wia, "Wild-Bug image sequence")

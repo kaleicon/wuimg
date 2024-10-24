@@ -213,6 +213,21 @@ static struct fmt_magic magic_map[] = {
 		"TLG6.0\x00raw\x1a", fmt_tlg},
 #endif // WU_ENABLE_TLG
 
+#ifdef WU_ENABLE_WGTSPR
+	// Truncated due to length
+	// FIXME: Masking the first byte screws up sorting
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\x04\0 Sprite Fi", fmt_wgtspr}, // 4
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\x03\0 Sprite Fi", fmt_wgtspr}, // 3
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\x02\0 Sprite Fi", fmt_wgtspr}, // 2
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\x01\0 Sprite Fi", fmt_wgtspr}, // 1
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\x00\0 Sprite Fi", fmt_wgtspr}, // 0
+#endif // WU_ENABLE_WGTSPR
+
 #ifdef WU_ENABLE_WPX
 	{"\xff\xff\xff\xff\xff\xff\xff\xff", "WPX\x1a" "BMP", fmt_wbm},
 	{"\xff\xff\xff\xff\xff\xff\xff\xff", "WPX\x1a" "IA2", fmt_wia},
@@ -587,6 +602,10 @@ static struct fmt_ext ext_map[] = {
 
 #ifdef WU_ENABLE_TLG
 	{"tlg", -1},
+#endif
+
+#ifdef WU_ENABLE_WGTSPR
+	{"spr", -1},
 #endif
 
 #ifdef WU_ENABLE_WBMP
