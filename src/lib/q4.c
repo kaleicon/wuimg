@@ -213,6 +213,7 @@ size_t q4_decode(const struct q4_desc *desc, struct wuimg *img) {
 				}
 				w = write_image(&mp, block, img);
 			}
+			free(block->off);
 			free(block);
 		}
 	}

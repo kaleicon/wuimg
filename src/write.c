@@ -181,11 +181,11 @@ struct write_writer *writer) {
 				image->name, wu_error_message(err));
 			all_ok = false;
 		}
-		dec_free_image(image);
 		free_write_path(&path);
 	} else {
 		perror("Failed to open output directory");
 	}
+	dec_free_image(image);
 	return all_ok;
 }
 

@@ -154,6 +154,10 @@ const size_t i) {
 	case pnm_plain_ppm:
 		return plain_ppm_decode(desc, dst, elems);
 	case pnm_xv_thumb:
+		if (!wuimg_bitfield_from_id(img, 0x332)) {
+			return 0;
+		}
+		// fallthrough
 	case pnm_raw_pbm:
 	case pnm_mtv:
 		return fread(dst, 1, size, desc->ifp);
@@ -200,9 +204,6 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		}
 		desc->rast.bitdepth = 8;
 		desc->rast.layout = pix_bgra;
-		if (!wuimg_bitfield_from_id(&desc->rast, 0x332)) {
-			return wu_alloc_error;
-		}
 		break;
 	case pnm_color_phm: case pnm_gray_phm:
 		is_half = true;
