@@ -508,7 +508,7 @@ const struct wuimg *src, const size_t y) {
 
 static uint8_t * get_row(const struct imgconv *state, size_t y) {
 	const struct wuimg *src = state->src;
-	y = mirror_swap(src) ? src->w - 1 - y : y;
+	y = mirror_swap(src) ? src->h - 1 - y : y;
 	const uint8_t *u_row = get_unpacked(state, src, y);
 
 	// Set reading direction
