@@ -146,7 +146,7 @@ enum wu_error maki_parse(struct maki_desc *desc, struct wuimg *img) {
 	img->bitdepth = 4;
 	img->layout = pix_grba;
 	img->ratio = (endian16(buf[3], big_endian) & 1) ? 1/2.0 : 1;
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (pal) {
 		const enum wu_error st = fmt_load_pal(desc->ifp, pal,
 			fmt_pal_rgb, 16);

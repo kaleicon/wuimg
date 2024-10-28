@@ -19,7 +19,7 @@ void bitplane_interleave_pack(uint8_t *restrict dst,
 const uint8_t *restrict src, size_t w, uint8_t planes, align_t align);
 
 void v9958_ykj_to_grb(upack1555_t *dst, const uint8_t *restrict src,
-size_t dwords, const struct raster_pal *yae);
+size_t dwords, const struct palette *yae);
 
 struct pix_rgba8 ega_palette(size_t idx);
 

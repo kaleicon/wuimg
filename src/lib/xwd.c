@@ -93,7 +93,7 @@ const uint32_t ncolors) {
 	if (!fread(xwd_pal, XWD_PAL_ENTRY_SIZE*ncolors, 1, desc->ifp)) {
 		return wu_unexpected_eof;
 	}
-	struct raster_pal *pal = img->u.palette;
+	struct palette *pal = img->u.palette;
 	for (size_t i = 0; i < ncolors; ++i) {
 		const size_t base = i*XWD_PAL_ENTRY_SIZE;
 		/* FIXME: Support 16-bit palettes.

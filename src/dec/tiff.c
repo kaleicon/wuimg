@@ -197,11 +197,10 @@ const struct tiff_info *info) {
 	return wu_ok;
 }
 
-static struct raster_pal * load_palette(TIFF *tif, struct wuimg *img,
-uint16_t bps) {
+static bool load_palette(TIFF *tif, struct wuimg *img, uint16_t bps) {
 	uint16_t *red, *green, *blue;
 	if (TIFFGetField(tif, TIFFTAG_COLORMAP, &red, &green, &blue) == 1) {
-		struct raster_pal *pal = wuimg_palette_init(img);
+		struct palette *pal = wuimg_palette_init(img);
 		if (pal) {
 			const size_t len = 1U << bps;
 			for (size_t i = 0; i < len; ++i) {

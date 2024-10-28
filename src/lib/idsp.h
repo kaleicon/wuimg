@@ -42,7 +42,7 @@ struct idsp_desc {
 	uint32_t frames;
 	float beam_length;
 	uint16_t entries;
-	struct raster_pal pal;
+	struct palette *pal;
 };
 
 const char * idsp_type_str(enum idsp_type t);
@@ -50,6 +50,8 @@ const char * idsp_type_str(enum idsp_type t);
 const char * idsp_alpha_str(enum idsp_alpha a);
 
 const char * idsp_synch_str(enum idsp_synch s);
+
+void idsp_cleanup(struct idsp_desc *desc);
 
 size_t idsp_read_image(const struct idsp_desc *desc, struct wuimg *img);
 

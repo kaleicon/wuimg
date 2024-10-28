@@ -14,10 +14,12 @@ struct pdt_desc {
 	struct mparser mp;
 	enum pdt_version version;
 	uint32_t mask_offset;
-	const uint8_t *pal;
+	struct palette *pal;
 };
 
 const char * pdt_version_str(enum pdt_version version);
+
+void pdt_cleanup(struct pdt_desc *desc);
 
 size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img);
 

@@ -27,8 +27,8 @@ struct gif_state {
 	struct gif_disposal_prev previous;
 	int idx;
 	bool opaque_first_frame;
-	struct raster_pal global_pal;
-	struct raster_pal local_pal;
+	struct palette global_pal;
+	struct palette local_pal;
 };
 
 static enum wu_error map_error_to_wu(const int e) {
@@ -68,17 +68,17 @@ static void gif_end(struct image_file *infile) {
 }
 
 static void copy_stride(unsigned char *restrict out,
-const GifByteType *restrict raster, const struct raster_pal *pal,
+const GifByteType *restrict raster, const struct palette *pal,
 const size_t stride, const uint8_t ch) {
 	if (ch == 1) {
 		memcpy(out, raster, stride);
 	} else {
-		raster_pal_expand(out, raster, pal, stride, 8);
+		palette_expand(out, raster, pal, stride, 8);
 	}
 }
 
 static void palette_to_color(unsigned char *restrict out,
-const GifByteType *restrict raster, const struct raster_pal *pal, size_t len,
+const GifByteType *restrict raster, const struct palette *pal, size_t len,
 const unsigned char ch, const int alpha_idx) {
 	if (alpha_idx != -1) {
 		for (;;) {
@@ -105,7 +105,7 @@ const unsigned char ch, const int alpha_idx) {
 
 static void compost_gif_frame(struct wuimg *img,
 const struct frame_info *geom, const GifByteType *restrict raster,
-const struct raster_pal *palette, const int trans) {
+const struct palette *palette, const int trans) {
 	const unsigned char ch = img->channels;
 
 	size_t offset = (geom->y * img->w + geom->x) * ch;
@@ -118,9 +118,9 @@ const struct raster_pal *palette, const int trans) {
 	}
 }
 
-static void get_palette(struct raster_pal *pal,
+static void get_palette(struct palette *pal,
 const ColorMapObject *gif_map, const int alpha_idx) {
-	raster_pal_from_rgb8(pal, gif_map->Colors, (size_t)gif_map->ColorCount);
+	palette_from_rgb8(pal, gif_map->Colors, (size_t)gif_map->ColorCount);
 	if (alpha_idx != -1) {
 		pal->color[alpha_idx].a = 0x00;
 	}
@@ -170,16 +170,14 @@ static enum wu_error gif_dec_frame(struct wuimg *img, struct gif_state *ds) {
 	}
 
 	const SavedImage *gif_image = ds->gif_file->SavedImages + ds->idx;
-	struct raster_pal *pal;
+	struct palette *pal;
 	if (img->mode == image_mode_palette) {
 		pal = img->u.palette;
+	} else if (gif_image->ImageDesc.ColorMap) {
+		pal = &ds->local_pal;
+		get_palette(pal, gif_image->ImageDesc.ColorMap, trans);
 	} else {
-		if (gif_image->ImageDesc.ColorMap) {
-			pal = &ds->local_pal;
-			get_palette(pal, gif_image->ImageDesc.ColorMap, trans);
-		} else {
-			pal = &ds->global_pal;
-		}
+		pal = &ds->global_pal;
 	}
 	compost_gif_frame(img, img->frames->f + ds->idx, gif_image->RasterBits,
 		pal, trans);
@@ -342,7 +340,7 @@ const struct wu_conf *wuconf) {
 	if (gif_file->SColorMap) {
 		++pal_num;
 
-		struct raster_pal *pal;
+		struct palette *pal;
 		int trans;
 		if (pal_num == 1 && enable_paletted_mode) {
 			img->channels = 1;

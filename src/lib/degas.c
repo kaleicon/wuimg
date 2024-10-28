@@ -65,7 +65,7 @@ const double time) {
 			if (crng->reverse) {
 				i = cnt - i;
 			}
-			raster_pal_cyclecopy(img->u.palette, desc->crng_pal,
+			palette_cyclecopy(img->u.palette, desc->crng_pal,
 				crng->lo, i, cnt);
 		}
 	}
@@ -238,7 +238,7 @@ enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img) {
 		return wuimg_verify(img);
 	}
 
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (pal) {
 		const uint8_t sh = 8;
 		const int scale = (0xff << sh) / 0x07 + 1;

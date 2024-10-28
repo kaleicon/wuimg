@@ -518,7 +518,7 @@ const struct gl_upload_params *params) {
 		tex_active(gl_tex_pal);
 		tex_2d_swizzle(img->layout);
 		tex_sub2d(0, 0, 1 << img->bitdepth, 1, GL_RGBA,
-			GL_UNSIGNED_BYTE, img->u.palette);
+			GL_UNSIGNED_BYTE, img->u.palette->color);
 		tex_active(gl_tex_img);
 		// fallthrough
 	case image_mode_raw:

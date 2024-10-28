@@ -17,17 +17,19 @@ size_t xyz_decode(const struct mparser *mp, struct wuimg *img) {
 	 * will be freed when the palette is. */
 	const struct wuptr src = mp_remaining_at(mp, mp->pos, SIZE_MAX);
 	if (src.len) {
-		struct raster_pal *pal;
+		struct palette *pal;
 		const size_t dst_len = sizeof(*pal) + wuimg_size(img);
 		uint8_t *dst = malloc(dst_len);
 		if (dst) {
-			const size_t pal_items = ARRAY_LEN(pal->color);
-			uint8_t *uncmp = dst + pal_items;
-			uLong uncmp_len = (uLong)(dst_len - pal_items);
+			const size_t entries = 256;
+			const size_t write_offset = sizeof(*pal) - entries*3;
+			uint8_t *uncmp = dst + write_offset;
+			uLong uncmp_len = (uLong)(dst_len - write_offset);
 			uncompress(uncmp, &uncmp_len, src.ptr, (uLong)src.len);
-			if (uncmp_len > pal_items*3) {
-				pal = (struct raster_pal *)dst;
-				raster_pal_from_rgb8(pal, uncmp, pal_items);
+			if (uncmp_len > entries*3) {
+				pal = (struct palette *)dst;
+				pal->refs = 0;
+				palette_from_rgb8(pal, uncmp, entries);
 				wuimg_palette_set(img, pal);
 				img->data = dst + sizeof(*pal);
 				img->borrowed = true;

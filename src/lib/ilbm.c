@@ -11,12 +11,12 @@
 static const uint8_t HAM_CH = 3; // Output channels for HAM
 
 void ilbm_cleanup(struct ilbm_desc *desc) {
-	free(desc->pal);
+	palette_unref(desc->pal);
 }
 
-void ilbm_palette_cycle(const struct ilbm_desc *desc, struct raster_pal *pal,
+void ilbm_palette_cycle(const struct ilbm_desc *desc, struct palette *pal,
 const double time) {
-	const struct raster_pal *src_pal = desc->pal;
+	const struct palette *src_pal = desc->pal;
 	for (size_t cycle = 0; cycle < desc->crng.len; ++cycle) {
 		const struct ilbm_crng *crng = desc->crng.crng + cycle;
 		if (!crng->active) {
@@ -30,9 +30,7 @@ const double time) {
 		}
 
 		const uint8_t low = crng->low;
-		raster_pal_cyclecopy(pal, src_pal, low, i, cnt);
-//		memcpy(pal->color + low + i, src_pal->color + low, (cnt - i)*4);
-//		memcpy(pal->color + low, src_pal->color + low + cnt - i, i*4);
+		palette_cyclecopy(pal, src_pal, low, i, cnt);
 	}
 }
 
@@ -170,6 +168,7 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 			return wu_no_image_data;
 		}
 		img->data = (uint8_t *)desc->pal;
+		memmove(img->data, desc->pal->color, sizeof(desc->pal->color));
 		desc->pal = NULL;
 		img->w = desc->colors;
 		img->h = 1;
@@ -177,11 +176,10 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		img->bitdepth = 8;
 	} else {
 		if (desc->pal) {
-			struct raster_pal *pal = desc->pal;
+			struct palette *pal = desc->pal;
 			if (!desc->ham) {
 				if (img->evolving) {
-					wuimg_palette_set(img,
-						memdup(pal, sizeof(*pal)));
+					wuimg_palette_set(img, palette_copy(pal));
 				} else {
 					wuimg_palette_set(img, pal);
 					desc->pal = NULL;
@@ -311,11 +309,11 @@ const struct wuptr data) {
 	}
 	desc->colors = (unsigned)colors;
 	if (desc->colors) {
-		desc->pal = calloc(1, sizeof(*desc->pal));
+		desc->pal = palette_new();
 		if (!desc->pal) {
 			return wu_alloc_error;
 		}
-		raster_pal_from_rgb8(desc->pal, data.ptr, colors);
+		palette_from_rgb8(desc->pal, data.ptr, colors);
 	}
 	return wu_ok;
 }

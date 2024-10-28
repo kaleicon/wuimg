@@ -116,7 +116,7 @@ struct wuimg {
 	bool scalable:1; // The decoder will draw according to the window size
 	enum image_mode mode:2;
 	union {
-		struct raster_pal *palette;
+		struct palette *palette;
 		struct image_planes *planes;
 		struct bitfield *bitfield;
 	} u;
@@ -169,9 +169,9 @@ void wuimg_plane_subsamp(struct wuimg *img, uint8_t horz, uint8_t vert);
 struct image_planes * wuimg_plane_init(struct wuimg *img);
 
 
-struct raster_pal * wuimg_palette_set(struct wuimg *img, struct raster_pal *pal);
+struct palette * wuimg_palette_set(struct wuimg *img, struct palette *pal);
 
-struct raster_pal * wuimg_palette_init(struct wuimg *img);
+struct palette * wuimg_palette_init(struct wuimg *img);
 
 
 int wuimg_frame_prev_keyframe(struct wuimg *img, int current, int i);

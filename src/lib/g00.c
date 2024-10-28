@@ -102,11 +102,11 @@ const size_t written) {
 		return 0;
 	}
 
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return 0;
 	}
-	memcpy(pal, desc->buf + 2, pal_entries * 4);
+	memcpy(pal->color, desc->buf + 2, pal_entries * 4);
 
 	img->data = desc->buf + pal_bytes;
 	img->borrowed = true;

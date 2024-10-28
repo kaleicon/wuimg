@@ -42,14 +42,15 @@ unsigned char header[static 12]) {
 		return wu_invalid_header;
 	}
 
-	struct raster_pal *palette = malloc(sizeof(*palette) * clut->nb);
+	struct palette *palette = malloc(sizeof(*palette) * clut->nb);
 	if (!palette) {
 		return wu_alloc_error;
 	}
 	wuimg_palette_set(img, palette);
 
 	for (size_t n = 0; n < clut->nb; ++n) {
-		struct raster_pal *pal = palette + n;
+		struct palette *pal = palette + n;
+		pal->refs = 0;
 		uint16_t *buf = (uint16_t *)(pal + 1) - colors;
 		if (fread(buf, sizeof(*buf), colors, desc->ifp) != colors) {
 			return wu_unexpected_eof;
@@ -58,7 +59,7 @@ unsigned char header[static 12]) {
 		special_transparency_process(buf, colors);
 		struct bitfield bf;
 		bitfield_from_id(&bf, 0x1555, 16);
-		bitfield_unpack(&bf, pal, buf, colors);
+		bitfield_unpack(&bf, pal->color, buf, colors);
 	}
 	return wu_ok;
 }

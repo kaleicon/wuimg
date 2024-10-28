@@ -360,7 +360,7 @@ enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img) {
 		return status;
 	}
 
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return wu_alloc_error;
 	}

@@ -89,11 +89,13 @@ const struct wu_conf *wuconf, struct tga_desc *desc) {
 		++i;
 	}
 	if (extra_pal) {
-		img[i].data = (uint8_t *)tga_take_extra_palette(desc);
+		struct palette *pal = tga_take_extra_palette(desc);
+		img[i].data = (uint8_t *)pal;
 		img[i].w = 16;
 		img[i].h = 16;
 		img[i].channels = 4;
 		img[i].bitdepth = 8;
+		memmove(img[i].data, pal->color, sizeof(pal->color));
 	}
 	for (i = 0; i < infile->nr; ++i) {
 		if (wuimg_exceeds_limit(img + i, wuconf)) {

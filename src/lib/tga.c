@@ -37,7 +37,7 @@ const char * tga_type_str(const enum tga_image_type type) {
 }
 
 void tga_cleanup(struct tga_desc *desc) {
-	free(desc->map.extra_pal);
+	palette_unref(desc->map.extra_pal);
 }
 
 size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp) {
@@ -120,8 +120,8 @@ size_t tga_decode(const struct tga_desc *desc, struct wuimg *img) {
 	return 0;
 }
 
-struct raster_pal * tga_take_extra_palette(struct tga_desc *desc) {
-	struct raster_pal *pal = desc->map.extra_pal;
+struct palette * tga_take_extra_palette(struct tga_desc *desc) {
+	struct palette *pal = desc->map.extra_pal;
 	desc->map.extra_pal = NULL;
 	return pal;
 }
@@ -288,21 +288,21 @@ bool tga_parse_footer(struct tga_desc *desc, struct wuimg *img) {
 }
 
 static enum wu_error load_colormap(struct tga_desc *desc, struct wuimg *img) {
-	struct raster_pal *pal = malloc(sizeof(*pal));
+	struct palette *pal = palette_new();
 	if (!pal) {
 		return wu_alloc_error;
 	}
+	struct tga_colormap *map = &desc->map;
 	switch (desc->type) {
 	case tga_colormap_data:
 	case tga_colormap_rle:
 		wuimg_palette_set(img, pal);
 		break;
 	default:
-		desc->map.extra_pal = pal;
+		map->extra_pal = pal;
 		break;
 	}
 
-	struct tga_colormap *map = &desc->map;
 	const size_t colormap_len = map->len - map->offset;
 	const size_t elems = zumin(colormap_len, 256);
 	const size_t elem_size = (map->depth + 7U) / 8;
@@ -330,10 +330,10 @@ static enum wu_error load_colormap(struct tga_desc *desc, struct wuimg *img) {
 		}
 		struct bitfield bf;
 		bitfield_from_id(&bf, 0x1555, 16);
-		bitfield_unpack(&bf, pal, wbuf, elems);
+		bitfield_unpack(&bf, pal->color, wbuf, elems);
 		break;
 	case 24:
-		raster_pal_from_rgb8(pal, buf, elems);
+		palette_from_rgb8(pal, buf, elems);
 		break;
 	}
 	return wu_ok;

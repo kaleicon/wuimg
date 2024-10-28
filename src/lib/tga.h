@@ -48,7 +48,7 @@ enum tga_image_type {
 };
 
 struct tga_colormap {
-	struct raster_pal *extra_pal;
+	struct palette *extra_pal;
 	uint16_t offset, len;
 	uint8_t depth;
 };
@@ -71,7 +71,7 @@ size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp);
 
 size_t tga_decode(const struct tga_desc *desc, struct wuimg *img);
 
-struct raster_pal * tga_take_extra_palette(struct tga_desc *desc);
+struct palette * tga_take_extra_palette(struct tga_desc *desc);
 
 enum wu_error tga_parse_stamp(const struct tga_desc *desc,
 struct wuimg *main, struct wuimg *stamp);

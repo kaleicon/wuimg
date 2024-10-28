@@ -45,13 +45,13 @@ size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, const enum endianness 
 	return fmt_load_raster_swap_depth(img, ifp, e, img->bitdepth);
 }
 
-enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,
+enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
 const enum fmt_pal_type type, const size_t entries) {
 	const size_t elen = (size_t)type;
-	unsigned char *buf = (unsigned char *)pal + (4 - elen) * entries;
+	unsigned char *buf = (unsigned char *)pal->color + (4 - elen) * entries;
 	if (fread(buf, elen * entries, 1, ifp)) {
 		if (elen == 3) {
-			raster_pal_from_rgb8(pal, buf, entries);
+			palette_from_rgb8(pal, buf, entries);
 		}
 		return wu_ok;
 	}

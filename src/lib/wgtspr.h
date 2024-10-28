@@ -8,8 +8,10 @@ struct wgtspr_desc {
 	FILE *ifp;
 	uint16_t version;
 	uint32_t sprites;
-	struct raster_pal pal;
+	struct palette *pal;
 };
+
+void wgtspr_cleanup(struct wgtspr_desc *desc);
 
 size_t wgtspr_get_sprite(const struct wgtspr_desc *desc, struct wuimg *img);
 

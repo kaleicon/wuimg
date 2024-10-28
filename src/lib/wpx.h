@@ -44,7 +44,7 @@ struct wpx_bmp_desc {
 	int raster_idx;
 	int mask_idx;
 	uint8_t depth;
-	struct raster_pal *pal;
+	struct palette *pal;
 };
 
 

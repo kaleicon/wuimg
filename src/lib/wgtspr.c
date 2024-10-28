@@ -1,6 +1,9 @@
-#include "misc/mem.h"
 #include "raster/fmt.h"
 #include "wgtspr.h"
+
+void wgtspr_cleanup(struct wgtspr_desc *desc) {
+	palette_unref(desc->pal);
+}
 
 size_t wgtspr_get_sprite(const struct wgtspr_desc *desc, struct wuimg *img) {
 	return wuimg_alloc_noverify(img) ? fmt_load_raster(img, desc->ifp) : 0;
@@ -18,16 +21,17 @@ enum wu_error wgtspr_next_sprite(struct wgtspr_desc *desc, struct wuimg *img) {
 		img->h = endian16(buf[2], little_endian);
 		img->channels = 1;
 		img->bitdepth = 8;
-		if (wuimg_palette_set(img, memdup(&desc->pal, sizeof(desc->pal)))) {
-			return wuimg_verify(img);
-		}
-		return wu_alloc_error;
+		wuimg_palette_set(img, palette_ref(desc->pal));
+		return wuimg_verify(img);
 	}
 	fseek(desc->ifp, -4, SEEK_CUR);
 	return wu_no_change;
 }
 
 enum wu_error wgtspr_init(struct wgtspr_desc *desc, FILE *ifp) {
+	*desc = (struct wgtspr_desc){
+		.ifp = ifp,
+	};
 	const uint8_t magic[13] = " Sprite File ";
 	uint8_t buf[2 + sizeof(magic)];
 	if (!fread(buf, sizeof(buf), 1, ifp)) {
@@ -36,7 +40,11 @@ enum wu_error wgtspr_init(struct wgtspr_desc *desc, FILE *ifp) {
 
 	desc->version = buf_endian16(buf, little_endian);
 	if (desc->version <= 5 && !memcmp(magic, buf + 2, sizeof(magic))) {
-		struct raster_pal *pal = &desc->pal;
+		struct palette *pal = palette_new();
+		if (!pal) {
+			return wu_alloc_error;
+		}
+		desc->pal = pal;
 		const enum wu_error st = fmt_load_pal(ifp, pal, fmt_pal_rgb, 256);
 		if (st == wu_ok) {
 			if (fread(buf, 2, 1, ifp)) {

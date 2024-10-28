@@ -207,7 +207,7 @@ static bool deca_loader(const struct mag_desc *desc) {
 
 static enum wu_error read_pal(struct mag_desc *desc, struct wuimg *img,
 const bool is_yjk) {
-	struct raster_pal *pal = malloc(sizeof(*pal));
+	struct palette *pal = palette_new();
 	if (!pal) {
 		return wu_alloc_error;
 	}

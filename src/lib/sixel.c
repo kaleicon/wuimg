@@ -18,7 +18,7 @@ static const size_t LINE_HEIGHT = 6;
 
 struct sixel_colormap {
 	struct pix_rgba8 active;
-	struct raster_pal map;
+	struct palette map;
 };
 
 enum sixel_control_character {

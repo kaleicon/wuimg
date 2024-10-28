@@ -13,7 +13,7 @@ struct imgconv {
 	cmsHTRANSFORM xfr;
 	size_t row_len;
 	uint8_t *row;
-	struct raster_pal *pal;
+	struct palette *pal;
 	const struct wuimg *src;
 	const struct wuimg *dst;
 	struct wuimg *tmp;

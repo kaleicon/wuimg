@@ -134,7 +134,7 @@ struct color_space *cs) {
 }
 
 static bool read_palette(const struct png_state *png, struct wuimg *img) {
-	struct raster_pal *palette = wuimg_palette_init(img);
+	struct palette *palette = wuimg_palette_init(img);
 	if (palette) {
 		png_color *plte;
 		int plte_num;

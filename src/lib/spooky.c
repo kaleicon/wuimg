@@ -190,7 +190,9 @@ const uint16_t i) {
 	const uint8_t *sprite = desc->sprites + 10*i;
 	img->w = sprite[0];
 	img->h = sprite[1];
-	return common_setup(img, (bool)buf_endian32(sprite + 6, big_endian));
+	// Never thought something as bizarre as 0x1565 would ever exist
+	const bool packed = buf_endian32(sprite + 6, big_endian);
+	return common_setup(img, packed);
 }
 
 enum wu_error trs_init(struct trs_desc *desc, const struct map_info map) {

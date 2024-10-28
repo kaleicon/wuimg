@@ -308,21 +308,20 @@ size_t pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 	return ok;
 }
 
-static bool load_pal(const struct pic_desc *desc, struct raster_pal *palette) {
+static bool load_pal(const struct pic_desc *desc, struct palette *pal) {
 	const struct pic_bits *b = &desc->bits;
 	const uint8_t pal_depth = (uint8_t)(b->uni*3 + b->shared);
 	const size_t entries = 1 << desc->depth;
 	const size_t len = strip_base(entries, pal_depth);
-	uint8_t *buf = (uint8_t *)(palette + 1) - len;
+	uint8_t *buf = (uint8_t *)(pal + 1) - len;
 	if (!fread(buf, len, 1, desc->ifp)) {
 		return false;
 	}
 
 	struct bitstrm bs = bitstrm_from_bytes(buf, len);
-	struct pix_rgba8 *pal = palette->color;
 	for (size_t i = 0; i < entries; ++i) {
-		read_grb((uint8_t *)(pal + i), b, &bs);
-		pal[i].a = 0xff;
+		read_grb((uint8_t *)(pal->color + i), b, &bs);
+		pal->color[i].a = 0xff;
 	}
 	return true;
 }
@@ -563,7 +562,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		if (uni_bits) {
 			calc_mul(&desc->bits, uni_bits, shared_bits);
 			if (desc->depth <= 8) {
-				struct raster_pal *pal = wuimg_palette_init(img);
+				struct palette *pal = wuimg_palette_init(img);
 				if (!pal) {
 					return wu_alloc_error;
 				} else if (!load_pal(desc, pal)) {

@@ -306,6 +306,10 @@ const char * idsp_synch_str(const enum idsp_synch s) {
 	return "???";
 }
 
+void idsp_cleanup(struct idsp_desc *desc) {
+	palette_unref(desc->pal);
+}
+
 size_t idsp_read_image(const struct idsp_desc *desc, struct wuimg *img) {
 	if (wuimg_alloc_noverify(img)) {
 		return fmt_load_raster(img, desc->ifp);
@@ -333,21 +337,11 @@ enum wu_error idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 	img->w = endian32(dims[2], little_endian);
 	img->h = endian32(dims[3], little_endian);
 	img->bitdepth = 8;
+	img->channels = 1;
 	switch (desc->version) {
 	case idsp_quake:
-		img->channels = 1;
-		struct raster_pal *pal = wuimg_palette_init(img);
-		if (!pal) {
-			return wu_alloc_error;
-		}
-		raster_pal_from_rgb8(pal, QUAKE_RGB, sizeof(QUAKE_RGB)/3);
-		pal->color[255].a = 0x00;
-		break;
 	case idsp_half_life:
-		img->channels = 1;
-		if (!wuimg_palette_set(img, memdup(&desc->pal, sizeof(desc->pal)))) {
-			return wu_alloc_error;
-		}
+		wuimg_palette_set(img, palette_ref(desc->pal));
 		break;
 	case idsp_rgba:
 		img->channels = 4;
@@ -385,14 +379,19 @@ const uint8_t header[static 30]) {
 		const uint16_t entries = buf_endian16(header + 28, little_endian);
 		if (entries && entries <= 256) {
 			desc->entries = entries;
-			const enum wu_error st = fmt_load_pal(desc->ifp,
-				&desc->pal, fmt_pal_rgb, entries);
-			if (st == wu_ok) {
-				desc->pal.color[255].a = alpha == idsp_alpha_test
-					? 0x00 : 0xff;
-				return common_header(desc, header + 4);
+			desc->pal = palette_new();
+			if (desc->pal) {
+				struct palette *p = desc->pal;
+				const enum wu_error st = fmt_load_pal(desc->ifp,
+					p, fmt_pal_rgb, entries);
+				if (st == wu_ok) {
+					p->color[255].a = alpha == idsp_alpha_test
+						? 0x00 : 0xff;
+					return common_header(desc, header + 4);
+				}
+				return st;
 			}
-			return st;
+			return wu_alloc_error;
 		}
 	}
 	return wu_invalid_header;
@@ -426,6 +425,9 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 		28      u16     PalEntries
 		30      u8[3]   PalRGB[PalEntries]
 	*/
+	*desc = (struct idsp_desc) {
+		.ifp = ifp,
+	};
 	uint8_t header[42];
 	if (!fread(header, sizeof(header), 1, ifp)) {
 		return wu_unexpected_eof;
@@ -437,20 +439,28 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 	}
 	const uint32_t version = buf_endian32(header + 4, little_endian);
 	const uint32_t type = buf_endian32(header + 8, little_endian);
-	desc->ifp = ifp;
-	desc->version = (enum idsp_version)version;
-	desc->type = (enum idsp_type)type;
 	switch (type) {
 	case idsp_vp_parallel_upright:
 	case idsp_facing_upright:
 	case idsp_vp_parallel:
 	case idsp_oriented:
 	case idsp_vp_parallel_oriented:
+		desc->type = (enum idsp_type)type;
 		switch (version) {
-		case idsp_quake: case idsp_rgba:
+		case idsp_quake:
+			desc->pal = palette_new();
+			if (!desc->pal) {
+				return wu_alloc_error;
+			}
+			palette_from_rgb8(desc->pal, QUAKE_RGB, sizeof(QUAKE_RGB)/3);
+			desc->pal->color[255].a = 0x00;
+			// fallthrough
+		case idsp_rgba:
 			fseek(ifp, -6, SEEK_CUR);
+			desc->version = (enum idsp_version)version;
 			return common_header(desc, header + 12);
 		case idsp_half_life:
+			desc->version = (enum idsp_version)version;
 			return ver2_header(desc, header + 12);
 		}
 	}

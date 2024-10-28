@@ -5,7 +5,7 @@
 #include "prt.h"
 
 void prt_cleanup(struct prt_desc *desc) {
-	free(desc->pal);
+	palette_unref(desc->pal);
 }
 
 static void turn_mask(struct sewing_machine *sew) {
@@ -123,7 +123,7 @@ enum wu_error prt_parse(struct prt_desc *desc, struct wuimg *img) {
 
 	if (desc->depth == 8) {
 		fseek(desc->ifp, pal_offset, SEEK_SET);
-		struct raster_pal *pal = malloc(sizeof(*pal));
+		struct palette *pal = palette_new();
 		if (!pal) {
 			return wu_alloc_error;
 		}

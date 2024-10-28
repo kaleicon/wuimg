@@ -11,7 +11,7 @@ enum prt_version {
 
 struct prt_desc {
 	FILE *ifp;
-	struct raster_pal *pal;
+	struct palette *pal;
 	enum prt_version version:8;
 	uint8_t depth;
 	bool mask;

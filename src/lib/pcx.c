@@ -97,7 +97,7 @@ const struct wuimg *img) {
 static bool load_palette(const struct pcx_desc *desc,
 struct wuimg *img, const struct pix_rgb8 *pal_data) {
 	// Take a deep breath...
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return false;
 	}
@@ -116,7 +116,7 @@ struct wuimg *img, const struct pix_rgb8 *pal_data) {
 		 * This seems to work rather well for all samples. */
 		if (pal_data && desc->palette_type
 		&& memcmp(pal_data, pal_data + 1, sizeof(*pal_data))) {
-			raster_pal_from_rgb8(pal, pal_data, entries);
+			palette_from_rgb8(pal, pal_data, entries);
 		} else {
 			/* Beware when testing: imagemagick renders monochrome
 			 * opposite from ffmpeg. */
@@ -156,7 +156,7 @@ struct wuimg *img, const struct pix_rgb8 *pal_data) {
 			}
 		}
 	} else if (pal_data) { // Header or trailing palette
-		raster_pal_from_rgb8(pal, pal_data, entries);
+		palette_from_rgb8(pal, pal_data, entries);
 	} else { // Standard EGA palette (CGA)
 		for (size_t i = 0; i < entries; ++i) {
 			pal->color[i] = cga_palette(i);

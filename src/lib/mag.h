@@ -64,7 +64,7 @@ struct mag_desc {
 	struct wustr comm;
 	long null_pos;
 	struct mag_section flag_a, flag_b, color;
-	struct raster_pal *yae;
+	struct palette *yae;
 };
 
 const char * mag_screen_mode_str(enum mag_screen_mode mode);

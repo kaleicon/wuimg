@@ -15,7 +15,7 @@ void imgconv_close(struct imgconv *state) {
 		free(state->tmp);
 	}
 	free(state->row);
-	free(state->pal);
+	palette_unref(state->pal);
 }
 
 static float mix(const float a, const float b, const float k) {
@@ -467,7 +467,7 @@ static uint8_t * get_planar_row(const struct imgconv *state, size_t y) {
 }
 
 static void * expand_pal(uint32_t *tgt, const uint8_t *restrict unpack,
-const ptrdiff_t stride, const struct raster_pal *pal, const size_t w) {
+const ptrdiff_t stride, const struct palette *pal, const size_t w) {
 	for (size_t i = 0; i < w; ++i) {
 		memcpy(tgt + i, pal->color + *unpack, sizeof(*pal->color));
 		unpack += stride;
@@ -665,7 +665,7 @@ const struct wuimg *src) {
 		state->op = src->bitdepth < dst->bitdepth ? op_unpack : op_noop;
 
 		// Create a color-corrected palette
-		state->pal = calloc(1, sizeof(*state->pal));
+		state->pal = palette_new();
 		if (!state->pal) {
 			return "Couldn't allocate temporary palette";
 		}

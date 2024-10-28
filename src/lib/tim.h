@@ -7,13 +7,13 @@
 #include "raster/wuimg.h"
 
 struct tim_clut {
-	size_t nb;
-	unsigned x, y;
+	uint16_t nb;
+	uint16_t x, y;
 };
 
 struct tim_desc {
 	FILE *ifp;
-	unsigned x, y;
+	uint16_t x, y;
 	struct tim_clut clut;
 };
 

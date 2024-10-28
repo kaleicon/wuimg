@@ -167,7 +167,7 @@ static enum wu_error multicolor_settings(struct wuimg *img) {
 	img->cs.primaries = cicp_primaries_bt470_6_system_b_g;
 	img->cs.transfer = cicp_transfer_bt470_6_system_b_g;
 	img->cs.matrix = cicp_matrix_bt470_6_system_b_g;
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (pal) {
 		const struct pix_rgb8 c64_pal[16] = {
 			gen_e(0, 0),
@@ -187,7 +187,7 @@ static enum wu_error multicolor_settings(struct wuimg *img) {
 			gen_e(15, 15),
 			gen_e(20, 0),
 		};
-		raster_pal_from_rgb8(pal, c64_pal, ARRAY_LEN(c64_pal));
+		palette_from_rgb8(pal, c64_pal, ARRAY_LEN(c64_pal));
 		return wuimg_verify(img);
 	}
 	return wu_alloc_error;

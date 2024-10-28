@@ -167,16 +167,16 @@ struct wuimg *img) {
 		return false;
 	}
 
-	struct raster_pal *pal = img->u.palette;
-	uint8_t *dst = (uint8_t *)(pal->color + 16);
-	const size_t w = decode_block(dst, block);
+	struct palette *pal = img->u.palette;
+	uint8_t *buf = (uint8_t *)(pal->color + 16);
+	const size_t w = decode_block(buf, block);
 	for (uint8_t i = 0; i < w/6; ++i) {
 		const uint8_t z = (i & 0x8) | ((i >> 2) & 0x1) | (i & 0x3) << 1;
 		pal->color[i] = (struct pix_rgba8) {
 			// 4-bit colors stored in 16-bits little-endian words
-			.r = dst[6*z + 1]*0x11u,
-			.g = dst[6*z + 3]*0x11u,
-			.b = dst[6*z + 5]*0x11u,
+			.r = buf[6*z + 1]*0x11u,
+			.g = buf[6*z + 3]*0x11u,
+			.b = buf[6*z + 5]*0x11u,
 			.a = 0xff,
 		};
 	}

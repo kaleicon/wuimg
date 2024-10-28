@@ -18,6 +18,10 @@ const char * pdt_version_str(const enum pdt_version version) {
 	return "???";
 }
 
+void pdt_cleanup(struct pdt_desc *desc) {
+	palette_unref(desc->pal);
+}
+
 #define MAX_LZSS_READ (3*8 + 1)
 static inline size_t base_lzss(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, size_t src_len, const uint8_t ch,
@@ -119,8 +123,8 @@ size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img) {
 	uint8_t color_ch = (desc->version == pdt10) ? 3 : 1;
 
 	struct sewing_machine sew;
-	strip_sew_init(&sew, img->data, (const struct raster_pal *)desc->pal,
-		img->w, img->h, color_ch, img->align_sh, desc->mask_offset);
+	strip_sew_init(&sew, img->data, desc->pal, img->w, img->h, color_ch,
+		img->align_sh, desc->mask_offset);
 
 	size_t written = pick_decode(sew.color.ptr, sew.color.len,
 		desc->mp.mem + desc->mp.pos, desc->mp.len - desc->mp.pos,
@@ -169,17 +173,18 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 			return wu_unexpected_eof;
 		}
 
+		struct palette *pal = palette_new();
+		if (!pal) {
+			return wu_alloc_error;
+		}
+		memcpy(pal->color, buf, pal_size);
 		if (desc->mask_offset) {
 			img->channels = 4;
-			desc->pal = buf;
+			desc->pal = pal;
 		} else {
 			img->channels = 1;
-			struct raster_pal *pal = wuimg_palette_init(img);
-			if (!pal) {
-				return wu_alloc_error;
-			}
-			memcpy(pal, buf, pal_size);
 			img->alpha = alpha_ignore;
+			wuimg_palette_set(img, pal);
 		}
 	} else {
 		img->channels = (desc->mask_offset) ? 4 : 3;

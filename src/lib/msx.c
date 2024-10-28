@@ -57,7 +57,7 @@ bool msx_mode_may_have_alternate_field(enum msx_screen mode) {
 	return false;
 }
 
-static void set_msx_pal(struct raster_pal *pal, const uint8_t grb[static 30],
+static void set_msx_pal(struct palette *pal, const uint8_t grb[static 30],
 const uint8_t depth, const bool is_yae) {
 	const int scale = ((is_yae ? 0x1f : 0xff) << 8) / 0x07 + 1;
 	// First entry is always transparent
@@ -75,7 +75,7 @@ const uint8_t depth, const bool is_yae) {
 	}
 }
 
-static void search_msx_pal(struct raster_pal *pal, const uint8_t *grb,
+static void search_msx_pal(struct palette *pal, const uint8_t *grb,
 const uint8_t depth, const bool is_yae) {
 	unsigned short acc = 0;
 	for (int i = 0; i < (1 << depth); ++i) {
@@ -87,7 +87,7 @@ const uint8_t depth, const bool is_yae) {
 }
 
 static bool read_pal_at(const struct msx_desc *desc, const long offset,
-struct raster_pal *pal, const uint8_t depth, const bool is_yae) {
+struct palette *pal, const uint8_t depth, const bool is_yae) {
 	if (offset < desc->end) {
 		fseek(desc->ifp, offset + 7, SEEK_SET);
 		uint8_t grb[0x30];
@@ -99,7 +99,7 @@ struct raster_pal *pal, const uint8_t depth, const bool is_yae) {
 	return false;
 }
 
-static void default_msx2_pal(struct raster_pal *pal, const uint8_t depth) {
+static void default_msx2_pal(struct palette *pal, const uint8_t depth) {
 	/* The TMS9900 specifies it's default palette as YCbCr values, while
 	 * the V9938 uses GRB. We take the later as the intended conversion. */
 	const uint8_t grb[15*2] = {
@@ -284,18 +284,20 @@ static size_t msx2p_decode(const struct msx_desc *desc, struct wuimg *img) {
 	 * packing they are encoded in the YJK colorspace. SCREEN 10 and 11
 	 * are additionally in YAE mode.
 	*/
-	const bool use_pal = (desc->mode != msx_screen12);
-	struct raster_pal *yae = NULL;
+	struct palette *yae = NULL;
+	const size_t pal_size = (desc->mode != msx_screen12)
+		? sizeof(*yae) : 0;
 
 	const size_t bytes = img->w * img->h;
-	uint8_t *buf = malloc(bytes + use_pal * sizeof(*yae));
+	uint8_t *buf = malloc(bytes + pal_size);
 	if (!buf) {
 		return 0;
 	}
 
 	const size_t read = fread(buf, 1, bytes, desc->ifp);
-	if (use_pal) {
-		yae = (struct raster_pal *)(buf + bytes);
+	if (pal_size) {
+		yae = (struct palette *)(buf + bytes);
+		yae->refs = 0;
 		if (!read_pal_at(desc, 0xfa80, yae, 4, true)) {
 			default_msx2_pal(yae, 4);
 		}
@@ -502,7 +504,7 @@ const uint8_t ext[static 3]) {
 	}
 
 	if (pal_depth) {
-		struct raster_pal *pal = wuimg_palette_init(img);
+		struct palette *pal = wuimg_palette_init(img);
 		if (!pal) {
 			return wu_alloc_error;
 		}

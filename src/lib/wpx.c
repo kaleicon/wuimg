@@ -67,7 +67,7 @@ struct bit_and_byte_reader {
 
 void wpx_bmp_cleanup(struct wpx_bmp_desc *desc) {
 	free(desc->dir.sections);
-	free(desc->pal);
+	palette_unref(desc->pal);
 }
 
 static void free_array(struct wpx_ia2_array *arr) {
@@ -392,7 +392,7 @@ const struct wpx_section *section) {
 		return wu_invalid_header;
 	}
 
-	desc->pal = malloc(sizeof(*desc->pal));
+	desc->pal = palette_new();
 	if (!desc->pal) {
 		return wu_alloc_error;
 	}
@@ -402,7 +402,7 @@ const struct wpx_section *section) {
 	if (read != size) {
 		return wu_unexpected_eof;
 	}
-	raster_pal_from_rgb8(desc->pal, buf, read/3);
+	palette_from_rgb8(desc->pal, buf, read/3);
 	return wu_ok;
 }
 

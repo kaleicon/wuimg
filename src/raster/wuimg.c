@@ -361,13 +361,12 @@ struct image_planes * wuimg_plane_init(struct wuimg *img) {
 			+ img->channels * sizeof(*img->u.planes->p)));
 }
 
-struct raster_pal * wuimg_palette_set(struct wuimg *img,
-struct raster_pal *pal) {
+struct palette * wuimg_palette_set(struct wuimg *img, struct palette *pal) {
 	return set_img_mode(img, image_mode_palette, pal);
 }
 
-struct raster_pal * wuimg_palette_init(struct wuimg *img) {
-	return wuimg_palette_set(img, calloc(1, sizeof(*img->u.palette)));
+struct palette * wuimg_palette_init(struct wuimg *img) {
+	return set_img_mode(img, image_mode_palette, palette_new());
 }
 
 int wuimg_frame_prev_keyframe(struct wuimg *img, const int current, int i) {
@@ -420,8 +419,7 @@ bool wuimg_clone(struct wuimg *dst, struct wuimg *src) {
 		ok = true;
 		break;
 	case image_mode_palette:
-		ok = wuimg_palette_set(dst,
-			memdup(src->u.palette, sizeof(*src->u.palette)));
+		ok = wuimg_palette_set(dst, palette_copy(src->u.palette));
 		break;
 	case image_mode_planar:
 		ok = wuimg_plane_init(dst);
@@ -449,7 +447,7 @@ void wuimg_free(struct wuimg *img) {
 		free(img->u.planes);
 		break;
 	case image_mode_palette:
-		free(img->u.palette);
+		palette_unref(img->u.palette);
 		break;
 	case image_mode_raw:
 		break;

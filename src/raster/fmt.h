@@ -21,7 +21,7 @@ uint8_t word_depth);
 
 size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, enum endianness e);
 
-enum wu_error fmt_load_pal(FILE *ifp, struct raster_pal *pal,
+enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
 enum fmt_pal_type type, size_t entries);
 
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig, size_t size,

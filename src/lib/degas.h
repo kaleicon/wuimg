@@ -24,7 +24,7 @@ struct degas_desc {
 	enum degas_res res:8;
 	bool compressed;
 	bool is_elite;
-	struct raster_pal *crng_pal;
+	struct palette *crng_pal;
 	struct degas_crng crng[4];
 };
 

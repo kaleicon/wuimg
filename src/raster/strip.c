@@ -49,7 +49,7 @@ const size_t width, const size_t ch) {
 
 static void sew_pal_alpha8(struct pix_rgba8 *dst,
 const uint8_t *restrict entries, const uint8_t *restrict alpha, const size_t w,
-const struct raster_pal *pal) {
+const struct palette *pal) {
 	for (size_t x = 0; x < w; ++x) {
 		memcpy(dst + x, pal->color + entries[x], 4);
 		dst[x].a = alpha[x];
@@ -73,7 +73,7 @@ const struct pix_rgb8 *color, const uint8_t *restrict alpha, const size_t w) {
 }
 
 void strip_handsew_alpha(void *dst, const void *color,
-const void *alpha, const size_t w, const void *restrict pal,
+const void *alpha, const size_t w, const struct palette *pal,
 const uint8_t ch) {
 	switch (ch) {
 	case 1:
@@ -130,7 +130,7 @@ bool strip_sew_alloc_alpha(struct sewing_machine *sew) {
 }
 
 void strip_sew_init(struct sewing_machine *sew, void *restrict dst,
-const struct raster_pal *pal, const size_t w, const size_t h, const uint8_t ch,
+const struct palette *pal, const size_t w, const size_t h, const uint8_t ch,
 const align_t align, const bool will_sew) {
 	const uint8_t out_ch = (will_sew)
 		? ((pal || ch > 2) ? 4 : 2)

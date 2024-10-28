@@ -106,7 +106,7 @@ static int unpack_ykj_chroma(const uint8_t *src) {
 }
 
 void v9958_ykj_to_grb(upack1555_t *dst, const uint8_t *restrict src,
-const size_t dwords, const struct raster_pal *yae) {
+const size_t dwords, const struct palette *yae) {
 	/*
 		G = Y + K
 		R = Y + J

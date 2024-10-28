@@ -54,7 +54,7 @@ struct ilbm_desc {
 
 	struct mparser mp;
 	struct wuptr body;
-	struct raster_pal *pal;
+	struct palette *pal;
 	struct ilbm_tiny tiny;
 	struct ilbm_crng_array crng;
 
@@ -70,7 +70,7 @@ struct ilbm_desc {
 
 void ilbm_cleanup(struct ilbm_desc *desc);
 
-void ilbm_palette_cycle(const struct ilbm_desc *desc, struct raster_pal *pal,
+void ilbm_palette_cycle(const struct ilbm_desc *desc, struct palette *pal,
 double time);
 
 size_t ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,

@@ -214,7 +214,7 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 		return wu_invalid_header;
 	}
 
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return wu_alloc_error;
 	}

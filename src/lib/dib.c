@@ -238,7 +238,7 @@ bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 static enum wu_error load_pal(struct dib_desc *desc, struct wuimg *img,
 const enum fmt_pal_type type) {
 	img->alpha = alpha_ignore;
-	struct raster_pal *pal = wuimg_palette_init(img);
+	struct palette *pal = wuimg_palette_init(img);
 	if (pal) {
 		return fmt_load_pal(desc->ifp, pal, type, desc->pal_entries);
 	}
@@ -954,13 +954,13 @@ static bool ico_palette_dec(struct dib_desc *dib, struct wuimg *img) {
 	const size_t instride = strip_length(img->w, dib->depth, 2);
 	const size_t outstride = strip_length(img->w, 32, 2);
 	for (size_t y = 0; y < img->h; ++y) {
-		raster_pal_expand(dst.buf + outstride*y, xor.buf + instride*y,
+		palette_expand(dst.buf + outstride*y, xor.buf + instride*y,
 			img->u.palette, img->w, dib->depth);
 	}
 	ico_32bit_dec(img, (struct pix_rgba8 *)dst.buf, and.buf, and.stride);
 
 	free(xor.buf);
-	free(img->u.palette);
+	palette_unref(img->u.palette);
 	img->u.palette = NULL;
 	img->mode = image_mode_raw;
 	img->data = dst.buf;
