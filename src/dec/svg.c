@@ -21,7 +21,7 @@ GError *err, const enum wu_error val) {
 	return val;
 }
 
-static float get_mirror(const struct wu_state *state, const bool horizontal) {
+static float get_scale(const struct wu_state *state, const bool horizontal) {
 	return (state->mirror && (state->rotate & 1) == horizontal)
 		? -state->zoom : state->zoom;
 }
@@ -38,7 +38,7 @@ const RsvgRectangle *viewport) {
 	return wu_ok;
 }
 
-static cairo_t * canvas_switcheroo(uint8_t *data, const cairo_format_t format,
+static cairo_t * get_canvas(uint8_t *data, const cairo_format_t format,
 const int width, const int height, const int stride) {
 	cairo_surface_t *surf = cairo_image_surface_create_for_data(data,
 		format, width, height, stride);
@@ -92,7 +92,7 @@ const enum image_event event) {
 		memset(img->data, 0, size);
 	}
 
-	cairo_t *canvas = canvas_switcheroo(img->data, format, width, height,
+	cairo_t *canvas = get_canvas(img->data, format, width, height,
 		stride);
 	if (!canvas) {
 		return wu_alloc_error;
@@ -107,8 +107,8 @@ const enum image_event event) {
 	double rotate = 0;
 	const bool first_render = event & ev_subcycle;
 	if (!first_render) {
-		x_scale = get_mirror(state, 1),
-		y_scale = get_mirror(state, 0),
+		x_scale = get_scale(state, true),
+		y_scale = get_scale(state, false),
 		rotate = state->rotate * M_PI_2;
 		x = fbw + state->x_offset * x_scale;
 		y = fbh + state->y_offset * y_scale;
@@ -163,8 +163,7 @@ const struct wu_conf *wuconf) {
 		return st;
 	}
 
-	cairo_t *canvas = canvas_switcheroo(img->data, format, width, height,
-		stride);
+	cairo_t *canvas = get_canvas(img->data, format, width, height, stride);
 	if (!canvas) {
 		return wu_alloc_error;
 	}
