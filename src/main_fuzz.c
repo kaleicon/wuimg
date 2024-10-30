@@ -21,6 +21,7 @@ int main(void) {
 	struct image_context image = {
 		.conf = conf_default(),
 	};
+	image.conf.max_img_size = 2048;
 
 #ifdef __AFL_HAVE_MANUAL_CONTROL
 	__AFL_INIT();
