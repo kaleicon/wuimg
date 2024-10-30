@@ -55,9 +55,8 @@ const size_t offset) {
 
 	uint8_t *dst = img->data;
 	const uint8_t *src = img->data + offset;
-	const uint8_t *restrict pal = (uint8_t *)desc->pal;
+	const struct palette *pal = desc->pal;
 	const size_t stride = img->w*HAM_CH;
-	const uint8_t cpy_size = HAM_CH;
 	for (size_t y = 0; y < img->h; ++y) {
 		for (size_t x = 0; x < img->w; ++x) {
 			const size_t pix = y*stride + x*HAM_CH;
@@ -68,9 +67,9 @@ const size_t offset) {
 			if (ham) {
 				if (x) {
 					memcpy(dst + pix, dst + pix - HAM_CH,
-						cpy_size);
+						HAM_CH);
 				} else {
-					memcpy(dst + pix, pal + 0, cpy_size);
+					memcpy(dst + pix, pal->color, HAM_CH);
 				}
 //				uint8_t ch = (ham ^ 2);
 //				ch ^= ch >> 1;
@@ -79,7 +78,7 @@ const size_t offset) {
 				dst[pix + ch] = (uint8_t)(entry << (8 - color_bits))
 					| (dst[pix + ch] & antimask);
 			} else {
-				memcpy(dst + pix, pal + entry*4, cpy_size);
+				memcpy(dst + pix, pal->color + entry, HAM_CH);
 			}
 		}
 	}
@@ -176,8 +175,8 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		img->bitdepth = 8;
 	} else {
 		if (desc->pal) {
-			struct palette *pal = desc->pal;
 			if (!desc->ham) {
+				struct palette *pal = desc->pal;
 				if (img->evolving) {
 					wuimg_palette_set(img, palette_copy(pal));
 				} else {
@@ -215,6 +214,9 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 				}
 			}
 		} else {
+			if (desc->ham) {
+				return wu_invalid_header;
+			}
 			if (desc->planes < 8) {
 				img->used_bits = desc->planes;
 			}
@@ -596,6 +598,9 @@ enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mparser mp) {
 			const uint32_t len = buf_endian32(data + 4, big_endian);
 			const uint32_t id = buf_endian32(data + 8, big_endian);
 			if (len < desc->mp.len - 8) {
+				if (len < 4) {
+					return wu_invalid_header;
+				}
 				desc->mp.len = (size_t)len + 8;
 			}
 			switch (id) {
