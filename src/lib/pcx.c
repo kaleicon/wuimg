@@ -213,8 +213,8 @@ const unsigned char *restrict rle, const size_t rle_len) {
 	size_t d = 0;
 	size_t r = 0;
 	const uint8_t mask = 0xc0;
-	while (d < dst_len && r < rle_len) {
-		const unsigned char packet = rle[r];
+	while (r < rle_len) {
+		const uint8_t packet = rle[r];
 		++r;
 		if (packet >= mask) {
 			const size_t run_len = packet - mask;
@@ -225,6 +225,9 @@ const unsigned char *restrict rle, const size_t rle_len) {
 			d += run_len;
 			++r;
 		} else {
+			if (d >= dst_len) {
+				break;
+			}
 			dst[d] = packet;
 			++d;
 		}

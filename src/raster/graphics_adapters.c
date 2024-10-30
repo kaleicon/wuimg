@@ -1,19 +1,38 @@
 // SPDX-License-Identifier: 0BSD
 #include <string.h>
 
+#include "misc/endian.h"
 #include "misc/math.h"
 #include "raster/graphics_adapters.h"
 
 static void interleave_byte(uint8_t *restrict dst, const uint8_t *restrict src,
 const uint8_t planes, const size_t plane_stride, const size_t pos, const size_t bits) {
-	uint8_t buf[8] = {0};
-	for (uint8_t z = 0; z < planes; ++z) {
-		const uint8_t byte = src[pos + z*plane_stride];
-		for (uint8_t bit = 0; bit < bits; ++bit) {
-			buf[bit] |= ((byte >> (7-bit)) & 1) << z;
+	if (sizeof(void *) < 8) {
+		/* Code for non-64bit cpus
+		 * Actually not sure if it's better than using uint64_t anyway,
+		 * but the code's been around for a while, so might as well
+		 * keep it a bit longer. */
+		uint8_t buf[8] = {0};
+		for (uint8_t z = 0; z < planes; ++z) {
+			const uint8_t byte = src[pos + z*plane_stride];
+			for (uint8_t bit = 0; bit < bits; ++bit) {
+				buf[bit] |= ((byte >> (7-bit)) & 1) << z;
+			}
 		}
+		memcpy(dst + pos*8, buf, bits);
+	} else {
+		// Code for 64bit cpus
+		uint64_t tmp = 0;
+		const enum endianness e = which_end();
+		for (uint8_t z = 0; z < planes; ++z) {
+			const uint8_t byte = src[pos + z*plane_stride];
+			for (uint8_t bit = 0; bit < bits; ++bit) {
+				unsigned shl = (e == little_endian) ? bit : (7-bit);
+				tmp |= (uint64_t)((byte >> (7-bit)) & 1) << (shl*8 + z);
+			}
+		}
+		memcpy(dst + pos*8, &tmp, bits);
 	}
-	memcpy(dst + pos*8, buf, bits);
 }
 
 static void interleave_row8_with_stride(uint8_t *restrict dst,
@@ -38,14 +57,14 @@ const size_t w, const uint8_t planes, const align_t align) {
 static void interleave_dword(uint8_t *restrict dst, const uint8_t *restrict src,
 const uint8_t planes, const size_t plane_stride, const size_t spread,
 const size_t pos, const size_t bits) {
-	uint8_t buf[8*4] = {0};
+	uint32_t *buf = (uint32_t *)dst + pos*8;
+	memset(buf, 0, bits*spread);
 	for (uint8_t z = 0; z < planes; ++z) {
 		const uint8_t byte = src[pos + z*plane_stride];
 		for (uint8_t bit = 0; bit < bits; ++bit) {
-			buf[bit*spread + (z/8)] |= ((byte >> (7-bit)) & 1) << (z%8);
+			buf[bit] |= ((byte >> (7-bit)) & 1) << z;
 		}
 	}
-	memcpy(dst + pos*8*spread, buf, bits*spread);
 }
 
 static void bitplane_interleave_row32(uint8_t *restrict dst,
