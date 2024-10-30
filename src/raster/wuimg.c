@@ -396,7 +396,7 @@ struct image_frames * wuimg_frames_init(struct wuimg *img, size_t nr) {
 	if (nr < 1) {
 		return false;
 	}
-	img->frames = calloc(sizeof(*img->frames) + nr * sizeof(*img->frames->f), 1);
+	img->frames = small_calloc(sizeof(*img->frames) + nr * sizeof(*img->frames->f), 1);
 	if (img->frames) {
 		img->frames->nr = nr;
 	}

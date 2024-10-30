@@ -26,7 +26,7 @@ struct wuimg * realloc_sub_images(struct image_file *file, const size_t nr) {
 	}
 
 	const size_t struct_size = sizeof(*file->sub_img);
-	struct wuimg *hold = realloc(file->sub_img, nr * struct_size);
+	struct wuimg *hold = small_realloc(file->sub_img, nr, struct_size);
 	if (hold) {
 		if (nr > file->nr) {
 			const size_t len = struct_size * (nr - file->nr);
@@ -42,7 +42,7 @@ struct wuimg * alloc_sub_images(struct image_file *file, const size_t nr) {
 	if (nr < 1) {
 		return NULL;
 	}
-	file->sub_img = calloc(nr, sizeof(*file->sub_img));
+	file->sub_img = small_calloc(nr, sizeof(*file->sub_img));
 	if (file->sub_img) {
 		file->nr = nr;
 	}

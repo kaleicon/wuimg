@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "wustr.h"
+#include "misc/common.h"
 #include "misc/math.h"
 
 bool wugrow_reserve(struct wugrow *grow, size_t extra) {
@@ -11,7 +12,7 @@ bool wugrow_reserve(struct wugrow *grow, size_t extra) {
 	if (needed >= grow->alloc) {
 		const size_t new_len = zumax(needed,
 			grow->alloc + grow->alloc / 4) + 16;
-		void *hold = realloc(grow->ptr, grow->elem_size * new_len);
+		void *hold = small_realloc(grow->ptr, new_len, grow->elem_size);
 		if (!hold) {
 			return false;
 		}
@@ -73,7 +74,7 @@ void wustr_free(struct wustr *w) {
 }
 
 bool wustr_realloc(struct wustr *w, const size_t len) {
-	void *hold = realloc(w->str, len + 1);
+	void *hold = small_realloc(w->str, len + 1, 1);
 	if (hold) {
 		w->len = len;
 		w->str = hold;
@@ -83,7 +84,7 @@ bool wustr_realloc(struct wustr *w, const size_t len) {
 
 bool wustr_malloc(struct wustr *w, const size_t len) {
 	w->len = len;
-	w->str = malloc(len + 1);
+	w->str = small_malloc(len + 1, 1);
 	return (bool)w->str;
 }
 

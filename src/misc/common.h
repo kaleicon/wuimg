@@ -48,6 +48,12 @@ uint8_t short_opt(const char *opt);
 
 long num_cpus(void);
 
+void * small_realloc(void *ptr, size_t nmemb, size_t size);
+
+void * small_calloc(size_t nmemb, size_t size);
+
+void * small_malloc(size_t nmemb, size_t size);
+
 void fatal_bug(const char *name, const char *msg);
 
 void null_function();

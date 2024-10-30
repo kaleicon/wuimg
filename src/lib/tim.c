@@ -42,7 +42,7 @@ unsigned char header[static 12]) {
 		return wu_invalid_header;
 	}
 
-	struct palette *palette = malloc(sizeof(*palette) * clut->nb);
+	struct palette *palette = small_malloc(clut->nb, sizeof(*palette));
 	if (!palette) {
 		return wu_alloc_error;
 	}

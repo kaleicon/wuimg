@@ -198,7 +198,7 @@ struct pcf_toc *t, const enum endianness e) {
 		return st;
 	}
 
-	uint8_t *buf = malloc(rem);
+	uint8_t *buf = small_malloc(rem, 1);
 	if (!buf) {
 		return wu_alloc_error;
 	}
@@ -223,7 +223,7 @@ const enum endianness e) {
 	desc->glyphs = umin(desc->glyphs, glyphs);
 
 	bitmap->format = t->format;
-	bitmap->offsets = malloc(desc->glyphs * sizeof(*bitmap->offsets));
+	bitmap->offsets = small_malloc(desc->glyphs, sizeof(*bitmap->offsets));
 	if (!bitmap->offsets) {
 		return wu_alloc_error;
 	}
@@ -262,7 +262,7 @@ const enum endianness e) {
 		return wu_unexpected_eof;
 	}
 
-	struct pcf_metrics *metrics = malloc(desc->glyphs * sizeof(*metrics));
+	struct pcf_metrics *metrics = small_malloc(desc->glyphs, sizeof(*metrics));
 	if (!metrics) {
 		return wu_alloc_error;
 	}
@@ -317,7 +317,7 @@ const enum endianness e) {
 	if (st != wu_ok) {
 		return st;
 	}
-	uint8_t *buf = malloc(rem);
+	uint8_t *buf = small_malloc(rem, 1);
 	if (!buf) {
 		return wu_alloc_error;
 	}
@@ -368,7 +368,7 @@ enum wu_error pcf_parse(struct pcf_desc *desc) {
 
 	struct pcf_toc *toc;
 	const size_t toc_size = desc->toc_len * sizeof(*toc);
-	toc = malloc(toc_size);
+	toc = small_malloc(desc->toc_len, sizeof(*toc));
 	if (!toc) {
 		return wu_alloc_error;
 	}

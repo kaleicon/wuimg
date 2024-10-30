@@ -62,7 +62,7 @@ static struct wu_tree * irrigate(struct wu_tree *par, const size_t reserve) {
 	if (branch->len + reserve >= branch->alloc) {
 		const size_t new_alloc = branch->alloc + branch->alloc / 4
 			+ reserve;
-		void *hold = realloc(branch->b, new_alloc * sizeof(*branch->b));
+		void *hold = small_realloc(branch->b, new_alloc, sizeof(*branch->b));
 		if (!hold) {
 			return NULL;
 		}
@@ -323,7 +323,7 @@ bool tree_sow(struct wu_tree *root, const char *name) {
 		struct wu_branch *branch = &root->leaf.val.branch;
 		branch->alloc = 8;
 		branch->len = 0;
-		branch->b = malloc(sizeof(*branch->b) * branch->alloc);
+		branch->b = small_malloc(branch->alloc, sizeof(*branch->b));
 		return (bool)branch->b;
 	}
 	return false;

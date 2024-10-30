@@ -167,13 +167,12 @@ static enum wu_error load_toc(struct xcursor_desc *desc) {
 		12
 	*/
 
-	const size_t size = sizeof(*desc->toc) * desc->ntoc;
-	desc->toc = malloc(size);
+	desc->toc = small_malloc(desc->ntoc, sizeof(*desc->toc));
 	if (!desc->toc) {
 		return wu_alloc_error;
 	}
 
-	if (!fread(desc->toc, size, 1, desc->ifp)) {
+	if (!fread(desc->toc, desc->ntoc * sizeof(*desc->toc), 1, desc->ifp)) {
 		return wu_unexpected_eof;
 	}
 

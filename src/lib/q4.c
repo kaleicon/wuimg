@@ -149,7 +149,7 @@ static size_t decode_block(uint8_t *restrict dst, struct q4_block *block) {
 	if (block->off_alloc < block->codes) {
 		free(block->off);
 		const size_t alloc = zumin(0xffff, block->codes + block->codes/4);
-		block->off = malloc(alloc * sizeof(*block->off));
+		block->off = small_malloc(alloc, sizeof(*block->off));
 		if (!block->off) {
 			block->off_alloc = 0;
 			return 0;
