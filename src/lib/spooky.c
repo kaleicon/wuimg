@@ -215,7 +215,9 @@ enum wu_error trs_init(struct trs_desc *desc, const struct map_info map) {
 			desc->nr = buf_endian16(header + 4, big_endian);
 			desc->xres = buf_endian16(header + 8, big_endian);
 			desc->sprites = mp_next_slice(&desc->mp, 10*desc->nr);
-			return desc->sprites ? wu_ok : wu_unexpected_eof;
+			if (desc->xres) {
+				return desc->sprites ? wu_ok : wu_unexpected_eof;
+			}
 		}
 		return wu_invalid_header;
 	}
