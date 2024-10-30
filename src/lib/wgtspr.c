@@ -11,18 +11,22 @@ size_t wgtspr_get_sprite(const struct wgtspr_desc *desc, struct wuimg *img) {
 
 enum wu_error wgtspr_next_sprite(struct wgtspr_desc *desc, struct wuimg *img) {
 	uint16_t buf[3];
-	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+	const size_t read = fread(buf, sizeof(*buf), ARRAY_LEN(buf), desc->ifp);
+	if (!read) {
 		return wu_unexpected_eof;
 	}
 
 	const uint16_t used = endian16(buf[0], little_endian);
 	if (used) {
-		img->w = endian16(buf[1], little_endian);
-		img->h = endian16(buf[2], little_endian);
-		img->channels = 1;
-		img->bitdepth = 8;
-		wuimg_palette_set(img, palette_ref(desc->pal));
-		return wuimg_verify(img);
+		if (read == ARRAY_LEN(buf)) {
+			img->w = endian16(buf[1], little_endian);
+			img->h = endian16(buf[2], little_endian);
+			img->channels = 1;
+			img->bitdepth = 8;
+			wuimg_palette_set(img, palette_ref(desc->pal));
+			return wuimg_verify(img);
+		}
+		return wu_unexpected_eof;
 	}
 	fseek(desc->ifp, -4, SEEK_CUR);
 	return wu_no_change;
