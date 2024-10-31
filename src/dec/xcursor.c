@@ -24,7 +24,7 @@ const struct wu_conf *wuconf) {
 	}
 
 	uint32_t o = 0;
-	for (uint32_t i = 0; i < desc.ntoc; ++i) {
+	for (uint64_t i = 0; i < desc.ntoc; ++i) {
 		const struct xcursor_toc *entry = desc.toc + i;
 		struct xcursor_chunk chunk;
 		struct wuimg *img = NULL;

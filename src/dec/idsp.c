@@ -26,7 +26,7 @@ const struct wu_conf *conf, struct idsp_desc *desc) {
 	tree_bud_leaf_f(tree, "Beam length", desc->beam_length);
 	tree_add_leaf_utf8(tree, "Synch", idsp_synch_str(desc->synch));
 
-	uint32_t i = 0;
+	uint64_t i = 0;
 	while (i < desc->frames) {
 		st = idsp_next_image(desc, img);
 		if (st == wu_ok) {
