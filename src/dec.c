@@ -100,6 +100,16 @@ static const struct fmt_desc * fmtmap_identify(struct image_context *image) {
 	return NULL;
 }
 
+const struct fmt_desc * fmtmap_by_name(const char *name) {
+	const struct fmt_desc *d = NULL;
+	for (size_t i = 0; i < ARRAY_LEN(desc_map); ++i) {
+		if (!strncmp(name, desc_map[i].name, sizeof(d->name))) {
+			d = desc_map + i;
+			break;
+		}
+	}
+	return d;
+}
 
 bool fmtmap_known_extension(const struct wuptr filename) {
 	uint8_t buf[sizeof(ext_map->ext)] = {0};

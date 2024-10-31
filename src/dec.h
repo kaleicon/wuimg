@@ -7,6 +7,8 @@
 #include "wudefs.h"
 #include "misc/wustr.h"
 
+const struct fmt_desc * fmtmap_by_name(const char *name);
+
 bool fmtmap_known_extension(const struct wuptr filename);
 
 
