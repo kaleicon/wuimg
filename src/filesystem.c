@@ -12,8 +12,8 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 
-#include "dec.h"
 #include "filesystem.h"
+#include "fmtmap.h"
 
 /* Though ICU recommends using direct collation over sorting keys unless many
  * comparisons are done, the crossover point for sorting turns out to be at

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 #include <stdio.h>
 
-#include "dec.h"
-#include "term.h"
+#include "fmtmap.h"
 #include "imgconv.h"
 #include "write.h"
 
@@ -72,7 +71,7 @@ int main(const int argc, char **argv) {
 		print_help(stderr);
 		return 0;
 	case show_fmts:
-		print_known_formats(stderr);
+		fmtmap_print_known(stderr);
 		return 0;
 	}
 

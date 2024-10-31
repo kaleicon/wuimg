@@ -10,9 +10,10 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "misc/wustr.h"
-#include "dec.h"
-#include "extract.h"
+#include "fmtmap.h"
 #include "term.h"
+
+#include "extract.h"
 
 static bool open_archive(struct extract_iter *iter) {
 	iter->ra = archive_read_new();

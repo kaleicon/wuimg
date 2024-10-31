@@ -10,6 +10,7 @@
 #include "events.h"
 #include "extract.h"
 #include "filesystem.h"
+#include "fmtmap.h"
 #include "write.h"
 #include "misc/math.h"
 #include "misc/time.h"
@@ -508,7 +509,7 @@ int main(const int argc, char *argv[]) {
 		print_keys();
 		return 0;
 	case formats:
-		print_known_formats(stdout);
+		fmtmap_print_known(stdout);
 		return 0;
 	case sole:
 	case test:

@@ -7,11 +7,6 @@
 #include "wudefs.h"
 #include "misc/wustr.h"
 
-const struct fmt_desc * fmtmap_by_name(const char *name);
-
-bool fmtmap_known_extension(const struct wuptr filename);
-
-
 void dec_free_image(struct image_context *image);
 
 enum wu_error dec_callback(struct image_context *image,
@@ -30,8 +25,5 @@ void dec_src_file(struct image_context *image, FILE *ifp, const char *name,
 bool keep_file, bool stat_file);
 
 void dec_src_filename(struct image_context *image, const char *filename);
-
-
-void print_known_formats(FILE *ofp);
 
 #endif /* DEC */

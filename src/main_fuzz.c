@@ -2,6 +2,7 @@
 #include <unistd.h>
 
 #include "dec.h"
+#include "fmtmap.h"
 
 #ifndef __AFL_FUZZ_TESTCASE_LEN
 ssize_t fuzz_len;

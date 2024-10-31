@@ -1002,7 +1002,7 @@ static int mapsort(void) {
 		min_ext_len, max_ext_len);
 
 	/* Include the rest of the file */
-	fputs("\n#include \"dec.c\"\n", stdout);
+	fputs("\n#include \"fmtmap.c\"\n", stdout);
 	return 0;
 }
 
