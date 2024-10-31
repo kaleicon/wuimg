@@ -501,17 +501,27 @@ static void print_colorspace_data(const struct color_space *cs) {
 	}
 }
 
+static const char * alpha_str(enum alpha_interpretation alpha) {
+	switch (alpha) {
+	case alpha_unassociated: return "Unassociated";
+	case alpha_associated: return "Associated";
+	case alpha_key: return "Key";
+	case alpha_ignore: return "Ignored";
+	}
+	return "???";
+}
+
 static void print_more_data(const struct wuimg *img, const int verbosity) {
 	fputs("  Layout: ", stdout);
 	pix_layout_print(img->layout, stdout);
 	printf("  Alignment: %d\n"
 		"  Rotation: %d\n"
 		"  Mirror: %s\n"
-		"  Alpha: %d\n"
+		"  Alpha: %s\n"
 		"  Ratio: %g\n"
 		"  Bits used: %d\n",
 		img->align_sh, img->rotate, img->mirror ? "yes" : "no",
-		img->alpha, img->ratio, img->used_bits);
+		alpha_str(img->alpha), img->ratio, img->used_bits);
 
 	print_colorspace_data(&img->cs);
 	if (img->mode == image_mode_planar) {
