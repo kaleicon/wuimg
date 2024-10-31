@@ -2,8 +2,8 @@
 #ifndef WUDEFS
 #define WUDEFS
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "misc/file.h"
 #include "misc/wustr.h"

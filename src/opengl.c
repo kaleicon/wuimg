@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 #include "opengl.h"
 #include "misc/bit.h"
+#include "misc/common.h"
 #include "misc/math.h"
 #include "raster/color.h"
 #include "raster/pix.h"

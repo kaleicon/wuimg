@@ -1,3 +1,4 @@
+#include "misc/common.h"
 #include "raster/fmt.h"
 #include "wgtspr.h"
 

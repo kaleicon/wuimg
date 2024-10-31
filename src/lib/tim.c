@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 #include <stdbool.h>
 
+#include "misc/common.h"
 #include "raster/fmt.h"
 #include "tim.h"
 

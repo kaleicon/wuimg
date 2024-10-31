@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-#include "misc/common.h"
+#include "misc/time.h"
 #include "dpx.h"
 
 /* This format is a great example of how to do file headers.

@@ -4,7 +4,9 @@
 
 #include <stdbool.h>
 
-#include "misc/common.h"
+struct display_dims {
+	int w, h;
+};
 
 struct wu_conf {
 	unsigned max_img_size; /* Max image size in either dimension. The

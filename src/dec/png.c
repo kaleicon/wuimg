@@ -9,6 +9,7 @@
 #include "metadata.h"
 #include "misc/common.h"
 #include "misc/endian.h"
+#include "misc/time.h"
 
 struct png_state {
 	png_struct *png;

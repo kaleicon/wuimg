@@ -5,6 +5,7 @@
 #include <epoxy/gl.h>
 
 #include "wudefs.h"
+#include "misc/time.h"
 
 // Texture swizzling is the newest feature we require, so 3.3 is the minimum
 #define WU_GL_MAJOR 3

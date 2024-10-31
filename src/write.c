@@ -11,6 +11,7 @@
 #include "filesystem.h"
 #include "term.h"
 #include "write.h"
+#include "misc/common.h"
 
 #include "enc/pam.h"
 

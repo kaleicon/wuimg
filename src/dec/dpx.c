@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 #include "lib/dpx.h"
+#include "misc/common.h"
 #include "wudefs.h"
 
 static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {

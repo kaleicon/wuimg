@@ -6,6 +6,7 @@
 #include "utf8.h"
 #include "wutree.h"
 #include "misc/mem.h"
+#include "misc/time.h"
 
 static bool is_emb_str(const struct wu_emb_str *emb) {
 	return emb->len > sizeof(emb->s.arr);

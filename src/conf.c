@@ -9,6 +9,7 @@
 
 #include "conf.h"
 #include "term.h"
+#include "misc/common.h"
 #include "misc/file.h"
 #include "misc/mparser.h"
 

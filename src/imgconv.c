@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 #include "misc/bit.h"
+#include "misc/common.h"
 #include "misc/math.h"
 #include "imgconv.h"
 

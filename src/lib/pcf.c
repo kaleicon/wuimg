@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "misc/bit.h"
+#include "misc/common.h"
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"

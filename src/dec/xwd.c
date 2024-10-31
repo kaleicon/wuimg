@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
-#include "rast_utils.h"
 #include "lib/xwd.h"
+#include "misc/common.h"
+#include "rast_utils.h"
 
 static void meta(const void *restrict ptr, struct wu_tree *meta) {
 	const struct xwd_desc *desc = ptr;

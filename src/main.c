@@ -12,6 +12,7 @@
 #include "filesystem.h"
 #include "write.h"
 #include "misc/math.h"
+#include "misc/time.h"
 
 enum work_mode {
 	guess = 0,

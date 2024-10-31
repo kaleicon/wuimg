@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+#include "misc/common.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/graphics_adapters.h"

@@ -4,11 +4,11 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "misc/common.h"
 #include "misc/endian.h"
 #include "misc/file.h"
 #include "misc/math.h"
 #include "misc/mem.h"
+#include "misc/time.h"
 #include "raster/bitfield.h"
 #include "raster/fmt.h"
 #include "raster/unpack.h"
