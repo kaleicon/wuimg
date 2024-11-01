@@ -10,9 +10,32 @@
 
 static const uint8_t HAM_CH = 3; // Output channels for HAM
 
+const char * ilbm_compression_str(const enum ilbm_compression comp) {
+	switch (comp) {
+	case ilbm_compression_none: return "None";
+	case ilbm_compression_packbits: return "PackBits";
+	case ilbm_compression_vdat: return "VDAT";
+	}
+	return "???";
+}
+
 void ilbm_cleanup(struct ilbm_desc *desc) {
 	palette_unref(desc->pal);
 	free(desc->cycle);
+}
+
+static bool next_chunk(struct mparser *mp, uint32_t *restrict id,
+uint32_t *restrict len, struct wuptr *data) {
+	const uint8_t *slice = mp_next_slice(mp, 8);
+	if (slice) {
+		*id = buf_endian32(slice, big_endian);
+		*len = buf_endian32(slice + 4, big_endian);
+		*data = mp_next_remaining(mp, *len);
+		if (*len % 2) {
+			mp_next_slice(mp, 1);
+		}
+	}
+	return (bool)slice;
 }
 
 static size_t interleave_bitplanes(const struct ilbm_desc *desc,
@@ -82,16 +105,102 @@ static size_t decompress_ilbm(const struct ilbm_desc *desc, struct wuimg *img,
 const struct wuptr body) {
 	const size_t upack_len = strip_length(img->w, 1, 1) * desc->planes * img->h;
 	uint8_t *upack = malloc(upack_len);
+	size_t w = 0;
 	if (upack) {
-		const size_t w = decomp_pack_bits(upack, upack_len,
+		w = decomp_pack_bits(upack, upack_len,
 			(const int8_t *)body.ptr, body.len);
-		if (w) {
-			expand_body(desc, img, wuptr_mem(upack, w));
-		}
+		expand_body(desc, img, wuptr_mem(upack, w));
 		free(upack);
-		return w;
 	}
-	return 0;
+	return w;
+}
+
+static void unscramble_vdat(uint16_t *restrict dst, const uint16_t *restrict src,
+const size_t plane_stride, const size_t h, const uint8_t planes) {
+	for (size_t y = 0; y < h; ++y) {
+		for (uint8_t z = 0; z < planes; ++z) {
+			for (size_t x = 0; x < plane_stride; ++x) {
+				dst[y*plane_stride*planes + z*plane_stride + x] =
+					src[z*plane_stride*h + x*h + y];
+			}
+		}
+	}
+}
+
+static size_t decomp_vdat(uint16_t *restrict dst, const size_t dst_len,
+const uint8_t *restrict src, const size_t src_len) {
+	/* VDAT chunk:
+		Offset  Type    Name
+		0       u16     DataOffset
+		4       s8      Ctrl[]
+		DataOff u16     Data[]
+		ChunkLen
+
+	 * There seem to be as many VDAT chunks as there are bitplanes.
+	*/
+	struct mparser mp = mp_mem(src_len, src);
+	size_t d = 0;
+	uint32_t id, _l;
+	struct wuptr body;
+	const uint32_t vdat = FOURCC('V', 'D', 'A', 'T');
+	while (next_chunk(&mp, &id, &_l, &body) && id == vdat && body.len > 2) {
+		const uint16_t data_off = buf_endian16(body.ptr, big_endian);
+		size_t data_pos = data_off;
+		for (size_t s = 2; s < data_off; ++s) {
+			const int8_t c = (int8_t)body.ptr[s];
+			size_t run;
+			bool repeat;
+			if (c < 0) {
+				run = (size_t)-c;
+				repeat = false;
+			} else if (c > 1) {
+				run = (size_t)c;
+				repeat = true;
+			} else {
+				if (data_pos + 2 > body.len) {
+					break;
+				}
+				run = buf_endian16(body.ptr + data_pos, big_endian);
+				data_pos += 2;
+				repeat = (bool)c;
+			}
+			if (d + run > dst_len) {
+				return d;
+			}
+			if (repeat) {
+				if (data_pos + 2 > body.len) {
+					break;
+				}
+				memset16(dst + d, body.ptr + data_pos, run);
+				data_pos += 2;
+			} else {
+				if (data_pos + run*2 > body.len) {
+					break;
+				}
+				memcpy(dst + d, body.ptr + data_pos, run*2);
+				data_pos += run*2;
+			}
+			d += run;
+		}
+	}
+	return d;
+}
+
+static size_t decomp_vertical_rle(const struct ilbm_desc *desc,
+struct wuimg *img, const struct wuptr body) {
+	const size_t stride = strip_length(img->w, 1, 1);
+	const size_t upack_len = stride * desc->planes * img->h;
+	uint8_t *upack = malloc(upack_len);
+	size_t w = 0;
+	if (upack) {
+		uint16_t *tmp = (uint16_t *)img->data;
+		w = decomp_vdat(tmp, upack_len/2, body.ptr, body.len);
+		unscramble_vdat((uint16_t *)upack, tmp, stride/2, img->h,
+			desc->planes);
+		expand_body(desc, img, wuptr_mem(upack, upack_len));
+		free(upack);
+	}
+	return w;
 }
 
 static size_t ilbm_decode(const struct ilbm_desc *desc, struct wuimg *img,
@@ -109,6 +218,8 @@ const struct wuptr body) {
 			return expand_body(desc, img, body);
 		case ilbm_compression_packbits:
 			return decompress_ilbm(desc, img, body);
+		case ilbm_compression_vdat:
+			return decomp_vertical_rle(desc, img, body);
 		}
 		break;
 	case ilbm_format_pbm:
@@ -120,6 +231,8 @@ const struct wuptr body) {
 		case ilbm_compression_packbits:
 			return decomp_pack_bits(img->data, size,
 				(const int8_t *)body.ptr, body.len);
+		case ilbm_compression_vdat:
+			break;
 		}
 		break;
 	}
@@ -419,6 +532,11 @@ const struct wuptr data) {
 		return wu_unsupported_feature;
 	}
 	switch (desc->compression) {
+	case ilbm_compression_vdat:
+		if (desc->format != ilbm_format_ilbm) {
+			return wu_uncertain_validity;
+		}
+		// fallthrough
 	case ilbm_compression_none:
 	case ilbm_compression_packbits:
 		wuimg_aspect_ratio(img, data.ptr[14], data.ptr[15]);
@@ -478,38 +596,18 @@ static const struct ilbm_chunk_def * search_chunk_def(const uint32_t id) {
 		sizeof(*CHUNK_MAP), chunk_cmp);
 }
 
-static enum wu_error next_chunk(struct ilbm_desc *desc,
-uint32_t *restrict chunk, uint32_t *restrict len, struct wuptr *data) {
-	const uint8_t *slice = mp_next_slice(&desc->mp, 8);
-	if (slice) {
-		*chunk = buf_endian32(slice, big_endian);
-		*len = buf_endian32(slice + 4, big_endian);
-		*data = mp_next_remaining(&desc->mp, *len);
-		if (*len % 2) {
-			mp_next_slice(&desc->mp, 1);
-		}
-		return wu_ok;
-	}
-	return wu_unexpected_eof;
-}
-
 enum wu_error ilbm_parse_footer(struct ilbm_desc *desc) {
+	uint32_t id, len;
+	struct wuptr data;
 	enum wu_error st = wu_ok;
-	do {
-		uint32_t chunk, len;
-		struct wuptr data;
-		st = next_chunk(desc, &chunk, &len, &data);
-		if (st == wu_unexpected_eof) {
-			return wu_ok;
-		} else if (st == wu_ok) {
-			const struct ilbm_chunk_def *def = search_chunk_def(chunk);
-			if (def && !def->essential) {
-				st = def->fn.m(desc, chunk, data);
-			} else {
-				st = desc->callback(chunk, data, desc->usr_ptr);
-			}
+	while (st == wu_ok && next_chunk(&desc->mp, &id, &len, &data)) {
+		const struct ilbm_chunk_def *def = search_chunk_def(id);
+		if (def && !def->essential) {
+			st = def->fn.m(desc, id, data);
+		} else {
+			st = desc->callback(id, data, desc->usr_ptr);
 		}
-	} while (st == wu_ok);
+	}
 	return st;
 }
 
@@ -518,27 +616,26 @@ enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
 	bool bmhd_found = false;
 	enum wu_error st = wu_ok;
 	do {
-		uint32_t chunk, len;
+		uint32_t id, len;
 		struct wuptr data;
-		st = next_chunk(desc, &chunk, &len, &data);
-		if (st != wu_ok) {
+		if (!next_chunk(&desc->mp, &id, &len, &data)) {
 			if (!desc->planes) { // Colormap only
 				return tidy_up(desc, img);
 			}
-			break;
+			return wu_unexpected_eof;
 		}
 
-		if (chunk == ilbm_chunk_body) {
+		if (id == ilbm_chunk_body) {
 			desc->body = data;
 			return tidy_up(desc, img);
 		}
 		if (data.len < len) {
 			return wu_unexpected_eof;
 		}
-		const struct ilbm_chunk_def *def = search_chunk_def(chunk);
+		const struct ilbm_chunk_def *def = search_chunk_def(id);
 		if (def) {
 			if (def->essential) {
-				if (chunk == ilbm_chunk_bmhd) {
+				if (id == ilbm_chunk_bmhd) {
 					if (bmhd_found) {
 						return wu_invalid_header;
 					}
@@ -548,10 +645,10 @@ enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
 				}
 				st = def->fn.img(desc, img, data);
 			} else {
-				st = def->fn.m(desc, chunk, data);
+				st = def->fn.m(desc, id, data);
 			}
 		} else {
-			st = desc->callback(chunk, data, desc->usr_ptr);
+			st = desc->callback(id, data, desc->usr_ptr);
 		}
 	} while (st == wu_ok);
 	return st;

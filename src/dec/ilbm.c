@@ -19,9 +19,10 @@ const struct wuptr data, void *ptr) {
 }
 
 static void add_metadata(const struct ilbm_desc *desc, struct wu_tree *meta) {
+	tree_add_leaf_utf8(meta, "Compression",
+		ilbm_compression_str(desc->compression));
 	tree_bud_leaf_u(meta, "Depth", desc->planes);
 	tree_bud_leaf_u(meta, "Colors", desc->colors);
-	tree_bud_leaf_bool(meta, "Compression", desc->compression);
 	if (desc->extra_half_brite) {
 		tree_bud_leaf_bool(meta, "Extra Half Brite",
 			desc->extra_half_brite);

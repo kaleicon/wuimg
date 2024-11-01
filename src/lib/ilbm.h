@@ -21,6 +21,7 @@ enum ilbm_masking {
 enum ilbm_compression {
 	ilbm_compression_none = 0,
 	ilbm_compression_packbits = 1,
+	ilbm_compression_vdat = 2,
 };
 
 enum ilbm_format {
@@ -51,6 +52,8 @@ struct ilbm_desc {
 	bool extra_half_brite;
 	bool ham;
 };
+
+const char * ilbm_compression_str(enum ilbm_compression comp);
 
 void ilbm_cleanup(struct ilbm_desc *desc);
 

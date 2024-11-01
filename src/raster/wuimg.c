@@ -34,6 +34,9 @@ const char * wu_error_message(const enum wu_error err) {
 	case wu_samples_wanted:
 		return "Format feature not supported due to a lack of samples."
 			" Please consider reporting this!";
+	case wu_uncertain_validity:
+		return "Decoder is unsure if this file is invalid or a rare"
+			" edge case. Please consider reporting this!";
 	case wu_no_image_data:
 		return "Header-only file with no image data";
 	case wu_exceeds_size_limit:
