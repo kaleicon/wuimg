@@ -29,9 +29,9 @@ static void add_metadata(const struct ilbm_desc *desc, struct wu_tree *meta) {
 	if (desc->ham) {
 		tree_bud_leaf_bool(meta, "HAM", desc->ham);
 	}
-	if (desc->crng.active_nr) {
+	if (desc->cycle) {
 		tree_bud_leaf_u(meta, "Active color ranges",
-			desc->crng.active_nr);
+			desc->cycle->active_nr);
 	}
 }
 
@@ -56,7 +56,7 @@ const enum image_event ev) {
 		}
 		break;
 	case ev_time:
-		ilbm_palette_cycle(desc, img->u.palette, state->time);
+		palette_cycle_render(img->u.palette, desc->cycle, state->time);
 		return wu_ok;
 	default: break;
 	}
@@ -91,7 +91,7 @@ const struct wu_conf *wuconf) {
 	st = ilbm_parse_header(desc, img);
 	if (st != wu_ok) {
 		return st;
-	} else if (desc->crng.too_many) {
+	} else if (desc->cycle && desc->cycle->too_many) {
 		image_file_strerror_append(infile,
 			"Excess color cycles ignored");
 	}

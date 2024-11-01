@@ -12,26 +12,7 @@ static const uint8_t HAM_CH = 3; // Output channels for HAM
 
 void ilbm_cleanup(struct ilbm_desc *desc) {
 	palette_unref(desc->pal);
-}
-
-void ilbm_palette_cycle(const struct ilbm_desc *desc, struct palette *pal,
-const double time) {
-	const struct palette *src_pal = desc->pal;
-	for (size_t cycle = 0; cycle < desc->crng.len; ++cycle) {
-		const struct ilbm_crng *crng = desc->crng.crng + cycle;
-		if (!crng->active) {
-			continue;
-		}
-
-		const size_t cnt = crng->cnt;
-		size_t i = (size_t)(time/crng->secs) % cnt;
-		if (crng->reverse) {
-			i = cnt - i;
-		}
-
-		const uint8_t low = crng->low;
-		palette_cyclecopy(pal, src_pal, low, i, cnt);
-	}
+	free(desc->cycle);
 }
 
 static size_t interleave_bitplanes(const struct ilbm_desc *desc,
@@ -151,6 +132,10 @@ struct wuimg *tiny) {
 		tiny->w = desc->tiny.w;
 		tiny->h = desc->tiny.h;
 		if (wuimg_verify(tiny) == wu_ok) {
+			if (tiny->mode == image_mode_palette) {
+				memcpy(tiny->u.palette->color, desc->cycle->color,
+					sizeof(desc->cycle->color));
+			}
 			return ilbm_decode(desc, tiny, desc->tiny.data);
 		}
 	}
@@ -173,17 +158,11 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		img->h = 1;
 		img->channels = 4;
 		img->bitdepth = 8;
+		img->evolving = false;
 	} else {
 		if (desc->pal) {
 			if (!desc->ham) {
 				struct palette *pal = desc->pal;
-				if (img->evolving) {
-					wuimg_palette_set(img, palette_copy(pal));
-				} else {
-					wuimg_palette_set(img, pal);
-					desc->pal = NULL;
-				}
-
 				if (desc->extra_half_brite) {
 					for (size_t i = 0; i < 32; ++i) {
 						pal->color[i+32] = (struct pix_rgba8) {
@@ -212,12 +191,21 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 				case ilbm_masking_lasso:
 					break;
 				}
+				wuimg_palette_set(img, palette_ref(pal));
+				if (desc->cycle) {
+					palette_cycle_set(desc->cycle, pal);
+				}
+			} else if (desc->cycle) {
+				// TODO
+				// Sample: AH_Swimmer.iff
+				free(desc->cycle);
+				desc->cycle = NULL;
 			}
 		} else {
-			if (desc->ham) {
+			if (desc->ham || desc->cycle) {
 				return wu_invalid_header;
 			}
-			if (desc->planes < 8) {
+			if (desc->planes <= 8) {
 				img->used_bits = desc->planes;
 			}
 		}
@@ -265,33 +253,41 @@ const struct wuptr data) {
 	 * [1] Where 16384 is 1/60 of a second, 8192 is 1/30, etc.
 	*/
 
-	const uint16_t ACTIVE = 0x1;
-	const uint16_t REVERSE = 0x2;
-	const float TO_SECS = 273.0f + 1.0f/15;
 	if (data.len == 8) {
-		struct ilbm_crng_array *crng = &desc->crng;
-		if (crng->len < ARRAY_LEN(crng->crng)) {
+		const uint8_t MAX_SLOTS = 16;
+		struct palette_cycle *cycle = desc->cycle;
+		if (!cycle) {
+			cycle = palette_cycle_new(MAX_SLOTS);
+			if (!cycle) {
+				return wu_alloc_error;
+			}
+			desc->cycle = cycle;
+		}
+
+		if (cycle->len < cycle->alloc) {
+			const uint16_t ACTIVE = 0x1;
+			const uint16_t REVERSE = 0x2;
+			const float TO_SECS = 273.0f + 1.0f/15;
 			const uint16_t rate = buf_endian16(data.ptr + 2,
 				big_endian);
 			const uint16_t flags = buf_endian16(data.ptr + 4,
 				big_endian);
-			const uint8_t low = data.ptr[6];
-			const uint8_t high = data.ptr[7];
+			const uint8_t lo = data.ptr[6];
+			const uint8_t hi = data.ptr[7];
 
-			const bool active = (flags & ACTIVE) && rate
-				&& low < high;
-			crng->crng[crng->len] = (struct ilbm_crng) {
-				.secs = TO_SECS/rate,
-				.cnt = (uint16_t)(high - low + 1),
-				.low = low,
+			const bool active = (flags & ACTIVE) && rate && lo < hi;
+			cycle->crng[cycle->len] = (struct palette_crng) {
+				.lo = lo,
+				.hi = hi,
 				.active = active,
 				.reverse = flags & REVERSE,
+				.secs = TO_SECS/rate,
 			};
-			++crng->len;
-			crng->active_nr += active;
+			++cycle->len;
+			cycle->active_nr += active;
 			img->evolving |= active;
 		} else {
-			crng->too_many = true;
+			cycle->too_many = true;
 		}
 		return wu_ok;
 	}

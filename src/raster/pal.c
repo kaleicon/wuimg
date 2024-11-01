@@ -40,13 +40,6 @@ struct palette * palette_new(void) {
 	return calloc(1, sizeof(struct palette));
 }
 
-void palette_cyclecopy(struct palette *restrict dst,
-const struct palette *restrict src, const size_t base, const size_t i,
-const size_t cnt) {
-	memcpy(dst->color + base + i, src->color + base, (cnt - i)*4);
-	memcpy(dst->color + base, src->color + base + cnt - i, i*4);
-}
-
 static uint8_t * expand_palette(const uint_fast8_t byte, uint8_t *restrict dst,
 const struct palette *cm, const size_t items, const uint8_t bitdepth) {
 	const uint8_t ch = 4;
@@ -113,4 +106,37 @@ const size_t nmemb) {
 		memmove(dst->color + i, s + i, (i + 1 < nmemb) ? 4 : 3);
 		dst->color[i].a = 0xff;
 	}
+}
+
+
+void palette_cycle_render(struct palette *dst, const struct palette_cycle *src,
+const double time) {
+	for (uint16_t c = 0; c < src->len; ++c) {
+		const struct palette_crng *crng = src->crng + c;
+		if (crng->active) {
+			const uint8_t lo = crng->lo;
+			const size_t cnt = crng->hi + 1u - lo;
+			size_t i = (size_t)(time/crng->secs) % cnt;
+			if (crng->reverse) {
+				i = cnt - i;
+			}
+
+			memcpy(dst->color + lo + i, src->color + lo, (cnt - i)*4);
+			memcpy(dst->color + lo, src->color + lo + cnt - i, i*4);
+		}
+	}
+}
+
+void palette_cycle_set(struct palette_cycle *dst, const struct palette *src) {
+	memcpy(dst->color, src->color, sizeof(src->color));
+}
+
+struct palette_cycle * palette_cycle_new(const uint8_t slots) {
+	struct palette_cycle *cycle = calloc(
+		sizeof(*cycle) + slots * sizeof(*cycle->crng), 1
+	);
+	if (cycle) {
+		cycle->alloc = slots;
+	}
+	return cycle;
 }

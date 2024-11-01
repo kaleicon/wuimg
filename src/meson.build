@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: 0BSD
 fmt_map = {
 	'internal': [
+		'atarist',
 		'c64',
-		'degas',
 		'dib',
 		'dpx',
 		'g00',

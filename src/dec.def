@@ -3,12 +3,13 @@
 /* Enumerate known formats
  * Format: WUDEC(base_name, description) */
 
-#ifdef WU_ENABLE_C64
-WUDEC(c64, "KoalaPainter (KOA) and Advanced Art Studio (OCP)")
+#ifdef WU_ENABLE_ATARIST
+WUDEC(degas, "DEGAS bitmaps")
+WUDEC(tiny, "Tiny Stuff")
 #endif
 
-#ifdef WU_ENABLE_DEGAS
-WUDEC(degas, "DEGAS bitmaps")
+#ifdef WU_ENABLE_C64
+WUDEC(c64, "KoalaPainter (KOA) and Advanced Art Studio (OCP)")
 #endif
 
 #ifdef WU_ENABLE_DIB

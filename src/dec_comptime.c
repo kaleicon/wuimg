@@ -404,21 +404,29 @@ static struct fmt_ext ext_map[] = {
 	{"da4", fmt_da4},
 	{"doo", fmt_doo},
 
-#ifdef WU_ENABLE_C64
-	{"gig", fmt_c64},
-	{"gg", fmt_c64},
-	{"koa", fmt_c64},
-	{"kla", fmt_c64},
-	{"ocp", fmt_c64},
-#endif
-
-#ifdef WU_ENABLE_DEGAS
+#ifdef WU_ENABLE_ATARIST
 	{"pi1", fmt_degas},
 	{"pi2", fmt_degas},
 	{"pi3", fmt_degas},
 	{"pc1", fmt_degas},
 	{"pc2", fmt_degas},
 	{"pc3", fmt_degas},
+
+	{"tny", fmt_tiny},
+	{"tn1", fmt_tiny},
+	{"tn2", fmt_tiny},
+	{"tn3", fmt_tiny},
+	{"tn4", fmt_tiny},
+	{"tn5", fmt_tiny},
+	{"tn6", fmt_tiny},
+#endif
+
+#ifdef WU_ENABLE_C64
+	{"gig", fmt_c64},
+	{"gg", fmt_c64},
+	{"koa", fmt_c64},
+	{"kla", fmt_c64},
+	{"ocp", fmt_c64},
 #endif
 
 #ifdef WU_ENABLE_DIB
@@ -675,8 +683,11 @@ static struct fmt_ext ext_map[] = {
 	{"jps", -1},
 	{"mpo", -1},
 	{"thm", -1},
+#ifndef WU_ENABLE_ATARIST
+	// Not sure where I got this one from. Conflicts with Tiny Stuff.
 	{"tn3", -1},
-#endif
+#endif // !WU_ENABLE_ATARIST
+#endif // WU_ENABLE_JPEG
 
 #ifdef WU_ENABLE_JPEG2000
 	{"j2c", -1},

@@ -13,6 +13,8 @@ uint8_t memcycle(uint8_t *dst, size_t pos);
 void memtessel(void *restrict dst, const void *restrict src, size_t size,
 size_t bytes);
 
+void memset16(uint16_t *dst, const void *restrict src, size_t nmemb);
+
 void memwordset(void *restrict dst, const void *restrict src, size_t size,
 size_t nmemb);
 

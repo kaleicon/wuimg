@@ -57,8 +57,7 @@ const size_t nmemb) {
 	memcpy(dst + i*size, &triple, size);
 }
 
-static void u16_set(uint16_t *dst, const void *restrict src,
-const size_t nmemb) {
+void memset16(uint16_t *dst, const void *restrict src, const size_t nmemb) {
 	uint16_t word;
 	memcpy(&word, src, sizeof(word));
 	for (size_t i = 0; i < nmemb; ++i) {
@@ -70,7 +69,7 @@ void memwordset(void *restrict dst, const void *restrict src,
 const size_t size, const size_t nmemb) {
 	switch (size) {
 	case 1: memset(dst, *((const uint8_t *)src), nmemb); break;
-	case 2: u16_set(dst, src, nmemb); break;
+	case 2: memset16(dst, src, nmemb); break;
 	case 3: u24_set(dst, src, nmemb); break;
 	case 4: u32_set(dst, src, nmemb); break;
 	default: memtessel(dst, src, size, size*nmemb); break;

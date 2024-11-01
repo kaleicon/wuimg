@@ -11,22 +11,6 @@ struct ilbm_tiny {
 	struct wuptr data;
 };
 
-struct ilbm_crng {
-	float secs;
-	uint16_t cnt;
-	uint8_t low;
-	bool active:1;
-	bool reverse:1;
-};
-
-struct ilbm_crng_array {
-	uint8_t len;
-	uint8_t active_nr;
-	bool too_many;
-	struct ilbm_crng crng[16]; /* The most I've seen are 16, usually with
-		placeholders. */
-};
-
 enum ilbm_masking {
 	ilbm_masking_none = 0,
 	ilbm_masking_bitplane = 1,
@@ -55,8 +39,8 @@ struct ilbm_desc {
 	struct mparser mp;
 	struct wuptr body;
 	struct palette *pal;
+	struct palette_cycle *cycle;
 	struct ilbm_tiny tiny;
-	struct ilbm_crng_array crng;
 
 	enum ilbm_format format;
 	unsigned colors;
@@ -69,9 +53,6 @@ struct ilbm_desc {
 };
 
 void ilbm_cleanup(struct ilbm_desc *desc);
-
-void ilbm_palette_cycle(const struct ilbm_desc *desc, struct palette *pal,
-double time);
 
 size_t ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
 struct wuimg *tiny);
