@@ -144,6 +144,11 @@ enum wu_error dec_decode(struct image_context *image) {
 		struct image_file *infile = &image->file;
 		const struct wu_conf *conf = &image->conf;
 		const struct fmt_desc *desc = &image->desc;
+		if (desc->is_auto || desc->dec.fn->alloc_single) {
+			if (!alloc_sub_images(infile, 1)) {
+				return wu_alloc_error;
+			}
+		}
 		st = desc->is_auto
 			? auto_init(infile, conf, desc->dec.desc)
 			: desc->dec.fn->dec(infile, conf);

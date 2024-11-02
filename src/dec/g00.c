@@ -9,11 +9,7 @@ static void g00_end(struct image_file *infile) {
 
 static enum wu_error decode(struct image_file *infile,
 const struct wu_conf *wuconf, struct g00_desc *desc) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	const enum wu_error st = g00_read_header(desc, img, infile->ifp);
 	if (st != wu_ok) {
 		return st;
@@ -44,6 +40,7 @@ const struct wu_conf *wuconf) {
 }
 
 const struct image_fn g00_fn = {
+	.alloc_single = true,
 	.dec = g00_dec,
 	.end = g00_end,
 };

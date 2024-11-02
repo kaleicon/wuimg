@@ -59,11 +59,7 @@ const struct wu_conf *wuconf) {
 	struct pcx_desc desc;
 	enum wu_error err = pcx_open_file(&desc, mp_map(infile->map));
 	if (err == wu_ok) {
-		struct wuimg *img = alloc_sub_images(infile, 1);
-		if (img) {
-			return common_pcx(&desc, img, wuconf);
-		}
-		return wu_alloc_error;
+		return common_pcx(&desc, infile->sub_img, wuconf);
 	}
 	return err;
 }
@@ -105,7 +101,11 @@ const struct wu_conf *wuconf) {
 	return st;
 }
 
-const struct image_fn pcx_fn = {.mmap = true, .dec = pcx_dec};
+const struct image_fn pcx_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.dec = pcx_dec,
+};
 const struct image_fn dcx_fn = {
 	.mmap = true,
 	.dec = dcx_dec,

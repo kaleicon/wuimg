@@ -67,6 +67,7 @@ typedef void (*fmt_end_t)(struct image_file *infile);
 
 struct image_fn {
 	bool mmap;
+	bool alloc_single;
 	fmt_dec_t dec;
 	fmt_callback_t callback;
 	fmt_end_t end;

@@ -58,11 +58,7 @@ static void read_metadata(struct wu_tree *tree, FLIF_IMAGE *frame) {
 
 static enum wu_error setup_img(struct image_file *infile,
 const struct wu_conf *wuconf, struct flif_state *ds) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec, 0);
 	img->w = flif_image_get_width(frame);
 	img->h = flif_image_get_height(frame);
@@ -137,6 +133,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn flif_fn = {
 	.mmap = true,
+	.alloc_single = true,
 	.dec = flif_dec,
 	.callback = flif_callback,
 	.end = flif_end,

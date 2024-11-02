@@ -32,11 +32,7 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 		return wu_unsupported_feature;
 	}
 
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	img->w = jbg_dec_getwidth(state);
 	img->h = jbg_dec_getheight(state);
 	if (wuimg_exceeds_limit(img, wuconf)) {
@@ -66,4 +62,8 @@ const struct wu_conf *wuconf) {
 	return st;
 }
 
-const struct image_fn jbig_fn = {.mmap = true, .dec = jbig_dec};
+const struct image_fn jbig_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.dec = jbig_dec
+};

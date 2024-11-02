@@ -412,10 +412,7 @@ const struct wu_conf *wuconf) {
 	read_metadata(&infile->metadata, ds,
 		wuconf->webp_use_homegrown_renderer);
 
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
+	struct wuimg *img = infile->sub_img;
 	img->w = (size_t)ds->config.input.width;
 	img->h = (size_t)ds->config.input.height;
 	img->bitdepth = 8;
@@ -452,6 +449,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn webp_fn = {
 	.mmap = true,
+	.alloc_single = true,
 	.dec = webp_dec,
 	.callback = webp_callback,
 	.end = webp_end,

@@ -142,15 +142,6 @@ const struct wu_conf *wuconf, const opj_image_t *jp2) {
 static enum wu_error jpeg2000_dec(struct image_file *infile,
 const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 	struct wuimg *img = infile->sub_img;
-	if (img) {
-		wuimg_clear(img);
-	} else {
-		img = alloc_sub_images(infile, 1);
-		if (!img) {
-			return wu_alloc_error;
-		}
-	}
-
 	opj_codec_t *dec = opj_create_decompress(format);
 	if (!dec) {
 		return wu_alloc_error;
@@ -212,5 +203,13 @@ const struct wu_conf *wuconf) {
 	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_J2K);
 }
 
-const struct image_fn jp2_fn = {.dec = jp2_dec, .end = jpeg2000_end};
-const struct image_fn j2k_fn = {.dec = j2k_dec, .end = jpeg2000_end};
+const struct image_fn jp2_fn = {
+	.alloc_single = true,
+	.dec = jp2_dec,
+	.end = jpeg2000_end,
+};
+const struct image_fn j2k_fn = {
+	.alloc_single = true,
+	.dec = j2k_dec,
+	.end = jpeg2000_end,
+};

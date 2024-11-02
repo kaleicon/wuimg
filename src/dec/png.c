@@ -157,11 +157,7 @@ static bool read_palette(const struct png_state *png, struct wuimg *img) {
 
 static enum wu_error decode_image(struct image_file *infile,
 const struct wu_conf *wuconf, struct png_state *png) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	img->w = png_get_image_width(png->png, png->info);
 	img->h = png_get_image_height(png->png, png->info);
 	img->channels = png_get_channels(png->png, png->info);
@@ -249,4 +245,7 @@ const struct wu_conf *wuconf) {
 	return wu_alloc_error;
 }
 
-const struct image_fn png_fn = {.dec = png_dec};
+const struct image_fn png_fn = {
+	.alloc_single = true,
+	.dec = png_dec
+};

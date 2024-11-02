@@ -191,10 +191,7 @@ const struct wu_conf *wuconf) {
 		return handle_gerror(infile, err, wu_open_error);
 	}
 
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
+	struct wuimg *img = infile->sub_img;
 	img->channels = 4;
 	img->bitdepth = 8;
 	img->alpha = alpha_associated;
@@ -209,6 +206,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn svg_fn = {
 	.mmap = true,
+	.alloc_single = true,
 	.dec = svg_dec,
 	.callback = svg_callback,
 	.end = svg_end,

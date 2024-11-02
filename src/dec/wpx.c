@@ -22,12 +22,7 @@ const struct wu_conf *wuconf) {
 	enum wu_error st = wpx_bmp_open(&desc, mp_map(infile->map));
 	if (st == wu_ok) {
 		tree_bud_leaf_u(&infile->metadata, "Depth", desc.depth);
-		struct wuimg *img = alloc_sub_images(infile, 1);
-		if (img) {
-			st = single_decode(img, wuconf, &desc);
-		} else {
-			st = wu_alloc_error;
-		}
+		st = single_decode(infile->sub_img, wuconf, &desc);
 		wpx_bmp_cleanup(&desc);
 	}
 	return st;
@@ -123,7 +118,11 @@ const struct wu_conf *wuconf) {
 	return st;
 }
 
-const struct image_fn wbm_fn = {.mmap = true, .dec = wbm_dec};
+const struct image_fn wbm_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.dec = wbm_dec,
+};
 const struct image_fn wia_fn = {
 	.mmap = true,
 	.dec = wia_dec,

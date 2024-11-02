@@ -172,11 +172,7 @@ const uint32_t val) {
 
 enum wu_error auto_init(struct image_file *infile, const struct wu_conf *conf,
 const struct auto_desc *desc) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	img->w = desc->w;
 	img->h = desc->h;
 	img->channels = desc->channels;

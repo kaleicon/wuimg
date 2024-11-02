@@ -311,11 +311,7 @@ const struct wu_conf *wuconf) {
 		return wu_invalid_header;
 	}
 
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	img->w = (size_t)gif_file->SWidth;
 	img->h = (size_t)gif_file->SHeight;
 	if (wuimg_exceeds_limit(img, wuconf)) {
@@ -378,5 +374,8 @@ const struct wu_conf *wuconf) {
 }
 
 const struct image_fn gif_fn = {
-	.dec = gif_dec, .callback = gif_callback, .end = gif_end,
+	.alloc_single = true,
+	.dec = gif_dec,
+	.callback = gif_callback,
+	.end = gif_end,
 };

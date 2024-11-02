@@ -42,22 +42,19 @@ rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
 
 enum wu_error rast_trivial_fread(struct image_file *infile,
 const struct wu_conf *wuconf, rast_open_t open_fn) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (img) {
-		enum wu_error st = (*open_fn)(img, infile->ifp);
-		if (st == wu_ok) {
-			if (!wuimg_exceeds_limit(img, wuconf)) {
-				st = wuimg_alloc(img);
-				if (st == wu_ok) {
-					return fmt_load_raster_swap(img,
-						infile->ifp, big_endian)
-						? wu_ok : wu_unexpected_eof;
-				}
-				return st;
+	struct wuimg *img = infile->sub_img;
+	enum wu_error st = (*open_fn)(img, infile->ifp);
+	if (st == wu_ok) {
+		if (!wuimg_exceeds_limit(img, wuconf)) {
+			st = wuimg_alloc(img);
+			if (st == wu_ok) {
+				return fmt_load_raster_swap(img,
+					infile->ifp, big_endian)
+					? wu_ok : wu_unexpected_eof;
 			}
-			return wu_exceeds_size_limit;
+			return st;
 		}
-		return st;
+		return wu_exceeds_size_limit;
 	}
-	return wu_alloc_error;
+	return st;
 }

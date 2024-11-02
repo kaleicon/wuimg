@@ -54,11 +54,7 @@ static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
 
 static enum wu_error dec_wrapper(struct image_file *infile,
 const struct wu_conf *wuconf, struct tga_desc *desc) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	enum wu_error st = tga_parse_header(desc, img, infile->ifp);
 	if (st) {
 		return st;
@@ -122,4 +118,7 @@ const struct wu_conf *wuconf) {
 	return err;
 }
 
-const struct image_fn tga_fn = {.dec = tga_dec};
+const struct image_fn tga_fn = {
+	.alloc_single = true,
+	.dec = tga_dec
+};

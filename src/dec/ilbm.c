@@ -51,7 +51,7 @@ const enum image_event ev) {
 	case ev_subcycle:
 		if (!img[state->idx].data) {
 			const bool ok = state->idx
-				? ilbm_decode_tiny(desc, img, img + 1)
+				? ilbm_decode_tiny(desc, img, img + state->idx)
 				: ilbm_decode_main(desc, img);
 			return ok ? wu_ok : wu_decoding_error;
 		}
@@ -77,11 +77,7 @@ const struct wu_conf *wuconf) {
 	if (st != wu_ok) {
 		return st;
 	}
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	const char type[] = {FOURCC_TO_STR(desc->format)};
 	struct wu_tree *type_meta = tree_add_branch(&infile->metadata, type);
 	if (type_meta) {
@@ -107,6 +103,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn ilbm_fn = {
 	.mmap = true,
+	.alloc_single = true,
 	.dec = ilbm_dec,
 	.callback = ilbm_callback,
 	.end = ilbm_end,

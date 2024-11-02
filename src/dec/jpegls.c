@@ -70,11 +70,7 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 
 	tree_add_leaf_utf8(&infile->metadata, "Interleave", interleave_str(mode));
 
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	img->w = frame.width;
 	img->h = frame.height;
 	if (wuimg_exceeds_limit(img, wuconf)) {
@@ -131,4 +127,8 @@ const struct wu_conf *wuconf) {
 	return st;
 }
 
-const struct image_fn jpegls_fn = {.mmap = true, .dec = jpegls_dec};
+const struct image_fn jpegls_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.dec = jpegls_dec
+};

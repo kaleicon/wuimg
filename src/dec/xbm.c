@@ -21,12 +21,8 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 
 static enum wu_error xbm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
 	struct xbm_desc desc;
+	struct wuimg *img = infile->sub_img;
 	const enum wu_error st = xbm_parse_header(&desc, img,
 		mp_map(infile->map));
 	if (st) {
@@ -40,4 +36,8 @@ const struct wu_conf *wuconf) {
 	return xbm_decode(&desc, img) ? wu_ok : wu_decoding_error;
 }
 
-const struct image_fn xbm_fn = {.mmap = true, .dec = xbm_dec};
+const struct image_fn xbm_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.dec = xbm_dec,
+};

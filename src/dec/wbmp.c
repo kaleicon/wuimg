@@ -7,4 +7,7 @@ const struct wu_conf *wuconf) {
 	return rast_trivial_fread(infile, wuconf, wbmp_open_file);
 }
 
-const struct image_fn wbmp_fn = {.dec = wbmp_dec};
+const struct image_fn wbmp_fn = {
+	.alloc_single = true,
+	.dec = wbmp_dec,
+};
