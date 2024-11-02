@@ -72,6 +72,7 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"COKE format.", fmt_coke},
 	{"\xff\xff\xff\xff", "TRUP", fmt_eggpaint},
+	{"\xff\xff\xff\xff", "Indy", fmt_indy},
 	{"\xff\xff\xff\xff", "tru?", fmt_trp},
 
 #ifdef WU_ENABLE_DIB
@@ -385,11 +386,13 @@ static struct fmt_ext ext_map[] = {
 	{"nlm", -1},
 
 	// Atari Falcon True Color family
-	{"tg1", -1},
-	{"trp", -1},
-	{"tru", -1},
+	{"hgr", -1}, // IndyPaint
+	{"tg1", -1}, // COKE
+	{"trp", -1}, // EggPaint, Spooky Sprites TRU
+	{"tru", -1}, // IndyPaint, Spooky Sprites TRU
 	{"ftc", fmt_ftc},
 	{"god", fmt_god},
+
 	// Atari ST High Resolution
 	{"da4", fmt_da4},
 	{"doo", fmt_doo},

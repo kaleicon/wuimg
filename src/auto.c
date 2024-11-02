@@ -111,7 +111,7 @@ const struct auto_desc ftc_desc = {
 };
 // GodPaint
 static const struct auto_read god_read[] = {
-	{auto_skip, 2},
+	{auto_skip, 2}, // File ID, but files have unconsistent values
 	{'w', 2},
 	{'h', 2},
 };
@@ -120,6 +120,19 @@ const struct auto_desc god_desc = {
 	.layout = pix_bgra, .bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(god_read),
+};
+// IndyPaint
+static const struct auto_read indy_read[] = {
+	{auto_match, AUTO_CSTR("Indy")},
+	{'w', 2},
+	{'h', 2},
+	{auto_skip, 248}, // Must be zero
+};
+const struct auto_desc indy_desc = {
+	.channels = 1, .bitdepth = 16,
+	.layout = pix_bgra, .bitfield = 0x565,
+	.endian = big_endian,
+	AUTO_READ(indy_read),
 };
 // Spooky Sprites TRP
 static const struct auto_read trp_read[] = {
@@ -158,16 +171,16 @@ enum wu_error auto_load(struct image_file *infile, const struct auto_desc *desc)
 	return st;
 }
 
-static void set_value(struct wuimg *img, const enum auto_dst dst,
-const uint32_t val) {
-	switch (dst) {
-	case auto_width: img->w = val; return;
-	case auto_height: img->h = val; return;
-	case auto_skip: return;
-	case auto_match:
-		break;
+static size_t get_value(const uint8_t *buf, const size_t pos,
+const uint8_t size, const enum endianness endian) {
+	switch (size) {
+	case 1: return buf[pos];
+	case 2: return buf_endian16(buf + pos, endian);
+	case 4: return buf_endian32(buf + pos, endian);
 	}
-	fatal_bug(__func__, "Nowhere to put value");
+	fatal_bug("get_value() in auto_init()", "Unexpected word size");
+	// Fix no-return warnings
+	return 0;
 }
 
 enum wu_error auto_init(struct image_file *infile, const struct wu_conf *conf,
@@ -192,7 +205,7 @@ const struct auto_desc *desc) {
 			read += desc->read[r].size;
 		}
 
-		uint8_t buf[18];
+		uint8_t buf[256];
 		if (read > sizeof(buf)) {
 			fatal_bug(__func__, "Buffer is too small");
 		}
@@ -204,28 +217,20 @@ const struct auto_desc *desc) {
 		size_t pos = 0;
 		for (uint8_t r = 0; r < desc->rlen; ++r) {
 			const struct auto_read *dr = desc->read + r;
-			if (dr->dst == auto_match) {
+			switch (dr->dst) {
+			case auto_match:
 				if (memcmp(buf + pos, dr->bytes, dr->size)) {
 					return wu_invalid_header;
 				}
-			} else {
-				uint32_t val;
-				switch (dr->size) {
-				case 1:
-					val = buf[pos];
-					break;
-				case 2:
-					val = buf_endian16(buf + pos, desc->endian);
-					break;
-				case 4:
-					val = buf_endian32(buf + pos, desc->endian);
-					break;
-				default:
-					fatal_bug(__func__, "Unexpected word size");
-					// Fix uninitialized warnings
-					return wu_invalid_params;
-				}
-				set_value(img, dr->dst, val);
+				break;
+			case auto_skip:
+				break;
+			case auto_width:
+				img->w = get_value(buf, pos, dr->size, desc->endian);
+				break;
+			case auto_height:
+				img->h = get_value(buf, pos, dr->size, desc->endian);
+				break;
 			}
 			pos += dr->size;
 		}
