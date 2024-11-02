@@ -59,16 +59,15 @@ static const short RAW_IF_PRESENT = fmt_raw;
 static const short RAW_IF_PRESENT = -1;
 #endif
 
-/* Be careful with masks. This array is sorted dumbly. */
 static struct fmt_magic magic_map[] = {
 	// Auto formats
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff", "farbfeld", fmt_farbfeld},
+	{"\xff\xff\xff" "\xff\xff\xff", "B&W256", fmt_gemview},
 	/* 0x2c and 0x20 are the image dimensions, but they're always the same
 	 * so include them to make matching more robust. */
-	{"\xff\xff\xff" "\xff\xff\xff", "B&W256", fmt_gemview},
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\x01\x00\x01\x00\x2c\x00\x20\x00", fmt_hpicon},
-	{"\xff\xff\xff\xff" "\xff\xf8", "NLM " "\x01\x00", fmt_nlm},
+	{"\xff\xff\xff\xff" "\xff\xfc", "NLM " "\x01\x00", fmt_nlm},
 
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"COKE format.", fmt_coke},
@@ -98,8 +97,8 @@ static struct fmt_magic magic_map[] = {
 #endif //WU_ENABLE_IDSP
 
 #ifdef WU_ENABLE_ILBM
-	{"\xff\xff\xff\xff\0\0\0\0\xff\xff\xff\xff", "FORM\0\0\0\0ILBM", fmt_ilbm},
-	{"\xff\xff\xff\xff\0\0\0\0\xff\xff\xff\xff", "FORM\0\0\0\0PBM ", fmt_ilbm},
+	{"\xff\xff\xff\xff" "\0\0\0\0" "\xff\xff\xff\xff", "FORM\0\0\0\0ILBM", fmt_ilbm},
+	{"\xff\xff\xff\xff" "\0\0\0\0" "\xff\xff\xff\xff", "FORM\0\0\0\0PBM ", fmt_ilbm},
 #endif // WU_ENABLE_ILBM
 
 #ifdef WU_ENABLE_MAG
@@ -151,7 +150,7 @@ static struct fmt_magic magic_map[] = {
 #endif // WU_ENABLE_PIC
 
 #ifdef WU_ENABLE_PIC2
-	{"\xff\xff\xff", "P2DT", fmt_pic2},
+	{"\xff\xff\xff\xff", "P2DT", fmt_pic2},
 #endif // WU_ENABLE_PIC2
 
 #ifdef WU_ENABLE_PICTOR
@@ -167,10 +166,8 @@ static struct fmt_magic magic_map[] = {
 
 	{"\xff\xff\xff", "P7\n", fmt_pnm}, // PAM
 	{"\xff\xff\xff\xff\xff\xff\xff", "P7 332\n", fmt_pnm}, // Xv thumbnail
-	{"\xff\xff", "PF", fmt_pnm}, // Color PFM
-	{"\xff\xff", "Pf", fmt_pnm}, // Gray PFM
-	{"\xff\xff", "PH", fmt_pnm}, // Color PHM
-	{"\xff\xff", "Ph", fmt_pnm}, // Gray PHM
+	{"\xff\xdf", "PF", fmt_pnm}, // 'F', 'f' (color/gray PFM)
+	{"\xff\xdf", "PH", fmt_pnm}, // 'H', 'h' (color/gray PHM)
 
 	{"\xff\xff\xff\xff\xff\xff", "PG ML ", fmt_pnm}, // PGX
 	{"\xff\xff\xff\xff\xff\xff", "PG LM ", fmt_pnm},
@@ -215,17 +212,10 @@ static struct fmt_magic magic_map[] = {
 
 #ifdef WU_ENABLE_WGTSPR
 	// Truncated due to length
-	// FIXME: Masking the first byte screws up sorting
+	{"\xfc\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"\x00\0 Sprite Fi", fmt_wgtspr}, // 0..3
 	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\x04\0 Sprite Fi", fmt_wgtspr}, // 4
-	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
-		"\x03\0 Sprite Fi", fmt_wgtspr}, // 3
-	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
-		"\x02\0 Sprite Fi", fmt_wgtspr}, // 2
-	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
-		"\x01\0 Sprite Fi", fmt_wgtspr}, // 1
-	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
-		"\x00\0 Sprite Fi", fmt_wgtspr}, // 0
 #endif // WU_ENABLE_WGTSPR
 
 #ifdef WU_ENABLE_WPX
@@ -253,11 +243,11 @@ static struct fmt_magic magic_map[] = {
 #if defined WU_ENABLE_AVIF || defined WU_ENABLE_HEIF
 	/* See WU_ENABLE_HEIF for notes. */
 	// avic|avis
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypavif", fmt_avif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypavic", fmt_avif},
-	{"\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypavis", fmt_avif},
 #endif // AVIF || HEIF
 
@@ -281,34 +271,34 @@ static struct fmt_magic magic_map[] = {
 	 * also be a multiple of 4. */
 
 	// heic|heix|heim|heis
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheic", fmt_heif},
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheix", fmt_heif},
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheim", fmt_heif},
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypheis", fmt_heif},
 
 	// hevc|hevx|hevm|hevs
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevc", fmt_heif},
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevx", fmt_heif},
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevm", fmt_heif},
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftyphevs", fmt_heif},
 
 	// mif1|msf1
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypmif1", fmt_heif},
-	{"\xff\xff\xff\x03\xff\xff\xff\xff\xff\xff\xff\xff",
+	{"\xff\xff\xff\x03" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
 		"\0\0\0\0" "ftypmsf1", fmt_heif},
 #endif // WU_ENABLE_HEIF
 
 #ifdef WU_ENABLE_JBIG2
-	{"\xff\xff\xff\xff\xff\xff\xff\xff", "\x97JB2\x0d\x0a\x1a\x0a",
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff", "\x97JB2" "\x0d\x0a\x1a\x0a",
 		fmt_jbig2},
 #endif // WU_ENABLE_JBIG2
 
@@ -371,7 +361,7 @@ static struct fmt_magic magic_map[] = {
 #endif // WU_ENABLE_TIFF
 
 #ifdef WU_ENABLE_WEBP
-	{"\xff\xff\xff\xff\0\0\0\0\xff\xff\xff\xff", "RIFF\0\0\0\0WEBP", fmt_webp},
+	{"\xff\xff\xff\xff" "\0\0\0\0" "\xff\xff\xff\xff", "RIFF\0\0\0\0WEBP", fmt_webp},
 #endif // WU_ENABLE_WEBP
 };
 
@@ -861,12 +851,22 @@ static const char *mime_application_map[] = {
 	NULL, // Silence pedantic warnings
 };
 
-/* These two functions are a bit different from the ones in dec.c */
+static int magic_bits(const struct fmt_magic *magic) {
+	int bits = 0;
+	for (size_t i = 0; i < sizeof(magic->and_mask); ++i) {
+		for (int b = 0; b < 8; ++b) {
+			bits += (magic->and_mask[i] >> b) & 1;
+		}
+	}
+	return bits;
+}
+
 static int quine_fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 	const struct fmt_magic *restrict magic1 = m1;
 	const struct fmt_magic *restrict magic2 = m2;
-	int diff = 0;
-	for (size_t i = 0; i < sizeof(magic1->bytes) && !diff; ++i) {
+	// Sort by number of mask bits, then by ASCII order
+	int diff = magic_bits(magic2) - magic_bits(magic1);
+	for (size_t i = 0; !diff && i < sizeof(magic1->bytes); ++i) {
 		diff = (magic1->bytes[i] & magic1->and_mask[i])
 			- (magic2->bytes[i] & magic2->and_mask[i]);
 	}

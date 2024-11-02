@@ -19,12 +19,9 @@ static int fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 	const unsigned char *restrict magic1 = m1;
 	const struct fmt_magic *restrict magic2 = m2;
 	int diff = 0;
-	for (size_t i = 0; i < MAX_MAG_LEN; ++i) {
+	for (size_t i = 0; !diff && i < MAX_MAG_LEN; ++i) {
 		const unsigned char m = magic2->and_mask[i];
 		diff = (magic1[i] & m) - (magic2->bytes[i] & m);
-		if (diff) {
-			break;
-		}
 	}
 	return diff;
 }
@@ -48,8 +45,12 @@ static const struct fmt_magic * search_magic(struct image_file *infile) {
 	if (read < MIN_MAG_LEN) {
 		return NULL;
 	}
-	return bsearch(magic, magic_map, ARRAY_LEN(magic_map),
-		sizeof(*magic_map), fmaskmagiccmp);
+	for (size_t i = 0; i < ARRAY_LEN(magic_map); ++i) {
+		if (!fmaskmagiccmp(magic, magic_map + i)) {
+			return magic_map + i;
+		}
+	}
+	return NULL;
 }
 
 static const struct fmt_ext * search_extension(const struct wuptr name,
