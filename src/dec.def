@@ -6,6 +6,7 @@
 #ifdef WU_ENABLE_ATARI
 WUDEC(dali, "Dali uncompressed")
 WUDEC(degas, "DEGAS bitmaps")
+WUDEC(bld, "MegaPaint")
 WUDEC(tiny, "Tiny Stuff")
 #endif
 

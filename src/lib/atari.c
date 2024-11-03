@@ -5,6 +5,7 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/graphics_adapters.h"
+#include "raster/fmt.h"
 
 #include "lib/atari.h"
 
@@ -335,6 +336,82 @@ FILE *ifp) {
 			.size = zumin(rem, size_limit),
 		};
 		return set_dims(img, desc->res, src + 1);
+	}
+	return wu_unexpected_eof;
+}
+
+/* MegaPaint */
+
+static size_t bld_rle(uint8_t *restrict dst, const size_t dst_len,
+const uint8_t *restrict src, const size_t src_len) {
+	size_t d = 0;
+	size_t s = 0;
+	while (s < src_len) {
+		const uint8_t val = src[s];
+		++s;
+		size_t run = 1;
+		switch (val) {
+		case 0x00: case 0xff:
+			if (s >= src_len) {
+				return d;
+			}
+			run = src[s] + 1;
+			++s;
+			break;
+		}
+		if (d + run > dst_len) {
+			break;
+		}
+		memset(dst + d, val, run);
+		d += run;
+	}
+	return d;
+}
+
+size_t bld_decode(struct bld_desc *desc, struct wuimg *img) {
+	size_t w = 0;
+	if (wuimg_alloc_noverify(img)) {
+		if (desc->compressed) {
+			size_t rem = file_remaining(desc->ifp);
+			uint8_t *rle = malloc(rem);
+			if (rle) {
+				const size_t len = fread(rle, 1, rem, desc->ifp);
+				w = bld_rle(img->data, wuimg_size(img),
+					rle, len);
+				free(rle);
+			}
+		} else {
+			w = fmt_load_raster(img, desc->ifp);
+		}
+	}
+	return w;
+}
+
+enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
+	/* MegaPaint format:
+		Offset  Type    Name
+		0       s16     Width  // If width negative, file is compressed
+		2       s16     Height // Actual dims are the absolute value + 1
+		4
+	 * MegaPaint extension and header conflict with BSAVE formats.
+	*/
+	uint16_t buf[2];
+	if (fread(buf, sizeof(buf), 1, ifp)) {
+		int16_t height = (int16_t)endian16(buf[1], big_endian);
+		if (height > 0) {
+			int16_t width = (int16_t)endian16(buf[0], big_endian);
+			*desc = (struct bld_desc) {
+				.ifp = ifp,
+				.compressed = width < 0,
+			};
+			img->w = (size_t)abs(width) + 1;
+			img->h = (size_t)height + 1;
+			img->channels = 1;
+			img->bitdepth = 1;
+			img->attr = pix_inverted;
+			return wuimg_verify(img);
+		}
+		return wu_invalid_header;
 	}
 	return wu_unexpected_eof;
 }

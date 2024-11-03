@@ -6,6 +6,7 @@ static void res_metadata(struct wu_tree *meta, const enum atari_st_res res) {
 	tree_add_leaf_utf8(meta, "Resolution", atari_st_res_str(res));
 }
 
+/* Dali */
 static enum wu_error dali_dec(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct dali_desc desc;
@@ -22,6 +23,7 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+/* DEGAS */
 static void degas_end(struct image_file *infile) {
 	struct degas_desc *desc = infile->dec_state;
 	degas_free(desc);
@@ -67,6 +69,25 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+/* MegaPaint */
+static enum wu_error bld_dec(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct bld_desc desc;
+	struct wuimg *img = infile->sub_img;
+	enum wu_error st = bld_parse(&desc, img, infile->ifp);
+	if (st == wu_ok) {
+		tree_bud_leaf_bool(&infile->metadata, "Compressed", desc.compressed);
+		if (wuimg_exceeds_limit(img, conf)) {
+			st = wu_exceeds_size_limit;
+		} else {
+			st = bld_decode(&desc, img)
+				? wu_ok : wu_decoding_error;
+		}
+	}
+	return st;
+}
+
+/* Tiny Stuff */
 static void tiny_end(struct image_file *infile) {
 	struct tiny_desc *desc = infile->dec_state;
 	tiny_free(desc);
@@ -108,6 +129,7 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+
 const struct image_fn dali_fn = {
 	.alloc_single = true,
 	.dec = dali_dec,
@@ -118,6 +140,11 @@ const struct image_fn degas_fn = {
 	.dec = degas_dec,
 	.callback = degas_callback,
 	.end = degas_end,
+};
+
+const struct image_fn bld_fn = {
+	.alloc_single = true,
+	.dec = bld_dec,
 };
 
 const struct image_fn tiny_fn = {

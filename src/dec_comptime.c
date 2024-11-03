@@ -409,6 +409,8 @@ static struct fmt_ext ext_map[] = {
 	{"pc2", fmt_degas},
 	{"pc3", fmt_degas},
 
+	{"bld", fmt_bld}, // MegaPaint
+
 	{"tny", fmt_tiny},
 	{"tn1", fmt_tiny},
 	{"tn2", fmt_tiny},

@@ -12,7 +12,7 @@ enum atari_st_res {
 
 const char * atari_st_res_str(enum atari_st_res res);
 
-
+/* Dali */
 struct dali_desc {
 	FILE *ifp;
 	enum atari_st_res res;
@@ -23,7 +23,7 @@ size_t dali_decode(struct dali_desc *desc, struct wuimg *img);
 enum wu_error dali_parse(struct dali_desc *desc, struct wuimg *img, FILE *ifp,
 const uint8_t ext[static 3]);
 
-
+/* DEGAS */
 struct degas_desc {
 	FILE *ifp;
 	size_t size;
@@ -40,7 +40,17 @@ size_t degas_decode(struct degas_desc *desc, struct wuimg *img);
 enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img,
 FILE *ifp);
 
+/* MegaPaint */
+struct bld_desc {
+	FILE *ifp;
+	bool compressed;
+};
 
+size_t bld_decode(struct bld_desc *desc, struct wuimg *img);
+
+enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp);
+
+/* Tiny Stuff */
 struct tiny_desc {
 	struct mparser mp;
 	enum atari_st_res res:8;
