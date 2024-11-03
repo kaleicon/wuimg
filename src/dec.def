@@ -5,7 +5,7 @@
 
 #ifdef WU_ENABLE_ATARI
 WUDEC(dali, "Dali uncompressed")
-WUDEC(degas, "DEGAS bitmaps")
+WUDEC(degas, "DEGAS and DEGAS Elite")
 WUDEC(bld, "MegaPaint")
 WUDEC(tiny, "Tiny Stuff")
 #endif
@@ -40,7 +40,7 @@ WUDEC(idsp, "id Software Sprite")
 #endif
 
 #ifdef WU_ENABLE_ILBM
-WUDEC(ilbm, "Interleaved Bitmap")
+WUDEC(ilbm, "Interleaved Bitmap (ILBM and PBM)")
 #endif
 
 #ifdef WU_ENABLE_MAC
@@ -93,7 +93,7 @@ WUDEC(pictor, "PCPaint PICtor")
 #endif
 
 #ifdef WU_ENABLE_PNM
-WUDEC(pnm, "PNM format family")
+WUDEC(pnm, "PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)")
 #endif
 
 #ifdef WU_ENABLE_PRT
