@@ -397,7 +397,11 @@ static struct fmt_ext ext_map[] = {
 	{"da4", fmt_da4},
 	{"doo", fmt_doo},
 
-#ifdef WU_ENABLE_ATARIST
+#ifdef WU_ENABLE_ATARI
+	{"sd0", fmt_dali},
+	{"sd1", fmt_dali},
+	{"sd2", fmt_dali},
+
 	{"pi1", fmt_degas},
 	{"pi2", fmt_degas},
 	{"pi3", fmt_degas},
@@ -676,10 +680,10 @@ static struct fmt_ext ext_map[] = {
 	{"jps", -1},
 	{"mpo", -1},
 	{"thm", -1},
-#ifndef WU_ENABLE_ATARIST
+#ifndef WU_ENABLE_ATARI
 	// Not sure where I got this one from. Conflicts with Tiny Stuff.
 	{"tn3", -1},
-#endif // !WU_ENABLE_ATARIST
+#endif // !WU_ENABLE_ATARI
 #endif // WU_ENABLE_JPEG
 
 #ifdef WU_ENABLE_JPEG2000

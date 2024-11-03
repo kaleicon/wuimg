@@ -3,7 +3,8 @@
 /* Enumerate known formats
  * Format: WUDEC(base_name, description) */
 
-#ifdef WU_ENABLE_ATARIST
+#ifdef WU_ENABLE_ATARI
+WUDEC(dali, "Dali uncompressed")
 WUDEC(degas, "DEGAS bitmaps")
 WUDEC(tiny, "Tiny Stuff")
 #endif

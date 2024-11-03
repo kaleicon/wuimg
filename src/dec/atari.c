@@ -1,6 +1,26 @@
 // SPDX-License-Identifier: 0BSD
 #include "wudefs.h"
-#include "lib/atarist.h"
+#include "lib/atari.h"
+
+static void res_metadata(struct wu_tree *meta, const enum atari_st_res res) {
+	tree_add_leaf_utf8(meta, "Resolution", atari_st_res_str(res));
+}
+
+static enum wu_error dali_dec(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct dali_desc desc;
+	struct wuimg *img = infile->sub_img;
+	enum wu_error st = dali_parse(&desc, img, infile->ifp, infile->ext);
+	if (st == wu_ok) {
+		res_metadata(&infile->metadata, desc.res);
+		if (wuimg_exceeds_limit(img, conf)) {
+			st = wu_exceeds_size_limit;
+		} else {
+			st = dali_decode(&desc, img) ? wu_ok : wu_decoding_error;
+		}
+	}
+	return st;
+}
 
 static void degas_end(struct image_file *infile) {
 	struct degas_desc *desc = infile->dec_state;
@@ -24,11 +44,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return wu_no_change;
 }
 
-static void res_metadata(struct wu_tree *meta, const enum atarist_res res) {
-	tree_add_leaf_utf8(meta, "Resolution", atarist_res_str(res));
-}
-
-static void get_metadata(struct wu_tree *meta, const struct degas_desc *desc) {
+static void degas_metadata(struct wu_tree *meta, const struct degas_desc *desc) {
 	res_metadata(meta, desc->res);
 	tree_bud_leaf_bool(meta, "Compressed", desc->compressed);
 	tree_bud_leaf_bool(meta, "Elite", desc->is_elite);
@@ -43,7 +59,7 @@ const struct wu_conf *conf) {
 		struct wuimg *img = infile->sub_img;
 		st = degas_parse(desc, img, infile->ifp);
 		if (st == wu_ok) {
-			get_metadata(&infile->metadata, desc);
+			degas_metadata(&infile->metadata, desc);
 			st = wuimg_exceeds_limit(img, conf)
 				? wu_exceeds_size_limit : wu_ok;
 		}
@@ -92,8 +108,12 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+const struct image_fn dali_fn = {
+	.alloc_single = true,
+	.dec = dali_dec,
+};
+
 const struct image_fn degas_fn = {
-	.mmap = false,
 	.alloc_single = true,
 	.dec = degas_dec,
 	.callback = degas_callback,

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: 0BSD
 fmt_map = {
 	'internal': [
-		'atarist',
+		'atari',
 		'c64',
 		'dib',
 		'dpx',

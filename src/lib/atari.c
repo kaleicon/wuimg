@@ -6,7 +6,7 @@
 #include "misc/mem.h"
 #include "raster/graphics_adapters.h"
 
-#include "lib/atarist.h"
+#include "lib/atari.h"
 
 /* In the Atari ST, the bits for each 16 pixel run are stored in a planar
  * format, with each bitplane kept in a 16-bit big-endian word. The number
@@ -42,16 +42,55 @@ static const uint8_t ST_HIGH_DEPTH = 1;
 static const size_t ST_HIGH_HEIGHT = 400;
 static const size_t ST_HIGH_WIDTH = VIDEO_RAM * (8/ST_HIGH_DEPTH) / ST_HIGH_HEIGHT;
 
-const char * atarist_res_str(const enum atarist_res res) {
+const char * atari_st_res_str(const enum atari_st_res res) {
 	switch (res) {
-	case atarist_res_low: return "Low";
-	case atarist_res_medium: return "Medium";
-	case atarist_res_high: return "High";
+	case atari_st_res_low: return "Low";
+	case atari_st_res_medium: return "Medium";
+	case atari_st_res_high: return "High";
 	}
 	return "???";
 }
 
 /* Common functions */
+
+static void st_interleave(struct wuimg *img, const uint16_t *src,
+const enum atari_st_res res) {
+	const uint8_t planes = (res == atari_st_res_low)
+		? ST_LOW_DEPTH : ST_MEDIUM_DEPTH;
+	const size_t width = (res == atari_st_res_low)
+		? ST_LOW_WIDTH : ST_MEDIUM_WIDTH;
+	const size_t height = 200;
+
+	const size_t src_stride = width/(16/planes);
+	for (size_t y = 0; y < height; ++y) {
+		for (size_t group = 0; group < width/16; ++group) {
+			const size_t d_base = y*width + group*16;
+			const size_t s_base = y*src_stride + (group * planes);
+			for (uint8_t p = 0; p < planes; ++p) {
+				const size_t s = endian16(src[s_base + p], big_endian);
+				for (uint8_t bit = 0; bit < 16; ++bit) {
+					img->data[d_base + bit] |= (uint8_t)(
+						((s << bit) & 0x8000) >> (15 - p)
+					);
+				}
+			}
+		}
+	}
+}
+
+static size_t load_raw(struct wuimg *img, const enum atari_st_res res, FILE *ifp) {
+	if (res == atari_st_res_high) {
+		return fread(img->data, 1, VIDEO_RAM, ifp);
+	}
+	size_t w = 0;
+	uint16_t *ram = malloc(VIDEO_RAM);
+	if (ram) {
+		w = fread(ram, 1, VIDEO_RAM, ifp);
+		st_interleave(img, ram, res);
+		free(ram);
+	}
+	return w;
+}
 
 static enum wu_error set_pal(struct wuimg *img, const uint8_t src[static 32]) {
 	struct palette *pal = wuimg_palette_init(img);
@@ -80,21 +119,21 @@ static enum wu_error set_pal(struct wuimg *img, const uint8_t src[static 32]) {
 	return wu_alloc_error;
 }
 
-static enum wu_error set_dims(struct wuimg *img, const enum atarist_res res,
+static enum wu_error set_dims(struct wuimg *img, const enum atari_st_res res,
 const void *restrict pal) {
 	img->channels = 1;
 	switch (res) {
-	case atarist_res_low:
+	case atari_st_res_low:
 		img->w = ST_LOW_WIDTH;
 		img->h = ST_LOW_HEIGHT;
 		img->bitdepth = 8;
 		return set_pal(img, pal);
-	case atarist_res_medium:
+	case atari_st_res_medium:
 		img->w = ST_MEDIUM_WIDTH;
 		img->h = ST_MEDIUM_HEIGHT;
 		img->bitdepth = 8;
 		return set_pal(img, pal);
-	case atarist_res_high:
+	case atari_st_res_high:
 		img->w = ST_HIGH_WIDTH;
 		img->h = ST_HIGH_HEIGHT;
 		img->bitdepth = 1;
@@ -103,6 +142,54 @@ const void *restrict pal) {
 		return wuimg_verify(img);
 	}
 	return wu_invalid_header;
+}
+
+/* Dali */
+
+size_t dali_decode(struct dali_desc *desc, struct wuimg *img) {
+	if (wuimg_alloc_noverify(img)) {
+		return load_raw(img, desc->res, desc->ifp);
+	}
+	return 0;
+}
+
+static bool dali_ext(struct dali_desc *desc, const uint8_t ext[static 3]) {
+	const char pre[] = {'s', 'd'};
+	if (!memcmp(ext, pre, sizeof(pre))) {
+		switch (ext[2]) {
+		case '0': case '1': case '2':
+			desc->res = ext[2] - '0';
+			return true;
+		}
+	}
+	return false;
+}
+
+enum wu_error dali_parse(struct dali_desc *desc, struct wuimg *img, FILE *ifp,
+const uint8_t ext[static 3]) {
+	/* Dali format:
+		Offset  Type    Name
+		0       u32     ID                 // Always 0
+		4       u16     Palette[16]
+		36      u8      Reserved[96]       // Often 0
+		128     u16     ScreenDump[16000]
+		32128
+	*/
+
+	*desc = (struct dali_desc) {
+		.ifp = ifp,
+	};
+	if (dali_ext(desc, ext)) {
+		uint32_t header[32];
+		if (fread(header, sizeof(header), 1, ifp)) {
+			if (!header[0]) {
+				return set_dims(img, desc->res, header+1);
+			}
+			return wu_invalid_signature;
+		}
+		return wu_unexpected_eof;
+	}
+	return wu_unknown_file_type;
 }
 
 /* DEGAS */
@@ -160,37 +247,12 @@ static void load_elite_crng(struct degas_desc *desc, struct wuimg *img) {
 	}
 }
 
-static void st_interleave(struct wuimg *img, const uint16_t *src,
-const enum atarist_res res) {
-	const uint8_t planes = (res == atarist_res_low)
-		? ST_LOW_DEPTH : ST_MEDIUM_DEPTH;
-	const size_t width = (res == atarist_res_low)
-		? ST_LOW_WIDTH : ST_MEDIUM_WIDTH;
-	const size_t height = 200;
-
-	const size_t src_stride = width/(16/planes);
-	for (size_t y = 0; y < height; ++y) {
-		for (size_t group = 0; group < width/16; ++group) {
-			const size_t d_base = y*width + group*16;
-			const size_t s_base = y*src_stride + (group * planes);
-			for (uint8_t p = 0; p < planes; ++p) {
-				const size_t s = endian16(src[s_base + p], big_endian);
-				for (uint8_t bit = 0; bit < 16; ++bit) {
-					img->data[d_base + bit] |= (uint8_t)(
-						((s << bit) & 0x8000) >> (15 - p)
-					);
-				}
-			}
-		}
-	}
-}
-
-static size_t st_decomp(struct degas_desc *desc, struct wuimg *img) {
+static size_t degas_decomp(struct degas_desc *desc, struct wuimg *img) {
 	int8_t *pb = malloc(desc->size);
 	if (pb) {
 		const size_t pb_len = fread(pb, 1, desc->size, desc->ifp);
 		uint8_t *unpack;
-		if (desc->res == atarist_res_high) {
+		if (desc->res == atari_st_res_high) {
 			unpack = img->data;
 		} else {
 			unpack = malloc(VIDEO_RAM);
@@ -202,7 +264,7 @@ static size_t st_decomp(struct degas_desc *desc, struct wuimg *img) {
 		const size_t w = decomp_pack_bits(unpack, VIDEO_RAM, pb, pb_len);
 		free(pb);
 		if (unpack != img->data) {
-			const uint8_t planes = (desc->res == atarist_res_low)
+			const uint8_t planes = (desc->res == atari_st_res_low)
 				? ST_LOW_DEPTH : ST_MEDIUM_DEPTH;
 
 			const size_t outstride = wuimg_stride(img);
@@ -223,21 +285,13 @@ static size_t st_decomp(struct degas_desc *desc, struct wuimg *img) {
 size_t degas_decode(struct degas_desc *desc, struct wuimg *img) {
 	if (wuimg_alloc_noverify(img)) {
 		if (desc->compressed) {
-			return st_decomp(desc, img);
+			return degas_decomp(desc, img);
 		}
-		if (desc->res == atarist_res_high) {
-			return fread(img->data, 1, VIDEO_RAM, desc->ifp);
+		const size_t w = load_raw(img, desc->res, desc->ifp);
+		if (desc->res != atari_st_res_high && desc->is_elite) {
+			load_elite_crng(desc, img);
 		}
-		uint16_t *ram = malloc(VIDEO_RAM);
-		if (ram) {
-			const size_t w = fread(ram, 1, VIDEO_RAM, desc->ifp);
-			st_interleave(img, ram, desc->res);
-			free(ram);
-			if (desc->is_elite) {
-				load_elite_crng(desc, img);
-			}
-			return w;
-		}
+		return w;
 	}
 	return 0;
 }
@@ -262,7 +316,7 @@ FILE *ifp) {
 	if (fread(src, sizeof(src), 1, ifp)) {
 		const uint16_t flags = endian16(src[0], big_endian);
 		const bool compressed = flags & 0x8000;
-		const enum atarist_res res = flags & ~0x8000;
+		const enum atari_st_res res = flags & ~0x8000;
 		const size_t size_limit = compressed
 			? VIDEO_RAM*2 : VIDEO_RAM;
 		size_t rem = file_remaining(ifp);
@@ -356,7 +410,7 @@ size_t tiny_decode(const struct tiny_desc *desc, struct wuimg *img) {
 		const void *ctrl = mp_next_slice(&mp, desc->ctrl);
 		struct wuptr data = mp_next_remaining(&mp, desc->data*2);
 		if (ctrl) {
-			const bool high_res = desc->res == atarist_res_high;
+			const bool high_res = desc->res == atari_st_res_high;
 			uint16_t *buf = malloc(VIDEO_RAM * (high_res ? 1 : 2));
 			if (buf) {
 				w = tiny_rle(buf, ctrl, desc->ctrl, data);
