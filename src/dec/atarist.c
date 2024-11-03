@@ -30,9 +30,8 @@ static void res_metadata(struct wu_tree *meta, const enum atarist_res res) {
 
 static void get_metadata(struct wu_tree *meta, const struct degas_desc *desc) {
 	res_metadata(meta, desc->res);
-	if (desc->is_elite) {
-		tree_bud_leaf_bool(meta, "Elite", desc->is_elite);
-	}
+	tree_bud_leaf_bool(meta, "Compressed", desc->compressed);
+	tree_bud_leaf_bool(meta, "Elite", desc->is_elite);
 }
 
 static enum wu_error degas_dec(struct image_file *infile,

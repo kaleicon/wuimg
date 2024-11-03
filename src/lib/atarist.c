@@ -185,7 +185,7 @@ const enum atarist_res res) {
 	}
 }
 
-static size_t st_decomp(const struct degas_desc *desc, struct wuimg *img) {
+static size_t st_decomp(struct degas_desc *desc, struct wuimg *img) {
 	int8_t *pb = malloc(desc->size);
 	if (pb) {
 		const size_t pb_len = fread(pb, 1, desc->size, desc->ifp);
@@ -213,6 +213,7 @@ static size_t st_decomp(const struct degas_desc *desc, struct wuimg *img) {
 					unpack + instride*y, img->w, planes, 1);
 			}
 			free(unpack);
+			load_elite_crng(desc, img);
 		}
 		return w;
 	}
@@ -247,8 +248,13 @@ FILE *ifp) {
 		Offset  Type    Name
 		0       u16     Flags
 		2       u16     Palette[16]
-		34      u16     ScreenMemory[16000]
-		32034
+		34      u16     Data[]
+	 * For uncompressed files, Data is 16000 words in size, and so the file
+	 *   should be 32034 bytes. If it's 32066 bytes (32034 + 32) instead,
+	 *   then it's a DEGAS Elite file, and has a color animation struct
+	 *   at the end.
+	 * For compressed files, the color animation struct is always present,
+	 *   and so the size of Data is the file size minus header and footer.
 	*/
 
 	desc->cycle = NULL;
@@ -259,12 +265,19 @@ FILE *ifp) {
 		const enum atarist_res res = flags & ~0x8000;
 		const size_t size_limit = compressed
 			? VIDEO_RAM*2 : VIDEO_RAM;
-		const size_t rem = file_remaining(ifp);
+		size_t rem = file_remaining(ifp);
+		if (compressed) {
+			const size_t crng_size = 4*4*2;
+			if (rem <= crng_size) {
+				return wu_unexpected_eof;
+			}
+			rem -= crng_size;
+		}
 		*desc = (struct degas_desc) {
 			.ifp = ifp,
 			.res = res,
 			.compressed = compressed,
-			.is_elite = !compressed && rem + 34 >= 32066,
+			.is_elite = compressed || rem + 34 >= 32066,
 			.size = zumin(rem, size_limit),
 		};
 		return set_dims(img, desc->res, src + 1);
