@@ -58,7 +58,6 @@ static void raw_end(struct image_file *infile) {
 		infile->nr -= rs->jpeg.file.nr;
 	}
 	libraw_close(rs->data);
-	free(rs);
 }
 
 #ifdef WU_ENABLE_JPEG
@@ -226,12 +225,7 @@ static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 
 static enum wu_error raw_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct raw_state *rs = calloc(1, sizeof(*rs));
-	if (!rs) {
-		return wu_alloc_error;
-	}
-	infile->dec_state = rs;
-
+	struct raw_state *rs = infile->dec_state;
 	libraw_data_t *data = libraw_init(0);
 	if (!data) {
 		return wu_alloc_error;
@@ -311,6 +305,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn raw_fn = {
 	.mmap = true,
+	.state_size = sizeof(struct raw_state),
 	.dec = raw_dec,
 	.callback = raw_callback,
 	.end = raw_end,

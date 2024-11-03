@@ -68,6 +68,7 @@ typedef void (*fmt_end_t)(struct image_file *infile);
 struct image_fn {
 	bool mmap;
 	bool alloc_single;
+	uint16_t state_size;
 	fmt_dec_t dec;
 	fmt_callback_t callback;
 	fmt_end_t end;
@@ -90,9 +91,6 @@ struct image_context {
 	struct wu_conf conf;
 	struct fmt_desc desc;
 };
-
-void image_file_end(struct image_file *infile);
-
 
 struct wuimg * realloc_sub_images(struct image_file *file, size_t nr);
 

@@ -40,17 +40,13 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event _ev) 
 static enum wu_error trs_dec(struct image_file *infile,
 const struct wu_conf *conf) {
 	(void)conf;
-	struct trs_desc *desc = calloc(1, sizeof(*desc));
-	if (desc) {
-		infile->dec_state = desc;
-		const enum wu_error st = trs_init(desc, infile->map);
-		if (st == wu_ok) {
-			return alloc_sub_images(infile, desc->nr)
-				? wu_ok : wu_alloc_error;
-		}
-		return st;
+	struct trs_desc *desc = infile->dec_state;
+	const enum wu_error st = trs_init(desc, infile->map);
+	if (st == wu_ok) {
+		return alloc_sub_images(infile, desc->nr)
+			? wu_ok : wu_alloc_error;
 	}
-	return wu_alloc_error;
+	return st;
 }
 
 const struct image_fn tre_fn = {
@@ -59,7 +55,7 @@ const struct image_fn tre_fn = {
 };
 const struct image_fn trs_fn = {
 	.mmap = true,
+	.state_size = sizeof(struct trs_desc),
 	.dec = trs_dec,
 	.callback = trs_callback,
-	.end = image_file_end,
 };

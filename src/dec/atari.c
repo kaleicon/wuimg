@@ -26,8 +26,7 @@ const struct wu_conf *conf) {
 /* DEGAS */
 static void degas_end(struct image_file *infile) {
 	struct degas_desc *desc = infile->dec_state;
-	degas_free(desc);
-	free(desc);
+	degas_cleanup(desc);
 }
 
 static enum wu_error degas_callback(struct image_file *infile,
@@ -54,17 +53,13 @@ static void degas_metadata(struct wu_tree *meta, const struct degas_desc *desc) 
 
 static enum wu_error degas_dec(struct image_file *infile,
 const struct wu_conf *conf) {
-	struct degas_desc *desc = malloc(sizeof(*desc));
-	infile->dec_state = desc;
-	enum wu_error st = wu_alloc_error;
-	if (desc) {
-		struct wuimg *img = infile->sub_img;
-		st = degas_parse(desc, img, infile->ifp);
-		if (st == wu_ok) {
-			degas_metadata(&infile->metadata, desc);
-			st = wuimg_exceeds_limit(img, conf)
-				? wu_exceeds_size_limit : wu_ok;
-		}
+	struct degas_desc *desc = infile->dec_state;
+	struct wuimg *img = infile->sub_img;
+	enum wu_error st = degas_parse(desc, img, infile->ifp);
+	if (st == wu_ok) {
+		degas_metadata(&infile->metadata, desc);
+		st = wuimg_exceeds_limit(img, conf)
+			? wu_exceeds_size_limit : wu_ok;
 	}
 	return st;
 }
@@ -90,8 +85,7 @@ const struct wu_conf *conf) {
 /* Tiny Stuff */
 static void tiny_end(struct image_file *infile) {
 	struct tiny_desc *desc = infile->dec_state;
-	tiny_free(desc);
-	free(desc);
+	tiny_cleanup(desc);
 }
 
 static enum wu_error tiny_callback(struct image_file *infile,
@@ -112,19 +106,15 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 
 static enum wu_error tiny_dec(struct image_file *infile,
 const struct wu_conf *conf) {
-	struct tiny_desc *desc = malloc(sizeof(*desc));
-	infile->dec_state = desc;
-	enum wu_error st = wu_alloc_error;
-	if (desc) {
-		struct wuimg *img = infile->sub_img;
-		st = tiny_parse(desc, img, infile->map);
-		if (st == wu_ok) {
-			res_metadata(&infile->metadata, desc->res);
-			tree_bud_leaf_u(&infile->metadata, "Iterations",
-				desc->iters);
-			st = wuimg_exceeds_limit(img, conf)
-				? wu_exceeds_size_limit : wu_ok;
-		}
+	struct tiny_desc *desc = infile->dec_state;
+	struct wuimg *img = infile->sub_img;
+	enum wu_error st = tiny_parse(desc, img, infile->map);
+	if (st == wu_ok) {
+		res_metadata(&infile->metadata, desc->res);
+		tree_bud_leaf_u(&infile->metadata, "Iterations",
+			desc->iters);
+		st = wuimg_exceeds_limit(img, conf)
+			? wu_exceeds_size_limit : wu_ok;
 	}
 	return st;
 }
@@ -137,6 +127,7 @@ const struct image_fn dali_fn = {
 
 const struct image_fn degas_fn = {
 	.alloc_single = true,
+	.state_size = sizeof(struct degas_desc),
 	.dec = degas_dec,
 	.callback = degas_callback,
 	.end = degas_end,
@@ -150,6 +141,7 @@ const struct image_fn bld_fn = {
 const struct image_fn tiny_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.state_size = sizeof(struct tiny_desc),
 	.dec = tiny_dec,
 	.callback = tiny_callback,
 	.end = tiny_end,

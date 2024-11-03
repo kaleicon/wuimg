@@ -13,29 +13,25 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 
 static enum wu_error pnm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct pnm_desc *desc = malloc(sizeof(*desc));
-	if (desc) {
-		infile->dec_state = desc;
-		enum wu_error st = pnm_open_file(desc, infile->ifp, true);
+	struct pnm_desc *desc = infile->dec_state;
+	enum wu_error st = pnm_open_file(desc, infile->ifp, true);
+	if (st == wu_ok) {
+		st = pnm_parse_header(desc);
 		if (st == wu_ok) {
-			st = pnm_parse_header(desc);
-			if (st == wu_ok) {
-				tree_add_leaf_utf8(&infile->metadata, "Type",
-					pnm_type_str(desc->type));
-				if (!wuimg_exceeds_limit(&desc->rast, wuconf)) {
-					return alloc_sub_images(infile, desc->nr)
-						? wu_ok : wu_alloc_error;
-				}
-				return wu_exceeds_size_limit;
+			tree_add_leaf_utf8(&infile->metadata, "Type",
+				pnm_type_str(desc->type));
+			if (!wuimg_exceeds_limit(&desc->rast, wuconf)) {
+				return alloc_sub_images(infile, desc->nr)
+					? wu_ok : wu_alloc_error;
 			}
+			return wu_exceeds_size_limit;
 		}
-		return st;
 	}
-	return wu_alloc_error;
+	return st;
 }
 
 const struct image_fn pnm_fn = {
+	.state_size = sizeof(struct pnm_desc),
 	.dec = pnm_dec,
 	.callback = pnm_callback,
-	.end = image_file_end,
 };

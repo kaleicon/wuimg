@@ -33,7 +33,6 @@ static void jbig2_end(struct image_file *infile) {
 	}
 	free(ds->pages);
 	jbig2_ctx_free(ds->ctx);
-	free(ds);
 }
 
 static enum wu_error add_image(struct image_file *infile,
@@ -89,23 +88,21 @@ const struct wu_conf *wuconf, struct jbig2_state *ds) {
 
 static enum wu_error jbig2_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct jbig2_state *ds = calloc(1, sizeof(*ds));
-	infile->dec_state = ds;
-	if (ds) {
-		ds->ctx = jbig2_ctx_new(NULL, 0, NULL, err_fn, infile);
-		if (ds->ctx) {
-			if (!jbig2_data_in(ds->ctx,
-			infile->map.data, infile->map.len)) {
-				return get_images(infile, wuconf, ds);
-			}
-			return wu_decoding_error;
+	struct jbig2_state *ds = infile->dec_state;
+	ds->ctx = jbig2_ctx_new(NULL, 0, NULL, err_fn, infile);
+	if (ds->ctx) {
+		if (!jbig2_data_in(ds->ctx,
+		infile->map.data, infile->map.len)) {
+			return get_images(infile, wuconf, ds);
 		}
+		return wu_decoding_error;
 	}
 	return wu_alloc_error;
 }
 
 const struct image_fn jbig2_fn = {
 	.mmap = true,
+	.state_size = sizeof(struct jbig2_state),
 	.dec = jbig2_dec,
 	.end = jbig2_end,
 };

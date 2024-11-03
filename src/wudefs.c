@@ -6,10 +6,6 @@
 #include "misc/math.h"
 #include "wudefs.h"
 
-void image_file_end(struct image_file *infile) {
-	free(infile->dec_state);
-}
-
 static void wuimg_free_range(struct wuimg *img, const size_t start,
 const size_t end) {
 	for (size_t i = start; i < end; ++i) {

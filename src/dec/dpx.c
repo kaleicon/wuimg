@@ -133,7 +133,7 @@ static void read_metadata(const struct dpx_desc *desc, struct wu_tree *tree) {
 
 static enum wu_error dec_wrap(struct wuimg *img, const struct wu_conf *wuconf,
 const struct dpx_desc *desc, const uint8_t idx) {
-	const enum wu_error st =  dpx_set_image(desc, img, idx);
+	const enum wu_error st = dpx_set_image(desc, img, idx);
 	if (st == wu_ok) {
 		if (!wuimg_exceeds_limit(img, wuconf)) {
 			return dpx_decode(desc, img, idx)
@@ -155,25 +155,21 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 static enum wu_error dpx_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct dpx_desc *desc = malloc(sizeof(*desc));
-	if (desc) {
-		infile->dec_state = desc;
-		enum wu_error st = dpx_open(desc, infile->ifp);
+	struct dpx_desc *desc = infile->dec_state;
+	enum wu_error st = dpx_open(desc, infile->ifp);
+	if (st == wu_ok) {
+		st = dpx_parse(desc);
 		if (st == wu_ok) {
-			st = dpx_parse(desc);
-			if (st == wu_ok) {
-				read_metadata(desc, &infile->metadata);
-				return alloc_sub_images(infile, desc->generic.image.nb_elem)
-					? wu_ok : wu_alloc_error;
-			}
+			read_metadata(desc, &infile->metadata);
+			return alloc_sub_images(infile, desc->generic.image.nb_elem)
+				? wu_ok : wu_alloc_error;
 		}
-		return st;
 	}
-	return wu_alloc_error;
+	return st;
 }
 
 const struct image_fn dpx_fn = {
+	.state_size = sizeof(struct dpx_desc),
 	.dec = dpx_dec,
 	.callback = dpx_callback,
-	.end = image_file_end,
 };

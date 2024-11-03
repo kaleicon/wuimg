@@ -64,7 +64,6 @@ static void webp_end(struct image_file *infile) {
 	}
 
 	WebPFreeDecBuffer(&ds->config.output);
-	free(ds);
 }
 
 static void rewind_webp_state(struct webp_state *ds, struct wuimg *img,
@@ -393,12 +392,7 @@ bool use_homegrown) {
 
 static enum wu_error webp_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct webp_state *ds = calloc(1, sizeof(*ds));
-	if (!ds) {
-		return wu_alloc_error;
-	}
-	infile->dec_state = ds;
-
+	struct webp_state *ds = infile->dec_state;
 	ds->data.size = infile->map.len;
 	ds->data.bytes = infile->map.data;
 
@@ -450,6 +444,7 @@ const struct wu_conf *wuconf) {
 const struct image_fn webp_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.state_size = sizeof(struct webp_state),
 	.dec = webp_dec,
 	.callback = webp_callback,
 	.end = webp_end,

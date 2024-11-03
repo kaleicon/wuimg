@@ -67,7 +67,6 @@ const struct wu_conf *wuconf) {
 
 static void dcx_end(struct image_file *infile) {
 	dcx_free(infile->dec_state);
-	free(infile->dec_state);
 }
 
 static enum wu_error dcx_callback(struct image_file *infile,
@@ -88,12 +87,7 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 static enum wu_error dcx_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct dcx_desc *desc = malloc(sizeof(*desc));
-	if (!desc) {
-		return wu_alloc_error;
-	}
-
-	infile->dec_state = desc;
+	struct dcx_desc *desc = infile->dec_state;
 	const enum wu_error st = dcx_open_file(desc, mp_map(infile->map));
 	if (st == wu_ok) {
 		return alloc_sub_images(infile, desc->nr) ? wu_ok : wu_alloc_error;
@@ -108,6 +102,7 @@ const struct image_fn pcx_fn = {
 };
 const struct image_fn dcx_fn = {
 	.mmap = true,
+	.state_size = sizeof(struct dcx_desc),
 	.dec = dcx_dec,
 	.callback = dcx_callback,
 	.end = dcx_end,

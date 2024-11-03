@@ -38,7 +38,6 @@ static void add_metadata(const struct ilbm_desc *desc, struct wu_tree *meta) {
 
 static void ilbm_end(struct image_file *infile) {
 	ilbm_cleanup(infile->dec_state);
-	free(infile->dec_state);
 }
 
 static enum wu_error ilbm_callback(struct image_file *infile,
@@ -67,12 +66,7 @@ const enum image_event ev) {
 static enum wu_error ilbm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct ilbm_desc *desc = malloc(sizeof(*desc));
-	if (!desc) {
-		return wu_alloc_error;
-	}
-	infile->dec_state = desc;
-
+	struct ilbm_desc *desc = infile->dec_state;
 	enum wu_error st = ilbm_open(desc, mp_map(infile->map));
 	if (st != wu_ok) {
 		return st;
@@ -104,6 +98,7 @@ const struct wu_conf *wuconf) {
 const struct image_fn ilbm_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.state_size = sizeof(struct ilbm_desc),
 	.dec = ilbm_dec,
 	.callback = ilbm_callback,
 	.end = ilbm_end,

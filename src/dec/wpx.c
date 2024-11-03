@@ -31,7 +31,6 @@ const struct wu_conf *wuconf) {
 
 static void wia_end(struct image_file *infile) {
 	wpx_ia2_cleanup(infile->dec_state);
-	free(infile->dec_state);
 }
 
 static enum wu_error frame_decode(struct wpx_ia2_desc *desc, struct wuimg *img,
@@ -100,18 +99,14 @@ static void anim_metadata(struct wu_tree *tree, const struct wpx_ia2_desc *desc)
 static enum wu_error wia_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	enum wu_error st = wu_alloc_error;
-	struct wpx_ia2_desc *desc = calloc(1, sizeof(*desc));
-	if (desc) {
-		infile->dec_state = desc;
-		st = wpx_ia2_open(desc, mp_map(infile->map));
+	struct wpx_ia2_desc *desc = infile->dec_state;
+	enum wu_error st = wpx_ia2_open(desc, mp_map(infile->map));
+	if (st == wu_ok) {
+		st = wpx_ia2_parse(desc);
 		if (st == wu_ok) {
-			st = wpx_ia2_parse(desc);
-			if (st == wu_ok) {
-				anim_metadata(&infile->metadata, desc);
-				if (!alloc_sub_images(infile, desc->frames.nr)) {
-					st = wu_alloc_error;
-				}
+			anim_metadata(&infile->metadata, desc);
+			if (!alloc_sub_images(infile, desc->frames.nr)) {
+				st = wu_alloc_error;
 			}
 		}
 	}
@@ -125,6 +120,7 @@ const struct image_fn wbm_fn = {
 };
 const struct image_fn wia_fn = {
 	.mmap = true,
+	.state_size = sizeof(struct wpx_ia2_desc),
 	.dec = wia_dec,
 	.callback = wia_callback,
 	.end = wia_end,

@@ -195,7 +195,7 @@ const uint8_t ext[static 3]) {
 
 /* DEGAS */
 
-void degas_free(struct degas_desc *desc) {
+void degas_cleanup(struct degas_desc *desc) {
 	free(desc->cycle);
 }
 
@@ -418,7 +418,7 @@ enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
 
 /* Tiny Stuff */
 
-void tiny_free(struct tiny_desc *desc) {
+void tiny_cleanup(struct tiny_desc *desc) {
 	free(desc->cycle);
 }
 

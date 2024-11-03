@@ -33,7 +33,7 @@ struct degas_desc {
 	struct palette_cycle *cycle;
 };
 
-void degas_free(struct degas_desc *desc);
+void degas_cleanup(struct degas_desc *desc);
 
 size_t degas_decode(struct degas_desc *desc, struct wuimg *img);
 
@@ -60,7 +60,7 @@ struct tiny_desc {
 	struct palette_cycle *cycle;
 };
 
-void tiny_free(struct tiny_desc *desc);
+void tiny_cleanup(struct tiny_desc *desc);
 
 size_t tiny_decode(const struct tiny_desc *desc, struct wuimg *img);
 

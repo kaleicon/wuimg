@@ -24,7 +24,6 @@ static void jpegxl_end(struct image_file *infile) {
 	}
 	JxlDecoderDestroy(ds->jd);
 	wustr_free(&ds->box);
-	free(ds);
 }
 
 static void process_metadata(struct image_file *infile,
@@ -256,13 +255,15 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 	return wu_invalid_params;
 }
 
-static enum wu_error dec_wrap(struct image_file *infile,
-const struct wu_conf *wuconf, struct jpegxl_state *ds) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
+static enum wu_error jpegxl_dec(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	struct jpegxl_state *ds = infile->dec_state;
+	ds->jd = JxlDecoderCreate(NULL);
+	if (!ds->jd) {
 		return wu_alloc_error;
 	}
 
+	struct wuimg *img = infile->sub_img;
 	input_init(infile, ds);
 	JxlDecoderSetKeepOrientation(ds->jd, JXL_TRUE);
 	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_BASIC_INFO
@@ -298,26 +299,13 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 				JxlResizableParallelRunner, ds->runner);
 		}
 	}
-	return get_frame(infile, 0);//render_frame(img, ds);
-}
-
-static enum wu_error jpegxl_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	enum wu_error err = wu_alloc_error;
-	struct jpegxl_state *ds = calloc(1, sizeof(*ds));
-	if (ds) {
-		ds->jd = JxlDecoderCreate(NULL);
-		if (ds->jd) {
-			infile->dec_state = ds;
-			return dec_wrap(infile, wuconf, ds);
-		}
-		free(ds);
-	}
-	return err;
+	return get_frame(infile, 0);
 }
 
 const struct image_fn jpegxl_fn = {
 	.mmap = true,
+	.alloc_single = true,
+	.state_size = sizeof(struct jpegxl_state),
 	.dec = jpegxl_dec,
 	.callback = jpegxl_callback,
 	.end = jpegxl_end,

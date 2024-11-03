@@ -13,7 +13,13 @@
 
 void dec_free_image(struct image_context *image) {
 	if (image->file.dec_state) {
-		image->desc.dec.fn->end(&image->file);
+		const struct image_fn *fn = image->desc.dec.fn;
+		if (fn->end) {
+			fn->end(&image->file);
+		}
+		if (fn->state_size) {
+			free(image->file.dec_state);
+		}
 	}
 	image_file_free(&image->file);
 }
@@ -146,6 +152,12 @@ enum wu_error dec_decode(struct image_context *image) {
 		const struct fmt_desc *desc = &image->desc;
 		if (desc->is_auto || desc->dec.fn->alloc_single) {
 			if (!alloc_sub_images(infile, 1)) {
+				return wu_alloc_error;
+			}
+		}
+		if (!desc->is_auto && desc->dec.fn->state_size) {
+			infile->dec_state = calloc(1, desc->dec.fn->state_size);
+			if (!infile->dec_state) {
 				return wu_alloc_error;
 			}
 		}

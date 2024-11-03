@@ -57,7 +57,6 @@ static void jpeg_end(struct image_file *infile) {
 	struct jpeg_state *js = infile->dec_state;
 	jpeg_destroy_decompress(&js->dinfo);
 	free(js->soi_offsets);
-	free(js);
 }
 
 static long marker_len(FILE *f, int first_byte) {
@@ -418,25 +417,19 @@ const enum image_event ev) {
 static enum wu_error jpeg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	if (alloc_sub_images(infile, 1)) {
-		struct jpeg_state *js = malloc(sizeof(*js));
-		if (js) {
-			infile->dec_state = js;
-
-			js->dinfo.client_data = infile;
-			js->dinfo.err = jpeg_std_error(&js->jerr);
-			js->jerr.error_exit = jerror_exit;
-			js->jerr.output_message = joutput_message;
-			js->soi_offsets = NULL;
-
-			jpeg_create_decompress(&js->dinfo);
-			return wu_ok;
-		}
-	}
-	return wu_alloc_error;
+	struct jpeg_state *js = infile->dec_state;
+	js->dinfo.client_data = infile;
+	js->dinfo.err = jpeg_std_error(&js->jerr);
+	js->jerr.error_exit = jerror_exit;
+	js->jerr.output_message = joutput_message;
+	js->soi_offsets = NULL;
+	jpeg_create_decompress(&js->dinfo);
+	return wu_ok;
 }
 
 const struct image_fn jpeg_fn = {
+	.alloc_single = true,
+	.state_size = sizeof(struct jpeg_state),
 	.dec = jpeg_dec,
 	.callback = jpeg_callback,
 	.end = jpeg_end,

@@ -14,10 +14,7 @@ struct flif_state {
 
 static void flif_end(struct image_file *infile) {
 	struct flif_state *ds = infile->dec_state;
-	if (ds->dec) {
-		flif_destroy_decoder(ds->dec);
-	}
-	free(ds);
+	flif_destroy_decoder(ds->dec);
 }
 
 static enum wu_error decode_frame(struct wuimg *img, FLIF_IMAGE *frame,
@@ -116,12 +113,7 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 
 static enum wu_error flif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct flif_state *ds = calloc(1, sizeof(*ds));
-	if (!ds) {
-		return wu_alloc_error;
-	}
-	infile->dec_state = ds;
-
+	struct flif_state *ds = infile->dec_state;
 	ds->dec = flif_create_decoder();
 	const int32_t success = flif_decoder_decode_memory(ds->dec,
 		infile->map.data, infile->map.len);
@@ -134,6 +126,7 @@ const struct wu_conf *wuconf) {
 const struct image_fn flif_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.state_size = sizeof(struct flif_state),
 	.dec = flif_dec,
 	.callback = flif_callback,
 	.end = flif_end,

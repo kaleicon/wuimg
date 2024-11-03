@@ -33,7 +33,6 @@ static void heif_end(struct image_file *infile) {
 		heif_context_free(ds->ctx);
 	}
 	heif_deinit();
-	free(ds);
 }
 
 static void read_block(const struct heif_image_handle* handle,
@@ -308,11 +307,7 @@ const enum image_event ev) {
 static enum wu_error heif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct heif_state *ds = calloc(1, sizeof(*ds));
-	if (!ds) {
-		return wu_alloc_error;
-	}
-
+	struct heif_state *ds = infile->dec_state;
 	infile->dec_state = ds;
 	struct heif_error herr = heif_init(&ds->params);
 	if (herr.code != heif_error_Ok) {
@@ -349,6 +344,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn heif_fn = {
 	.mmap = true,
+	.state_size = sizeof(struct heif_state),
 	.dec = heif_dec,
 	.callback = heif_callback,
 	.end = heif_end,

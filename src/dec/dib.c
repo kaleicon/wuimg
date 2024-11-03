@@ -63,7 +63,6 @@ const struct image_fn dib_fn = {.dec = dib_dec};
 
 static void ico_end(struct image_file *infile) {
 	ico_cleanup(infile->dec_state);
-	free(infile->dec_state);
 }
 
 static enum wu_error wrap_ico(struct wuimg *img, const struct wu_conf *wuconf,
@@ -89,25 +88,22 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 static enum wu_error ico_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct ico_desc *desc = malloc(sizeof(*desc));
-	if (desc) {
-		infile->dec_state = desc;
-		enum wu_error err = ico_open_file(desc, infile->ifp);
+	struct ico_desc *desc = infile->dec_state;
+	enum wu_error err = ico_open_file(desc, infile->ifp);
+	if (err == wu_ok) {
+		err = ico_parse_header(desc);
 		if (err == wu_ok) {
-			err = ico_parse_header(desc);
-			if (err == wu_ok) {
-				tree_add_leaf_utf8(&infile->metadata, "Type",
-					ico_type_str(desc->type));
-				return alloc_sub_images(infile, desc->count)
-					? wu_ok : wu_alloc_error;
-			}
+			tree_add_leaf_utf8(&infile->metadata, "Type",
+				ico_type_str(desc->type));
+			return alloc_sub_images(infile, desc->count)
+				? wu_ok : wu_alloc_error;
 		}
-		return err;
 	}
-	return wu_alloc_error;
+	return err;
 }
 
 const struct image_fn ico_fn = {
+	.state_size = sizeof(struct ico_desc),
 	.dec = ico_dec,
 	.callback = ico_callback,
 	.end = ico_end,

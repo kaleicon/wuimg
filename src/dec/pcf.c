@@ -4,7 +4,6 @@
 
 static void pcf_end(struct image_file *infile) {
 	pcf_cleanup(infile->dec_state);
-	free(infile->dec_state);
 }
 
 static enum wu_error pcf_callback(struct image_file *infile,
@@ -49,26 +48,23 @@ static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
 static enum wu_error pcf_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
-	struct pcf_desc *desc = malloc(sizeof(*desc));
-	if (desc) {
-		infile->dec_state = desc;
-		enum wu_error st = pcf_open(desc, infile->ifp);
+	struct pcf_desc *desc = infile->dec_state;
+	enum wu_error st = pcf_open(desc, infile->ifp);
+	if (st == wu_ok) {
+		st = pcf_parse(desc);
 		if (st == wu_ok) {
-			st = pcf_parse(desc);
-			if (st == wu_ok) {
-				if (alloc_sub_images(infile, desc->glyphs)) {
-					read_metadata(infile, desc);
-					return wu_ok;
-				}
-				return wu_alloc_error;
+			if (alloc_sub_images(infile, desc->glyphs)) {
+				read_metadata(infile, desc);
+				return wu_ok;
 			}
+			return wu_alloc_error;
 		}
-		return st;
 	}
-	return wu_alloc_error;
+	return st;
 }
 
 const struct image_fn pcf_fn = {
+	.state_size = sizeof(struct pcf_desc),
 	.dec = pcf_dec,
 	.callback = pcf_callback,
 	.end = pcf_end,

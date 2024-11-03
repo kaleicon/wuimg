@@ -64,7 +64,6 @@ static void gif_end(struct image_file *infile) {
 	DGifCloseFile(ds->gif_file, NULL);
 	free(ds->previous.buf);
 	free(ds->gcb);
-	free(ds);
 }
 
 static void copy_stride(unsigned char *restrict out,
@@ -291,12 +290,7 @@ static int dgif_input_fn(GifFileType *gif_file, GifByteType *out, int len) {
 
 static enum wu_error gif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct gif_state *ds = calloc(1, sizeof(*ds));
-	if (!ds) {
-		return wu_alloc_error;
-	}
-	infile->dec_state = ds;
-
+	struct gif_state *ds = infile->dec_state;
 	int error = 0;
 	GifFileType *gif_file = DGifOpen(infile->ifp, dgif_input_fn, &error);
 	if (error) {
@@ -375,6 +369,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn gif_fn = {
 	.alloc_single = true,
+	.state_size = sizeof(struct gif_state),
 	.dec = gif_dec,
 	.callback = gif_callback,
 	.end = gif_end,
