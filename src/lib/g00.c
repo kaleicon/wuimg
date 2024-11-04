@@ -13,22 +13,14 @@ struct g00_part_loc {
 	uint32_t len;
 };
 
+static const size_t G00_DIR_SIZE = 4*6;
 static const size_t G00_BLOCK_SIZE = 5*2 + 41*2;
 static const size_t G00_PART_SIZE = 2*2 + 8*4 + 20*4;
 
 void g00_cleanup(struct g00_desc *desc, struct wuimg *img) {
-	switch (desc->version) {
-	case g00_v0:
-		return;
-	case g00_v1:
-		if (img) {
-			img->data = NULL;
-		}
-		free(desc->buf);
-		break;
-	case g00_v2:
-		free(desc->v2.dir);
-		break;
+	if (desc->version == g00_v1) {
+		free(desc->u.buf);
+		img->data = NULL;
 	}
 }
 
@@ -88,8 +80,8 @@ const size_t written) {
 		return 0;
 	}
 
-	const uint16_t pal_entries = buf_endian16(desc->buf, little_endian);
-	if (pal_entries || pal_entries > 256) {
+	const uint16_t pal_entries = buf_endian16(desc->u.buf, little_endian);
+	if (!pal_entries || pal_entries > 256) {
 		return 0;
 	}
 
@@ -102,19 +94,16 @@ const size_t written) {
 		return 0;
 	}
 
-	struct palette *pal = wuimg_palette_init(img);
-	if (!pal) {
-		return 0;
-	}
-	memcpy(pal->color, desc->buf + 2, pal_entries * 4);
+	struct palette *pal = img->u.palette;
+	memcpy(pal->color, desc->u.buf + 2, pal_entries * 4);
 
-	img->data = desc->buf + pal_bytes;
+	img->data = desc->u.buf + pal_bytes;
 	img->borrowed = true;
 	return written - pal_bytes;
 }
 
 static size_t v2_compost(struct g00_desc *desc, struct wuimg *img,
-const size_t written) {
+const size_t written, const uint8_t *buf) {
 	/* V2 decoded data format:
 		Offset  Type    Name
 		0       u32     NrParts
@@ -160,18 +149,18 @@ const size_t written) {
 		return 0;
 	}
 
-	const void *data_end = desc->buf + written;
-	struct g00_desc_v2 *v2 = &desc->v2;
+	const void *data_end = buf + written;
+	struct g00_desc_v2 *v2 = &desc->u.v2;
 
-	struct g00_part_loc *loc = (struct g00_part_loc *)(desc->buf + 4);
+	struct g00_part_loc *loc = (struct g00_part_loc *)(buf + 4);
 	if ((void *)(loc + v2->dir_count) >= data_end
-	|| buf_endian32(desc->buf, little_endian) != v2->dir_count) {
+	|| buf_endian32(buf, little_endian) != v2->dir_count) {
 		return 0;
 	}
 
 	size_t composted = 0;
 	for (uint32_t i = 0; i < v2->dir_count; ++i) {
-		uint8_t *part = desc->buf + endian32(loc[i].offset, little_endian);
+		const uint8_t *part = buf + endian32(loc[i].offset, little_endian);
 		if ((void *)(part + 4) >= data_end) {
 			continue;
 		}
@@ -185,14 +174,16 @@ const size_t written) {
 		if ((const void *)block >= data_end) {
 			continue;
 		}
+		const uint32_t xstart = buf_endian32(v2->dir + i*G00_DIR_SIZE, little_endian);
+		const uint32_t ystart = buf_endian32(v2->dir + i*G00_DIR_SIZE + 4, little_endian);
 		for (uint16_t b = 0; b < block_count; ++b) {
 			const uint8_t *rast = block + G00_BLOCK_SIZE;
 			if ((const void *)rast >= data_end) {
 				break;
 			}
 			const struct frame_info fr = {
-				.x = v2->dir[i].xstart + buf_endian16(block, little_endian),
-				.y = v2->dir[i].ystart + buf_endian16(block + 2, little_endian),
+				.x = xstart + buf_endian16(block, little_endian),
+				.y = ystart + buf_endian16(block + 2, little_endian),
 				.w = buf_endian16(block + 6, little_endian),
 				.h = buf_endian16(block + 8, little_endian),
 			};
@@ -212,42 +203,30 @@ const size_t written) {
 	return composted;
 }
 
-size_t g00_decode(struct g00_desc *desc, struct wuimg *img) {
-	size_t written = 0;
+enum wu_error g00_decode(struct g00_desc *desc, struct wuimg *img) {
 	void *dst = malloc(desc->decomp_size);
 	if (dst) {
-		void *src = malloc(desc->comp_size);
-		if (src) {
-			const size_t read = fread(src, 1, desc->comp_size,
-				desc->ifp);
-			if (read) {
-				const size_t elem_size = (desc->version == g00_v0) ? 3 : 1;
-				const size_t min_run = (desc->version == g00_v0) ? 1 : 2;
-				written = lzss_decomp(dst, desc->decomp_size,
-					src, read, elem_size, min_run);
-			}
-			free(src);
-		}
-
-		if (written) {
-			switch (desc->version) {
-			case g00_v0:
-				img->data = dst;
-				break;
-			case g00_v1:
-				desc->buf = dst;
-				written = v1_finish(desc, img, written);
-				break;
-			case g00_v2:
-				desc->buf = dst;
-				written = v2_compost(desc, img, written);
-				break;
-			}
-		} else {
+		const struct wuptr src = mp_next_remaining(&desc->mp, desc->comp_size);
+		const size_t elem_size = (desc->version == g00_v0) ? 3 : 1;
+		const size_t min_run = (desc->version == g00_v0) ? 1 : 2;
+		size_t written = lzss_decomp(dst, desc->decomp_size,
+			src.ptr, src.len, elem_size, min_run);
+		switch (desc->version) {
+		case g00_v0:
+			img->data = dst;
+			break;
+		case g00_v1:
+			desc->u.buf = dst;
+			written = v1_finish(desc, img, written);
+			break;
+		case g00_v2:
+			written = v2_compost(desc, img, written, dst);
 			free(dst);
+			break;
 		}
+		return written ? wu_ok : wu_decoding_error;
 	}
-	return written;
+	return wu_alloc_error;
 }
 
 static enum wu_error header_set(struct g00_desc *desc, struct wuimg *img,
@@ -255,7 +234,12 @@ const enum g00_version version, const uint16_t width, const uint16_t height) {
 	uint8_t ch;
 	switch (version) {
 	case g00_v0: ch = 3; break;
-	case g00_v1: ch = 1; break;
+	case g00_v1:
+		if (!wuimg_palette_init(img)) {
+			return wu_alloc_error;
+		}
+		ch = 1;
+		break;
 	case g00_v2: ch = 4; break;
 	default: return wu_unsupported_feature;
 	}
@@ -269,8 +253,8 @@ const enum g00_version version, const uint16_t width, const uint16_t height) {
 	return wuimg_verify(img);
 }
 
-enum wu_error g00_read_header(struct g00_desc *desc, struct wuimg *img,
-FILE *ifp) {
+enum wu_error g00_parse(struct g00_desc *desc, struct wuimg *img,
+const struct map_info map) {
 	/* Base header:
 		Offset  Type    Name
 		0       u8      Version // 0, 1, or 2
@@ -290,7 +274,7 @@ FILE *ifp) {
 			16      u32     Reserved[2]
 			24
 
-	 * Compressed data header, after all previous fields::
+	 * Compressed data header, after all previous fields:
 		Offset  Type    Name
 		0       u32     CompressedSize   // Includes itself
 		4       u32     DecompressedSize
@@ -299,14 +283,16 @@ FILE *ifp) {
 	 * Afterwards comes the compressed data.
 	 * For version 0, this is 8-bit BGR pixel data.
 	 * For version 1, this is an 8-bit BGRA palette followed by the
-	 *     paletted raster.
+	 *     raster.
 	 * For version 2, this is a series of 8-bit BGRA pieces to be
 	 *     composited.
 	*/
 
-	desc->ifp = ifp;
-	unsigned char header[8];
-	if (!fread(header, 5, 1, ifp)) {
+	*desc = (struct g00_desc) {
+		.mp = mp_map(map),
+	};
+	const uint8_t *header = mp_next_slice(&desc->mp, 5);
+	if (!header) {
 		return wu_unexpected_eof;
 	}
 
@@ -319,31 +305,26 @@ FILE *ifp) {
 
 	const size_t dims = img->w * img->h;
 	if (desc->version == g00_v2) {
-		if (!fread(header, 4, 1, ifp)) {
+		header = mp_next_slice(&desc->mp, 4);
+		if (!header) {
 			return wu_unexpected_eof;
 		}
 
-		struct g00_desc_v2 *v2 = &desc->v2;
+		struct g00_desc_v2 *v2 = &desc->u.v2;
 		v2->dir_count = buf_endian32(header, little_endian);
-		const size_t overflow = SIZE_MAX / dims;
-		if (!v2->dir_count || v2->dir_count >= zumin(dims, overflow)) {
+		if (!v2->dir_count || v2->dir_count >= zumin(dims, 0xffff)) {
 			return wu_invalid_header;
 		}
 
-		const size_t table_len = v2->dir_count * sizeof(*v2->dir);
-		v2->dir = malloc(table_len);
-		if (!v2->dir) {
-			return wu_invalid_header;
-		}
-
-		if (!fread(v2->dir, table_len, 1, desc->ifp)) {
+		const size_t table_len = v2->dir_count * G00_DIR_SIZE;
+		desc->u.v2.dir = mp_next_slice(&desc->mp, table_len);
+		if (!desc->u.v2.dir) {
 			return wu_unexpected_eof;
 		}
-		endian_loop32((uint32_t *)v2->dir, little_endian,
-			v2->dir_count * sizeof(*v2->dir) / 4);
 	}
 
-	if (!fread(header, 8, 1, ifp)) {
+	header = mp_next_slice(&desc->mp, 8);
+	if (!header) {
 		return wu_unexpected_eof;
 	}
 	desc->comp_size = buf_endian32(header, little_endian);
