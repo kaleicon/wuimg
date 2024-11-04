@@ -445,11 +445,12 @@ const struct wu_conf *wuconf, TIFF *tif, struct wuimg *img, const tdir_t i) {
 
 static enum wu_error tiff_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)ev;
 	TIFF *tif = infile->dec_state;
 	const tdir_t idx = (tdir_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
-	return get_dir(infile, wuconf, tif, img, idx);
+	return (ev == ev_subcycle)
+		? get_dir(infile, wuconf, tif, img, idx)
+		: wu_no_change;
 }
 
 static enum wu_error tiff_dec(struct image_file *infile,

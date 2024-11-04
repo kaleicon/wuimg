@@ -107,11 +107,11 @@ const enum image_event event) {
 	double rotate = 0;
 	const bool first_render = event & ev_subcycle;
 	if (!first_render) {
-		x_scale = get_scale(state, true),
-		y_scale = get_scale(state, false),
+		x_scale = get_scale(state, true);
+		y_scale = get_scale(state, false);
 		rotate = state->rotate * M_PI_2;
-		x = fbw + state->x_offset * x_scale;
-		y = fbh + state->y_offset * y_scale;
+		x = fma(state->x_offset, x_scale, fbw);
+		y = fma(state->y_offset, y_scale, fbh);
 	}
 	const RsvgRectangle viewport = {
 		.x = -fbw,
@@ -173,10 +173,12 @@ const struct wu_conf *wuconf) {
 static enum wu_error svg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	if (wuconf->svg_window_adapt) {
-		return adapt_to_window(infile, wuconf, state, event);
-	} else if (!infile->sub_img->data) {
-		return attempt_native(infile, wuconf);
+	if (event & (ev_subcycle | ev_scale | ev_move | ev_mirrot)) {
+		if (wuconf->svg_window_adapt) {
+			return adapt_to_window(infile, wuconf, state, event);
+		} else if (!infile->sub_img->data) {
+			return attempt_native(infile, wuconf);
+		}
 	}
 	return wu_no_change;
 }

@@ -32,7 +32,9 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 	struct flif_state *ds = infile->dec_state;
 	FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec,
 		(size_t)state->frame);
-	return decode_frame(infile->sub_img, frame, ds);
+	return (ev == ev_frame)
+		? decode_frame(infile->sub_img, frame, ds)
+		: wu_no_change;
 }
 
 static void read_metadata(struct wu_tree *tree, FLIF_IMAGE *frame) {

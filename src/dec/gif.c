@@ -188,7 +188,10 @@ static enum wu_error gif_dec_frame(struct wuimg *img, struct gif_state *ds) {
 static enum wu_error gif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	(void)wuconf; (void)event;
+	(void)wuconf;
+	if (event != ev_frame) {
+		return wu_no_change;
+	}
 	struct gif_state *ds = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
 	if (ds->idx != state->frame) {

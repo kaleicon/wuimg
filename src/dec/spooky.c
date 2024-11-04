@@ -20,8 +20,10 @@ const struct wu_conf *conf) {
 }
 
 static enum wu_error trs_callback(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event _ev) {
-	(void)_ev;
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	if (ev != ev_subcycle) {
+		return wu_no_change;
+	}
 	const uint16_t i = (uint16_t)state->idx;
 	struct wuimg *img = infile->sub_img + i;
 	struct trs_desc *desc = infile->dec_state;

@@ -213,8 +213,10 @@ struct wu_state *state) {
 static enum wu_error webp_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
-	(void)wuconf; (void)event;
-	return webp_frame_iter(infile, state);
+	(void)wuconf;
+	return (event == ev_frame)
+		? webp_frame_iter(infile, state)
+		: wu_no_change;
 }
 
 static enum wu_error gather_info(struct wuimg *img, WebPIterator *iter) {

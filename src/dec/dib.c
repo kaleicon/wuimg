@@ -82,7 +82,9 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 	(void)ev;
 	const uint16_t idx = (uint16_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
-	return wrap_ico(img, wuconf, infile->dec_state, idx);
+	return (ev == ev_subcycle)
+		? wrap_ico(img, wuconf, infile->dec_state, idx)
+		: wu_no_change;
 }
 
 static enum wu_error ico_dec(struct image_file *infile,

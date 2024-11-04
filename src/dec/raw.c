@@ -84,9 +84,9 @@ const enum image_event ev) {
 	struct image_context *jpeg = &rs->jpeg;
 
 	jpeg->state.idx = state->idx - raws;
-	enum wu_error status = ev
-		? dec_callback(jpeg, ev)
-		: dec_decode(jpeg);
+	enum wu_error status = ev == 0
+		? dec_decode(jpeg)
+		: dec_callback(jpeg, ev);
 
 	if (status <= wu_ok) {
 		const enum wu_error copy_status = copy_jpeg(infile, rs, jpeg);
@@ -156,8 +156,9 @@ const enum image_event ev) {
 		return decode_jpeg(infile, rs, state, ev);
 	}
 #endif
-	(void)ev;
-	return raw_decode(infile, wuconf, state);
+	return (ev == ev_subcycle)
+		? raw_decode(infile, wuconf, state)
+		: wu_no_change;
 }
 
 static unsigned char convert_rotate(const int flip) {

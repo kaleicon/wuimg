@@ -4,11 +4,14 @@
 
 static enum wu_error pnm_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf; (void)ev;
-	const size_t i = (size_t)state->idx;
-	struct wuimg *img = infile->sub_img + i;
-	return pnm_decode(infile->dec_state, img, i)
-		? wu_ok : wu_decoding_error;
+	(void)wuconf;
+	if (ev == ev_subcycle) {
+		const size_t i = (size_t)state->idx;
+		struct wuimg *img = infile->sub_img + i;
+		return pnm_decode(infile->dec_state, img, i)
+			? wu_ok : wu_decoding_error;
+	}
+	return wu_no_change;
 }
 
 static enum wu_error pnm_dec(struct image_file *infile,

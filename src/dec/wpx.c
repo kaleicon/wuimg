@@ -46,10 +46,11 @@ const struct wu_conf *wuconf, const uint32_t i) {
 
 static enum wu_error wia_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)ev;
 	struct wpx_ia2_desc *desc = infile->dec_state;
 	struct wuimg *img = infile->sub_img + state->idx;
-	return frame_decode(desc, img, wuconf, (uint32_t)state->idx);
+	return (ev == ev_subcycle)
+		? frame_decode(desc, img, wuconf, (uint32_t)state->idx)
+		: wu_no_change;
 }
 
 static void add_list(struct wu_tree *tree, const char *branch_name,

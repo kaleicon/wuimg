@@ -71,17 +71,19 @@ static void dcx_end(struct image_file *infile) {
 
 static enum wu_error dcx_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)ev;
-	struct dcx_desc *desc = infile->dec_state;
-	const uint32_t i = (uint32_t)state->idx;
-	struct wuimg *img = infile->sub_img + i;
+	if (ev == ev_subcycle) {
+		struct dcx_desc *desc = infile->dec_state;
+		const uint32_t i = (uint32_t)state->idx;
+		struct wuimg *img = infile->sub_img + i;
 
-	struct pcx_desc pcx;
-	enum wu_error st = dcx_set_file(desc, &pcx, i);
-	if (st == wu_ok) {
-		return common_pcx(&pcx, img, wuconf);
+		struct pcx_desc pcx;
+		enum wu_error st = dcx_set_file(desc, &pcx, i);
+		if (st == wu_ok) {
+			return common_pcx(&pcx, img, wuconf);
+		}
+		return st;
 	}
-	return st;
+	return wu_no_change;
 }
 
 static enum wu_error dcx_dec(struct image_file *infile,

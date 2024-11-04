@@ -5,10 +5,12 @@
 
 static enum wu_error px_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf; (void)ev;
+	(void)wuconf;
 	const uint32_t idx = (uint32_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
-	return px_decode(infile->dec_state, img, idx);
+	return (ev == ev_subcycle)
+		? px_decode(infile->dec_state, img, idx)
+		: wu_no_change;
 }
 
 static enum wu_error px_dec(struct image_file *infile,

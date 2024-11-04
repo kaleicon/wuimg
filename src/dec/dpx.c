@@ -149,7 +149,9 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 	(void)ev;
 	const uint8_t idx = (uint8_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
-	return dec_wrap(img, wuconf, infile->dec_state, idx);
+	return (ev == ev_subcycle)
+		? dec_wrap(img, wuconf, infile->dec_state, idx)
+		: wu_no_change;
 }
 
 static enum wu_error dpx_dec(struct image_file *infile,

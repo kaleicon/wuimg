@@ -197,8 +197,10 @@ static enum wu_error get_frame(struct image_file *infile, int idx) {
 
 static enum wu_error jpegxl_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf; (void)ev;
-	return get_frame(infile, state->frame);
+	(void)wuconf;
+	return (ev == ev_frame)
+		? get_frame(infile, state->frame)
+		: wu_no_change;
 }
 
 static enum wu_error gather_info(struct image_file *infile,

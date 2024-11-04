@@ -225,7 +225,9 @@ struct heif_image *himg, const bool alpha, int *bpl, size_t *scanline) {
 static enum wu_error heif_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
-	(void)ev;
+	if (ev != ev_subcycle) {
+		return wu_no_change;
+	}
 	const size_t i = (size_t)state->idx;
 
 	struct heif_state *ds = infile->dec_state;

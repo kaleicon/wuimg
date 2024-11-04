@@ -410,8 +410,9 @@ const struct wu_conf *wuconf, const int i) {
 static enum wu_error jpeg_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
-	(void)ev;
-	return decode_img(infile, wuconf, state->idx);
+	return (ev == ev_subcycle)
+		? decode_img(infile, wuconf, state->idx)
+		: wu_no_change;
 }
 
 static enum wu_error jpeg_dec(struct image_file *infile,

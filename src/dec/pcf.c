@@ -9,18 +9,21 @@ static void pcf_end(struct image_file *infile) {
 static enum wu_error pcf_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event ev) {
-	(void)ev;
-	struct pcf_desc *desc = infile->dec_state;
-	const uint32_t i = (uint32_t)state->idx;
-	struct wuimg *img = infile->sub_img + i;
-	const enum wu_error st = pcf_set_glyph(desc, img, i);
-	if (st == wu_ok) {
-		if (wuimg_exceeds_limit(img, wuconf)) {
-			return wu_exceeds_size_limit;
+	if (ev == ev_subcycle) {
+		struct pcf_desc *desc = infile->dec_state;
+		const uint32_t i = (uint32_t)state->idx;
+		struct wuimg *img = infile->sub_img + i;
+		const enum wu_error st = pcf_set_glyph(desc, img, i);
+		if (st == wu_ok) {
+			if (wuimg_exceeds_limit(img, wuconf)) {
+				return wu_exceeds_size_limit;
+			}
+			return pcf_load_glyph(desc, img)
+				? wu_ok : wu_decoding_error;
 		}
-		return pcf_load_glyph(desc, img) ? wu_ok : wu_decoding_error;
+		return st;
 	}
-	return st;
+	return wu_no_change;
 }
 
 static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {

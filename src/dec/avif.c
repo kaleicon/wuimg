@@ -153,7 +153,9 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 	(void)ev;
 	const uint32_t idx = (uint32_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
-	return dec_subimg(infile, wuconf, img, idx);
+	return (ev == ev_subcycle)
+		? dec_subimg(infile, wuconf, img, idx)
+		: wu_no_change;
 }
 
 static enum wu_error decode_map(struct image_file *infile,
