@@ -83,6 +83,9 @@ void gl_clear_color(const uint8_t bg[static 4]);
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 const struct wuimg *img, enum heed_ratio heed);
 
+bool gl_subtexture_upload(struct gl_context *context, const struct wuimg *img,
+const struct wu_state *state);
+
 bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
 
 

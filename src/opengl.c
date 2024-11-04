@@ -49,6 +49,7 @@
 #define EOTF_HLG "2"
 
 static const float VISUAL_EPSILON = 0x1p-16;
+static const align_t DEFAULT_ALIGN = 2;
 
 enum gl_mag_filter {
 	gl_mag_linear = GL_LINEAR,
@@ -407,11 +408,10 @@ static void gl_alignment(const align_t align) {
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1 << align);
 }
 
-static void * unpack_upload(const GLuint pix_buf,
+static bool unpack_upload(const GLuint pix_buf,
 const struct gl_upload_params *params, const struct wuimg *img, size_t w,
 const size_t h, const unsigned char *data) {
-	const align_t out_align = 2;
-	gl_alignment(out_align);
+	gl_alignment(DEFAULT_ALIGN);
 	w *= params->comps;
 	const void *arg = params->op == op_bitfield
 		? (const void *)img->u.bitfield : (const void *)&params->remap;
@@ -421,18 +421,19 @@ const size_t h, const unsigned char *data) {
 	if (!outwidth) {
 		fatal_bug("Upload error", "Unsupported raster format");
 	}
-	const size_t outstride = strip_length(outwidth, 8, out_align);
+	const size_t outstride = strip_length(outwidth, 8, DEFAULT_ALIGN);
 
-	unsigned char *map = map_unpack_buffer(pix_buf, outstride * h,
-		GL_READ_ONLY);
-	const watch_t start = watch_look();
-	for (size_t y = 0; y < h; ++y) {
-		unpack_strip(map + outstride*y, data + instride*y,
-			w, img->bitdepth, img->attr, params->op, arg);
+	uint8_t *map = map_unpack_buffer(pix_buf, outstride * h, GL_READ_ONLY);
+	if (map) {
+		const watch_t start = watch_look();
+		for (size_t y = 0; y < h; ++y) {
+			unpack_strip(map + outstride*y, data + instride*y,
+				w, img->bitdepth, img->attr, params->op, arg);
+		}
+		watch_report("Unpacked", start, report_detail);
+		glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	}
-	watch_report("Unpacked", start, report_detail);
-	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-	return 0;
+	return (bool)map;
 }
 
 static bool tex_upload(struct gl_context *context, const struct wuimg *img,
@@ -440,25 +441,60 @@ const struct gl_upload_params *params, const size_t w, const size_t h,
 const void *data) {
 	const GLuint pix_buf = context->pixel_unpack_buf;
 	bool bind_buffer = false;
+	bool ok = true;
 	if (params->op != op_noop || img->align_sh > 3) {
-		data = unpack_upload(pix_buf, params, img, w, h, data);
+		ok = unpack_upload(pix_buf, params, img, w, h, data);
+		data = 0;
 		bind_buffer = true;
 	} else {
 		gl_alignment(img->align_sh);
 	}
 
-	tex_2d_params(params, w, h, data);
-	if (bind_buffer) {
-		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	if (ok) {
+		tex_2d_params(params, w, h, data);
+		if (bind_buffer) {
+			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+		}
 	}
 
 	const GLenum err = glGetError();
 	if (err) {
-		fprintf(stderr, "Encountered error %x when uploading to "
-			"texture: %s\n", err, gl_strerror(err));
+		fprintf(stderr, "Encountered error %x in %s: %s\n",
+			err, __func__, gl_strerror(err));
 		return false;
 	}
 	return true;
+}
+
+static bool subtex_upload(struct gl_context *context, const struct wuimg *img,
+const struct gl_upload_params *params, const struct frame_info *frame) {
+	gl_alignment(DEFAULT_ALIGN);
+	size_t w = frame->w * img->channels;
+	size_t full_w = img->w * img->channels;
+
+	const size_t instride = strip_length(full_w, img->bitdepth, img->align_sh);
+	const size_t outstride = strip_length(w, img->bitdepth, DEFAULT_ALIGN);
+	const size_t outlen = strip_base(w, img->bitdepth);
+
+	size_t x_off = strip_base(frame->x * img->channels, img->bitdepth);
+	const uint8_t *data = img->data + x_off + instride * frame->y;
+	uint8_t *map = map_unpack_buffer(context->pixel_unpack_buf,
+		outstride * frame->h, GL_WRITE_ONLY);
+	if (map) {
+		for (size_t y = 0; y < frame->h; ++y) {
+			memcpy(map + outstride*y, data + instride*y, outlen);
+		}
+		glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+		tex_sub2d((GLint)frame->x, (GLint)frame->y, (GLsizei)frame->w,
+			(GLsizei)frame->h, params->tex.fmt, params->tex.type, 0);
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	}
+	const GLenum err = glGetError();
+	if (err) {
+		fprintf(stderr, "Encountered error %x in %s: %s\n",
+			err, __func__, gl_strerror(err));
+	}
+	return (bool)map;
 }
 
 static float get_coord_mul(const size_t dim, const size_t subdim,
@@ -494,8 +530,8 @@ const struct wuimg *img, const struct gl_upload_params *params) {
 			const struct plane_info *p = img->u.planes->p + i;
 			tex_upload(context, img, params, p->w, p->h, p->ptr);
 			subsamp_positioning(pos[i], img, p);
-			context->tex.subsamp |= (bool)
-				(p->x.subsamp > 1 || p->y.subsamp > 1) << i;
+			context->tex.subsamp |=
+				((p->x.subsamp > 1) | (p->y.subsamp > 1)) << i;
 		} else {
 			tex_2d_solid();
 		}
@@ -512,8 +548,7 @@ const struct wuimg *img, const struct gl_upload_params *params) {
 }
 
 static bool mode_upload(struct gl_context *context, const struct wuimg *img,
-const struct gl_upload_params *params) {
-	context->tex.subsamp = 0;
+const struct gl_upload_params *params, const struct frame_info *frame) {
 	switch (img->mode) {
 	case image_mode_palette:
 		tex_active(gl_tex_pal);
@@ -523,6 +558,18 @@ const struct gl_upload_params *params) {
 		tex_active(gl_tex_img);
 		// fallthrough
 	case image_mode_raw:
+		if (frame) {
+			if (!frame->w || !frame->h) {
+				return true;
+			}
+			if (params->op == op_noop) {
+				switch (img->bitdepth) {
+				case 8: case 16: case 32:
+					return subtex_upload(context, img, params, frame);
+				}
+			}
+		}
+		// fallthrough
 	case image_mode_bitfield:
 		return tex_upload(context, img, params, img->w, img->h,
 			img->data);
@@ -572,6 +619,20 @@ const enum pix_attr attr) {
 
 static const char * set_upload_params(struct gl_upload_params *params,
 const struct wuimg *img) {
+	*params = (struct gl_upload_params){.op = op_noop};
+	switch (img->mode) {
+	case image_mode_raw:
+	case image_mode_bitfield:
+		params->layout = img->layout;
+		params->comps = img->channels;
+		break;
+	case image_mode_palette:
+	case image_mode_planar:
+		params->layout = pix_gray;
+		params->comps = 1;
+		break;
+	}
+
 	uint8_t ch = params->comps;
 	uint8_t bd = img->bitdepth;
 	struct gl_tex_params *tex = &params->tex;
@@ -795,29 +856,17 @@ const struct wuimg *img, const enum heed_ratio heed) {
 
 	gl_clock_start(context);
 	set_cms(context, img);
-
-	struct gl_upload_params params = {.op = op_noop};
 	switch_color_mode(context, img->mode);
-	switch (img->mode) {
-	case image_mode_raw:
-	case image_mode_bitfield:
-		params.layout = img->layout;
-		params.comps = img->channels;
-		break;
-	case image_mode_palette:
-	case image_mode_planar:
-		params.layout = pix_gray;
-		params.comps = 1;
-		break;
-	}
 
+	struct gl_upload_params params;
 	const char *errmsg = set_upload_params(&params, img);
 	if (errmsg) {
 		fatal_bug(__func__, errmsg);
 		return gl_upload_fail;
 	}
 
-	if (!mode_upload(context, img, &params)) {
+	context->tex.subsamp = 0;
+	if (!mode_upload(context, img, &params, NULL)) {
 		return gl_upload_fail;
 	}
 	gl_clock_end();
@@ -836,6 +885,20 @@ const struct wuimg *img, const enum heed_ratio heed) {
 		return gl_upload_success;
 	}
 	return gl_upload_same_size;
+}
+
+bool gl_subtexture_upload(struct gl_context *context, const struct wuimg *img,
+const struct wu_state *state) {
+	struct gl_upload_params params;
+	const char *errmsg = set_upload_params(&params, img);
+	if (errmsg) {
+		fatal_bug(__func__, errmsg);
+		return false;
+	}
+	const struct frame_info *frame = img->frames
+		? img->frames->f + state->frame : NULL;
+	context->update = gl_update_redraw;
+	return mode_upload(context, img, &params, frame);
 }
 
 void gl_reader_close(struct gl_reader_context *reader) {

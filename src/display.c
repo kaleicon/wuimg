@@ -54,9 +54,13 @@ void display_end(struct window_context *window, const struct term_restore *tr) {
 }
 
 static enum wu_error update_texture(struct image_context *image,
-struct gl_context *gl, const bool reset) {
+struct gl_context *gl, const bool reset, const bool subupload) {
 	struct wu_state *state = &image->state;
 	struct wuimg *img = image->file.sub_img + state->idx;
+	if (subupload) {
+		return gl_subtexture_upload(gl, img, state)
+			? wu_ok : wu_display_error;
+	}
 	switch (gl_texture_upload(gl, img, image->conf.heed_pixel_ratio)) {
 	case gl_upload_fail:
 		term_line_put("Failed to upload to texture.", stderr);
@@ -166,14 +170,17 @@ const bool allow_cycle, const bool allow_delete) {
 	enum image_event evs = ev_subcycle;
 	for (bool upload = true, first_iter = true; err == wu_ok;) {
 		if (upload) {
+			bool subupload = false;
 			if (event->image & ev_subcycle) {
 				state->anim_playing = image_cur_is_anim(image);
 				state->time = 0;
 				evs = image_cur_events(image);
+			} else {
+				subupload = true;
 			}
 
 			struct gl_context *gl = &window->pub.gl;
-			err = update_texture(image, gl, first_iter);
+			err = update_texture(image, gl, first_iter, subupload);
 			if (err != wu_ok) {
 				break;
 			}
