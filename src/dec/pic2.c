@@ -47,10 +47,11 @@ const struct wu_conf *wuconf) {
 
 	read_metadata(&desc, &infile->metadata);
 
+
 	size_t total = 0;
 	size_t i = 0;
 	struct pic2_block block;
-	while (i < USHRT_MAX) {
+	while (i < SHRT_MAX) {
 		st = pic2_next_block(&desc, &block);
 		if (st == wu_no_change) {
 			if (!i) {
@@ -58,7 +59,7 @@ const struct wu_conf *wuconf) {
 			}
 			break;
 		} else if (st != wu_ok) {
-			continue;
+			return st;
 		}
 		++total;
 		i += block.is_image;
