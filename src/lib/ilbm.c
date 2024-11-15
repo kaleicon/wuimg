@@ -8,7 +8,9 @@
 
 #include "lib/ilbm.h"
 
-static const uint8_t HAM_CH = 3; // Output channels for HAM
+/* Output channels for HAM. 3 are required, but 4 is much faster as rendering
+ * makes heavy use of memcpy */
+static const uint8_t HAM_CH = 4;
 
 const char * ilbm_compression_str(const enum ilbm_compression comp) {
 	switch (comp) {
@@ -61,6 +63,7 @@ const size_t offset) {
 	const uint8_t *src = img->data + offset;
 	const struct palette *pal = desc->pal;
 	const size_t stride = img->w*HAM_CH;
+
 	for (size_t y = 0; y < img->h; ++y) {
 		for (size_t x = 0; x < img->w; ++x) {
 			const size_t pix = y*stride + x*HAM_CH;
@@ -75,10 +78,13 @@ const size_t offset) {
 				} else {
 					memcpy(dst + pix, pal->color, HAM_CH);
 				}
-//				uint8_t ch = (ham ^ 2);
-//				ch ^= ch >> 1;
-				const uint8_t conv[4] = {0 /*unused*/, 2, 0, 1};
-				const uint8_t ch = conv[ham];
+
+				// equivalent to:
+				//const uint8_t conv[4] = {0 /*unused*/, 2, 0, 1};
+				//uint8_t ch = conv[ham];
+				uint8_t ch = (ham ^ 2);
+				ch ^= ch >> 1;
+
 				dst[pix + ch] = (uint8_t)(entry << (8 - color_bits))
 					| (dst[pix + ch] & antimask);
 			} else {
@@ -190,14 +196,13 @@ static size_t decomp_vertical_rle(const struct ilbm_desc *desc,
 struct wuimg *img, const struct wuptr body) {
 	const size_t stride = strip_length(img->w, 1, 1);
 	const size_t upack_len = stride * desc->planes * img->h;
-	uint8_t *upack = malloc(upack_len);
+	uint16_t *upack = malloc(upack_len*2);
 	size_t w = 0;
 	if (upack) {
-		uint16_t *tmp = (uint16_t *)img->data;
-		w = decomp_vdat(tmp, upack_len/2, body.ptr, body.len);
-		unscramble_vdat((uint16_t *)upack, tmp, stride/2, img->h,
-			desc->planes);
-		expand_body(desc, img, wuptr_mem(upack, upack_len));
+		w = decomp_vdat(upack, upack_len/2, body.ptr, body.len);
+		uint16_t *linear = upack + upack_len/2;
+		unscramble_vdat(linear, upack, stride/2, img->h, desc->planes);
+		expand_body(desc, img, wuptr_mem(linear, upack_len));
 		free(upack);
 	}
 	return w;
@@ -244,8 +249,9 @@ struct wuimg *tiny) {
 	if (desc->tiny.present && wuimg_clone(tiny, main)) {
 		tiny->w = desc->tiny.w;
 		tiny->h = desc->tiny.h;
-		if (wuimg_verify(tiny) == wu_ok) {
-			if (tiny->mode == image_mode_palette) {
+		const enum wu_error st = wuimg_verify(tiny);
+		if (st == wu_ok) {
+			if (tiny->mode == image_mode_palette && desc->cycle) {
 				memcpy(tiny->u.palette->color, desc->cycle->color,
 					sizeof(desc->cycle->color));
 			}
@@ -274,7 +280,17 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		img->evolving = false;
 	} else {
 		if (desc->pal) {
-			if (!desc->ham) {
+			if (desc->ham) {
+				img->channels = HAM_CH;
+				img->alpha = alpha_ignore;
+				if (desc->cycle) {
+					// TODO
+					// Sample: AH_Swimmer.iff
+					free(desc->cycle);
+					desc->cycle = NULL;
+				}
+			} else {
+				img->channels = 1;
 				struct palette *pal = desc->pal;
 				if (desc->extra_half_brite) {
 					for (size_t i = 0; i < 32; ++i) {
@@ -308,17 +324,16 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 				if (desc->cycle) {
 					palette_cycle_set(desc->cycle, pal);
 				}
-			} else if (desc->cycle) {
-				// TODO
-				// Sample: AH_Swimmer.iff
-				free(desc->cycle);
-				desc->cycle = NULL;
 			}
 		} else {
 			if (desc->ham || desc->cycle) {
 				return wu_invalid_header;
 			}
-			if (desc->planes <= 8) {
+			if (desc->planes > 8) {
+				img->channels = 4;
+				img->used_bits = 8;
+			} else {
+				img->channels = 1;
 				img->used_bits = desc->planes;
 			}
 		}
@@ -333,13 +348,21 @@ const struct wuptr data) {
 		0       u16     Width
 		2       u16     Height
 		4       [Len-4] Data
+	 * Data is compressed just like the main image.
 	*/
 	(void)id;
-	if (data.len > 4) {
+	if (data.len > 4 && desc->planes) {
+		/* TODO: Find ILBM samples with TINY.
+		 * All valid TINY samples I've seen are PBM.
+		 * FONA.LBM has a thumbnail, but has 0 height and unknown
+		 * data.
+		 * Maybe also find a source that's not a mysterious edit in
+		 * Wikipedia. */
+		uint16_t w = buf_endian16(data.ptr, big_endian);
+		uint16_t h = buf_endian16(data.ptr + 2, big_endian);
 		desc->tiny = (struct ilbm_tiny) {
-			.present = true,
-			.w = buf_endian16(data.ptr, big_endian),
-			.h = buf_endian16(data.ptr + 2, big_endian),
+			.present = w & h,
+			.w = w, .h = h,
 			.data = wuptr_mem(data.ptr + 4, data.len - 4),
 		};
 		return wu_ok;
@@ -440,6 +463,7 @@ const struct wuptr data) {
 		7:  Extra Half-Brite
 		11: HAM
 	*/
+	(void)img;
 	if (data.len != 4 || desc->format != ilbm_format_ilbm) {
 		return wu_invalid_header;
 	}
@@ -456,7 +480,6 @@ const struct wuptr data) {
 		if (desc->masking) {
 			return wu_unsupported_feature;
 		}
-		img->channels = HAM_CH;
 	}
 	return wu_ok;
 }
@@ -485,7 +508,6 @@ const struct wuptr data) {
 	}
 	img->w = buf_endian16(data.ptr, big_endian);
 	img->h = buf_endian16(data.ptr + 2, big_endian);
-	img->channels = 1;
 	img->bitdepth = 8;
 	desc->planes = data.ptr[8];
 	desc->masking = data.ptr[9];
@@ -503,7 +525,6 @@ const struct wuptr data) {
 		case 5: case 6: case 7: case 8:
 			break;
 		case 24: case 32:
-			img->channels = 4;
 			img->layout = which_end() == little_endian
 				? pix_rgba : pix_abgr;
 			img->alpha = (desc->planes == 24)

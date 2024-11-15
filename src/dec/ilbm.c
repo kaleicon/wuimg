@@ -41,14 +41,16 @@ static void ilbm_end(struct image_file *infile) {
 }
 
 static enum wu_error ilbm_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
+const struct wu_conf *conf, struct wu_state *state,
 const enum image_event ev) {
-	(void)wuconf;
 	struct ilbm_desc *desc = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
 	switch (ev) {
 	case ev_subcycle:
 		if (!img[state->idx].data) {
+			if (wuimg_exceeds_limit(img + state->idx, conf)) {
+				return wu_exceeds_size_limit;
+			}
 			const bool ok = state->idx
 				? ilbm_decode_tiny(desc, img, img + state->idx)
 				: ilbm_decode_main(desc, img);
