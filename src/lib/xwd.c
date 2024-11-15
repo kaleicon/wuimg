@@ -220,6 +220,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 			return wu_invalid_header;
 		}
 		break;
+	default: return wu_invalid_header;
 	}
 	desc->bpp = (uint8_t)bpp;
 	desc->depth = (uint8_t)depth;
