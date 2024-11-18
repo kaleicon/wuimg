@@ -95,7 +95,7 @@ enum wu_error pgx_read_header(struct pgx_desc *desc, struct wuimg *img) {
 	img->alpha = buf_endian16(buf + 12, little_endian)
 		? alpha_unassociated : alpha_ignore;
 	desc->comp_size = buf_endian32(buf + 16, little_endian);
-	return desc->comp_size + 32 <= desc->mp.len
+	return desc->comp_size < 0xffffffff - 32 && desc->comp_size + 32 <= desc->mp.len
 		? wuimg_verify(img)
 		: wu_unexpected_eof;
 }
