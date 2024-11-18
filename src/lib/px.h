@@ -15,7 +15,7 @@ enum px_type {
 };
 
 struct px_tile {
-	uint32_t len;
+	uint32_t size;
 	uint16_t w, h;
 	long data_start;
 };
