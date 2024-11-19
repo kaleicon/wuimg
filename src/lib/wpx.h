@@ -48,25 +48,51 @@ struct wpx_bmp_desc {
 };
 
 
-struct wpx_ia2_array {
-	uint32_t nr;
-	uint32_t *val;
+// underscore means uncertainty
+struct wpx_ia2_geom_t {
+	uint32_t frame; // frame index
+	uint32_t _x, _y;
+	uint32_t w, h;
+};
+
+struct wpx_ia2_range_t {
+	uint32_t _nr, _base; // mys5 ranges ?
+};
+
+struct wpx_ia2_mys5_t {
+	uint32_t _code; // 1 = play frame, 4 = loop start, 5 = loop end ?
+	uint32_t _arg; // inverse of play speed ?
+	uint32_t idx; // geom index
+	uint32_t _loop_count;
+	uint32_t _unknown;
 };
 
 struct wpx_ia2_list {
 	uint32_t str_len;
 	char *str;
-	struct wpx_ia2_array idx;
+	uint32_t *off;
+};
+
+struct wpx_ia2_count_t {
+	uint32_t _a;
+	uint32_t frames;
+	uint32_t geom;
+	uint32_t sfx;
+	uint32_t range;
+	uint32_t mys5;
 };
 
 struct wpx_ia2_desc {
 	struct mparser mp;
 	struct wpx_dir dir;
 	uint32_t base;
-	struct wpx_ia2_array frames;
-	struct wpx_ia2_array mys3;
-	struct wpx_ia2_array mys4;
-	struct wpx_ia2_array mys5;
+
+	struct wpx_ia2_count_t nr;
+	uint32_t *frames;
+	struct wpx_ia2_geom_t *geom;
+	struct wpx_ia2_range_t *range;
+	struct wpx_ia2_mys5_t *mys5;
+
 	struct wpx_ia2_list names;
 	struct wpx_ia2_list sfx;
 };

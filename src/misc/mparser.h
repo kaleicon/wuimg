@@ -44,6 +44,8 @@ size_t mp_scan_int(struct mparser *mp, size_t digits, long *val);
 
 size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val);
 
+void mp_seek_cur(struct mparser *mp, ptrdiff_t pos);
+
 struct wuptr mp_remaining_at(const struct mparser *mp, size_t pos,
 size_t len);
 

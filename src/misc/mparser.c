@@ -183,6 +183,17 @@ size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val) {
 	return mp_scan_uint(mp, digits, val);
 }
 
+void mp_seek_cur(struct mparser *mp, const ptrdiff_t pos) {
+	const size_t upos = (size_t)pos;
+	if (pos < 0) {
+		mp->pos = upos > mp->pos ? 0 : mp->pos - upos;
+	} else if (SIZE_MAX - mp->pos > upos) {
+		mp->pos = zumin(mp->pos + upos, mp->len);
+	} else {
+		mp->pos = mp->len;
+	}
+}
+
 struct wuptr mp_remaining_at(const struct mparser *mp, const size_t pos,
 const size_t len) {
 	return (struct wuptr) {

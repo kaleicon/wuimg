@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: 0BSD
-#include <string.h>
+#include <inttypes.h>
 
-#include "wudefs.h"
 #include "lib/wpx.h"
+#include "misc/math.h"
+#include "wudefs.h"
 
 static enum wu_error single_decode(struct wuimg *img,
 const struct wu_conf *wuconf, struct wpx_bmp_desc *desc) {
@@ -54,9 +55,10 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 }
 
 static void add_list(struct wu_tree *tree, const char *branch_name,
-const struct wpx_ia2_list *list) {
+const struct wpx_ia2_list *list, const uint32_t nr) {
 	struct wu_tree *br = NULL;
-	for (uint32_t i = 0; i < list->idx.nr; ++i) {
+	const size_t m = zumin(nr, 1024);
+	for (uint32_t i = 0; i < m; ++i) {
 		struct wuptr str;
 		if (wpx_ia2_list_get(list, i, &str)) {
 			if (!br) {
@@ -66,34 +68,34 @@ const struct wpx_ia2_list *list) {
 				}
 			}
 			char num[13];
-			snprintf(num, sizeof(num), "%u", i);
+			snprintf(num, sizeof(num), "%" PRIu32, i);
 			tree_add_leaf_len(br, num, str, NULL);
 		}
 	}
 }
 
-static void array_print(const char *name, const struct wpx_ia2_array *arr,
-const uint32_t per_line) {
-	if (arr->nr) {
-		FILE *out = stderr;
-		fputs(name, out);
-		for (uint32_t i = 0; i < arr->nr; ++i) {
-			if (i % per_line == 0) {
-				fputc('\n', out);
-			}
-			fprintf(out, " %u", arr->val[i]);
+static void array_print(const char *name, const void *ptr,
+const uint32_t nr, const size_t size) {
+	FILE *out = stderr;
+	fprintf(out, "%s (%u)\n", name, nr);
+	const size_t fields = size/sizeof(uint32_t);
+	for (uint32_t i = 0; i < nr; ++i) {
+		for (size_t k = 0; k < fields; ++k) {
+			const uint32_t *arr = ptr;
+			fprintf(out, " %u", arr[i*fields + k]);
 		}
 		fputc('\n', out);
 	}
 }
 
 static void anim_metadata(struct wu_tree *tree, const struct wpx_ia2_desc *desc) {
-	add_list(tree, "Names", &desc->names);
-	add_list(tree, "SFX", &desc->sfx);
-	if (0) {
-		array_print("Mys3", &desc->mys3, 5);
-		array_print("Mys4", &desc->mys4, 2);
-		array_print("Mys5", &desc->mys5, 5);
+	add_list(tree, "Names", &desc->names, desc->nr.frames);
+	add_list(tree, "SFX", &desc->sfx, desc->nr.sfx);
+	const bool debug = false;
+	if (debug) {
+		array_print("Geom", desc->geom, desc->nr.geom, sizeof(*desc->geom));
+		array_print("Range", desc->range, desc->nr.range, sizeof(*desc->range));
+		array_print("Mys5", desc->mys5, desc->nr.mys5, sizeof(*desc->mys5));
 	}
 }
 
@@ -106,7 +108,7 @@ const struct wu_conf *wuconf) {
 		st = wpx_ia2_parse(desc);
 		if (st == wu_ok) {
 			anim_metadata(&infile->metadata, desc);
-			if (!alloc_sub_images(infile, desc->frames.nr)) {
+			if (!alloc_sub_images(infile, desc->nr.frames)) {
 				st = wu_alloc_error;
 			}
 		}
