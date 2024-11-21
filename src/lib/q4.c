@@ -57,20 +57,10 @@ const size_t dst_len, size_t src_len) {
 	uint8_t saved_val = 0;
 	uint8_t end[MAX_RLE_READ*2];
 	for (;;) {
-		const uint8_t *flag = memchr(src + s, 0x10, src_len - s);
-		if (!flag) {
-			const size_t len = zumin(dst_len - d, src_len - s);
-			memcpy(dst + d, src + s, len);
-			d += len;
-			break;
-		}
-		const size_t len = (size_t)(flag - (src + s));
-		if (d + len > dst_len) {
-			break;
-		}
-		memcpy(dst + d, src + s, len);
-		d += len;
-		s += len;
+		const size_t read = memccpy_cur(dst + d, src + s, 0x10,
+			dst_len - d, src_len - s);
+		d += read;
+		s += read;
 
 		if (s + MAX_RLE_READ > src_len) {
 			if (src == end) {
@@ -172,7 +162,7 @@ struct wuimg *img) {
 	uint8_t *buf = (uint8_t *)(pal->color + 16);
 	const size_t w = decode_block(buf, block);
 	for (uint8_t i = 0; i < w/6; ++i) {
-		const uint8_t z = (i & 0x8) | ((i >> 2) & 0x1) | (i & 0x3) << 1;
+		const unsigned z = (i & 0x8u) | ((i >> 2) & 0x1u) | (i & 0x3u) << 1;
 		pal->color[i] = (struct pix_rgba8) {
 			// 4-bit colors stored in 16-bits little-endian words
 			.r = buf[6*z + 1]*0x11u,
