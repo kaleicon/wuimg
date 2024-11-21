@@ -119,7 +119,7 @@ size_t memccpy_cur(unsigned char *restrict dst,
 const unsigned char *restrict src, const unsigned char c, size_t dst_len,
 size_t src_len) {
 	const size_t n = zumin(dst_len, src_len);
-	const unsigned char *end = memccpy(dst, src, c, zumin(dst_len, src_len));
+	const unsigned char *end = memccpy(dst, src, c, n);
 	if (end) {
 		return (size_t)(end - dst - 1);
 	}

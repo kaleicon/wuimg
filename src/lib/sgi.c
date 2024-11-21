@@ -7,30 +7,31 @@
 #include "raster/fmt.h"
 #include "sgi.h"
 
+static const unsigned HEADER_SIZE = 512;
 static const uint8_t RLE_LEN_MASK = 0x7f;
 
 struct rle_info {
-	size_t entries;
+	size_t rows;
 	size_t total;
 	uint8_t *buf;
 	uint32_t *row_offset;
 	uint32_t *row_len;
 };
 
-static void rle_loop16(uint16_t *restrict output, const size_t out_limit,
+static size_t rle_loop16(uint16_t *restrict output, const size_t out_limit,
 const uint16_t *restrict rle, const uint32_t rle_limit) {
 	size_t o = 0;
 	uint32_t r = 0;
-	do {
+	while (rle_limit - r > 1) {
 		const uint16_t packet = endian16(rle[r], big_endian);
 		const uint16_t len = packet & RLE_LEN_MASK;
-		if (o + len > out_limit) {
-			return;
+		if (len > out_limit - o) {
+			break;
 		}
 		++r;
 		if (packet & 0x80) {
-			if (r + len > rle_limit) {
-				return;
+			if (len > rle_limit - r) {
+				break;
 			}
 			for (uint16_t i = 0; i < len; ++i) {
 				output[o] = endian16(rle[r], big_endian);
@@ -40,73 +41,64 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 		} else {
 			const uint16_t pix = endian16(rle[r], big_endian);
 			for (uint16_t i = 0; i < len; ++i) {
-				output[o + i] = pix;
+				output[o] = pix;
+				++o;
 			}
-			o += len;
 			++r;
 		}
-	} while (r + 1 < rle_limit);
+	}
+	return o;
 }
 
-static void rle_loop8(uint8_t *restrict output, const size_t out_limit,
+static size_t rle_loop8(uint8_t *restrict output, const size_t out_limit,
 const uint8_t *restrict rle, const uint32_t rle_limit) {
 	size_t o = 0;
 	uint32_t r = 0;
-	do {
+	while (rle_limit - r > 1) {
 		const uint8_t packet = rle[r];
 		const uint8_t len = packet & RLE_LEN_MASK;
-		if (o + len > out_limit) {
-			return;
+		if (len > out_limit - o) {
+			break;
 		}
 		++r;
 		if (packet & 0x80) {
-			if (r + len > rle_limit) {
-				return;
+			if (len > rle_limit - r) {
+				break;
 			}
 			memcpy(output + o, rle + r, len);
-			o += len;
 			r += len;
 		} else {
 			memset(output + o, rle[r], len);
-			o += len;
 			++r;
 		}
-	} while (r + 1 < rle_limit);
+		o += len;
+	}
+	return o;
 }
 
-static void rle_loop(const struct sgi_desc *desc, struct wuimg *img,
+static size_t rle_loop(const struct sgi_desc *desc, struct wuimg *img,
 const struct rle_info *rle) {
-	const size_t width = img->w;
-	for (size_t y = 0; y < rle->entries; ++y) {
-		const size_t offset = width*y;
-		const uint32_t row_off = rle->row_offset[y];
-		const uint32_t row_len = rle->row_len[y];
-		if (desc->bytedepth == 1) {
-			rle_loop8((uint8_t *)img->data + offset, width,
-				(uint8_t *)rle->buf + row_off, row_len);
-		} else {
-			rle_loop16((uint16_t *)img->data + offset, width,
-				(uint16_t *)rle->buf + row_off, row_len);
+	size_t w = 0;
+	for (size_t i = 0; i < rle->rows; ++i) {
+		uint32_t off = endian32(rle->row_offset[i], big_endian);
+		uint32_t len = endian32(rle->row_len[i], big_endian);
+		if (off > UINT32_MAX - len || off + len > rle->total) {
+			continue;
 		}
-	}
-}
 
-static bool check_offsets(struct rle_info *rle, const uint8_t bytedepth) {
-	const uint32_t min_len = bytedepth * 2; // Packet + min payload
-	for (size_t i = 0; i < rle->entries; ++i) {
-		const uint32_t offset = endian32(rle->row_offset[i], big_endian);
-		const uint32_t len = endian32(rle->row_len[i], big_endian);
-		if (len < min_len) {
-			return false;
-		} else if (offset > UINT32_MAX - len || offset + len > rle->total) {
-			return false;
-		} else if (offset % bytedepth || len % bytedepth) {
-			return false;
+		const size_t width = img->w;
+		const size_t line = width*i;
+		off /= desc->bytedepth;
+		len /= desc->bytedepth;
+		if (desc->bytedepth == 1) {
+			w += rle_loop8((uint8_t *)img->data + line, width,
+				(uint8_t *)rle->buf + off, len);
+		} else {
+			w += rle_loop16((uint16_t *)img->data + line, width,
+				(uint16_t *)rle->buf + off, len);
 		}
-		rle->row_offset[i] = offset/bytedepth;
-		rle->row_len[i] = len/bytedepth;
 	}
-	return true;
+	return w;
 }
 
 static size_t get_total_size(const struct sgi_desc *desc,
@@ -131,15 +123,13 @@ static size_t rle_decode(const struct sgi_desc *desc, struct wuimg *img) {
 	 * file.
 	*/
 
-	const size_t file_header = 512;
-
 	struct rle_info rle;
-	rle.entries = img->h * img->channels;
-	const size_t table_size = rle.entries * sizeof(uint32_t) * 2;
-	const size_t non_rle = file_header + table_size;
+	rle.rows = img->h * img->channels;
+	const size_t table_size = rle.rows * sizeof(uint32_t) * 2;
+	const size_t non_rle = HEADER_SIZE + table_size;
 	rle.total = get_total_size(desc, non_rle, wuimg_size(img));
 
-	bool ok = false;
+	size_t w = 0;
 	if (rle.total) {
 		/* Just load the whole file so we don't have to subtract
 		 * offsets and all that jazz. */
@@ -149,18 +139,14 @@ static size_t rle_decode(const struct sgi_desc *desc, struct wuimg *img) {
 			fseek(desc->ifp, 0, SEEK_SET);
 			const size_t read = fread(rle.buf, 1, rle.total, desc->ifp);
 			if (read > non_rle) {
-				rle.row_offset = (uint32_t *)(rle.buf + file_header);
-				rle.row_len = rle.row_offset + rle.entries;
-
-				if (check_offsets(&rle, desc->bytedepth)) {
-					rle_loop(desc, img, &rle);
-					ok = true;
-				}
+				rle.row_offset = (uint32_t *)(rle.buf + HEADER_SIZE);
+				rle.row_len = rle.row_offset + rle.rows;
+				w = rle_loop(desc, img, &rle);
 			}
 			free(rle.buf);
 		}
 	}
-	return ok;
+	return w;
 }
 
 size_t sgi_decode(const struct sgi_desc *desc, struct wuimg *img) {
@@ -168,7 +154,7 @@ size_t sgi_decode(const struct sgi_desc *desc, struct wuimg *img) {
 		if (desc->compression == sgi_rle) {
 			return rle_decode(desc, img);
 		}
-		fseek(desc->ifp, 512, SEEK_SET);
+		fseek(desc->ifp, (long)HEADER_SIZE, SEEK_SET);
 		return fmt_load_raster_swap(img, desc->ifp, big_endian);
 	}
 	return 0;
@@ -178,12 +164,6 @@ static enum wu_error validate_header(struct sgi_desc *desc, struct wuimg *img,
 const uint8_t compression, const uint8_t bytedepth,
 const uint16_t dimension, const uint16_t width, const uint16_t height,
 const uint16_t channels, const uint32_t bitmap_type) {
-	switch (compression) {
-	case sgi_uncompressed: case sgi_rle:
-		break;
-	default: return wu_invalid_header;
-	}
-
 	if (bytedepth < 1 || bytedepth > 2) {
 		return wu_invalid_header;
 	}
@@ -213,28 +193,29 @@ const uint16_t channels, const uint32_t bitmap_type) {
 
 	switch (bitmap_type) {
 	case sgi_raw:
+		switch (compression) {
+		case sgi_uncompressed: case sgi_rle:
+			img->w = width;
+			img->h = height;
+			img->channels = (unsigned char)channels;
+			img->bitdepth = bytedepth * 8;
+			img->mirror = true;
+			if (wuimg_plane_init(img)) {
+				desc->bytedepth = bytedepth;
+				desc->compression = compression;
+				desc->type = (enum sgi_bitmap_type)bitmap_type;
+				return wuimg_verify(img);
+			}
+			return wu_alloc_error;
+		}
 		break;
 	case sgi_332:
 		return wu_samples_wanted;
 	case sgi_colormap:
 	case sgi_colormap_define:
 		return wu_no_image_data;
-	default:
-		return wu_invalid_header;
 	}
-
-	img->w = width;
-	img->h = height;
-	img->channels = (unsigned char)channels;
-	img->bitdepth = bytedepth * 8;
-	img->mirror = true;
-	if (wuimg_plane_init(img)) {
-		desc->bytedepth = bytedepth;
-		desc->compression = (enum sgi_compression)compression;
-		desc->type = (enum sgi_bitmap_type)bitmap_type;
-		return wuimg_verify(img);
-	}
-	return wu_alloc_error;
+	return wu_invalid_header;
 }
 
 enum wu_error sgi_parse_header(struct sgi_desc *desc, struct wuimg *img) {
