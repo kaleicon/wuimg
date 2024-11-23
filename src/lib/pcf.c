@@ -422,9 +422,11 @@ enum wu_error pcf_parse(struct pcf_desc *desc) {
 		}
 	}
 
-	const uint16_t required = pcf_type_metrics | pcf_type_bitmaps;
+	// Not sure if glyph_names are mandatory, but all valid files have them
+	const uint16_t required = pcf_type_metrics | pcf_type_bitmaps
+		| pcf_type_glyph_names;
 	if ((desc->seen & required) == required) {
-		return desc->glyphs ? wu_ok : wu_invalid_header;
+		return desc->glyphs ? wu_ok : wu_no_image_data;
 	}
 	return wu_invalid_header;
 }
