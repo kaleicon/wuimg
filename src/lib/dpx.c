@@ -164,7 +164,7 @@ struct elem_info *n) {
 static void unpack10(uint16_t *dst, const uint32_t w, const size_t len,
 const uint8_t shr, const uint16_t mask, const uint32_t scale) {
 	for (uint8_t z = 0; z < len; ++z) {
-		const uint32_t val = mask & (w >> (shr + (20 - 10*z)));
+		const uint32_t val = mask & (w >> (20 - 10*z + shr));
 		dst[z] = (uint16_t)((val * scale) >> 16);
 	}
 }
@@ -175,15 +175,11 @@ const struct dpx_element *elem) {
 	const size_t whole = items / 3;
 	const size_t remain = items % 3;
 
-	const size_t len = whole + (bool)remain;
-	const size_t instride = len * 4 + elem->line_pad;
-	const size_t insize = instride * img->h;
-	uint8_t *buf = malloc(insize);
+	const size_t len = (whole + (bool)remain) * 4;
+	uint32_t *buf = malloc(len);
 	if (!buf) {
 		return 0;
 	}
-
-	const size_t read = fread(buf, 1, insize, desc->ifp);
 
 	/* Three 10-bit components are grouped in 30-bits of a 32-bit word.
 	 * Earlier components appear in lower bits.
@@ -194,15 +190,18 @@ const struct dpx_element *elem) {
 	const uint32_t scale = (0xffffu << 16) / mask + 1;
 	const uint8_t shr = (elem->pack == dpx_pack_a) ? 2 : 0;
 	uint16_t *dst = (uint16_t *)img->data;
+	size_t read = 0;
 	for (size_t y = 0; y < img->h; ++y) {
-		const uint32_t *src = (uint32_t *)(buf + y*instride);
+		read += fread(buf, 1, len, desc->ifp);
+		fseek(desc->ifp, elem->line_pad, SEEK_CUR);
+
 		for (size_t x = 0; x < whole; ++x) {
-			unpack10(dst, endian32(src[x], desc->endian), 3, shr,
+			unpack10(dst, endian32(buf[x], desc->endian), 3, shr,
 				mask, scale);
 			dst += 3;
 		}
 		if (remain) {
-			unpack10(dst, endian32(src[whole], desc->endian),
+			unpack10(dst, endian32(buf[whole], desc->endian),
 				remain, shr, mask, scale);
 			dst += remain;
 		}
