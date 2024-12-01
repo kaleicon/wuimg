@@ -75,6 +75,12 @@ static struct fmt_magic magic_map[] = {
 	{"\xff\xff\xff\xff", "Indy", fmt_indy},
 	{"\xff\xff\xff\xff", "tru?", fmt_trp},
 
+#ifdef WU_ENABLE_CBG
+	// Truncated
+	{"\xff\xff\xff\xff" "\xff\xff\xff\xff" "\xff\xff\xff\xff",
+		"CompressedBG", fmt_cbg},
+#endif
+
 #ifdef WU_ENABLE_DIB
 	{"\xff\xff", "BM", fmt_bmp},
 #ifdef WU_ENABLE_BMZ
@@ -426,6 +432,10 @@ static struct fmt_ext ext_map[] = {
 	{"koa", fmt_c64},
 	{"kla", fmt_c64},
 	{"ocp", fmt_c64},
+#endif
+
+#ifdef WU_ENABLE_CBG
+	{"cbg", -1}, // This is just made up
 #endif
 
 #ifdef WU_ENABLE_DIB

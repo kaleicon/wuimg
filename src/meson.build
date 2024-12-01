@@ -3,6 +3,7 @@ fmt_map = {
 	'internal': [
 		'atari',
 		'c64',
+		'cbg',
 		'dib',
 		'dpx',
 		'g00',

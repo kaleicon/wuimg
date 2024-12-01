@@ -14,6 +14,10 @@ WUDEC(tiny, "Tiny Stuff")
 WUDEC(c64, "KoalaPainter (KOA) and Advanced Art Studio (OCP)")
 #endif
 
+#ifdef WU_ENABLE_CBG
+WUDEC(cbg, "BGI/Ethornell CompressedBG (v1)")
+#endif
+
 #ifdef WU_ENABLE_DIB
 WUDEC(bmp, "Microsoft Bitmap")
 WUDEC(dib, "Microsoft DIB")
