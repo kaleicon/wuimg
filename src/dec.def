@@ -200,7 +200,7 @@ WUDEC(jbig2, "JBIG2")
 #endif
 
 #ifdef WU_ENABLE_JPEG
-WUDEC(jpeg, "JPEG")
+WUDEC(jpeg, "JPEG and MPO")
 #endif
 
 #ifdef WU_ENABLE_JPEG2000
