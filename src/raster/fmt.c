@@ -60,7 +60,7 @@ const enum fmt_pal_type type, const size_t entries) {
 
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig,
 const size_t size, struct mparser *mp) {
-	const uint8_t *buf = mp_next_slice(mp, size);
+	const uint8_t *buf = mp_slice(mp, size);
 	if (buf) {
 		return !memcmp(buf, sig, size) ? wu_ok : wu_invalid_signature;
 	}

@@ -110,14 +110,24 @@ struct wuptr mp_next_word(struct mparser *mp) {
 	return wuptr_mem(mp->mem + start, mp->pos - start);
 }
 
-struct wuptr mp_next_remaining(struct mparser *mp, const size_t len) {
-	const size_t rem = zumin(mp->len - mp->pos, len);
-	const struct wuptr wp = wuptr_mem(mp->mem + mp->pos, rem);
-	mp->pos += rem;
-	return wp;
+
+const uint8_t * mp_slice_at(const struct mparser *mp, const size_t pos,
+const size_t len) {
+	if (pos <= mp->len && mp->len - pos >= len) {
+		return mp->mem + pos;
+	}
+	return NULL;
 }
 
-const uint8_t * mp_next_slice(struct mparser *mp, const size_t len) {
+struct wuptr mp_avail_at(const struct mparser *mp, const size_t pos,
+const size_t len) {
+	return (struct wuptr) {
+		.ptr = mp->mem + pos,
+		.len = (pos <= mp->len) ? zumin(mp->len - mp->pos, len) : 0,
+	};
+}
+
+const uint8_t * mp_slice(struct mparser *mp, const size_t len) {
 	if (mp->len - mp->pos >= len) {
 		const uint8_t *slice = mp->mem + mp->pos;
 		mp->pos += len;
@@ -125,6 +135,18 @@ const uint8_t * mp_next_slice(struct mparser *mp, const size_t len) {
 	}
 	return NULL;
 }
+
+struct wuptr mp_avail(struct mparser *mp, const size_t len) {
+	const size_t rem = zumin(mp->len - mp->pos, len);
+	const struct wuptr wp = wuptr_mem(mp->mem + mp->pos, rem);
+	mp->pos += rem;
+	return wp;
+}
+
+struct wuptr mp_remaining(struct mparser *mp) {
+	return mp_avail(mp, mp->len - mp->pos);
+}
+
 
 size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val) {
 	digits = zumin(digits, mp->len - mp->pos);
@@ -156,7 +178,7 @@ size_t mp_scan_int(struct mparser *mp, size_t digits, long *val) {
 }
 
 size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val) {
-	const uint8_t *pre = mp_next_slice(mp, 2);
+	const uint8_t *pre = mp_slice(mp, 2);
 	bool hex = false;
 	if (pre) {
 		if (pre[0] == '0' && (pre[1] == 'x' || pre[1] == 'X')) {
@@ -183,6 +205,7 @@ size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val) {
 	return mp_scan_uint(mp, digits, val);
 }
 
+
 void mp_seek_cur(struct mparser *mp, const ptrdiff_t pos) {
 	const size_t upos = (size_t)pos;
 	if (pos < 0) {
@@ -194,21 +217,6 @@ void mp_seek_cur(struct mparser *mp, const ptrdiff_t pos) {
 	}
 }
 
-struct wuptr mp_remaining_at(const struct mparser *mp, const size_t pos,
-const size_t len) {
-	return (struct wuptr) {
-		.ptr = mp->mem + pos,
-		.len = (pos <= mp->len) ? zumin(mp->len - mp->pos, len) : 0,
-	};
-}
-
-const uint8_t * mp_slice_at(const struct mparser *mp, const size_t pos,
-const size_t len) {
-	if (pos <= mp->len && mp->len - pos >= len) {
-		return mp->mem + pos;
-	}
-	return NULL;
-}
 
 struct mparser mp_mem(const size_t len, const void *mem) {
 	return (struct mparser) {

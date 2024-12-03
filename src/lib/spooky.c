@@ -60,7 +60,7 @@ size_t tre_decode(const struct tre_desc *desc, struct wuimg *img) {
 	size_t w = 0;
 	if (wuimg_alloc_noverify(img)) {
 		struct mparser mp = desc->mp;
-		struct wuptr src = mp_next_remaining(&mp, SIZE_MAX);
+		struct wuptr src = mp_remaining(&mp);
 		w = tre_rle((uint16_t *)img->data, img->w * img->h,
 			src.ptr, src.len);
 	}
@@ -85,7 +85,7 @@ enum wu_error tre_parse(struct tre_desc *desc, struct wuimg *img) {
 		4       u32     NrChunks
 		8       Chunks[]
 	*/
-	const uint8_t *header = mp_next_slice(&desc->mp, 8);
+	const uint8_t *header = mp_slice(&desc->mp, 8);
 	if (header) {
 		img->w = buf_endian16(header, big_endian);
 		img->h = buf_endian16(header + 2, big_endian);
@@ -162,7 +162,8 @@ const uint16_t i) {
 		const uint32_t pos = packed ? packed : unpacked;
 		if (pos) {
 			const size_t len = img->w * img->h;
-			struct wuptr src = mp_remaining_at(&desc->mp, pos, SIZE_MAX);
+			struct mparser mp = desc->mp;
+			struct wuptr src = mp_remaining(&mp);
 			if (packed) {
 				w = sprite_unpack(img->data, len, src.ptr,
 					src.len, img->w, desc->xres);
@@ -207,14 +208,14 @@ enum wu_error trs_init(struct trs_desc *desc, const struct map_info map) {
 	*desc = (struct trs_desc) {
 		.mp = mp_map(map),
 	};
-	const uint8_t *header = mp_next_slice(&desc->mp, 10);
+	const uint8_t *header = mp_slice(&desc->mp, 10);
 	if (header) {
 		const uint8_t magic[] = {'T', 'C', 'S', 'F'};
 		const uint16_t version = buf_endian16(header + 6, big_endian);
 		if (!memcmp(header, magic, sizeof(magic)) && version == 1) {
 			desc->nr = buf_endian16(header + 4, big_endian);
 			desc->xres = buf_endian16(header + 8, big_endian);
-			desc->sprites = mp_next_slice(&desc->mp, 10*desc->nr);
+			desc->sprites = mp_slice(&desc->mp, 10*desc->nr);
 			if (desc->xres) {
 				return desc->sprites ? wu_ok : wu_unexpected_eof;
 			}

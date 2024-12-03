@@ -368,7 +368,7 @@ struct pic2_image *block, const uint32_t size) {
 	*/
 	const uint32_t hsize = 26;
 	if (size > hsize) {
-		const uint8_t *header = mp_next_slice(&desc->mp, hsize - 8);
+		const uint8_t *header = mp_slice(&desc->mp, hsize - 8);
 		if (header) {
 			const uint16_t flags = buf_endian16(header, big_endian);
 			const uint32_t reserved = buf_endian32(header + 14, big_endian);
@@ -382,7 +382,7 @@ struct pic2_image *block, const uint32_t size) {
 					.opaque = repack_opaque(
 						buf_endian32(header + 10, big_endian),
 						desc->depth, flags),
-					.data = mp_next_remaining(&desc->mp, size - hsize),
+					.data = mp_avail(&desc->mp, size - hsize),
 				};
 				return wu_ok;
 			}
@@ -399,7 +399,7 @@ enum wu_error pic2_next_block(struct pic2_desc *desc, struct pic2_block *block) 
 		4       u32     BlockSize
 		8
 	*/
-	const uint8_t *header_header = mp_next_slice(&desc->mp, 8);
+	const uint8_t *header_header = mp_slice(&desc->mp, 8);
 	if (header_header) {
 		block->id = buf_endian32(header_header, big_endian);
 		block->is_image = false;
@@ -412,7 +412,7 @@ enum wu_error pic2_next_block(struct pic2_desc *desc, struct pic2_block *block) 
 			return read_image_block(desc, &block->u.image, size);
 		case pic2_pdpi:
 			if (size == 10) {
-				const uint8_t *d = mp_next_slice(&desc->mp, 2);
+				const uint8_t *d = mp_slice(&desc->mp, 2);
 				if (d) {
 					block->u.dpi = buf_endian16(d, big_endian);
 					return wu_ok;
@@ -468,7 +468,7 @@ enum wu_error pic2_parse(struct pic2_desc *desc) {
 	 * [*] May indicate the file is part of a sequence, NOT that the file
 	 *     contains this many images.
 	*/
-	const uint8_t *head = mp_next_slice(&desc->mp, 120);
+	const uint8_t *head = mp_slice(&desc->mp, 120);
 	if (!head) {
 		return wu_unexpected_eof;
 	}
@@ -517,7 +517,7 @@ enum wu_error pic2_parse(struct pic2_desc *desc) {
 		return wu_invalid_header;
 	}
 	size -= desc->mp.pos;
-	const uint8_t *comment = mp_next_slice(&desc->mp, size);
+	const uint8_t *comment = mp_slice(&desc->mp, size);
 	if (!comment) {
 		return wu_unexpected_eof;
 	}

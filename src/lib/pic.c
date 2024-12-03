@@ -205,7 +205,7 @@ static uint32_t read_len_code(struct bitstrm *bs) {
 	 * And so on, and so on
 	*/
 	uint32_t bits = bitstrm_msb_peek_32(bs);
-	const uint32_t z = bit_clz32(~bits) + 1;
+	const uint32_t z = bit_clo32(bits) + 1;
 	bs->pos += z;
 	const uint32_t val = bit_set32(z)
 		+ (bitstrm_msb_peek_32(bs) >> (32 - z));

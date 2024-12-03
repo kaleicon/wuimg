@@ -1105,7 +1105,7 @@ enum wu_error bmz_open(struct bmz_desc *desc, struct mparser mp) {
 	const uint8_t magic[4] = {'Z', 'L', 'C', '3'};
 	enum wu_error st = fmt_sigcmp_mem(magic, sizeof(magic), &mp);
 	if (st == wu_ok) {
-		const struct wuptr z = mp_next_remaining(&mp, SIZE_MAX);
+		const struct wuptr z = mp_remaining(&mp);
 		if (z.len > 4) {
 			uLong orig = buf_endian32(z.ptr, little_endian);
 			uint8_t *buf = malloc(orig);

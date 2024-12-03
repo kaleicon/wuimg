@@ -14,7 +14,8 @@ size_t xyz_decode(const struct mparser *mp, struct wuimg *img) {
 	 * palette to RGBA in place, and make img->data point after
 	 * img->u.palette while setting the borrowed bit to true. The image
 	 * will be freed when the palette is. */
-	const struct wuptr src = mp_remaining_at(mp, mp->pos, SIZE_MAX);
+	struct mparser mpcpy = *mp;
+	const struct wuptr src = mp_remaining(&mpcpy);
 	if (src.len) {
 		struct palette *pal;
 		const size_t dst_len = sizeof(*pal) + wuimg_size(img);
@@ -41,7 +42,7 @@ size_t xyz_decode(const struct mparser *mp, struct wuimg *img) {
 }
 
 enum wu_error xyz_parse(struct mparser *mp, struct wuimg *img) {
-	const uint8_t *header = mp_next_slice(mp, 4);
+	const uint8_t *header = mp_slice(mp, 4);
 	if (header) {
 		img->w = buf_endian16(header, little_endian);
 		img->h = buf_endian16(header + 2, little_endian);

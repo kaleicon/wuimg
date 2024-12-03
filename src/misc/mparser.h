@@ -34,9 +34,19 @@ int mp_next_nonspace(struct mparser *mp);
 
 struct wuptr mp_next_word(struct mparser *mp);
 
-struct wuptr mp_next_remaining(struct mparser *mp, size_t len);
 
-const uint8_t * mp_next_slice(struct mparser *mp, size_t len);
+const uint8_t * mp_slice_at(const struct mparser *mp, size_t pos,
+size_t len);
+
+struct wuptr mp_avail_at(const struct mparser *mp, size_t pos,
+size_t len);
+
+const uint8_t * mp_slice(struct mparser *mp, size_t len);
+
+struct wuptr mp_avail(struct mparser *mp, size_t len);
+
+struct wuptr mp_remaining(struct mparser *mp);
+
 
 size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val);
 
@@ -46,11 +56,6 @@ size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val);
 
 void mp_seek_cur(struct mparser *mp, ptrdiff_t pos);
 
-struct wuptr mp_remaining_at(const struct mparser *mp, size_t pos,
-size_t len);
-
-const uint8_t * mp_slice_at(const struct mparser *mp, size_t pos,
-size_t len);
 
 struct mparser mp_mem(size_t len, const void *restrict mem);
 

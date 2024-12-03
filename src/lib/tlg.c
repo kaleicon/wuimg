@@ -147,13 +147,13 @@ struct dict *dict, struct mparser *mp) {
 		const size_t strip_height = zumin(img->h - y, desc->block_height);
 		const size_t strip_pixs = strip_height * img->w;
 		for (uint8_t z = 0; z < img->channels; ++z) {
-			const uint8_t *header = mp_next_slice(mp, 5);
+			const uint8_t *header = mp_slice(mp, 5);
 			if (!header) {
 				return y;
 			}
 
 			const bool uncompressed = header[0];
-			struct wuptr block = mp_next_remaining(mp,
+			struct wuptr block = mp_avail(mp,
 				buf_endian32(header + 1, little_endian));
 
 			if (uncompressed) {
@@ -202,7 +202,7 @@ static enum wu_error read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
 		4       u32     BlockSizes[ceildiv(Height, BlockHeight)]
 	*/
 
-	const uint8_t *header = mp_next_slice(&desc->mp, 4);
+	const uint8_t *header = mp_slice(&desc->mp, 4);
 	if (!header) {
 		return wu_unexpected_eof;
 	}
@@ -215,7 +215,7 @@ static enum wu_error read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
 	/* BlockSizes are repeated in the data stream, so they can safely be
 	 * skipped. */
 	const size_t blocks = zuceildiv(img->h, desc->block_height);
-	return mp_next_slice(&desc->mp, blocks * 4)
+	return mp_slice(&desc->mp, blocks * 4)
 		? wu_ok : wu_unexpected_eof;
 }
 
@@ -254,7 +254,7 @@ enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img) {
 		9
 	*/
 
-	const uint8_t *header = mp_next_slice(&desc->mp, 9);
+	const uint8_t *header = mp_slice(&desc->mp, 9);
 	if (!header) {
 		return wu_unexpected_eof;
 	}
@@ -280,7 +280,7 @@ enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct map_info *map) {
 
 	desc->mp = mp_map(*map);
 	const size_t siglen = sizeof(tlg) + sizeof(sds) + 1;
-	const uint8_t *magic = mp_next_slice(&desc->mp, siglen);
+	const uint8_t *magic = mp_slice(&desc->mp, siglen);
 	if (magic) {
 		if (!memcmp(magic, tlg, sizeof(tlg))) {
 			switch (magic[3]) {

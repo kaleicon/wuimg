@@ -341,13 +341,13 @@ const struct wpx_section *section, void *restrict dst, const size_t dst_len,
 const uint8_t quant_size, const size_t stride) {
 	struct wuptr src;
 	if (section_is_uncompressed(section)) {
-		src = mp_remaining_at(mp, section->offset, dst_len);
+		src = mp_avail_at(mp, section->offset, dst_len);
 		memcpy(dst, src.ptr, src.len);
 		return src.len;
 	} else if (!quant_size) {
 		return 0;
 	}
-	src = mp_remaining_at(mp, section->offset, section->comp_size);
+	src = mp_avail_at(mp, section->offset, section->comp_size);
 	return decode_section_data(section, dst, dst_len, src.ptr, src.len,
 		quant_size, stride);
 }
@@ -444,7 +444,7 @@ struct mparser *mp, const uint8_t min_sections) {
 		8
 	*/
 
-	const uint8_t *buf = mp_next_slice(mp, 8);
+	const uint8_t *buf = mp_slice(mp, 8);
 	if (buf) {
 		const size_t dirsize = sizeof(*dir->sections);
 		dir->count = buf[6];
@@ -452,7 +452,7 @@ struct mparser *mp, const uint8_t min_sections) {
 		&& dir->count >= min_sections && buf[7] == dirsize) {
 			const size_t dir_len = dir->count * dirsize;
 			mp_seek_cur(mp, (ptrdiff_t)buf_endian32(buf, little_endian) - 0x10);
-			buf = mp_next_slice(mp, dir_len);
+			buf = mp_slice(mp, dir_len);
 			if (buf) {
 				dir->sections = memdup(buf, dir_len);
 				return dir->sections ? wu_ok : wu_alloc_error;

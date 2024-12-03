@@ -38,10 +38,10 @@ time_t q4_approximate_date(const struct q4_desc *desc) {
 }
 
 static bool read_block(struct q4_block *block, struct mparser *mp) {
-	const uint8_t *head = mp_next_slice(mp, 6);
+	const uint8_t *head = mp_slice(mp, 6);
 	if (head) {
 		const uint16_t comp_len = buf_endian16(head, little_endian);
-		block->data = mp_next_remaining(mp, comp_len);
+		block->data = mp_avail(mp, comp_len);
 		block->orig_len = buf_endian16(head + 4, little_endian) * 2;
 		block->comp_len = comp_len;
 		block->codes = buf_endian16(head + 2, little_endian);
@@ -147,8 +147,7 @@ static size_t decode_block(uint8_t *restrict dst, struct q4_block *block) {
 		}
 		block->off_alloc = (uint16_t)alloc;
 	}
-	return lzwdec(dst, block,
-		bitstrm_from_bytes(block->data.ptr, block->data.len));
+	return lzwdec(dst, block, bitstrm_from_wuptr(block->data));
 }
 
 static bool write_palette(struct mparser *mp, struct q4_block *block,
@@ -243,7 +242,7 @@ enum wu_error q4_open(struct q4_desc *desc, const struct map_info mm) {
 	*desc = (struct q4_desc) {
 		.mp = mp_map(mm),
 	};
-	const uint8_t *head = mp_next_slice(&desc->mp, 16);
+	const uint8_t *head = mp_slice(&desc->mp, 16);
 	if (!head) {
 		return wu_unexpected_eof;
 	}

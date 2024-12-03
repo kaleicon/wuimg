@@ -53,6 +53,10 @@ uint32_t bit_clz32(uint32_t bits) {
 	return n;
 }
 
+uint32_t bit_clo32(uint32_t bits) {
+	return bit_clz32(~bits);
+}
+
 uint32_t bit_set32(const uint32_t bits) {
 	const uint32_t ones = ~0u;
 	return ones >> (sizeof(ones)*8 - bits);
@@ -159,7 +163,7 @@ uint32_t bitstrm_msb_gamma_zero(struct bitstrm *bs) {
 		1110xxx 8-15
 	 * and so on and so on. */
 	const uint32_t bits = bitstrm_msb_peek_32(bs);
-	const uint32_t z = bit_clz32(~bits);
+	const uint32_t z = bit_clo32(bits);
 	bs->pos += z;
 	// Top bit will be 0
 	const uint32_t val = (1u << 31) | bitstrm_msb_peek_32(bs);
@@ -208,4 +212,8 @@ struct bitstrm bitstrm_from_bytes(const void *mem, const size_t bytes) {
 	};
 	bitstrm_seek(&bs, 0);
 	return bs;
+}
+
+struct bitstrm bitstrm_from_wuptr(const struct wuptr data) {
+	return bitstrm_from_bytes(data.ptr, data.len);
 }

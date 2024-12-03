@@ -145,7 +145,7 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 
 	// The tag ID has already been read, so substract 8 from the offsets
 	struct mparser mp = desc->image;
-	const uint8_t *tag = mp_next_slice(&mp, 32);
+	const uint8_t *tag = mp_slice(&mp, 32);
 	if (!tag) {
 		return false;
 	}
@@ -155,8 +155,8 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	uLong ctrl_comp = buf_endian32(tag + 24, little_endian);
 	uLong ctrl_orig = buf_endian32(tag + 28, little_endian);
 
-	const struct wuptr zext = mp_next_remaining(&mp, extent_comp);
-	const struct wuptr zctrl = mp_next_remaining(&mp, ctrl_comp);
+	const struct wuptr zext = mp_avail(&mp, extent_comp);
+	const struct wuptr zctrl = mp_avail(&mp, ctrl_comp);
 	if (!zctrl.len) {
 		return false;
 	}
@@ -195,7 +195,7 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 }
 
 enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img) {
-	const uint8_t *stdinfo = mp_next_slice(&desc->image, STDINFO_LEN);
+	const uint8_t *stdinfo = mp_slice(&desc->image, STDINFO_LEN);
 	if (!stdinfo) {
 		return wu_unexpected_eof;
 	}
@@ -225,7 +225,7 @@ enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img) {
 	desc->canvas_w = buf_endian32(stdinfo + 36, little_endian);
 	desc->canvas_h = buf_endian32(stdinfo + 40, little_endian);
 
-	const uint8_t *tag = mp_next_slice(&desc->image, 8);
+	const uint8_t *tag = mp_slice(&desc->image, 8);
 	if (!tag) {
 		return wu_unexpected_eof;
 	}
@@ -264,7 +264,7 @@ enum wu_error hg3_next_image(struct hg3_desc *desc) {
 		52      u32     YCenter
 		56
 	*/
-	const uint8_t *entry_header = mp_next_slice(&desc->mp, 8);
+	const uint8_t *entry_header = mp_slice(&desc->mp, 8);
 	if (!entry_header) {
 		return wu_unexpected_eof;
 	}
@@ -276,7 +276,7 @@ enum wu_error hg3_next_image(struct hg3_desc *desc) {
 		len = next - 8;
 	}
 
-	const struct wuptr m = mp_next_remaining(&desc->mp, len);
+	const struct wuptr m = mp_avail(&desc->mp, len);
 	if (m.len > STDINFO_LEN + 8) {
 		desc->image = mp_mem(m.len, m.ptr);
 		return wu_ok;
@@ -305,7 +305,7 @@ enum wu_error hg3_open(struct hg3_desc *desc, const struct mparser mp) {
 	const uint8_t id[4] = "HG-3";
 	const enum wu_error st = fmt_sigcmp_mem(id, sizeof(id), &desc->mp);
 	if (st == wu_ok) {
-		const uint8_t *header = mp_next_slice(&desc->mp, 8);
+		const uint8_t *header = mp_slice(&desc->mp, 8);
 		if (header) {
 			const uint32_t size = buf_endian32(header, little_endian);
 			const uint32_t version = buf_endian32(header + 4, little_endian);

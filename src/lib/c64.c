@@ -52,13 +52,13 @@ const struct c64_mem_offsets *off) {
 	}
 }
 
-static bool contiguous_mem(struct mparser *mp, const size_t adv,
+static bool contiguous_mem(struct mparser *mp, const ptrdiff_t adv,
 struct c64_mem_offsets *off) {
-	mp_next_slice(mp, adv);
-	off->bitmap = mp_next_slice(mp, BITMAP_LEN);
-	off->screen = mp_next_slice(mp, RAM_LEN);
-	off->color = mp_next_slice(mp, RAM_LEN);
-	off->bg = mp_next_slice(mp, BG_LEN);
+	mp_seek_cur(mp, adv);
+	off->bitmap = mp_slice(mp, BITMAP_LEN);
+	off->screen = mp_slice(mp, RAM_LEN);
+	off->color = mp_slice(mp, RAM_LEN);
+	off->bg = mp_slice(mp, BG_LEN);
 	return off->bg;
 }
 
@@ -107,12 +107,12 @@ bool c64_decode(const struct mparser *mp_orig, struct wuimg *img) {
 			}
 			break;
 		case c64_ocp:
-			mp_next_slice(&mp, 2);
-			off.bitmap = mp_next_slice(&mp, BITMAP_LEN);
-			off.screen = mp_next_slice(&mp, RAM_LEN);
-			mp_next_slice(&mp, 1); // border
-			off.bg = mp_next_slice(&mp, BG_LEN);
-			off.color = mp_next_slice(&mp, RAM_LEN);
+			mp_seek_cur(&mp, 2);
+			off.bitmap = mp_slice(&mp, BITMAP_LEN);
+			off.screen = mp_slice(&mp, RAM_LEN);
+			mp_seek_cur(&mp, 1); // border
+			off.bg = mp_slice(&mp, BG_LEN);
+			off.color = mp_slice(&mp, RAM_LEN);
 			if (off.color) {
 				multicolor_expand(img->data, &off);
 				ok = true;

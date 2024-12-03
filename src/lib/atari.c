@@ -484,8 +484,8 @@ size_t tiny_decode(const struct tiny_desc *desc, struct wuimg *img) {
 	size_t w = 0;
 	if (wuimg_alloc_noverify(img)) {
 		struct mparser mp = desc->mp;
-		const void *ctrl = mp_next_slice(&mp, desc->ctrl);
-		struct wuptr data = mp_next_remaining(&mp, desc->data*2);
+		const void *ctrl = mp_slice(&mp, desc->ctrl);
+		struct wuptr data = mp_avail(&mp, desc->data*2);
 		if (ctrl) {
 			const bool high_res = desc->res == atari_st_res_high;
 			uint16_t *buf = malloc(VIDEO_RAM * (high_res ? 1 : 2));
@@ -527,7 +527,7 @@ const struct map_info map) {
 		.mp = mp_map(map),
 	};
 
-	const uint8_t *header = mp_next_slice(&desc->mp, 1);
+	const uint8_t *header = mp_slice(&desc->mp, 1);
 	if (!header) {
 		return wu_unexpected_eof;
 	}
@@ -536,9 +536,9 @@ const struct map_info map) {
 	uint8_t res = header[0];
 	if (res >= 3) {
 		res -= 3;
-		crng = mp_next_slice(&desc->mp, 4);
+		crng = mp_slice(&desc->mp, 4);
 	}
-	header = mp_next_slice(&desc->mp, 36);
+	header = mp_slice(&desc->mp, 36);
 	if (!header) {
 		return wu_unexpected_eof;
 	}

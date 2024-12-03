@@ -28,13 +28,13 @@ void ilbm_cleanup(struct ilbm_desc *desc) {
 
 static bool next_chunk(struct mparser *mp, uint32_t *restrict id,
 uint32_t *restrict len, struct wuptr *data) {
-	const uint8_t *slice = mp_next_slice(mp, 8);
+	const uint8_t *slice = mp_slice(mp, 8);
 	if (slice) {
 		*id = buf_endian32(slice, big_endian);
 		*len = buf_endian32(slice + 4, big_endian);
-		*data = mp_next_remaining(mp, *len);
+		*data = mp_avail(mp, *len);
 		if (*len % 2) {
-			mp_next_slice(mp, 1);
+			mp_seek_cur(mp, 1);
 		}
 	}
 	return (bool)slice;
@@ -707,7 +707,7 @@ enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mparser mp) {
 		.text_callback = dont_callback,
 		.mp = mp,
 	};
-	const uint8_t *data = mp_next_slice(&desc->mp, 12);
+	const uint8_t *data = mp_slice(&desc->mp, 12);
 	if (data) {
 		if (!memcmp(data, "FORM", 4)) {
 			const uint32_t len = buf_endian32(data + 4, big_endian);

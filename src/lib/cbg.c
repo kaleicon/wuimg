@@ -197,8 +197,7 @@ const size_t nodes, const uint32_t total_weight, struct mparser *mp) {
 			if (weight[n] >= total_weight) {
 				tree->root = (int)n;
 				tree->cutoff = (int)nodes;
-				struct wuptr data = mp_next_remaining(mp, SIZE_MAX);
-				tree->bs = bitstrm_from_bytes(data.ptr, data.len);
+				tree->bs = bitstrm_from_wuptr(mp_remaining(mp));
 				return true;
 			}
 		}
@@ -212,7 +211,7 @@ size_t cbg_decode(const struct cbg_desc *desc, struct wuimg *img) {
 	}
 
 	struct mparser mp = desc->mp;
-	const uint8_t *enc_weights = mp_next_slice(&mp, desc->weights_len);
+	const uint8_t *enc_weights = mp_slice(&mp, desc->weights_len);
 	if (!enc_weights) {
 		return 0;
 	}
@@ -255,7 +254,7 @@ enum wu_error cbg_parse(struct cbg_desc *desc, struct wuimg *img) {
 		32
 	*/
 
-	const uint8_t *header = mp_next_slice(&desc->mp, 32);
+	const uint8_t *header = mp_slice(&desc->mp, 32);
 	if (!header) {
 		return wu_unexpected_eof;
 	}

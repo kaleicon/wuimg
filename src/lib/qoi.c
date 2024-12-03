@@ -30,7 +30,8 @@ size_t qoi_decode(const struct mparser *mp, struct wuimg *img) {
 		return 0;
 	}
 
-	const struct wuptr src = mp_remaining_at(mp, mp->pos, SIZE_MAX);
+	struct mparser mpcpy = *mp;
+	const struct wuptr src = mp_remaining(&mpcpy);
 	struct pix_rgba8 seen[64] = {0};
 	size_t s = 0;
 	size_t d = 0;
@@ -107,7 +108,7 @@ enum wu_error qoi_parse(struct mparser *mp, struct wuimg *img) {
 		9       u8      IsLinearRGB
 		10
 	*/
-	const uint8_t *header = mp_next_slice(mp, 10);
+	const uint8_t *header = mp_slice(mp, 10);
 	if (!header) {
 		return wu_unexpected_eof;
 	}

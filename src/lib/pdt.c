@@ -153,7 +153,7 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 		20      u32     MaskOffset
 		24
 	*/
-	const uint8_t *buf = mp_next_slice(&desc->mp, 24);
+	const uint8_t *buf = mp_slice(&desc->mp, 24);
 	if (!buf) {
 		return wu_unexpected_eof;
 	}
@@ -168,7 +168,7 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 	img->alpha = alpha_associated;
 	if (desc->version == pdt11) {
 		const size_t pal_size = 256 * 4;
-		buf = mp_next_slice(&desc->mp, pal_size);
+		buf = mp_slice(&desc->mp, pal_size);
 		if (!buf) {
 			return wu_unexpected_eof;
 		}
@@ -196,7 +196,7 @@ enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *map) {
 	*desc = (struct pdt_desc) {
 		.mp = mp_map(*map),
 	};
-	const uint8_t *buf = mp_next_slice(&desc->mp, 8);
+	const uint8_t *buf = mp_slice(&desc->mp, 8);
 	if (buf) {
 		const uint8_t init[] = {'P', 'D', 'T', '1'};
 		if (!memcmp(init, buf, sizeof(init)) && !memchk(buf + 5, 0, 3)) {

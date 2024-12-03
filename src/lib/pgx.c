@@ -82,7 +82,7 @@ enum wu_error pgx_read_header(struct pgx_desc *desc, struct wuimg *img) {
 	 * way is to seek to -CompressedSize bytes from the end of the file.
 	*/
 
-	const uint8_t *buf = mp_next_slice(&desc->mp, 20);
+	const uint8_t *buf = mp_slice(&desc->mp, 20);
 	if (!buf) {
 		return wu_unexpected_eof;
 	}

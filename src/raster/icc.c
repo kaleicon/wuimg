@@ -27,7 +27,7 @@ void icc_profile_free(struct icc_profile *icc) {
 static cmsUInt32Number read_fn(struct _cms_io_handler *io, void *buf,
 const cmsUInt32Number size, const cmsUInt32Number nmemb) {
 	struct mparser *mp = io->stream;
-	const void *block = mp_next_slice(mp, size*nmemb);
+	const void *block = mp_slice(mp, size*nmemb);
 	if (block) {
 		memcpy(buf, block, size*nmemb);
 		return nmemb;

@@ -244,7 +244,7 @@ enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 	}
 
 	desc->mp.pos = 128;
-	struct wuptr rle = mp_next_remaining(&desc->mp,
+	struct wuptr rle = mp_avail(&desc->mp,
 		zumin(dims*2 + VGA_PAL_LEN + 1, desc->rle_len));
 	if (!rle.len) {
 		return wu_unexpected_eof;
@@ -333,9 +333,9 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 		stopped being updated.
 	*/
 
-	const uint8_t *header1 = mp_next_slice(&desc->mp, 13); // Bytes 0 to 13
-	desc->file_pal = mp_next_slice(&desc->mp, 48);
-	const uint8_t *header2 = mp_next_slice(&desc->mp, 10); // Bytes 61 to 71
+	const uint8_t *header1 = mp_slice(&desc->mp, 13); // Bytes 0 to 13
+	desc->file_pal = mp_slice(&desc->mp, 48);
+	const uint8_t *header2 = mp_slice(&desc->mp, 10); // Bytes 61 to 71
 	if (!header2) {
 		return wu_unexpected_eof;
 	}
@@ -368,7 +368,7 @@ enum wu_error pcx_open_file(struct pcx_desc *desc, const struct mparser mp) {
 
 	desc->mp = mp;
 	if (desc->mp.len > 128) {
-		const uint8_t *sig = mp_next_slice(&desc->mp, 3);
+		const uint8_t *sig = mp_slice(&desc->mp, 3);
 		if (sig) {
 			if (sig[0] == 0x0a && sig[2] == 1) {
 				switch (sig[1]) {
@@ -422,7 +422,7 @@ enum wu_error dcx_open_file(struct dcx_desc *d, const struct mparser mp) {
 	const uint8_t sig[] = {0xb1, 0x68, 0xde, 0x3a};
 	enum wu_error st = fmt_sigcmp_mem(sig, sizeof(sig), &d->mp);
 	if (st == wu_ok) {
-		const struct wuptr p = mp_next_remaining(&d->mp, SIZE_MAX);
+		const struct wuptr p = mp_remaining(&d->mp);
 		const size_t max = zumin(1024, p.len/4);
 		d->off = malloc(sizeof(*d->off) * (max + 1));
 		if (d->off) {

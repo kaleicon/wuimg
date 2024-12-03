@@ -6,6 +6,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "misc/wustr.h"
+
 uint8_t bit_min_wordsize_log2(unsigned bits);
 
 size_t bit_min_wordsize_bits(unsigned bits);
@@ -23,6 +25,8 @@ uint32_t bit_ctz32(uint32_t bits);
 uint32_t bit_cto32(uint32_t bits);
 
 uint32_t bit_clz32(uint32_t bits);
+
+uint32_t bit_clo32(uint32_t bits);
 
 uint32_t bit_set32(uint32_t bits);
 
@@ -66,5 +70,7 @@ uint32_t bitstrm_lsb_gamma_one(struct bitstrm *bs);
 
 
 struct bitstrm bitstrm_from_bytes(const void *mem, size_t bytes);
+
+struct bitstrm bitstrm_from_wuptr(struct wuptr data);
 
 #endif /* RASTER_BITSTREAM */

@@ -206,7 +206,7 @@ const size_t written, const uint8_t *buf) {
 enum wu_error g00_decode(struct g00_desc *desc, struct wuimg *img) {
 	void *dst = malloc(desc->decomp_size);
 	if (dst) {
-		const struct wuptr src = mp_next_remaining(&desc->mp, desc->comp_size);
+		const struct wuptr src = mp_avail(&desc->mp, desc->comp_size);
 		const size_t elem_size = (desc->version == g00_v0) ? 3 : 1;
 		const size_t min_run = (desc->version == g00_v0) ? 1 : 2;
 		size_t written = lzss_decomp(dst, desc->decomp_size,
@@ -291,7 +291,7 @@ const struct map_info map) {
 	*desc = (struct g00_desc) {
 		.mp = mp_map(map),
 	};
-	const uint8_t *header = mp_next_slice(&desc->mp, 5);
+	const uint8_t *header = mp_slice(&desc->mp, 5);
 	if (!header) {
 		return wu_unexpected_eof;
 	}
@@ -305,7 +305,7 @@ const struct map_info map) {
 
 	const size_t dims = img->w * img->h;
 	if (desc->version == g00_v2) {
-		header = mp_next_slice(&desc->mp, 4);
+		header = mp_slice(&desc->mp, 4);
 		if (!header) {
 			return wu_unexpected_eof;
 		}
@@ -317,13 +317,13 @@ const struct map_info map) {
 		}
 
 		const size_t table_len = v2->dir_count * G00_DIR_SIZE;
-		desc->u.v2.dir = mp_next_slice(&desc->mp, table_len);
+		desc->u.v2.dir = mp_slice(&desc->mp, table_len);
 		if (!desc->u.v2.dir) {
 			return wu_unexpected_eof;
 		}
 	}
 
-	header = mp_next_slice(&desc->mp, 8);
+	header = mp_slice(&desc->mp, 8);
 	if (!header) {
 		return wu_unexpected_eof;
 	}
