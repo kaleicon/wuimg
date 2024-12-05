@@ -457,6 +457,10 @@ static struct fmt_ext ext_map[] = {
 	{"g00", fmt_g00},
 #endif
 
+#ifdef WU_ENABLE_GP4
+	{"gp4", fmt_gp4},
+#endif
+
 #ifdef WU_ENABLE_HG3
 	{"hg3", -1},
 #endif

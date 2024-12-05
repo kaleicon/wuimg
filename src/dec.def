@@ -35,6 +35,10 @@ WUDEC(dpx, "Digital Picture Exchange")
 WUDEC(g00, "RealLive's G00")
 #endif
 
+#ifdef WU_ENABLE_GP4
+WUDEC(gp4, "elf's AI5 engine GP4")
+#endif
+
 #ifdef WU_ENABLE_HG3
 WUDEC(hg3, "CatSystem engine HG3")
 #endif

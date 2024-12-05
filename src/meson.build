@@ -7,6 +7,7 @@ fmt_map = {
 		'dib',
 		'dpx',
 		'g00',
+		'gp4',
 		'hg3',
 		'idsp',
 		'ilbm',
