@@ -166,18 +166,21 @@ if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 endif
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
-dec_comptime = executable('dec_comptime', 'dec_comptime.c')
+python = find_program('python3')
+comptime = files('comptime.py')
 
 src_list += [custom_target('dec_maps',
+		input : [dec_enable],
 		output : ['dec_maps.c'],
 		capture : true,
-		depend_files : [dec_enable, 'fmtmap.c'],
-		command : [dec_comptime, '-m']),
+		feed : true,
+		command : [python, comptime, 'maps']),
 	custom_target('dec_fn',
+		input : [dec_enable],
 		output : ['dec_fn.h'],
 		capture : true,
-		depend_files : dec_enable,
-		command : [dec_comptime, '-h']),
+		feed : true,
+		command : [python, comptime, 'header']),
 
 	'auto.c',
 	'conf.c',

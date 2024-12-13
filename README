@@ -64,6 +64,7 @@ Prerequisites
 For building you'll need
 * meson
 * A C and C++ compiler (both GCC and Clang work fine, no idea about others)
+* python3
 
 and at a very minimum the development files for
 * libarchive
