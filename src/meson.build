@@ -240,3 +240,8 @@ executable('wuconv', ['main_wuconv.c', 'imgconv.c'] + src_list,
 executable('wufuzz', ['main_fuzz.c'] + src_list,
 	dependencies : dep_list,
 	build_by_default : false)
+custom_target('formats',
+	capture : true,
+	output : 'FORMATS.txt',
+	command : [python, comptime, '-all', 'show'],
+	build_by_default : false)

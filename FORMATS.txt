@@ -1,0 +1,184 @@
+58 decoders, 81 formats supported
+
+Decoder   Format    Description
+--------------------------------
+atari     bld       MegaPaint
+atari     dali      Dali uncompressed
+atari     degas     DEGAS and DEGAS Elite
+atari     tiny      Tiny Stuff
+auto      avs       AVS X
+auto      bru       Degas Brush
+auto      coke      COKE (Atari Falcon)
+auto      da4       PaintShop (Atari ST)
+auto      doo       Atari Doodle
+auto      eggpaint  EggPaint
+auto      farbfeld  farbfeld
+auto      ftc       Falcon True Color
+auto      gemview   GEM View-Dither
+auto      god       GodPaint
+auto      hpicon    HP Palmtop Icon
+auto      indy      IndyPaint
+auto      nlm       Nokia Logo Manager
+auto      trp       Spooky Sprites uncompressed
+avif|heif avif      AV1 Image File Format
+c64       c64       KoalaPainter (KOA) and Advanced Art Studio (OCP)
+cbg       cbg       BGI/Ethornell CompressedBG (v1)
+dib       bmp       Microsoft Bitmap
+dib       bmz       GSD engine BMZ
+dib       dib       Microsoft DIB
+dib       ico       Microsoft Icon
+dpx       dpx       Digital Picture Exchange
+flif      flif      Free Lossless Image Format
+g00       g00       RealLive engine G00
+gif       gif       Graphics Interchange Format
+gp4       gp4       elf AI5 engine GP4
+heif      heif      High Efficiency Image File Format
+hg3       hg3       CatSystem engine HG3
+idsp      idsp      id Software Sprite (Quake, Half-Life, and 32-bit variants)
+ilbm      ilbm      Interleaved Bitmap (ILBM and PBM)
+jbig      jbig      JBIG
+jbig2     jbig2     JBIG2
+jpeg      jpeg      JPEG, MPO
+jpeg2000  j2k       JPEG 2000 codestream
+jpeg2000  jp2       JPEG 2000
+jpegls    jpegls    JPEG LS
+jpegxl    jpegxl    JPEG XL
+lerc      lerc      Limited Error Raster Compression
+mac       mac       MacPaint
+mag       mag       MAG (MAKI02)
+maki      maki      MAKIchan (MAKI01)
+msx       msx       MSX-BASIC dump
+pcf       pcf       PCF bitmap font
+pcx       dcx       Multi-image PCX
+pcx       pcx       PC Paintbrush PCX
+pdt       pdt       RealLive engine PDT
+pgx       pgx       Glib2 engine PGX
+pi        pi        Yanagisawa's Pi
+pic       pic       Yanagisawa's PIC
+pic2      pic2      Yanagisawa's PIC2
+pictor    pictor    PCPaint PICtor
+png       png       Portable Network Graphics
+pnm       pnm       PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)
+prt       prt       Kid engine PRT
+px        px        Leaf engine PX
+q4        q4        MAJYO's Q4 (XLD4)
+qoi       qoi       QuiteOK image
+raw       raw       Raw camera formats
+sgi       sgi       Silicon Graphics Image
+sixel     sixel     SIXEL terminal graphics
+spooky    tre       Spooky Sprites Run-Length Encoded
+spooky    trs       Spooky Sprites sprite
+sun       sun       Sun Raster
+svg       svg       Scalable Vector Graphics
+tga       tga       Truevision TGA (TARGA)
+tiff      tiff      Tag Image File Format, BigTIFF
+tim       tim       PlayStation image
+tlg       tlg       KiriKiri engine image (v5)
+wbmp      wbmp      Wireless Bitmap
+webp      webp      WebP
+wgtspr    wgtspr    WGT Sprite
+wpx       wbm       Wild-Bug engine image
+wpx       wia       Wild-Bug engine image sequence
+xbm       xbm       X Bitmap
+xcursor   xcursor   X11 cursor
+xwd       xwd       X Window Dump
+xyz       xyz       RPG Maker image
+
+Known extensions: 188
+arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bru, bw, cbg, cps, cr2, cur, da4, dcr, dcx, dib, dit, dmp, dng, doo, dpx, dt2, erf, ff, flif, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, grp, heic, heics, heif, heifs, hg3, hgr, hif, icn, ico, iff, ilbm, im1, im24, im32, im4, im8, j2c, j2k, jb2, jbg, jbig, jfi, jfif, jhc, jif, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, lbm, lerc, lerc1, lerc2, lrc, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, p2, p7, pam, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, png, pnm, pntg, ppm, prt, px, q4, qoi, raf, ras, raw, rgb, rgba, rw2, rwl, s16, s17, s1a, s1c, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sd0, sd1, sd2, sgi, six, sixel, spr, spr32, sr5, sr6, sr7, sr8, srs, sun, svg, svgz, tg1, tga, thm, tif, tiff, tim, tlg, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, wbm, wbmp, webp, wia, xbm, xwd, xyz, yjk
+
+Known magic sequences: 94
+avif      b'\x00\x00\x00\x00ftypavic'
+avif      b'\x00\x00\x00\x00ftypavif'
+bmp       b'BM'
+bmz       b'ZLC3'
+cbg       b'CompressedBG___\x00'
+coke      b'COKE format.'
+dcx       b'\xb1h\xde:'
+dpx       b'SDPX\x00\x00\x00\x00V\x00.0'
+dpx       b'XPDS\x00\x00\x00\x00V\x00.0'
+eggpaint  b'TRUP'
+farbfeld  b'farbfeld'
+flif      b'FLIF'
+gemview   b'B&W256'
+gif       b'GIF87a'
+gif       b'GIF89a'
+heif      b'\x00\x00\x00\x00ftypheic'
+heif      b'\x00\x00\x00\x00ftypheim'
+heif      b'\x00\x00\x00\x00ftypheix'
+heif      b'\x00\x00\x00\x00ftyphevc'
+heif      b'\x00\x00\x00\x00ftyphevm'
+heif      b'\x00\x00\x00\x00ftyphevx'
+heif      b'\x00\x00\x00\x00ftypmif1'
+heif      b'\x00\x00\x00\x00ftypmsf1'
+hg3       b'HG-3'
+hpicon    b'\x01\x00\x01\x00,\x00 \x00'
+idsp      b'IDSP'
+ilbm      b'FORM\x00\x00\x00\x00ILBM'
+ilbm      b'FORM\x00\x00\x00\x00PBM '
+indy      b'Indy'
+j2k       b'\xffO\xffQ'
+jbig2     b'\x97JB2\r\n\x1a\n'
+jp2       b'\x00\x00\x00\x00jP  \r\n\x87\n'
+jp2       b'\r\n\x87\n'
+jpeg      b'\xff\xd8'
+jpegxl    b'\x00\x00\x00\x00JXL \r\n\x87\n'
+jpegxl    b'\xff\n'
+lerc      b'CntZImage '
+lerc      b'Lerc2 '
+mag       b'MAKI02  '
+maki      b'MAKI01A '
+maki      b'MAKI01B '
+msx       b'\xfe\x00\x00\x00j\x00\x00'
+nlm       b'NLM \x01\x00'
+pcf       b'\x01fcp'
+pcx       b'\n\x00\x01'
+pcx       b'\n\x02\x01'
+pcx       b'\n\x04\x01'
+pdt       b'PDT10\x00\x00\x00'
+pgx       b'PGX\x00'
+pi        b'Pi'
+pic       b'PIC'
+pic2      b'P2DT'
+pictor    b'4\x12'
+png       b'\x89PNG\r\n\x1a\n'
+pnm       b'P1'
+pnm       b'P2'
+pnm       b'P4'
+pnm       b'P6'
+pnm       b'P7\n'
+pnm       b'P7 332\n'
+pnm       b'PF'
+pnm       b'PG LM '
+pnm       b'PG ML '
+pnm       b'PH'
+prt       b'PRT\x00'
+qoi       b'qoif'
+raw       b'FUJIFILMCCD-RAW '
+raw       b'IIRO'
+raw       b'IIRS'
+raw       b'IIU\x00'
+raw       b'MMOR'
+sgi       b'\x01\xda'
+sixel     b'\x1bP'
+sixel     b'\x90'
+sun       b'Y\xa6j\x95'
+tiff      b'II*\x00'
+tiff      b'II+\x00\x08\x00\x00\x00'
+tiff      b'MM\x00*'
+tiff      b'MM\x00+\x00\x08\x00\x00'
+tim       b'\x10\x00\x00\x00'
+tlg       b'TLG5.0\x00raw\x1a'
+tre       b'tre1'
+trp       b'tru?'
+trs       b'TCSF'
+wbm       b'WPX\x1aBMP\x00'
+webp      b'RIFF\x00\x00\x00\x00WEBP'
+wgtspr    b'\x00\x00 Sprite File '
+wgtspr    b'\x04\x00 Sprite File '
+wia       b'WPX\x1aIA2\x00'
+xbm       b'#define '
+xbm       b'/*'
+xbm       b'//'
+xcursor   b'Xcur'
+xyz       b'XYZ1'

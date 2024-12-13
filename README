@@ -21,7 +21,7 @@ Features
 
 Supported formats
 -----------------
-Over 70 format families are supported, ranging from the common to the niche.
+Over 80 format are supported, ranging from the common to the niche.
 Here is a representative but not exhaustive listing:
 * Well-known:
   * BMP and ICO
@@ -54,7 +54,7 @@ Here is a representative but not exhaustive listing:
   * RealLive's G00 and PDT
   * PSX's TIM
 
-Refer to `src/dec.def` and `src/auto.def` for a full and much better list.
+Refer to `FORMATS.txt' for a full list.
 
 As archives are supported, CBZ/CB7 are also viewable.
 
