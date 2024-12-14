@@ -188,14 +188,6 @@ DEC_MAP = {
 		},
 	},
 
-	"idsp": {
-		"idsp": {
-			"desc": "id Software Sprite (Quake, Half-Life, and 32-bit variants)",
-			"ext": ("spr", "spr32"),
-			"magic": b"IDSP",
-		},
-	},
-
 	"ilbm": {
 		"ilbm": {
 			"desc": "Interleaved Bitmap (ILBM and PBM)",
@@ -404,6 +396,18 @@ DEC_MAP = {
 			"desc": "QuiteOK image",
 			"ext": "qoi",
 			"magic": b"qoif",
+		},
+	},
+
+	"quake": {
+		"idsp": {
+			"desc": "id Software Sprite (Quake, Half-Life, and 32-bit variants)",
+			"ext": ("spr", "spr32"),
+			"magic": b"IDSP",
+		},
+		"lmp": {
+			"desc": "Quake LMP",
+			"match": "lmp",
 		},
 	},
 

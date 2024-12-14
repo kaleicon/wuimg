@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
-#include "lib/idsp.h"
+#include "lib/quake.h"
+#include "rast_utils.h"
 #include "wudefs.h"
 
 static enum wu_error wrapper(struct image_file *infile,
@@ -55,4 +56,16 @@ const struct wu_conf *conf) {
 	return st;
 }
 
-const struct image_fn idsp_fn = {.dec = idsp_dec};
+
+static enum wu_error lmp_dec(struct image_file *infile,
+const struct wu_conf *conf) {
+	return rast_trivial_fread(infile, conf, lmp_init);
+}
+
+const struct image_fn idsp_fn = {
+	.dec = idsp_dec,
+};
+const struct image_fn lmp_fn = {
+	.alloc_single = true,
+	.dec = lmp_dec,
+};

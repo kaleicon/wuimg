@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 #include "misc/mem.h"
 #include "raster/fmt.h"
-#include "idsp.h"
+#include "quake.h"
 
 /* ID Software sprite format.
 
@@ -277,6 +277,15 @@ static const uint8_t QUAKE_RGB[] = {
 	0x9f, 0x5b, 0x53,
 };
 
+static struct palette * get_quake_pal(void) {
+	struct palette *pal = palette_new();
+	if (pal) {
+		palette_from_rgb8(pal, QUAKE_RGB, sizeof(QUAKE_RGB)/3);
+		pal->color[255].a = 0x00;
+	}
+	return pal;
+}
+
 const char * idsp_type_str(const enum idsp_type t) {
 	switch (t) {
 	case idsp_vp_parallel_upright: return "Parallel upright";
@@ -448,12 +457,10 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 		desc->type = (enum idsp_type)type;
 		switch (version) {
 		case idsp_quake:
-			desc->pal = palette_new();
+			desc->pal = get_quake_pal();
 			if (!desc->pal) {
 				return wu_alloc_error;
 			}
-			palette_from_rgb8(desc->pal, QUAKE_RGB, sizeof(QUAKE_RGB)/3);
-			desc->pal->color[255].a = 0x00;
 			// fallthrough
 		case idsp_rgba:
 			fseek(ifp, -6, SEEK_CUR);
@@ -465,4 +472,29 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 		}
 	}
 	return wu_invalid_header;
+}
+
+/* LMP
+https://quakewiki.org/wiki/.lmp
+*/
+
+enum wu_error lmp_init(struct wuimg *img, FILE *ifp) {
+	/* LMP structure:
+		Offset  Type    Name
+		0       u32     Width
+		4       u32     Height
+		8       u8      Data[Width*Height]
+	*/
+	uint32_t buf[2];
+	if (fread(buf, sizeof(buf), 1, ifp)) {
+		img->w = endian32(buf[0], little_endian);
+		img->h = endian32(buf[1], little_endian);
+		img->channels = 1;
+		img->bitdepth = 8;
+		if (wuimg_palette_set(img, get_quake_pal())) {
+			return wu_ok;
+		}
+		return wu_alloc_error;
+	}
+	return wu_unexpected_eof;
 }
