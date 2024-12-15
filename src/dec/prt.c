@@ -13,8 +13,8 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	}
 }
 
-static void cleanup(void *ptr) {
-	prt_cleanup(ptr);
+static void cleanup(struct image_file *infile) {
+	prt_cleanup(infile->dec_state);
 }
 static size_t dec(const void *restrict ptr, struct wuimg *img) {
 	return prt_decode(ptr, img);
@@ -27,10 +27,13 @@ static enum wu_error open(void *restrict ptr, struct image_file *infile) {
 }
 
 static enum wu_error prt_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	struct prt_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec, cleanup);
+const struct wu_conf *conf) {
+	return rast_trivial_dec(infile, conf, infile->dec_state, open, parse,
+		metadata, dec);
 }
 
-const struct image_fn prt_fn = {.dec = prt_dec};
+const struct image_fn prt_fn = {
+	.state_size = sizeof(struct prt_desc),
+	.dec = prt_dec,
+	.end = cleanup,
+};

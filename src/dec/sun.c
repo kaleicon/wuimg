@@ -21,7 +21,7 @@ static enum wu_error sun_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct sun_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec, NULL);
+		dec);
 }
 
 const struct image_fn sun_fn = {.dec = sun_dec};

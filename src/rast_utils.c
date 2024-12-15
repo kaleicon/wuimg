@@ -4,9 +4,9 @@
 #include "raster/fmt.h"
 #include "rast_utils.h"
 
-enum wu_error rast_trivial_opened(struct image_file *infile,
+static enum wu_error rast_trivial_opened(struct image_file *infile,
 const struct wu_conf *wuconf, void *desc, rast_vparse_t parse,
-rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
+rast_vmeta_t meta, rast_vdec_t dec) {
 	struct wuimg *img = alloc_sub_images(infile, 1);
 	enum wu_error st = wu_alloc_error;
 	if (img) {
@@ -22,20 +22,17 @@ rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
 					? wu_ok : wu_decoding_error;
 			}
 		}
-		if (cleanup) {
-			(*cleanup)(desc);
-		}
 	}
 	return st;
 }
 
 enum wu_error rast_trivial_dec(struct image_file *infile,
 const struct wu_conf *wuconf, void *desc, rast_vopen_t open,
-rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup) {
+rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec) {
 	enum wu_error st = (*open)(desc, infile);
 	if (st == wu_ok) {
 		st = rast_trivial_opened(infile, wuconf, desc, parse, meta,
-			dec, cleanup);
+			dec);
 	}
 	return st;
 }

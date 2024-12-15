@@ -34,7 +34,7 @@ static enum wu_error tim_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct tim_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec, NULL);
+		dec);
 }
 
 const struct image_fn tim_fn = {.dec = tim_dec};

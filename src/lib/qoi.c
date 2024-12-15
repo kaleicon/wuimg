@@ -126,7 +126,8 @@ enum wu_error qoi_parse(struct mparser *mp, struct wuimg *img) {
 	return wu_invalid_header;
 }
 
-enum wu_error qoi_open(struct mparser *mp) {
+enum wu_error qoi_init(struct mparser *mp, const struct wuptr mem) {
+	*mp = mp_wuptr(mem);
 	const uint8_t magic[4] = "qoif";
 	return fmt_sigcmp_mem(magic, sizeof(magic), mp);
 }

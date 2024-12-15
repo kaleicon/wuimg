@@ -15,8 +15,7 @@ static enum wu_error open(void *restrict desc, struct image_file *infile) {
 static enum wu_error pgx_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct pgx_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, open, parse, NULL, dec,
-		NULL);
+	return rast_trivial_dec(infile, wuconf, &desc, open, parse, NULL, dec);
 }
 
 const struct image_fn pgx_fn = {

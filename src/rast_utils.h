@@ -5,7 +5,6 @@
 #include "wudefs.h"
 #include "misc/file.h"
 
-typedef void (*rast_vfree_t)(void *desc);
 typedef size_t (*rast_vdec_t)(const void *restrict desc, struct wuimg *img);
 typedef void (*rast_vmeta_t)(const void *restrict desc, struct wu_tree *metadata);
 typedef enum wu_error (*rast_vparse_t)(void *restrict desc, struct wuimg *img);
@@ -14,13 +13,9 @@ typedef enum wu_error (*rast_vopen_t)(void *restrict desc, struct image_file *in
 typedef enum wu_error (*rast_open_t)(struct wuimg *img, FILE *ifp);
 
 
-enum wu_error rast_trivial_opened(struct image_file *infile,
-const struct wu_conf *wuconf, void *desc, rast_vparse_t parse,
-rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup);
-
 enum wu_error rast_trivial_dec(struct image_file *infile,
 const struct wu_conf *wuconf, void *desc, rast_vopen_t open,
-rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec, rast_vfree_t cleanup);
+rast_vparse_t parse, rast_vmeta_t meta, rast_vdec_t dec);
 
 enum wu_error rast_trivial_fread(struct image_file *infile,
 const struct wu_conf *wuconf, rast_open_t open_fn);

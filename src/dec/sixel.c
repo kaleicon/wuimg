@@ -15,8 +15,7 @@ static enum wu_error open(void *ptr, struct image_file *infile) {
 static enum wu_error sixel_dec(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct sixel_desc desc;
-	return rast_trivial_dec(infile, conf, &desc, open, parse, NULL, dec,
-		NULL);
+	return rast_trivial_dec(infile, conf, &desc, open, parse, NULL, dec);
 }
 
 const struct image_fn sixel_fn = {.mmap = true, .dec = sixel_dec};

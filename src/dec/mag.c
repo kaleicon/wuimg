@@ -21,8 +21,8 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	}
 }
 
-static void cleanup(void *restrict desc) {
-	mag_cleanup(desc);
+static void cleanup(struct image_file *infile) {
+	mag_cleanup(infile->dec_state);
 }
 static size_t dec(const void *restrict desc, struct wuimg *img) {
 	return mag_decode(desc, img);
@@ -35,13 +35,14 @@ static enum wu_error open(void *restrict desc, struct image_file *infile) {
 }
 
 static enum wu_error mag_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	struct mag_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc,
-		open, parse, metadata, dec, cleanup);
+const struct wu_conf *conf) {
+	return rast_trivial_dec(infile, conf, infile->dec_state,
+		open, parse, metadata, dec);
 }
 
 const struct image_fn mag_fn = {
 	.mmap = true,
+	.state_size = sizeof(struct mag_desc),
 	.dec = mag_dec,
+	.end = cleanup,
 };

@@ -21,7 +21,7 @@ static enum wu_error tlg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct tlg_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec, NULL);
+		dec);
 }
 
 const struct image_fn tlg_fn = {.mmap = true, .dec = tlg_dec};

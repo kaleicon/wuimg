@@ -20,7 +20,7 @@ static enum wu_error cbg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct cbg_desc desc;
 	return rast_trivial_dec(infile, wuconf, &desc, init, parse,
-		metadata, dec, NULL);
+		metadata, dec);
 }
 
 const struct image_fn cbg_fn = {.mmap = true, .dec = cbg_dec};

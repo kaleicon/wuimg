@@ -54,7 +54,8 @@ enum wu_error xyz_parse(struct mparser *mp, struct wuimg *img) {
 	return wu_unexpected_eof;
 }
 
-enum wu_error xyz_open(struct mparser *mp) {
+enum wu_error xyz_init(struct mparser *mp, const struct wuptr mem) {
+	*mp = mp_wuptr(mem);
 	const unsigned char magic[] = {'X', 'Y', 'Z', '1'};
 	return fmt_sigcmp_mem(magic, sizeof(magic), mp);
 }

@@ -15,8 +15,7 @@ static enum wu_error init(void *ptr, struct image_file *infile) {
 static enum wu_error tre_dec(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct tre_desc desc;
-	return rast_trivial_dec(infile, conf, &desc, init, parse, NULL, dec,
-		NULL);
+	return rast_trivial_dec(infile, conf, &desc, init, parse, NULL, dec);
 }
 
 static enum wu_error trs_callback(struct image_file *infile,

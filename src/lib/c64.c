@@ -13,17 +13,21 @@ static const size_t TOTAL_LEN = BITMAP_LEN + RAM_LEN*2 + BG_LEN + 2;
 static const size_t WIDTH = 160;
 static const size_t HEIGHT = 200;
 
-enum c64_fmt_sizes {
-	c64_koa = 10003,
-	c64_ocp = 10018,
-};
-
 struct c64_mem_offsets {
 	const uint8_t *restrict bitmap;
 	const uint8_t *restrict screen;
 	const uint8_t *restrict color;
 	const uint8_t *restrict bg;
 };
+
+const char * c64_fmt_str(const enum c64_fmt fmt) {
+	switch (fmt) {
+	case c64_koa: return "KoalaPaint";
+	case c64_ocp: return "Advanced Art Studio";
+	case c64_koa_compressed: return "KoalaPaint compressed";
+	}
+	return "???";
+}
 
 static void multicolor_expand(uint8_t *restrict dst,
 const struct c64_mem_offsets *off) {
@@ -94,12 +98,12 @@ const struct mparser rle, struct wuimg *img, struct c64_mem_offsets *off) {
 	return false;
 }
 
-bool c64_decode(const struct mparser *mp_orig, struct wuimg *img) {
+bool c64_decode(const struct c64_desc *desc, struct wuimg *img) {
 	bool ok = false;
 	if (wuimg_alloc_noverify(img)) {
-		struct mparser mp = *mp_orig;
+		struct mparser mp = desc->mp;
 		struct c64_mem_offsets off;
-		switch (mp.len) {
+		switch (desc->fmt) {
 		case c64_koa:
 			if (contiguous_mem(&mp, 2, &off)) {
 				multicolor_expand(img->data, &off);
@@ -118,7 +122,7 @@ bool c64_decode(const struct mparser *mp_orig, struct wuimg *img) {
 				ok = true;
 			}
 			break;
-		default:
+		case c64_koa_compressed:
 			;uint8_t *uncomp = malloc(TOTAL_LEN);
 			if (uncomp) {
 				ok = gg_decode(uncomp, TOTAL_LEN, mp, img, &off);
@@ -158,7 +162,7 @@ inline static struct pix_rgb8 gen_e(const uint8_t level, const uint8_t angle) {
 	};
 }
 
-static enum wu_error multicolor_settings(struct wuimg *img) {
+enum wu_error c64_set(struct wuimg *img) {
 	img->w = WIDTH;
 	img->h = HEIGHT;
 	img->channels = 1;
@@ -193,17 +197,24 @@ static enum wu_error multicolor_settings(struct wuimg *img) {
 	return wu_alloc_error;
 }
 
-enum wu_error c64_guess(const struct mparser *mp, struct wuimg *img) {
-	bool ok = false;
-	switch (mp->len) {
+enum wu_error c64_guess(struct c64_desc *desc, const struct wuptr mem) {
+	enum c64_fmt fmt;
+	switch (mem.len) {
 	case c64_koa:
 	case c64_ocp:
-		ok = true;
+		fmt = (enum c64_fmt)mem.len;
 		break;
 	default:
 		// e.g. 0xfe 0x01 0xfe  0xfe 0x01 0xfe ...
-		;const size_t pathological_rle = TOTAL_LEN*3;
-		ok = (mp->len < pathological_rle);
+		if (mem.len >= TOTAL_LEN*3) {
+			return wu_unknown_file_type;
+		}
+		fmt = c64_koa_compressed;
+		break;
 	}
-	return (ok) ? multicolor_settings(img) : wu_unknown_file_type;
+	*desc = (struct c64_desc) {
+		.mp = mp_wuptr(mem),
+		.fmt = fmt,
+	};
+	return wu_ok;
 }
