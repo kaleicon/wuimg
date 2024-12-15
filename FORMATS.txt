@@ -46,7 +46,7 @@ lerc      lerc      Limited Error Raster Compression
 mac       mac       MacPaint
 mag       mag       MAG (MAKI02)
 maki      maki      MAKIchan (MAKI01)
-msx       msx       MSX-BASIC dump
+msx       msx       MSX-BASIC dump, Graph Saurus
 pcf       pcf       PCF bitmap font
 pcx       dcx       Multi-image PCX
 pcx       pcx       PC Paintbrush PCX

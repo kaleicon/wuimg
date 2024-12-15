@@ -221,7 +221,7 @@ DEC_MAP = {
 
 	"msx": {
 		"msx": {
-			"desc": "MSX-BASIC dump",
+			"desc": "MSX-BASIC dump, Graph Saurus",
 			# You can sort of tell whether a file is an MSX-BASIC format,
 			# but you can rarely tell the screen mode it uses without the
 			# extension.
