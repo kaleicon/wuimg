@@ -1,42 +1,9 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdlib.h>
-
 #include <unistd.h>
 #include <sys/mman.h>
 
 #include "misc/file.h"
 #include "misc/math.h"
-#include "misc/mem.h"
-
-bool file_read_pi_comm(struct wustr *comm, FILE *ifp) {
-	const uint8_t eos = 0x00;
-	const uint8_t eoc = 0x1a;
-	const size_t max = 0x4000; // PixelArt.v03/MAKICHAN/MAGSCR7/CHO13.MAG
-	struct wugrow grow = wugrow_init(sizeof(comm->str));
-	uint8_t *buf = NULL;
-	while (grow.pos < max) {
-		const int c = getc(ifp);
-		if (c == EOF) {
-			break;
-		} else if (c == eos) {
-			const uint8_t *end = memrchr(buf, eoc, grow.pos);
-			comm->str = buf;
-			comm->len = end ? (size_t)(end - buf) : grow.pos;
-			if (grow.pos - comm->len >= 2) {
-				comm->len = grow.pos;
-			}
-			return true;
-		}
-		if (!wugrow_recheck(&grow)) {
-			break;
-		}
-		buf = grow.ptr;
-		buf[grow.pos] = (uint8_t)c;
-		++grow.pos;
-	}
-	free(buf);
-	return false;
-}
 
 size_t file_tail(void *buf, const size_t size, const size_t nmemb,
 FILE *ifp) {

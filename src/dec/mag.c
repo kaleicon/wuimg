@@ -13,7 +13,12 @@ static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	}
 	tree_add_leaf_utf8(tree, "Screen mode",
 		mag_screen_mode_str(desc->screen_mode));
-	tree_add_leaf_len(tree, "Comment", wuptr_wustr(desc->comm), "SHIFT_JIS");
+	if (desc->comm.len) {
+		tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT_JIS");
+	}
+	if (desc->dummy.len) {
+		tree_add_leaf_len(tree, "Comment", desc->dummy, NULL);
+	}
 }
 
 static void cleanup(void *restrict desc) {
@@ -26,7 +31,7 @@ static enum wu_error parse(void *restrict desc, struct wuimg *img) {
 	return mag_parse(desc, img);
 }
 static enum wu_error open(void *restrict desc, struct image_file *infile) {
-	return mag_open(desc, infile->ifp);
+	return mag_init(desc, infile->map);
 }
 
 static enum wu_error mag_dec(struct image_file *infile,
@@ -36,4 +41,7 @@ const struct wu_conf *wuconf) {
 		open, parse, metadata, dec, cleanup);
 }
 
-const struct image_fn mag_fn = {.dec = mag_dec};
+const struct image_fn mag_fn = {
+	.mmap = true,
+	.dec = mag_dec,
+};

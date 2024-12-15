@@ -32,10 +32,6 @@ const char * pic_model_str(const enum pic_type type) {
 	return "???";
 }
 
-void pic_cleanup(struct pic_desc *desc) {
-	wustr_free(&desc->comm);
-}
-
 struct pic_cache {
 	/* PIC's color cache algorithm works by using an structure that is
 	 * indexed as an array but modified like a linked list.
@@ -214,25 +210,25 @@ static uint32_t read_len_code(struct bitstrm *bs) {
 	return val;
 }
 
-static bool decode_data(const struct pic_desc *desc, uint8_t *restrict dst,
+static void decode_data(const struct pic_desc *desc, uint8_t *restrict dst,
 const int w, const int limit, const uint8_t ch, struct bitstrm *bs,
 uint8_t *mask, struct pic_cache *cache) {
-	for (int i = -1; !bs->eof;) {
+	int i = -1;
+	while (!bs->eof) {
 		i += (int)read_len_code(bs);
-		if ((unsigned)i < (unsigned)limit) {
-			read_img_color(dst + i*ch, desc, bs, cache, ch);
-			mask[i/8] |= 1 << (i%8);
-			if (bitstrm_msb_next(bs)) {
-				const int x = i % w;
-				const int y = i / w;
-				chain_expand(dst, bs, ch, x, y, w, limit, mask);
-			}
-		} else {
+		if ((unsigned)i >= (unsigned)limit) {
 			break;
+		}
+		read_img_color(dst + i*ch, desc, bs, cache, ch);
+		mask[i/8] |= 1 << (i%8);
+		if (bitstrm_msb_next(bs)) {
+			const int x = i % w;
+			const int y = i / w;
+			chain_expand(dst, bs, ch, x, y, w, limit, mask);
 		}
 	}
 
-	int i = 0;
+	i = 0;
 	int src = 0;
 	while (i < limit && !mask[i/8]) {
 		i += 8;
@@ -253,7 +249,6 @@ uint8_t *mask, struct pic_cache *cache) {
 			i += 8;
 		}
 	}
-	return true;
 }
 
 static uint8_t get_pix_size(const struct pic_desc *desc,
@@ -266,15 +261,13 @@ const struct wuimg *img) {
 	return 3;
 }
 
-size_t pic_decode(const struct pic_desc *desc, struct wuimg *img) {
+bool pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 	if (!wuimg_alloc_noverify(img)) {
-		return 0;
+		return false;
 	}
 
-	const size_t comp_size = file_remaining(desc->ifp);
-	if (!comp_size) {
-		return 0;
-	}
+	struct mparser mp = desc->mp;
+	struct bitstrm bs = bitstrm_from_wuptr(mp_remaining(&mp));
 
 	const size_t w = img->w;
 	const size_t h = (desc->tiled ? img->h/2 : img->h);
@@ -284,47 +277,36 @@ size_t pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 	const bool use_cache = desc->depth > 8 && desc->type != pic_type_mac;
 
 	struct pic_cache *cache = NULL;
-	uint8_t *data = malloc(comp_size + mask_size
-		+ use_cache * sizeof(*cache));
-	bool ok = false;
+	uint8_t *data = calloc(mask_size + use_cache * sizeof(*cache), 1);
 	if (data) {
-		const size_t read = fread(data, 1, comp_size, desc->ifp);
-		if (read) {
-			struct bitstrm bs = bitstrm_from_bytes(data, read);
-
-			uint8_t *mask = data + read;
-			memset(mask, 0, mask_size);
-
-			if (use_cache) {
-				cache = (struct pic_cache *)(mask + mask_size);
-				init_cache(cache);
-			}
-
-			const uint8_t ch = get_pix_size(desc, img);
-			ok = decode_data(desc, img->data, (int)w, (int)limit,
-				ch, &bs, mask, cache);
+		uint8_t *mask = data;
+		if (use_cache) {
+			cache = (struct pic_cache *)(data + mask_size);
+			init_cache(cache);
 		}
+
+		const uint8_t ch = get_pix_size(desc, img);
+		decode_data(desc, img->data, (int)w, (int)limit,
+			ch, &bs, mask, cache);
 		free(data);
 	}
-	return ok;
+	return data;
 }
 
-static bool load_pal(const struct pic_desc *desc, struct palette *pal) {
+static bool load_pal(struct pic_desc *desc, struct palette *pal) {
 	const struct pic_bits *b = &desc->bits;
 	const uint8_t pal_depth = (uint8_t)(b->uni*3 + b->shared);
 	const size_t entries = 1 << desc->depth;
 	const size_t len = strip_base(entries, pal_depth);
-	uint8_t *buf = (uint8_t *)(pal + 1) - len;
-	if (!fread(buf, len, 1, desc->ifp)) {
-		return false;
+	const uint8_t *buf = mp_slice(&desc->mp, len);
+	if (buf) {
+		struct bitstrm bs = bitstrm_from_bytes(buf, len);
+		for (size_t i = 0; i < entries; ++i) {
+			read_grb((uint8_t *)(pal->color + i), b, &bs);
+			pal->color[i].a = 0xff;
+		}
 	}
-
-	struct bitstrm bs = bitstrm_from_bytes(buf, len);
-	for (size_t i = 0; i < entries; ++i) {
-		read_grb((uint8_t *)(pal->color + i), b, &bs);
-		pal->color[i].a = 0xff;
-	}
-	return true;
+	return buf;
 }
 
 static void calc_mul(struct pic_bits *bits, const uint8_t uni,
@@ -336,9 +318,10 @@ const uint8_t shared) {
 	bits->uni = uni;
 }
 
-static bool extra_fields(uint8_t *restrict buf, struct pic_desc *desc,
-struct wuimg *img, const bool rgb_bits) {
-	if (!fread(buf, 6 + rgb_bits, 1, desc->ifp)) {
+static bool extra_fields(struct pic_desc *desc,
+struct wuimg *img) {
+	const uint8_t *buf = mp_slice(&desc->mp, 6);
+	if (!buf) {
 		return wu_unexpected_eof;
 	}
 
@@ -365,9 +348,10 @@ struct wuimg *img, const bool rgb_bits) {
 enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	/* PIC header (after magic bytes):
 		Offset  Size    Name
-		0       u8      Comment[]     // 0x1a then 0x00 terminated
+		0       u8      Comment[]     // 0x1a terminated
+		+0      u8      Dummy[]       // 0x00 terminated
 		...
-		+0      u8      Reserved      // 0x00
+		+0      u8      Reserved      // 0x00 (not the Dummy terminator)
 		+1      u8      ModelBitfield
 			0-3     Type
 			4-7     Mode
@@ -392,16 +376,16 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	 * byte boundary.
 	*/
 
-	if (!file_read_pi_comm(&desc->comm, desc->ifp)) {
+	if (!mp_upto(&desc->mp, &desc->comm, 0x1a)
+	|| !mp_upto(&desc->mp, &desc->dummy, 0x00)) {
 		return wu_unexpected_eof;
 	}
 
-	uint8_t buf[8];
-	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+	const uint8_t *buf = mp_slice(&desc->mp, 8);
+	if (!buf) {
 		return wu_unexpected_eof;
-	}
-
-	if (buf[0]) {
+	} else if (buf[0]) {
+		puts("AAAAH");
 		return wu_invalid_header;
 	}
 	desc->type = buf[1] & 0xf;
@@ -496,7 +480,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		 * anything about this, so hopefully what follows is correct. */
 		switch (desc->mode) {
 		case 0x00:
-			st = extra_fields(buf, desc, img, false);
+			st = extra_fields(desc, img);
 			if (st != wu_ok) {
 				return st;
 			}
@@ -513,17 +497,20 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		img->layout = pix_rgba;
 		break;
 	case pic_type_generic:
-		st = extra_fields(buf, desc, img, false);
+		st = extra_fields(desc, img);
 		if (st != wu_ok) {
 			return st;
 		}
 
 		switch (bd) {
 		case 4: case 8:
-			uni_bits = buf[6];
-			if (!uni_bits || uni_bits > 8) {
+			;int bits = mp_next_char(&desc->mp);
+			if (bits == EOF) {
+				return wu_unexpected_eof;
+			} else if (bits < 1 || bits > 8) {
 				return wu_invalid_header;
 			}
+			uni_bits = (uint8_t)bits;
 			break;
 		case 12: case 24:
 			break;
@@ -576,10 +563,10 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	return wuimg_verify(img);
 }
 
-enum wu_error pic_open(struct pic_desc *desc, FILE *ifp) {
+enum wu_error pic_init(struct pic_desc *desc, const struct wuptr mem) {
 	*desc = (struct pic_desc) {
-		.ifp = ifp,
+		.mp = mp_wuptr(mem),
 	};
 	const unsigned char sig[] = {'P', 'I', 'C'};
-	return fmt_sigcmp(sig, sizeof(sig), ifp);
+	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
 }

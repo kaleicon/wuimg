@@ -46,6 +46,8 @@ struct wuptr mp_avail(struct mparser *mp, size_t len);
 
 struct wuptr mp_remaining(struct mparser *mp);
 
+bool mp_upto(struct mparser *mp, struct wuptr *out, char chr);
+
 
 size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val);
 

@@ -147,6 +147,20 @@ struct wuptr mp_remaining(struct mparser *mp) {
 	return mp_avail(mp, mp->len - mp->pos);
 }
 
+bool mp_upto(struct mparser *mp, struct wuptr *out, const char chr) {
+	const size_t rem = mp->len - mp->pos;
+	const uint8_t *start = mp->mem + mp->pos;
+	const uint8_t *end = memchr(start, chr, rem);
+	out->ptr = mp->mem + mp->pos;
+	if (end) {
+		out->len = (size_t)(end - start);
+		mp->pos = (size_t)(end - mp->mem) + 1;
+	} else {
+		out->len = rem;
+		mp->pos = mp->len;
+	}
+	return end;
+}
 
 size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val) {
 	digits = zumin(digits, mp->len - mp->pos);

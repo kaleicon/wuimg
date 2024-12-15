@@ -2,8 +2,7 @@
 #ifndef LIB_PIC
 #define LIB_PIC
 
-#include <stdio.h>
-
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 enum pic_type {
@@ -22,8 +21,9 @@ struct pic_bits {
 };
 
 struct pic_desc {
-	FILE *ifp;
-	struct wustr comm;
+	struct mparser mp;
+	struct wuptr comm;
+	struct wuptr dummy;
 	int16_t x, y;
 	struct pic_bits bits;
 	uint8_t depth;
@@ -34,12 +34,10 @@ struct pic_desc {
 
 const char * pic_model_str(enum pic_type type);
 
-void pic_cleanup(struct pic_desc *desc);
-
-size_t pic_decode(const struct pic_desc *desc, struct wuimg *img);
+bool pic_decode(const struct pic_desc *desc, struct wuimg *img);
 
 enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img);
 
-enum wu_error pic_open(struct pic_desc *desc, FILE *ifp);
+enum wu_error pic_init(struct pic_desc *desc, struct wuptr mem);
 
 #endif /* LIB_PIC */

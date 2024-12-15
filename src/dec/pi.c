@@ -4,22 +4,21 @@
 
 static void metadata(const void *restrict ptr, struct wu_tree *tree) {
 	const struct pi_desc *desc = ptr;
-	if (desc->comm.str) {
-		tree_add_leaf_len(tree, "Comment", wuptr_wustr(desc->comm),
-			"SHIFT-JIS");
+	if (desc->comm.len) {
+		tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT-JIS");
 	}
-	tree_add_leaf_len(tree, "Saver model", WUPTR_ARRAY(desc->saver.sig),
+	if (desc->dummy.len) {
+		tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
+	}
+	tree_add_leaf_len(tree, "Saver model", WUPTR_ARRAY(desc->saver.model),
 		"SHIFT-JIS");
-	if (desc->saver.data) {
-		tree_add_leaf_len(tree, "Saver data",
-			wuptr_mem(desc->saver.data, desc->saver.len), "SHIFT-JIS");
+	if (desc->saver.data.len) {
+		tree_add_leaf_len(tree, "Saver data", desc->saver.data,
+			"SHIFT-JIS");
 	}
 	tree_bud_leaf_u(tree, "Depth", desc->depth);
 }
 
-static void cleanup(void *ptr) {
-	pi_cleanup(ptr);
-}
 static size_t dec(const void *restrict ptr, struct wuimg *img) {
 	return pi_decode(ptr, img);
 }
@@ -27,14 +26,17 @@ static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
 	return pi_read_header(ptr, img);
 }
 static enum wu_error open(void *restrict ptr, struct image_file *infile) {
-	return pi_open_file(ptr, infile->ifp);
+	return pi_init(ptr, infile->map);
 }
 
 static enum wu_error pi_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+const struct wu_conf *conf) {
 	struct pi_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec, cleanup);
+	return rast_trivial_dec(infile, conf, &desc, open, parse, metadata,
+		dec, NULL);
 }
 
-const struct image_fn pi_fn = {.dec = pi_dec};
+const struct image_fn pi_fn = {
+	.mmap = true,
+	.dec = pi_dec,
+};

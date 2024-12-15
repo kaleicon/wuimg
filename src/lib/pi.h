@@ -2,30 +2,27 @@
 #ifndef LIB_PI
 #define LIB_PI
 
-#include <stdio.h>
-
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 struct pi_saver {
-	unsigned char *data;
-	unsigned short len;
-	unsigned char sig[4];
+	unsigned char model[4];
+	struct wuptr data;
 };
 
 struct pi_desc {
-	FILE *ifp;
+	struct mparser mp;
 	unsigned char depth;
 
-	struct wustr comm;
+	struct wuptr comm;
+	struct wuptr dummy;
 	struct pi_saver saver;
 };
-
-void pi_cleanup(struct pi_desc *desc);
 
 size_t pi_decode(const struct pi_desc *desc, struct wuimg *img);
 
 enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img);
 
-enum wu_error pi_open_file(struct pi_desc *desc, FILE *ifp);
+enum wu_error pi_init(struct pi_desc *desc, struct wuptr mem);
 
 #endif /* LIB_PI */

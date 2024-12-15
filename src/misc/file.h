@@ -6,8 +6,6 @@
 
 #include "wustr.h"
 
-bool file_read_pi_comm(struct wustr *comm, FILE *ifp);
-
 size_t file_tail(void *buf, size_t size, size_t nmemb, FILE *ifp);
 
 size_t file_remaining(FILE *ifp);

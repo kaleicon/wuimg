@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
-#include <limits.h>
 
 #include "misc/bit.h"
-#include "misc/file.h"
-#include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "pi.h"
@@ -29,11 +24,6 @@ enum pi_repeat_src {
 	pi_1row_next = 6,
 	pi_1row_prev = 7,
 };
-
-void pi_cleanup(struct pi_desc *desc) {
-	wustr_free(&desc->comm);
-	free(desc->saver.data);
-}
 
 static uint8_t table_lookup(uint8_t *table, const unsigned depth,
 const size_t x, const size_t y) {
@@ -251,69 +241,33 @@ const unsigned depth) {
 	return i;
 }
 
-static size_t max_bitstream_size(FILE *ifp, const size_t dims) {
-	return zumin(dims * 2, file_remaining(ifp));
-}
-
 size_t pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 	size_t written = 0;
 	if (wuimg_alloc_noverify(img)) {
-		const size_t dims = wuimg_size(img);
 		const unsigned colors = (1 << desc->depth);
 		const unsigned table_size = colors*colors;
-		const size_t bslen = max_bitstream_size(desc->ifp, dims);
-		void *buf = malloc(table_size + bslen);
-		if (buf) {
-			uint8_t *restrict delta_table = buf;
-			uint8_t *restrict bitstream = delta_table + table_size;
-
+		uint8_t *delta_table = malloc(table_size);
+		if (delta_table) {
 			init_delta_table(delta_table, colors);
-			const size_t read = fread(bitstream, 1, bslen, desc->ifp);
 
-			struct bitstrm bs = bitstrm_from_bytes(bitstream, read);
+			struct mparser mp = desc->mp;
+			struct bitstrm bs = bitstrm_from_wuptr(mp_remaining(&mp));
+			const size_t dims = wuimg_size(img);
 			written = bt_decode_loop(img->data, dims, &bs, img->w,
 				delta_table, colors);
-			free(buf);
+			free(delta_table);
 		}
 	}
 	return written;
 }
 
-static enum wu_error validate_header(struct pi_desc *desc, struct wuimg *img,
-uint8_t ratio_x, uint8_t ratio_y, const uint8_t bitdepth, const uint16_t width,
-const uint16_t height) {
-	switch (bitdepth) {
-	case 4: case 8:
-		break;
-	default:
-		return wu_invalid_header;
-	}
-
-	/* Images of width 2 or less are stored 'without repetition'. I guess
-	 * the bitstream may omit the 'process delta again' bit then, but I
-	 * don't have any samples to check that. Hence, this. */
-	if (width <= 2)  {
-		return wu_samples_wanted;
-	}
-
-	img->w = width;
-	img->h = height;
-	img->channels = 1;
-	img->bitdepth = 8;
-	/* According to Google Translate, "dots are multiplied by n/m in the
-	 * vertical direction", so swap parameter order. */
-	wuimg_aspect_ratio(img, ratio_y, ratio_x);
-
-	desc->depth = bitdepth;
-	return wu_ok;
-}
-
 enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img) {
 	/* Pi header (after magic bytes):
 		Offset  Size    Name
-		0       VAR     Comment[];      // 0x1a then 0x00 terminated
+		0       VAR     Comment[];      // 0x1a terminated
+		--      VAR     Dummy[];        // 0x00 terminated
 
-		--      BYTE    ModeByte;       // Unreliable palette indicator
+		+0      BYTE    ModeByte;       // Unreliable palette indicator
 		+1      BYTE    ScreenRatioNum;
 		+2      BYTE    ScreenRatioDen;
 		+3      BYTE    BitDepth;       // 4 or 8
@@ -326,55 +280,65 @@ enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img) {
 		+4      VAR     Palette;        // Length of 1 << BitDepth
 	*/
 
-	if (!file_read_pi_comm(&desc->comm, desc->ifp)) {
+	if (!mp_upto(&desc->mp, &desc->comm, 0x1a)
+	|| !mp_upto(&desc->mp, &desc->dummy, 0x00)) {
 		return wu_unexpected_eof;
 	}
 
-	uint8_t buf[10];
-	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+	const uint8_t *buf = mp_slice(&desc->mp, 10);
+	if (!buf) {
 		return wu_unexpected_eof;
 	}
 
-	memcpy(desc->saver.sig, buf + 4, sizeof(desc->saver.sig));
-	unsigned short saver_len = buf_endian16(buf + 8, big_endian);
-	if (saver_len) {
-		desc->saver.len = saver_len;
-		desc->saver.data = malloc(saver_len);
-		if (!desc->saver.data) {
-			return wu_alloc_error;
-		}
-		if (!fread(desc->saver.data, saver_len, 1, desc->ifp)) {
+	desc->depth = buf[3];
+	switch (desc->depth) {
+	case 4: case 8: break;
+	default: return wu_invalid_header;
+	}
+
+	const uint8_t ratio_x = buf[1];
+	const uint8_t ratio_y = buf[2];
+	/* According to Google Translate, "dots are multiplied by n/m in the
+	 * vertical direction", so swap parameter order. */
+	wuimg_aspect_ratio(img, ratio_y, ratio_x);
+
+	memcpy(desc->saver.model, buf + 4, sizeof(desc->saver.model));
+	desc->saver.data.len = buf_endian16(buf + 8, big_endian);
+	if (desc->saver.data.len) {
+		desc->saver.data.ptr = mp_slice(&desc->mp, desc->saver.data.len);
+		if (!desc->saver.data.ptr) {
 			return wu_unexpected_eof;
 		}
 	}
 
-	if (!fread(buf + 4, 4, 1, desc->ifp)) {
+	buf = mp_slice(&desc->mp, 4 + 3 * (1u << desc->depth));
+	if (!buf) {
 		return wu_unexpected_eof;
 	}
 
-	enum wu_error status = validate_header(desc, img,
-		buf[1], buf[2], buf[3],
-		buf_endian16(buf + 4, big_endian),
-		buf_endian16(buf + 6, big_endian));
-	if (status != wu_ok) {
-		return status;
-	}
-
-	struct palette *pal = wuimg_palette_init(img);
-	if (!pal) {
+	/* Images of width 2 or less are stored 'without repetition'. Maybe
+	 * the bitstream omits the 'process delta again' bit then, but I
+	 * don't have any samples to check that. Hence, this. */
+	img->w = buf_endian16(buf, big_endian);
+	img->h = buf_endian16(buf + 2, big_endian);
+	img->channels = 1;
+	img->bitdepth = 8;
+	if (img->w > 2)  {
+		struct palette *pal = wuimg_palette_init(img);
+		if (pal) {
+			const uint8_t *pal_src = buf + 4;
+			palette_from_rgb8(pal, pal_src, 1 << desc->depth);
+			return wuimg_verify(img);
+		}
 		return wu_alloc_error;
 	}
-	status = fmt_load_pal(desc->ifp, pal, fmt_pal_rgb, 1 << desc->depth);
-	if (status == wu_ok) {
-		return wuimg_verify(img);
-	}
-	return status;
+	return wu_samples_wanted;
 }
 
-enum wu_error pi_open_file(struct pi_desc *desc, FILE *ifp) {
+enum wu_error pi_init(struct pi_desc *desc, const struct wuptr mem) {
 	*desc = (struct pi_desc) {
-		.ifp = ifp,
+		.mp = mp_wuptr(mem),
 	};
 	const unsigned char sig[] = {'P', 'i'};
-	return fmt_sigcmp(sig, sizeof(sig), ifp);
+	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
 }

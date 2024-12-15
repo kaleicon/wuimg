@@ -55,14 +55,15 @@ struct mag_msx {
 };
 
 struct mag_desc {
-	FILE *ifp;
+	struct mparser mp;
+	struct wuptr comm;
+	struct wuptr dummy;
+	size_t null_pos;
 	uint8_t model[4];
 	enum mag_model_code code:8;
 	enum mag_screen_mode screen_mode:8;
 	struct mag_msx msx;
 	size_t row_dwords;
-	struct wustr comm;
-	long null_pos;
 	struct mag_section flag_a, flag_b, color;
 	struct palette *yae;
 };
@@ -79,6 +80,6 @@ size_t mag_decode(const struct mag_desc *desc, struct wuimg *img);
 
 enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img);
 
-enum wu_error mag_open(struct mag_desc *desc, FILE *ifp);
+enum wu_error mag_init(struct mag_desc *desc, struct wuptr mem);
 
 #endif /* LIB_MAG */
