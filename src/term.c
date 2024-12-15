@@ -7,20 +7,8 @@
 #include "term.h"
 #include "misc/math.h"
 
-static size_t graph_len(const unsigned char *str, size_t len) {
-	while (len) {
-		const unsigned char c = str[len - 1];
-		if (c && isgraph(c)) {
-			break;
-		}
-		--len;
-	}
-	return len;
-}
-
 void term_print_escaped(const unsigned char *restrict data, size_t len,
 const bool is_utf8, FILE *stream) {
-	len = graph_len(data, len);
 	const unsigned char hex[16] = "0123456789ABCDEF";
 	const unsigned char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
 	const unsigned char RESET[] = {0x1b, '[', 'm'};
