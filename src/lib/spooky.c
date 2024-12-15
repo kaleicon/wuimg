@@ -95,9 +95,9 @@ enum wu_error tre_parse(struct tre_desc *desc, struct wuimg *img) {
 	return wu_unexpected_eof;
 }
 
-enum wu_error tre_init(struct tre_desc *desc, const struct map_info map) {
+enum wu_error tre_init(struct tre_desc *desc, const struct wuptr mem) {
 	*desc = (struct tre_desc) {
-		.mp = mp_map(map),
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t magic[] = {'t', 'r', 'e', '1'};
 	return fmt_sigcmp_mem(magic, sizeof(magic), &desc->mp);
@@ -196,7 +196,7 @@ const uint16_t i) {
 	return common_setup(img, packed);
 }
 
-enum wu_error trs_init(struct trs_desc *desc, const struct map_info map) {
+enum wu_error trs_init(struct trs_desc *desc, const struct wuptr mem) {
 	/* TRS header (after magic bytes):
 		Offset  Type    Name
 		0       u8      Magic[4]
@@ -206,7 +206,7 @@ enum wu_error trs_init(struct trs_desc *desc, const struct map_info map) {
 		10      SpriteLoc[]
 	*/
 	*desc = (struct trs_desc) {
-		.mp = mp_map(map),
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t *header = mp_slice(&desc->mp, 10);
 	if (header) {

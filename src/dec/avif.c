@@ -162,7 +162,7 @@ static enum wu_error decode_map(struct image_file *infile,
 avifDecoder *dec, avifResult *res) {
 	dec->strictFlags = AVIF_STRICT_DISABLED;
 	dec->maxThreads = (int)num_cpus();
-	*res = avifDecoderSetIOMemory(dec, infile->map.data, infile->map.len);
+	*res = avifDecoderSetIOMemory(dec, infile->map.ptr, infile->map.len);
 	if (*res != AVIF_RESULT_OK) {
 		return wu_invalid_header;
 	}

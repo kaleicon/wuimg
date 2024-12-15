@@ -91,8 +91,8 @@ static void errno_append(struct image_file *infile, const int n) {
 
 static enum wu_error actually_open(struct image_context *image) {
 	struct image_file *infile = &image->file;
-	struct map_info *map = &infile->map;
-	if (!infile->ifp && !map->data) {
+	struct wuptr *map = &infile->map;
+	if (!infile->ifp && !map->ptr) {
 		if (!image->name) {
 			fatal_bug("dec_decode()",
 				"No data source for image_context");
@@ -119,7 +119,7 @@ static enum wu_error actually_open(struct image_context *image) {
 	if (infile->ifp) {
 		fd = fileno(infile->ifp);
 		if (!image->desc.is_auto && image->desc.dec.fn->mmap) {
-			if (!map->data) {
+			if (!map->ptr) {
 				errno = 0;
 				if (!file_map_fd(map, fd)) {
 					errno_append(infile, errno);
@@ -133,7 +133,7 @@ static enum wu_error actually_open(struct image_context *image) {
 	} else {
 		if (image->desc.is_auto || !image->desc.dec.fn->mmap) {
 			errno = 0;
-			infile->ifp = fmemopen((uint8_t *)map->data, map->len,
+			infile->ifp = fmemopen((uint8_t *)map->ptr, map->len,
 				"rb");
 			if (!infile->ifp) {
 				errno_append(infile, errno);
@@ -213,10 +213,7 @@ struct wuimg **cur_img) {
 void dec_src_mem(struct image_context *image, const struct wuptr data,
 const char *name, const struct image_fn *fn) {
 	image->name = name;
-	image->file.map = (struct map_info) {
-		.data = data.ptr,
-		.len = data.len,
-	};
+	image->file.map = data;
 	image->file.keep_map = true;
 	image->desc.dec.fn = fn;
 }

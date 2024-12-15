@@ -27,6 +27,6 @@ struct xbm_desc {
 size_t xbm_decode(const struct xbm_desc *desc, struct wuimg *img);
 
 enum wu_error xbm_parse_header(struct xbm_desc *desc, struct wuimg *img,
-struct mparser mp);
+struct wuptr mem);
 
 #endif /* LIB_XBM */

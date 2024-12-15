@@ -127,7 +127,7 @@ void image_file_free(struct image_file *file) {
 	free(file->sub_img);
 	wustr_free(&file->errors);
 	tree_unroot(&file->metadata);
-	if (file->map.data && !file->keep_map) {
+	if (file->map.ptr && !file->keep_map) {
 		file_unmap(&file->map);
 	}
 	if (file->ifp && !file->keep_file) {

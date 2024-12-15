@@ -192,9 +192,9 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 	return wuimg_verify(img);
 }
 
-enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *map) {
+enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct wuptr mem) {
 	*desc = (struct pdt_desc) {
-		.mp = mp_map(*map),
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t *buf = mp_slice(&desc->mp, 8);
 	if (buf) {

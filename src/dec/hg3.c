@@ -5,7 +5,7 @@
 static enum wu_error hg3_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct hg3_desc desc;
-	enum wu_error st = hg3_open(&desc, mp_map(infile->map));
+	enum wu_error st = hg3_open(&desc, infile->map);
 	if (st != wu_ok) {
 		return st;
 	}

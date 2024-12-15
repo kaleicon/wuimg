@@ -287,9 +287,9 @@ enum wu_error cbg_parse(struct cbg_desc *desc, struct wuimg *img) {
 	return wu_invalid_header;
 }
 
-enum wu_error cbg_init(struct cbg_desc *desc, const struct mparser mp) {
+enum wu_error cbg_init(struct cbg_desc *desc, const struct wuptr mem) {
 	*desc = (struct cbg_desc) {
-		.mp = mp,
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t magic[16] = "CompressedBG___"; // Ending nul is important
 	return fmt_sigcmp_mem(magic, sizeof(magic), &desc->mp);

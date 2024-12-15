@@ -113,7 +113,7 @@ const struct wu_conf *wuconf) {
 			comment_handler, &infile->metadata);
 
 		err = charls_jpegls_decoder_set_source_buffer(dec,
-			infile->map.data, infile->map.len);
+			infile->map.ptr, infile->map.len);
 		if (err == CHARLS_JPEGLS_ERRC_SUCCESS) {
 			st = read_data(infile, wuconf, dec, &err);
 		}

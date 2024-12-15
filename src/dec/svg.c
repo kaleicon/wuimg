@@ -187,7 +187,7 @@ static enum wu_error svg_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	GError *err = NULL;
-	infile->dec_state = rsvg_handle_new_from_data(infile->map.data,
+	infile->dec_state = rsvg_handle_new_from_data(infile->map.ptr,
 		infile->map.len, &err);
 	if (!infile->dec_state) {
 		return handle_gerror(infile, err, wu_open_error);

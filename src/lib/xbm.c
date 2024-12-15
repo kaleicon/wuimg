@@ -238,8 +238,8 @@ static bool skip_comment(struct xbm_desc *desc, struct mparser *tp) {
 }
 
 enum wu_error xbm_parse_header(struct xbm_desc *desc, struct wuimg *img,
-const struct mparser mp) {
-	desc->tp = mp;
+const struct wuptr mem) {
+	desc->tp = mp_wuptr(mem);
 	struct mparser *tp = &desc->tp;
 
 	desc->comment.len = 0;

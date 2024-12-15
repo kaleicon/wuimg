@@ -14,7 +14,7 @@ static enum wu_error parse(void *ptr, struct wuimg *img) {
 	return tlg_read_header(ptr, img);
 }
 static enum wu_error open(void *ptr, struct image_file *infile) {
-	return tlg_open_mem(ptr, &infile->map);
+	return tlg_open_mem(ptr, infile->map);
 }
 
 static enum wu_error tlg_dec(struct image_file *infile,

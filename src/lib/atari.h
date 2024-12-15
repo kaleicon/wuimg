@@ -2,6 +2,7 @@
 #ifndef LIB_DEGAS
 #define LIB_DEGAS
 
+#include "misc/wustr.h"
 #include "raster/wuimg.h"
 
 enum atari_st_res {
@@ -65,6 +66,6 @@ void tiny_cleanup(struct tiny_desc *desc);
 size_t tiny_decode(const struct tiny_desc *desc, struct wuimg *img);
 
 enum wu_error tiny_parse(struct tiny_desc *desc, struct wuimg *img,
-struct map_info map);
+struct wuptr mem);
 
 #endif /* LIB_DEGAS */

@@ -254,7 +254,7 @@ const enum g00_version version, const uint16_t width, const uint16_t height) {
 }
 
 enum wu_error g00_parse(struct g00_desc *desc, struct wuimg *img,
-const struct map_info map) {
+const struct wuptr mem) {
 	/* Base header:
 		Offset  Type    Name
 		0       u8      Version // 0, 1, or 2
@@ -289,7 +289,7 @@ const struct map_info map) {
 	*/
 
 	*desc = (struct g00_desc) {
-		.mp = mp_map(map),
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t *header = mp_slice(&desc->mp, 5);
 	if (!header) {

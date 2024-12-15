@@ -32,7 +32,7 @@ struct wugrow wugrow_init(size_t elem_size);
 
 #define WUPTR_ARRAY(arr) ( (struct wuptr){.len = sizeof(arr), .ptr = (const uint8_t *)arr} )
 
-struct wuptr wuptr_mem(const void *str, size_t len);
+struct wuptr wuptr_mem(const void *mem, size_t len);
 
 struct wuptr wuptr_str(const char *str);
 

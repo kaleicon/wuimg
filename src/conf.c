@@ -206,7 +206,7 @@ static int get_config_fd(void) {
 	return fd;
 }
 
-static bool open_config(struct map_info *mm) {
+static bool open_config(struct wuptr *mm) {
 	bool ok = false;
 	const int fd = get_config_fd();
 	if (fd >= 0) {
@@ -218,12 +218,12 @@ static bool open_config(struct map_info *mm) {
 
 struct wu_conf conf_load(void) {
 	struct wu_conf conf = conf_default();
-	struct map_info mm;
+	struct wuptr mm;
 	if (!open_config(&mm)) {
 		return conf;
 	}
 
-	struct mparser tp = mp_map(mm);
+	struct mparser tp = mp_wuptr(mm);
 	const bool ok = parse_config_file(&conf, &tp);
 	file_unmap(&mm);
 	if (ok) {

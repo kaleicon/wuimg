@@ -118,7 +118,7 @@ const struct wu_conf *wuconf) {
 	struct flif_state *ds = infile->dec_state;
 	ds->dec = flif_create_decoder();
 	const int32_t success = flif_decoder_decode_memory(ds->dec,
-		infile->map.data, infile->map.len);
+		infile->map.ptr, infile->map.len);
 	if (success) {
 		return setup_img(infile, wuconf, ds);
 	}

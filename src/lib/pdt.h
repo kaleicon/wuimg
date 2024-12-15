@@ -25,6 +25,6 @@ size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img);
 
 enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img);
 
-enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct map_info *map);
+enum wu_error pdt_open_mem(struct pdt_desc *desc, struct wuptr mem);
 
 #endif /* LIB_PDT */

@@ -22,7 +22,6 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img);
 enum wu_error sixel_calc_parameters(struct sixel_desc *desc,
 struct wuimg *img);
 
-enum wu_error sixel_open_mem(struct sixel_desc *desc,
-const struct map_info *map);
+enum wu_error sixel_open_mem(struct sixel_desc *desc, struct wuptr mem);
 
 #endif // LIB_SIXEL

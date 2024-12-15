@@ -33,9 +33,9 @@ static int fextcmp(const void *restrict e1, const void *restrict e2) {
 static const struct fmt_magic * search_magic(struct image_file *infile) {
 	unsigned char magic[sizeof(magic_map->bytes)] = {0};
 	size_t read = 0;
-	if (infile->map.data) {
+	if (infile->map.ptr) {
 		read = zumin(infile->map.len, MAX_MAG_LEN);
-		memcpy(magic, infile->map.data, read);
+		memcpy(magic, infile->map.ptr, read);
 	} else if (infile->ifp) {
 		read = fread(magic, 1, MAX_MAG_LEN, infile->ifp);
 	}

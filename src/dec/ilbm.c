@@ -69,7 +69,7 @@ static enum wu_error ilbm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct ilbm_desc *desc = infile->dec_state;
-	enum wu_error st = ilbm_open(desc, mp_map(infile->map));
+	enum wu_error st = ilbm_open(desc, infile->map);
 	if (st != wu_ok) {
 		return st;
 	}

@@ -12,7 +12,7 @@ struct gp4_desc {
 
 size_t gp4_decode(const struct gp4_desc *desc, struct wuimg *img);
 
-enum wu_error gp4_parse(struct gp4_desc *desc, const struct map_info map,
+enum wu_error gp4_parse(struct gp4_desc *desc, struct wuptr mem,
 struct wuimg *img);
 
 #endif /* LIB_GP4 */

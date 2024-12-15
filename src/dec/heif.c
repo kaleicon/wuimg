@@ -319,7 +319,7 @@ const struct wu_conf *wuconf) {
 
 	ds->ctx = heif_context_alloc();
 	herr = heif_context_read_from_memory_without_copy(ds->ctx,
-		infile->map.data, infile->map.len, NULL);
+		infile->map.ptr, infile->map.len, NULL);
 	if (herr.code != heif_error_Ok) {
 		image_file_strerror_append(infile, herr.message);
 		return wu_open_error;

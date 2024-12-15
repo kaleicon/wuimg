@@ -219,7 +219,7 @@ enum wu_error q4_info(struct wuimg *img) {
 		? wuimg_verify(img) : wu_alloc_error;
 }
 
-enum wu_error q4_open(struct q4_desc *desc, const struct map_info mm) {
+enum wu_error q4_open(struct q4_desc *desc, const struct wuptr mem) {
 	/* Q4 format:
 		Offset  Type    Name
 		0       u8      EOF          // 0x1a
@@ -240,7 +240,7 @@ enum wu_error q4_open(struct q4_desc *desc, const struct map_info mm) {
 		6       u8[]    Data
 	*/
 	*desc = (struct q4_desc) {
-		.mp = mp_map(mm),
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t *head = mp_slice(&desc->mp, 16);
 	if (!head) {

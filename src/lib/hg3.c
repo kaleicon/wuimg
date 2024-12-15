@@ -284,7 +284,7 @@ enum wu_error hg3_next_image(struct hg3_desc *desc) {
 	return wu_unexpected_eof;
 }
 
-enum wu_error hg3_open(struct hg3_desc *desc, const struct mparser mp) {
+enum wu_error hg3_open(struct hg3_desc *desc, const struct wuptr mem) {
 	/* Overall structure:
 		Header
 		ImageEntry
@@ -300,7 +300,7 @@ enum wu_error hg3_open(struct hg3_desc *desc, const struct mparser mp) {
 		12
 	*/
 	*desc = (struct hg3_desc) {
-		.mp = mp,
+		.mp = mp_wuptr(mem)
 	};
 	const uint8_t id[4] = "HG-3";
 	const enum wu_error st = fmt_sigcmp_mem(id, sizeof(id), &desc->mp);

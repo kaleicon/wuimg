@@ -92,7 +92,7 @@ const struct wu_conf *wuconf) {
 	ds->ctx = jbig2_ctx_new(NULL, 0, NULL, err_fn, infile);
 	if (ds->ctx) {
 		if (!jbig2_data_in(ds->ctx,
-		infile->map.data, infile->map.len)) {
+		infile->map.ptr, infile->map.len)) {
 			return get_images(infile, wuconf, ds);
 		}
 		return wu_decoding_error;

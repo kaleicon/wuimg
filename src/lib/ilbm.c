@@ -687,7 +687,7 @@ ilbm_callback_t tcb, void *restrict usr_ptr) {
 	desc->usr_ptr = usr_ptr;
 }
 
-enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mparser mp) {
+enum wu_error ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 	/* IFF structure:
 		Offset  Size    Name
 		0       u8      ChunkID[4]   // "FORM" in this case
@@ -705,7 +705,7 @@ enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mparser mp) {
 	*desc = (struct ilbm_desc) {
 		.callback = dont_callback,
 		.text_callback = dont_callback,
-		.mp = mp,
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t *data = mp_slice(&desc->mp, 12);
 	if (data) {

@@ -9,7 +9,7 @@ static enum wu_error parse(void *ptr, struct wuimg *img) {
 	return sixel_calc_parameters(ptr, img);
 }
 static enum wu_error open(void *ptr, struct image_file *infile) {
-	return sixel_open_mem(ptr, &infile->map);
+	return sixel_open_mem(ptr, infile->map);
 }
 
 static enum wu_error sixel_dec(struct image_file *infile,

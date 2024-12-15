@@ -18,6 +18,6 @@ enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img);
 
 enum wu_error hg3_next_image(struct hg3_desc *desc);
 
-enum wu_error hg3_open(struct hg3_desc *desc, struct mparser mp);
+enum wu_error hg3_open(struct hg3_desc *desc, struct wuptr mem);
 
 #endif /* LIB_HG3 */

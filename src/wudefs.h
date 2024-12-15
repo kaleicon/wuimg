@@ -42,7 +42,7 @@ enum image_event {
 
 struct image_file {
 	FILE *ifp;
-	struct map_info map;
+	struct wuptr map;
 
 	size_t nr;
 	struct wuimg *sub_img;

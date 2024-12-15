@@ -13,7 +13,7 @@ static enum wu_error parse(void *restrict desc, struct wuimg *img) {
 	return cbg_parse(desc, img);
 }
 static enum wu_error init(void *restrict desc, struct image_file *infile) {
-	return cbg_init(desc, mp_map(infile->map));
+	return cbg_init(desc, infile->map);
 }
 
 static enum wu_error cbg_dec(struct image_file *infile,

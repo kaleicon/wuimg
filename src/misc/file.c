@@ -67,20 +67,20 @@ FILE * file_from_stdin(void) {
 }
 
 
-int file_unmap(struct map_info *mm) {
-	return munmap((void *)mm->data, mm->len);
+int file_unmap(struct wuptr *mm) {
+	return munmap((void *)mm->ptr, mm->len);
 }
 
-bool file_map_fd(struct map_info *mm, const int fd) {
+bool file_map_fd(struct wuptr *mm, const int fd) {
 	const off_t end = lseek(fd, 0, SEEK_END);
 	if (end >= 0) {
 		const size_t len = (size_t)end;
-		void *data = mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0);
-		*mm = (struct map_info) {
+		void *ptr = mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0);
+		*mm = (struct wuptr) {
 			.len = len,
-			.data = data,
+			.ptr = ptr,
 		};
-		return data != MAP_FAILED;
+		return ptr != MAP_FAILED;
 	}
 	return false;
 }

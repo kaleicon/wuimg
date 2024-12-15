@@ -14,7 +14,7 @@ time_t q4_approximate_date(const struct q4_desc *desc);
 
 size_t q4_decode(const struct q4_desc *desc, struct wuimg *img);
 
-enum wu_error q4_open(struct q4_desc *desc, const struct map_info map);
+enum wu_error q4_open(struct q4_desc *desc, struct wuptr mem);
 
 enum wu_error q4_info(struct wuimg *img);
 

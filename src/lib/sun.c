@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 #include <string.h>
 
+#include "misc/file.h"
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"

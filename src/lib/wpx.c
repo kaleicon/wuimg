@@ -514,9 +514,9 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img) {
 	return wuimg_verify(img);
 }
 
-enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct mparser mp) {
+enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct wuptr mem) {
 	*desc = (struct wpx_bmp_desc) {
-		.mp = mp,
+		.mp = mp_wuptr(mem),
 		.raster_idx = -1,
 		.mask_idx = -1,
 	};
@@ -530,8 +530,8 @@ struct wpx_bmp_desc *frame, const uint32_t i) {
 	if (i < desc->nr.frames) {
 		const size_t pos = desc->base + desc->frames[i];
 		if (pos < desc->mp.len) {
-			return wpx_bmp_open(frame, mp_mem(
-				desc->mp.len - pos, desc->mp.mem + pos
+			return wpx_bmp_open(frame, wuptr_mem(
+				desc->mp.mem + pos, desc->mp.len - pos
 			));
 		}
 		return wu_unexpected_eof;
@@ -689,9 +689,9 @@ enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc) {
 	return wu_ok;
 }
 
-enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct mparser mp) {
+enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct wuptr mem) {
 	*desc = (struct wpx_ia2_desc) {
-		.mp = mp,
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t sig[] = {'W', 'P', 'X', 0x1a, 'I', 'A', '2', 0};
 	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);

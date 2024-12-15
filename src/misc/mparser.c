@@ -225,6 +225,6 @@ struct mparser mp_mem(const size_t len, const void *mem) {
 	};
 }
 
-struct mparser mp_map(const struct map_info mm) {
-	return mp_mem(mm.len, mm.data);
+struct mparser mp_wuptr(const struct wuptr mm) {
+	return mp_mem(mm.len, mm.ptr);
 }

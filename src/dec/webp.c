@@ -395,8 +395,10 @@ bool use_homegrown) {
 static enum wu_error webp_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct webp_state *ds = infile->dec_state;
-	ds->data.size = infile->map.len;
-	ds->data.bytes = infile->map.data;
+	ds->data = (WebPData) {
+		.size = infile->map.len,
+		.bytes = infile->map.ptr,
+	};
 
 	WebPInitDecoderConfig(&ds->config);
 	VP8StatusCode status = WebPGetFeatures(ds->data.bytes, ds->data.size,

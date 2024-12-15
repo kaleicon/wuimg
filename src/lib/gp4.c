@@ -179,7 +179,7 @@ loop_escape:
 	return band*img->h + y;
 }
 
-enum wu_error gp4_parse(struct gp4_desc *desc, const struct map_info map,
+enum wu_error gp4_parse(struct gp4_desc *desc, const struct wuptr mem,
 struct wuimg *img) {
 	/* GP4 structure:
 		Offset  Type    Name
@@ -199,7 +199,7 @@ struct wuimg *img) {
 	 * Width and Height have a bias of -1.
 	*/
 
-	desc->mp = mp_map(map);
+	desc->mp = mp_wuptr(mem);
 	const uint8_t *header = mp_slice(&desc->mp, 40);
 	if (!header) {
 		return wu_unexpected_eof;

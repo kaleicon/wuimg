@@ -57,6 +57,6 @@ enum wu_error pic2_next_block(struct pic2_desc *desc, struct pic2_block *block);
 
 enum wu_error pic2_parse(struct pic2_desc *desc);
 
-enum wu_error pic2_init(struct pic2_desc *desc, const struct map_info map);
+enum wu_error pic2_init(struct pic2_desc *desc, struct wuptr mem);
 
 #endif // LIB_PIC2

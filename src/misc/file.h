@@ -15,13 +15,8 @@ size_t file_remaining(FILE *ifp);
 FILE * file_from_stdin(void);
 
 
-struct map_info {
-	size_t len;
-	const unsigned char *data;
-};
+int file_unmap(struct wuptr *mm);
 
-int file_unmap(struct map_info *mm);
-
-bool file_map_fd(struct map_info *mm, int fd);
+bool file_map_fd(struct wuptr *mm, int fd);
 
 #endif /* WU_FILE */

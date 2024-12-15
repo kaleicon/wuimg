@@ -484,9 +484,8 @@ static int skip_csi(struct mparser *tp) {
 	return c;
 }
 
-enum wu_error sixel_open_mem(struct sixel_desc *desc,
-const struct map_info *map) {
-	desc->tp = mp_map(*map);
+enum wu_error sixel_open_mem(struct sixel_desc *desc, const struct wuptr mem) {
+	desc->tp = mp_wuptr(mem);
 	struct mparser *tp = &desc->tp;
 
 	/* The sixel format begins with the Device Control String, which might

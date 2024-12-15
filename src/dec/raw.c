@@ -233,7 +233,7 @@ const struct wu_conf *wuconf) {
 	}
 	rs->data = data;
 
-	unsigned char *will_crash_if_written_to = (unsigned char *)infile->map.data;
+	unsigned char *will_crash_if_written_to = (unsigned char *)infile->map.ptr;
 	int err = libraw_open_buffer(data, will_crash_if_written_to, infile->map.len);
 	if (err != LIBRAW_SUCCESS) {
 		return raw_error_to_wu(infile, err);

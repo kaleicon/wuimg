@@ -69,6 +69,6 @@ enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img);
 void ilbm_set_callbacks(struct ilbm_desc *desc, ilbm_callback_t callback,
 ilbm_callback_t text_callback, void *restrict usr_ptr);
 
-enum wu_error ilbm_open(struct ilbm_desc *desc, const struct mparser mp);
+enum wu_error ilbm_open(struct ilbm_desc *desc, struct wuptr mem);
 
 #endif /* LIB_ILBM */

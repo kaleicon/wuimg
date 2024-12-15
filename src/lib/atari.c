@@ -2,6 +2,7 @@
 #include "misc/common.h"
 #include "misc/decomp.h"
 #include "misc/endian.h"
+#include "misc/file.h"
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/graphics_adapters.h"
@@ -505,7 +506,7 @@ size_t tiny_decode(const struct tiny_desc *desc, struct wuimg *img) {
 }
 
 enum wu_error tiny_parse(struct tiny_desc *desc, struct wuimg *img,
-const struct map_info map) {
+const struct wuptr mem) {
 	/* Tiny header:
 		Offset  Type    Name
 		0       u8      Resolution
@@ -524,7 +525,7 @@ const struct map_info map) {
 		...     u16     DataWords[DataLen]
 	*/
 	*desc = (struct tiny_desc) {
-		.mp = mp_map(map),
+		.mp = mp_wuptr(mem),
 	};
 
 	const uint8_t *header = mp_slice(&desc->mp, 1);

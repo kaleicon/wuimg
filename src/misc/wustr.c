@@ -33,8 +33,8 @@ struct wugrow wugrow_init(const size_t elem_size) {
 }
 
 
-struct wuptr wuptr_mem(const void *str, const size_t len) {
-	return (struct wuptr){.len = len, .ptr = str};
+struct wuptr wuptr_mem(const void *mem, const size_t len) {
+	return (struct wuptr){.len = len, .ptr = mem};
 }
 
 struct wuptr wuptr_str(const char *str) {

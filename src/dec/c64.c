@@ -11,7 +11,7 @@ static enum wu_error parse(void *restrict mp, struct wuimg *img) {
 
 static enum wu_error c64_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct mparser mp = mp_map(infile->map);
+	struct mparser mp = mp_wuptr(infile->map);
 	return rast_trivial_opened(infile, wuconf, &mp, parse, NULL, dec, NULL);
 }
 

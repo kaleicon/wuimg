@@ -20,7 +20,7 @@ const struct wu_conf *wuconf, struct wpx_bmp_desc *desc) {
 static enum wu_error wbm_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct wpx_bmp_desc desc;
-	enum wu_error st = wpx_bmp_open(&desc, mp_map(infile->map));
+	enum wu_error st = wpx_bmp_open(&desc, infile->map);
 	if (st == wu_ok) {
 		tree_bud_leaf_u(&infile->metadata, "Depth", desc.depth);
 		st = single_decode(infile->sub_img, wuconf, &desc);
@@ -103,7 +103,7 @@ static enum wu_error wia_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct wpx_ia2_desc *desc = infile->dec_state;
-	enum wu_error st = wpx_ia2_open(desc, mp_map(infile->map));
+	enum wu_error st = wpx_ia2_open(desc, infile->map);
 	if (st == wu_ok) {
 		st = wpx_ia2_parse(desc);
 		if (st == wu_ok) {

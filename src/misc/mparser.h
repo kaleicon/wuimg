@@ -4,7 +4,6 @@
 
 #include <stdint.h>
 
-#include "misc/file.h"
 #include "misc/wustr.h"
 
 struct mparser {
@@ -59,6 +58,6 @@ void mp_seek_cur(struct mparser *mp, ptrdiff_t pos);
 
 struct mparser mp_mem(size_t len, const void *restrict mem);
 
-struct mparser mp_map(struct map_info mm);
+struct mparser mp_wuptr(struct wuptr mm);
 
 #endif /* COMMON_MEMPARSER */

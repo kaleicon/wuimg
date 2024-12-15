@@ -22,6 +22,6 @@ size_t cbg_decode(const struct cbg_desc *desc, struct wuimg *img);
 
 enum wu_error cbg_parse(struct cbg_desc *desc, struct wuimg *img);
 
-enum wu_error cbg_init(struct cbg_desc *desc, struct mparser mp);
+enum wu_error cbg_init(struct cbg_desc *desc, struct wuptr mem);
 
 #endif /* LIB_CBG */

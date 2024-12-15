@@ -357,7 +357,7 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 		buf_endian16(header2 + 4, little_endian));
 }
 
-enum wu_error pcx_open_file(struct pcx_desc *desc, const struct mparser mp) {
+enum wu_error pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
 	/* PCX header:
 		Offset  Size    Name
 		0	BYTE	IdentifierByte; // Always 0x0A
@@ -366,7 +366,7 @@ enum wu_error pcx_open_file(struct pcx_desc *desc, const struct mparser mp) {
 		3
 	*/
 
-	desc->mp = mp;
+	desc->mp = mp_wuptr(mem);
 	if (desc->mp.len > 128) {
 		const uint8_t *sig = mp_slice(&desc->mp, 3);
 		if (sig) {
@@ -396,15 +396,15 @@ void dcx_free(struct dcx_desc *desc) {
 enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
 const uint32_t i) {
 	if (i < dcx->nr) {
-		return pcx_open_file(pcx, mp_mem(
-			dcx->off[i + 1] - dcx->off[i],
-			dcx->mp.mem + dcx->off[i]
+		return pcx_open_file(pcx, wuptr_mem(
+			dcx->mp.mem + dcx->off[i],
+			dcx->off[i + 1] - dcx->off[i]
 		));
 	}
 	return wu_invalid_params;
 }
 
-enum wu_error dcx_open_file(struct dcx_desc *d, const struct mparser mp) {
+enum wu_error dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
 	/* Why would anyone use the most device dependent file format ever for
 	 * sending documents is beyond me.
 
@@ -417,7 +417,7 @@ enum wu_error dcx_open_file(struct dcx_desc *d, const struct mparser mp) {
 	 * despite using only two fields. It's amazing.
 	*/
 
-	d->mp = mp;
+	d->mp = mp_wuptr(mem);
 	d->off = NULL;
 	const uint8_t sig[] = {0xb1, 0x68, 0xde, 0x3a};
 	enum wu_error st = fmt_sigcmp_mem(sig, sizeof(sig), &d->mp);

@@ -100,8 +100,8 @@ enum wu_error pgx_read_header(struct pgx_desc *desc, struct wuimg *img) {
 		: wu_unexpected_eof;
 }
 
-enum wu_error pgx_init(struct pgx_desc *desc, const struct map_info map) {
-	desc->mp = mp_map(map);
+enum wu_error pgx_init(struct pgx_desc *desc, const struct wuptr mem) {
+	desc->mp = mp_wuptr(mem);
 	const unsigned char sig[] = {'P', 'G', 'X', 0};
 	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
 }

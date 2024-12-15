@@ -56,9 +56,9 @@ const unsigned type) {
 
 static enum wu_error lerc_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	const struct map_info *mm = &infile->map;
+	const struct wuptr *mm = &infile->map;
 	unsigned info[9];
-	enum wu_error err = map_lerc_to_wu(lerc_getBlobInfo(mm->data,
+	enum wu_error err = map_lerc_to_wu(lerc_getBlobInfo(mm->ptr,
 		(unsigned)mm->len, info, NULL, ARRAY_LEN(info), 0),
 		wu_invalid_header);
 	if (err != wu_ok) {
@@ -100,7 +100,7 @@ const struct wu_conf *wuconf) {
 	}
 
 	return map_lerc_to_wu(
-		lerc_decode(mm->data, (unsigned)mm->len, (int)mask_nb, mask,
+		lerc_decode(mm->ptr, (unsigned)mm->len, (int)mask_nb, mask,
 			(int)dims, (int)w, (int)h, (int)bands, type,
 			img[0].data),
 		wu_decoding_error

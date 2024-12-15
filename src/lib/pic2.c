@@ -527,9 +527,9 @@ enum wu_error pic2_parse(struct pic2_desc *desc) {
 	return wu_ok;
 }
 
-enum wu_error pic2_init(struct pic2_desc *desc, const struct map_info mm) {
+enum wu_error pic2_init(struct pic2_desc *desc, const struct wuptr mem) {
 	*desc = (struct pic2_desc) {
-		.mp = mp_map(mm),
+		.mp = mp_wuptr(mem),
 	};
 	const uint8_t sig[4] = {'P', '2', 'D', 'T'};
 	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);

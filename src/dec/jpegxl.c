@@ -167,7 +167,7 @@ static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 }
 
 static void input_init(struct image_file *infile, struct jpegxl_state *ds) {
-	JxlDecoderSetInput(ds->jd, infile->map.data, infile->map.len);
+	JxlDecoderSetInput(ds->jd, infile->map.ptr, infile->map.len);
 	JxlDecoderCloseInput(ds->jd);
 	ds->idx = -1;
 }
