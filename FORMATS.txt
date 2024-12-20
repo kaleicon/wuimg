@@ -33,8 +33,8 @@ g00       g00       RealLive engine G00
 gif       gif       Graphics Interchange Format
 gp4       gp4       elf AI5 engine GP4
 heif      heif      High Efficiency Image File Format
-hg3       hg3       CatSystem engine HG3
-ilbm      ilbm      Interleaved Bitmap (ILBM and PBM)
+hg3       hg3       CatSystem engine image
+ilbm      ilbm      Interleaved Bitmap (ILBM and PBM) (Extra Half-Brite, HAM, color cycling)
 jbig      jbig      JBIG
 jbig2     jbig2     JBIG2
 jpeg      jpeg      JPEG, MPO
@@ -49,17 +49,17 @@ maki      maki      MAKIchan (MAKI01)
 msx       msx       MSX-BASIC dump, Graph Saurus
 pcf       pcf       PCF bitmap font
 pcx       dcx       Multi-image PCX
-pcx       pcx       PC Paintbrush PCX
-pdt       pdt       RealLive engine PDT
-pgx       pgx       Glib2 engine PGX
+pcx       pcx       PC Paintbrush PCX (all versions, plus CGA mode)
+pdt       pdt       RealLive engine PDT10 and PDT11
+pgx       pgx       Glib2 engine image
 pi        pi        Yanagisawa's Pi
 pic       pic       Yanagisawa's PIC
 pic2      pic2      Yanagisawa's PIC2
 pictor    pictor    PCPaint PICtor
 png       png       Portable Network Graphics
 pnm       pnm       PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)
-prt       prt       Kid engine PRT
-px        px        Leaf engine PX
+prt       prt       Kid engine image
+px        px        Leaf engine image
 q4        q4        MAJYO's Q4 (XLD4)
 qoi       qoi       QuiteOK image
 quake     idsp      id Software Sprite (Quake, Half-Life, and 32-bit variants)
@@ -80,9 +80,9 @@ webp      webp      WebP
 wgtspr    wgtspr    WGT Sprite
 wpx       wbm       Wild-Bug engine image
 wpx       wia       Wild-Bug engine image sequence
-xbm       xbm       X Bitmap
+xbm       xbm       X10 and X11 Bitmap
 xcursor   xcursor   X11 cursor
-xwd       xwd       X Window Dump
+xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
 Known extensions: 189

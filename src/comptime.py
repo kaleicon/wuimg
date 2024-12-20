@@ -182,7 +182,7 @@ DEC_MAP = {
 
 	"hg3": {
 		"hg3": {
-			"desc": "CatSystem engine HG3",
+			"desc": "CatSystem engine image",
 			"ext": "hg3",
 			"magic": b"HG-3",
 		},
@@ -190,7 +190,7 @@ DEC_MAP = {
 
 	"ilbm": {
 		"ilbm": {
-			"desc": "Interleaved Bitmap (ILBM and PBM)",
+			"desc": "Interleaved Bitmap (ILBM and PBM) (Extra Half-Brite, HAM, color cycling)",
 			"ext": ("bl1", "iff", "ilbm", "lbm"),
 			"mask": (
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
@@ -262,7 +262,7 @@ DEC_MAP = {
 		},
 
 		"pcx": {
-			"desc": "PC Paintbrush PCX",
+			"desc": "PC Paintbrush PCX (all versions, plus CGA mode)",
 			"ext": ("pcc", "pcx"),
 			"mask": (
 				# Second byte is version. Valid values are 0,2,3,4,5
@@ -279,7 +279,7 @@ DEC_MAP = {
 
 	"pdt": {
 		"pdt": {
-			"desc": "RealLive engine PDT",
+			"desc": "RealLive engine PDT10 and PDT11",
 			"ext": "pdt",
 			"mask": (
 				# Match "PDT10" and "PDT11"
@@ -290,7 +290,7 @@ DEC_MAP = {
 
 	"pgx": {
 		"pgx": {
-			"desc": "Glib2 engine PGX",
+			"desc": "Glib2 engine image",
 			"ext": "pgx",
 			"magic": b"PGX\0",
 		},
@@ -369,13 +369,13 @@ DEC_MAP = {
 
 	"prt": {
 		"prt": {
-			"desc": "Kid engine PRT",
+			"desc": "Kid engine image",
 			"ext": ("cps", "prt"),
 			"magic": b"PRT\0",
 		},
 	},
 
-	"px": {"px": {"desc": "Leaf engine PX", "match": "px"}},
+	"px": {"px": {"desc": "Leaf engine image", "match": "px"}},
 
 	"q4": {
 		"q4": {
@@ -526,7 +526,7 @@ DEC_MAP = {
 
 	"xbm": {
 		"xbm": {
-			"desc": "X Bitmap",
+			"desc": "X10 and X11 Bitmap",
 			"match": "xbm",
 			"magic": (
 				b"/*",
@@ -539,7 +539,7 @@ DEC_MAP = {
 
 	"xcursor": {"xcursor": {"desc": "X11 cursor", "magic": b"Xcur"}},
 
-	"xwd": {"xwd": {"desc": "X Window Dump", "match": ("dmp", "xwd")}},
+	"xwd": {"xwd": {"desc": "X11 Window Dump", "match": ("dmp", "xwd")}},
 
 	"xyz": {
 		"xyz": {
