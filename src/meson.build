@@ -8,6 +8,7 @@ fmt_map = {
 		'dpx',
 		'g00',
 		'gp4',
+		'gpc',
 		'hg3',
 		'ilbm',
 		'mac',

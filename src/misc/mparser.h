@@ -55,7 +55,10 @@ size_t mp_scan_int(struct mparser *mp, size_t digits, long *val);
 
 size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val);
 
+
 void mp_seek_cur(struct mparser *mp, ptrdiff_t pos);
+
+void mp_seek_set(struct mparser *mp, size_t pos);
 
 
 struct mparser mp_mem(size_t len, const void *restrict mem);

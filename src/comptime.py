@@ -180,6 +180,19 @@ DEC_MAP = {
 
 	"gp4": {"gp4": {"desc": "elf AI5 engine GP4", "match": "gp4"}},
 
+	"gpc": {
+		"gpc": {
+			"desc": "IDES/Fairytale PC-98 visual novel image",
+			"ext": "gpc",
+			"magic": b"PC98)GPCFILE   \0",
+		},
+
+		"clm": {
+			"desc": "IDES/Fairytale PC-98 thumbnail? (no palette support)",
+			"match": "clm",
+		},
+	},
+
 	"hg3": {
 		"hg3": {
 			"desc": "CatSystem engine image",

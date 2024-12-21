@@ -221,14 +221,18 @@ size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val) {
 
 
 void mp_seek_cur(struct mparser *mp, const ptrdiff_t pos) {
-	const size_t upos = (size_t)pos;
 	if (pos < 0) {
+		const size_t upos = (size_t)-pos;
 		mp->pos = upos > mp->pos ? 0 : mp->pos - upos;
-	} else if (SIZE_MAX - mp->pos > upos) {
-		mp->pos = zumin(mp->pos + upos, mp->len);
+	} else if (SIZE_MAX - mp->pos > (size_t)pos) {
+		mp->pos = zumin(mp->pos + (size_t)pos, mp->len);
 	} else {
 		mp->pos = mp->len;
 	}
+}
+
+void mp_seek_set(struct mparser *mp, const size_t pos) {
+	mp->pos = zumin(pos, mp->len);
 }
 
 
