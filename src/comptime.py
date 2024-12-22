@@ -121,16 +121,44 @@ DEC_MAP = {
 
 	"c64": {
 		"c64": {
-			"desc": "KoalaPainter (KOA) and Advanced Art Studio (OCP)",
-			"match": ("gg", "gig", "kla", "koa", "ocp")
+			"desc": "Art Studio (OCP), Artist64, Blazing Paddles, Create With Garfield"
+				", Doodle (raw & compressed), Hi-Eddi, Image System, Interpaint"
+				", KoalaPainter (raw & compressed), Runpaint, Saracen Paint"
+				", Vidcom 64",
+			"match": (
+				# Omit conflicting extensions until we improve detection capabilities
+				# Art Studio
+				"aas", "hpi", "ocp", #"art,"
+				# Wigmore Artist64
+				"a64", "wig",
+				# Blazing Paddles
+				"bp", "bpl", #"pi",
+				# Create With Garfield
+				"cwg",
+				# Doodle
+				"dd", "ddl", "jj",
+				# Hi-Eddi
+				"hed",
+				# Image System
+				"ims", "ish", "ism",
+				# Interpaint
+				"ip64h", "iph", "ipt",
+				# KoalaPainter
+				"gg", "gig", "kla", "koa", "koala",
+				# Runpaint
+				"rpm",
+				# Saracen Paint
+				"sar",
+				# Vidcom 64
+				"vid",
+			),
+			#"mask": (b"\xff\x03", b"\x00\x00"),
 		},
 	},
 
 	"cbg": {
 		"cbg": {
 			"desc": "BGI/Ethornell CompressedBG (v1)",
-			# Never seen these files with any extension
-			"ext": "cbg",
 			"magic": b"CompressedBG___\0",
 		}
 	},

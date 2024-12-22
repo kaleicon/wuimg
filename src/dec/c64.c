@@ -5,16 +5,16 @@
 static void meta(const void *restrict ptr, struct wu_tree *tree) {
 	const struct c64_desc *desc = ptr;
 	tree_add_leaf_utf8(tree, "Type", c64_fmt_str(desc->fmt));
+	tree_add_leaf_utf8(tree, "Mode", c64_mode_str(desc->mode));
 }
 static size_t dec(const void *restrict desc, struct wuimg *img) {
 	return c64_decode(desc, img);
 }
 static enum wu_error parse(void *restrict desc, struct wuimg *img) {
-	(void)desc;
-	return c64_set(img);
+	return c64_set(desc, img);
 }
 static enum wu_error init(void *restrict desc, struct image_file *infile) {
-	return c64_guess(desc, infile->map);
+	return c64_guess(desc, infile->map, infile->ext);
 }
 
 static enum wu_error c64_dec(struct image_file *infile,

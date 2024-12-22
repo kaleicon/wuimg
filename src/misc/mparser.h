@@ -2,6 +2,7 @@
 #ifndef COMMON_MEMPARSER
 #define COMMON_MEMPARSER
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "misc/wustr.h"
