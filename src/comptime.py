@@ -27,10 +27,11 @@ DEC_MAP = {
 	# Homemade decoders first
 	"auto": {
 		"avs": {
-			"desc": "AVS X",
+			"desc": "Stardent AVS X",
 			"match": (
 				"avs",
-				"mbfavs", # where did this come from?
+				"mbfavs",
+				"x",
 			),
 		},
 		"bru": {"desc": "Degas Brush", "match": "bru"},

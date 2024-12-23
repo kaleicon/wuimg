@@ -7,13 +7,18 @@
 
 #define AUTO_READ(rdesc) .rlen = (uint8_t)(ARRAY_LEN(rdesc)), .read = rdesc
 
-// AVS
+/* AVS
+ * Defined in Appendix E-3 of the AVS user guide:
+http://bitsavers.informatik.uni-stuttgart.de/pdf/stardent/002424-001_Rev_A_Application_Visualization_System_Users_Guide_1989.pdf
+ * Data is in RGB format plus an auxiliary channel with no set interpretation.
+*/
 static const struct auto_read avs_read[] = {
 	{'w', 4},
 	{'h', 4},
 };
 const struct auto_desc avs_desc = {
 	.channels = 4, .bitdepth = 8, .layout = pix_argb,
+	.alpha = alpha_ignore,
 	.endian = big_endian,
 	AUTO_READ(avs_read),
 };
@@ -193,6 +198,7 @@ const struct auto_desc *desc) {
 	img->used_bits = desc->used_bits;
 	img->layout = desc->layout;
 	img->attr = desc->attr;
+	img->alpha = desc->alpha;
 	if (desc->bitfield) {
 		if (!wuimg_bitfield_from_id(img, desc->bitfield)) {
 			return wu_alloc_error;
