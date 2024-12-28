@@ -214,22 +214,25 @@ const unsigned char *restrict rle, const size_t rle_len) {
 	size_t r = 0;
 	const uint8_t mask = 0xc0;
 	while (r < rle_len) {
+		/* Don't increase `r` until we've written the value, as we
+		 * might skip the palette byte when breaking out.
+		 * PCX sucks. */
 		const uint8_t packet = rle[r];
-		++r;
 		if (packet >= mask) {
 			const size_t run_len = packet - mask;
-			if (r >= rle_len || d + run_len > dst_len) {
+			if (r + 1 >= rle_len || d + run_len > dst_len) {
 				break;
 			}
-			memset(dst + d, rle[r], run_len);
+			memset(dst + d, rle[r+1], run_len);
 			d += run_len;
-			++r;
+			r += 2;
 		} else {
 			if (d >= dst_len) {
 				break;
 			}
 			dst[d] = packet;
 			++d;
+			++r;
 		}
 	}
 	return r;
