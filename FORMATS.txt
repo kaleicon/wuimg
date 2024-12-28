@@ -1,4 +1,4 @@
-59 decoders, 84 formats supported
+60 decoders, 85 formats supported
 
 Decoder   Format    Description
 --------------------------------
@@ -68,6 +68,7 @@ quake     idsp      id Software Sprite (Quake, Half-Life, and 32-bit variants)
 quake     lmp       Quake LMP
 raw       raw       Raw camera formats
 sgi       sgi       Silicon Graphics Image
+signum    imc       Signum! IMC
 sixel     sixel     SIXEL terminal graphics
 spooky    tre       Spooky Sprites Run-Length Encoded
 spooky    trs       Spooky Sprites sprite
@@ -87,10 +88,10 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 212
-a64, aas, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bp, bpl, bru, bw, clm, cps, cr2, cur, cwg, da4, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt2, erf, ff, flif, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grp, hed, heic, heics, heif, heifs, hg3, hgr, hif, hpi, icn, ico, iff, ilbm, im1, im24, im32, im4, im8, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, lbm, lerc, lerc1, lerc2, lmp, lrc, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, p2, p7, pam, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, png, pnm, pntg, ppm, prt, px, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwl, s16, s17, s1a, s1c, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sd0, sd1, sd2, sgi, six, sixel, spr, spr32, sr5, sr6, sr7, sr8, srs, sun, svg, svgz, tg1, tga, thm, tif, tiff, tim, tlg, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 213
+a64, aas, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bp, bpl, bru, bw, clm, cps, cr2, cur, cwg, da4, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt2, erf, ff, flif, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grp, hed, heic, heics, heif, heifs, hg3, hgr, hif, hpi, icn, ico, iff, ilbm, im1, im24, im32, im4, im8, imc, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, lbm, lerc, lerc1, lerc2, lmp, lrc, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, p2, p7, pam, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, png, pnm, pntg, ppm, prt, px, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwl, s16, s17, s1a, s1c, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sd0, sd1, sd2, sgi, six, sixel, spr, spr32, sr5, sr6, sr7, sr8, srs, sun, svg, svgz, tg1, tga, thm, tif, tiff, tim, tlg, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 95
+Known magic sequences: 96
 avif      b'\x00\x00\x00\x00ftypavic'
 avif      b'\x00\x00\x00\x00ftypavif'
 bmp       b'BM'
@@ -120,6 +121,7 @@ hpicon    b'\x01\x00\x01\x00,\x00 \x00'
 idsp      b'IDSP'
 ilbm      b'FORM\x00\x00\x00\x00ILBM'
 ilbm      b'FORM\x00\x00\x00\x00PBM '
+imc       b'bimc0002'
 indy      b'Indy'
 j2k       b'\xffO\xffQ'
 jbig2     b'\x97JB2\r\n\x1a\n'

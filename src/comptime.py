@@ -461,6 +461,14 @@ DEC_MAP = {
 		},
 	},
 
+	"signum": {
+		"imc": {
+			"desc": "Signum! IMC",
+			"ext": "imc",
+			"magic": b"bimc0002",
+		},
+	},
+
 	"sixel": {
 		"sixel": {
 			"desc": "SIXEL terminal graphics",

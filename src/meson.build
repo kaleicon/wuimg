@@ -30,6 +30,7 @@ fmt_map = {
 		'qoi',
 		'quake',
 		'sgi',
+		'signum',
 		'sixel',
 		'spooky',
 		'sun',
