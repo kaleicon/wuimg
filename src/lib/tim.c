@@ -17,12 +17,20 @@ static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 	}
 }
 
+static void stp_callback(void *restrict data, const size_t len,
+void *restrict user) {
+	(void)user;
+	special_transparency_process(data, len/2);
+}
+
 size_t tim_decode(const struct tim_desc *desc, struct wuimg *img) {
 	size_t read = 0;
 	if (wuimg_alloc_noverify(img)) {
-		read = fread(img->data, 1, wuimg_size(img), desc->ifp);
 		if (img->mode == image_mode_bitfield) {
-			special_transparency_process((uint16_t *)img->data, read/2);
+			read = fmt_load_raster_callback(img, desc->ifp,
+				stp_callback, NULL);
+		} else {
+			read = fmt_load_raster(img, desc->ifp);
 		}
 	}
 	return read;

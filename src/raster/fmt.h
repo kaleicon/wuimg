@@ -14,12 +14,26 @@ enum fmt_pal_type {
 	fmt_pal_rgbx = 4,
 };
 
+struct fmt_swap_info {
+	enum endianness e:8;
+	uint8_t depth;
+};
+
+bool fmt_will_swap(const struct fmt_swap_info info);
+
+void fmt_swap(void *restrict data, size_t len, struct fmt_swap_info info);
+
+/* Function called on each row as they get read. */
+typedef void (*fmt_load_callback_t)(void *restrict data, size_t len,
+	void *restrict user);
+
 size_t fmt_load_raster(struct wuimg *img, FILE *ifp);
 
-size_t fmt_load_raster_swap_depth(struct wuimg *img, FILE *ifp, enum endianness e,
-uint8_t word_depth);
+size_t fmt_load_raster_callback(struct wuimg *img, FILE *ifp,
+fmt_load_callback_t fn, void *restrict ptr);
 
 size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, enum endianness e);
+
 
 enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
 enum fmt_pal_type type, size_t entries);

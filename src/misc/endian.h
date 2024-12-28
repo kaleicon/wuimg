@@ -2,6 +2,7 @@
 #ifndef RASTER_ENDIAN
 #define RASTER_ENDIAN
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -21,13 +22,18 @@ const char * endian_str(enum endianness e);
 
 enum endianness which_end(void);
 
+
+/* All endian* functions work for reading and writing.
+ * If `val` has endianness `e`, it will be returned in native order.
+ * If `val` is in native order, it will be returned with endianness `e`.
+*/
 uint16_t endian16(uint16_t val, enum endianness e);
 
 uint32_t endian32(uint32_t val, enum endianness e);
 
 float endianf32(uint32_t val, enum endianness e);
 
-
+/* Read data from unaligned buffers. */
 uint16_t buf_endian16(const void *data, enum endianness e);
 
 uint32_t buf_endian24(const void *data, enum endianness e);
@@ -39,11 +45,7 @@ uint64_t buf_endian64(const void *data, enum endianness e);
 float buf_endianf32(const void *data, enum endianness e);
 
 /* Swaps `n` data words in place if `e` doesn't match the processor's
- * endianness. Otherwise does nothing.
- * Happily enough, these also work the other way. If data is in native order,
- * after the call it will be in the specified endianness. So, to write an
- * array in big-endian order to a file, an unconditional call to
- * endian_loopN(data, big_endian, n) suffices. */
+ * endianness. */
 void endian_loop16(uint16_t *data, enum endianness e, size_t n);
 
 void endian_loop24(uint8_t *data, enum endianness e, size_t n);

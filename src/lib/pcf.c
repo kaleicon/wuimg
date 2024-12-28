@@ -46,6 +46,36 @@ void pcf_cleanup(struct pcf_desc *desc) {
 	free(desc->toc);
 }
 
+struct pcf_cb_data {
+	struct fmt_swap_info swap;
+	enum endianness bit:8;
+};
+
+static void load_callback(void *restrict data, size_t len,
+void *restrict user) {
+	const struct pcf_cb_data *info = user;
+	fmt_swap(data, len, info->swap);
+	if (info->bit == little_endian) {
+		len /= info->swap.depth/8;
+		for (size_t i = 0; i < len; ++i) {
+			switch (info->swap.depth) {
+			case 8:
+				;uint8_t *da = data;
+				da[i] = bit_rev8(da[i]);
+				break;
+			case 16:
+				;uint16_t *db = data;
+				db[i] = bit_rev16(db[i]);
+				break;
+			case 32:
+				;uint32_t *dc = data;
+				dc[i] = bit_rev32(dc[i]);
+				break;
+			}
+		}
+	}
+}
+
 size_t pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img) {
 	size_t r = 0;
 	if (wuimg_alloc_noverify(img)) {
@@ -55,25 +85,15 @@ size_t pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img) {
 		const enum endianness byte = format_byte_endian(bitmap->format);
 		const enum endianness bit = format_bit_endian(bitmap->format);
 		const uint8_t unit = format_scan_unit(bitmap->format);
-		r = fmt_load_raster_swap_depth(img, desc->ifp, byte, 8 << unit);
-		if (bit == little_endian) {
-			void *d = img->data;
-			for (size_t i = 0; i < (r >> unit); ++i) {
-				switch (unit) {
-				case 0:
-					;uint8_t *da = d;
-					da[i] = bit_rev8(da[i]);
-					break;
-				case 1:
-					;uint16_t *db = d;
-					db[i] = bit_rev16(db[i]);
-					break;
-				case 2:
-					;uint32_t *dc = d;
-					dc[i] = bit_rev32(dc[i]);
-					break;
-				}
-			}
+		struct pcf_cb_data data = {
+			.swap = {.e = byte, .depth = 8 << unit},
+			.bit = bit,
+		};
+		if (data.bit == little_endian || fmt_will_swap(data.swap)) {
+			r = fmt_load_raster_callback(img, desc->ifp,
+				load_callback, &data);
+		} else {
+			r = fmt_load_raster(img, desc->ifp);
 		}
 	}
 	return r;

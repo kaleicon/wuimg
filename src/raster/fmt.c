@@ -9,20 +9,27 @@ size_t fmt_load_raster(struct wuimg *img, FILE *ifp) {
 	return fread(img->data, 1, wuimg_size(img), ifp);
 }
 
-static bool will_swap(const enum endianness e, const uint8_t word_depth) {
-	if (e != which_end()) {
-		switch (word_depth) {
-		case 16: case 24: case 32: case 64: return true;
-		}
+bool fmt_will_swap(const struct fmt_swap_info info) {
+	switch (info.depth) {
+	case 16: case 24: case 32: case 64:
+		return which_end() != info.e;
 	}
 	return false;
 }
 
-size_t fmt_load_raster_swap_depth(struct wuimg *img, FILE *ifp,
-const enum endianness e, const uint8_t word_depth) {
-	if (!will_swap(e, word_depth)) {
-		return fmt_load_raster(img, ifp);
+void fmt_swap(void *restrict data, const size_t len,
+const struct fmt_swap_info info) {
+	const enum endianness e = info.e;
+	switch (info.depth) {
+	case 16: endian_loop16(data, e, len/2); break;
+	case 24: endian_loop24(data, e, len/3); break;
+	case 32: endian_loop32(data, e, len/4); break;
+	case 64: endian_loop64(data, e, len/8); break;
 	}
+}
+
+size_t fmt_load_raster_callback(struct wuimg *img, FILE *ifp,
+fmt_load_callback_t fn, void *restrict ptr) {
 	const size_t stride = wuimg_stride(img);
 	const size_t l = zumax(stride, img->h);
 	const size_t s = zumin(stride, img->h);
@@ -30,19 +37,23 @@ const enum endianness e, const uint8_t word_depth) {
 	for (size_t y = 0; y < s; ++y) {
 		void *row = img->data + l*y;
 		size_t read = fread(row, 1, l, ifp);
-		switch (word_depth) {
-		case 16: endian_loop16(row, e, read/2); break;
-		case 24: endian_loop24(row, e, read/3); break;
-		case 32: endian_loop32(row, e, read/4); break;
-		case 64: endian_loop64(row, e, read/8); break;
-		}
 		acc += read;
+		fn(row, read, ptr);
 	}
 	return acc;
 }
 
+static void swap_cb_wrap(void *restrict data, const size_t len,
+void *restrict ptr) {
+	const struct fmt_swap_info *info = ptr;
+	fmt_swap(data, len, *info);
+}
+
 size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, const enum endianness e) {
-	return fmt_load_raster_swap_depth(img, ifp, e, img->bitdepth);
+	struct fmt_swap_info info = {.e = e, .depth = img->bitdepth};
+	return fmt_will_swap(info)
+		? fmt_load_raster_callback(img, ifp, swap_cb_wrap, &info)
+		: fmt_load_raster(img, ifp);
 }
 
 enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
