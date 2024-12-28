@@ -37,6 +37,7 @@ fmt_map = {
 		'tga',
 		'tim',
 		'tlg',
+		'txf',
 		'wbmp',
 		'wgtspr',
 		'wpx',

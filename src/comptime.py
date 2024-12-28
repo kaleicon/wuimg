@@ -538,6 +538,14 @@ DEC_MAP = {
 		},
 	},
 
+	"txf": {
+		"txf": {
+			"desc": "TexFont Texture Mapped Font",
+			"ext": "txf",
+			"magic": b"\xfftxf",
+		},
+	},
+
 	"wbmp": {
 		"wbmp": {
 			"desc": "Wireless Bitmap",
