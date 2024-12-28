@@ -169,17 +169,21 @@ static enum wu_error gif_dec_frame(struct wuimg *img, struct gif_state *ds) {
 	}
 
 	const SavedImage *gif_image = ds->gif_file->SavedImages + ds->idx;
+	const GifImageDesc *desc = &gif_image->ImageDesc;
+	const struct frame_info dt = {
+		.x = (size_t)desc->Left, .y = (size_t)desc->Top,
+		.w = (size_t)desc->Width, .h = (size_t)desc->Height,
+	};
 	struct palette *pal;
 	if (img->mode == image_mode_palette) {
 		pal = img->u.palette;
-	} else if (gif_image->ImageDesc.ColorMap) {
+	} else if (desc->ColorMap) {
 		pal = &ds->local_pal;
-		get_palette(pal, gif_image->ImageDesc.ColorMap, trans);
+		get_palette(pal, desc->ColorMap, trans);
 	} else {
 		pal = &ds->global_pal;
 	}
-	compost_gif_frame(img, img->frames->f + ds->idx, gif_image->RasterBits,
-		pal, trans);
+	compost_gif_frame(img, &dt, gif_image->RasterBits, pal, trans);
 
 	++ds->idx;
 	return wu_ok;
@@ -259,10 +263,10 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 			gcb->DelayTime = default_delay;
 		}
 
+		// TODO: Calculate changed area
 		const GifImageDesc *desc = &image->ImageDesc;
 		const bool valid_frame = wuimg_frame_set(img, i,
-			(size_t)desc->Left, (size_t)desc->Top,
-			(size_t)desc->Width, (size_t)desc->Height,
+			0, 0, img->w, img->h,
 			gcb->DelayTime, 100,
 			gcb->TransparentColor == NO_TRANSPARENT_COLOR);
 		if (!valid_frame) {
