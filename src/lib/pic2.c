@@ -428,10 +428,7 @@ enum wu_error pic2_next_block(struct pic2_desc *desc, struct pic2_block *block) 
 }
 
 static struct wuptr text_field(const uint8_t *src, size_t len) {
-	while (len && src[len-1] == 0x20) {
-		--len;
-	}
-	return wuptr_mem(src, len);
+	return wuptr_trim_end(wuptr_mem(src, len), ' ');
 }
 
 enum wu_error pic2_parse(struct pic2_desc *desc) {

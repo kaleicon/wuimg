@@ -45,6 +45,13 @@ struct wuptr wuptr_wustr(const struct wustr w) {
 	return (struct wuptr){.len = w.len, .ptr = w.str};
 }
 
+struct wuptr wuptr_trim_end(struct wuptr w, const unsigned char c) {
+	while (w.len && w.ptr[w.len-1] == c) {
+		--w.len;
+	}
+	return w;
+}
+
 bool wuptr_suffix(const struct wuptr w1, const struct wuptr w2) {
 	if (w1.len >= w2.len) {
 		const size_t diff = w1.len - w2.len;
