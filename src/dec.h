@@ -7,7 +7,7 @@
 #include "wudefs.h"
 #include "misc/wustr.h"
 
-void dec_free_image(struct image_context *image);
+void dec_free(struct image_context *image);
 
 enum wu_error dec_callback(struct image_context *image,
 enum image_event event);

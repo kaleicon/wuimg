@@ -54,7 +54,7 @@ static void raw_end(struct image_file *infile) {
 	}
 	free(rs->raw.proc);
 	if (rs->jpeg.file.sub_img) {
-		dec_free_image(&rs->jpeg);
+		dec_free(&rs->jpeg);
 		infile->nr -= rs->jpeg.file.nr;
 	}
 	libraw_close(rs->data);

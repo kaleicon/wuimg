@@ -141,7 +141,7 @@ struct write_writer *writer) {
 	struct wuimg *cur;
 	enum wu_error err = dec_iter(image, &cur);
 	if (err != wu_ok) {
-		dec_free_image(image);
+		dec_free(image);
 		fprintf(stderr, "Error while opening %s: %s\n", image->name,
 			wu_error_message(err));
 		return false;
@@ -186,7 +186,7 @@ struct write_writer *writer) {
 	} else {
 		perror("Failed to open output directory");
 	}
-	dec_free_image(image);
+	dec_free(image);
 	return all_ok;
 }
 

@@ -142,7 +142,7 @@ struct test_mode_args args) {
 					taken += watch_elapsed(watch) * (j >= args.warmup);
 				}
 			}
-			dec_free_image(&image);
+			dec_free(&image);
 		}
 
 		if (result == wu_ok) {
@@ -197,7 +197,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		image_reset(image);
 		dec_src_file(image, iter.cur, iter.name, true, true);
 		result = display_loop(&window, true, false);
-		dec_free_image(image);
+		dec_free(image);
 		putchar('\n');
 		if (result != wu_ok) {
 			event->cycle = direction;
@@ -252,7 +252,7 @@ const bool interpret_stdin) {
 
 		if (!free_entry) {
 			result = display_loop(&window, remaining > 1, true);
-			dec_free_image(image);
+			dec_free(image);
 			if (result != wu_ok) {
 				free_entry = true;
 			} else if (event->rm == rm_yes) {

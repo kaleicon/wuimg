@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
 			struct wuimg *img;
 			err = dec_iter(&image, &img);
 		} while (err == wu_ok);
-		dec_free_image(&image);
+		dec_free(&image);
 		image_reset(&image);
 	}
 	return 0;

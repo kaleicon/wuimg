@@ -11,7 +11,7 @@
 
 #include "dec.h"
 
-void dec_free_image(struct image_context *image) {
+void dec_free(struct image_context *image) {
 	if (image->file.dec_state) {
 		const struct image_fn *fn = image->desc.dec.fn;
 		if (fn->end) {
