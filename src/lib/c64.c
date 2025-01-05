@@ -248,7 +248,7 @@ bool c64_decode(const struct c64_desc *desc, struct wuimg *img) {
 	bool ok = false;
 	if (wuimg_alloc_noverify(img)) {
 		struct mparser mp = desc->mp;
-		struct c64_mem_offsets off;
+		struct c64_mem_offsets off = {0};
 		uint8_t *uncomp = NULL;
 		if (desc->compressed) {
 			const unsigned upack_len = ggjj_needed(desc->fmt);
