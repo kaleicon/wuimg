@@ -205,6 +205,20 @@ DEC_MAP = {
 		},
 	},
 
+	"elecbyte": {
+		"eb_fnt": {
+			"desc": "Elecbyte M.U.G.E.N. Font v1. Requires PCX",
+			"ext": "fnt",
+			"magic": b"ElecbyteFnt\0",
+		},
+
+		"eb_sff": {
+			"desc": "Elecbyte M.U.G.E.N. Sprite v1. Requires PCX",
+			"ext": "sff",
+			"magic": b"ElecbyteSpr\0",
+		},
+	},
+
 	"g00": {"g00": {"desc": "RealLive engine G00", "match": "g00"}},
 
 	"gp4": {"gp4": {"desc": "elf AI5 engine GP4", "match": "gp4"}},
