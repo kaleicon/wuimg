@@ -8,10 +8,10 @@
 #include <pwd.h>
 
 #include "conf.h"
-#include "term.h"
 #include "misc/common.h"
 #include "misc/file.h"
 #include "misc/mparser.h"
+#include "misc/term.h"
 
 static const unsigned DEFAULT_MAX = USHRT_MAX / 4;
 

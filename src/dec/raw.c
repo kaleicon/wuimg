@@ -2,10 +2,9 @@
 #include <libraw/libraw.h>
 
 #include "wudefs.h"
-#include "metadata.h"
 #include "misc/common.h"
-#include "misc/file.h"
 #include "misc/math.h"
+#include "misc/metadata.h"
 
 #include "dec_enable.def"
 #ifdef WU_ENABLE_JPEG
@@ -199,11 +198,11 @@ libraw_data_t *data) {
 	return raw_thumb_none;
 }
 
-static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
+static void read_metadata(struct wutree *tree, libraw_data_t *data) {
 	const libraw_imgother_t *other = libraw_get_imgother(data);
 	tree_add_leaf_limit(tree, "Artist", WUPTR_ARRAY(other->artist), NULL);
 	tree_add_leaf_limit(tree, "Description", WUPTR_ARRAY(other->desc), NULL);
-	const struct wu_tree_sap sap[] = {
+	const struct wutree_sap sap[] = {
 		{"ISO speed", {wu_leaf_float, {.f = other->iso_speed}}},
 		{"Shutter speed", {wu_leaf_float, {.f = other->shutter}}},
 		{"Aperture", {wu_leaf_float, {.f = other->aperture}}},
@@ -221,7 +220,7 @@ static void read_metadata(struct wu_tree *tree, libraw_data_t *data) {
 		tree_bud_leaf_u(tree, "DNG version", idata->dng_version);
 	}
 
-	standard_metadata(xmp_metadata, idata->xmpdata, idata->xmplen, tree);
+	metadata_parse(metadata_xmp, idata->xmpdata, idata->xmplen, tree);
 }
 
 static enum wu_error raw_dec(struct image_file *infile,

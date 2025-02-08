@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 #include <stdlib.h>
 
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/xcursor.h"
 
 static enum wu_error xcursor_dec(struct image_file *infile,

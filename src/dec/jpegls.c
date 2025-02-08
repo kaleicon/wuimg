@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 #include <charls/charls.h>
 
-#include "rast_utils.h"
-#include "raster/strip.h"
+#include "wudefs.h"
 
 static const char * compression_str(const charls_spiff_compression_type comp) {
 	switch (comp) {

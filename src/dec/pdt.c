@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/pdt.h"
 
-static void metadata(const void *ptr, struct wu_tree *tree) {
+static void metadata(const void *ptr, struct wutree *tree) {
 	const struct pdt_desc *desc = ptr;
 	tree_add_leaf_utf8(tree, "Version", pdt_version_str(desc->version));
 }

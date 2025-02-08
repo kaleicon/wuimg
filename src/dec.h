@@ -2,8 +2,6 @@
 #ifndef DEC
 #define DEC
 
-#include <stdbool.h>
-
 #include "wudefs.h"
 #include "misc/wustr.h"
 

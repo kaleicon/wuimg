@@ -9,9 +9,9 @@
 #include "misc/common.h"
 #include "misc/math.h"
 #include "misc/mem.h"
+#include "misc/term.h"
 #include "misc/wustr.h"
 #include "fmtmap.h"
-#include "term.h"
 
 #include "extract.h"
 

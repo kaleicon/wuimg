@@ -3,10 +3,9 @@
 #define WU_WINDOW_BASE
 
 #include "misc/common.h"
-
-#include "wudefs.h"
+#include "misc/term.h"
 #include "opengl.h"
-#include "term.h"
+#include "wudefs.h"
 
 #define WINDOW_KEYSTART ' '
 #define WINDOW_KEYEND ('Z' + 1)

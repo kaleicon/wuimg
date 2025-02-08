@@ -2,10 +2,10 @@
 #include <avif/avif.h>
 
 #include "wudefs.h"
-#include "metadata.h"
 #include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/math.h"
+#include "misc/metadata.h"
 #include "raster/unpack.h"
 
 static void avif_end(struct image_file *infile) {
@@ -15,16 +15,16 @@ static void avif_end(struct image_file *infile) {
 static void read_metadata_item(struct wuimg *img, const avifRWData *meta,
 const enum metadata_type type) {
 	if (meta->size) {
-		struct wu_tree *tree = wuimg_get_metadata(img);
+		struct wutree *tree = wuimg_get_metadata(img);
 		if (tree) {
-			standard_metadata(type, meta->data, meta->size, tree);
+			metadata_parse(type, meta->data, meta->size, tree);
 		}
 	}
 }
 
 static void get_metadata(struct wuimg *img, const avifImage *avif) {
-	read_metadata_item(img, &avif->exif, exif_metadata);
-	read_metadata_item(img, &avif->xmp, xmp_metadata);
+	read_metadata_item(img, &avif->exif, metadata_exif);
+	read_metadata_item(img, &avif->xmp, metadata_xmp);
 }
 
 static void get_colorspace(struct wuimg *img, const avifImage *avif) {

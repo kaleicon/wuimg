@@ -6,13 +6,13 @@
 
 #include "wudefs.h"
 #include "misc/math.h"
+#include "misc/metadata.h"
 #include "misc/wustr.h"
-#include "metadata.h"
 
 enum marker_type {
 	unknown_marker = 0,
-	exif_marker = exif_metadata,
-	xmp_marker = xmp_metadata,
+	exif_marker = metadata_exif,
+	xmp_marker = metadata_xmp,
 	icc_marker,
 	mpo_marker,
 };
@@ -203,13 +203,13 @@ static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
 }
 
 static enum wu_error parse_markers(const struct jpeg_marker_struct *mk,
-struct wu_tree *metadata, struct image_file *infile, struct jpeg_state *js,
+struct wutree *metadata, struct image_file *infile, struct jpeg_state *js,
 struct icc_assembler *icc, const bool is_first) {
 	const struct marker_info info = identify_marker(mk);
 	switch (info.type) {
 	case xmp_marker:
 	case exif_marker:
-		;const bool ok = standard_metadata((enum metadata_type)info.type,
+		;const bool ok = metadata_parse((enum metadata_type)info.type,
 			mk->data + info.data_start,
 			mk->data_length - info.data_start, metadata);
 		if (ok) {
@@ -237,7 +237,7 @@ struct icc_assembler *icc, const bool is_first) {
 		break;
 	}
 
-	struct wu_tree *branch = tree_add_branch(metadata, "Marker");
+	struct wutree *branch = tree_add_branch(metadata, "Marker");
 	if (branch) {
 		char app[] = "APPXXX";
 		sprintf(app + 3, "%hhu", (uint8_t)(mk->marker - JPEG_APP0));
@@ -255,7 +255,7 @@ struct image_file *infile, struct wuimg *img, struct jpeg_state *js,
 const bool is_first) {
 	struct icc_assembler icc = {0};
 	enum wu_error status = wu_ok;
-	struct wu_tree *metadata = wuimg_get_metadata(img);
+	struct wutree *metadata = wuimg_get_metadata(img);
 	if (!img->metadata) {
 		return wu_alloc_error;
 	}

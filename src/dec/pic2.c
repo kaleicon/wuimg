@@ -3,13 +3,13 @@
 #include "lib/pic2.h"
 
 static void add_str(const char *name, const struct wuptr value,
-struct wu_tree *tree) {
+struct wutree *tree) {
 	if (value.len) {
 		tree_add_leaf_len(tree, name, value, "SHIFT_JIS");
 	}
 }
 
-static void read_metadata(const struct pic2_desc *desc, struct wu_tree *tree) {
+static void read_metadata(const struct pic2_desc *desc, struct wutree *tree) {
 	add_str("Name", desc->name, tree);
 	add_str("Subtitle", desc->subtitle, tree);
 	add_str("Title", desc->title, tree);
@@ -24,7 +24,7 @@ static void read_metadata(const struct pic2_desc *desc, struct wu_tree *tree) {
 }
 
 static void read_block_metadata(const struct pic2_block *block,
-struct wu_tree *tree) {
+struct wutree *tree) {
 	if (tree) {
 		tree_bud_leaf_u(tree, "X", block->u.image.x);
 		tree_bud_leaf_u(tree, "Y", block->u.image.y);

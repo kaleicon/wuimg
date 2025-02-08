@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/sun.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct sun_desc *desc = ptr;
 	tree_bud_leaf_bool(tree, "Compressed", desc->type == sun_byte_encoded);
 }

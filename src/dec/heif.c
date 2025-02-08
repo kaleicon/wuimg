@@ -2,8 +2,7 @@
 #include <libheif/heif.h>
 
 #include "dec_enable.def"
-#include "misc/file.h"
-#include "metadata.h"
+#include "misc/metadata.h"
 #include "wudefs.h"
 
 struct heif_state {
@@ -41,15 +40,15 @@ const size_t len) {
 	const struct heif_error herr = heif_image_handle_get_metadata(handle,
 		id, buf);
 	if (herr.code == heif_error_Ok) {
-		struct wu_tree *meta = wuimg_get_metadata(img);
+		struct wutree *meta = wuimg_get_metadata(img);
 		if (meta) {
 			const char *type = heif_image_handle_get_metadata_type(
 				handle, id);
 			if (!strcmp(type, "Exif") && len > 10) {
-				standard_metadata(exif_metadata, buf + 10,
+				metadata_parse(metadata_exif, buf + 10,
 					len - 10, meta);
 			} else if (!strcmp(type, "mime")) {
-				standard_metadata(xmp_metadata, buf, len, meta);
+				metadata_parse(metadata_xmp, buf, len, meta);
 			} else {
 				tree_add_leaf_utf8(meta,
 					"Found metadata block", type);

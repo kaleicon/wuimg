@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 #include "icc.h"
-#include "term.h"
+#include "misc/term.h"
 
 cmsUInt32Number icc_fmt_colorspace(const uint8_t ch, const uint8_t bytedepth,
 const enum alpha_interpretation alpha, const uint8_t colorspace) {

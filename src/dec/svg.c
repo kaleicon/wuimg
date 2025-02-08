@@ -7,7 +7,6 @@
 
 #include "wudefs.h"
 #include "misc/endian.h"
-#include "misc/file.h"
 #include "misc/math.h"
 
 static void svg_end(struct image_file *infile) {

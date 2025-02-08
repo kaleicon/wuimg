@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #include "misc/common.h"
 #include "raster/color.h"

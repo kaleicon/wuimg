@@ -2,11 +2,6 @@
 #ifndef WUDEFS
 #define WUDEFS
 
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "misc/file.h"
-#include "misc/wustr.h"
 #include "raster/wuimg.h"
 
 #define WU_SCALING_POW 6
@@ -46,7 +41,7 @@ struct image_file {
 
 	size_t nr;
 	struct wuimg *sub_img;
-	struct wu_tree metadata;
+	struct wutree metadata;
 
 	void *restrict dec_state; // Used by decoder for callbacks
 	struct wustr errors;

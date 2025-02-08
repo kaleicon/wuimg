@@ -3,12 +3,12 @@
 #include "wudefs.h"
 
 static void read_macbin_metadata(const struct mac_binary_header *macbin,
-struct wu_tree *tree) {
+struct wutree *tree) {
 	if (!tree) {
 		return;
 	}
 
-	struct wu_tree *file = tree_add_branch(tree, "File");
+	struct wutree *file = tree_add_branch(tree, "File");
 	if (file) {
 		tree_add_leaf_len(file, "Name",
 			wuptr_mem(macbin->name, macbin->name_len), NULL);
@@ -24,7 +24,7 @@ struct wu_tree *tree) {
 			mac_time_to_unix(macbin->time.modified));
 	}
 
-	struct wu_tree *window = tree_add_branch(tree, "Window");
+	struct wutree *window = tree_add_branch(tree, "Window");
 	if (window) {
 		tree_bud_leaf_u(window, "Y", macbin->window.y);
 		tree_bud_leaf_u(window, "X", macbin->window.x);

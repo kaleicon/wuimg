@@ -54,9 +54,9 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 		: wu_no_change;
 }
 
-static void add_list(struct wu_tree *tree, const char *branch_name,
+static void add_list(struct wutree *tree, const char *branch_name,
 const struct wpx_ia2_list *list, const uint32_t nr) {
-	struct wu_tree *br = NULL;
+	struct wutree *br = NULL;
 	const size_t m = zumin(nr, 1024);
 	for (uint32_t i = 0; i < m; ++i) {
 		struct wuptr str;
@@ -88,7 +88,7 @@ const uint32_t nr, const size_t size) {
 	}
 }
 
-static void anim_metadata(struct wu_tree *tree, const struct wpx_ia2_desc *desc) {
+static void anim_metadata(struct wutree *tree, const struct wpx_ia2_desc *desc) {
 	add_list(tree, "Names", &desc->names, desc->nr.frames);
 	add_list(tree, "SFX", &desc->sfx, desc->nr.sfx);
 	const bool debug = false;

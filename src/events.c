@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: 0BSD
 #include "events.h"
-#include "term.h"
 #include "wudefs.h"
 #include "misc/math.h"
+#include "misc/term.h"
 
 enum event_repeat {
 	repeat_none = 0,

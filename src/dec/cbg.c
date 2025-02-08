@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/cbg.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *metadata) {
+static void metadata(const void *restrict ptr, struct wutree *metadata) {
 	const struct cbg_desc *desc = ptr;
 	tree_bud_leaf_u(metadata, "Version", desc->version);
 }

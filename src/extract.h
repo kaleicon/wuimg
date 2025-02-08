@@ -7,8 +7,6 @@
 
 #include <archive.h>
 
-#include "misc/wustr.h"
-
 struct extract_iter {
 	struct archive *ra;
 	FILE *cur;

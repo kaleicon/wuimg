@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/prt.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct prt_desc *desc = ptr;
 	tree_bud_leaf_u(tree, "Version", desc->version);
 	tree_bud_leaf_u(tree, "Depth", desc->depth);

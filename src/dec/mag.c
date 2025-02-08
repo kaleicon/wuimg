@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/mag.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct mag_desc *desc = ptr;
 	tree_add_leaf_limit(tree, "Model", WUPTR_ARRAY(desc->model), "SHIFT-JIS");
 	tree_add_leaf_utf8(tree, "Code", mag_model_code_str(desc->code));

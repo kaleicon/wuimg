@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-#include "wustr.h"
+#include "misc/wustr.h"
 
 size_t file_tail(void *buf, size_t size, size_t nmemb, FILE *ifp);
 

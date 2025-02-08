@@ -213,7 +213,7 @@ const enum image_event event) {
 }
 
 static int read_extensions(const int count, ExtensionBlock *ext,
-GraphicsControlBlock *gcb, struct wu_tree *tree) {
+GraphicsControlBlock *gcb, struct wutree *tree) {
 	int status = GIF_ERROR;
 	for (int j = 0; j < count; ++j) {
 		const int func = ext[j].Function;

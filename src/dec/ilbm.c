@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: 0BSD
-#include "rast_utils.h"
 #include "lib/ilbm.h"
+#include "wudefs.h"
 
 #define GET_CHAR(b, sh) (char)((b >> sh) & 0xff)
 #define FOURCC_TO_STR(n) GET_CHAR(n, 24), GET_CHAR(n, 16), GET_CHAR(n, 8), GET_CHAR(n, 0), 0
@@ -18,7 +18,7 @@ const struct wuptr data, void *ptr) {
 	return wu_ok;
 }
 
-static void add_metadata(const struct ilbm_desc *desc, struct wu_tree *meta) {
+static void add_metadata(const struct ilbm_desc *desc, struct wutree *meta) {
 	tree_add_leaf_utf8(meta, "Compression",
 		ilbm_compression_str(desc->compression));
 	tree_bud_leaf_u(meta, "Depth", desc->planes);
@@ -75,7 +75,7 @@ const struct wu_conf *wuconf) {
 	}
 	struct wuimg *img = infile->sub_img;
 	const char type[] = {FOURCC_TO_STR(desc->format)};
-	struct wu_tree *type_meta = tree_add_branch(&infile->metadata, type);
+	struct wutree *type_meta = tree_add_branch(&infile->metadata, type);
 	if (type_meta) {
 		ilbm_set_callbacks(desc, chunk_metadata, text_chunk_metadata,
 			type_meta);

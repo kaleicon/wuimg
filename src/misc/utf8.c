@@ -4,7 +4,7 @@
 #include <uchardet/uchardet.h>
 #include <unicode/ucnv.h>
 
-#include "utf8.h"
+#include "misc/utf8.h"
 
 static bool convert_str(UConverter *from, UConverter *to, const char *data,
 const size_t len, struct wustr *out, UErrorCode *err) {

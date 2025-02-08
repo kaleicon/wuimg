@@ -15,7 +15,7 @@ const struct wu_conf *conf, struct idsp_desc *desc) {
 		return wu_alloc_error;
 	}
 
-	struct wu_tree *tree = &infile->metadata;
+	struct wutree *tree = &infile->metadata;
 	tree_bud_leaf_u(tree, "Version", desc->version);
 	tree_add_leaf_utf8(tree, "Type", idsp_type_str(desc->type));
 	if (desc->version == idsp_half_life) {

@@ -4,8 +4,8 @@
 
 #include <unistd.h>
 
-#include "term.h"
 #include "misc/math.h"
+#include "misc/term.h"
 
 void term_print_escaped(const unsigned char *restrict data, size_t len,
 const bool is_utf8, FILE *stream) {

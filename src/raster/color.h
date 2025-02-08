@@ -2,10 +2,10 @@
 #ifndef RASTER_COLOR
 #define RASTER_COLOR
 
-#include "alpha.h"
-#include "cicp.h"
-#include "icc.h"
 #include "misc/mat.h"
+#include "raster/alpha.h"
+#include "raster/cicp.h"
+#include "raster/icc.h"
 
 enum color_transfer_fn {
 	color_transfer_linear_gamma,

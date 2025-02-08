@@ -6,9 +6,9 @@
 #include <tiffio.h>
 
 #include "wudefs.h"
-#include "metadata.h"
 #include "misc/common.h"
 #include "misc/math.h"
+#include "misc/metadata.h"
 #include "raster/unpack.h"
 
 struct tiff_info {
@@ -56,7 +56,7 @@ static void get_metadata_tags(TIFF *tif, struct wuimg *img) {
 		{TIFFTAG_PAGENAME, "Page name"},
 	};
 
-	struct wu_tree *tree = wuimg_get_metadata(img);
+	struct wutree *tree = wuimg_get_metadata(img);
 	if (!tree) {
 		return;
 	}
@@ -71,10 +71,10 @@ static void get_metadata_tags(TIFF *tif, struct wuimg *img) {
 	uint32_t data_len;
 	void *data;
 	if (TIFFGetField(tif, TIFFTAG_XMLPACKET, &data_len, &data)) {
-		standard_metadata(xmp_metadata, data, data_len, tree);
+		metadata_parse(metadata_xmp, data, data_len, tree);
 	}
 	if (TIFFGetField(tif, TIFFTAG_RICHTIFFIPTC, &data_len, &data)) {
-		standard_metadata(iptc_metadata, data, data_len, tree);
+		metadata_parse(metadata_iptc, data, data_len, tree);
 	}
 }
 

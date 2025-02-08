@@ -2,7 +2,7 @@
 #include "lib/txf.h"
 #include "rast_utils.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct txf_desc *desc = ptr;
 	tree_bud_leaf_u(tree, "Max ascent", desc->max_ascent);
 	tree_bud_leaf_u(tree, "Max descent", desc->max_descent);

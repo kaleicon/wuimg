@@ -2,7 +2,7 @@
 #ifndef WU_DISPLAY
 #define WU_DISPLAY
 
-#include "term.h"
+#include "misc/term.h"
 #include "window.h"
 
 void display_end(struct window_context *window,

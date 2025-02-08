@@ -6,13 +6,13 @@
 #include <stdbool.h>
 
 #include "conf.h"
-#include "wutree.h"
+#include "misc/wutree.h"
 #include "raster/alpha.h"
 #include "raster/bitfield.h"
 #include "raster/color.h"
 #include "raster/compost.h"
-#include "raster/pix.h"
 #include "raster/pal.h"
+#include "raster/pix.h"
 #include "raster/strip.h"
 
 enum wu_error {
@@ -138,13 +138,13 @@ struct wuimg {
 	struct color_space cs;
 	struct image_frames *frames;
 
-	struct wu_tree *metadata;
+	struct wutree *metadata;
 };
 
 const char * wu_error_message(enum wu_error err);
 
 
-struct wu_tree * wuimg_get_metadata(struct wuimg *img);
+struct wutree * wuimg_get_metadata(struct wuimg *img);
 
 void wuimg_aspect_ratio(struct wuimg *img, unsigned h_size, unsigned v_size);
 

@@ -18,7 +18,7 @@ static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 }
 
 static void add_metadata(const struct pcx_desc *desc, struct wuimg *img) {
-	struct wu_tree *metadata = wuimg_get_metadata(img);
+	struct wutree *metadata = wuimg_get_metadata(img);
 	if (!metadata) {
 		return;
 	}

@@ -3,9 +3,9 @@
 #include <jxl/resizable_parallel_runner.h>
 
 #include "wudefs.h"
-#include "metadata.h"
 #include "misc/bit.h"
 #include "misc/math.h"
+#include "misc/metadata.h"
 
 struct jpegxl_state {
 	JxlDecoder *jd;
@@ -30,10 +30,10 @@ static void process_metadata(struct image_file *infile,
 struct jpegxl_state *ds) {
 	if (ds->pending) {
 		if (JxlDecoderReleaseBoxBuffer(ds->jd) == 0) {
-			standard_metadata(ds->pending, ds->box.str,
+			metadata_parse(ds->pending, ds->box.str,
 				ds->box.len, &infile->metadata);
 		}
-		ds->pending = no_metadata;
+		ds->pending = metadata_none;
 	}
 }
 
@@ -41,11 +41,11 @@ static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
 	process_metadata(infile, ds);
 	;JxlBoxType type;
 	if (JxlDecoderGetBoxType(ds->jd, type, JXL_TRUE) == JXL_DEC_SUCCESS) {
-		enum metadata_type pending = no_metadata;
+		enum metadata_type pending = metadata_none;
 		if (!memcmp(type, "Exif", sizeof(type))) {
-			pending = exif_metadata;
+			pending = metadata_exif;
 		} else if (!memcmp(type, "xml ", sizeof(type))) {
-			pending = xmp_metadata;
+			pending = metadata_xmp;
 		} else {
 			if (!memcmp(type, "jbrd", sizeof(type))) {
 				tree_bud_leaf_bool(&infile->metadata,

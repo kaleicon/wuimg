@@ -19,7 +19,7 @@ const struct wu_conf *wuconf, struct dib_desc *desc) {
 	}
 
 	if (dib_decode(desc, img)) {
-		struct wu_tree *tree = &infile->metadata;
+		struct wutree *tree = &infile->metadata;
 		tree_add_leaf_utf8(tree, "Header", dib_type_str(desc));
 		tree_add_leaf_utf8(tree, "Compression",
 			dib_compression_str(desc->compression));

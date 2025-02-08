@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/hg3.h"
 
 static enum wu_error hg3_dec(struct image_file *infile,

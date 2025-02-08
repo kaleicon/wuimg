@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/sgi.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct sgi_desc *desc = ptr;
 	tree_add_leaf_limit(tree, "Image name", WUPTR_ARRAY(desc->name), NULL);
 	tree_bud_leaf_bool(tree, "Compressed",

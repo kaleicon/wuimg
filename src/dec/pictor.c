@@ -2,7 +2,7 @@
 #include "lib/pictor.h"
 #include "rast_utils.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct pictor_desc *desc = ptr;
 	tree_bud_leaf_u(tree, "X", desc->x);
 	tree_bud_leaf_u(tree, "Y", desc->y);

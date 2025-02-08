@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: 0BSD
 
 #include <errno.h>
-#include <stdio.h>
 
 #include <sys/stat.h>
 
 #include "misc/common.h"
+#include "misc/file.h"
 #include "auto.h"
 #include "fmtmap.h"
 
@@ -52,7 +52,7 @@ enum image_event event) {
 
 static enum wu_error init_metadata(struct image_file *infile,
 const struct fmt_desc *fmt, const int fd) {
-	struct wu_tree *metadata = &infile->metadata;
+	struct wutree *metadata = &infile->metadata;
 	if (!tree_sow(metadata, "Metadata")) {
 		return wu_alloc_error;
 	}
@@ -67,12 +67,12 @@ const struct fmt_desc *fmt, const int fd) {
 		return wu_ok;
 	}
 
-	struct wu_tree *fdmeta = tree_add_branch(metadata, "Stat");
+	struct wutree *fdmeta = tree_add_branch(metadata, "Stat");
 	if (!fdmeta) {
 		return wu_alloc_error;
 	}
 
-	const struct wu_tree_sap sap[] = {
+	const struct wutree_sap sap[] = {
 		{"Size", {wu_leaf_signed, {.d = sb.st_size}}},
 		{"Last access", {wu_leaf_time, {.time = sb.st_atim.tv_sec}}},
 		{"Last modified", {wu_leaf_time, {.time = sb.st_mtim.tv_sec}}},

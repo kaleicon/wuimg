@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/q4.h"
 
 static enum wu_error q4_dec(struct image_file *infile,

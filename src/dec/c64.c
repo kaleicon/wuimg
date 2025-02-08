@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/c64.h"
 
-static void meta(const void *restrict ptr, struct wu_tree *tree) {
+static void meta(const void *restrict ptr, struct wutree *tree) {
 	const struct c64_desc *desc = ptr;
 	tree_add_leaf_utf8(tree, "Type", c64_fmt_str(desc->fmt));
 	tree_add_leaf_utf8(tree, "Mode", c64_mode_str(desc->mode));

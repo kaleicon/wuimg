@@ -3,7 +3,6 @@
 #define WU_WRITE
 
 #include "wudefs.h"
-#include "opengl.h"
 
 extern const char write_description[];
 extern const char write_switches[];

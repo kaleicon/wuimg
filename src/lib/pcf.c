@@ -121,7 +121,7 @@ const uint32_t i) {
 	struct wuptr id;
 	const uint32_t offset = endian32(names->offsets[i], names->endian);
 	if (get_pcf_str(&names->str, &id, offset)) {
-		struct wu_tree *meta = wuimg_get_metadata(img);
+		struct wutree *meta = wuimg_get_metadata(img);
 		if (meta) {
 			tree_add_leaf_len(meta, "Name", id, NULL);
 		}

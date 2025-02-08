@@ -7,7 +7,7 @@ static void end(struct image_file *infile) {
 }
 
 static void get_metadata(const struct gpc_desc *desc, struct wuimg *img) {
-	struct wu_tree *tree = wuimg_get_metadata(img);
+	struct wutree *tree = wuimg_get_metadata(img);
 	if (tree) {
 		tree_bud_leaf_u(tree, "X", desc->cur.x);
 		tree_bud_leaf_u(tree, "Y", desc->cur.y);

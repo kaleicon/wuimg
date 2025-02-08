@@ -2,16 +2,16 @@
 #include "rast_utils.h"
 #include "lib/tim.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct tim_desc *desc = ptr;
-	struct wu_tree *offset = tree_add_branch(tree, "Offset");
+	struct wutree *offset = tree_add_branch(tree, "Offset");
 	if (offset) {
 		tree_bud_leaf_u(offset, "X", desc->x);
 		tree_bud_leaf_u(offset, "Y", desc->y);
 	}
 
 	if (desc->clut.nb) {
-		struct wu_tree *pal = tree_add_branch(tree, "CLUT");
+		struct wutree *pal = tree_add_branch(tree, "CLUT");
 		if (pal) {
 			tree_bud_leaf_u(pal, "Nb.", desc->clut.nb);
 			tree_bud_leaf_u(pal, "X", desc->clut.x);

@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/tlg.h"
 
-static void metadata(const void *ptr, struct wu_tree *tree) {
+static void metadata(const void *ptr, struct wutree *tree) {
 	const struct tlg_desc *desc = ptr;
 	tree_add_leaf_utf8(tree, "Version", tlg_version_str(desc->version));
 }

@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: 0BSD
-#include <stdio.h>
-#include <math.h>
-
 #include "misc/common.h"
 #include "misc/mat.h"
 #include "misc/math.h"

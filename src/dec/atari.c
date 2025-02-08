@@ -2,7 +2,7 @@
 #include "wudefs.h"
 #include "lib/atari.h"
 
-static void res_metadata(struct wu_tree *meta, const enum atari_st_res res) {
+static void res_metadata(struct wutree *meta, const enum atari_st_res res) {
 	tree_add_leaf_utf8(meta, "Resolution", atari_st_res_str(res));
 }
 
@@ -45,7 +45,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return wu_no_change;
 }
 
-static void degas_metadata(struct wu_tree *meta, const struct degas_desc *desc) {
+static void degas_metadata(struct wutree *meta, const struct degas_desc *desc) {
 	res_metadata(meta, desc->res);
 	tree_bud_leaf_bool(meta, "Compressed", desc->compressed);
 	tree_bud_leaf_bool(meta, "Elite", desc->is_elite);

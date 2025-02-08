@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 #include <errno.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,9 +10,11 @@
 
 #include "dec.h"
 #include "filesystem.h"
-#include "term.h"
 #include "write.h"
 #include "misc/common.h"
+#include "misc/file.h"
+#include "misc/term.h"
+#include "misc/time.h"
 
 #include "enc/pam.h"
 

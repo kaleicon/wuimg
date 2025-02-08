@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/wgtspr.h"
 
 static enum wu_error wrapper(struct image_file *infile,

@@ -10,9 +10,9 @@
 #include <gbm.h>
 
 #include "misc/math.h"
+#include "misc/term.h"
 #include "window/drm.h"
 #include "opengl.h"
-#include "term.h"
 
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 

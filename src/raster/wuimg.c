@@ -54,7 +54,7 @@ const char * wu_error_message(const enum wu_error err) {
 		"Pray for my soul.";
 }
 
-struct wu_tree * wuimg_get_metadata(struct wuimg *img) {
+struct wutree * wuimg_get_metadata(struct wuimg *img) {
 	if (!img->metadata) {
 		img->metadata = tree_plant("Metadata");
 	}

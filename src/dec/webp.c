@@ -9,8 +9,7 @@
 #include <webp/demux.h>
 
 #include "wudefs.h"
-#include "metadata.h"
-#include "misc/file.h"
+#include "misc/metadata.h"
 #include "raster/compost.h"
 
 struct frame_dispose {
@@ -341,13 +340,13 @@ struct webp_state *ds) {
 	return WebPDecode(ds->data.bytes, ds->data.size, &ds->config);
 }
 
-static void loop_over_chunks(struct wu_tree *tree, WebPDemuxer *dmux,
+static void loop_over_chunks(struct wutree *tree, WebPDemuxer *dmux,
 WebPChunkIterator *chunks, const char *fourcc, const enum metadata_type type,
 const size_t offset) {
 	if (WebPDemuxGetChunk(dmux, fourcc, 1, chunks)) {
 		do {
 			if (chunks->chunk.size > offset) {
-				standard_metadata(type,
+				metadata_parse(type,
 					chunks->chunk.bytes + offset,
 					chunks->chunk.size - offset, tree);
 			}
@@ -355,17 +354,17 @@ const size_t offset) {
 	}
 }
 
-static void read_metadata(struct wu_tree *tree, struct webp_state *ds,
+static void read_metadata(struct wutree *tree, struct webp_state *ds,
 bool use_homegrown) {
 	WebPDemuxer *dmux = WebPDemux(&ds->data);
 	const uint32_t flags = WebPDemuxGetI(dmux, WEBP_FF_FORMAT_FLAGS);
 
 	WebPChunkIterator chunks;
 	if (flags & EXIF_FLAG) {
-		loop_over_chunks(tree, dmux, &chunks, "EXIF", exif_metadata, 6);
+		loop_over_chunks(tree, dmux, &chunks, "EXIF", metadata_exif, 6);
 	}
 	if (flags & XMP_FLAG) {
-		loop_over_chunks(tree, dmux, &chunks, "XMP ", xmp_metadata, 0);
+		loop_over_chunks(tree, dmux, &chunks, "XMP ", metadata_xmp, 0);
 	}
 
 	if (ds->config.input.has_animation && use_homegrown) {

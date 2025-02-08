@@ -6,9 +6,9 @@
 #include <png.h>
 
 #include "wudefs.h"
-#include "metadata.h"
 #include "misc/common.h"
 #include "misc/endian.h"
+#include "misc/metadata.h"
 #include "misc/time.h"
 
 struct png_state {
@@ -33,7 +33,7 @@ static void big_trouble_fn(png_struct *png, const char *msg) {
 
 static void read_png_info(const png_struct *png, png_info *info,
 struct image_file *infile) {
-	struct wu_tree *tree = &infile->metadata;
+	struct wutree *tree = &infile->metadata;
 	struct wuimg *img = infile->sub_img;
 
 #ifdef PNG_bKGD_SUPPORTED
@@ -51,10 +51,10 @@ struct image_file *infile) {
 	png_text *text = NULL;
 	const int num_comm = png_get_text(png, info, &text, NULL);
 	if (text) {
-		struct wu_tree *branch = NULL;
+		struct wutree *branch = NULL;
 		for (int i = 0; i < num_comm; ++i) {
 			if (!strcmp(text[i].key, "XML:com.adobe.xmp")) {
-				standard_metadata(xmp_metadata, text[i].text,
+				metadata_parse(metadata_xmp, text[i].text,
 					strlen(text[i].text), tree);
 			} else {
 				if (!branch) {
@@ -83,7 +83,7 @@ struct image_file *infile) {
 	png_byte *exif = NULL;
 	png_uint_32 len;
 	png_get_eXIf_1(png, info, &len, &exif);
-	if (exif && standard_metadata(exif_metadata, exif, len, tree)) {
+	if (exif && metadata_parse(metadata_exif, exif, len, tree)) {
 		wuimg_exif_orientation(img, metadata_orientation(tree));
 	}
 #endif

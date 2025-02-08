@@ -2,9 +2,8 @@
 #include <flif.h>
 
 #include "wudefs.h"
-#include "metadata.h"
 #include "misc/common.h"
-#include "misc/file.h"
+#include "misc/metadata.h"
 
 struct flif_state {
 	FLIF_DECODER *dec;
@@ -37,20 +36,20 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 		: wu_no_change;
 }
 
-static void read_metadata(struct wu_tree *tree, FLIF_IMAGE *frame) {
+static void read_metadata(struct wutree *tree, FLIF_IMAGE *frame) {
 	struct {
 		const char *name;
 		enum metadata_type type;
 	} chunks[] = {
-		{"eXif", exif_metadata},
-		{"eXmp", xmp_metadata},
+		{"eXif", metadata_exif},
+		{"eXmp", metadata_xmp},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(chunks); ++i) {
 		unsigned char *data = NULL;
 		size_t len;
 		flif_image_get_metadata(frame, chunks[i].name, &data, &len);
 		if (data && len) {
-			standard_metadata(chunks[i].type, data, len, tree);
+			metadata_parse(chunks[i].type, data, len, tree);
 		}
 	}
 }

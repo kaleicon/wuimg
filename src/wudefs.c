@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "misc/common.h"
+#include "misc/file.h"
 #include "misc/math.h"
 #include "wudefs.h"
 

@@ -12,6 +12,7 @@
 #include "filesystem.h"
 #include "fmtmap.h"
 #include "write.h"
+#include "misc/file.h"
 #include "misc/math.h"
 #include "misc/time.h"
 

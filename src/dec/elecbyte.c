@@ -6,7 +6,7 @@
 #include "dec.h"
 #include "dec_fn.h"
 
-static void add_version(struct wu_tree *tree, const uint8_t version[static 4]) {
+static void add_version(struct wutree *tree, const uint8_t version[static 4]) {
 	char str[16];
 	tree_add_leaf_utf8_len(tree, "Version",
 		wuptr_mem(str, eb_print_version(str, version)));
@@ -14,7 +14,7 @@ static void add_version(struct wu_tree *tree, const uint8_t version[static 4]) {
 
 static void add_metadata(struct wuimg *img, const struct eb_sff_desc *desc,
 const struct eb_sff_sub *sub) {
-	struct wu_tree *meta = wuimg_get_metadata(img);
+	struct wutree *meta = wuimg_get_metadata(img);
 	if (meta) {
 		const uint8_t version = eb_sff_get_version(desc);
 		meta = tree_add_branch(meta, version == 2 ? "SFF2" : "SFF");
@@ -138,7 +138,7 @@ const struct wu_conf *conf) {
 		if (st == wu_ok) {
 			struct wuimg *img = alloc_sub_images(infile, desc.images);
 			if (img) {
-				struct wu_tree *meta = &infile->metadata;
+				struct wutree *meta = &infile->metadata;
 				add_version(meta, desc.version);
 				tree_bud_leaf_u(meta, "Images", desc.images);
 				switch (eb_sff_get_version(&desc)) {
@@ -169,7 +169,7 @@ const struct wu_conf *conf) {
 	if (st == wu_ok) {
 		st = eb_fnt_parse(&desc);
 		if (st == wu_ok) {
-			struct wu_tree *tree = &infile->metadata;
+			struct wutree *tree = &infile->metadata;
 			add_version(tree, desc.version);
 			if (desc.comment.len) {
 				tree_add_leaf_len(tree, "Comment", desc.comment, NULL);

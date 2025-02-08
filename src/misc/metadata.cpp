@@ -15,10 +15,10 @@ static const char IPTC[] = "IPTC";
 // Disclaimer: I don't know any C++
 
 template <typename Datum>
-static void read_any(Datum meta, struct wu_tree *tree) {
+static void read_any(Datum meta, struct wutree *tree) {
 	std::string group = meta->groupName();
 
-	struct wu_tree *branch = tree_findadd_branch(tree, group.c_str());
+	struct wutree *branch = tree_findadd_branch(tree, group.c_str());
 	if (branch) {
 		std::string tag = meta->tagName();
 
@@ -52,7 +52,7 @@ static void read_any(Datum meta, struct wu_tree *tree) {
 }
 
 static bool read_xmp(const char *metadata, const size_t len,
-struct wu_tree *tree) {
+struct wutree *tree) {
 	const std::string str_xmp(metadata, len);
 
 	Exiv2::XmpData data;
@@ -62,7 +62,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::XmpData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_add_branch(tree, XMP);
+	struct wutree *outtree = tree_add_branch(tree, XMP);
 	for (Exiv2::XmpData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -73,7 +73,7 @@ struct wu_tree *tree) {
 }
 
 static bool read_iptc(const unsigned char *metadata, const size_t len,
-struct wu_tree *tree) {
+struct wutree *tree) {
 	Exiv2::IptcData data;
 	Exiv2::IptcParser::decode(data, metadata, len);
 	if (!data.count()) {
@@ -81,7 +81,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::IptcData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_add_branch(tree, IPTC);
+	struct wutree *outtree = tree_add_branch(tree, IPTC);
 	for (Exiv2::IptcData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -92,7 +92,7 @@ struct wu_tree *tree) {
 }
 
 static bool read_exif(const unsigned char *metadata, const size_t len,
-struct wu_tree *tree) {
+struct wutree *tree) {
 	Exiv2::ExifData data;
 	Exiv2::ExifParser::decode(data, metadata, len);
 	if (!data.count()) {
@@ -100,7 +100,7 @@ struct wu_tree *tree) {
 	}
 
 	Exiv2::ExifData::const_iterator end = data.end();
-	struct wu_tree *outtree = tree_add_branch(tree, EXIF);
+	struct wutree *outtree = tree_add_branch(tree, EXIF);
 	for (Exiv2::ExifData::const_iterator i = data.begin(); i != end; ++i) {
 		if (i->count()) {
 			read_any(i, outtree);
@@ -110,7 +110,7 @@ struct wu_tree *tree) {
 	return true;
 }
 
-extern "C" unsigned char metadata_orientation(struct wu_tree *tree) {
+extern "C" unsigned char metadata_orientation(struct wutree *tree) {
 	const char *path[] = {EXIF, "Image", "Orientation"};
 	tree = tree_find_path(tree, path, ARRAY_LEN(path));
 	if (tree && tree->leaf.type == wu_leaf_signed) {
@@ -122,28 +122,28 @@ extern "C" unsigned char metadata_orientation(struct wu_tree *tree) {
 	return 0;
 }
 
-extern "C" bool standard_metadata(const enum metadata_type type,
-const void *metadata, const size_t len, struct wu_tree *tree) {
+extern "C" bool metadata_parse(const enum metadata_type type,
+const void *metadata, const size_t len, struct wutree *tree) {
 	bool st = false;
 	try {
 		switch (type) {
-		case no_metadata: break;
-		case exif_metadata:
+		case metadata_none: break;
+		case metadata_exif:
 			st = read_exif((const unsigned char *)metadata, len, tree);
 			break;
-		case xmp_metadata:
+		case metadata_xmp:
 			st = read_xmp((const char *)metadata, len, tree);
 			break;
-		case iptc_metadata:
+		case metadata_iptc:
 			st = read_iptc((const unsigned char *)metadata, len, tree);
 			break;
 		}
 	} catch (...) {
 		switch (type) {
-		case no_metadata: break;
-		case exif_metadata: fputs(EXIF, stderr); break;
-		case xmp_metadata: fputs(XMP, stderr); break;
-		case iptc_metadata: fputs(IPTC, stderr); break;
+		case metadata_none: break;
+		case metadata_exif: fputs(EXIF, stderr); break;
+		case metadata_xmp: fputs(XMP, stderr); break;
+		case metadata_iptc: fputs(IPTC, stderr); break;
 		}
 		fputs(" parsing failed.\n", stderr);
 	}

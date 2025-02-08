@@ -27,7 +27,7 @@ const enum image_event ev) {
 }
 
 static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
-	struct wu_tree *meta = &infile->metadata;
+	struct wutree *meta = &infile->metadata;
 	bool all_ok = true;
 	for (uint32_t i = 0; i < desc->prop.len; ++i) {
 		struct pcf_property p;

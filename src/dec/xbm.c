@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: 0BSD
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/xbm.h"
 
-static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
+static void get_metadata(struct wutree *tree, const struct xbm_desc *desc) {
 	tree_bud_leaf_u(tree, "Version", (desc->type == xbm_x11) ? 11 : 10);
 	if (desc->name.len) {
 		tree_add_leaf_len(tree, "Source name", desc->name, NULL);
@@ -11,7 +11,7 @@ static void get_metadata(struct wu_tree *tree, const struct xbm_desc *desc) {
 		tree_add_leaf_len(tree, "Comment", desc->comment, NULL);
 	}
 	if (desc->has_hotspot) {
-		struct wu_tree *hot = tree_add_branch(tree, "Hot spot");
+		struct wutree *hot = tree_add_branch(tree, "Hot spot");
 		if (hot) {
 			tree_bud_leaf_d(hot, "X", desc->x_hot);
 			tree_bud_leaf_d(hot, "Y", desc->y_hot);

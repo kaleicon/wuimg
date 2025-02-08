@@ -2,7 +2,7 @@
 #include "rast_utils.h"
 #include "lib/maki.h"
 
-static void metadata(const void *restrict ptr, struct wu_tree *tree) {
+static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct maki_desc *desc = ptr;
 	tree_add_leaf_utf8(tree, "Version", maki_version_str(desc->version));
 	tree_add_leaf_len(tree, "Model", WUPTR_ARRAY(desc->model), "SHIFT-JIS");

@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: 0BSD
-#include <string.h>
-
 #include "misc/endian.h"
 
 static uint16_t swap16(const uint16_t val) {

@@ -5,7 +5,7 @@
 
 #include "../lib/tga.h"
 
-static void read_extension_area(struct wu_tree *tree,
+static void read_extension_area(struct wutree *tree,
 const struct tga_metadata *meta) {
 	tree = tree_add_branch(tree, "Extension area");
 	if (!tree) {
@@ -44,7 +44,7 @@ const struct tga_metadata *meta) {
 	}
 }
 
-static void read_tga_info(struct wu_tree *tree, const struct tga_desc *desc) {
+static void read_tga_info(struct wutree *tree, const struct tga_desc *desc) {
 	tree_add_leaf_utf8(tree, "Type", tga_type_str(desc->type));
 	tree_add_leaf_len(tree, "ID", wuptr_mem(desc->meta.id, desc->meta.id_len),
 		NULL);

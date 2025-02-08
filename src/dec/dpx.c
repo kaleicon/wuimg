@@ -3,7 +3,7 @@
 #include "misc/common.h"
 #include "wudefs.h"
 
-static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {
+static void read_television(const struct dpx_desc *desc, struct wutree *tree) {
 	const struct dpx_industry_television *t = &desc->industry.tv;
 	char buf[16];
 	const int w = snprintf(buf, sizeof(buf), "%x:%x:%x %x",
@@ -11,7 +11,7 @@ static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {
 		(t->time_code >> 8) & 0xff, t->time_code & 0xff);
 	tree_add_leaf_utf8_len(tree, "Time code", wuptr_mem(buf, (size_t)w));
 
-	const struct wu_tree_sap vid[] = {
+	const struct wutree_sap vid[] = {
 		{"Interlaced", {wu_leaf_bool, {.f = t->interlaced}}},
 		{"Field num.", {wu_leaf_unsigned, {.f = t->field}}},
 		{"Horizontal sampling rate", {wu_leaf_float, {.f = t->horz_rate}}},
@@ -23,11 +23,11 @@ static void read_television(const struct dpx_desc *desc, struct wu_tree *tree) {
 	tree_bud_leaves(tree, vid, ARRAY_LEN(vid));
 }
 
-static void read_film(const struct dpx_desc *desc, struct wu_tree *tree) {
+static void read_film(const struct dpx_desc *desc, struct wutree *tree) {
 	const struct dpx_industry_film *f = &desc->industry.film;
-	struct wu_tree *edge = tree_add_branch(tree, "Edge codes");
+	struct wutree *edge = tree_add_branch(tree, "Edge codes");
 	if (edge) {
-		const struct wu_tree_sap codes[] = {
+		const struct wutree_sap codes[] = {
 			{"Manufacturer", {wu_leaf_unsigned, {.u = f->manufacturer}}},
 			{"Type", {wu_leaf_unsigned, {.u = f->type}}},
 			{"Perf offset", {wu_leaf_unsigned, {.u = f->perf_offset}}},
@@ -38,7 +38,7 @@ static void read_film(const struct dpx_desc *desc, struct wu_tree *tree) {
 	}
 	tree_add_leaf_limit(tree, "Format", WUPTR_ARRAY(f->format), NULL);
 
-	const struct wu_tree_sap sap[] = {
+	const struct wutree_sap sap[] = {
 		{"Frame num.", {wu_leaf_unsigned, {.u = f->frame_num}}},
 		{"Total frames", {wu_leaf_unsigned, {.u = f->total_frames}}},
 		{"Held count", {wu_leaf_unsigned, {.u = f->held_count}}},
@@ -51,8 +51,8 @@ static void read_film(const struct dpx_desc *desc, struct wu_tree *tree) {
 	tree_add_leaf_len(tree, "Slate info", WUPTR_ARRAY(f->slate_info), NULL);
 }
 
-static void read_industry(const struct dpx_desc *desc, struct wu_tree *tree) {
-	struct wu_tree *b = tree_add_branch(tree, "Film");
+static void read_industry(const struct dpx_desc *desc, struct wutree *tree) {
+	struct wutree *b = tree_add_branch(tree, "Film");
 	if (b) {
 		read_film(desc, b);
 	}
@@ -63,9 +63,9 @@ static void read_industry(const struct dpx_desc *desc, struct wu_tree *tree) {
 	}
 }
 
-static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
+static void read_source(const struct dpx_desc *desc, struct wutree *tree) {
 	const struct dpx_generic_source *s = &desc->generic.src;
-	const struct wu_tree_sap sap[] = {
+	const struct wutree_sap sap[] = {
 		{"X", {wu_leaf_unsigned, {.u = s->x}}},
 		{"Y", {wu_leaf_unsigned, {.u = s->y}}},
 		{"X center", {wu_leaf_float, {.f = s->x_center}}},
@@ -81,9 +81,9 @@ static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
 	tree_add_leaf_len(tree, "Input serial number", WUPTR_ARRAY(s->input_sn),
 		NULL);
 
-	struct wu_tree *eros = tree_add_branch(tree, "Erosion");
+	struct wutree *eros = tree_add_branch(tree, "Erosion");
 	if (eros) {
-		const struct wu_tree_sap frame[] = {
+		const struct wutree_sap frame[] = {
 			{"Left", {wu_leaf_unsigned, {.u = s->erosion.left}}},
 			{"Right", {wu_leaf_unsigned, {.u = s->erosion.right}}},
 			{"Top", {wu_leaf_unsigned, {.u = s->erosion.top}}},
@@ -97,7 +97,7 @@ static void read_source(const struct dpx_desc *desc, struct wu_tree *tree) {
 	tree_add_leaf_utf8_len(tree, "Size", wuptr_mem(buf, (size_t)w));
 }
 
-static void read_file(const struct dpx_desc *desc, struct wu_tree *tree) {
+static void read_file(const struct dpx_desc *desc, struct wutree *tree) {
 	const struct dpx_generic_file *f = &desc->generic.file;
 	tree_add_leaf_len(tree, "Name", WUPTR_ARRAY(f->name), NULL);
 	tree_bud_leaf_time(tree, "Created", f->date);
@@ -106,8 +106,8 @@ static void read_file(const struct dpx_desc *desc, struct wu_tree *tree) {
 	tree_add_leaf_len(tree, "Copyright", WUPTR_ARRAY(f->copyright), NULL);
 }
 
-static void read_generic(const struct dpx_desc *desc, struct wu_tree *tree) {
-	struct wu_tree *b = tree_add_branch(tree, "File");
+static void read_generic(const struct dpx_desc *desc, struct wutree *tree) {
+	struct wutree *b = tree_add_branch(tree, "File");
 	if (b) {
 		read_file(desc, b);
 	}
@@ -117,8 +117,8 @@ static void read_generic(const struct dpx_desc *desc, struct wu_tree *tree) {
 	}
 }
 
-static void read_metadata(const struct dpx_desc *desc, struct wu_tree *tree) {
-	struct wu_tree *b = tree_add_branch(tree, "Generic");
+static void read_metadata(const struct dpx_desc *desc, struct wutree *tree) {
+	struct wutree *b = tree_add_branch(tree, "Generic");
 	if (b) {
 		read_generic(desc, b);
 	}

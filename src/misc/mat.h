@@ -3,6 +3,7 @@
 #define RASTER_MAT
 
 #include <stdbool.h>
+#include <stdio.h>
 
 struct mat3f {
 	float m[3*3];
