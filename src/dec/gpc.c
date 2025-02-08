@@ -48,10 +48,7 @@ const struct wu_conf *conf) {
 		return st;
 	}
 
-	if (desc->maker.len) {
-		tree_add_leaf_len(&infile->metadata, "Maker", desc->maker,
-			"SHIFT-JIS");
-	}
+	tree_add_leaf_len(&infile->metadata, "Maker", desc->maker, "SHIFT-JIS");
 	return alloc_sub_images(infile, desc->nb) ? wu_ok : wu_alloc_error;
 }
 

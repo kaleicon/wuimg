@@ -28,10 +28,8 @@ const struct eb_sff_sub *sub) {
 				tree_bud_leaf_d(meta, "Image", sub1->image);
 				tree_bud_leaf_bool(meta, "Shared palette",
 					sub1->shared_pal);
-				if (sub1->comm.len) {
-					tree_add_leaf_len(meta, "Comment",
-						sub1->comm, NULL);
-				}
+				tree_add_leaf_len(meta, "Comment", sub1->comm,
+					NULL);
 				break;
 			case 2:
 				;const struct eb_sff2_sub *sub2 = &sub->u.v2;
@@ -149,10 +147,8 @@ const struct wu_conf *conf) {
 					tree_bud_leaf_u(meta, "Palettes", desc.u.v2.pal_nr);
 					break;
 				}
-				if (desc.comm.len) {
-					tree_add_leaf_len(meta, "Comment",
-						desc.comm, NULL);
-				}
+				tree_add_leaf_len(meta, "Comment", desc.comm,
+					NULL);
 				return sff_loop(infile, conf, img, &desc);
 			}
 			return wu_alloc_error;
@@ -171,12 +167,9 @@ const struct wu_conf *conf) {
 		if (st == wu_ok) {
 			struct wutree *tree = &infile->metadata;
 			add_version(tree, desc.version);
-			if (desc.comment.len) {
-				tree_add_leaf_len(tree, "Comment", desc.comment, NULL);
-			}
-			if (desc.text.len) {
-				tree_add_leaf_len(tree, "Font definition", desc.text, NULL);
-			}
+			tree_add_leaf_len(tree, "Comment", desc.comment, NULL);
+			tree_add_leaf_len(tree, "Font definition", desc.text,
+				NULL);
 
 			struct image_context ctx = {.conf = *conf};
 			dec_src_mem(&ctx, desc.pcx, NULL, &pcx_fn);

@@ -4,18 +4,11 @@
 
 static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct pi_desc *desc = ptr;
-	if (desc->comm.len) {
-		tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT-JIS");
-	}
-	if (desc->dummy.len) {
-		tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
-	}
+	tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT-JIS");
+	tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
 	tree_add_leaf_len(tree, "Saver model", WUPTR_ARRAY(desc->saver.model),
 		"SHIFT-JIS");
-	if (desc->saver.data.len) {
-		tree_add_leaf_len(tree, "Saver data", desc->saver.data,
-			"SHIFT-JIS");
-	}
+	tree_add_leaf_len(tree, "Saver data", desc->saver.data, "SHIFT-JIS");
 	tree_bud_leaf_u(tree, "Depth", desc->depth);
 }
 

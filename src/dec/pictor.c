@@ -10,15 +10,8 @@ static void metadata(const void *restrict ptr, struct wutree *tree) {
 	tree_bud_leaf_u(tree, "Planes", desc->planes);
 	tree_bud_leaf_u(tree, "Depth", desc->depth);
 
-	const char *mode = pictor_video_mode(desc);
-	if (mode) {
-		tree_add_leaf_utf8(tree, "Video mode", mode);
-	}
-
-	const char *paltype = pictor_palette_str(desc->pal_type);
-	if (paltype) {
-		tree_add_leaf_utf8(tree, "Palette type", paltype);
-	}
+	tree_add_leaf_utf8(tree, "Video mode", pictor_video_mode(desc));
+	tree_add_leaf_utf8(tree, "Palette type", pictor_palette_str(desc->pal_type));
 }
 
 static size_t dec(const void *restrict ptr, struct wuimg *img) {

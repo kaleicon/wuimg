@@ -26,9 +26,7 @@ static void meta(const void *restrict ptr, struct wutree *meta) {
 			{"Border width", {wu_leaf_unsigned, {.u = desc->win.border_w}}},
 		};
 		tree_bud_leaves(win, w, ARRAY_LEN(w));
-		if (desc->win.name.len) {
-			tree_add_leaf_len(win, "Name", wuptr_wustr(desc->win.name), NULL);
-		}
+		tree_add_leaf_len(win, "Name", wuptr_wustr(desc->win.name), NULL);
 	}
 }
 

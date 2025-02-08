@@ -4,12 +4,8 @@
 
 static void get_metadata(struct wutree *tree, const struct xbm_desc *desc) {
 	tree_bud_leaf_u(tree, "Version", (desc->type == xbm_x11) ? 11 : 10);
-	if (desc->name.len) {
-		tree_add_leaf_len(tree, "Source name", desc->name, NULL);
-	}
-	if (desc->comment.len) {
-		tree_add_leaf_len(tree, "Comment", desc->comment, NULL);
-	}
+	tree_add_leaf_len(tree, "Source name", desc->name, NULL);
+	tree_add_leaf_len(tree, "Comment", desc->comment, NULL);
 	if (desc->has_hotspot) {
 		struct wutree *hot = tree_add_branch(tree, "Hot spot");
 		if (hot) {

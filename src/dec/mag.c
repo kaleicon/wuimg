@@ -4,7 +4,7 @@
 
 static void metadata(const void *restrict ptr, struct wutree *tree) {
 	const struct mag_desc *desc = ptr;
-	tree_add_leaf_limit(tree, "Model", WUPTR_ARRAY(desc->model), "SHIFT-JIS");
+	tree_add_leaf_len(tree, "Model", WUPTR_ARRAY(desc->model), "SHIFT-JIS");
 	tree_add_leaf_utf8(tree, "Code", mag_model_code_str(desc->code));
 	if (desc->code == mag_model_msx) {
 		tree_add_leaf_utf8(tree, "MSX Screen mode",
@@ -13,12 +13,8 @@ static void metadata(const void *restrict ptr, struct wutree *tree) {
 	}
 	tree_add_leaf_utf8(tree, "Screen mode",
 		mag_screen_mode_str(desc->screen_mode));
-	if (desc->comm.len) {
-		tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT_JIS");
-	}
-	if (desc->dummy.len) {
-		tree_add_leaf_len(tree, "Comment", desc->dummy, NULL);
-	}
+	tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT_JIS");
+	tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
 }
 
 static void cleanup(struct image_file *infile) {

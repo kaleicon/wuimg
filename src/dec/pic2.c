@@ -4,9 +4,7 @@
 
 static void add_str(const char *name, const struct wuptr value,
 struct wutree *tree) {
-	if (value.len) {
-		tree_add_leaf_len(tree, name, value, "SHIFT_JIS");
-	}
+	tree_add_leaf_len(tree, name, value, "SHIFT_JIS");
 }
 
 static void read_metadata(const struct pic2_desc *desc, struct wutree *tree) {

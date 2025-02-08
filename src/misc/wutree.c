@@ -171,6 +171,9 @@ struct wustr value, const bool is_utf8) {
 
 bool tree_add_leaf_utf8_len(struct wutree *par, const char *name,
 const struct wuptr value) {
+	if (value.len == 0) {
+		return false;
+	}
 	return add_leaf_copy(par, name, value, true);
 }
 
@@ -187,6 +190,9 @@ const char *restrict value) {
 
 bool tree_add_leaf_len(struct wutree *par, const char *restrict name,
 const struct wuptr value, const char *restrict encoding) {
+	if (value.len == 0) {
+		return false;
+	}
 	struct wustr utf;
 	switch (utf8_convert((const char *)value.ptr, value.len, &utf, encoding)) {
 	case trit_true:

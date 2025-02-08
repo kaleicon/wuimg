@@ -18,7 +18,7 @@ const char * pictor_palette_str(enum pictor_palette_type type) {
 	case pictor_vga_palette:
 	case pictor_vga_too_i_think: return "VGA";
 	}
-	return NULL;
+	return "???";
 }
 
 const char * pictor_video_mode(const struct pictor_desc *desc) {
@@ -44,7 +44,7 @@ const char * pictor_video_mode(const struct pictor_desc *desc) {
 	case 'N': return "EGA 720x348x16 (Hercules InColor)";
 	case 'O': return "VGA 640x480x2";
 	}
-	return NULL;
+	return "???";
 }
 
 static void pictor_interleave(const struct pictor_desc *desc,
