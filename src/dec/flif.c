@@ -95,17 +95,12 @@ const struct wu_conf *wuconf, struct flif_state *ds) {
 
 	const size_t nr = flif_decoder_num_images(ds->dec);
 	if (nr > 1) {
-		struct image_frames *f = wuimg_frames_init(img, nr);
-		if (!f) {
+		if (!wuimg_frames_init(img, nr)) {
 			return wu_alloc_error;
 		}
-		for (size_t i = 0; i < f->nr; ++i) {
-			f->f[i] = (struct frame_info) {
-				.w = img->w,
-				.h = img->h,
-				.sec = (float)flif_image_get_frame_delay(frame)
-					/ 1000,
-			};
+		for (size_t i = 0; i < nr; ++i) {
+			wuimg_frame_set(img, i, 0, 0, img->w, img->h,
+				flif_image_get_frame_delay(frame), 1000, true);
 		}
 	}
 

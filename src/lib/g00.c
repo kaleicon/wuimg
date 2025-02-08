@@ -181,22 +181,22 @@ const size_t written, const uint8_t *buf) {
 			if ((const void *)rast >= data_end) {
 				break;
 			}
-			const struct frame_info fr = {
+			const struct compost reg = {
 				.x = xstart + buf_endian16(block, little_endian),
 				.y = ystart + buf_endian16(block + 2, little_endian),
 				.w = buf_endian16(block + 6, little_endian),
 				.h = buf_endian16(block + 8, little_endian),
 			};
-			if (!compost_bounds_check(img->w, img->h, &fr)) {
+			if (!compost_bounds_check(img->w, img->h, &reg)) {
 				continue;
 			}
 
-			block = rast + fr.w * fr.h * 4;
+			block = rast + reg.w * reg.h * 4;
 			if ((const void *)block > data_end) { // Incomplete raster
 				break;
 			}
 
-			compost_overwrite(img->data, img->w, 4, rast, &fr);
+			compost_overwrite(img->data, img->w, 4, rast, &reg);
 			++composted;
 		}
 	}

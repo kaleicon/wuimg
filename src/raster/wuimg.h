@@ -91,6 +91,14 @@ enum image_mode {
 	image_mode_bitfield,
 };
 
+struct frame_info {
+	struct compost reg;
+	struct frame_time {
+		uint32_t num, den;
+	} sec;
+	bool keyframe;
+};
+
 struct image_frames {
 	size_t nr;
 	struct frame_info f[];
@@ -178,7 +186,7 @@ struct palette * wuimg_palette_init(struct wuimg *img);
 int wuimg_frame_prev_keyframe(struct wuimg *img, int current, int i);
 
 bool wuimg_frame_set(struct wuimg *img, size_t i, size_t x, size_t y, size_t w,
-size_t h, long sec_num, long sec_den, bool opaque);
+size_t h, uint32_t sec_num, uint32_t sec_den, bool independent);
 
 size_t wuimg_frames_nr(const struct wuimg *img);
 

@@ -53,19 +53,28 @@ struct write_writer *writer) {
 	return err_msg;
 }
 
-static const size_t SUFFIX_SPACE = sizeof(int)*3*2 + 8 + 4;
+static const size_t SUFFIX_SPACE = sizeof(int)*3*2 // index and frame number
+	+ sizeof(uint32_t)*3*2 // frame time numerator and denominator
+	+ 5 // delimiters and extension dot
+	+ 3 // extension
+	+ 1; // ending nul
 
 static FILE * create_file(struct write_path *path, const struct wu_state *state,
-const bool overwrite, const bool anim) {
+const bool overwrite, const struct image_frames *frames) {
 	const char ext[] = "pam";
 	char *suffix = (char *)path->file.str + path->name_base;
 	const size_t rem = SUFFIX_SPACE;
 
 	const int prec = 5;
 	int w;
-	if (anim) {
-		w = snprintf(suffix, rem, "_%.*d:%.*d.%s", prec, state->idx,
-			prec, state->frame, ext);
+	if (frames) {
+		const struct frame_time sec = frames->f[state->frame].sec;
+		w = snprintf(suffix, rem,
+			"_%.*d:%.*d:%" PRIu32 ":%" PRIu32 ".%s",
+			prec, state->idx,
+			prec, state->frame,
+			sec.num, sec.den,
+			ext);
 	} else if (path->with_idx) {
 		w = snprintf(suffix, rem, "_%.*d.%s", prec, state->idx, ext);
 	} else {
@@ -220,9 +229,15 @@ const int len, char **names, const struct wu_conf *conf) {
 }
 
 const char write_description[] =
-	"\tConvert each FILE to FILE(_sub#:frame#).pam, with sub-images\n"
-	"\tand animations frames on separate files. Output names are\n"
-	"\twritten to stdout.\n";
+	"\tConvert each FILE to FILE[_sub:frame:num:den].pam, with sub-images\n"
+	"\tand animation frames on separate files. Output names are written\n"
+	"\tto stdout.\n"
+	"\tFor images with multiple sub-images, output names contain the\n"
+	"\tsub-image index.\n"
+	"\tWhen a sub-image is an animation, name additionally contains the\n"
+	"\tframe index, then the frame duration in seconds expressed as\n"
+	"\tnumerator and denominator.\n"
+;
 
 const char write_switches[] =
 	"\t-d OUTDIR\n"

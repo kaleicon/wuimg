@@ -6,22 +6,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
-struct frame_info {
+struct compost {
 	size_t x, y;
 	size_t w, h;
-	float sec;
-	bool keyframe;
 };
 
 void compost_alpha_blend(void *restrict dst, size_t w,
-const void *restrict src, const struct frame_info *fr);
+const void *restrict src, const struct compost *reg);
 
 void compost_overwrite(void *restrict dst, size_t w, uint8_t ch,
-const void *restrict src, const struct frame_info *fr);
+const void *restrict src, const struct compost *reg);
 
 void compost_clear(void *restrict dst, size_t w, uint8_t ch, int c,
-const struct frame_info *fr);
+const struct compost *reg);
 
-bool compost_bounds_check(size_t w, size_t h, const struct frame_info *fr);
+bool compost_bounds_check(size_t w, size_t h, const struct compost *reg);
 
 #endif /* ANIM_COMMON */

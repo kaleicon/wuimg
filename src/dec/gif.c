@@ -97,7 +97,7 @@ const unsigned char ch, const int alpha_idx) {
 }
 
 static void compost_gif_frame(struct wuimg *img,
-const struct frame_info *geom, const GifByteType *restrict raster,
+const struct compost *geom, const GifByteType *restrict raster,
 const struct palette *palette, const int trans) {
 	const unsigned char ch = img->channels;
 
@@ -119,8 +119,8 @@ const ColorMapObject *gif_map, const int alpha_idx) {
 	}
 }
 
-static struct frame_info get_frame(const struct GifImageDesc *desc) {
-	return (struct frame_info) {
+static struct compost get_region(const struct GifImageDesc *desc) {
+	return (struct compost) {
 		.x = (size_t)desc->Left, .y = (size_t)desc->Top,
 		.w = (size_t)desc->Width, .h = (size_t)desc->Height,
 	};
@@ -159,7 +159,7 @@ static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds) {
 		case DISPOSE_BACKGROUND:
 			;const SavedImage *prev_image = ds->gif_file->SavedImages
 				+ ds->idx - 1;
-			const struct frame_info prev = get_frame(
+			const struct compost prev = get_region(
 				&prev_image->ImageDesc);
 			compost_clear(img->data, img->w, img->channels, fill,
 				&prev);
@@ -175,7 +175,7 @@ static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds) {
 
 	const SavedImage *gif_image = ds->gif_file->SavedImages + ds->idx;
 	const GifImageDesc *desc = &gif_image->ImageDesc;
-	const struct frame_info dt = get_frame(desc);
+	const struct compost reg = get_region(desc);
 	struct palette *pal;
 	if (img->mode == image_mode_palette) {
 		pal = img->u.palette;
@@ -185,7 +185,7 @@ static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds) {
 	} else {
 		pal = &ds->global_pal;
 	}
-	compost_gif_frame(img, &dt, gif_image->RasterBits, pal, trans);
+	compost_gif_frame(img, &reg, gif_image->RasterBits, pal, trans);
 
 	++ds->idx;
 	return wu_ok;
@@ -261,7 +261,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 			gcb->UserInputFlag = 0;
 			gcb->DelayTime = default_delay;
 			gcb->TransparentColor = NO_TRANSPARENT_COLOR;
-		} else if (gcb->DelayTime == 0) {// && gcb->UserInputFlag == 0) {
+		} else if (gcb->DelayTime <= 0) {// && gcb->UserInputFlag == 0) {
 			gcb->DelayTime = default_delay;
 		}
 
@@ -286,7 +286,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 
 		const bool valid_frame = wuimg_frame_set(img, i,
 			x, y, w, h,
-			gcb->DelayTime, 100,
+			(uint32_t)gcb->DelayTime, 100,
 			gcb->TransparentColor == NO_TRANSPARENT_COLOR);
 		if (!valid_frame) {
 			return wu_invalid_header;
@@ -341,7 +341,7 @@ const struct wu_conf *wuconf) {
 	img->channels = 4;
 	img->bitdepth = 8;
 	if (gif_file->AspectByte) {
-		img->ratio = (gif_file->AspectByte + 15.0f)/64.0f;
+		wuimg_aspect_ratio(img, gif_file->AspectByte + 15, 64);
 	}
 
 	int pal_num = 0;

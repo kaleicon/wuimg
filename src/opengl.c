@@ -467,26 +467,26 @@ const void *data) {
 }
 
 static bool subtex_upload(struct gl_context *context, const struct wuimg *img,
-const struct gl_upload_params *params, const struct frame_info *frame) {
+const struct gl_upload_params *params, const struct compost *region) {
 	gl_alignment(DEFAULT_ALIGN);
-	size_t w = frame->w * img->channels;
+	size_t w = region->w * img->channels;
 	size_t full_w = img->w * img->channels;
 
 	const size_t instride = strip_length(full_w, img->bitdepth, img->align_sh);
 	const size_t outstride = strip_length(w, img->bitdepth, DEFAULT_ALIGN);
 	const size_t outlen = strip_base(w, img->bitdepth);
 
-	size_t x_off = strip_base(frame->x * img->channels, img->bitdepth);
-	const uint8_t *data = img->data + x_off + instride * frame->y;
+	size_t x_off = strip_base(region->x * img->channels, img->bitdepth);
+	const uint8_t *data = img->data + x_off + instride * region->y;
 	uint8_t *map = map_unpack_buffer(context->pixel_unpack_buf,
-		outstride * frame->h, GL_WRITE_ONLY);
+		outstride * region->h, GL_WRITE_ONLY);
 	if (map) {
-		for (size_t y = 0; y < frame->h; ++y) {
+		for (size_t y = 0; y < region->h; ++y) {
 			memcpy(map + outstride*y, data + instride*y, outlen);
 		}
 		glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-		tex_sub2d((GLint)frame->x, (GLint)frame->y, (GLsizei)frame->w,
-			(GLsizei)frame->h, params->tex.fmt, params->tex.type, 0);
+		tex_sub2d((GLint)region->x, (GLint)region->y, (GLsizei)region->w,
+			(GLsizei)region->h, params->tex.fmt, params->tex.type, 0);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
 	const GLenum err = glGetError();
@@ -548,7 +548,7 @@ const struct wuimg *img, const struct gl_upload_params *params) {
 }
 
 static bool mode_upload(struct gl_context *context, const struct wuimg *img,
-const struct gl_upload_params *params, const struct frame_info *frame) {
+const struct gl_upload_params *params, const struct compost *region) {
 	switch (img->mode) {
 	case image_mode_palette:
 		tex_active(gl_tex_pal);
@@ -558,14 +558,15 @@ const struct gl_upload_params *params, const struct frame_info *frame) {
 		tex_active(gl_tex_img);
 		// fallthrough
 	case image_mode_raw:
-		if (frame) {
-			if (!frame->w || !frame->h) {
+		if (region) {
+			if (!region->w || !region->h) {
 				return true;
 			}
 			if (params->op == op_noop) {
 				switch (img->bitdepth) {
 				case 8: case 16: case 32:
-					return subtex_upload(context, img, params, frame);
+					return subtex_upload(context, img,
+						params, region);
 				}
 			}
 		}
@@ -895,10 +896,10 @@ const struct wu_state *state) {
 		fatal_bug(__func__, errmsg);
 		return false;
 	}
-	const struct frame_info *frame = img->frames
-		? img->frames->f + state->frame : NULL;
+	const struct compost *region = img->frames
+		? &img->frames->f[state->frame].reg : NULL;
 	context->update = gl_update_redraw;
-	return mode_upload(context, img, &params, frame);
+	return mode_upload(context, img, &params, region);
 }
 
 void gl_reader_close(struct gl_reader_context *reader) {

@@ -151,7 +151,7 @@ static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 				 * to get the duration of a tick. */
 				const uint32_t num = ds->info.animation.tps_numerator;
 				const uint32_t den = ds->info.animation.tps_denominator;
-				const long duration = den*header.duration;
+				const uint32_t duration = den*header.duration;
 				wuimg_frame_set(img, (size_t)ds->idx, 0, 0,
 					img->w, img->h, duration, num, false);
 			}

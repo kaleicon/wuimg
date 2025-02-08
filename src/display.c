@@ -141,7 +141,9 @@ const enum image_event evs, const bool allow_cycle) {
 static double min_time(const struct wuimg *img, const struct wu_state *state) {
 	struct image_frames *frames = img->frames;
 	if (frames) {
-		return fmax(frames->f[state->frame].sec, 1.0 / 30);
+		const struct frame_time *time = &frames->f[state->frame].sec;
+		const double secs = (double)time->num / (double)time->den;
+		return fmax(secs, 1.0 / 30);
 	}
 	return INFINITY;
 }
