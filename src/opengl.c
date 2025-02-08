@@ -876,6 +876,7 @@ const struct wuimg *img, const enum heed_ratio heed) {
 	context->tex.rotate = img->rotate;
 	context->tex.mirror = img->mirror;
 	context->tex.alpha = img->alpha;
+	context->tex.shown_frame = img->frames ? img->frames->current : 0;
 	context->tex.ratio = get_pixel_ratio(img, heed);
 	context->update = gl_update_matrix;
 	set_alpha_ops(context);
@@ -896,9 +897,13 @@ const struct wu_state *state) {
 		fatal_bug(__func__, errmsg);
 		return false;
 	}
-	const struct compost *region = img->frames
-		? &img->frames->f[state->frame].reg : NULL;
+
+	const struct compost *region = NULL;
+	if (img->frames && context->tex.shown_frame + 1 == state->frame) {
+		region = &img->frames->f[state->frame].reg;
+	}
 	context->update = gl_update_redraw;
+	context->tex.shown_frame = state->frame;
 	return mode_upload(context, img, &params, region);
 }
 

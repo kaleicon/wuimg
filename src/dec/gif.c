@@ -19,7 +19,6 @@ struct gif_state {
 	GraphicsControlBlock *gcb;
 	size_t image_size;
 	struct gif_disposal_prev previous;
-	int idx;
 	bool opaque_first_frame;
 	struct palette global_pal;
 	struct palette local_pal;
@@ -130,11 +129,12 @@ static bool should_cache_prev(struct gif_state *ds) {
 	return ds->previous.num_of_disposals > 1 || !ds->previous.written;
 }
 
-static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds) {
-	const GraphicsControlBlock *gcb = ds->gcb + ds->idx;
+static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds,
+const int idx) {
+	const GraphicsControlBlock *gcb = ds->gcb + idx;
 	const int trans = gcb->TransparentColor;
 	const int fill = (img->mode == image_mode_palette) ? trans : 0;
-	if (ds->idx == 0) {
+	if (idx == 0) {
 		if (!ds->opaque_first_frame) {
 			memset(img->data, fill, ds->image_size);
 		}
@@ -158,7 +158,7 @@ static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds) {
 		switch (gcb[-1].DisposalMode) {
 		case DISPOSE_BACKGROUND:
 			;const SavedImage *prev_image = ds->gif_file->SavedImages
-				+ ds->idx - 1;
+				+ idx - 1;
 			const struct compost prev = get_region(
 				&prev_image->ImageDesc);
 			compost_clear(img->data, img->w, img->channels, fill,
@@ -173,7 +173,7 @@ static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds) {
 		}
 	}
 
-	const SavedImage *gif_image = ds->gif_file->SavedImages + ds->idx;
+	const SavedImage *gif_image = ds->gif_file->SavedImages + idx;
 	const GifImageDesc *desc = &gif_image->ImageDesc;
 	const struct compost reg = get_region(desc);
 	struct palette *pal;
@@ -186,8 +186,6 @@ static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds) {
 		pal = &ds->global_pal;
 	}
 	compost_gif_frame(img, &reg, gif_image->RasterBits, pal, trans);
-
-	++ds->idx;
 	return wu_ok;
 }
 
@@ -200,15 +198,16 @@ const enum image_event event) {
 	}
 	struct gif_state *ds = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
-	if (ds->idx != state->frame) {
-		ds->idx = wuimg_frame_prev_keyframe(img, ds->idx, state->frame);
-	}
-	while (ds->idx <= state->frame) {
-		const enum wu_error err = render_frame(infile->sub_img, ds);
+	int idx = wuimg_frame_prev_nearest(img, img->frames->current,
+		state->frame);
+	while (idx <= state->frame) {
+		const enum wu_error err = render_frame(infile->sub_img, ds, idx);
+		++idx;
 		if (err != wu_ok) {
 			return err;
 		}
 	}
+	img->frames->current = state->frame;
 	return wu_ok;
 }
 
@@ -390,7 +389,7 @@ const struct wu_conf *wuconf) {
 			return wu_alloc_error;
 		}
 	}
-	return render_frame(img, ds);
+	return render_frame(img, ds, 0);
 }
 
 const struct image_fn gif_fn = {

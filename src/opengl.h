@@ -53,6 +53,7 @@ struct gl_context {
 		bool no_transform:1;
 		bool mirror:1;
 		uint8_t rotate;
+		int shown_frame;
 		float fit_zoom;
 		float ratio;
 		float w, h;

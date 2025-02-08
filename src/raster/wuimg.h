@@ -101,6 +101,7 @@ struct frame_info {
 
 struct image_frames {
 	size_t nr;
+	int current; // Frame currently rendered in .data
 	struct frame_info f[];
 };
 
@@ -183,7 +184,9 @@ struct palette * wuimg_palette_set(struct wuimg *img, struct palette *pal);
 struct palette * wuimg_palette_init(struct wuimg *img);
 
 
-int wuimg_frame_prev_keyframe(struct wuimg *img, int current, int i);
+/* With `shown` as the currently shown frame, get the closest starting point
+ * needed to render frame `i`. */
+int wuimg_frame_prev_nearest(struct wuimg *img, int shown, int i);
 
 bool wuimg_frame_set(struct wuimg *img, size_t i, size_t x, size_t y, size_t w,
 size_t h, uint32_t sec_num, uint32_t sec_den, bool independent);

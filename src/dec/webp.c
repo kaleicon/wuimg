@@ -28,8 +28,6 @@ struct webp_state {
 	WebPData data;
 	WebPDecoderConfig config;
 
-	int idx;
-
 	enum render_type {
 		webp_single = 0,
 		webp_homegrown,
@@ -60,14 +58,16 @@ static void webp_end(struct image_file *infile) {
 	WebPFreeDecBuffer(&ds->config.output);
 }
 
-static void rewind_webp_state(struct webp_state *ds, struct wuimg *img,
-const int frame) {
+static int rewind_webp_state(struct webp_state *ds, struct wuimg *img,
+const int current, const int frame) {
 	if (ds->anim_render == webp_library) {
-		WebPAnimDecoderReset(ds->anim.dec);
-		ds->idx = 0;
-	} else {
-		ds->idx = wuimg_frame_prev_keyframe(img, ds->idx, frame);
+		if (frame < current) {
+			WebPAnimDecoderReset(ds->anim.dec);
+			return 0;
+		}
+		return current + 1;
 	}
+	return wuimg_frame_prev_nearest(img, current, frame);
 }
 
 static enum wu_error map_status(VP8StatusCode status, const char **msg) {
@@ -121,16 +121,15 @@ struct webp_state *ds) {
 	}
 
 	img->data = buf;
-	++ds->idx;
 	return wu_ok;
 }
 
 static enum wu_error homegrown_dec_frame(struct wuimg *img,
-struct webp_state *ds) {
+struct webp_state *ds, const int idx) {
 	struct homegrown_anim *hanim = &ds->anim.h;
-	WebPDemuxGetFrame(hanim->dmux, ds->idx + 1, &hanim->iter);
+	WebPDemuxGetFrame(hanim->dmux, idx + 1, &hanim->iter);
 
-	const struct frame_info *frame = img->frames->f + ds->idx;
+	const struct frame_info *frame = img->frames->f + idx;
 	const int stride = hanim->iter.width * img->channels;
 	const size_t buf_size = (size_t)(stride * hanim->iter.height);
 	ds->config.output.colorspace = MODE_BGRA;
@@ -154,7 +153,7 @@ struct webp_state *ds) {
 	}
 
 	if (!frame->keyframe) {
-		if (ds->idx == 0) {
+		if (idx == 0) {
 			memset(img->data, 0, wuimg_size(img));
 		} else {
 			switch (hanim->dispose.method) {
@@ -173,41 +172,37 @@ struct webp_state *ds) {
 			hanim->dispose.bg_geom = &frame->reg;
 		}
 	}
-	++ds->idx;
 	return wu_ok;
 }
 
 static enum wu_error webp_dec_frame(struct wuimg *img,
-struct webp_state *ds) {
+struct webp_state *ds, const int idx) {
 	if (ds->anim_render == webp_homegrown) {
-		return homegrown_dec_frame(img, ds);
+		return homegrown_dec_frame(img, ds, idx);
 	}
 	return libwebp_dec_frame(img, ds);
-}
-
-static enum wu_error webp_frame_iter(struct image_file *infile,
-struct wu_state *state) {
-	struct webp_state *ds = infile->dec_state;
-	struct wuimg *img = infile->sub_img;
-	if (ds->idx > state->frame) {
-		rewind_webp_state(ds, img, state->frame);
-	}
-	while (ds->idx <= state->frame) {
-		const enum wu_error err = webp_dec_frame(img, ds);
-		if (err != wu_ok) {
-			return err;
-		}
-	}
-	return wu_ok;
 }
 
 static enum wu_error webp_callback(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state,
 const enum image_event event) {
 	(void)wuconf;
-	return (event == ev_frame)
-		? webp_frame_iter(infile, state)
-		: wu_no_change;
+	if (event != ev_frame) {
+		return wu_no_change;
+	}
+
+	struct webp_state *ds = infile->dec_state;
+	struct wuimg *img = infile->sub_img;
+	int idx = rewind_webp_state(ds, img, img->frames->current, state->frame);
+	while (idx <= state->frame) {
+		const enum wu_error err = webp_dec_frame(img, ds, idx);
+		++idx;
+		if (err != wu_ok) {
+			return err;
+		}
+	}
+	img->frames->current = state->frame;
+	return wu_ok;
 }
 
 static enum wu_error gather_info(struct wuimg *img, WebPIterator *iter) {
@@ -423,7 +418,7 @@ const struct wu_conf *wuconf) {
 			? webp_homegrown : webp_library;
 		err = anim_setup(img, ds, &infile->bg);
 		if (err == wu_ok) {
-			err = webp_dec_frame(img, ds);
+			err = webp_dec_frame(img, ds, 0);
 		}
 	} else {
 		status = single_image_decode(img, ds);

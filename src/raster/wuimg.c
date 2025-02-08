@@ -372,8 +372,9 @@ struct palette * wuimg_palette_init(struct wuimg *img) {
 	return set_img_mode(img, image_mode_palette, palette_new());
 }
 
-int wuimg_frame_prev_keyframe(struct wuimg *img, const int current, int i) {
-	const int limit = current <= i ? current : 0;
+
+int wuimg_frame_prev_nearest(struct wuimg *img, const int shown, int i) {
+	const int limit = i < shown ? 0 : shown + 1;
 	while (i > limit && !img->frames->f[i].keyframe) {
 		--i;
 	}
