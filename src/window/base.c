@@ -70,7 +70,7 @@ const double y) {
 		if (isnormal(x_diff) || isnormal(y_diff)) {
 			state->x_offset += x_diff;
 			state->y_offset += y_diff;
-			pub->event.image = ev_move;
+			pub->event.image = ev_transform;
 		}
 	}
 	win->cur.x.pos = (float)x;

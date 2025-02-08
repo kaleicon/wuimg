@@ -27,12 +27,8 @@ enum image_event {
 	ev_none = 0,
 	ev_subcycle = 1,
 	ev_frame = 1 << 1,
-	ev_upscale = 1 << 2,
-	ev_downscale = 1 << 3,
-	ev_scale = ev_upscale | ev_downscale,
-	ev_move = 1 << 4,
-	ev_mirrot = 1 << 5,
-	ev_time = 1 << 6,
+	ev_time = 1 << 2,
+	ev_transform = 1 << 3,
 };
 
 struct image_file {
@@ -95,8 +91,6 @@ void image_file_free_if_single(struct image_file *file);
 
 void image_file_print(const struct image_file *file, int verbosity,
 bool unloaded_too);
-
-void image_file_normalize(struct image_file *file);
 
 enum wu_error image_file_total_decoded(struct image_file *file, size_t o);
 

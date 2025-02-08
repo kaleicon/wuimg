@@ -41,13 +41,9 @@ enum image_event event) {
 		break;
 	}
 	const struct fmt_desc *desc = &image->desc;
-	const enum wu_error status = desc->is_auto
+	return desc->is_auto
 		? auto_load(infile, desc->dec.desc)
 		: desc->dec.fn->callback(infile, &image->conf, state, event);
-	if (status == wu_ok) {
-		image_file_normalize(infile);
-	}
-	return status;
 }
 
 static enum wu_error init_metadata(struct image_file *infile,
@@ -165,7 +161,10 @@ enum wu_error dec_decode(struct image_context *image) {
 			? auto_init(infile, conf, desc->dec.desc)
 			: desc->dec.fn->dec(infile, conf);
 		if (st == wu_ok) {
-			image_file_normalize(infile);
+			if (!infile->nr) {
+				fatal_bug(__func__,
+					"No sub-images despite `OK` code");
+			}
 			if (!infile->sub_img->data) {
 				st = dec_callback(image, ev_subcycle);
 				if (st == wu_no_change) {

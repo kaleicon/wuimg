@@ -177,7 +177,7 @@ const bool allow_cycle, const bool allow_delete) {
 				state->anim_playing = image_cur_is_anim(image);
 				state->time = 0;
 				evs = image_cur_events(image);
-			} else {
+			} else if (!(event->image & ev_transform)) {
 				subupload = true;
 			}
 

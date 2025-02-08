@@ -98,12 +98,6 @@ const bool unloaded_too) {
 	}
 }
 
-void image_file_normalize(struct image_file *file) {
-	if (!file->nr) {
-		fatal_bug("Bad image", "No sub-images contained!");
-	}
-}
-
 enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) {
 	if (!o) {
 		return wu_decoding_error;
@@ -150,21 +144,20 @@ enum image_event image_cur_events(const struct image_context *image) {
 	const struct wuimg *img = image_cur_sub_img(image);
 	return ev_subcycle
 		| (img->evolving ? ev_time : 0)
-		| (img->frames ? ev_frame : 0)
-		| (img->scalable ? ev_scale | ev_mirrot | ev_move : 0);
+		| (img->scalable ? ev_transform : 0)
+		| (img->frames ? ev_frame : 0);
 }
 
 enum image_event image_zoom(struct image_context *image, float new_zoom) {
 	const float max = 1 << WU_SCALING_POW;
 	const float min = 1.0f/max;
 
-	enum image_event ev = 0;
 	new_zoom = fclampf(new_zoom, min, max);
 	if (new_zoom != image->state.zoom) {
-		ev = (new_zoom > image->state.zoom) ? ev_upscale : ev_downscale;
 		image->state.zoom = new_zoom;
+		return ev_transform;
 	}
-	return ev;
+	return 0;
 }
 
 enum image_event image_sub_cycle(struct image_context *image, int steps) {

@@ -94,40 +94,40 @@ const int code, const float dt, const bool shift) {
 
 	// Image movement
 	case 'H': // Left
-		event->image = ev_move;
+		event->image = ev_transform;
 		state->x_offset += dt / state->zoom;
 		return repeat_smooth;
 	case 'J': // Down
-		event->image = ev_move;
+		event->image = ev_transform;
 		state->y_offset -= dt / state->zoom;
 		return repeat_smooth;
 	case 'K': // Up
-		event->image = ev_move;
+		event->image = ev_transform;
 		state->y_offset += dt / state->zoom;
 		return repeat_smooth;
 	case 'L': // Right
-		event->image = ev_move;
+		event->image = ev_transform;
 		state->x_offset -= dt / state->zoom;
 		return repeat_smooth;
 
 	// Rotation
 	case 'Z': // Counterclockwise
-		event->image = ev_mirrot;
-		state->rotate = (state->rotate - 1) & 3;
+		event->image = ev_transform;
+		state->rotate = (state->rotate - 1) & 0x03;
 		break;
 	case 'X': // Clockwise
-		event->image = ev_mirrot;
-		state->rotate = (state->rotate + 1) & 3;
+		event->image = ev_transform;
+		state->rotate = (state->rotate + 1) & 0x03;
 		break;
 
 	// Mirror
 	case 'I': // Horizontal
-		event->image = ev_mirrot;
+		event->image = ev_transform;
 		state->mirror = !state->mirror;
 		state->rotate = (state->rotate + 2) & 0x03;
 		break;
 	case 'O': // Vertical
-		event->image = ev_mirrot;
+		event->image = ev_transform;
 		state->mirror = !state->mirror;
 		break;
 
@@ -151,7 +151,6 @@ const int code, const float dt, const bool shift) {
 		const float fit = gl->tex.fit_zoom;
 		event->image = image_zoom(image,
 			(code == '0') ? fminf(1.0, fit) : fit);
-		event->image |= ev_move;
 		return repeat_none;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
