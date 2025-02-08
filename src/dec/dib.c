@@ -4,11 +4,7 @@
 
 static enum wu_error dib_common(struct image_file *infile,
 const struct wu_conf *wuconf, struct dib_desc *desc) {
-	struct wuimg *img = alloc_sub_images(infile, 1);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
+	struct wuimg *img = infile->sub_img;
 	const enum wu_error err = dib_parse_header(desc, img);
 	if (err != wu_ok) {
 		return err;
@@ -57,8 +53,8 @@ const struct wu_conf *wuconf) {
 	return decode_dib(infile, wuconf, false);
 }
 
-const struct image_fn bmp_fn = {.dec = bmp_dec};
-const struct image_fn dib_fn = {.dec = dib_dec};
+const struct image_fn bmp_fn = {.alloc_single = true, .dec = bmp_dec};
+const struct image_fn dib_fn = {.alloc_single = true, .dec = dib_dec};
 
 
 static void ico_end(struct image_file *infile) {
@@ -125,5 +121,9 @@ const struct wu_conf *wuconf) {
 	return st;
 }
 
-const struct image_fn bmz_fn = {.mmap = true, .dec = bmz_dec};
+const struct image_fn bmz_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.dec = bmz_dec,
+};
 #endif /* WU_ENABLE_BMZ */
