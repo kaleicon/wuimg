@@ -3,7 +3,8 @@
 #include "lib/qoi.h"
 
 static size_t dec(const void *restrict desc, struct wuimg *img) {
-	return qoi_decode(desc, img);
+	const struct mparser *mp = desc;
+	return qoi_decode(*mp, img);
 }
 static enum wu_error parse(void *restrict desc, struct wuimg *img) {
 	return qoi_parse(desc, img);

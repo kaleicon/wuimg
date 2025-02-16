@@ -5,7 +5,7 @@
 #include "raster/wuimg.h"
 #include "misc/mparser.h"
 
-size_t qoi_decode(const struct mparser *mp, struct wuimg *img);
+size_t qoi_decode(struct mparser mp, struct wuimg *img);
 
 enum wu_error qoi_parse(struct mparser *mp, struct wuimg *img);
 

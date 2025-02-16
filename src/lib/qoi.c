@@ -22,7 +22,7 @@ const struct pix_rgba8 cur) {
 	memcpy(seen + hash_pxl(cur), &cur, sizeof(cur));
 }
 
-size_t qoi_decode(const struct mparser *mp, struct wuimg *img) {
+size_t qoi_decode(struct mparser mp, struct wuimg *img) {
 	const size_t dst_len = wuimg_size(img);
 	// Add 1 byte of padding so we can use a faster 4-byte memcpy
 	img->data = malloc(dst_len + (bool)(img->channels == 3));
@@ -30,13 +30,23 @@ size_t qoi_decode(const struct mparser *mp, struct wuimg *img) {
 		return 0;
 	}
 
-	struct mparser mpcpy = *mp;
-	const struct wuptr src = mp_remaining(&mpcpy);
+	const struct wuptr src = mp_remaining(&mp);
 	struct pix_rgba8 seen[64] = {0};
 	size_t s = 0;
 	size_t d = 0;
 	struct pix_rgba8 cur = {0, 0, 0, 255};
-	while (d < dst_len && s < src.len) {
+
+	if (s < src.len) {
+		/* Cache initial color if the first instruction is a pixel run
+		https://github.com/phoboslab/qoi/issues/258
+		*/
+		const uint8_t c = src.ptr[s];
+		const uint8_t lo = qoi_op_run << 6;
+		if (c >= lo && c < (lo | qoi_op_rgb)) {
+			witness_pxl(seen, cur);
+		}
+	}
+	while (s < src.len) {
 		const uint8_t c = src.ptr[s];
 		++s;
 		const uint8_t arg = c & 0x3f;
@@ -63,11 +73,11 @@ size_t qoi_decode(const struct mparser *mp, struct wuimg *img) {
 			witness_pxl(seen, cur);
 			break;
 		case qoi_op_run:
-			;uint8_t ch;
 			switch (arg) {
+			uint8_t ch;
 			case qoi_op_rgb:
 				ch = 3;
-				if (s + ch > src.len) {
+				if (ch > src.len - s) {
 					return d;
 				}
 				memcpy(&cur, src.ptr + s, ch);
@@ -75,22 +85,26 @@ size_t qoi_decode(const struct mparser *mp, struct wuimg *img) {
 				break;
 			case qoi_op_rgba:
 				ch = 4;
-				if (s + ch > src.len) {
+				if (ch > src.len - s) {
 					return d;
 				}
 				memcpy(&cur, src.ptr + s, ch);
 				s += ch;
 				break;
 			default:
-				;const size_t run = arg + 1;
-				if (d + run*img->channels > dst_len) {
+				ch = img->channels;
+				const size_t run = arg + 1;
+				if (run*ch > dst_len - d) {
 					return d;
 				}
-				memwordset(img->data + d, &cur, img->channels, run);
-				d += run * img->channels;
+				memwordset(img->data + d, &cur, ch, run);
+				d += run * ch;
 				continue;
 			}
 			witness_pxl(seen, cur);
+			break;
+		}
+		if (d >= dst_len) {
 			break;
 		}
 		memcpy(img->data + d, &cur, 4);
