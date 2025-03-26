@@ -236,6 +236,14 @@ DEC_MAP = {
 		},
 	},
 
+	"hel": {
+		"hel": {
+			"desc": "Herahera Animation (へらへらアニメ, HEL)",
+			"ext": "hel",
+			"magic": b"he1\0" b"\x01\0\0\0",
+		},
+	},
+
 	"hg3": {
 		"hg3": {
 			"desc": "CatSystem engine image",

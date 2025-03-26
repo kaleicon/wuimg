@@ -10,6 +10,7 @@ fmt_map = {
 		'g00',
 		'gp4',
 		'gpc',
+		'hel',
 		'hg3',
 		'ilbm',
 		'mac',
