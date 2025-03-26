@@ -515,7 +515,7 @@ DEC_MAP = {
 	"spooky": {
 		"tre": {
 			"desc": "Spooky Sprites Run-Length Encoded",
-			"ext": "tre",
+			"ext": ("dta", "tre"),
 			"magic": b"tre1",
 		},
 
