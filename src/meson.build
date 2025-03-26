@@ -13,6 +13,7 @@ fmt_map = {
 		'hel',
 		'hg3',
 		'ilbm',
+		'kyg',
 		'mac',
 		'mag',
 		'maki',

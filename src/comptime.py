@@ -265,6 +265,14 @@ DEC_MAP = {
 		},
 	},
 
+	"kyg": {
+		"kyg": {
+			"desc": "Kyss graphics format (KYG)",
+			"ext": "kyg",
+			"magic": b"KYGformat ver.0.10\x0d\x0a",
+		},
+	},
+
 	"mac": {"mac": {"desc": "MacPaint", "match": ("mac", "pntg")}},
 
 	"mag": {
