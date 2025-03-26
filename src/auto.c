@@ -3,7 +3,7 @@
 #include "raster/fmt.h"
 #include "auto.h"
 
-#define AUTO_CSTR(arr) .size = (uint8_t)(sizeof(arr) - 1), .bytes = (const uint8_t *)arr
+#define AUTO_CSTR(arr) .size = (uint8_t)(sizeof(arr) - 1), .u.bytes = (const uint8_t *)arr
 
 #define AUTO_READ(rdesc) .rlen = (uint8_t)(ARRAY_LEN(rdesc)), .read = rdesc
 
@@ -64,6 +64,39 @@ const struct auto_desc hpicon_desc = {
 	.channels = 1, .bitdepth = 1,
 	.attr = pix_inverted, .endian = little_endian,
 	AUTO_READ(hpicon_read),
+};
+
+// InShape IIM
+static bool iim_depth(struct wuimg *img, const uint8_t *restrict src,
+const uint8_t len) {
+	(void)len;
+	switch (*src) {
+	case 0:
+		img->bitdepth = 1;
+		img->attr = pix_inverted;
+		return true;
+	case 1:
+		img->attr = pix_inverted;
+		return true;
+	case 4:
+		img->channels = 3;
+		return true;
+	case 5:
+		img->channels = 4;
+		img->layout = pix_argb;
+		return true;
+	}
+	return false;
+}
+static const struct auto_read iim_read[] = {
+	{auto_match, AUTO_CSTR("IS_IMAGE\0")},
+	{auto_fn, 3, .u.fn = iim_depth},
+	{'w', 2},
+	{'h', 2},
+};
+const struct auto_desc iim_desc = {
+	.channels = 1, .bitdepth = 8,
+	AUTO_READ(iim_read),
 };
 
 // Nokia Logo Manager
@@ -270,11 +303,16 @@ const struct auto_desc *desc) {
 			const struct auto_read *dr = desc->read + r;
 			switch (dr->dst) {
 			case auto_match:
-				if (memcmp(buf + pos, dr->bytes, dr->size)) {
+				if (memcmp(buf + pos, dr->u.bytes, dr->size)) {
 					return wu_invalid_header;
 				}
 				break;
 			case auto_skip:
+				break;
+			case auto_fn:
+				if (!dr->u.fn(img, buf + pos, dr->size)) {
+					return wu_invalid_header;
+				}
 				break;
 			case auto_width:
 				img->w = get_value(buf, pos, dr->size, desc->endian);

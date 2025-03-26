@@ -53,6 +53,11 @@ DEC_MAP = {
 				# they're always the same so match against them too
 				b"\x01\x00\x01\x00\x2c\x00\x20\x00",
 		},
+		"iim": {
+			"desc": "InShape IIM",
+			"ext": "iim",
+			"magic": b"IS_IMAGE\0",
+		},
 		"nlm": {
 			"desc": "Nokia Logo Manager",
 			"ext": "nlm",

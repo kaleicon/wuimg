@@ -8,14 +8,20 @@
 enum auto_dst {
 	auto_match = 0,
 	auto_skip,
+	auto_fn,
 	auto_width = 'w',
 	auto_height = 'h',
 };
 
+typedef bool (*auto_fn_t)(struct wuimg *img, const uint8_t *restrict src, uint8_t len);
+
 struct auto_read {
 	enum auto_dst dst:8;
 	uint8_t size;
-	const uint8_t *bytes;
+	union {
+		const uint8_t *bytes;
+		auto_fn_t fn;
+	} u;
 };
 
 struct auto_desc {
