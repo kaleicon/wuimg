@@ -139,6 +139,51 @@ const struct auto_desc indy_desc = {
 	.endian = big_endian,
 	AUTO_READ(indy_read),
 };
+// Rembrandt
+/* Program with documentation (in French):
+https://no-fragments.atari.org/no_fragments_04/archive/work/gfx/remb306b.zip
+ * TODO: Support comments and multiple images, once we find files that use them
+*/
+static const struct auto_read tcp_read[] = {
+	/* Rembrandt header:
+		Offset  Type    Name
+		0       char    ID[8]
+		8       u32     FileSize
+		12      u16     HeaderSize
+		14      u16     Version
+		16      u16     NumPictures
+		18
+	 * Picture header:
+		0       char    ID[4]
+		4       u32     RasterSize
+		8       u16     PictHeaderSize
+		10      u16     Width
+		12      u16     Height
+		14      u16     TransparentColor
+		16      u16     CrayonColor
+		18      u8      Compression
+		19      u8      HasPalette
+		20      u8      Overscan
+		21      u8      DoubleWidth
+		22      u8      DoubleHeight
+		23      char    Comment[175]
+		198
+	*/
+	{auto_match, AUTO_CSTR("TRUECOLR")},
+	{auto_skip, 4},
+	{auto_match, AUTO_CSTR("\x00\x12\x00\x01\x00\x01PICT")},
+	{auto_skip, 4},
+	{auto_match, AUTO_CSTR("\x00\xc6")},
+	{'w', 2},
+	{'h', 2},
+	{auto_skip, 0xc6 - 14},
+};
+const struct auto_desc tcp_desc = {
+	.channels = 1, .bitdepth = 16,
+	.layout = pix_bgra, .bitfield = 0x565,
+	.endian = big_endian,
+	AUTO_READ(tcp_read),
+};
 // Spooky Sprites TRP
 static const struct auto_read trp_read[] = {
 	{auto_match, AUTO_CSTR("tru?")},

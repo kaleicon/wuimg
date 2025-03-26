@@ -80,6 +80,11 @@ DEC_MAP = {
 			"ext": ("hgr", "tru"),
 			"magic": b"Indy",
 		},
+		"tcp": {
+			"desc": "Atari Rembrandt",
+			"ext": "tcp",
+			"magic": b"TRUECOLR",
+		},
 		"trp": {
 			"desc": "Spooky Sprites uncompressed",
 			"ext": ("trp", "tru"),
