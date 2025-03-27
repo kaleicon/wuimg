@@ -5,12 +5,12 @@
 cmsUInt32Number icc_fmt_colorspace(const uint8_t ch, const uint8_t bytedepth,
 const enum alpha_interpretation alpha, const uint8_t colorspace) {
 	const bool has_alpha = ch % 2 == 0;
-	return PREMUL_SH(alpha == alpha_associated)
+	return (cmsUInt32Number)(PREMUL_SH(alpha == alpha_associated)
 		| FLOAT_SH(bytedepth == 4)
 		| EXTRA_SH(has_alpha)
 		| COLORSPACE_SH(colorspace)
 		| CHANNELS_SH(ch - has_alpha)
-		| BYTES_SH(bytedepth);
+		| BYTES_SH(bytedepth));
 }
 
 cmsUInt32Number icc_fmt(const uint8_t ch, const uint8_t bytedepth,

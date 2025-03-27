@@ -276,6 +276,14 @@ DEC_MAP = {
 		},
 	},
 
+	"jam": {
+		"jam": {
+			"desc": "Aladdin JAM format",
+			"ext": "jam",
+			"magic": b"XCOM",
+		},
+	},
+
 	"kyg": {
 		"kyg": {
 			"desc": "Kyss graphics format (KYG)",

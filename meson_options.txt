@@ -12,6 +12,7 @@ option('gpc', type : 'feature', description : 'IDES/Fairytale PC-98 visual novel
 option('hg3', type : 'feature', description : 'CatSystem engine image')
 option('hel', type : 'feature', description : 'Herahera Animation (HEL)')
 option('ilbm', type : 'feature', description : 'IFF/ILBM image')
+option('jam', type : 'feature', description : 'Aladdin JAM')
 option('kyg', type : 'feature', description : 'Kyss graphics format')
 option('mac', type : 'feature', description : 'MacPaint image')
 option('mag', type : 'feature', description : 'MAG/MAKI02 image')
