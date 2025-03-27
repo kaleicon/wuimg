@@ -23,6 +23,18 @@ const struct auto_desc avs_desc = {
 	AUTO_READ(avs_read),
 };
 
+// Bob Raytracer Raster
+static const struct auto_read bob_read[] = {
+	{'w', 2},
+	{'h', 2},
+};
+const struct auto_desc bob_desc = {
+	.channels = 1, .bitdepth = 8,
+	.mode = image_mode_palette, .u.pal_rgb8 = true,
+	.endian = little_endian,
+	AUTO_READ(bob_read),
+};
+
 // BRU - Degas Elite Brush
 const struct auto_desc bru_desc = {
 	.w = 8, .h = 8,
@@ -125,7 +137,8 @@ static const struct auto_read coke_read[] = {
 };
 const struct auto_desc coke_desc = {
 	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra, .bitfield = 0x565,
+	.layout = pix_bgra,
+	.mode = image_mode_bitfield, .u.bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(coke_read),
 };
@@ -137,7 +150,8 @@ static const struct auto_read eggpaint_read[] = {
 };
 const struct auto_desc eggpaint_desc = {
 	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra, .bitfield = 0x565,
+	.layout = pix_bgra,
+	.mode = image_mode_bitfield, .u.bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(eggpaint_read),
 };
@@ -145,7 +159,8 @@ const struct auto_desc eggpaint_desc = {
 const struct auto_desc ftc_desc = {
 	.w = 384, .h = 240,
 	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra, .bitfield = 0x565,
+	.layout = pix_bgra,
+	.mode = image_mode_bitfield, .u.bitfield = 0x565,
 };
 // GodPaint
 static const struct auto_read god_read[] = {
@@ -155,7 +170,8 @@ static const struct auto_read god_read[] = {
 };
 const struct auto_desc god_desc = {
 	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra, .bitfield = 0x565,
+	.layout = pix_bgra,
+	.mode = image_mode_bitfield, .u.bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(god_read),
 };
@@ -168,7 +184,8 @@ static const struct auto_read indy_read[] = {
 };
 const struct auto_desc indy_desc = {
 	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra, .bitfield = 0x565,
+	.layout = pix_bgra,
+	.mode = image_mode_bitfield, .u.bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(indy_read),
 };
@@ -213,7 +230,8 @@ static const struct auto_read tcp_read[] = {
 };
 const struct auto_desc tcp_desc = {
 	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra, .bitfield = 0x565,
+	.layout = pix_bgra,
+	.mode = image_mode_bitfield, .u.bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(tcp_read),
 };
@@ -225,7 +243,8 @@ static const struct auto_read trp_read[] = {
 };
 const struct auto_desc trp_desc = {
 	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra, .bitfield = 0x565,
+	.layout = pix_bgra,
+	.mode = image_mode_bitfield, .u.bitfield = 0x565,
 	.endian = big_endian,
 	AUTO_READ(trp_read),
 };
@@ -276,12 +295,7 @@ const struct auto_desc *desc) {
 	img->used_bits = desc->used_bits;
 	img->layout = desc->layout;
 	img->attr = desc->attr;
-	img->alpha = desc->alpha;
-	if (desc->bitfield) {
-		if (!wuimg_bitfield_from_id(img, desc->bitfield)) {
-			return wu_alloc_error;
-		}
-	}
+	img->alpha = desc->alpha & 0x3u;
 
 	if (desc->rlen) {
 		size_t read = 0;
@@ -322,6 +336,34 @@ const struct auto_desc *desc) {
 				break;
 			}
 			pos += dr->size;
+		}
+	}
+
+	switch (desc->mode) {
+	case image_mode_raw:
+	case image_mode_planar: break;
+	case image_mode_bitfield:
+		if (!wuimg_bitfield_from_id(img, desc->u.bitfield)) {
+			return wu_alloc_error;
+		}
+		break;
+	case image_mode_palette:
+		;struct palette *pal = wuimg_palette_init(img);
+		if (!pal) {
+			return wu_alloc_error;
+		}
+		const uint8_t ch = desc->u.pal_rgb8 ? 3 : 4;
+		const size_t items = 1 << img->bitdepth;
+		const size_t len = items * ch;
+		void *dst = pal->color;
+		if (ch == 3) {
+			dst = (uint8_t *)pal->color + sizeof(pal->color) - len;
+		}
+		if (!fread(dst, len, 1, infile->ifp)) {
+			return wu_unexpected_eof;
+		}
+		if (ch == 3) {
+			palette_from_rgb8(pal, dst, items);
 		}
 	}
 	return wuimg_exceeds_limit(img, conf) ? wu_exceeds_size_limit : wu_ok;

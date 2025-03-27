@@ -34,6 +34,7 @@ DEC_MAP = {
 				"x",
 			),
 		},
+		"bob": {"desc": "Bob raytracer raster", "match": "bob"},
 		"bru": {"desc": "Degas Brush", "match": "bru"},
 		"farbfeld": {
 			"desc": "farbfeld",

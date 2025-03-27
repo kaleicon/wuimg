@@ -31,8 +31,13 @@ struct auto_desc {
 	uint8_t used_bits;
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
-	enum alpha_interpretation alpha:2;
-	uint16_t bitfield;
+	enum alpha_interpretation alpha:8;
+
+	enum image_mode mode:8;
+	union {
+		uint16_t bitfield;
+		bool pal_rgb8;
+	} u;
 	enum endianness endian:8;
 	uint8_t rlen;
 	const struct auto_read *read;
