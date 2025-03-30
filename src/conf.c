@@ -87,7 +87,7 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 		mp_skip_space(tp);
 		struct wuptr key = mp_next_word(tp);
 		if (key.len == 0 || key.ptr[0] == '#') {
-			mp_skip_line(tp);
+			mp_skip_until(tp, '\n');
 			continue;
 		}
 		if (mp_next_nonblank(tp) != '=') {
@@ -162,7 +162,7 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 		mp_skip_blank(tp);
 		switch (mp_next_char(tp)) {
 		case '#':
-			mp_skip_line(tp);
+			mp_skip_until(tp, '\n');
 			break;
 		case '\n':
 			break;

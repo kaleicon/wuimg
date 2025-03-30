@@ -24,7 +24,9 @@ void mp_skip_blank(struct mparser *mp);
 
 size_t mp_skip_space(struct mparser *mp);
 
-void mp_skip_line(struct mparser *mp);
+void mp_skip_until(struct mparser *mp, int c);
+
+int mp_cur_char(struct mparser *mp);
 
 int mp_next_char(struct mparser *mp);
 

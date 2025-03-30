@@ -101,7 +101,6 @@ DEC_MAP = {
 		"da4": {"desc": "PaintShop (Atari ST)", "match": "da4"},
 		"doo": {"desc": "Atari Doodle", "match": "doo"},
 	},
-
 	"atari": {
 		"dali": {
 			"desc": "Dali uncompressed",
@@ -1019,7 +1018,7 @@ class FmtDesc(collections.namedtuple('desc', ('dec', 'name', 'info'))):
 		dec, name, info = self
 		is_auto = dec == 'auto'
 		suffix = 'desc' if is_auto else 'fn'
-		type = 'auto_desc' if is_auto else 'image_fn'
+		type = 'wuptr' if is_auto else 'image_fn'
 		return f'extern const struct {type} {name}_{suffix};'
 
 	def declare(self, name_limit):

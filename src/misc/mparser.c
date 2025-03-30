@@ -77,14 +77,17 @@ size_t mp_skip_space(struct mparser *mp) {
 	return k;
 }
 
-void mp_skip_line(struct mparser *mp) {
-	const unsigned char *loc = memchr(mp->mem + mp->pos, '\n',
-		mp->len - mp->pos);
+void mp_skip_until(struct mparser *mp, int c) {
+	const unsigned char *loc = memchr(mp->mem + mp->pos, c, mp->len - mp->pos);
 	if (loc) {
-		mp->pos = (size_t)loc - (size_t)mp->mem;
+		mp->pos = (size_t)loc + 1 - (size_t)mp->mem;
 	} else {
 		mp->pos = mp->len;
 	}
+}
+
+int mp_cur_char(struct mparser *mp) {
+	return bndchk(mp) ? curc(mp) : EOF;
 }
 
 int mp_next_char(struct mparser *mp) {

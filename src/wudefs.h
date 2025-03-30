@@ -71,7 +71,7 @@ struct fmt_desc {
 	bool is_auto;
 	union {
 		const struct image_fn *fn;
-		const struct auto_desc *desc;
+		const struct wuptr *desc;
 	} dec;
 };
 

@@ -1,200 +1,190 @@
 // SPDX-License-Identifier: 0BSD
+#include <ctype.h>
+
 #include "misc/common.h"
+#include "misc/math.h"
+#include "misc/mparser.h"
+#include "misc/term.h"
 #include "raster/fmt.h"
 #include "auto.h"
 
-#define AUTO_CSTR(arr) .size = (uint8_t)(sizeof(arr) - 1), .u.bytes = (const uint8_t *)arr
-
-#define AUTO_READ(rdesc) .rlen = (uint8_t)(ARRAY_LEN(rdesc)), .read = rdesc
+#define DESC(arg) {.ptr = (const uint8_t *)(arg), .len = sizeof(arg) - 1}
 
 /* AVS
  * Defined in Appendix E-3 of the AVS user guide:
 http://bitsavers.informatik.uni-stuttgart.de/pdf/stardent/002424-001_Rev_A_Application_Visualization_System_Users_Guide_1989.pdf
  * Data is in RGB format plus an auxiliary channel with no set interpretation.
 */
-static const struct auto_read avs_read[] = {
-	{'w', 4},
-	{'h', 4},
-};
-const struct auto_desc avs_desc = {
-	.channels = 4, .bitdepth = 8, .layout = pix_argb,
-	.alpha = alpha_ignore,
-	.endian = big_endian,
-	AUTO_READ(avs_read),
-};
+const struct wuptr avs_desc = DESC(
+	"endian:big\n"
+	"channels:4\n"
+	"bitdepth:8\n"
+	"layout:argb\n"
+	"alpha:ignore\n"
+
+	"w:<u32>\n"
+	"h:<u32>"
+);
 
 // Bob Raytracer Raster
-static const struct auto_read bob_read[] = {
-	{'w', 2},
-	{'h', 2},
-};
-const struct auto_desc bob_desc = {
-	.channels = 1, .bitdepth = 8,
-	.mode = image_mode_palette, .u.pal_rgb8 = true,
-	.endian = little_endian,
-	AUTO_READ(bob_read),
-};
+const struct wuptr bob_desc = DESC(
+	"endian:little\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"pal:<u24>[]"
+);
 
 // BRU - Degas Elite Brush
-const struct auto_desc bru_desc = {
-	.w = 8, .h = 8,
-	.channels = 1, .bitdepth = 8,
-	.used_bits = 1, .attr = pix_inverted,
-};
+const struct wuptr bru_desc = DESC(
+	"w:8\n"
+	"h:8\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+	"bitsused:1\n"
+	"attr:inverted"
+);
 
 // FARBFELD
-static const struct auto_read farbfeld_read[] = {
-	{auto_match, AUTO_CSTR("farbfeld")},
-	{'w', 4},
-	{'h', 4},
-};
-const struct auto_desc farbfeld_desc = {
-	.channels = 4, .bitdepth = 16,
-	.endian = big_endian,
-	AUTO_READ(farbfeld_read),
-};
+const struct wuptr farbfeld_desc = DESC(
+	"endian:big\n"
+	"channels:4\n"
+	"bitdepth:16\n"
+
+	"match:[farbfeld]\n"
+	"w:<u32>\n"
+	"h:<u32>"
+);
 
 // GEM View-Dither
-static const struct auto_read gemview_read[] = {
-	{auto_match, AUTO_CSTR("B&W256")},
-	{'w', 2},
-	{'h', 2},
-};
-const struct auto_desc gemview_desc = {
-	.channels = 1, .bitdepth = 8,
-	.endian = big_endian,
-	AUTO_READ(gemview_read),
-};
+const struct wuptr gemview_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+
+	"match:[B&W256]\n"
+	"w:<u16>\n"
+	"h:<u16>"
+);
 
 // HP Palmtop Icon
-static const struct auto_read hpicon_read[] = {
-	{auto_match, AUTO_CSTR("\x01\x00\x01\x00")},
-	{'w', 2},
-	{'h', 2},
-};
-const struct auto_desc hpicon_desc = {
-	.channels = 1, .bitdepth = 1,
-	.attr = pix_inverted, .endian = little_endian,
-	AUTO_READ(hpicon_read),
-};
+const struct wuptr hpicon_desc = DESC(
+	"endian:little\n"
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted\n"
+
+	"match:[\x01\x00\x01\x00]\n"
+	"w:<u16>\n"
+	"h:<u16>"
+);
 
 // InShape IIM
-static bool iim_depth(struct wuimg *img, const uint8_t *restrict src,
-const uint8_t len) {
-	(void)len;
-	switch (*src) {
-	case 0:
-		img->bitdepth = 1;
-		img->attr = pix_inverted;
-		return true;
-	case 1:
-		img->attr = pix_inverted;
-		return true;
-	case 4:
-		img->channels = 3;
-		return true;
-	case 5:
-		img->channels = 4;
-		img->layout = pix_argb;
-		return true;
-	}
-	return false;
-}
-static const struct auto_read iim_read[] = {
-	{auto_match, AUTO_CSTR("IS_IMAGE\0")},
-	{auto_fn, 3, .u.fn = iim_depth},
-	{'w', 2},
-	{'h', 2},
-};
-const struct auto_desc iim_desc = {
-	.channels = 1, .bitdepth = 8,
-	AUTO_READ(iim_read),
-};
+const struct wuptr iim_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+
+	"match:[IS_IMAGE]\n"
+	"(match:<u16>"
+		"0 attr:inverted bitdepth:1\n"
+		"1 attr:inverted\n"
+		"4 channels:3\n"
+		"5 channels:4 layout:argb\n"
+	")\n"
+	"skip:2\n" // ???
+	"w:<u16>\n"
+	"h:<u16>"
+);
 
 // Nokia Logo Manager
 // TODO: Report logo type, multiple images
-static const struct auto_read nlm_read[] = {
-	{auto_match, AUTO_CSTR("NLM \x01")},
-	{auto_skip, 1}, // 0: Operator, 1: Caller, 2: Startup, 3: Picture image
-	{auto_match, AUTO_CSTR("\0")}, // Number of images - 1
-	{'w', 1},
-	{'h', 1},
-	{auto_match, AUTO_CSTR("\x01")}, // ???
-};
-const struct auto_desc nlm_desc = {
-	.channels = 1, .bitdepth = 1,
-	.attr = pix_inverted,
-	AUTO_READ(nlm_read),
-};
+const struct wuptr nlm_desc = DESC(
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted\n"
+
+	"match:[NLM \x01]\n"
+	"skip:1\n" // 0: Operator, 1: Caller, 2: Startup, 3: Picture image
+	"match:[\0]\n" // Number of images - 1
+	"w:<u8>\n"
+	"h:<u8>\n"
+	"match:[\x01]" // ???
+);
 
 /* Atari Falcon True Color family */
 // COKE
-static const struct auto_read coke_read[] = {
-	{auto_match, AUTO_CSTR("COKE format.")},
-	{'w', 2},
-	{'h', 2},
-	{auto_match, AUTO_CSTR("\x00\x12")}, // Offset to raster, always 0x0012
-};
-const struct auto_desc coke_desc = {
-	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra,
-	.mode = image_mode_bitfield, .u.bitfield = 0x565,
-	.endian = big_endian,
-	AUTO_READ(coke_read),
-};
+const struct wuptr coke_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"layout:bgra\n"
+	"bitfield:0x565\n"
+
+	"match:[COKE format.]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"match:[\x00\x12]"
+);
+
 // EggPaint
-static const struct auto_read eggpaint_read[] = {
-	{auto_match, AUTO_CSTR("TRUP")},
-	{'w', 2},
-	{'h', 2},
-};
-const struct auto_desc eggpaint_desc = {
-	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra,
-	.mode = image_mode_bitfield, .u.bitfield = 0x565,
-	.endian = big_endian,
-	AUTO_READ(eggpaint_read),
-};
+const struct wuptr eggpaint_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"layout:bgra\n"
+	"bitfield:0x565\n"
+
+	"match:[TRUP]\n"
+	"w:<u16>\n"
+	"h:<u16>"
+);
+
 // FTC (Falcon True Color)
-const struct auto_desc ftc_desc = {
-	.w = 384, .h = 240,
-	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra,
-	.mode = image_mode_bitfield, .u.bitfield = 0x565,
-};
+const struct wuptr ftc_desc = DESC(
+	"w:384\n"
+	"h:240\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"layout:bgra\n"
+	"bitfield:0x565"
+);
+
 // GodPaint
-static const struct auto_read god_read[] = {
-	{auto_skip, 2}, // File ID, but files have unconsistent values
-	{'w', 2},
-	{'h', 2},
-};
-const struct auto_desc god_desc = {
-	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra,
-	.mode = image_mode_bitfield, .u.bitfield = 0x565,
-	.endian = big_endian,
-	AUTO_READ(god_read),
-};
+const struct wuptr god_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"layout:bgra\n"
+	"bitfield:0x565\n"
+
+	"skip:2\n" // Technically format ID, but files have inconsistent values
+	"w:<u16>\n"
+	"h:<u16>"
+);
+
 // IndyPaint
-static const struct auto_read indy_read[] = {
-	{auto_match, AUTO_CSTR("Indy")},
-	{'w', 2},
-	{'h', 2},
-	{auto_skip, 248}, // Must be zero
-};
-const struct auto_desc indy_desc = {
-	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra,
-	.mode = image_mode_bitfield, .u.bitfield = 0x565,
-	.endian = big_endian,
-	AUTO_READ(indy_read),
-};
+const struct wuptr indy_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"layout:bgra\n"
+	"bitfield:0x565\n"
+
+	"match:[Indy]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"skip:248" // A run of zeros
+);
+
 // Rembrandt
 /* Program with documentation (in French):
 https://no-fragments.atari.org/no_fragments_04/archive/work/gfx/remb306b.zip
  * TODO: Support comments and multiple images, once we find files that use them
 */
-static const struct auto_read tcp_read[] = {
+const struct wuptr tcp_desc = DESC(
 	/* Rembrandt header:
 		Offset  Type    Name
 		0       char    ID[8]
@@ -219,152 +209,521 @@ static const struct auto_read tcp_read[] = {
 		23      char    Comment[175]
 		198
 	*/
-	{auto_match, AUTO_CSTR("TRUECOLR")},
-	{auto_skip, 4},
-	{auto_match, AUTO_CSTR("\x00\x12\x00\x01\x00\x01PICT")},
-	{auto_skip, 4},
-	{auto_match, AUTO_CSTR("\x00\xc6")},
-	{'w', 2},
-	{'h', 2},
-	{auto_skip, 0xc6 - 14},
-};
-const struct auto_desc tcp_desc = {
-	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra,
-	.mode = image_mode_bitfield, .u.bitfield = 0x565,
-	.endian = big_endian,
-	AUTO_READ(tcp_read),
-};
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"layout:bgra\n"
+	"bitfield:0x565\n"
+
+	"match:[TRUECOLR]\n"
+	"skip:4\n"
+	"match:[\x00\x12\x00\x01\x00\x01PICT]\n"
+	"skip:4\n"
+	"match:[\x00\xc6]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"skip:0xb8" // 0xc6 - 14
+);
+
 // Spooky Sprites TRP
-static const struct auto_read trp_read[] = {
-	{auto_match, AUTO_CSTR("tru?")},
-	{'w', 2},
-	{'h', 2},
-};
-const struct auto_desc trp_desc = {
-	.channels = 1, .bitdepth = 16,
-	.layout = pix_bgra,
-	.mode = image_mode_bitfield, .u.bitfield = 0x565,
-	.endian = big_endian,
-	AUTO_READ(trp_read),
-};
+const struct wuptr trp_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"layout:bgra\n"
+	"bitfield:0x565\n"
+
+	"match:[tru?]\n"
+	"w:<u16>\n"
+	"h:<u16>"
+);
 
 /* Atari ST High Resolution */
 // DA4 (PaintShop)
-const struct auto_desc da4_desc = {
-	.w = 640, .h = 800,
-	.channels = 1, .bitdepth = 1,
-	.attr = pix_inverted,
-};
+const struct wuptr da4_desc = DESC(
+	"w:640\n"
+	"h:800\n"
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted"
+);
+
 // DOO (Atari Doodle)
-const struct auto_desc doo_desc = {
-	.w = 640, .h = 400,
-	.channels = 1, .bitdepth = 1,
-	.attr = pix_inverted,
+const struct wuptr doo_desc = DESC(
+	"w:640\n"
+	"h:400\n"
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted"
+);
+
+enum token_type {
+	token_num,
+	token_enum,
+	token_load,
+	token_load_array,
+	token_str,
+	token_colon,
+	token_open_paren,
+	token_close_paren,
+	token_eof,
 };
 
-enum wu_error auto_load(struct image_file *infile, const struct auto_desc *desc) {
+struct load {
+	bool is_signed;
+	uint8_t size;
+	uint16_t array;
+	uint32_t value;
+};
+
+struct token {
+	enum token_type type;
+	union {
+		long num;
+		struct load load;
+		struct wuptr str;
+	} u;
+};
+
+struct parse_err {
+	enum wu_error st;
+	const char *msg;
+};
+
+static struct parse_err perr(const enum wu_error st, const char *msg) {
+	return (struct parse_err){.st = st, .msg = msg};
+}
+
+static struct parse_err pbug(const char *msg) {
+	return perr(wu_invalid_params, msg);
+}
+
+static struct parse_err pok(void) {
+	return perr(wu_ok, NULL);
+}
+
+static int count_equals(struct mparser *mp, const uint8_t end) {
+	int n = 0;
+	int c;
+	while ( (c = mp_next_char(mp)) == '=') {
+		++n;
+	}
+	if (c == end) { // "[[", "[=["
+		++n;
+	} else { // "["
+		if (n) { // "[="
+			return -1;
+		}
+		mp->pos -= c != EOF;
+	}
+	return n;
+}
+
+static struct parse_err get_str(struct mparser *mp, struct token *tok) {
+	const int depth = count_equals(mp, '[');
+	if (depth < 0) {
+		return pbug("Expected '[' delimiter");
+	}
+	size_t init = mp->pos;
+	while (mp->pos < mp->len) {
+		mp_skip_until(mp, ']');
+		const size_t end = mp->pos - 1;
+		const int e = count_equals(mp, ']');
+		if (e == depth) {
+			tok->type = token_str;
+			tok->u.str = (struct wuptr) {
+				.ptr = mp->mem + init,
+				.len = end - init,
+			};
+			return pok();
+		}
+	}
+	return pbug("Unexpected end of string");
+}
+
+static struct parse_err get_load(struct mparser *mp, struct token *tok) {
+	const int type = mp_next_char(mp);
+	long n;
+	switch (type) {
+	case 'i': case 'u':
+		mp_scan_uint(mp, 2, &n);
+		switch (n) {
+		case 8: case 16: case 24: case 32:
+			if (mp_next_char(mp) == '>') {
+				int c = mp_cur_char(mp);
+				tok->type = c == '[' ? token_load_array : token_load;
+				tok->u.load = (struct load) {
+					.is_signed = type == 'i',
+					.size = (uint8_t)(n/8),
+				};
+				if (tok->type == token_load_array) {
+					++mp->pos;
+					// Array is either empty ("[]") or > 0
+					if (!mp_scan_xint(mp, 3, &n) || n) {
+						if (mp_next_char(mp) == ']') {
+							tok->u.load.array =
+								(uint16_t)n;
+							return pok();
+						}
+					}
+				} else {
+					return pok();
+				}
+			}
+		}
+	}
+	return pbug("Bad type spec");
+}
+
+static struct parse_err get_word(struct mparser *mp, struct token *tok) {
+	const size_t init = mp->pos;
+	for (;;) {
+		const int c = mp_cur_char(mp);
+		if (!isalnum(c)) {
+			break;
+		}
+		++mp->pos;
+	}
+	tok->type = token_enum;
+	tok->u.str = (struct wuptr){.ptr = mp->mem + init, .len = mp->pos - init};
+	return pok();
+}
+
+static struct parse_err read_token(struct mparser *mp, struct token *tok) {
+	const int type = mp_next_nonspace(mp);
+	switch (type) {
+	case EOF: tok->type = token_eof; break;
+	case ':': tok->type = token_colon; break;
+	case '(': tok->type = token_open_paren; break;
+	case ')': tok->type = token_close_paren; break;
+	case '[': return get_str(mp, tok);
+	case '<': return get_load(mp, tok);
+	case '0': case '1': case '2': case '3': case '4':
+	case '5': case '6': case '7': case '8': case '9':
+		--mp->pos;
+		mp_scan_xint(mp, 6, &tok->u.num);
+		if (tok->u.num > 0xffff) {
+			return pbug("Number literals greater than 65535 (0xffff)"
+				" not supported");
+		}
+		tok->type = token_num;
+		break;
+	default:
+		if (!isalpha(type)) {
+			return pbug("Unexpected symbol in word");
+		}
+		--mp->pos;
+		return get_word(mp, tok);
+	}
+	return pok();
+}
+
+static uint8_t tohex(const uint8_t c) {
+	switch (c) {
+	case '0': case '1': case '2': case '3': case '4':
+	case '5': case '6': case '7': case '8': case '9':
+		return c - '0';
+	case 'A': case 'a': return 0xa;
+	case 'B': case 'b': return 0xb;
+	case 'C': case 'c': return 0xc;
+	case 'D': case 'd': return 0xd;
+	case 'E': case 'e': return 0xe;
+	case 'F': case 'f': return 0xf;
+	}
+	return 0x10;
+}
+
+static struct parse_err str_file_cmp(const struct wuptr arg, FILE *ifp) {
+	size_t i = 0;
+	const struct parse_err eof = perr(wu_unexpected_eof, NULL);
+	while (i < arg.len) {
+		int c = arg.ptr[i];
+		++i;
+		if (c == '\\') {
+			if (i >= arg.len) {
+				return eof;
+			}
+			uint8_t d = arg.ptr[i];
+			++i;
+			switch (d) {
+			case '\\': break;
+			case 't': c = '\t'; break;
+			case 'r': c = '\r'; break;
+			case 'n': c = '\n'; break;
+			case '0': c = 0; break;
+			case 'x':
+				if (arg.len - i < 2) {
+					return eof;
+				}
+				uint8_t x[2] = {
+					tohex(arg.ptr[i]),
+					tohex(arg.ptr[i+1]),
+				};
+				if (x[0] >= 0x10 || x[1] >= 0x10) {
+					return pbug("Invalid hex literal");
+				}
+				c = x[0] << 4 | x[1];
+				i += 2;
+				break;
+			default: return pbug("Unrecognized escape char");
+			}
+		}
+		int f = getc(ifp);
+		if (c != f) {
+			return perr(wu_invalid_header, "Matching failure");
+		}
+	}
+	return pok();
+}
+
+static struct parse_err load_pal(struct wuimg *img, FILE *ifp,
+const struct load l) {
+	const size_t elems = l.array ? l.array : (1 << img->bitdepth);
+	if (elems <= 256) {
+		switch (l.size) {
+		case 3: case 4:
+			;struct palette *pal = wuimg_palette_init(img);
+			if (pal) {
+				const enum wu_error st = fmt_load_pal(ifp, pal,
+					l.size, elems);
+				return perr(st, "Palette load failure");
+			}
+			return perr(wu_alloc_error, "Palette alloc error");
+		default: return pbug("Palette must be <u24> or <u32>");
+		}
+	}
+	return pbug("Palette entries must be <= 256");
+}
+
+static struct parse_err load_val(struct image_file *infile, const struct token *tok,
+uint32_t *scalar) {
+	const uint8_t size = tok->u.load.size;
+	void *ptr = scalar;
+	if (!fread(ptr, size, 1, infile->ifp)) {
+		return perr(wu_unexpected_eof, NULL);
+	}
+	const enum endianness e = (enum endianness)infile->dec_state;
+	switch (size) {
+	case 1: *scalar = *((uint8_t *)ptr); break;
+	case 2: *scalar = endian16(*((uint16_t *)ptr), e); break;
+	case 4: *scalar = endian32(*scalar, e); break;
+	default: return pbug("Bad word size");
+	}
+	if (tok->u.load.is_signed && (*scalar & (1u << (size - 1)))) {
+		return perr(wu_invalid_header, "Got negative value from file");
+	}
+	return pok();
+}
+
+static struct parse_err set_num(struct wuimg *img, const struct wuptr op,
+const long num) {
+	if (wuptr_eq_str(op, "w")) {
+		img->w = (size_t)num;
+	} else if (wuptr_eq_str(op, "h")) {
+		img->h = (size_t)num;
+	} else {
+		return pbug("Unknown variable");
+	}
+	return pok();
+}
+
+static struct parse_err exec_stmt(struct image_file *infile, const struct wuptr op,
+const struct token *tok, uint32_t *scalar) {
+	struct wuimg *img = infile->sub_img;
+	switch (tok->type) {
+	case token_str:
+		if (wuptr_eq_str(op, "match")) {
+			return str_file_cmp(tok->u.str, infile->ifp);
+		}
+		return pbug("Unknown variable-str pair");
+	case token_enum:
+		;const struct wuptr arg = tok->u.str;
+		if (wuptr_eq_str(op, "endian")) {
+			if (wuptr_eq_str(arg, "little")) {
+				infile->dec_state = (void *)little_endian;
+			} else if (wuptr_eq_str(arg, "big")) {
+				infile->dec_state = (void *)big_endian;
+			} else {
+				return pbug("Bad endian value");
+			}
+		} else if (wuptr_eq_str(op, "layout")) {
+			uint8_t buf[4] = {0, 0, 0, 1};
+			if (arg.len != sizeof(buf)) {
+				return pbug("Bad layout value");
+			}
+			if (!wuptr_eq_str(arg, "gray")) {
+				for (uint8_t i = 0; i < sizeof(buf); ++i) {
+					uint8_t c;
+					switch (tolower(arg.ptr[i])) {
+					case 'r': c = 0; break;
+					case 'g': c = 1; break;
+					case 'b': c = 2; break;
+					case 'a': c = 3; break;
+					default: return pbug("Bad layout value");
+					}
+					buf[c] = i;
+				}
+			}
+			img->layout = pix_layout_pack(buf[0], buf[1], buf[2], buf[3]);
+		} else if (wuptr_eq_str(op, "attr")) {
+			if (wuptr_eq_str(arg, "normal")) {
+				img->attr = pix_normal;
+			} else if (wuptr_eq_str(arg, "inverted")) {
+				img->attr = pix_inverted;
+			} else if (wuptr_eq_str(arg, "signed")) {
+				img->attr = pix_signed;
+			} else if (wuptr_eq_str(arg, "float")) {
+				img->attr = pix_float;
+			} else {
+				return pbug("Bad attr value");
+			}
+		} else if (wuptr_eq_str(op, "alpha")) {
+			if (wuptr_eq_str(arg, "unassociated")) {
+				img->alpha = alpha_unassociated;
+			} else if (wuptr_eq_str(arg, "associated")) {
+				img->alpha = alpha_associated;
+			} else if (wuptr_eq_str(arg, "key")) {
+				img->alpha = alpha_key;
+			} else if (wuptr_eq_str(arg, "ignore")) {
+				img->alpha = alpha_ignore;
+			} else {
+				return pbug("Bad alpha value");
+			}
+		} else {
+			return pbug("Unknown variable-enum pair");
+		}
+		return pok();
+	case token_num:
+		;const long num = tok->u.num;
+		if (wuptr_eq_str(op, "skip")) {
+			fseek(infile->ifp, num, SEEK_CUR);
+		} else if (wuptr_eq_str(op, "channels")) {
+			img->channels = (uint8_t)num;
+		} else if (wuptr_eq_str(op, "bitdepth")) {
+			img->bitdepth = (uint8_t)num;
+		} else if (wuptr_eq_str(op, "bitsused")) {
+			img->used_bits = (uint8_t)num;
+		} else if (wuptr_eq_str(op, "bitfield")) {
+			if (!wuimg_bitfield_from_id(img, (uint16_t)num)) {
+				return perr(wu_alloc_error,
+					"Bitfield alloc error");
+			}
+		} else {
+			return set_num(img, op, num);
+		}
+		return pok();
+	case token_load:
+		;const struct parse_err err = load_val(infile, tok, scalar);
+		if (!err.st) {
+			if (wuptr_eq_str(op, "match")) {
+				// Do nothing, just leave `scalar` set
+			} else {
+				return set_num(img, op, *scalar);
+			}
+		}
+		return err;
+	case token_load_array:
+		if (wuptr_eq_str(op, "pal")) {
+			return load_pal(img, infile->ifp, tok->u.load);
+		}
+		return pbug("Unknown variable-array pair");
+	default:
+		break;
+	}
+	return pbug("Syntax error");
+}
+
+struct parse_state {
+	bool exec:1;
+	bool got_match:1;
+};
+
+static struct parse_err parse(struct mparser *mp, struct image_file *infile) {
+	uint32_t scalar = 0;
+
+	struct parse_state state[4];
+	uint8_t d = 0;
+	state[d] = (struct parse_state) {.exec = true};
+	for (;;) {
+		struct token l;
+		struct parse_err err = read_token(mp, &l);
+		if (err.st != wu_ok) {
+			return err;
+		}
+
+		switch (l.type) {
+		case token_eof: return d ? pbug("Unclosed contexts") : pok();
+		case token_enum:
+			;struct token r;
+			err = read_token(mp, &r);
+			if (err.st != wu_ok) {
+				return err;
+			} else if (r.type != token_colon) {
+				return pbug("Syntax error");
+			}
+			err = read_token(mp, &r);
+			if (err.st != wu_ok) {
+				return err;
+			} else if (state[d].exec) {
+				scalar = 0;
+				err = exec_stmt(infile, l.u.str, &r, &scalar);
+				if (err.st != wu_ok) {
+					return err;
+				}
+			}
+			break;
+		case token_num:
+			if (state[d].got_match) {
+				state[d].exec = false;
+			} else {
+				state[d].exec = l.u.num == scalar;
+				state[d].got_match = state[d].exec;
+			}
+			break;
+		case token_open_paren:
+			++d;
+			if (d >= ARRAY_LEN(state)) {
+				return pbug("Max depth reached");
+			}
+			state[d] = (struct parse_state) {
+				.exec = state[d-1].exec,
+				.got_match = !state[d-1].exec & state[d-1].got_match,
+			};
+			break;
+		case token_close_paren:
+			if (!state[d].exec && !state[d].got_match) {
+				return perr(wu_invalid_header, "No matches found");
+			} else if (!d) {
+				return pbug("Excess closing parens");
+			}
+			--d;
+			break;
+		default: return pbug("Syntax error");
+		}
+	}
+	return pok();
+}
+
+enum wu_error auto_load(struct image_file *infile) {
 	struct wuimg *img = infile->sub_img;
 	const enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {
-		return fmt_load_raster_swap(img, infile->ifp, desc->endian)
+		const enum endianness e = (enum endianness)infile->dec_state;
+		return fmt_load_raster_swap(img, infile->ifp, e)
 			? wu_ok : wu_unexpected_eof;
 	}
 	return st;
 }
 
-static size_t get_value(const uint8_t *buf, const size_t pos,
-const uint8_t size, const enum endianness endian) {
-	switch (size) {
-	case 1: return buf[pos];
-	case 2: return buf_endian16(buf + pos, endian);
-	case 4: return buf_endian32(buf + pos, endian);
-	}
-	fatal_bug("get_value() in auto_init()", "Unexpected word size");
-	// Fix no-return warnings
-	return 0;
-}
-
 enum wu_error auto_init(struct image_file *infile, const struct wu_conf *conf,
-const struct auto_desc *desc) {
-	struct wuimg *img = infile->sub_img;
-	img->w = desc->w;
-	img->h = desc->h;
-	img->channels = desc->channels;
-	img->bitdepth = desc->bitdepth;
-	img->used_bits = desc->used_bits;
-	img->layout = desc->layout;
-	img->attr = desc->attr;
-	img->alpha = desc->alpha & 0x3u;
-
-	if (desc->rlen) {
-		size_t read = 0;
-		for (uint8_t r = 0; r < desc->rlen; ++r) {
-			read += desc->read[r].size;
+const struct wuptr desc) {
+	struct mparser mp = mp_wuptr(desc);
+	const struct parse_err err = parse(&mp, infile);
+	if (err.st != wu_ok) {
+		if (err.msg && getenv("WU_DEBUG")) {
+			term_line_key_val(__func__, err.msg, stderr);
 		}
-
-		uint8_t buf[256];
-		if (read > sizeof(buf)) {
-			fatal_bug(__func__, "Buffer is too small");
-		}
-
-		if (!fread(buf, read, 1, infile->ifp)) {
-			return wu_unexpected_eof;
-		}
-
-		size_t pos = 0;
-		for (uint8_t r = 0; r < desc->rlen; ++r) {
-			const struct auto_read *dr = desc->read + r;
-			switch (dr->dst) {
-			case auto_match:
-				if (memcmp(buf + pos, dr->u.bytes, dr->size)) {
-					return wu_invalid_header;
-				}
-				break;
-			case auto_skip:
-				break;
-			case auto_fn:
-				if (!dr->u.fn(img, buf + pos, dr->size)) {
-					return wu_invalid_header;
-				}
-				break;
-			case auto_width:
-				img->w = get_value(buf, pos, dr->size, desc->endian);
-				break;
-			case auto_height:
-				img->h = get_value(buf, pos, dr->size, desc->endian);
-				break;
-			}
-			pos += dr->size;
-		}
+		return err.st;
 	}
-
-	switch (desc->mode) {
-	case image_mode_raw:
-	case image_mode_planar: break;
-	case image_mode_bitfield:
-		if (!wuimg_bitfield_from_id(img, desc->u.bitfield)) {
-			return wu_alloc_error;
-		}
-		break;
-	case image_mode_palette:
-		;struct palette *pal = wuimg_palette_init(img);
-		if (!pal) {
-			return wu_alloc_error;
-		}
-		const uint8_t ch = desc->u.pal_rgb8 ? 3 : 4;
-		const size_t items = 1 << img->bitdepth;
-		const size_t len = items * ch;
-		void *dst = pal->color;
-		if (ch == 3) {
-			dst = (uint8_t *)pal->color + sizeof(pal->color) - len;
-		}
-		if (!fread(dst, len, 1, infile->ifp)) {
-			return wu_unexpected_eof;
-		}
-		if (ch == 3) {
-			palette_from_rgb8(pal, dst, items);
-		}
-	}
-	return wuimg_exceeds_limit(img, conf) ? wu_exceeds_size_limit : wu_ok;
+	return wuimg_exceeds_limit(infile->sub_img, conf) ? wu_exceeds_size_limit : wu_ok;
 }

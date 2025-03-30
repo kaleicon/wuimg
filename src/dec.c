@@ -12,7 +12,7 @@
 #include "dec.h"
 
 void dec_free(struct image_context *image) {
-	if (image->file.dec_state) {
+	if (image->file.dec_state && !image->desc.is_auto) {
 		const struct image_fn *fn = image->desc.dec.fn;
 		if (fn->end) {
 			fn->end(&image->file);
@@ -42,7 +42,7 @@ enum image_event event) {
 	}
 	const struct fmt_desc *desc = &image->desc;
 	return desc->is_auto
-		? auto_load(infile, desc->dec.desc)
+		? auto_load(infile)
 		: desc->dec.fn->callback(infile, &image->conf, state, event);
 }
 
@@ -158,7 +158,7 @@ enum wu_error dec_decode(struct image_context *image) {
 			}
 		}
 		st = desc->is_auto
-			? auto_init(infile, conf, desc->dec.desc)
+			? auto_init(infile, conf, *desc->dec.desc)
 			: desc->dec.fn->dec(infile, conf);
 		if (st == wu_ok) {
 			if (!infile->nr) {
