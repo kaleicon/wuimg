@@ -13,7 +13,6 @@
 #include <linux/input-event-codes.h>
 
 #include "misc/math.h"
-#include "misc/mparser.h"
 #include "window/wayland.h"
 
 struct wayland_listeners {
@@ -283,18 +282,15 @@ static int alloc_shm(const int32_t dims) {
 static void draw_cursor(uint32_t *data, const int32_t w, const int32_t h) {
 	const uint32_t five_shades_of_gray = 0x333333;
 	for (int32_t y = 0; y < h; ++y) {
-		for (int32_t x = 0; x <= y; ++x) {
-			const int32_t yx = y + x;
-			if (yx < h || y < w) {
-				uint32_t pix = 0xff000000;
-				const bool triangle = (x > 0) && (x < y);
-				const bool a = (yx < h - 1);
-				const bool b = (y < w - 1);
-				if (triangle && (a + b)) {
-					pix |= five_shades_of_gray * (2u + a + b);
-				}
-				data[y*w + x] = pix;
-			}
+		const int32_t yp = y + 1;
+		const int32_t hy = h - y;
+		const int32_t limit = y < w ? yp : hy;
+		for (int32_t x = 0; x < limit; ++x) {
+			const bool border = (x > 0) & (x < y);
+			const int tint = (x + 1 < hy) + (yp < w);
+			uint32_t pix = 0xff000000;
+			pix |= five_shades_of_gray * (uint32_t)(border && tint ? tint+2 : 1);
+			data[y*w + x] = pix;
 		}
 	}
 }
@@ -305,7 +301,7 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 	 * window creation time itself. */
 
 	uint32_t *data;
-	const int32_t width = (height * 46341) >> 16;
+	const int32_t width = (height * 182) >> 8;
 	const int32_t pix_size = (int32_t)sizeof(*data);
 	const int32_t stride = width * pix_size;
 	const int32_t dims = height * stride;
@@ -335,13 +331,12 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 
 static void set_cursor(struct wayland *wl) {
 	int32_t size = 32; // The don't-care value used by everyone
-	const char *env_size = getenv("XCURSOR_SIZE");
-	if (env_size) {
-		const size_t max_digits = 3;
-		struct mparser tp = mp_mem(max_digits, env_size);
-		long tmp;
-		if (env_size[mp_scan_uint(&tp, max_digits, &tmp)] == 0 && tmp) {
-			size = imin((int32_t)tmp, 256);
+	const char *cur_size = getenv("XCURSOR_SIZE");
+	if (cur_size) {
+		char *end;
+		const unsigned long s = strtoul(cur_size, &end, 10);
+		if (*end == 0 && s) {
+			size = (int32_t)zumin(s, 256);
 		}
 	}
 
