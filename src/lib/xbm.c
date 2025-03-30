@@ -9,7 +9,7 @@
 
 struct xbm_define {
 	const struct wuptr name;
-	long d;
+	intmax_t d;
 	bool found;
 };
 
@@ -158,14 +158,11 @@ struct mparser *tp, const struct xbm_define define[static 4]) {
 
 static bool match_num(struct mparser *tp, struct xbm_define *define) {
 	mp_skip_blank(tp);
-	long val;
-	if (!mp_scan_int(tp, sizeof(val) * 2, &val)) {
+	if (!mp_scan_int(tp, sizeof(define->d) * 2, &define->d)) {
+		return false;
+	} else if (mp_next_char(tp) != '\n') {
 		return false;
 	}
-	if (mp_next_char(tp) != '\n') {
-		return false;
-	}
-	define->d = val;
 	define->found = true;
 	return true;
 }

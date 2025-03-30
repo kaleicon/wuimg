@@ -417,7 +417,7 @@ static int test_args(const int argc, char **argv, struct test_mode_args *args) {
 		}
 
 		struct mparser mp = mp_mem(strlen(argv[read+1]), argv[read+1]);
-		long tmp;
+		uintmax_t tmp;
 		if (mp_scan_uint_unsafe(&mp, &tmp) && !mp_next_char_unsafe(&mp)) {
 			*ptr = (unsigned)tmp;
 			read += 2;

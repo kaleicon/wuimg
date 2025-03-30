@@ -52,8 +52,8 @@ static struct wu_conf sanitize_conf(struct wu_conf conf) {
 	return conf;
 }
 
-static long read_xint(struct mparser *tp, bool *ok) {
-	long val;
+static uintmax_t read_xint(struct mparser *tp, bool *ok) {
+	uintmax_t val;
 	*ok = mp_scan_xint(tp, 5, &val);
 	return val;
 }

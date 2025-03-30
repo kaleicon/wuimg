@@ -6,11 +6,11 @@
 #include "misc/math.h"
 #include "misc/mparser.h"
 
-static long tonum(const long c) {
+static uint8_t tonum(const uint8_t c) {
 	return c - '0';
 }
 
-static long toxnum(const long c) {
+static uint8_t toxnum(const uint8_t c) {
 	switch (c) {
 	case 'A': case 'a': return 0xa;
 	case 'B': case 'b': return 0xb;
@@ -52,7 +52,7 @@ unsigned char mp_next_char_unsafe(struct mparser *mp) {
 	return c;
 }
 
-size_t mp_scan_uint_unsafe(struct mparser *mp, long *val) {
+size_t mp_scan_uint_unsafe(struct mparser *mp, uintmax_t *val) {
 	*val = 0;
 	const size_t start = mp->pos;
 	while (isdigit(curc(mp))) {
@@ -165,7 +165,7 @@ bool mp_upto(struct mparser *mp, struct wuptr *out, const char chr) {
 	return end;
 }
 
-size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val) {
+size_t mp_scan_uint(struct mparser *mp, size_t digits, uintmax_t *val) {
 	digits = zumin(digits, mp->len - mp->pos);
 	*val = 0;
 	size_t k = 0;
@@ -181,20 +181,20 @@ size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val) {
 	return k;
 }
 
-size_t mp_scan_int(struct mparser *mp, size_t digits, long *val) {
+size_t mp_scan_int(struct mparser *mp, size_t digits, intmax_t *val) {
 	bool sign = false;
 	if (curc(mp) == '-') {
 		++mp->pos;
 		sign = true;
 	}
-	const size_t k = mp_scan_uint(mp, digits, val);
+	const size_t k = mp_scan_uint(mp, digits, (uintmax_t *)val);
 	if (sign) {
 		*val = -*val;
 	}
 	return k;
 }
 
-size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val) {
+size_t mp_scan_xint(struct mparser *mp, size_t digits, uintmax_t *val) {
 	const uint8_t *pre = mp_slice(mp, 2);
 	bool hex = false;
 	if (pre) {

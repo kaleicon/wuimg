@@ -279,7 +279,7 @@ struct load {
 struct token {
 	enum token_type type;
 	union {
-		long num;
+		uintmax_t num;
 		struct load load;
 		struct wuptr str;
 	} u;
@@ -343,7 +343,7 @@ static struct parse_err get_str(struct mparser *mp, struct token *tok) {
 
 static struct parse_err get_load(struct mparser *mp, struct token *tok) {
 	const int type = mp_next_char(mp);
-	long n;
+	uintmax_t n;
 	switch (type) {
 	case 'i': case 'u':
 		mp_scan_uint(mp, 2, &n);
@@ -359,7 +359,7 @@ static struct parse_err get_load(struct mparser *mp, struct token *tok) {
 				if (tok->type == token_load_array) {
 					++mp->pos;
 					// Array is either empty ("[]") or > 0
-					if (!mp_scan_xint(mp, 3, &n) || n) {
+					if (!mp_scan_xint(mp, 4, &n) || n) {
 						if (mp_next_char(mp) == ']') {
 							tok->u.load.array =
 								(uint16_t)n;
@@ -516,7 +516,7 @@ uint32_t *scalar) {
 }
 
 static struct parse_err set_num(struct wuimg *img, const struct wuptr op,
-const long num) {
+const uintmax_t num) {
 	if (wuptr_eq_str(op, "w")) {
 		img->w = (size_t)num;
 	} else if (wuptr_eq_str(op, "h")) {
@@ -594,9 +594,9 @@ const struct token *tok, uint32_t *scalar) {
 		}
 		return pok();
 	case token_num:
-		;const long num = tok->u.num;
+		;const uintmax_t num = tok->u.num;
 		if (wuptr_eq_str(op, "skip")) {
-			fseek(infile->ifp, num, SEEK_CUR);
+			fseek(infile->ifp, (long)num, SEEK_CUR);
 		} else if (wuptr_eq_str(op, "channels")) {
 			img->channels = (uint8_t)num;
 		} else if (wuptr_eq_str(op, "bitdepth")) {

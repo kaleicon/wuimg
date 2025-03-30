@@ -73,13 +73,13 @@ void *restrict dst, const size_t dims) {
 		src[len] = 's'; // Sentinel
 		struct mparser mp = mp_mem(len, src);
 
-		const long range = (desc->scale.pnm > UCHAR_MAX)
+		const uint32_t range = (desc->scale.pnm > UCHAR_MAX)
 			? USHRT_MAX : UCHAR_MAX;
-		const long scale = (range << 16) / desc->scale.pnm + 1;
-		const size_t digits = 5;
+		const uint32_t scale = (range << 16) / desc->scale.pnm + 1;
+		const size_t digits = 6;
 		mp_skip_space_unsafe(&mp);
 		while (cnt < dims) {
-			long val;
+			uintmax_t val;
 			if (!mp_scan_uint(&mp, digits, &val)
 			|| val > desc->scale.pnm) {
 				break;

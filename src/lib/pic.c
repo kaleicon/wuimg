@@ -385,7 +385,6 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	if (!buf) {
 		return wu_unexpected_eof;
 	} else if (buf[0]) {
-		puts("AAAAH");
 		return wu_invalid_header;
 	}
 	desc->type = buf[1] & 0xf;

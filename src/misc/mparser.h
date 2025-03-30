@@ -17,7 +17,7 @@ unsigned char mp_next_char_unsafe(struct mparser *mp);
 
 size_t mp_skip_space_unsafe(struct mparser *mp);
 
-size_t mp_scan_uint_unsafe(struct mparser *mp, long *val);
+size_t mp_scan_uint_unsafe(struct mparser *mp, uintmax_t *val);
 
 
 void mp_skip_blank(struct mparser *mp);
@@ -52,11 +52,11 @@ struct wuptr mp_remaining(struct mparser *mp);
 bool mp_upto(struct mparser *mp, struct wuptr *out, char chr);
 
 
-size_t mp_scan_uint(struct mparser *mp, size_t digits, long *val);
+size_t mp_scan_uint(struct mparser *mp, size_t digits, uintmax_t *val);
 
-size_t mp_scan_int(struct mparser *mp, size_t digits, long *val);
+size_t mp_scan_int(struct mparser *mp, size_t digits, intmax_t *val);
 
-size_t mp_scan_xint(struct mparser *mp, size_t digits, long *val);
+size_t mp_scan_xint(struct mparser *mp, size_t digits, uintmax_t *val);
 
 
 void mp_seek_cur(struct mparser *mp, ptrdiff_t pos);

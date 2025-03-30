@@ -41,36 +41,36 @@ static bool issixel(int c) {
 	return c >= '?' && c <= '~';
 }
 
-static unsigned char hls_to_rgb(const int_fast16_t n,
-const int_fast16_t comp[static 3], const int_fast16_t point) {
+static unsigned char hls_to_rgb(const uint32_t n,
+const uint32_t comp[static 3], const uint32_t point) {
 	// https://en.wikipedia.org/wiki/HLS_color_space#HSL_to_RGB_alternative
-	const int_fast16_t h = comp[0];
-	const int_fast16_t l = comp[1];
-	const int_fast16_t s = comp[2];
+	const uint32_t h = comp[0];
+	const uint32_t l = comp[1];
+	const uint32_t s = comp[2];
 
-	const int_fast16_t k = (n + h / 30) % (12 * point);
-	const int_fast16_t a = s * lmin(l, point - l) / point;
-	const int_fast16_t min = lmin( lmin(k - 3*point, 9*point - k), point);
-	const int_fast16_t max = lmax(-point, min);
+	const uint32_t k = (n + h / 30) % (12 * point);
+	const uint32_t a = s * umin(l, point - l) / point;
+	const uint32_t min = umin( umin(k - 3*point, 9*point - k), point);
+	const uint32_t max = umax(-point, min);
 
-	const int_fast16_t result = l - a * max / point;
+	const uint32_t result = l - a * max / point;
 	return (unsigned char)((result * UCHAR_MAX) / point);
 }
 
 static void normalize_color(struct pix_rgba8 *entry,
-int_fast16_t comp[static 3], const enum sixel_colorspace pu) {
+uint32_t comp[static 3], const enum sixel_colorspace pu) {
 	unsigned char *rgba = (unsigned char *)entry;
 
-	const int_fast16_t point = 1 << 8;
-	int_fast16_t scale;
+	const uint32_t point = 1 << 8;
+	uint32_t scale;
 	switch (pu) {
 	case sixel_hls:
 		scale = (0x100 * point) / 100 + 1;
 		comp[0] *= point;
 		comp[1] = (comp[1] * scale) / point;
 		comp[2] = (comp[2] * scale) / point;
-		for (int_fast16_t i = 0; i < 3; ++i) {
-			const int_fast16_t n = ((12 - i*4) % 12) * point;
+		for (uint32_t i = 0; i < 3; ++i) {
+			const uint32_t n = ((12 - i*4) % 12) * point;
 			rgba[i] = hls_to_rgb(n, comp, point);
 		}
 		break;
@@ -84,14 +84,16 @@ int_fast16_t comp[static 3], const enum sixel_colorspace pu) {
 }
 
 static void read_color(struct mparser *tp, struct sixel_colormap *map) {
-	long idx;
+	uintmax_t idx;
 	mp_scan_uint_unsafe(tp, &idx);
 	if (mp_next_char_unsafe(tp) == ';') {
 		enum sixel_colorspace pu = mp_next_char_unsafe(tp);
-		long tmp[3] = {0};
+		uint32_t tmp[3] = {0};
 		for (size_t i = 0; i < ARRAY_LEN(tmp); ++i) {
 			++tp->pos;
-			mp_scan_uint_unsafe(tp, tmp + i);
+			uintmax_t t;
+			mp_scan_uint_unsafe(tp, &t);
+			tmp[i] = (uint32_t)t;
 		}
 		normalize_color(map->map.color + idx, tmp, pu);
 	} else {
@@ -113,8 +115,8 @@ static bool validate_color(struct mparser *tp) {
 	 * All three components are zero if omitted.
 	 * Note that the 'set' form leaves Pc as the active color. That was
 	 * a fun bug to hunt. */
-	long idx;
-	if (!mp_scan_uint(tp, 3, &idx) || idx > UCHAR_MAX) {
+	uintmax_t idx;
+	if (!mp_scan_uint(tp, 4, &idx) || idx > UCHAR_MAX) {
 		return false;
 	}
 	if (mp_next_char(tp) == ';') {
@@ -131,10 +133,10 @@ static bool validate_color(struct mparser *tp) {
 			if (mp_next_char(tp) != ';') {
 				return false;
 			}
-			const long max =
+			const unsigned max =
 				(i == 0 && pu == sixel_hls) ? 360 : 100;
-			long val;
-			if (!mp_scan_uint(tp, 3, &val) || val > max) {
+			uintmax_t val;
+			if (!mp_scan_uint(tp, 4, &val) || val > max) {
 				return false;
 			}
 		}
@@ -239,7 +241,7 @@ size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 			x = 0;
 			break;
 		case graphics_repeat_introducer:
-			;long repeat;
+			;uintmax_t repeat;
 			mp_scan_uint_unsafe(&tp, &repeat);
 			c = mp_next_char_unsafe(&tp);
 
@@ -289,7 +291,7 @@ struct wuimg *img) {
 			row_width = 0;
 			break;
 		case graphics_repeat_introducer:
-			;long repeat;
+			;uintmax_t repeat;
 			if (!mp_scan_uint(&tp, 5, &repeat)) {
 				return wu_decoding_error;
 			}
