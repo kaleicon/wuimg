@@ -41,6 +41,11 @@ size_t degas_decode(struct degas_desc *desc, struct wuimg *img);
 enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img,
 FILE *ifp);
 
+/* EZ-Art Professional */
+size_t ez_decode(struct mparser mp, struct wuimg *img);
+
+enum wu_error ez_parse(struct mparser *mp, struct wuimg *img, struct wuptr mem);
+
 /* MegaPaint */
 struct bld_desc {
 	FILE *ifp;

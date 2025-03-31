@@ -64,6 +64,28 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+/* EZ-Art Professional */
+static enum wu_error ez_callback(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *_s, const enum image_event ev) {
+	(void)_c; (void)_s;
+	if (ev == ev_subcycle) {
+		const struct mparser *mp = infile->dec_state;
+		return ez_decode(*mp, infile->sub_img)
+			? wu_ok : wu_decoding_error;
+	}
+	return wu_no_change;
+}
+
+static enum wu_error ez_dec(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct mparser *mp = infile->dec_state;
+	enum wu_error st = ez_parse(mp, infile->sub_img, infile->map);
+	if (st == wu_ok && wuimg_exceeds_limit(infile->sub_img, conf)) {
+		st = wu_exceeds_size_limit;
+	}
+	return st;
+}
+
 /* MegaPaint */
 static enum wu_error bld_dec(struct image_file *infile,
 const struct wu_conf *conf) {
@@ -131,6 +153,14 @@ const struct image_fn degas_fn = {
 	.dec = degas_dec,
 	.callback = degas_callback,
 	.end = degas_end,
+};
+
+const struct image_fn ez_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.state_size = sizeof(struct mparser),
+	.dec = ez_dec,
+	.callback = ez_callback,
 };
 
 const struct image_fn bld_fn = {

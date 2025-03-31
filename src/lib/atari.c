@@ -28,6 +28,9 @@
  * lower bit of Pixel 0, Bit 14 the lower bit of Pixel 1, etc.
 
 http://www.bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0904.pdf
+
+ * Format documentation:
+https://www.atari-wiki.com/index.php?title=ST_Picture_Formats
 */
 
 static const size_t VIDEO_RAM = 32000; // In bytes
@@ -81,15 +84,17 @@ const enum atari_st_res res) {
 }
 
 static size_t load_raw(struct wuimg *img, const enum atari_st_res res, FILE *ifp) {
-	if (res == atari_st_res_high) {
-		return fread(img->data, 1, VIDEO_RAM, ifp);
-	}
 	size_t w = 0;
-	uint16_t *ram = malloc(VIDEO_RAM);
-	if (ram) {
-		w = fread(ram, 1, VIDEO_RAM, ifp);
-		st_interleave(img, ram, res);
-		free(ram);
+	if (wuimg_alloc_noverify(img)) {
+		if (res == atari_st_res_high) {
+			return fread(img->data, 1, VIDEO_RAM, ifp);
+		}
+		uint16_t *ram = malloc(VIDEO_RAM);
+		if (ram) {
+			w = fread(ram, 1, VIDEO_RAM, ifp);
+			st_interleave(img, ram, res);
+			free(ram);
+		}
 	}
 	return w;
 }
@@ -149,10 +154,7 @@ const void *restrict pal) {
 /* Dali */
 
 size_t dali_decode(struct dali_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		return load_raw(img, desc->res, desc->ifp);
-	}
-	return 0;
+	return load_raw(img, desc->res, desc->ifp);
 }
 
 static bool dali_ext(struct dali_desc *desc, const uint8_t ext[static 3]) {
@@ -249,6 +251,19 @@ static void load_elite_crng(struct degas_desc *desc, struct wuimg *img) {
 	}
 }
 
+static void degas_deinterleave(struct wuimg *img, const enum atari_st_res res,
+const uint8_t *src) {
+	const uint8_t planes = (res == atari_st_res_low)
+		? ST_LOW_DEPTH : ST_MEDIUM_DEPTH;
+
+	const size_t outstride = wuimg_stride(img);
+	const size_t instride = strip_length(img->w, 1, 1) * planes;
+	for (size_t y = 0; y < 200; ++y) {
+		bitplane_interleave_row8(img->data + outstride*y,
+			src + instride*y, img->w, planes, 1);
+	}
+}
+
 static size_t degas_decomp(struct degas_desc *desc, struct wuimg *img) {
 	int8_t *pb = malloc(desc->size);
 	if (pb) {
@@ -266,16 +281,7 @@ static size_t degas_decomp(struct degas_desc *desc, struct wuimg *img) {
 		const size_t w = decomp_pack_bits(unpack, VIDEO_RAM, pb, pb_len);
 		free(pb);
 		if (unpack != img->data) {
-			const uint8_t planes = (desc->res == atari_st_res_low)
-				? ST_LOW_DEPTH : ST_MEDIUM_DEPTH;
-
-			const size_t outstride = wuimg_stride(img);
-			const size_t instride = strip_length(img->w, 1, 1)
-				* planes;
-			for (size_t y = 0; y < 200; ++y) {
-				bitplane_interleave_row8(img->data + outstride*y,
-					unpack + instride*y, img->w, planes, 1);
-			}
+			degas_deinterleave(img, desc->res, unpack);
 			free(unpack);
 			load_elite_crng(desc, img);
 		}
@@ -285,17 +291,14 @@ static size_t degas_decomp(struct degas_desc *desc, struct wuimg *img) {
 }
 
 size_t degas_decode(struct degas_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		if (desc->compressed) {
-			return degas_decomp(desc, img);
-		}
-		const size_t w = load_raw(img, desc->res, desc->ifp);
-		if (desc->res != atari_st_res_high && desc->is_elite) {
-			load_elite_crng(desc, img);
-		}
-		return w;
+	if (desc->compressed && wuimg_alloc_noverify(img)) {
+		return degas_decomp(desc, img);
 	}
-	return 0;
+	const size_t w = load_raw(img, desc->res, desc->ifp);
+	if (w && desc->is_elite && desc->res != atari_st_res_high) {
+		load_elite_crng(desc, img);
+	}
+	return w;
 }
 
 enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img,
@@ -337,6 +340,45 @@ FILE *ifp) {
 			.size = zumin(rem, size_limit),
 		};
 		return set_dims(img, desc->res, src + 1);
+	}
+	return wu_unexpected_eof;
+}
+
+/* EZ-Art Professional */
+size_t ez_decode(struct mparser mp, struct wuimg *img) {
+	size_t w = 0;
+	if (wuimg_alloc_noverify(img)) {
+		uint8_t *ram = malloc(VIDEO_RAM);
+		if (ram) {
+			const struct wuptr pack = mp_remaining(&mp);
+			w = decomp_pack_bits(ram, VIDEO_RAM,
+				(int8_t *)pack.ptr, pack.len);
+			degas_deinterleave(img, atari_st_res_low, ram);
+			free(ram);
+		}
+	}
+	return w;
+}
+
+enum wu_error ez_parse(struct mparser *mp, struct wuimg *img,
+const struct wuptr mem) {
+	/* EZ-Art header:
+		Offset  Type    Name
+		0       u16     ID
+		2       u16     Version?    // 0xc8 (200)
+		4       u16     Palette[16]
+		36      u16     ???[4]      // [*]
+		44
+	 * [*] Usually 0x000a 0x000f (0x0008|0x0000) 0x0000
+	*/
+	*mp = mp_wuptr(mem);
+	const uint8_t *hdr = mp_slice(mp, 44);
+	if (hdr) {
+		const uint8_t sig[] = {'E', 'Z', 0, 0xc8};
+		if (!memcmp(hdr, sig, sizeof(sig))) {
+			return set_dims(img, atari_st_res_low, hdr+4);
+		}
+		return wu_invalid_header;
 	}
 	return wu_unexpected_eof;
 }

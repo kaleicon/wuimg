@@ -123,6 +123,12 @@ DEC_MAP = {
 			)
 		},
 
+		"ez": {
+			"desc": "EZ-Art Professional",
+			"ext": "eza",
+			"magic": b"EZ\0\xc8",
+		},
+
 		"bld": {
 			"desc": "MegaPaint",
 			"match": "bld"
