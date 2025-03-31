@@ -67,6 +67,11 @@ DEC_MAP = {
 			"ext": "iim",
 			"magic": b"IS_IMAGE\0",
 		},
+		"kro": {
+			"desc": "Kolor Raw",
+			"ext": "kro",
+			"magic": b"KRO\x01",
+		},
 		"nlm": {
 			"desc": "Nokia Logo Manager",
 			"ext": "nlm",

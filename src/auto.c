@@ -114,6 +114,17 @@ const struct wuptr iim_desc = DESC(
 	"h:<u16>"
 );
 
+// KRO - Kolor Raw
+const struct wuptr kro_desc = DESC(
+	"endian:big\n"
+
+	"match:[KRO\x01]\n"
+	"w:<u32>\n"
+	"h:<u32>\n"
+	"(bitdepth:<u32> 8 16 32)\n"
+	"(channels:<u32> 3 4)"
+);
+
 // Nokia Logo Manager
 // TODO: Report logo type, multiple images
 const struct wuptr nlm_desc = DESC(
@@ -536,6 +547,10 @@ const uintmax_t num) {
 		img->w = (size_t)num;
 	} else if (wuptr_eq_str(op, "h")) {
 		img->h = (size_t)num;
+	} else if (wuptr_eq_str(op, "channels")) {
+		img->channels = (uint8_t)num;
+	} else if (wuptr_eq_str(op, "bitdepth")) {
+		img->bitdepth = (uint8_t)num;
 	} else {
 		return pbug("Unknown variable");
 	}
@@ -612,10 +627,6 @@ const struct token *tok, uint32_t *scalar) {
 		;const uintmax_t num = tok->u.num;
 		if (wuptr_eq_str(op, "skip")) {
 			fseek(infile->ifp, (long)num, SEEK_CUR);
-		} else if (wuptr_eq_str(op, "channels")) {
-			img->channels = (uint8_t)num;
-		} else if (wuptr_eq_str(op, "bitdepth")) {
-			img->bitdepth = (uint8_t)num;
 		} else if (wuptr_eq_str(op, "bitsused")) {
 			img->used_bits = (uint8_t)num;
 		} else if (wuptr_eq_str(op, "bitfield")) {
@@ -737,6 +748,9 @@ const struct wuptr desc) {
 	if (err.st != wu_ok) {
 		if (err.msg && getenv("WU_DEBUG")) {
 			term_line_key_val(__func__, err.msg, stderr);
+			term_line_put("Processed:", stderr);
+			fwrite(mp.mem, 1, mp.pos, stderr);
+			fputc('\n', stderr);
 		}
 		return err.st;
 	}
