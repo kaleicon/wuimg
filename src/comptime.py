@@ -46,6 +46,14 @@ DEC_MAP = {
 			"ext": "dit",
 			"magic": b"B&W256",
 		},
+		"hir": {
+			"desc": "Print-Technik Raw",
+			"ext": "hir",
+			"mask": (
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff",
+				b"\x0f\x0f\x00\x01" b"\0\0\0\0" b"\x00\x01",
+			),
+		},
 		"hpicon": {
 			"desc": "HP Palmtop Icon",
 			"ext": "icn",

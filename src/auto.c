@@ -69,6 +69,21 @@ const struct wuptr gemview_desc = DESC(
 	"h:<u16>"
 );
 
+/* HIR - Print-Technik Raw
+https://www.atari-wiki.com/index.php?title=Print-Technik_Raw_Data_file_format
+*/
+const struct wuptr hir_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+	"bitsused:7\n"
+
+	"match:[\x0f\x0f\x00\x01]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"match:[\x00\x01]"
+);
+
 // HP Palmtop Icon
 const struct wuptr hpicon_desc = DESC(
 	"endian:little\n"
