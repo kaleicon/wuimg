@@ -331,10 +331,10 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 			}
 			if (desc->planes > 8) {
 				img->channels = 4;
-				img->used_bits = 8;
+				img->bitrange = 8;
 			} else {
 				img->channels = 1;
-				img->used_bits = desc->planes;
+				img->bitrange = desc->planes;
 			}
 		}
 	}

@@ -2,6 +2,7 @@
 #ifndef COMMON_UNPACK
 #define COMMON_UNPACK
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "pix.h"
@@ -11,9 +12,7 @@
 enum unpack_op {
 	op_noop = 0,
 	op_unpack,
-	op_expand,
 	op_pack,
-	op_remap,
 	op_bitfield,
 };
 

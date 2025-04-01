@@ -80,7 +80,7 @@ struct gl_upload_params {
 	enum pix_layout layout:8;
 	enum unpack_op op:8;
 	uint8_t comps;
-	struct remap_info remap;
+	uint8_t bd;
 };
 
 const char * gl_strerror(const GLenum error) {
@@ -414,7 +414,7 @@ const size_t h, const unsigned char *data) {
 	gl_alignment(DEFAULT_ALIGN);
 	w *= params->comps;
 	const void *arg = params->op == op_bitfield
-		? (const void *)img->u.bitfield : (const void *)&params->remap;
+		? (void *)img->u.bitfield : &img->bitrange;
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
 	const size_t outwidth = unpack_stride(w, img->bitdepth, img->attr,
 		params->op, arg);
@@ -423,7 +423,7 @@ const size_t h, const unsigned char *data) {
 	}
 	const size_t outstride = strip_length(outwidth, 8, DEFAULT_ALIGN);
 
-	uint8_t *map = map_unpack_buffer(pix_buf, outstride * h, GL_READ_ONLY);
+	uint8_t *map = map_unpack_buffer(pix_buf, outstride * h, GL_WRITE_ONLY);
 	if (map) {
 		const watch_t start = watch_look();
 		for (size_t y = 0; y < h; ++y) {
@@ -620,7 +620,10 @@ const enum pix_attr attr) {
 
 static const char * set_upload_params(struct gl_upload_params *params,
 const struct wuimg *img) {
-	*params = (struct gl_upload_params){.op = op_noop};
+	*params = (struct gl_upload_params){
+		.op = op_noop,
+		.bd = img->bitdepth,
+	};
 	switch (img->mode) {
 	case image_mode_raw:
 	case image_mode_bitfield:
@@ -701,25 +704,18 @@ const struct wuimg *img) {
 		// fallthrough
 	case pix_signed:
 	case pix_inverted:
-		if (img->used_bits != bd) {
-			params->op = op_remap;
-			params->remap = remap_scale_info(
-				bit_set32(img->used_bits), bd, img->attr);
-		} else {
-			switch (bd) {
-			case 8: case 16: case 32:
-				params->op = img->attr == pix_normal
-					? op_noop : op_unpack;
-				break;
-			default:
-				if (bd > 16) {
-					params->op = op_pack;
-					bd = 16;
-				} else if (img->mode == image_mode_palette) {
-					params->op = op_unpack;
-				} else {
-					params->op = op_expand;
-				}
+		switch (bd) {
+		case 8: case 16: case 32:
+			params->op = img->attr == pix_normal
+				? op_noop : op_unpack;
+			break;
+		default:
+			if (bd > 16) {
+				params->op = op_pack;
+				bd = 16;
+			} else {
+				params->op = op_unpack;
+				bd = bd > 8 ? 16 : 8;
 			}
 		}
 		break;
@@ -737,7 +733,7 @@ const struct wuimg *img) {
 	default:
 		return "Invalid pix attribute";
 	}
-
+	params->bd = bd;
 	*tex = get_tex_params(bd, ch, img->attr);
 	return NULL;
 }
@@ -788,14 +784,32 @@ cmsHPROFILE out) {
 	return true;
 }
 
-static void set_cms(struct gl_context *context, const struct wuimg *img) {
+static void set_cms(struct gl_context *context, const struct wuimg *img,
+const struct gl_upload_params *params) {
 	const struct color_space *cs = &img->cs;
 	const struct gl_uni *uni = &context->uni;
 
+	bool is_planar = false;
+	double scale = 1;
+	switch (img->mode) {
+	case image_mode_planar:
+		is_planar = true;
+		// fallthrough
+	case image_mode_raw:
+		if (img->attr != pix_float && img->bitrange < params->bd) {
+			scale = (exp2(params->bd) - 1) / (exp2(img->bitrange) - 1);
+		}
+		break;
+	case image_mode_palette:
+		scale = (exp2(8) - 1) / (exp2(img->bitrange) - 1);
+		break;
+	case image_mode_bitfield:
+		break;
+	}
+
 	struct color_convert conv;
-	const bool is_planar = img->mode == image_mode_planar;
 	const bool spacewalk = color_space_to_linear_sRGB(cs, &conv,
-		img->layout == pix_gray, is_planar, 1);
+		img->layout == pix_gray, is_planar, scale);
 	glUniform4fv(uni->remap, 2, conv.map.mul);
 	glUniformMatrix3fv(uni->mat.nonlinear, 1, GL_FALSE, conv.nonlinear.m);
 
@@ -856,7 +870,6 @@ const struct wuimg *img, const enum heed_ratio heed) {
 	}
 
 	gl_clock_start(context);
-	set_cms(context, img);
 	switch_color_mode(context, img->mode);
 
 	struct gl_upload_params params;
@@ -865,6 +878,8 @@ const struct wuimg *img, const enum heed_ratio heed) {
 		fatal_bug(__func__, errmsg);
 		return gl_upload_fail;
 	}
+
+	set_cms(context, img, &params);
 
 	context->tex.subsamp = 0;
 	if (!mode_upload(context, img, &params, NULL)) {

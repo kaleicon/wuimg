@@ -497,13 +497,15 @@ const struct wuimg *src, const size_t y) {
 
 	/* Otherwise, convert whatever we have into 8- or 16-bit uints,
 	 * or 32-bit floats. */
+	const void *arg = (state->op == op_bitfield)
+		? (void *)src->u.bitfield : &src->bitrange;
 	const size_t elems = src->w * src->channels;
 	const size_t unpack_len = unpack_stride(elems, src->bitdepth,
-		src->attr, state->op, src->u.bitfield);
+		src->attr, state->op, arg);
 
 	uint8_t *u_row = state->row + state->row_len - unpack_len;
 	unpack_strip(u_row, s_row, elems,
-		src->bitdepth, src->attr, state->op, src->u.bitfield);
+		src->bitdepth, src->attr, state->op, arg);
 	return u_row;
 }
 
@@ -664,6 +666,7 @@ const struct wuimg *src) {
 		row_elems = zumax(row_elems, sizeof(state->pal->color));
 		state->unpack_ch = 1;
 		state->op = src->bitdepth < dst->bitdepth ? op_unpack : op_noop;
+		range = exp2(src->bitrange) - 1;
 
 		// Create a color-corrected palette
 		state->pal = palette_new();
@@ -682,11 +685,12 @@ const struct wuimg *src) {
 			range = 1;
 		} else if (src->bitdepth > dst->bitdepth) {
 			state->op = op_pack;
+			range = exp2(src->bitrange > 16 ? 16 : src->bitrange) - 1;
 		} else {
-			if (src->bitdepth < dst->bitdepth) {
+			if (src->bitdepth < dst->bitdepth || src->attr != pix_normal) {
 				state->op = op_unpack;
 			}
-			range = (double)bit_set32(src->used_bits);
+			range = exp2(src->bitrange) - 1;
 		}
 	}
 
@@ -713,7 +717,7 @@ const struct wuimg *src) {
 	if (state->row) {
 		if (state->pal) {
 			process_row(state->pal->color, src->u.palette->color,
-				4, 1 << src->used_bits, 4, 8, src, state);
+				4, 1 << src->bitdepth, 4, 8, src, state);
 		}
 		return NULL;
 	}

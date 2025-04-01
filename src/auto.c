@@ -43,7 +43,7 @@ const struct wuptr bru_desc = DESC(
 	"h:8\n"
 	"channels:1\n"
 	"bitdepth:8\n"
-	"bitsused:1\n"
+	"bitrange:1\n"
 	"attr:inverted"
 );
 
@@ -76,7 +76,7 @@ const struct wuptr hir_desc = DESC(
 	"endian:big\n"
 	"channels:1\n"
 	"bitdepth:8\n"
-	"bitsused:7\n"
+	"bitrange:7\n"
 
 	"match:[\x0f\x0f\x00\x01]\n"
 	"w:<u16>\n"
@@ -627,8 +627,8 @@ const struct token *tok, uint32_t *scalar) {
 		;const uintmax_t num = tok->u.num;
 		if (wuptr_eq_str(op, "skip")) {
 			fseek(infile->ifp, (long)num, SEEK_CUR);
-		} else if (wuptr_eq_str(op, "bitsused")) {
-			img->used_bits = (uint8_t)num;
+		} else if (wuptr_eq_str(op, "bitrange")) {
+			img->bitrange = (uint8_t)num;
 		} else if (wuptr_eq_str(op, "bitfield")) {
 			if (!wuimg_bitfield_from_id(img, (uint16_t)num)) {
 				return perr(wu_alloc_error,

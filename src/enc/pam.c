@@ -27,7 +27,7 @@ static void write_tuple(const uint8_t ch, FILE *ofp) {
 }
 
 void pam_write_header(const struct wuimg *dst, FILE *ofp) {
-	const uint32_t maxval = bit_set32(dst->used_bits);
+	const uint32_t maxval = bit_set32(dst->bitrange);
 	fprintf(ofp,
 		"P7\n"
 		"WIDTH %zu\n"
@@ -57,7 +57,5 @@ void pam_best_fit(struct wuimg *dst, const struct wuimg *src) {
 		dst->bitdepth = src->u.bitfield->outdepth;
 		break;
 	}
-//	dst->used_bits = src->bitdepth < dst->bitdepth && src->attr == pix_normal
-//		? src->used_bits : dst->bitdepth;
 	dst->alpha = alpha_unassociated;
 }

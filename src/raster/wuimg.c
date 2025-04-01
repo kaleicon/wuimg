@@ -217,8 +217,12 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 		return wu_int_overflow;
 	}
 
-	if (!img->used_bits) {
-		img->used_bits = img->bitdepth;
+	const uint8_t depth = img->mode == image_mode_palette ? 8 : img->bitdepth;
+	if (img->bitrange > depth) {
+		fatal_bug(__func__, "`bitrange` can't be greater than bitdepth,"
+			" or 8 for paletted images");
+	} else if (!img->bitrange) {
+		img->bitrange = depth;
 	}
 
 	if (!img->layout) {
@@ -531,7 +535,7 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 		"  Ratio: %g\n"
 		"  Bits used: %d\n",
 		img->align_sh, img->rotate, img->mirror ? "yes" : "no",
-		alpha_str(img->alpha), img->ratio, img->used_bits);
+		alpha_str(img->alpha), img->ratio, img->bitrange);
 
 	print_colorspace_data(&img->cs);
 	if (img->mode == image_mode_planar) {

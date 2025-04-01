@@ -7,70 +7,54 @@
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
-// Expand 2^n-bit to 8-bit
-static void expand4(const uint_fast8_t byte, uint8_t *dst, const size_t nr,
-const uint8_t s) {
+// Unpack 2^n-bit to 8-bit
+static void unpack4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
 	switch (nr) {
 	case 2:
-		dst[1] = (uint8_t)( (byte & 0x0f) * s );
+		dst[1] = (uint8_t)(byte & 0x0f);
 		// fallthrough
 	case 1:
-		dst[0] = (uint8_t)( (byte >> 4) * s );
+		dst[0] = (uint8_t)(byte >> 4);
 	}
 }
 
-static void expand2(const uint_fast8_t byte, uint8_t *dst, const size_t nr,
-const uint8_t s) {
+static void unpack2(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
 	switch (nr) {
 	case 4:
-		dst[3] = (uint8_t)( (byte & 0x03) * s );
+		dst[3] = (uint8_t)(byte & 0x03);
 		// fallthrough
 	case 3:
-		dst[2] = (uint8_t)( ((byte >> 2) & 0x03) * s );
+		dst[2] = (uint8_t)((byte >> 2) & 0x03);
 		// fallthrough
 	case 2:
-		dst[1] = (uint8_t)( ((byte >> 4) & 0x03) * s );
+		dst[1] = (uint8_t)((byte >> 4) & 0x03);
 		// fallthrough
 	case 1:
-		dst[0] = (uint8_t)( (byte >> 6) * s );
+		dst[0] = (uint8_t)(byte >> 6);
 		// fallthrough
 	}
 }
 
-static void expand1(const uint_fast8_t byte, uint8_t *dst, const size_t nr,
-const uint8_t s) {
+static void unpack1(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
 	for (size_t i = 0; i < nr; ++i) {
-		dst[i] = (byte & (0x80 >> i)) ? s : 0x00;
+		dst[i] = (byte & (0x80 >> i)) ? 0x01 : 0x00;
 	}
 }
 
 // Have the compiler inline one of the above
 static inline void select_unpack(const uint_fast8_t byte, uint8_t *dst,
-const size_t nr, const enum unpack_op action, const size_t bitdepth) {
-	switch (action) {
-	case op_unpack:
-		switch (bitdepth) {
-		case 1: expand1(byte, dst, nr, 1); break;
-		case 2: expand2(byte, dst, nr, 1); break;
-		case 4: expand4(byte, dst, nr, 1); break;
-		}
-		break;
-	case op_expand:
-		switch (bitdepth) {
-		case 1: expand1(byte, dst, nr, 0xff); break;
-		case 2: expand2(byte, dst, nr, 0xff / 0x03); break;
-		case 4: expand4(byte, dst, nr, 0xff / 0x0f); break;
-		}
-		break;
-	default:
-		break;
+const size_t nr, const size_t bitdepth) {
+	switch (bitdepth) {
+	case 1: unpack1(byte, dst, nr); break;
+	case 2: unpack2(byte, dst, nr); break;
+	case 4: unpack4(byte, dst, nr); break;
 	}
 }
 
 // The above but looping
 static inline void strip_common(uint8_t *restrict dst,
 const uint8_t *restrict src, const size_t width, const uint8_t bitdepth,
-const enum unpack_op op, const uint8_t xor) {
+const uint8_t xor) {
 	const size_t ppb = 8 / bitdepth;
 
 	const size_t bytes = width / ppb;
@@ -78,124 +62,96 @@ const enum unpack_op op, const uint8_t xor) {
 	for (size_t x = 0; x < bytes; ++x) {
 		const size_t o = x * ppb;
 		const uint8_t byte = src[x] ^ xor;
-		select_unpack(byte, dst + o, ppb, op, bitdepth);
+		select_unpack(byte, dst + o, ppb, bitdepth);
 	}
 	if (remainer) {
 		const uint8_t byte = src[bytes] ^ xor;
-		select_unpack(byte, dst + width - remainer, remainer, op,
+		select_unpack(byte, dst + width - remainer, remainer,
 			bitdepth);
 	}
 }
 
-static void strip_xor4(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n, const enum pix_attr attr) {
-	const uint8_t xor = (attr == pix_signed) ? 0x88 : 0xff;
-	strip_common(dst, src, n, 4, op_expand, xor);
-}
-
-static void strip_xor2(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n, const enum pix_attr attr) {
-	const uint8_t xor = (attr == pix_signed) ? 0xaa : 0xff;
-	strip_common(dst, src, n, 2, op_expand, xor);
-}
-
-static void strip_xor1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n) {
-	strip_common(dst, src, n, 1, op_expand, 0xff);
-}
-
-static void strip_expand4(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n) {
-	strip_common(dst, src, n, 4, op_expand, 0);
-}
-
-static void strip_expand2(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n) {
-	strip_common(dst, src, n, 2, op_expand, 0);
-}
-
-static void strip_expand1(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n) {
-	strip_common(dst, src, n, 1, op_expand, 0);
-}
-
 static void strip_unpack4(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 4, op_unpack, 0);
+	strip_common(dst, src, n, 4, 0);
 }
 
 static void strip_unpack2(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 2, op_unpack, 0);
+	strip_common(dst, src, n, 2, 0);
 }
 
 static void strip_unpack1(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 1, op_unpack, 0);
+	strip_common(dst, src, n, 1, 0);
 }
 
 static void strip_unpack_xor1(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 1, op_unpack, 0xff);
+	strip_common(dst, src, n, 1, 0xff);
 }
 
-static void strip_invert(uint8_t *restrict dst, const uint8_t *restrict src,
-const size_t n, const uint8_t bytedepth, const enum pix_attr attr) {
-	if (attr == pix_inverted) {
-		for (size_t x = 0; x < n; ++x) {
-			dst[x] = src[x] ^ 0xff;
+// Signed to unsigned
+static void strip_design8(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t w, const uint32_t add) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint8_t)(src[x] + add);
+	}
+}
+
+static void strip_design16(uint16_t *restrict dst, const uint16_t *restrict src,
+const size_t w, const uint32_t add) {
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint16_t)(src[x] + add);
+	}
+}
+
+static void strip_design(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t n, const uint8_t bytedepth) {
+	const size_t step = (which_end() == little_endian)
+		? bytedepth - 1 : 0;
+	for (size_t x = 0; x < n; x += bytedepth) {
+		for (size_t i = 0; i < bytedepth; ++i) {
+			dst[x+i] = src[x+i] ^ (i == step ? 0x80 : 0x00);
 		}
-	} else { // pix_signed
-		const size_t step = (which_end() == little_endian)
-			? bytedepth - 1 : 0;
-		for (size_t x = 0; x < n; x += bytedepth) {
-			for (size_t i = 0; i < bytedepth; ++i) {
-				const uint8_t c = src[x+i];
-				if (i == step) {
-					dst[x+i] = c ^ 0x80;
-				} else {
-					dst[x+i] = c;
-				}
-			}
-		}
+	}
+}
+
+static void strip_invert8(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t n, const uint32_t xor) {
+	for (size_t x = 0; x < n; ++x) {
+		dst[x] = (uint8_t)(src[x] ^ xor);
+	}
+}
+
+static void strip_invert16(uint16_t *restrict dst, const uint16_t *restrict src,
+const size_t n, const uint32_t xor) {
+	for (size_t x = 0; x < n; ++x) {
+		dst[x] = (uint16_t)(src[x] ^ xor);
 	}
 }
 
 // Unpack any bitdepth < 16 and non-power-of-two
-static inline void strip_small_common(void *restrict dst,
+static void strip_unpack_any(void *restrict dst,
 const void *restrict src, const size_t width, const uint8_t bitdepth,
-const enum pix_attr attr, const enum unpack_op op) {
-	const uint8_t outdepth = (bitdepth > 8) ? 16 : 8;
-
-	const uint32_t inrange = (1u << bitdepth) - 1;
-	const uint32_t outrange = (1u << outdepth) - 1;
-	const uint32_t scale = (outrange << 16) / inrange + 1;
-	uint32_t xor;
+const enum pix_attr attr, const uint8_t bitrange) {
+	uint32_t xor = 0;
 	switch (attr) {
-	case pix_signed: xor = (1u << (bitdepth - 1)); break;
-	case pix_inverted: xor = inrange; break;
-	default: xor = 0; break;
+	case pix_signed: xor = (1 << (bitrange - 1)); break;
+	case pix_inverted: xor = bit_set32(bitdepth); break;
+	default: break;
 	}
+
+	const bool highdepth = (bitdepth > 8);
+	const uint8_t off = bitdepth - bitrange;
 	for (size_t x = 0; x < width; ++x) {
-		uint32_t pix = bit_getn(src, x*bitdepth, bitdepth) ^ xor;
-		if (op == op_expand) {
-			pix = (pix * scale) >> 16;
-		}
-		switch (outdepth) {
-		case 8: ((uint8_t *)dst)[x] = (uint8_t)pix; break;
-		case 16: ((uint16_t *)dst)[x] = (uint16_t)pix; break;
+		uint32_t pix = bit_getn(src, x*bitdepth+off, bitrange) ^ xor;
+		if (highdepth) {
+			((uint16_t *)dst)[x] = (uint16_t)pix;
+		} else {
+			((uint8_t *)dst)[x] = (uint8_t)pix;
 		}
 	}
-}
-
-static void strip_sm_unpack(void *restrict dst, const void *restrict src,
-const size_t n, const uint8_t bitdepth, const enum pix_attr attr) {
-	strip_small_common(dst, src, n, bitdepth, attr, op_unpack);
-}
-
-static void strip_sm_expand(void *restrict dst, const void *restrict src,
-const size_t n, const uint8_t bitdepth, const enum pix_attr attr) {
-	strip_small_common(dst, src, n, bitdepth, attr, op_expand);
 }
 
 
@@ -211,11 +167,11 @@ const uint8_t bitdepth) {
 
 static inline void strip_wordpack_common(uint16_t *dst, const void *restrict src,
 const size_t width, const uint8_t bitdepth, const enum pix_attr attr) {
-	uint16_t xor;
+	uint16_t xor = 0;
 	switch (attr) {
 	case pix_signed: xor = 0x8000; break;
 	case pix_inverted: xor = 0xffff; break;
-	default: xor = 0; break;
+	default: break;
 	}
 	for (size_t x = 0; x < width; ++x) {
 		dst[x] = select_wordpack(src, x, bitdepth) ^ xor;
@@ -237,12 +193,24 @@ const size_t n, const uint8_t bitdepth, const enum pix_attr attr) {
 	strip_wordpack_common(dst, src, n, bitdepth, attr);
 }
 
+static void strip_design32_pack16(uint16_t *restrict dst,
+const uint32_t *restrict src, const size_t w, const uint8_t range) {
+	const uint32_t add = 1 << (range - 1);
+	const uint32_t shl = (range > 16) ? range - 16 : 16;
+	for (size_t x = 0; x < w; ++x) {
+		dst[x] = (uint16_t)((src[x] + add) >> shl);
+	}
+}
+
 static void strip_pack64f_32f(float *dst, const double *src, const size_t len) {
 	for (size_t i = 0; i < len; ++i) {
 		dst[i] = (float)(src[i]);
 	}
 }
 
+static uint8_t get_range(const uint8_t bitdepth, const void *arg) {
+	return arg ? *(const uint8_t *)arg : bitdepth;
+}
 
 void unpack_strip(void *restrict dst, const void *restrict src,
 const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
@@ -252,6 +220,7 @@ const enum unpack_op op, const void *arg) {
 		memcpy(dst, src, strip_base(n, bitdepth));
 		break;
 	case op_unpack:
+		;const uint8_t range = get_range(bitdepth, arg);
 		switch (attr) {
 		case pix_normal:
 			switch (bitdepth) {
@@ -261,83 +230,55 @@ const enum unpack_op op, const void *arg) {
 			}
 			break;
 		case pix_inverted:
-		case pix_signed:
+			;const uint32_t xor = bit_set32(range);
 			switch (bitdepth) {
 			case 1: strip_unpack_xor1(dst, src, n); return;
-			default:
-				if (bitdepth % 8 == 0) {
-					strip_invert(dst, src, n, bitdepth/8, attr);
-					return;
-				}
-				break;
-			}
-			break;
-		default: return;
-		}
-		strip_sm_unpack(dst, src, n, bitdepth, attr);
-		break;
-	case op_expand:
-		switch (attr) {
-		case pix_normal:
-			switch (bitdepth) {
-			case 1: strip_expand1(dst, src, n); break;
-			case 2: strip_expand2(dst, src, n); break;
-			case 4: strip_expand4(dst, src, n); break;
-			default: strip_sm_expand(dst, src, n, bitdepth, attr);
+			case 8: strip_invert8(dst, src, n, xor); return;
+			case 16: strip_invert16(dst, src, n, xor); return;
 			}
 			break;
 		case pix_signed:
-		case pix_inverted:
+			;const uint32_t add = 1 << (range - 1);
 			switch (bitdepth) {
-			case 1: strip_xor1(dst, src, n); break;
-			case 2: strip_xor2(dst, src, n, attr); break;
-			case 4: strip_xor4(dst, src, n, attr); break;
-			default:
-				if (bitdepth % 8) {
-					strip_sm_expand(dst, src, n, bitdepth, attr);
-				} else {
-					strip_invert(dst, src, n, bitdepth/8, attr);
-				}
-				break;
+			case 8: strip_design8(dst, src, n, add); return;
+			case 16: strip_design16(dst, src, n, add); return;
 			}
-			break;
-		case pix_float:
-			break;
+			strip_unpack_any(dst, src, n, bitdepth, attr, range);
+			return;
+		default: return;
 		}
+		strip_unpack_any(dst, src, n, bitdepth, attr, bitdepth);
 		break;
 	case op_pack:
 		switch (attr) {
 		case pix_normal:
-		case pix_signed:
 		case pix_inverted:
 			switch (bitdepth) {
-			case 32: strip_pack32_16(dst, src, n, attr); break;
-			case 64: strip_pack64_16(dst, src, n, attr); break;
-			default: strip_pack_16(dst, src, n, bitdepth, attr);
+			case 32: strip_pack32_16(dst, src, n, attr); return;
+			case 64: strip_pack64_16(dst, src, n, attr); return;
+			}
+			break;
+		case pix_signed:
+			switch (bitdepth) {
+			case 32:
+				strip_design32_pack16(dst, src, n,
+					get_range(bitdepth, arg));
+				return;
+			case 64: strip_pack64_16(dst, src, n, attr); return;
 			}
 			break;
 		case pix_float:
 			if (bitdepth == 64) {
 				strip_pack64f_32f(dst, src, n);
 			}
-			break;
+			return;
 		}
-		break;
-	case op_remap:
-		;const struct remap_info *nfo = arg;
-		remap_scale(dst, src, n, *nfo);
+		strip_pack_16(dst, src, n, bitdepth, attr);
 		break;
 	case op_bitfield:
 		bitfield_unpack(arg, dst, src, n);
 		break;
 	}
-}
-
-static uint8_t get_unpackdepth(const uint8_t depth) {
-	if (depth && depth < 16) {
-		return (depth > 8) ? 16 : 8;
-	}
-	return 0;
 }
 
 static uint8_t unpack_depth(const uint8_t bitdepth, const enum pix_attr attr,
@@ -346,15 +287,17 @@ const enum unpack_op op, const void *arg) {
 	case op_noop:
 		return bitdepth;
 	case op_unpack:
-	case op_expand:
 		switch (attr) {
 		case pix_normal:
+			if (bitdepth % 8) {
+				return bitdepth > 8 ? 16 : 8;
+			}
+			break;
 		case pix_signed:
 		case pix_inverted:
-			if (bitdepth % 8) {
-				return get_unpackdepth(bitdepth);
+			if (bitdepth && bitdepth <= 16) {
+				return bitdepth > 8 ? 16 : 8;
 			}
-			return bitdepth;
 		case pix_float:
 			break;
 		}
@@ -375,9 +318,6 @@ const enum unpack_op op, const void *arg) {
 			break;
 		}
 		break;
-	case op_remap:
-		;const struct remap_info *info = arg;
-		return (uint8_t)(8 << info->depth_sh);
 	case op_bitfield:
 		;const struct bitfield *bf = arg;
 		return bf->outdepth * bf->ch;
@@ -494,9 +434,10 @@ const struct remap_info info) {
 			}
 			break;
 		case pix_signed:
+			strip_design(dst, src, n, (uint8_t)(1 << depth));
+			break;
 		case pix_inverted:
-			strip_invert(dst, src, n, (uint8_t)(8 << depth),
-				info.attr);
+			strip_invert8(dst, src, n * (uint8_t)(1 << depth), 0xff);
 			break;
 		case pix_float:
 			break;

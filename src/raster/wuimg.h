@@ -110,10 +110,13 @@ struct wuimg {
 
 	size_t w, h;
 	unsigned char channels;
-	unsigned char bitdepth;
+	unsigned char bitdepth; // Bits per channel
 	align_t align_sh;
 
-	unsigned char used_bits;
+	unsigned char bitrange; /* Number of bits used within each channel,
+		such that `(1 << bitrange) - 1` corresponds to max brightness.
+		Must be <= bitdepth.
+		For paletted images, this applies to the palette itself. */
 	enum pix_layout layout:8;
 	enum pix_attr attr:8;
 

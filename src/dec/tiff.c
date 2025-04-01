@@ -283,7 +283,7 @@ struct tiff_info *info) {
 	img->channels = (unsigned char)info->spp;
 	enum unpack_op op;
 	if (info->is_tiled && info->bps % 8) {
-		op = op_expand;
+		op = op_unpack;
 		img->bitdepth = (info->bps > 8) ? 16 : 8;
 	} else {
 		op = op_noop;

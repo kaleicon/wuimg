@@ -185,7 +185,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 				return wu_alloc_error;
 			}
 		} else {
-			img->used_bits = (uint8_t)depth;
+			img->bitrange = (uint8_t)depth;
 		}
 		break;
 	case xwd_true_color: case xwd_direct_color:

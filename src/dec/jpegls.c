@@ -79,7 +79,7 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	}
 	img->channels = (uint8_t)frame.component_count;
 	img->bitdepth = (frame.bits_per_sample > 8) ? 16 : 8;
-	img->used_bits = (uint8_t)frame.bits_per_sample;
+	img->bitrange = (uint8_t)frame.bits_per_sample;
 	if (mode == CHARLS_INTERLEAVE_MODE_NONE) {
 		wuimg_plane_init(img);
 	}

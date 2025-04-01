@@ -40,7 +40,7 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 	}
 	img->channels = 1;
 	img->bitdepth = (state->planes > 8) ? 16 : 8;
-	img->used_bits = (uint8_t)state->planes;
+	img->bitrange = (uint8_t)state->planes;
 	img->attr = pix_inverted;
 	const enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {

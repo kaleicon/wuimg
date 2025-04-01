@@ -226,7 +226,7 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 	case pnm_pam:
 		;const uint32_t ones = bit_cto32(desc->scale.pnm);
 		if (desc->scale.pnm >> ones == 0) {
-			desc->rast.used_bits = (uint8_t)ones;
+			desc->rast.bitrange = (uint8_t)ones;
 			desc->skip_scaling = true;
 		}
 		// fallthrough
@@ -334,7 +334,7 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 	desc->scale.pnm = bit_set32(depth);
 	desc->rast.bitdepth = (unsigned char)bit_min_wordsize_bits(depth);
 	desc->rast.attr = (sign[1] == '-') ? pix_signed : pix_normal;
-	desc->rast.used_bits = (unsigned char)depth;
+	desc->rast.bitrange = (unsigned char)depth;
 	return setup_desc(desc);
 }
 

@@ -164,7 +164,7 @@ size_t scanlines[static 4]) {
 	img->channels = (uint8_t)((chroma == heif_chroma_monochrome ? 1 : 3)
 		+ alpha);
 	img->bitdepth = (depth > 8) ? 16 : 8;
-	img->used_bits = (uint8_t)depth;
+	img->bitrange = (uint8_t)depth;
 	for (uint8_t c = 1; c < img->channels; ++c) {
 		const int d = heif_image_get_bits_per_pixel_range(himg, chs[c]);
 		if (d != -1 && d != depth) {
@@ -212,7 +212,7 @@ struct heif_image *himg, const bool alpha, int *bpl, size_t *scanline) {
 
 	img->channels = 3 + alpha;
 	img->bitdepth = (depth > 8) ? 16 : 8;
-	img->used_bits = (uint8_t)depth;
+	img->bitrange = (uint8_t)depth;
 	const enum wu_error st = wuimg_verify(img);
 	if (st == wu_ok) {
 		img->data = heif_image_get_plane(himg, hch, bpl);
