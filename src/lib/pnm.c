@@ -235,7 +235,10 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 			return wu_invalid_header;
 		}
 		desc->rast.bitdepth = desc->scale.pnm > UCHAR_MAX ? 16 : 8;
-	case pnm_pgx: break;
+		break;
+	case pnm_pgx:
+		desc->skip_scaling = true;
+		break;
 	}
 
 	switch (desc->type) {
@@ -277,58 +280,80 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 }
 
 static enum wu_error parse_pgx(struct pnm_desc *desc) {
-	/* PGX data may have any bitdepth between 1 and 32, and are stored
+	/* PGX header as regex:
+	 *	PG (ML|LM) [+-]? ?[0-9]+ [0-9]+ [0-9]+\r?\n
+	 *	0   1       2      3      4      5     6
+	 * 0: Signature (already read)
+	 * 1: ML for big-endian, or LM for little-endian
+	 * 2: Data is signed if '-', unsigned otherwise
+	 * 3: Data depth
+	 * 4: Width
+	 * 5: Height
+	 * 6: End of header, either \n or \r\n
+	 * Fields are separated by exactly one space (0x20) character. And for
+	 * whatever reason, there's an optional space in between the sign and
+	 * the depth field.
+
+	 * Data may have any bitdepth between 1 and 32, and pixels are stored
 	 * in the smallest word unit that can fit them. So 5-bit data is stored
 	 * in 8-bit bytes, 9-bit data in 16-bit words, and 24-bit data in
-	 * 32-bit words. They are stored as normal numbers in the containing
-	 * word, with signed numbers in two's complement.
+	 * 32-bit words. Only `depth` bits are used, and when data is signed,
+	 * values are sign extended.
 	 *   5-bit unsigned: 0x00 to 0x1f (0 to 32)
 	 *   5-bit signed:   0xf0 to 0x0f (-16 to 15)
 	*/
-	char order[2];
+
+	char order[3];
 	char sign[4];
 	unsigned depth;
-	char spaces[2];
 	char newline[3];
 	const int match = fscanf(desc->ifp,
-		"%2c" "%3[ +-]" "%u"
-		"%c" "%zu" "%c" "%zu" "%2[\r\n]",
-		order, sign, &depth,
-		spaces, &desc->rast.w, spaces + 1, &desc->rast.h, newline);
+		"%2c"
+		"%3[+ -]"
+		"%3u" "%*1[ ]"
+		"%zu" "%*1[ ]"
+		"%zu" "%2[\r\n]",
+		order, sign, &depth, &desc->rast.w, &desc->rast.h, newline);
 	if (match == EOF) {
 		return wu_unexpected_eof;
-	} else if (match != 8 || !depth || depth > 32
-	|| memchk(spaces, ' ', sizeof(spaces))
-	|| (strcmp(newline, "\n") && strcmp(newline, "\r\n")) ) {
+	} else if (match != 6 || !depth || depth > 32) {
 		return wu_invalid_header;
 	}
 
-	if (!memcmp(order, "ML", sizeof(order))) {
+	if (!strcmp(order, "ML")) {
 		desc->endian = big_endian;
-	} else if (!memcmp(order, "LM", sizeof(order))) {
+	} else if (!strcmp(order, "LM")) {
 		desc->endian = little_endian;
 	} else {
 		return wu_invalid_header;
 	}
 
-	if (sign[0] == ' ') {
-		switch (sign[1]) {
-		case 0: break;
-		case ' ':
-			if (sign[2] != 0) {
-				return wu_invalid_header;
-			}
-			break;
-		case '+': case '-':
-			switch (sign[2]) {
-			case 0: case ' ': break;
-			default: return wu_invalid_header;
-			}
-			break;
-		default: return wu_invalid_header;
-		}
-	} else {
+	if (sign[0] != ' ') {
 		return wu_invalid_header;
+	}
+	switch (sign[1]) {
+	case ' ':
+		if (sign[2]) {
+			return wu_invalid_header;
+		}
+		break;
+	case '+': case '-':
+		if (sign[2] != 0 && sign[2] != ' ') {
+			return wu_invalid_header;
+		}
+		break;
+	}
+
+	switch (newline[0]) {
+	case '\n':
+		if (newline[1]) { // either "\n\n" or "\n\r"
+			ungetc(newline[1], desc->ifp);
+		}
+		break;
+	case '\r':
+		if (newline[1] != '\n') { // either "\r\r" or just "\r"
+			return wu_invalid_header;
+		}
 	}
 
 	desc->scale.pnm = bit_set32(depth);
