@@ -58,7 +58,7 @@ uint32_t bit_clo32(uint32_t bits) {
 }
 
 uint32_t bit_set32(const uint32_t bits) {
-	const uint32_t ones = ~0u;
+	const uint32_t ones = 0u - (bool)bits;
 	return ones >> (sizeof(ones)*8 - bits);
 }
 

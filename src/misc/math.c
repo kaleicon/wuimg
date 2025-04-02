@@ -44,6 +44,14 @@ size_t zumin(const size_t x, const size_t y) {
 	return x < y ? x : y;
 }
 
+uint32_t u32max(const uint32_t x, const uint32_t y) {
+	return x > y ? x : y;
+}
+
+uint32_t u32min(const uint32_t x, const uint32_t y) {
+	return x < y ? x : y;
+}
+
 unsigned int umax(const unsigned int x, const unsigned int y) {
 	return x > y ? x : y;
 }

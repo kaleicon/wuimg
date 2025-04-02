@@ -2,6 +2,7 @@
 #ifndef LIB_PCF
 #define LIB_PCF
 
+#include "misc/endian.h"
 #include "raster/wuimg.h"
 
 enum pcf_type {

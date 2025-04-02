@@ -3,6 +3,7 @@
 #define LIB_BMP
 
 #include "misc/common.h"
+#include "misc/endian.h"
 #include "misc/wustr.h"
 #include "raster/bitfield.h"
 #include "raster/wuimg.h"

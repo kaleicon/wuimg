@@ -318,13 +318,27 @@ void *restrict data) {
 	return data;
 }
 
-struct bitfield * wuimg_bitfield_init(struct wuimg *img) {
+static struct bitfield * wuimg_bitfield_init(struct wuimg *img) {
 	return set_img_mode(img, image_mode_bitfield,
 		calloc(1, sizeof(*img->u.bitfield)));
 }
 
-struct bitfield * wuimg_bitfield_from_id(struct wuimg *img,
-const enum bitfield_id id) {
+enum wu_error wuimg_bitfield_from_mask(struct wuimg *img,
+const uint32_t *mask, const uint8_t ch, const uint8_t word_depth) {
+	struct bitfield *bf = wuimg_bitfield_init(img);
+	if (bf) {
+		enum pix_layout l = bitfield_from_mask(bf, mask, ch, word_depth);
+		if (l) {
+			img->layout = pix_layout_mul(l,
+				img->layout ? img->layout : pix_rgba);
+			return wu_ok;
+		}
+		return wu_invalid_header;
+	}
+	return wu_alloc_error;
+}
+
+struct bitfield * wuimg_bitfield_from_id(struct wuimg *img, const uint16_t id) {
 	struct bitfield *bf = wuimg_bitfield_init(img);
 	if (bf) {
 		bitfield_from_id(bf, id, img->bitdepth);

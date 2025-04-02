@@ -22,6 +22,10 @@ size_t zumax(size_t x, size_t y);
 
 size_t zumin(size_t x, size_t y);
 
+uint32_t u32max(uint32_t x, uint32_t y);
+
+uint32_t u32min(uint32_t x, uint32_t y);
+
 unsigned int umax(unsigned int x, unsigned int y);
 
 unsigned int umin(unsigned int x, unsigned int y);

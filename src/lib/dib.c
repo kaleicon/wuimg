@@ -344,17 +344,7 @@ uint8_t *buf) {
 		buf_endian32(buf + 2*4, little_endian),
 		buf_endian32(buf + 3*4, little_endian)
 	};
-	if (!buf[3]) {
-		ch = 3;
-	}
-	struct bitfield *bf = wuimg_bitfield_init(img);
-	if (!bf) {
-		return wu_alloc_error;
-	}
-	if (bitfield_from_mask(bf, mask, ch, desc->depth)) {
-		return wu_ok;
-	}
-	return wu_invalid_header;
+	return wuimg_bitfield_from_mask(img, mask, ch, desc->depth);
 }
 
 static enum wu_error validate_common(struct dib_desc *desc, struct wuimg *img,
@@ -470,6 +460,7 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 		if (depth == 16) {
 			img->channels = 1;
 			img->bitdepth = 16;
+			img->layout = pix_bgra;
 			if (!wuimg_bitfield_from_id(img, 0x1555)) {
 				return wu_alloc_error;
 			}
@@ -626,6 +617,7 @@ struct wuimg *img) {
 				return wu_unexpected_eof;
 			}
 		}
+		img->layout = pix_rgba;
 		status = load_mask(desc, img, buf + 36);
 		if (status != wu_ok) {
 			return status;

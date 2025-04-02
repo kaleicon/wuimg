@@ -2,6 +2,7 @@
 
 #include "lib/gp4.h"
 #include "misc/bit.h"
+#include "misc/endian.h"
 #include "misc/mem.h"
 
 static const uint8_t BAND_W = sizeof(uint16_t);

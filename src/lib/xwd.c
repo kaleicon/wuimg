@@ -212,12 +212,10 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		default:
 			return wu_invalid_header;
 		}
-		struct bitfield *bf = wuimg_bitfield_init(img);
-		if (!bf) {
-			return wu_alloc_error;
-		}
-		if (!bitfield_from_mask(bf, mask, 3, (uint8_t)bpp)) {
-			return wu_invalid_header;
+		const enum wu_error st = wuimg_bitfield_from_mask(img, mask, 3,
+			(uint8_t)bpp);
+		if (st != wu_ok) {
+			return st;
 		}
 		break;
 	default: return wu_invalid_header;

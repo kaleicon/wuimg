@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: 0BSD
 #include "misc/bit.h"
 #include "misc/common.h"
+#include "misc/endian.h"
+#include "misc/math.h"
 #include "raster/bitfield.h"
 #include "raster/fmt.h"
-
-struct bf_key {
-	uint8_t shr;
-	uint8_t ones;
-	uint8_t idx;
-};
 
 static const uint32_t BITFIELD_SHIFT = 16;
 
@@ -49,22 +45,18 @@ const void *restrict src, const size_t w) {
 	}
 }
 
-static void get_mul(struct bitfield *bf) {
-	const uint32_t target = (uint32_t)(bf->outdepth > 8 ? USHRT_MAX : UCHAR_MAX)
+static uint32_t get_out_scale(const struct bitfield *bf) {
+	return (uint32_t)(bf->outdepth > 8 ? USHRT_MAX : UCHAR_MAX)
 		<< BITFIELD_SHIFT;
-	for (uint8_t i = 0; i < bf->ch; ++i) {
-		if (bf->comp[i].and) {
-			bf->comp[i].mul = target / bf->comp[i].and + 1;
-		}
-	}
 }
+
 static struct bitfield init_bitfield(const uint8_t word_depth) {
 	return (struct bitfield) {
 		.word_size = word_depth/8,
 	};
 }
 
-void bitfield_from_id(struct bitfield *bf, const enum bitfield_id id,
+void bitfield_from_id(struct bitfield *bf, const uint16_t id,
 const uint8_t word_depth) {
 	*bf = init_bitfield(word_depth);
 	uint8_t z = 0;
@@ -77,97 +69,113 @@ const uint8_t word_depth) {
 		}
 		bf->comp[z].shr = pos;
 		bf->comp[z].and = bit_set32(ones);
+
 		if (ones > maxdepth) {
 			maxdepth = ones;
 		}
 		pos += ones;
 		++z;
 	}
-	const bool high_depth = maxdepth > 8;
-	bf->outdepth = high_depth ? 16 : 8;
+	bf->outdepth = maxdepth > 8 ? 16 : 8;
 	bf->ch = z;
 	bf->id = id;
-	get_mul(bf);
+	const uint32_t target = get_out_scale(bf);
+	for (uint8_t i = 0; i < z; ++i) {
+		bf->comp[i].mul = target / bf->comp[i].and + 1;
+	}
 }
 
+struct bf_key {
+	uint8_t idx;
+	uint8_t zeroes;
+	uint8_t ones;
+};
+
 static void key_swap(struct bf_key *restrict a, struct bf_key *restrict b) {
-	if (a->shr < b->shr) {
+	if (a->zeroes > b->zeroes) {
 		struct bf_key tmp = *a;
 		*a = *b;
 		*b = tmp;
 	}
 }
 
-static void canon_form(struct bf_key canon[static 4], const struct bitfield *bf) {
-	for (uint8_t z = 0; z < ARRAY_LEN(bf->comp); ++z) {
-		if (z < bf->ch) {
-			canon[z] = (struct bf_key) {
-				.shr = (uint8_t)bf->comp[z].shr,
-				.ones = (uint8_t)bit_cto32(bf->comp[z].and),
-				.idx = z,
-			};
-		} else {
-			canon[z] = (struct bf_key) {
-				.idx = z,
-			};
-		}
-	}
-	key_swap(canon + 0, canon + 2);
-	key_swap(canon + 1, canon + 3);
-	key_swap(canon + 0, canon + 1);
-	key_swap(canon + 2, canon + 3);
-	key_swap(canon + 1, canon + 2);
+static enum pix_layout sort_masks(struct bf_key *k) {
+	key_swap(k + 0, k + 2);
+	key_swap(k + 1, k + 3);
+	key_swap(k + 0, k + 1);
+	key_swap(k + 2, k + 3);
+	key_swap(k + 1, k + 2);
+	return 0 << k[0].idx*2 | 1 << k[1].idx*2 | 2 << k[2].idx*2 | 3 << k[3].idx*2;
 }
 
-static void get_id(struct bitfield *bf) {
-	struct bf_key k[ARRAY_LEN(bf->comp)] = {0};
-	canon_form(k, bf);
-
-	enum bitfield_id id = 0;
-	for (uint8_t z = 0; z < bf->ch; ++z) {
-		id |= (unsigned)k[z].ones << (bf->ch - 1 - z)*4;
-	}
-	bf->id = id;
-}
-
-bool bitfield_from_mask(struct bitfield *bf, const uint32_t *mask,
+enum pix_layout bitfield_from_mask(struct bitfield *bf, const uint32_t *mask,
 const uint8_t ch, const uint8_t word_depth) {
+	/* Masks are used by BMP and XWD, where they must meet the following
+	 * requirements:
+	 * - Bits of each mask must be contiguous
+	 * - Masks must not overlap
+	 * It's likely the OR of all masks should also be contiguous, but we
+	 * don't check that at the moment. A mask with no bits, on the other
+	 * hand, is fine (i.e. for Alpha).
+	 * As for ourselves, we want easy legibility for optimization purposes
+	 * (i.e. OpenGL). That means we need a bitfield ID and for the image
+	 * pix_layout to reflect the stored order, as when `bitfield_from_id`
+	 * is called. These values fall out naturally when masks are sorted by
+	 * number of trailing zeroes.
+	*/
 	*bf = init_bitfield(word_depth);
-	uint32_t xor_acc = 0;
-	uint32_t maxdepth = 0;
+	struct bf_key k[ARRAY_LEN(bf->comp)];
+
+	const uint32_t max = sizeof(*mask)*8;
 	uint32_t totalbits = 0;
+	uint32_t maxdepth = 0;
+	uint32_t acc = 0;
 	for (uint8_t i = 0; i < ch; ++i) {
-		const uint32_t zeroes = bit_ctz32(mask[i]);
-		if (zeroes < sizeof(*mask)*8) {
-			uint32_t rem = mask[i] >> zeroes;
-			bf->comp[i].shr = zeroes;
-			bf->comp[i].and = rem;
-
-			const uint32_t ones = bit_cto32(rem);
-			rem = rem >> 1 >> (ones - 1);
-
+		uint32_t m = mask[i];
+		const uint32_t zeroes = bit_ctz32(m);
+		m >>= zeroes;
+		const uint32_t ones = bit_cto32(m);
+		if (ones) {
+			m = m >> 1 >> (ones - 1);
 			// Ensure bits are contiguous and non-overlapping
-			if (rem || (xor_acc & mask[i])) {
-				return false;
+			if (m || (acc & mask[i])) {
+				return 0;
 			}
-			xor_acc ^= mask[i];
-
-			if (ones > maxdepth) {
-				maxdepth = ones;
-			}
+			acc ^= mask[i];
 			totalbits += ones;
-		} else {
-			bf->comp[i] = (struct bitfield_comp){0};
+			maxdepth = u32max(maxdepth, ones);
 		}
+		k[i] = (struct bf_key) {
+			.idx = i,
+			.zeroes = (uint8_t)zeroes,
+			.ones = (uint8_t)ones,
+		};
 	}
-	if (!xor_acc || maxdepth >= word_depth / 2 || totalbits > word_depth) {
+	for (uint8_t i = ch; i < ARRAY_LEN(bf->comp); ++i) {
+		k[i] = (struct bf_key) {
+			.idx = i,
+			.zeroes = (uint8_t)max,
+		};
+	}
+	if (!acc || totalbits > word_depth || maxdepth > u32min(word_depth, 16)) {
 		return false;
 	}
 
-	const bool high_depth = maxdepth > 8;
-	bf->outdepth = high_depth ? 16 : 8;
+	const enum pix_layout layout = sort_masks(k);
+	bf->outdepth = maxdepth > 8 ? 16 : 8;
 	bf->ch = ch;
-	get_mul(bf);
-	get_id(bf);
-	return true;
+	const uint32_t target = get_out_scale(bf);
+	for (uint8_t i = 0; i < ch; ++i) {
+		if (k[i].zeroes >= max) {
+			break;
+		}
+		const uint32_t and = bit_set32(k[i].ones);
+		bf->comp[i] = (struct bitfield_comp) {
+			.shr = k[i].zeroes,
+			.and = and,
+			.mul = target / and + 1,
+		};
+		bf->id |= k[i].ones << (i*4);
+	}
+	return layout;
 }

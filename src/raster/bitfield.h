@@ -2,10 +2,8 @@
 #ifndef RASTER_BITFIELD
 #define RASTER_BITFIELD
 
-#include <stdbool.h>
 #include <stdint.h>
 
-#include "misc/endian.h"
 #include "raster/pix.h"
 
 enum bitfield_id {
@@ -28,10 +26,9 @@ struct bitfield {
 void bitfield_unpack(const struct bitfield *bf, void *restrict dst,
 const void *restrict src, size_t w);
 
-void bitfield_from_id(struct bitfield *bf, enum bitfield_id id,
-uint8_t word_depth);
+void bitfield_from_id(struct bitfield *bf, uint16_t id, uint8_t word_depth);
 
-bool bitfield_from_mask(struct bitfield *bf, const uint32_t *mask, uint8_t ch,
-uint8_t word_depth);
+enum pix_layout bitfield_from_mask(struct bitfield *bf, const uint32_t *mask,
+uint8_t ch, uint8_t word_depth);
 
 #endif /* RASTER_BITFIELD */
