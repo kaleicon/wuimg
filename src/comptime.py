@@ -374,13 +374,16 @@ DEC_MAP = {
 			"desc": "PC Paintbrush PCX (all versions, plus CGA mode)",
 			"ext": ("pcc", "pcx"),
 			"mask": (
-				# Second byte is version. Valid values are 0,2,3,4,5
-				# (If 1 were a valid version, we could get away with
-				# just two sequences. This damned format truly screws
-				# with us at every possible turn.)
-				b"\xff\xff\xff", b"\x0a\x00\x01", # 0
-				b"\xff\xfe\xff", b"\x0a\x02\x01", # 2,3
-				b"\xff\xfe\xff", b"\x0a\x04\x01", # 4,5
+				# Second byte is version. Valid values are
+				# 0,2,3,4,5. (If 1 were a valid version, we
+				# could get away with just two sequences. This
+				# damned format truly screws with us at every
+				# possible turn.)
+				# Third byte is compression. Almost always 1,
+				# rarely 0.
+				b"\xff\xff\xfe", b"\x0a\x00\x00", # 0
+				b"\xff\xfe\xfe", b"\x0a\x02\x00", # 2,3
+				b"\xff\xfe\xfe", b"\x0a\x04\x00", # 4,5
 			),
 			"mime": "x-pcx",
 		},

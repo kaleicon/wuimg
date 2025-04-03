@@ -215,8 +215,7 @@ const unsigned char *restrict rle, const size_t rle_len) {
 	const uint8_t mask = 0xc0;
 	while (r < rle_len) {
 		/* Don't increase `r` until we've written the value, as we
-		 * might skip the palette byte when breaking out.
-		 * PCX sucks. */
+		 * might skip the palette byte if we break out. PCX sucks. */
 		const uint8_t packet = rle[r];
 		if (packet >= mask) {
 			const size_t run_len = packet - mask;
@@ -247,15 +246,22 @@ enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 	}
 
 	desc->mp.pos = 128;
-	struct wuptr rle = mp_avail(&desc->mp,
-		zumin(dims*2 + VGA_PAL_LEN + 1, desc->rle_len));
-	if (!rle.len) {
+	struct wuptr src;
+	size_t r;
+	if (desc->compressed) {
+		// e.g. 0xc1 0x01 0xc1 0x02 -> 0x01 0x02
+		src = mp_avail(&desc->mp, dims*2 + VGA_PAL_LEN + 1);
+		r = rle_decode(img->data, dims, src.ptr, src.len);
+	} else {
+		src = mp_avail(&desc->mp, dims + VGA_PAL_LEN + 1);
+		r = zumin(dims, src.len);
+		memcpy(img->data, src.ptr, r);
+	}
+	if (!r) {
 		return wu_unexpected_eof;
 	}
-
-	const size_t r = rle_decode(img->data, dims, rle.ptr, rle.len);
 	enum wu_error fail = looking_for_lost_pauline(desc, img,
-		rle.ptr + r, rle.len - r);
+		src.ptr + r, src.len - r);
 	if (fail != wu_ok) {
 		return fail;
 	}
@@ -267,44 +273,6 @@ enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 		}
 	}
 	return wuimg_verify(img);
-}
-
-static enum wu_error validate_header(struct pcx_desc *desc, struct wuimg *img,
-const uint8_t bitdepth, const int width, const int height,
-const uint8_t planes, const uint16_t bytes_per_line,
-const uint16_t palette_type) {
-	switch (bitdepth) {
-	case 1: case 8:
-		if (planes < 1 || planes > 4) {
-			return wu_invalid_header;
-		}
-		break;
-	case 2: case 4:
-		if (planes != 1) {
-			return wu_invalid_header;
-		}
-		break;
-	default:
-		return wu_invalid_header;
-	}
-
-	if (width < 1 || height < 1) {
-		return wu_invalid_header;
-	}
-
-	img->w = (size_t)width;
-	img->h = (size_t)height;
-	img->channels = planes;
-	img->bitdepth = bitdepth;
-	img->align_sh = strip_alignment(bytes_per_line, img->w, img->bitdepth);
-	if (img->align_sh < 0 || img->align_sh > 3) {
-		return wu_invalid_header;
-	}
-
-	desc->palette_type = palette_type;
-	desc->bytes_per_line = bytes_per_line;
-	desc->entries = 1 << (img->bitdepth * img->channels);
-	return wu_ok;
 }
 
 enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
@@ -336,28 +304,61 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 		stopped being updated.
 	*/
 
-	const uint8_t *header1 = mp_slice(&desc->mp, 13); // Bytes 0 to 13
-	desc->file_pal = mp_slice(&desc->mp, 48);
-	const uint8_t *header2 = mp_slice(&desc->mp, 10); // Bytes 61 to 71
-	if (!header2) {
+	const uint8_t *hdr = mp_slice(&desc->mp, 71);
+	if (!hdr) {
 		return wu_unexpected_eof;
 	}
 
-	const int xstart = buf_endian16(header1 + 1, little_endian);
-	const int ystart = buf_endian16(header1 + 3, little_endian);
-	const int xend = buf_endian16(header1 + 5, little_endian);
-	const int yend = buf_endian16(header1 + 7, little_endian);
-	const int width = xend - xstart + 1;
-	const int height = yend - ystart + 1;
+	desc->horz_res = buf_endian16(hdr + 9, little_endian);
+	desc->vert_res = buf_endian16(hdr + 11, little_endian);
+	desc->file_pal = hdr + 13;
+	desc->palette_type = buf_endian16(hdr + 65, little_endian);
+	desc->horz_screen = buf_endian16(hdr + 67, little_endian);
+	desc->vert_screen = buf_endian16(hdr + 69, little_endian);
 
-	desc->horz_res = buf_endian16(header1 + 9, little_endian);
-	desc->vert_res = buf_endian16(header1 + 11, little_endian);
-	desc->horz_screen = buf_endian16(header2 + 6, little_endian);
-	desc->vert_screen = buf_endian16(header2 + 8, little_endian);
-	return validate_header(desc, img, header1[0], width, height,
-		header2[1],
-		buf_endian16(header2 + 2, little_endian),
-		buf_endian16(header2 + 4, little_endian));
+	const uint8_t bitdepth = hdr[0];
+	const uint16_t xstart = buf_endian16(hdr + 1, little_endian);
+	const uint16_t ystart = buf_endian16(hdr + 3, little_endian);
+	const uint16_t xend = buf_endian16(hdr + 5, little_endian);
+	const uint16_t yend = buf_endian16(hdr + 7, little_endian);
+	const uint8_t planes = hdr[62];
+	const uint16_t bytes_per_line = buf_endian16(hdr + 63, little_endian);
+
+	desc->entries = 1 << (planes * bitdepth);
+	const int height = yend - ystart + 1;
+	int width = xend - xstart + 1;
+	if (width < 1) {
+		/* Kludge for the broken files in
+		 * https://github.com/jsummers/deark/issues/79 */
+		width = xend;
+	}
+	if (width < 1 || height < 1) {
+		return wu_invalid_header;
+	}
+
+	switch (bitdepth) {
+	case 1: case 8:
+		if (planes < 1 || planes > 4) {
+			return wu_invalid_header;
+		}
+		break;
+	case 2: case 4:
+		if (planes != 1) {
+			return wu_invalid_header;
+		}
+		break;
+	default:
+		return wu_invalid_header;
+	}
+	img->w = (size_t)width;
+	img->h = (size_t)height;
+	img->channels = planes;
+	img->bitdepth = bitdepth;
+	img->align_sh = strip_alignment(bytes_per_line, img->w, img->bitdepth);
+	if (img->align_sh < 0 || img->align_sh > 3) {
+		return wu_invalid_header;
+	}
+	return wu_ok;
 }
 
 enum wu_error pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
@@ -365,23 +366,27 @@ enum wu_error pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
 		Offset  Size    Name
 		0	BYTE	IdentifierByte; // Always 0x0A
 		1	BYTE	Version;
-		2	BYTE	Encoding;       // Always 1
+		2	BYTE	Encoding;       // 0 or 1 [*]
 		3
+	 * [*] The only valid value is 1, meaning RLE encoding, and virtually
+	 *     all files in the wild follow this. Alas, imagemagick allows
+	 *     creating uncompressed files with Encoding = 0, while
+	 *     graphicsmagick does that by default.
 	*/
 
 	desc->mp = mp_wuptr(mem);
 	if (desc->mp.len > 128) {
 		const uint8_t *sig = mp_slice(&desc->mp, 3);
 		if (sig) {
-			if (sig[0] == 0x0a && sig[2] == 1) {
+			if (sig[0] == 0x0a && sig[2] <= 1) {
 				switch (sig[1]) {
 				case pcx_ver25:
 				case pcx_ver28_egapal:
 				case pcx_ver28_nopal:
 				case pcx_paintbrush:
 				case pcx_ver30:
-					desc->rle_len = desc->mp.len - 128;
 					desc->version = sig[1];
+					desc->compressed = sig[2];
 					return wu_ok;
 				}
 			}
