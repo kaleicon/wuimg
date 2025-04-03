@@ -34,6 +34,10 @@ struct file_list {
 	char **name;
 };
 
+struct sole_mode_args {
+	struct wuptr raw;
+};
+
 struct test_mode_args {
 	unsigned int iters;
 	unsigned int warmup;
@@ -43,6 +47,7 @@ struct test_mode_args {
 struct program_mode {
 	enum work_mode type;
 	union mode_args {
+		struct wuptr raw;
 		struct test_mode_args test;
 		struct write_args write;
 	} arg;
@@ -212,7 +217,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 }
 
 static enum wu_error run_with_list(struct file_list *entries, long idx,
-const bool interpret_stdin) {
+const bool interpret_stdin, const struct wuptr *raw) {
 	struct window_context window = {
 		.pub.image.conf = conf_load(),
 	};
@@ -249,6 +254,9 @@ const bool interpret_stdin) {
 			}
 		} else {
 			dec_src_filename(image, name);
+		}
+		if (raw && raw->ptr) {
+			dec_src_auto_desc(image, raw);
 		}
 
 		if (!free_entry) {
@@ -293,7 +301,7 @@ const struct program_mode *mode) {
 		case writeout: return convert_files(&entries, &mode->arg.write);
 		default: break;
 		}
-		return run_with_list(&entries, 0, true);
+		return run_with_list(&entries, 0, true, &mode->arg.raw);
 	}
 	term_line_put("ERROR: No files given", stderr);
 	return 1;
@@ -311,7 +319,7 @@ static enum wu_error from_path(const char *name) {
 
 	enum wu_error result;
 	if (entries.name) {
-		result = run_with_list(&entries, (long)start_idx, false);
+		result = run_with_list(&entries, (long)start_idx, false, NULL);
 		list_free(&entries);
 	} else {
 		if (errno) {
@@ -384,6 +392,15 @@ static void print_help(void) {
 		"\t\tto `wuconv` for a software renderer.\n"
 
 		"\n"
+		SOLE_MODE " switches:\n"
+		"\t-r STRING\n"
+		"\t\tRead a raw image using settings from STRING. Example:\n"
+		"\t\t\t'w:320 h:240 channels:4 bitdepth:8 layout:bgra'\n"
+		"\t\tOne may also perform rudimentary reads and seeks:\n"
+		"\t\t\t'endian:little channels:1 bitdepth:1 w:<u16> h:<u16> skip:0x80'\n"
+		"\t\tA complete description is yet to be written...\n"
+
+		"\n"
 		TEST_MODE " switches:\n"
 		"\t-n N\n"
 		"\t\tDecode each file N times. Default is 1.\n"
@@ -398,6 +415,20 @@ static void print_help(void) {
 		WRITE_MODE " switches:\n", stdout
 	);
 	fputs(write_switches, stdout);
+}
+
+static int sole_args(const int argc, char **argv, struct wuptr *args) {
+	*args = (struct wuptr){0};
+	int read = 0;
+	if (short_opt(argv[read]) == 'r') {
+		++read;
+		if (read >= argc) {
+			return 0;
+		}
+		*args = wuptr_str(argv[read]);
+		++read;
+	}
+	return read;
 }
 
 static int test_args(const int argc, char **argv, struct test_mode_args *args) {
@@ -458,6 +489,10 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 		++read;
 		int r = 0;
 		switch (mode->type) {
+		case sole:
+			r = sole_args(argc - read, argv + read,
+				&mode->arg.raw);
+			break;
 		case test:
 			r = test_args(argc - read, argv + read,
 				&mode->arg.test);

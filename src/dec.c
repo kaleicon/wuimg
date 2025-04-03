@@ -209,6 +209,13 @@ struct wuimg **cur_img) {
 	return wu_no_change;
 }
 
+void dec_src_auto_desc(struct image_context *image, const struct wuptr *desc) {
+	image->desc = (struct fmt_desc) {
+		.is_auto = true,
+		.dec.desc = desc,
+	};
+}
+
 void dec_src_mem(struct image_context *image, const struct wuptr data,
 const char *name, const struct image_fn *fn) {
 	image->name = name;

@@ -45,6 +45,8 @@ const char * wu_error_message(const enum wu_error err) {
 		return "Integer overflow";
 	case wu_decoding_error:
 		return "Failed to decode image";
+	case wu_string_parse_error:
+		return "Failed to parse string";
 	case wu_display_error:
 		return "Error ocurred during display";
 	case wu_unknown_error:
@@ -125,9 +127,7 @@ static void find_better_alignment(struct wuimg *img) {
 
 static const char * geom_verify(const uint8_t ch, const uint8_t bitdepth,
 const align_t align, const enum pix_attr attr, const enum image_mode mode) {
-	if (!ch) {
-		return "Channel number must not be zero";
-	} else if (!bitdepth) {
+	if (!bitdepth) {
 		return "Bitdepth must not be zero";
 	} else if (align < 0) {
 		return "Invalid alignment";
@@ -136,7 +136,10 @@ const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 	switch (mode) {
 	case image_mode_raw:
 	case image_mode_planar:
-		if (attr == pix_float) {
+		if (!ch) {
+			return "Channel number must not be zero for raw or"
+				" planar images";
+		} else if (attr == pix_float) {
 			switch (bitdepth) {
 			case 16: case 32: case 64: break;
 			default: return "Float depth must be 16, 32, or 64";
@@ -144,14 +147,14 @@ const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 		}
 		return NULL;
 	case image_mode_palette:
-		if (ch != 1) {
+		if (ch > 1) {
 			return "Paletted images must use 1 channel";
 		} else if (bitdepth > 8) {
 			return "Paletted images must not use more than 8 bits";
 		}
 		break;
 	case image_mode_bitfield:
-		if (ch != 1) {
+		if (ch > 1) {
 			return "Bitfield images must use 1 channel";
 		}
 		break;
@@ -209,6 +212,9 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 		fatal_bug(__func__, err_msg);
 	}
 
+	if (!img->channels) {
+		img->channels = 1;
+	}
 	if (img->align_sh > 3) {
 		find_better_alignment(img);
 	}

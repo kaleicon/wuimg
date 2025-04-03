@@ -32,6 +32,7 @@ enum wu_error {
 	wu_int_overflow,
 	wu_decoding_error,
 	wu_invalid_params,
+	wu_string_parse_error,
 	wu_display_error,
 	wu_unknown_error,
 };

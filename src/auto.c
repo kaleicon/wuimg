@@ -29,7 +29,6 @@ const struct wuptr avs_desc = DESC(
 // Bob Raytracer Raster
 const struct wuptr bob_desc = DESC(
 	"endian:little\n"
-	"channels:1\n"
 	"bitdepth:8\n"
 
 	"w:<u16>\n"
@@ -144,7 +143,6 @@ const struct wuptr nlm_desc = DESC(
 // COKE
 const struct wuptr coke_desc = DESC(
 	"endian:big\n"
-	"channels:1\n"
 	"bitdepth:16\n"
 	"layout:bgra\n"
 	"bitfield:0x565\n"
@@ -158,7 +156,6 @@ const struct wuptr coke_desc = DESC(
 // EggPaint
 const struct wuptr eggpaint_desc = DESC(
 	"endian:big\n"
-	"channels:1\n"
 	"bitdepth:16\n"
 	"layout:bgra\n"
 	"bitfield:0x565\n"
@@ -172,7 +169,6 @@ const struct wuptr eggpaint_desc = DESC(
 const struct wuptr ftc_desc = DESC(
 	"w:384\n"
 	"h:240\n"
-	"channels:1\n"
 	"bitdepth:16\n"
 	"layout:bgra\n"
 	"bitfield:0x565"
@@ -181,7 +177,6 @@ const struct wuptr ftc_desc = DESC(
 // GodPaint
 const struct wuptr god_desc = DESC(
 	"endian:big\n"
-	"channels:1\n"
 	"bitdepth:16\n"
 	"layout:bgra\n"
 	"bitfield:0x565\n"
@@ -194,7 +189,6 @@ const struct wuptr god_desc = DESC(
 // IndyPaint
 const struct wuptr indy_desc = DESC(
 	"endian:big\n"
-	"channels:1\n"
 	"bitdepth:16\n"
 	"layout:bgra\n"
 	"bitfield:0x565\n"
@@ -236,7 +230,6 @@ const struct wuptr tcp_desc = DESC(
 		198
 	*/
 	"endian:big\n"
-	"channels:1\n"
 	"bitdepth:16\n"
 	"layout:bgra\n"
 	"bitfield:0x565\n"
@@ -254,7 +247,6 @@ const struct wuptr tcp_desc = DESC(
 // Spooky Sprites TRP
 const struct wuptr trp_desc = DESC(
 	"endian:big\n"
-	"channels:1\n"
 	"bitdepth:16\n"
 	"layout:bgra\n"
 	"bitfield:0x565\n"
@@ -321,7 +313,7 @@ static struct parse_err perr(const enum wu_error st, const char *msg) {
 }
 
 static struct parse_err pbug(const char *msg) {
-	return perr(wu_invalid_params, msg);
+	return perr(wu_string_parse_error, msg);
 }
 
 static struct parse_err pok(void) {

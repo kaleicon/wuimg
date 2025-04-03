@@ -16,6 +16,8 @@ enum wu_error dec_iter(struct image_context *image,
 struct wuimg **cur_img);
 
 
+void dec_src_auto_desc(struct image_context *image, const struct wuptr *desc);
+
 void dec_src_mem(struct image_context *image, struct wuptr data,
 const char *name, const struct image_fn *fn);
 
