@@ -487,7 +487,7 @@ const uint8_t ext[static 3]) {
 		img->w = 256;
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 16;
-		if (!wuimg_bitfield_from_id(img, 0x1555)) {
+		if (!wuimg_bitfield_from_id(img, 0x555)) {
 			return wu_alloc_error;
 		}
 		/* These screen modes render to a higher bitdepth, so we'll
