@@ -789,6 +789,7 @@ DEC_MAP = {
 				"jpe", "jpeg", "jpg",
 				"jps",
 				"mpo",
+				"stj", # Stereoscopic JPEG
 				"thm",
 				# Not sure where I got this from. Conflicts with Tiny Stuff
 				"tn3",
