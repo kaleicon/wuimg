@@ -24,7 +24,16 @@ struct color_map {
 	float add[4];
 };
 
+enum color_steps {
+	color_step_map = 1 << 0,
+	color_step_nonlinear = 1 << 1,
+	color_step_eotf = 1 << 2,
+	color_step_linear = 1 << 3,
+	color_step_icc = 1 << 4,
+};
+
 struct color_convert {
+	enum color_steps steps;
 	struct color_map map;
 	struct mat3f nonlinear;
 	struct color_transfer eotf;

@@ -940,7 +940,8 @@ uint8_t * gl_reader_read_row(struct gl_reader_context *reader, const size_t y) {
 }
 
 const char * gl_reader_set(struct gl_reader_context *reader,
-const struct wuimg *dst, const struct wuimg *src) {
+const struct wuimg *dst, const struct wuimg *src, const bool _read_only) {
+	(void)_read_only;
 	// Alloc row first so that it's always safe to call gl_reader_close()
 	reader->row = malloc(wuimg_stride(dst));
 	if (!reader->row) {

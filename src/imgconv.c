@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: 0BSD
-#include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/math.h"
 #include "imgconv.h"
 
-// Set to true for a somewhat faster powf(), otherwise use libc functions
-static const uint8_t USE_MATH_APPROX = false;
+/* Enable for somewhat faster exp2f(), log2f() and powf(), otherwise use
+ * libc functions. */
+static const bool USE_MATH_APPROX = true;
+/* Use a upsampling function that is faster but harder to understand. */
+static const bool USE_UPSAMP_FASTER = true;
 
 void imgconv_close(struct imgconv *state) {
 	if (state->xfr) {
@@ -19,11 +21,27 @@ void imgconv_close(struct imgconv *state) {
 	palette_unref(state->pal);
 }
 
+/* Try to use whichever is best: fmaf() or a naive a*b+c. When supported by
+ * the processor, fmaf() is faster, yields better precision, and reduces the
+ * amount of instructions, but on unsupported machines it's implemented using
+ * doubles, incurring a very dramatic performance hit. We prefer the naive
+ * version in those cases.
+ * As a fallback we pass the -ffp-contract=fast flag to the compiler, which may
+ * turn the naive version into a FMA, but also may not be recognized by all
+ * compilers. We could pass =on, but then GCC will certainly ignore it. */
+float fmaff(const float a, const float b, const float c) {
+#if FP_FAST_FMAF == 1 || defined(__FMA__) || defined(__FMA4__) || defined(__ARM_FEATURE_FMA)
+	return fmaf(a,b,c);
+#else
+	return a*b+c;
+#endif
+}
+
 static float mix(const float a, const float b, const float k) {
 	/* Linear interpolation. Equivalent to
 	 *	a*(1 - k) + b*k
 	*/
-	return fmaf(b, k, fmaf(a, -k, a));
+	return fmaff(b, k, fmaff(a, -k, a));
 }
 
 static float fractf(float val) {
@@ -84,10 +102,13 @@ static float fastexp2f_unchecked(float x) {
 		a2 = 0x1.ee2454p-3f,
 		a3 = 0x1.abf854p-5f,
 		a4 = 0x1.b7f75ap-7f;
-	return fmaf(fmaf(fmaf(fmaf(a4, f, a3), f, a2), f, a1), f*e, e);
+	return fmaff(fmaff(fmaff(fmaff(a4, f, a3), f, a2), f, a1), f*e, e);
 }
 
 static float fastpowlog2f(float x, float mul) {
+	/* log2() that accepts the exponent of its powf() parent to save a
+	 * single instruction. */
+
 	// Extract the exponent of x
 	uint32_t u;
 	memcpy(&u, &x, sizeof(u));
@@ -108,8 +129,8 @@ static float fastpowlog2f(float x, float mul) {
 		a3 = -0x1.3b3c36p0,
 		a4 = 0x1.45cce8p-2,
 		a5 = -0x1.1a0ba8p-5;
-	x = fmaf(fmaf(fmaf(fmaf(fmaf(a5, m, a4), m, a3), m, a2), m, a1), m, a0);
-	return fmaf(x, fmaf(mul, m, -mul), e * mul);
+	x = fmaff(fmaff(fmaff(fmaff(fmaff(a5, m, a4), m, a3), m, a2), m, a1), m, a0);
+	return fmaff(x, fmaff(mul, m, -mul), e * mul);
 }
 
 static float myexp2f(float x) {
@@ -128,10 +149,27 @@ static float mypowf(float x, float e) {
 	return powf(x, e);
 }
 
-static unsigned poor_round(float val, float scale) {
-	/* Like lroundf(), but seems slightly faster
-	 * On par with lrintf(), but doesn't depend on the float environment. */
-	return (unsigned)fmaf(val, scale, .5f);
+static float poor_round(float val, float scale) {
+	/* A dumber and faster lroundf() replacement.
+	 * On par with lrintf() when FMA is supported, and slightly slower when
+	 * not, but not so much as to make us touch some icky global state nor
+	 * deal with fesetround() failures. */
+	return fmaff(saturate(val), scale, 0.5f);
+}
+
+static void matff_mul(float *restrict out, const float *restrict m1,
+const float *restrict m2, const int len, const int h1, const int w2) {
+	/* Reimplementation of matf_mul(), but using fmaff. Nice to have when
+	 * not compiling with LTO, too. */
+	for (int y = 0; y < h1; ++y) {
+		for (int x = 0; x < w2; ++x) {
+			float acc = m1[y*len] * m2[x];
+			for (int i = 1; i < len; ++i) {
+				acc = fmaff(m1[y*len + i], m2[x + i*w2], acc);
+			}
+			out[y*w2 + x] = acc;
+		}
+	}
 }
 
 static float get_ch(const void *data, const int32_t i, const uint8_t depth) {
@@ -142,17 +180,30 @@ static float get_ch(const void *data, const int32_t i, const uint8_t depth) {
 	return ((float *)data)[i];
 }
 
-static void pack_row(void *restrict t, const float *row, const size_t w,
-const uint8_t channels, const bool high_depth) {
-	const float scale = high_depth ? 0xffff : 0xff;
-	for (size_t i = 0; i < w*channels; ++i) {
-		unsigned ival = poor_round(saturate(row[i]), scale);
-		if (high_depth) {
-			((uint16_t *)t)[i] = (uint16_t)(ival);
-		} else {
-			((uint8_t *)t)[i] = (uint8_t)(ival);
-		}
+static void put_ch(void *dst, const size_t i, const float val,
+const bool high_depth) {
+	if (high_depth) {
+		((uint16_t *)dst)[i] = (uint16_t)val;
+	} else {
+		((uint8_t *)dst)[i] = (uint8_t)val;
 	}
+}
+
+static void * pack_row(void *t, const float *row, const size_t w,
+const uint8_t channels, const bool high_depth) {
+	const float mul = high_depth ? 0xffff : 0xff;
+	for (size_t i = 0; i < w*channels; ++i) {
+		put_ch(t, i, poor_round(row[i], mul), high_depth);
+	}
+	return t;
+}
+
+static void * pack_row_nomul(void *t, const float *row, const size_t w,
+const uint8_t channels, const bool high_depth) {
+	for (size_t i = 0; i < w*channels; ++i) {
+		put_ch(t, i, row[i] + .5f, high_depth);
+	}
+	return t;
 }
 
 static float oetf_srgb(float v) {
@@ -165,10 +216,10 @@ static float oetf_srgb(float v) {
 		float x = gamma ? 1.0f/2.4f : 1;
 		float m = gamma ? 1.055f : 12.92f;
 		float a = gamma ? -0.055f : 0;
-		return copysignf(fmaf(mypowf(v, x), m, a), v);
+		return copysignf(fmaff(mypowf(v, x), m, a), v);
 	}
 	return v > 0.0031308f
-		? fmaf(powf(v, 1.0f/2.4f), 1.055f, -0.055f)
+		? fmaff(powf(v, 1.0f/2.4f), 1.055f, -0.055f)
 		: v * 12.92f;
 }
 
@@ -179,11 +230,11 @@ static float eotf(float v, const struct color_transfer *t) {
 	case color_transfer_pq:
 		v = mypowf(max(v, 0), arg[0]);
 		float num = v - min(arg[1], v); // a.k.a. fdim()
-		float den = fmaf(v, -arg[3], arg[2]);
+		float den = fmaff(v, -arg[3], arg[2]);
 		return mypowf(num/den, arg[4]);
 	case color_transfer_hlg:
 		return v > arg[0]
-			? myexp2f(fmaf(v, arg[1], arg[2])) + arg[3]
+			? myexp2f(fmaff(v, arg[1], arg[2])) + arg[3]
 			: v * v * arg[4];
 	}
 	// Input to the linear-gamma EOTF may be negative
@@ -192,17 +243,17 @@ static float eotf(float v, const struct color_transfer *t) {
 	float e = gamma ? arg[1] : arg[4];
 	float l = gamma ? arg[2] : 0.0f;
 	float p = gamma ? arg[3] : 1.0f;
-	return copysignf(mypowf(fmaf(h, e, l), p), v);
+	return copysignf(mypowf(fmaff(h, e, l), p), v);
 }
 
-static void convert_alpha(float *pix, const size_t w, const uint8_t ch,
-const enum alpha_interpretation alpha, const bool high_depth) {
+static void convert_alpha(float *row, const size_t w, const uint8_t ch,
+const enum alpha_interpretation alpha) {
 	if (ch != 2 && ch != 4) {
 		return;
 	}
-	const float scale = high_depth ? 0xffff : 0xff;
 	uint8_t a = ch - 1;
 	for (size_t x = 0; x < w; ++x) {
+		float *pix = row + x*ch;
 		switch (alpha) {
 		case alpha_associated:
 			if (isnormal(pix[a])) {
@@ -210,9 +261,8 @@ const enum alpha_interpretation alpha, const bool high_depth) {
 					pix[z] /= pix[a];
 				}
 			}
-			// fallthrough
+			break;
 		case alpha_unassociated:
-			pix[a] *= scale;
 			break;
 		case alpha_key:
 			for (uint8_t z = 0; z < 3; ++z) {
@@ -220,135 +270,184 @@ const enum alpha_interpretation alpha, const bool high_depth) {
 			}
 			// fallthrough
 		case alpha_ignore:
-			pix[a] = scale;
+			pix[a] = 1;
 			break;
 		}
-		pix += ch;
 	}
 }
 
-static bool convert_row_gray(void *restrict tgt, const float *restrict unpack,
-size_t w, uint8_t channels, bool high_depth, enum alpha_interpretation alpha,
-const struct imgconv *state) {
-	if (!channels) {
-		return false;
-	}
-	const struct color_convert *cs = &state->color;
+static float scale(const float x, const struct color_convert *cc,
+const uint8_t i) {
+	return fmaff(x, cc->map.mul[i], cc->map.add[i]);
+}
+
+static bool convert_row_gray(float *row, size_t w, uint8_t channels,
+const enum alpha_interpretation alpha, const struct imgconv *state) {
+	const struct color_convert *cc = &state->color;
 	const bool has_alpha = channels > 1;
-	float *t = tgt;
-	for (size_t x = 0; x < w; ++x) {
-		const float *orig = unpack + x*channels;
-		if (has_alpha) {
-			t[x*channels+1] = fmaf(orig[1], cs->map.mul[3], cs->map.add[3]);
+	if ((cc->steps & color_step_map)) {
+		for (size_t x = 0; x < w; ++x) {
+			float *pix = row + x*channels;
+			pix[0] = scale(pix[0], cc, 0);
+			if (has_alpha) {
+				pix[1] = scale(pix[1], cc, 3);
+			}
 		}
-		t[x*channels] = fmaf(orig[0], cs->map.mul[0], cs->map.add[0]);
 	}
 
-	const bool process_alpha = has_alpha && alpha != alpha_unassociated;
-	if (state->src->cs.type == color_profile_icc) {
-		cmsDoTransform(state->xfr, t, t, (cmsUInt32Number)w);
-		return false;
-	} else if (!cs->eotf.srgb_input || process_alpha) {
+	if ((cc->steps & (color_step_icc))) {
+		return true;
+	}
+
+	const bool transfer = state->transfer;
+	if (transfer && (cc->steps & color_step_eotf)) {
 		for (size_t x = 0; x < w; ++x) {
-			float *pix = t + x*channels;
-			*pix = eotf(*pix, &cs->eotf);
+			float *pix = row + x*channels;
+			*pix = eotf(*pix, &cc->eotf);
 		}
-
-		convert_alpha(t, w, channels, alpha, high_depth);
-
+	}
+	convert_alpha(row, w, channels, alpha);
+	if (transfer) {
 		for (size_t x = 0; x < w; ++x) {
-			float *pix = t + x*channels;
+			float *pix = row + x*channels;
 			*pix = oetf_srgb(*pix);
 		}
 	}
-	return true;
+	return false;
 }
 
-static bool convert_row_color(void *restrict tgt, const float *restrict unpack,
-size_t w, uint8_t channels, bool high_depth, enum alpha_interpretation alpha_type,
-const struct imgconv *state) {
-	if (channels > 4) {
-		return false;
-	}
-	const struct color_convert *cs = &state->color;
+static bool convert_row_color(float *row, size_t w, uint8_t channels,
+enum alpha_interpretation alpha, const struct imgconv *state) {
+	const struct color_convert *cc = &state->color;
 	const bool has_alpha = channels > 3;
-	float *t = tgt;
-	for (size_t x = 0; x < w; ++x) {
-		const float *orig = unpack + x*channels;
-		float tmp[4];
-		memcpy(tmp, orig, sizeof(*tmp) * channels);
-		tmp[3] = has_alpha ? orig[3] : 1;
+	if ((cc->steps & (color_step_map | color_step_nonlinear))) {
+		for (size_t x = 0; x < w; ++x) {
+			float *pix = row + x*channels;
+			float tmp[4];
+			memcpy(tmp, pix, sizeof(*tmp) * channels);
+			tmp[3] = has_alpha ? pix[3] : 1;
 
-		for (size_t z = 0; z < ARRAY_LEN(tmp); ++z) {
-			tmp[z] = fmaf(tmp[z], cs->map.mul[z], cs->map.add[z]);
+			for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
+				tmp[z] = scale(tmp[z], cc, z);
+			}
+
+			matff_mul(pix, tmp, cc->nonlinear.m, 3, 1, 3);
+			memcpy(pix + 3, tmp + 3, sizeof(*tmp) * has_alpha);
 		}
-
-		float *dst = t + x*channels;
-		matf_mul(dst, tmp, cs->nonlinear.m, 3, 1, 3);
-		memcpy(dst + 3, tmp + 3, sizeof(*tmp) * has_alpha);
 	}
 
-	const bool process_alpha = has_alpha && alpha_type != alpha_unassociated;
-	if (state->src->cs.type == color_profile_icc) {
-		cmsDoTransform(state->xfr, t, t, (cmsUInt32Number)w);
-		return false;
-	} else if (!cs->eotf.srgb_input || process_alpha) {
+	if ((cc->steps & (color_step_icc))) {
+		return true;
+	}
+
+	const bool transfer = state->transfer;
+	if (transfer && (cc->steps & (color_step_eotf | color_step_linear))) {
 		for (size_t x = 0; x < w; ++x) {
-			float *pix = t + x*channels;
+			float *pix = row + x*channels;
 			float tmp[3];
 			for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
-				tmp[z] = eotf(pix[z], &cs->eotf);
+				tmp[z] = eotf(pix[z], &cc->eotf);
 			}
-			matf_mul(pix, cs->linear.m, tmp, 3, 3, 1);
+			matff_mul(pix, cc->linear.m, tmp, 3, 3, 1);
 		}
-
-		convert_alpha(t, w, channels, alpha_type, high_depth);
-
+	}
+	convert_alpha(row, w, channels, alpha);
+	if (transfer) {
 		for (size_t x = 0; x < w; ++x) {
-			float *pix = t + x*channels;
+			float *pix = row + x*channels;
 			for (uint8_t z = 0; z < 3; ++z) {
 				pix[z] = oetf_srgb(pix[z]);
 			}
 		}
 	}
-	return true;
+	return false;
 }
 
-static void convert_row(void *restrict tgt, const float *restrict unpack,
+static void * convert_row(void *restrict tgt, float *restrict row,
 size_t w, uint8_t channels, uint8_t depth, const struct wuimg *src,
 const struct imgconv *state) {
-	const enum alpha_interpretation a = src->alpha;
-	const bool high_depth = depth > 8;
-	float *row = (float *)state->row;
-	const bool pack = (channels >= 3)
-		? convert_row_color(row, unpack, w, channels, high_depth, a, state)
-		: convert_row_gray(row, unpack, w, channels, high_depth, a, state);
-	if (pack) {
-		pack_row(tgt, row, w, channels, high_depth);
+	/* Perform color correction on a row of floats.
+	 * There's an important assumption from here on: that channels < 3
+	 * are grayscale, >= 3 are color, and that 2 and 4 include an Alpha
+	 * channel. Just stating 'cause this might come to haunt us someday. */
+	const bool icc = (channels >= 3 ? convert_row_color : convert_row_gray)
+		(row, w, channels, src->alpha, state);
+	if (icc) {
+		cmsDoTransform(state->xfr, tgt, row, (cmsUInt32Number)w);
+		return tgt;
 	}
+	return pack_row(tgt, row, w, channels, depth > 8);
 }
 
-static void * process_row(void *restrict tgt, const void *restrict unpack,
+static void * expand_row(void *restrict tgt, const void *restrict unpack,
 ptrdiff_t pix_stride, size_t w, uint8_t channels, uint8_t bitdepth,
 const struct wuimg *src, const struct imgconv *state) {
-	/* Copy an unpacked and possibly rotated row into linear order.
-	 * Swizzle into RGBA or GrayAlpha order while at it. */
+	/* We're given pixels at some distance from each other, and components
+	 * interleaved in some order. Expand to floats in RGBA or GrayAlpha
+	 * order. */
 	const uint8_t ud = state->unpack_depth/8;
 	const uint8_t *u = unpack;
-
-	uint8_t swz[4];
-	pix_layout_map(swz, src->layout);
-
-	// Expand to float while swizzling
 	float *tmp = (float *)state->row;
 	for (size_t x = 0; x < w; ++x) {
 		for (uint8_t z = 0; z < channels; ++z) {
-			tmp[x*channels + z] = get_ch(u, swz[z], ud);
+			tmp[x*channels + z] = get_ch(u, state->swz[z], ud);
 		}
 		u += pix_stride;
 	}
-	convert_row(tgt, tmp, w, channels, bitdepth, src, state);
-	return tgt;
+	return convert_row(tgt, tmp, w, channels, bitdepth, src, state);
+}
+
+static void * raw_convert(void *restrict tgt, void *restrict unpack,
+ptrdiff_t pix_stride, const struct wuimg *restrict dst,
+const struct wuimg *restrict src, const struct imgconv *state) {
+	/* See if we can shuffle data without any color processing. */
+	const size_t w = dst->w;
+	const uint8_t channels = dst->channels;
+	const uint8_t bitdepth = dst->bitdepth;
+	uint8_t *u = unpack;
+	if (state->color_passthrough) {
+		// Input/unpacked data matches output colorspace
+		const uint8_t comp_size = state->unpack_depth/8;
+		const size_t pix = comp_size*channels;
+		uint8_t *t = tgt;
+		if (src->layout != state->dst->layout) {
+			// Only swizzling is needed
+			for (size_t x = 0; x < w; ++x) {
+				for (uint8_t z = 0; z < channels; ++z) {
+					memcpy(t + x*pix + z*comp_size,
+						u + state->swz[z]*comp_size,
+						comp_size);
+				}
+				u += pix_stride;
+			}
+		} else if ((ptrdiff_t)pix != pix_stride) {
+			// Read across the image
+			for (size_t x = 0; x < w; ++x) {
+				memcpy(t + x*pix, u, pix);
+				u += pix_stride;
+			}
+		} else if (src->attr == pix_float) {
+			// Input is floating-point. Send to pack_row()
+			t = u;
+		} else if (state->op != op_noop || state->wont_modify) {
+			/* Input is linear, and is a pointer into our buffer
+			 * or to the source data which the caller promises
+			 * not to modify. */
+			return u;
+		} else {
+			/* Input is linear and a pointer to the source image.
+			 * Caller may modify what we return (i.e. byte swaps)
+			 * and decoder may need it later on (i.e. animations)
+			 * so return a copy instead. */
+			memcpy(t, u, pix*w);
+		}
+		if (src->attr == pix_float) {
+			return pack_row(tgt, (float *)t, w, channels, bitdepth > 8);
+		}
+		return tgt;
+	}
+	return expand_row(tgt, unpack, pix_stride, w, channels, bitdepth,
+		src, state);
 }
 
 static bool mirror_swap(const struct wuimg *src) {
@@ -357,12 +456,96 @@ static bool mirror_swap(const struct wuimg *src) {
 
 struct planar_subsamp {
 	float samp, off;
+	float init;
+	float wrap;
+	float chg;
 };
 
-static void subsampled_plane(float *pix, const float *limit, const uint8_t ch,
-const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize,
-const struct planar_subsamp *xp, const struct planar_subsamp *yp) {
-	// This function works perfectly. It's also slow as molasses. FIXME
+static void set_params(struct planar_subsamp *c, const struct plane_dim *d,
+const int add) {
+	const uint8_t sub = d->subsamp;
+	const bool match_grid = d->cosit | (sub == 1);
+	c->samp = 1.f/sub;
+	c->off = match_grid ? 0 : -.5f + fractf(1.f/(sub*sub));
+	//c->init = add ? (add < 0 ? sub - 1 : 0) : 0;
+	//c->wrap = add ? (add < 0 ? 0 : sub - 1) : 0;
+	c->init = add < 0 ? sub - 1 : 0;
+	c->wrap = add < 0 ? 0 : sub - 1;
+	c->chg = match_grid
+		? c->wrap
+		: (float)((sub + (add < 0 ? -1 : 1))/2);
+}
+
+static float spos(const float coord, const struct planar_subsamp *p) {
+	return fmaff(coord, p->samp, p->off);
+}
+
+static void upsamp_plane4(float *pix, const float *limit, const uint8_t ch,
+const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
+	// Fast upsampling function
+	const bool x = xadd;
+
+	const ptrdiff_t stride = (ptrdiff_t)p->stride;
+	const ptrdiff_t vstride = x ? usize : stride;
+	const ptrdiff_t cstride = x ? stride : usize;
+	const ptrdiff_t dv = (ptrdiff_t)((x ? p->w : p->h) - 1) * vstride;
+	const ptrdiff_t dc = (ptrdiff_t)((x ? p->h : p->w) - 1) * cstride;
+
+	ptrdiff_t v = x ? ix : iy;
+	ptrdiff_t c = x ? iy : ix;
+	const int vadd = x ? xadd : yadd;
+	const int cadd = 0;
+	const struct plane_dim *dpv = x ? &p->x : &p->y;
+	const struct plane_dim *dpc = x ? &p->y : &p->x;
+
+	struct planar_subsamp pv, pc;
+	set_params(&pv, dpv, vadd);
+	set_params(&pc, dpc, cadd);
+	float fv = (float)(v % dpv->subsamp);
+	float fc = (float)(c % dpc->subsamp);
+	const float mc = fractf(spos(fc, &pc));
+
+	v = (ptrdiff_t)floorf(spos((float)v, &pv)) * vstride;
+	v += (vadd < 0) * vstride;
+	c = (ptrdiff_t)floorf(spos((float)c, &pc)) * cstride;
+	const ptrdiff_t loc = c + (c < 0) * cstride;
+	const ptrdiff_t hic = c + (c < dc) * cstride;
+
+	const ptrdiff_t limv = vadd >= 0 ? dv : 0;
+	const ptrdiff_t vdiff = vadd * vstride;
+	ptrdiff_t vv = v + vdiff;
+
+	const uint8_t *ptr = p->ptr;
+	float g[2];
+	const bool up = vadd >= 0;
+	g[up] = mix(
+		get_ch(ptr + loc + vv, 0, usize),
+		get_ch(ptr + hic + vv, 0, usize),
+		mc);
+	while (pix < limit) {
+		v += (v != limv)*vdiff;
+		vv = v;
+		g[!up] = g[up];
+		g[up] = mix(
+			get_ch(ptr + loc + vv, 0, usize),
+			get_ch(ptr + hic + vv, 0, usize),
+			mc);
+		do {
+			float mv = fractf(spos(fv, &pv));
+			*pix = mix(g[0], g[1], mv);
+			fv = (fv == pv.wrap) ? pv.init : fv + (float)vadd;
+			pix += ch;
+		} while (pix < limit && fv != pv.chg);
+	}
+}
+
+static void upsamp_plane(float *pix, const float *limit, const uint8_t ch,
+const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
+	// Reference upsampling function.
+	struct planar_subsamp xp, yp;
+	set_params(&xp, &p->x, xadd);
+	set_params(&yp, &p->y, yadd);
+
 	const uint8_t *ptr = p->ptr;
 	const int stride = (int)p->stride;
 	int ws = (int)(p->w - 1);
@@ -370,8 +553,8 @@ const struct planar_subsamp *xp, const struct planar_subsamp *yp) {
 	float fx = (float)ix;
 	float fy = (float)iy;
 	while (pix < limit) {
-		float xs = fmaf(fx, xp->samp, xp->off);
-		float ys = fmaf(fy, yp->samp, yp->off);
+		float xs = spos(fx, &xp);
+		float ys = spos(fy, &yp);
 		float xm = fractf(xs);
 		float ym = fractf(ys);
 		int xlo = (int)floorf(xs);
@@ -408,13 +591,7 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	}
 }
 
-static void set_params(struct planar_subsamp *c, const struct plane_dim *d) {
-	c->samp = 1.f/d->subsamp;
-	c->off = (d->cosit || d->subsamp < 2)
-		? 0 : -.5f + fractf(c->samp * c->samp);
-}
-
-static uint8_t * get_planar_row(const struct imgconv *state, size_t y) {
+static uint8_t * planar_convert(const struct imgconv *state, size_t y) {
 	/* Produce one row of interleaved output out of a planar and possibly
 	 * rotated image, doing linear interpolation on subsampled planes. */
 	const struct wuimg *src = state->tmp ? state->tmp : state->src;
@@ -425,50 +602,47 @@ static uint8_t * get_planar_row(const struct imgconv *state, size_t y) {
 	const uint8_t ud = state->unpack_depth/8;
 	const bool quarter = src->rotate & 1;
 
-	uint8_t swz[4];
-	pix_layout_map(swz, src->layout);
+	int w = (int)(src->w - 1);
+	int h = (int)(src->h - 1);
+	int ix, iy;
+	int xadd, yadd;
+	bool swap = mirror_swap(src);
+	if (quarter) {
+		ix = (src->rotate & 2) ? w - (int)y : (int)y;
+		xadd = 0;
+		iy = swap ? 0 : h;
+		yadd = swap ? 1 : -1;
+	} else {
+		ix = (src->rotate & 2) ? w : 0;
+		xadd = (src->rotate & 2) ? -1 : 1;
+		iy = swap ? h - (int)y : (int)y;
+		yadd = 0;
+	}
 
 	const size_t rowdims = dst->w * channels;
-	float *tgt = (float *)(state->row + (state->row_len & ~3u)) - rowdims;
+	float *tgt = (float *)state->row;
+	const float *limit = tgt + rowdims;
 	for (uint8_t out_z = 0; out_z < channels; ++out_z) {
-		uint8_t z = swz[out_z];
-		int w = (int)(src->w - 1);
-		int h = (int)(src->h - 1);
-		int ix, iy;
-		int xadd, yadd;
-		bool swap = mirror_swap(src);
-		struct planar_subsamp xp, yp;
-		if (quarter) {
-			ix = (src->rotate & 2) ? w - (int)y : (int)y;
-			xadd = 0;
-			iy = swap ? 0 : h;
-			yadd = swap ? 1 : -1;
-		} else {
-			ix = (src->rotate & 2) ? w : 0;
-			xadd = (src->rotate & 2) ? -1 : 1;
-			iy = swap ? h - (int)y : (int)y;
-			yadd = 0;
-		}
-		set_params(&xp, &p[z].x);
-		set_params(&yp, &p[z].y);
-
+		const uint8_t z = state->swz[out_z];
 		float *pix = tgt + out_z;
-		const float *limit = tgt + rowdims;
-		if (p[z].x.subsamp < 2 && p[z].y.subsamp < 2) {
-			full_plane(pix, limit, channels, p + z,
-				ix, xadd, iy, yadd, ud);
+		if (p[z].x.subsamp <= 1 && p[z].y.subsamp <= 1) {
+			full_plane(pix, limit, channels, p+z, ix, xadd, iy,
+				yadd, ud);
 		} else {
-			subsampled_plane(pix, limit, channels, p + z,
-				ix, xadd, iy, yadd, ud, &xp, &yp);
+			(USE_UPSAMP_FASTER ? upsamp_plane4 : upsamp_plane)
+				(pix, limit, channels, p+z, ix, xadd, iy, yadd, ud);
 		}
 	}
-	convert_row(state->row, tgt, dst->w, channels, dst->bitdepth, src,
-		state);
-	return state->row;
+	return (state->color_passthrough)
+		? pack_row_nomul(state->row, tgt, dst->w, channels, dst->bitdepth > 8)
+		: convert_row(state->row, tgt, dst->w, channels, dst->bitdepth,
+			src, state);
 }
 
-static void * expand_pal(uint32_t *tgt, const uint8_t *restrict unpack,
+static void * pal_convert(uint32_t *tgt, const uint8_t *restrict unpack,
 const ptrdiff_t stride, const struct palette *pal, const size_t w) {
+	/* Palette is color-corrected during the initial setup, so copy values
+	 * directly. */
 	for (size_t i = 0; i < w; ++i) {
 		memcpy(tgt + i, pal->color + *unpack, sizeof(*pal->color));
 		unpack += stride;
@@ -476,22 +650,21 @@ const ptrdiff_t stride, const struct palette *pal, const size_t w) {
 	return tgt;
 }
 
-static uint8_t * interleaved_convert(const void *restrict unpack,
+static uint8_t * interleaved_convert(void *restrict unpack,
 const ptrdiff_t stride, const struct wuimg *src, const struct imgconv *state) {
 	void *restrict tgt = state->row;
 	const struct wuimg *dst = state->dst;
 	if (state->pal) {
-		return expand_pal(tgt, unpack, stride, state->pal, dst->w);
+		return pal_convert(tgt, unpack, stride, state->pal, dst->w);
 	}
-	return process_row(tgt, unpack, stride, dst->w, dst->channels,
-		dst->bitdepth, src, state);
+	return raw_convert(tgt, unpack, stride, dst, src, state);
 }
 
-static const uint8_t * get_unpacked(const struct imgconv *state,
+static uint8_t * get_unpacked(const struct imgconv *state,
 const struct wuimg *src, const size_t y) {
-	const uint8_t *s_row = src->data + wuimg_stride(src) * y;
+	uint8_t *s_row = src->data + wuimg_stride(src) * y;
 	if (state->op == op_noop) {
-		// Just return the original row
+		// Nothing needs to be done, return pointer to original row
 		return s_row;
 	}
 
@@ -500,19 +673,18 @@ const struct wuimg *src, const size_t y) {
 	const void *arg = (state->op == op_bitfield)
 		? (void *)src->u.bitfield : &src->bitrange;
 	const size_t elems = src->w * src->channels;
-	const size_t unpack_len = unpack_stride(elems, src->bitdepth,
-		src->attr, state->op, arg);
-
-	uint8_t *u_row = state->row + state->row_len - unpack_len;
+	uint8_t *u_row = state->row + state->row_len - state->unpack_len;
 	unpack_strip(u_row, s_row, elems,
 		src->bitdepth, src->attr, state->op, arg);
 	return u_row;
 }
 
 static uint8_t * get_row(const struct imgconv *state, size_t y) {
+	/* Image may have half-rotations and may be mirrored. It's not
+	 * planar, but may require unpacking before accessing pixels. */
 	const struct wuimg *src = state->src;
 	y = mirror_swap(src) ? src->h - 1 - y : y;
-	const uint8_t *u_row = get_unpacked(state, src, y);
+	uint8_t *u_row = get_unpacked(state, src, y);
 
 	// Set reading direction
 	ptrdiff_t pix_size = state->unpack_depth/8 * state->unpack_ch;
@@ -524,12 +696,13 @@ static uint8_t * get_row(const struct imgconv *state, size_t y) {
 }
 
 static uint8_t * get_rotated_row(const struct imgconv *state, size_t col) {
-	// Get either the original or the recently unpacked image
-	const struct wuimg *src = state->tmp ? state->tmp : state->src;
+	/* Image has a quarter rotation and may be mirrored. It's not planar,
+	 * and any required unpacking was done during initialization. */
 
+	const struct wuimg *src = state->tmp ? state->tmp : state->src;
 	size_t pix_size = state->unpack_depth/8 * src->channels;
 	ptrdiff_t stride = (ptrdiff_t)wuimg_stride(src);
-	const uint8_t *data = src->data;
+	uint8_t *data = src->data;
 	if (src->rotate & 2) {
 		// 3/4 clockwise rotation.
 		data += pix_size * (src->w - 1 - col);
@@ -550,36 +723,36 @@ static uint8_t * get_rotated_row(const struct imgconv *state, size_t col) {
 
 uint8_t * imgconv_get_row(const struct imgconv *state, size_t y) {
 	if (state->src->mode == image_mode_planar) {
-		return get_planar_row(state, y);
+		return planar_convert(state, y);
 	} else if (state->src->rotate & 1) {
 		return get_rotated_row(state, y);
 	}
 	return get_row(state, y);
 }
 
-static void get_plane(uint8_t *restrict t, const uint8_t *restrict s,
+static void data_unpack(uint8_t *restrict t, const uint8_t *restrict s,
 const size_t t_stride, const size_t s_stride, const size_t elems,
 const size_t h, const struct wuimg *src, const enum unpack_op op) {
+	const void *arg = op == op_bitfield
+		? (void *)src->u.bitfield : &src->bitrange;
 	for (size_t y = 0; y < h; ++y) {
 		unpack_strip(t + y*t_stride, s + y*s_stride,
-			elems, src->bitdepth, src->attr, op, src->u.bitfield);
+			elems, src->bitdepth, src->attr, op, arg);
 	}
 }
 
-static void get_tmp_img(struct imgconv *state) {
-	struct wuimg *tmp = state->tmp;
-	const struct wuimg *src = state->src;
-
+static void get_tmp_img(struct wuimg *restrict tmp,
+const struct wuimg *restrict src, struct imgconv *state) {
 	if (tmp->mode == image_mode_planar) {
 		const struct plane_info *tp = tmp->u.planes->p;
 		const struct plane_info *sp = src->u.planes->p;
 		for (uint8_t z = 0; z < tmp->channels; ++z) {
-			get_plane(tp[z].ptr, sp[z].ptr,
+			data_unpack(tp[z].ptr, sp[z].ptr,
 				tp[z].stride, sp[z].stride, sp[z].w,
 				sp[z].h, src, state->op);
 		}
 	} else {
-		get_plane(tmp->data, src->data,
+		data_unpack(tmp->data, src->data,
 			wuimg_stride(tmp), wuimg_stride(src),
 			tmp->w * tmp->channels, tmp->h, src, state->op);
 	}
@@ -611,11 +784,23 @@ const struct wuimg *src) {
 		}
 		const enum wu_error st = wuimg_alloc(tmp);
 		if (st == wu_ok) {
-			get_tmp_img(state);
+			get_tmp_img(tmp, src, state);
 		}
 		return st;
 	}
 	return wu_alloc_error;
+}
+
+static bool needs_transfer(const struct wuimg *dst, const struct wuimg *src) {
+	switch (src->alpha) {
+	case alpha_associated: case alpha_key:
+		return true;
+	case alpha_ignore:
+		return pix_layout_offset(dst->layout, pix_alpha) < dst->channels;
+	case alpha_unassociated:
+		break;
+	}
+	return false;
 }
 
 static enum wu_error init_color(struct imgconv *state, const struct wuimg *dst,
@@ -648,78 +833,121 @@ const struct wuimg *src, const double range) {
 }
 
 const char * imgconv_init(struct imgconv *state, const struct wuimg *dst,
-const struct wuimg *src) {
+const struct wuimg *src, const bool wont_modify) {
+	if (src->attr == pix_float && src->bitdepth < 32) {
+		return "Conversion from half-precision floats not yet supported";
+	} else if (src->channels > 4) {
+		return "Conversion from channels > 4 not supported";
+	}
+
 	*state = (struct imgconv) {
 		.src = src,
 		.dst = dst,
 		.op = op_noop,
+		.wont_modify = wont_modify,
 		.unpack_depth = dst->bitdepth,
 		.unpack_ch = dst->channels,
 	};
-	if (src->attr == pix_float && src->bitdepth < 32) {
-		return "Conversion from half-precision floats not supported";
-	}
-	double range = dst->bitdepth > 8 ? 0xffff : 0xff;
+	pix_layout_map(state->swz, src->layout);
+
+	/* Colorspace operations require that we convert image components to
+	 * floats. We can do that directly when the original uses 8-bit ints,
+	 * 16-bit ints, or 32-bit floats.
+	 * If the image is not in any of those formats, set parameters to
+	 * `unpack_strip()` so we can call it before operating on a row. */
+	const double outrange = dst->bitdepth > 8 ? 0xffff : 0xff;
+	double inrange = exp2(src->bitrange) - 1;
 	size_t row_elems = dst->w * dst->channels;
 	switch (src->mode) {
 	case image_mode_palette:
 		row_elems = zumax(row_elems, sizeof(state->pal->color));
 		state->unpack_ch = 1;
 		state->op = src->bitdepth < dst->bitdepth ? op_unpack : op_noop;
-		range = exp2(src->bitrange) - 1;
-
-		// Create a color-corrected palette
-		state->pal = palette_new();
-		if (!state->pal) {
-			return "Couldn't allocate temporary palette";
-		}
 		break;
 	case image_mode_bitfield:
 		state->op = op_bitfield;
+		inrange = outrange;
 		break;
 	case image_mode_planar:
 	case image_mode_raw:
 		if (src->attr == pix_float) {
 			state->unpack_depth = 32;
 			state->op = src->bitdepth > 32 ? op_pack : op_noop;
-			range = 1;
+			inrange = 1;
 		} else if (src->bitdepth > dst->bitdepth) {
 			state->op = op_pack;
-			range = exp2(src->bitrange > 16 ? 16 : src->bitrange) - 1;
-		} else {
-			if (src->bitdepth < dst->bitdepth || src->attr != pix_normal) {
-				state->op = op_unpack;
-			}
-			range = exp2(src->bitrange) - 1;
+			inrange = fmin(inrange, 0xffff);
+		} else if (src->bitdepth < dst->bitdepth || src->attr != pix_normal) {
+			state->op = op_unpack;
 		}
 	}
 
-	range = 1.0/range;
-	enum wu_error st = init_color(state, dst, src, range);
+	enum wu_error st = init_color(state, dst, src, 1.0/inrange);
 	if (st != wu_ok) {
 		return wu_error_message(st);
 	}
 
-	if (src->rotate & 1 || src->mode == image_mode_planar) {
-		if (state->op != op_noop) {
-			// Create a temporal unpacked image
+	state->transfer = !state->color.eotf.srgb_input || needs_transfer(dst, src);
+	const enum color_steps omit = (!state->transfer ? color_step_eotf : 0)
+		| (inrange == outrange ? color_step_map : 0);
+	const enum color_steps steps = (state->color.steps & ~omit);
+	state->color_passthrough = steps == 0 && src->bitrange == dst->bitrange;
+
+	if (getenv("WU_DEBUG")) {
+		fprintf(stderr, "Color steps:"
+			" map:%d nonlinear:%d eotf:%d linear:%d icc:%d\n"
+			"in-range: %f, out-range: %f\n",
+			!!(steps & color_step_map),
+			!!(steps & color_step_nonlinear),
+			!!(steps & color_step_eotf),
+			!!(steps & color_step_linear),
+			!!(steps & color_step_icc),
+			inrange, outrange);
+	}
+
+	/* If we can't read pixels directly, and we can't access rows
+	 * independently either, then we must unpack the whole image and
+	 * refer to the copy instead of the original. */
+	if (state->op != op_noop) {
+		if (src->rotate & 1 || src->mode == image_mode_planar) {
 			st = init_tmp_img(state, src);
 			if (st != wu_ok) {
 				return wu_error_message(st);
 			}
+		} else {
+			const void *arg = (state->op == op_bitfield)
+				? (void *)src->u.bitfield : &src->bitrange;
+			state->unpack_len = unpack_stride(src->w*src->channels,
+				src->bitdepth, src->attr, state->op, arg);
 		}
 	}
 
-	/* Reserve memory for one row of temporary float data and output */
-	state->row_len = row_elems * sizeof(float)
-		+ dst->w * state->unpack_depth/8 * state->unpack_ch;
+	/* Allocate row buffer. Buffer is used for
+	 * - row unpacking (u8, u16, or float), placed at the end
+	 * - colorspace conversion (float), placed at the beginning
+	 * - packed output (u8 or u16), placed at the beginning
+	 * In case that unpacked data takes as much memory as color corrected
+	 * data, it must be offset by a pixel for swizzling to work correctly.
+	 * Other than that, stages may overlap with no issues.
+	 * FIXME: Don't allocate when none of these steps are neccesary. */
+	state->row_len = (row_elems + dst->channels) * sizeof(float),
 	state->row = malloc(state->row_len);
-	if (state->row) {
-		if (state->pal) {
-			process_row(state->pal->color, src->u.palette->color,
+	if (!state->row) {
+		return "Failed to allocate row memory";
+	}
+
+	if (src->mode == image_mode_palette) {
+		if (state->color_passthrough && src->layout == dst->layout) {
+			state->pal = palette_ref(src->u.palette);
+		} else {
+			// Create a color-corrected palette
+			state->pal = palette_new();
+			if (!state->pal) {
+				return "Couldn't allocate temporary palette";
+			}
+			expand_row(state->pal->color, src->u.palette->color,
 				4, 1 << src->bitdepth, 4, 8, src, state);
 		}
-		return NULL;
 	}
-	return "Failed to allocate row memory";
+	return NULL;
 }

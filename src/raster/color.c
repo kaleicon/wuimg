@@ -722,11 +722,16 @@ const double scale) {
 	for (size_t i = 0; i < 3; ++i) {
 		conv->map.mul[i] = (float)(map.mul[i] * scale);
 		conv->map.add[i] = (float)(map.add[i] * map.mul[i]);
+		conv->steps |= (conv->map.mul[i] != 1 && conv->map.add[i] != 0)
+			? color_step_map : 0;
 	}
 	conv->map.mul[3] = (float)scale;
 	conv->map.add[3] = 0;
+	conv->steps |= (conv->map.mul[3] != 1) ? color_step_map : 0;
 	for (size_t i = 0; i < ARRAY_LEN(conv->nonlinear.m); ++i) {
 		conv->nonlinear.m[i] = (float)cm.m[i];
+		conv->steps |= (conv->nonlinear.m[i] != (i % 4 == 0))
+			? color_step_nonlinear : 0;
 	}
 }
 
@@ -808,10 +813,16 @@ static bool primaries_close_to_bt709(const struct color_primaries *pri) {
 bool color_space_to_linear_sRGB(const struct color_space *cs,
 struct color_convert *conv, const bool grayscale, const bool maybe_yuv,
 const double scale) {
+	conv->steps |= (cs->type == color_profile_icc) ? color_step_icc : 0;
 	color_mat_gen(cs, conv, grayscale, maybe_yuv, scale);
 	if (!set_eotf(cs, &conv->eotf)) {
 		eotf_sRGB(&conv->eotf);
 	}
+	conv->steps |= (conv->eotf.fn == color_transfer_linear_gamma
+		&& conv->eotf.args[1] == 1
+		&& conv->eotf.args[2] == 0
+		&& conv->eotf.args[3] == 1
+		&& conv->eotf.args[4] == 1) ? 0 : color_step_eotf;
 
 	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
 	if (is_linear_rgb(cs->matrix) && primaries_close_to_bt709(pri)) {
@@ -837,6 +848,7 @@ const double scale) {
 					3, 3, 3);
 			}
 		}
+		conv->steps |= color_step_linear;
 	}
 	return (bool)pri;
 }

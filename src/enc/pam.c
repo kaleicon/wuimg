@@ -39,6 +39,10 @@ void pam_write_header(const struct wuimg *dst, FILE *ofp) {
 	fputs("ENDHDR\n", ofp);
 }
 
+bool pam_wont_modify_row(const struct wuimg *dst) {
+	return dst->bitdepth == 8 || which_end() == big_endian;
+}
+
 void pam_best_fit(struct wuimg *dst, const struct wuimg *src) {
 	dst->w = (src->rotate & 1) ? src->h : src->w;
 	dst->h = (src->rotate & 1) ? src->w : src->h;

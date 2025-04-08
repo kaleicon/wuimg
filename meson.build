@@ -19,6 +19,7 @@ add_project_arguments(
 
 	'-fno-math-errno',
 	'-fno-trapping-math',
+	'-ffp-contract=fast',
 	language : 'c')
 if cc.get_id() == 'gcc'
 	add_project_arguments(

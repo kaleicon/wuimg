@@ -17,7 +17,7 @@ struct write_args {
 typedef void (*writer_close_t)(void *state);
 typedef uint8_t * (*writer_get_row_t)(void *state, size_t y);
 typedef const char * (*writer_set_image_t)(void *state,
-	const struct wuimg *dst, const struct wuimg *src);
+	const struct wuimg *dst, const struct wuimg *src, bool read_only);
 
 struct write_writer {
 	void *state;

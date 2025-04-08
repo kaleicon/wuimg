@@ -52,8 +52,8 @@ static uint8_t * get_row(void *ptr, size_t y) {
 	return imgconv_get_row(ptr, y);
 }
 static const char * init_conv(void *ptr, const struct wuimg *dst,
-const struct wuimg *src) {
-	return imgconv_init(ptr, dst, src);
+const struct wuimg *src, const bool wont_modify) {
+	return imgconv_init(ptr, dst, src, wont_modify);
 }
 
 int main(const int argc, char **argv) {

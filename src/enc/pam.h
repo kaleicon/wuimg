@@ -8,8 +8,8 @@ size_t pam_write_row(uint8_t *restrict row, const struct wuimg *dst, FILE *ofp);
 
 void pam_write_header(const struct wuimg *dst, FILE *ofp);
 
-void pam_best_fit(struct wuimg *dst, const struct wuimg *src);
+bool pam_wont_modify_row(const struct wuimg *dst);
 
-bool pam_can_cpy(struct wuimg *dst, const struct wuimg *src);
+void pam_best_fit(struct wuimg *dst, const struct wuimg *src);
 
 #endif // ENC_PAM

@@ -82,8 +82,8 @@ static uint8_t * conv_get_row(void *ptr, size_t y) {
 	return gl_reader_read_row(ptr, y);
 }
 static const char * conv_set_image(void *ptr, const struct wuimg *dst,
-const struct wuimg *src) {
-	return gl_reader_set(ptr, dst, src);
+const struct wuimg *src, const bool read_only) {
+	return gl_reader_set(ptr, dst, src, read_only);
 }
 
 static enum wu_error convert_files(const struct file_list *entries,

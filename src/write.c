@@ -43,7 +43,8 @@ struct write_writer *writer) {
 	pam_best_fit(&dst, src);
 	if (wuimg_verify(&dst) == wu_ok) {
 		const watch_t w = watch_look();
-		err_msg = writer->set_image(writer->state, &dst, src);
+		err_msg = writer->set_image(writer->state, &dst, src,
+			pam_wont_modify_row(&dst));
 		if (!err_msg) {
 			write_pam(&dst, ofp, writer);
 			watch_report("Converted", w, report_info);
