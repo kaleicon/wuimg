@@ -31,6 +31,13 @@ size_t tim_decode(const struct tim_desc *desc, struct wuimg *img) {
 				stp_callback, NULL);
 		} else {
 			read = fmt_load_raster(img, desc->ifp);
+			if (img->bitdepth == 4) {
+				const size_t dims = wuimg_size(img);
+				uint8_t *d = img->data;
+				for (size_t i = 0; i < dims; ++i) {
+					d[i] = (uint8_t)(d[i] << 4 | d[i] >> 4);
+				}
+			}
 		}
 	}
 	return read;
