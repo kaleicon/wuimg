@@ -114,8 +114,8 @@ static void single_tile(unsigned char *restrict dst,
 const struct tile_info *tiles, const size_t width, const size_t height,
 const size_t dst_stride, const enum pix_attr attr, const enum unpack_op op,
 const uint16_t bps) {
-	for (size_t h = 0; h < height; ++h) {
-		const unsigned char *src = tiles->buf + tiles->stride * h;
+	for (size_t y = 0; y < height; ++y) {
+		const unsigned char *src = tiles->buf + tiles->stride * y;
 		unpack_strip(dst, src, width, (uint8_t)bps, attr, op, NULL);
 		dst += dst_stride;
 	}
@@ -143,6 +143,7 @@ const struct tiff_info *info, const enum unpack_op op) {
 	tiles.end_stride = strip_base(tiles.end_width * comps,
 		(uint8_t)info->bps);
 
+	const size_t u_stride = strip_base(tiles.width*comps, img->bitdepth);
 	const size_t dst_stride = strip_base(img->w * comps, img->bitdepth);
 	unsigned char *restrict dst = img->data;
 	uint32_t ts = 0;
@@ -157,7 +158,7 @@ const struct tiff_info *info, const enum unpack_op op) {
 					? tiles.end_width : tiles.width);
 
 				TIFFReadEncodedTile(tif, ts, tiles.buf, tiles.len);
-				single_tile(dst + x*tiles.stride, &tiles,
+				single_tile(dst + x*u_stride, &tiles,
 					width, height, dst_stride, img->attr,
 					op, info->bps);
 				++ts;
@@ -181,7 +182,7 @@ const struct tiff_info *info) {
 	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip);
 
 	const uint32_t strips = total_strips / info->planes;
-	const size_t stride = strip_base(img->w * img->channels / info->planes,
+	const size_t stride = strip_base(img->w * (img->channels / info->planes),
 		img->bitdepth);
 	unsigned char *data = img->data;
 	for (uint32_t p = 0; p < info->planes; ++p) {
@@ -244,6 +245,7 @@ const struct tiff_info *info) {
 		if (!load_palette(tif, img, info->bps)) {
 			return wu_alloc_error;
 		}
+		img->bitrange = 8;
 		break;
 	case PHOTOMETRIC_YCBCR:
 		img->cs.matrix = cicp_matrix_bt601_7;
@@ -283,8 +285,9 @@ struct tiff_info *info) {
 	img->channels = (unsigned char)info->spp;
 	enum unpack_op op;
 	if (info->is_tiled && info->bps % 8) {
-		op = op_unpack;
+		op = (info->bps > 16) ? op_pack : op_unpack;
 		img->bitdepth = (info->bps > 8) ? 16 : 8;
+		img->bitrange = (info->bps > 16) ? 16 : (uint8_t)info->bps;
 	} else {
 		op = op_noop;
 		img->bitdepth = (unsigned char)info->bps;
@@ -354,6 +357,10 @@ static bool check_support(const struct tiff_info *info) {
 		switch (info->bps) {
 		case 16: case 32: case 64:
 			break;
+		case 24:
+			// 1 sign bit, 7 exponent bits, 16 mantissa bits
+			// https://web.archive.org/web/20250108130838/http://chriscox.org/TIFFTN3d1.pdf
+			return false;
 		default:
 			return false;
 		}
