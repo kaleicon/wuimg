@@ -313,6 +313,29 @@ static int dgif_input_fn(GifFileType *gif_file, GifByteType *out, int len) {
 	return (int)fread(out, 1, (size_t)len, ifp);
 }
 
+static GifWord gmax(const GifWord x, const GifWord y) {
+	return x > y ? x : y;
+}
+
+static enum wu_error actual_canvas_size(struct wuimg *img,
+const GifFileType *gif_file, const struct wu_conf *conf) {
+	GifWord w = gif_file->SWidth;
+	GifWord h = gif_file->SHeight;
+	for (int i = 0; i < gif_file->ImageCount; ++i) {
+		const GifImageDesc *desc = &gif_file->SavedImages[i].ImageDesc;
+		const GifWord ww = desc->Left + desc->Width;
+		const GifWord hh = desc->Top + desc->Height;
+		if (ww < 0 || hh < 0) {
+			return wu_invalid_header;
+		}
+		w = gmax(w, ww);
+		h = gmax(h, hh);
+	}
+	img->w = (size_t)w;
+	img->h = (size_t)h;
+	return wuimg_exceeds_limit(img, conf) ? wu_exceeds_size_limit : wu_ok;
+}
+
 static enum wu_error gif_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct gif_state *ds = infile->dec_state;
@@ -331,9 +354,8 @@ const struct wu_conf *wuconf) {
 	}
 
 	struct wuimg *img = infile->sub_img;
-	img->w = (size_t)gif_file->SWidth;
-	img->h = (size_t)gif_file->SHeight;
-	if (wuimg_exceeds_limit(img, wuconf)) {
+	enum wu_error st = actual_canvas_size(img, gif_file, wuconf);
+	if (st != wu_ok) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -346,7 +368,7 @@ const struct wu_conf *wuconf) {
 	int pal_num = 0;
 	bool enable_paletted_mode = true;
 	ds->opaque_first_frame = true;
-	enum wu_error st = gather_info(infile, ds, &pal_num,
+	st = gather_info(infile, ds, &pal_num,
 		&enable_paletted_mode);
 	if (st != wu_ok) {
 		return st;
