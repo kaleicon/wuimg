@@ -266,14 +266,7 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 		break;
 	case pictor_vga_palette:
 	case pictor_vga_too_i_think:
-		;const unsigned maxval = (1 << 6) - 1;
-		const unsigned scale = (UCHAR_MAX << 8) / maxval + 1;
-		for (int i = 0; i < size / 3; ++i) {
-			pal->color[i].r = (unsigned char)((buf[i*3] * scale) >> 8);
-			pal->color[i].g = (unsigned char)((buf[i*3+1] * scale) >> 8);
-			pal->color[i].b = (unsigned char)((buf[i*3+2] * scale) >> 8);
-			pal->color[i].a = 0xff;
-		}
+		palette_from_rgb8_bitrange(pal, buf, size/3, 6);
 		break;
 	}
 	return wu_ok;

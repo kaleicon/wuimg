@@ -36,6 +36,7 @@ fmt_map = {
 		'sgi',
 		'signum',
 		'sixel',
+		'skyroads',
 		'spooky',
 		'sun',
 		'tga',

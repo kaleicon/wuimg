@@ -24,6 +24,10 @@ const struct palette *cm, size_t width, uint8_t bitdepth);
 
 void palette_from_rgb8(struct palette *dst, const void *src, size_t nmemb);
 
+void palette_from_rgb8_bitrange(struct palette *dst, const void *src,
+size_t nmemb, uint8_t bitrange);
+
+
 struct palette_crng {
 	uint8_t lo;
 	uint8_t hi;

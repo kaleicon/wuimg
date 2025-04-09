@@ -36,6 +36,7 @@ option('quake', type : 'feature', description : 'id Software Sprite (IDSP) and Q
 option('sgi', type : 'feature')
 option('signum', type : 'feature', description : 'Signum! IMC')
 option('sixel', type : 'feature')
+option('skyroads', type : 'feature', description : 'SkyRoads LZS graphics')
 option('spooky', type : 'feature', description : 'Spooky Sprites TRS and TRE')
 option('sun', type : 'feature')
 option('tga', type : 'feature')

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/mem.h"
 #include "raster/pal.h"
@@ -105,6 +106,21 @@ const size_t nmemb) {
 	for (size_t i = 0; i < nmemb; ++i) {
 		memmove(dst->color + i, s + i, (i + 1 < nmemb) ? 4 : 3);
 		dst->color[i].a = 0xff;
+	}
+}
+
+void palette_from_rgb8_bitrange(struct palette *dst, const void *src,
+const size_t nmemb, const uint8_t bitrange) {
+	const uint8_t max = (uint8_t)bit_set32(bitrange);
+	const uint32_t scale = (0xffu << 8) / max + 1;
+	const struct pix_rgb8 *s = src;
+	for (size_t i = 0; i < nmemb; ++i) {
+		dst->color[i] = (struct pix_rgba8) {
+			.r = (uint8_t)((s[i].r * scale) >> 8),
+			.g = (uint8_t)((s[i].g * scale) >> 8),
+			.b = (uint8_t)((s[i].b * scale) >> 8),
+			.a = 0xff,
+		};
 	}
 }
 

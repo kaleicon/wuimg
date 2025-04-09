@@ -552,6 +552,14 @@ DEC_MAP = {
 		},
 	},
 
+	"skyroads": {
+		"skyroads": {
+			"desc": "SkyRoads LZS graphics",
+			"ext": "lzs",
+			"magic": b"CMAP",
+		},
+	},
+
 	"spooky": {
 		"tre": {
 			"desc": "Spooky Sprites Run-Length Encoded",

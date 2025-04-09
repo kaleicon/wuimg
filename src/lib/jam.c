@@ -95,14 +95,7 @@ enum wu_error jam_parse(struct mparser *mp, struct wuimg *img) {
 	if (!pal) {
 		return wu_alloc_error;
 	}
-	for (size_t i = 0; i < elems/3; ++i) {
-		pal->color[i] = (struct pix_rgba8) {
-			.r = (uint8_t)(hdr[i*3] * 0x41 >> 4),
-			.g = (uint8_t)(hdr[i*3+1] * 0x41 >> 4),
-			.b = (uint8_t)(hdr[i*3+2] * 0x41 >> 4),
-			.a = 0xff,
-		};
-	}
+	palette_from_rgb8_bitrange(pal, hdr, elems/3, 6);
 	return wuimg_verify(img);
 }
 
