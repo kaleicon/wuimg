@@ -45,6 +45,8 @@ static const size_t MC_WIDTH = TW*4;
 static const size_t HEIGHT = TH*8;
 
 static const size_t RAM_LEN = TW * TH;
+static const size_t COLOR_LEN = RAM_LEN;
+static const size_t SCREEN_LEN = RAM_LEN;
 static const size_t BITMAP_LEN = RAM_LEN * 8;
 static const size_t BG_LEN = 1;
 
@@ -69,7 +71,10 @@ const char * c64_fmt_str(const enum c64_fmt fmt) {
 	case c64_advanced_art_studio: return "Advanced Art Studio";
 	case c64_artist64: return "Wigmore Artist64";
 	case c64_blazing_paddles: return "Blazing Paddles";
+	case c64_cdu_paint: return "CDU-Paint";
+	case c64_cheese: return "Cheese";
 	case c64_doodle: return "Doodle";
+	case c64_picasso_64: return "Picasso 64";
 	case c64_hi_eddi: return "Hi-Eddi";
 	case c64_image_system_m: return "Image System";
 	case c64_koalapainter: return "KoalaPainter";
@@ -93,6 +98,7 @@ static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off) 
 			/* OR them into a word, arranged such that we can
 			 * retrieve them using a bit couple as shr argument. */
 			const uint16_t src = c << 12 | sb << 8 | st << 4 | bg;
+
 			for (size_t y = 0; y < 8; ++y) {
 				const uint8_t byte = off->bitmap[tile*8 + y];
 				uint16_t out = 0;
@@ -129,83 +135,23 @@ static void hires_expand(uint32_t *dst, const struct c64_mem_offsets *off) {
 }
 
 static bool get_offsets(struct mparser *mp, struct c64_mem_offsets *off,
-const enum c64_fmt fmt) {
-	mp_seek_cur(mp, 2);
-	switch (fmt) {
-	case c64_art_studio:
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		off->screen = mp_slice(mp, RAM_LEN);
-		return off->screen;
-	case c64_doodle:
-		off->screen = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 0x18);
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		return off->bitmap;
-	case c64_hi_eddi:
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		mp_seek_cur(mp, 0xc0);
-		off->screen = mp_slice(mp, RAM_LEN);
-		return off->screen;
-
-	case c64_advanced_art_studio:
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		off->screen = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 1); // border
-		off->bg = mp_slice(mp, BG_LEN);
-		mp_seek_cur(mp, 0xe);
-		off->color = mp_slice(mp, RAM_LEN);
-		return off->color;
-	case c64_artist64:
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		mp_seek_cur(mp, 0xc0);
-		off->screen = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 0x18);
-		off->color = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 0x17);
-		off->bg = mp_slice(mp, BG_LEN);
-		return off->bg;
-	case c64_blazing_paddles:
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		mp_seek_cur(mp, 0x40);
-		off->bg = mp_slice(mp, BG_LEN);
-		mp_seek_cur(mp, 0x7f);
-		off->screen = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 0x18);
-		off->color = mp_slice(mp, RAM_LEN);
-		return off->color;
-	case c64_image_system_m:
-		off->color = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 0x18);
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		mp_seek_cur(mp, 0xbf);
-		off->bg = mp_slice(mp, BG_LEN);
-		off->screen = mp_slice(mp, RAM_LEN);
-		return off->screen;
-	case c64_koalapainter:
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		off->screen = mp_slice(mp, RAM_LEN);
-		off->color = mp_slice(mp, RAM_LEN);
-		off->bg = mp_slice(mp, BG_LEN);
-		return off->bg;
-	case c64_saracen_paint:
-		off->screen = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 8);
-		off->bg = mp_slice(mp, BG_LEN);
-		mp_seek_cur(mp, 0xf);
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		mp_seek_cur(mp, 0xc0);
-		off->color = mp_slice(mp, RAM_LEN);
-		return off->color;
-	case c64_vidcom_64:
-		off->color = mp_slice(mp, RAM_LEN);
-		mp_seek_cur(mp, 0x18);
-		off->screen = mp_slice(mp, RAM_LEN);
-		off->bg = mp_slice(mp, BG_LEN);
-		mp_seek_cur(mp, 0x17);
-		off->bitmap = mp_slice(mp, BITMAP_LEN);
-		return off->bitmap;
+const struct c64_fmt_info *info) {
+	const uint8_t len = info->mode == c64_multicolor ? 4 : 2;
+	for (uint8_t i = 0; i < len; ++i) {
+		mp_seek_cur(mp, info->tbl[i].seek);
+		switch (info->tbl[i].field) {
+		case c64_bitmap: off->bitmap = mp_slice(mp, BITMAP_LEN); break;
+		case c64_screen: off->screen = mp_slice(mp, SCREEN_LEN); break;
+		case c64_color: off->color = mp_slice(mp, COLOR_LEN); break;
+		case c64_bg: off->bg = mp_slice(mp, BG_LEN); break;
+		}
 	}
-	return false;
+	const bool base = off->bitmap && off->screen;
+	const bool color = off->color && off->bg;
+	if (info->mode == c64_multicolor) {
+		return base && color;
+	}
+	return base && !color;
 }
 
 static bool ggjj_decode(uint8_t *restrict dst, const size_t dst_len,
@@ -262,9 +208,9 @@ bool c64_decode(const struct c64_desc *desc, struct wuimg *img) {
 		}
 
 		if (ok) {
-			ok = get_offsets(&mp, &off, desc->fmt);
+			ok = get_offsets(&mp, &off, &desc->info);
 			if (ok) {
-				if (desc->mode == c64_hires) {
+				if (desc->info.mode == c64_hires) {
 					hires_expand((uint32_t *)img->data, &off);
 				} else {
 					multicolor_expand((uint16_t *)img->data, &off);
@@ -306,11 +252,11 @@ inline static struct pix_rgb8 gen_e(const uint8_t level, const uint8_t angle) {
 }
 
 enum wu_error c64_set(const struct c64_desc *desc, struct wuimg *img) {
-	img->w = desc->mode == c64_hires ? HR_WIDTH : MC_WIDTH;
+	img->w = desc->info.mode == c64_hires ? HR_WIDTH : MC_WIDTH;
 	img->h = HEIGHT;
 	img->channels = 1;
 	img->bitdepth = 4;
-	img->ratio = desc->mode == c64_hires ? 1 : 2;
+	img->ratio = desc->info.mode == c64_hires ? 1 : 2;
 	img->cs.primaries = cicp_primaries_bt470_6_system_b_g;
 	img->cs.transfer = cicp_transfer_bt470_6_system_b_g;
 	img->cs.matrix = cicp_matrix_bt470_6_system_b_g;
@@ -340,20 +286,149 @@ enum wu_error c64_set(const struct c64_desc *desc, struct wuimg *img) {
 	return wu_alloc_error;
 }
 
+static struct c64_fmt_info get_info(const enum c64_fmt fmt) {
+	switch (fmt) {
+	case c64_art_studio:
+		return (struct c64_fmt_info) {
+			.mode = c64_hires,
+			.tbl = {
+				{2, c64_bitmap},
+				{0, c64_screen},
+			},
+		};
+	case c64_doodle:
+		return (struct c64_fmt_info) {
+			.mode = c64_hires,
+			.tbl = {
+				{2, c64_screen},
+				{0x18, c64_bitmap},
+			},
+		};
+	case c64_hi_eddi:
+		return (struct c64_fmt_info) {
+			.mode = c64_hires,
+			.tbl = {
+				{2, c64_bitmap},
+				{0xc0, c64_screen},
+			},
+		};
+
+	case c64_koalapainter:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_bitmap},
+				{0, c64_screen},
+				{0, c64_color},
+				{0, c64_bg},
+			},
+		};
+	case c64_advanced_art_studio:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_bitmap},
+				{0, c64_screen},
+				{1 /* border */, c64_bg},
+				{0xe, c64_color},
+			},
+		};
+	case c64_vidcom_64:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_color},
+				{0x18, c64_screen},
+				{0, c64_bg},
+				{0x17, c64_bitmap},
+			},
+		};
+	case c64_picasso_64:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_color},
+				{0x18, c64_screen},
+				{0x17, c64_bg},
+				{0, c64_bitmap},
+			},
+		};
+	case c64_image_system_m:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_color},
+				{0x18, c64_bitmap},
+				{0xbf, c64_bg},
+				{0, c64_screen},
+			},
+		};
+	case c64_saracen_paint:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_screen},
+				{0x8, c64_bg},
+				{0xf, c64_bitmap},
+				{0xc0, c64_color},
+			},
+		};
+	case c64_artist64:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_bitmap},
+				{0xc0, c64_screen},
+				{0x18, c64_color},
+				{0x17, c64_bg},
+			},
+		};
+	case c64_blazing_paddles:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_bitmap},
+				{0x40, c64_bg},
+				{0x7f, c64_screen},
+				{0x18, c64_color},
+			},
+		};
+	case c64_cdu_paint:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{0x113, c64_bitmap},
+				{0, c64_screen},
+				{0, c64_color},
+				{0, c64_bg},
+			},
+		};
+	case c64_cheese:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.tbl = {
+				{2, c64_bitmap},
+				{0x22c0, c64_screen},
+				{0x218, c64_color},
+				{0x415, c64_bg},
+			},
+		};
+	}
+	return (struct c64_fmt_info) {0};
+}
+
 enum wu_error c64_guess(struct c64_desc *desc, const struct wuptr mem,
 const uint8_t ext[static 4]) {
 	*desc = (struct c64_desc) {
 		.mp = mp_wuptr(mem),
 	};
 	enum c64_fmt f;
-	enum c64_mode m = c64_multicolor;
 	const char *e = (const char *)ext;
 	bool gg = !strcmp(e, "gg");
 	if (gg || !strcmp(e, "jj")) {
 		// Koala or Doodle compressed file
 		desc->compressed = true;
 		f = gg ? c64_koalapainter : c64_doodle;
-		m = gg ? c64_multicolor : c64_hires;
 		// Ensure length is not outrageous
 		//   e.g. 0xfe 0x01 0xfe  0xfe 0x01 0xfe ...
 		const unsigned upack_len = ggjj_needed(f);
@@ -364,18 +439,13 @@ const uint8_t ext[static 4]) {
 		switch (mem.len) {
 		case 9002:
 		case 9003:
-		case 9009: f = c64_art_studio; m = c64_hires; break;
+		case 9009: f = c64_art_studio; break;
 		case 9026:
 		case 9217:
-		case 9346: f = c64_doodle; m = c64_hires; break;
-		case 9194: f = c64_hi_eddi; m = c64_hires; break;
+		case 9346: f = c64_doodle; break;
+		case 9194: f = c64_hi_eddi; break;
 		case 9218:
-			if (!strcmp(e, "hed")) {
-				f = c64_hi_eddi;
-			} else {
-				f = c64_doodle;
-			}
-			m = c64_hires;
+			f = !strcmp(e, "hed") ? c64_hi_eddi : c64_doodle;
 			break;
 
 		case 10001:
@@ -384,23 +454,26 @@ const uint8_t ext[static 4]) {
 		case 10006:
 		case 10007: f = c64_koalapainter; break;
 		case 10018: f = c64_advanced_art_studio; break;
-		case 10050: f = c64_vidcom_64; break;
+		case 10050:
+			f = !strcmp(e, "p64") ? c64_picasso_64 : c64_vidcom_64;
+			break;
 		case 10218: f = c64_image_system_m; break;
 		case 10219:
 			/* TODO: Some files are truncated to 10018 bytes.
 			 * Padding with zeros makes them display fine. */
 			f = c64_saracen_paint; break;
 		case 10242:
-			if (!strcmp(e, "a64") || !strcmp(e, "wig")) {
-				f = c64_artist64;
-			} else {
-				f = c64_blazing_paddles;
-			}
+			f = (!strcmp(e, "a64") || !strcmp(e, "wig"))
+				? c64_artist64 : c64_blazing_paddles;
 			break;
+		case 10277:
+			// TODO: Show text near the beginning
+			f = c64_cdu_paint; break;
+		case 20482: f = c64_cheese; break;
 		default: return wu_unknown_file_type;
 		}
 	}
 	desc->fmt = f;
-	desc->mode = m;
-	return wu_ok;
+	desc->info = get_info(f);
+	return desc->info.tbl[0].seek ? wu_ok : wu_invalid_params;
 }

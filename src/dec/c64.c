@@ -5,7 +5,7 @@
 static void meta(const void *restrict ptr, struct wutree *tree) {
 	const struct c64_desc *desc = ptr;
 	tree_add_leaf_utf8(tree, "Type", c64_fmt_str(desc->fmt));
-	tree_add_leaf_utf8(tree, "Mode", c64_mode_str(desc->mode));
+	tree_add_leaf_utf8(tree, "Mode", c64_mode_str(desc->info.mode));
 }
 static size_t dec(const void *restrict desc, struct wuimg *img) {
 	return c64_decode(desc, img);

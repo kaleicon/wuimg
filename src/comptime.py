@@ -151,9 +151,12 @@ DEC_MAP = {
 
 	"c64": {
 		"c64": {
-			"desc": "Art Studio (OCP), Artist64, Blazing Paddles, Create With Garfield"
-				", Doodle (raw & compressed), Hi-Eddi, Image System, Interpaint"
-				", KoalaPainter (raw & compressed), Runpaint, Saracen Paint"
+			"desc": "Art Studio (OCP), Artist64, Blazing Paddles"
+				", CDU-Paint, Cheese, Create With Garfield"
+				", Doodle (raw & compressed), Hi-Eddi"
+				", Image System, Interpaint"
+				", KoalaPainter (raw & compressed)"
+				", Picasso 64, Runpaint, Saracen Paint"
 				", Vidcom 64",
 			"match": (
 				# Omit conflicting extensions until we improve detection capabilities
@@ -163,6 +166,10 @@ DEC_MAP = {
 				"a64", "wig",
 				# Blazing Paddles
 				"bp", "bpl", #"pi",
+				# CDU-Paint
+				"cdu",
+				# Cheese
+				"che",
 				# Create With Garfield
 				"cwg",
 				# Doodle
@@ -175,6 +182,8 @@ DEC_MAP = {
 				"ip64h", "iph", "ipt",
 				# KoalaPainter
 				"gg", "gig", "kla", "koa", "koala",
+				# Picasso 64
+				"p64",
 				# Runpaint
 				"rpm",
 				# Saracen Paint
