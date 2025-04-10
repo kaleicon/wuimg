@@ -139,6 +139,24 @@ const struct wuptr nlm_desc = DESC(
 	"match:[\x01]" // ???
 );
 
+/* OTA - Over The Air bitmap
+https://web.archive.org/web/20120624211208/http://www.csoft.co.uk/documents/sms3_0_0.pdf
+ * Unlike every monochrome format ever, there are no padding bits between rows.
+ * That means we only properly support widths that are a multiple of 8. OTOH,
+ * ImageMagick includes padding bits anyway, and two wrongs make a right so
+ * we're good. FIXME someday anyway. */
+const struct wuptr ota_desc = DESC(
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted\n"
+
+	"(match:<u8>\n"
+		"0 w:<u8> h:<u8>\n"
+		"0x10 endian:big w:<u16> h:<u16>\n"
+	")\n"
+	"(bitdepth:<u8> 1)"
+);
+
 /* Atari Falcon True Color family */
 // COKE
 const struct wuptr coke_desc = DESC(
