@@ -140,6 +140,22 @@ static enum wu_error actually_open(struct image_context *image) {
 	return init_metadata(infile, &image->desc, fd);
 }
 
+static enum wu_error call_decoder(struct image_file *infile,
+const struct wu_conf *conf, const struct fmt_desc *desc) {
+	struct wu_st st;
+	if (desc->is_auto) {
+		st = auto_init(infile, conf, *desc->dec.desc);
+	} else if (desc->dec.fn->init) {
+		st = desc->dec.fn->init(infile, conf);
+	} else {
+		return desc->dec.fn->dec(infile, conf);
+	}
+	if (st.msg) {
+		image_file_strerror_append(infile, st.msg);
+	}
+	return st.st;
+}
+
 enum wu_error dec_decode(struct image_context *image) {
 	enum wu_error st = actually_open(image);
 	if (st == wu_ok) {
@@ -157,9 +173,7 @@ enum wu_error dec_decode(struct image_context *image) {
 				return wu_alloc_error;
 			}
 		}
-		st = desc->is_auto
-			? auto_init(infile, conf, *desc->dec.desc)
-			: desc->dec.fn->dec(infile, conf);
+		st = call_decoder(infile, conf, desc);
 		if (st == wu_ok) {
 			if (!infile->nr) {
 				fatal_bug(__func__,
@@ -168,7 +182,9 @@ enum wu_error dec_decode(struct image_context *image) {
 			if (!infile->sub_img->data) {
 				st = dec_callback(image, ev_subcycle);
 				if (st == wu_no_change) {
-					st = wu_ok;
+					fatal_bug(__func__,
+						"Callback returned `no change`"
+						" for sub-image request");
 				}
 			}
 		}

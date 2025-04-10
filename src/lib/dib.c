@@ -235,16 +235,6 @@ bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 	return w;
 }
 
-static enum wu_error load_pal(struct dib_desc *desc, struct wuimg *img,
-const enum fmt_pal_type type) {
-	img->alpha = alpha_ignore;
-	struct palette *pal = wuimg_palette_init(img);
-	if (pal) {
-		return fmt_load_pal(desc->ifp, pal, type, desc->pal_entries);
-	}
-	return wu_alloc_error;
-}
-
 static struct dib_ciexyz load_xyz(uint8_t *buf) {
 	return (struct dib_ciexyz) {
 		.x = buf_endian32(buf, little_endian),
@@ -253,7 +243,7 @@ static struct dib_ciexyz load_xyz(uint8_t *buf) {
 	};
 }
 
-static enum wu_error load_colorspace(struct dib_desc *desc, struct wuimg *img,
+static struct wu_st load_colorspace(struct dib_desc *desc, struct wuimg *img,
 uint8_t *buf) {
 	/* BITMAPV4HEADER (after previous fields):
 		Offset  Type    Name
@@ -307,14 +297,15 @@ uint8_t *buf) {
 				dib_gamma_to_double(desc->lcs.gamma.g),
 				dib_gamma_to_double(desc->lcs.gamma.b));
 			if (!ok) {
-				return wu_alloc_error;
+				return WUERR_HERE(wu_alloc_error);
 			}
 		}
-		return wu_ok;
+		return wuok();
 	case dib_profile_linked:
 	case dib_profile_embedded:
 		if (desc->type < dib_v5_header) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"Color profiles used with DIB type < 5");
 		}
 		desc->lcs.profile_off = buf_endian32(buf + 60, little_endian);
 		break;
@@ -332,7 +323,7 @@ uint8_t *buf) {
 			desc->lcs.intent = intent;
 		}
 	}
-	return wu_ok;
+	return wuok();
 }
 
 static enum wu_error load_mask(struct dib_desc *desc, struct wuimg *img,
@@ -347,15 +338,15 @@ uint8_t *buf) {
 	return wuimg_bitfield_from_mask(img, mask, ch, desc->depth);
 }
 
-static enum wu_error validate_common(struct dib_desc *desc, struct wuimg *img,
+static struct wu_st validate_common(struct dib_desc *desc, struct wuimg *img,
 const uint16_t planes, const uint32_t horz_res, const uint32_t vert_res,
 const uint32_t colors) {
 	if (planes > 1) { // Some files set it to 0
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "planes > 1");
 	}
 	if (desc->depth <= 8) {
 		if (colors > 256) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Excessive pal entries");
 		} else if (colors) {
 			desc->pal_entries = colors;
 		} else {
@@ -363,15 +354,15 @@ const uint32_t colors) {
 		}
 	}
 	wuimg_aspect_ratio(img, vert_res, horz_res);
-	return wu_ok;
+	return wuok();
 }
 
-static enum wu_error validate_os2_header(struct dib_desc *desc,
+static struct wu_st validate_os2_header(struct dib_desc *desc,
 struct wuimg *img, const uint32_t width, const uint32_t height,
 const uint16_t depth, const uint32_t compression, const uint32_t size,
 const uint16_t storage, const uint32_t color_encoding) {
 	if (width < 1 || height < 1) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "width or height < 1");
 	}
 	img->w = width;
 	img->h = height;
@@ -387,54 +378,48 @@ const uint16_t storage, const uint32_t color_encoding) {
 		img->bitdepth = 8;
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "Invalid depth for OS/2");
 	}
 
 	switch (compression) {
 	case os2_no_compression: break;
 	case os2_8bit_rle:
 		if (depth != 8 || !size) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Bad 8bit RLE params");
 		}
 		break;
 	case os2_4bit_rle:
 		if (depth != 4 || !size) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Bad 4bit RLE params");
 		}
 		break;
 	case os2_1d_huffman:
-		return wu_unsupported_feature;
+		return wuerr(wu_unsupported_feature,
+			"Huffman compression not supported");
 	case os2_24bit_rle:
 		if (depth != 24 || !size) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Bad 24bit RLE params");
 		}
 		break;
 	default:
-		return wu_invalid_header;
-	}
-	if (storage != 0) {
-		(void)storage;
-//		return wu_invalid_header;
-	}
-	if (color_encoding != 0) {
-		(void)color_encoding;
-//		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "Invalid OS/2 compression");
 	}
 	desc->depth = (unsigned char)depth;
 	desc->order = dib_bottom_up;
 	desc->compression = (unsigned char)compression;
 	desc->size = size;
-	return wu_ok;
+	return wuerr(wu_ok, (storage != 0 || color_encoding != 0)
+		? "Ignoring non-zero `storage` and `color_encoding`" : NULL);
 }
 
-static enum wu_error validate_dib_header(struct dib_desc *desc,
+static struct wu_st validate_dib_header(struct dib_desc *desc,
 struct wuimg *img, const int32_t width, const int32_t height,
 const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 	if (width < 1) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "width < 1");
 	}
 	if (!height) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "height == 0");
 	}
 	desc->order = (height > 0) ? dib_bottom_up : dib_top_down;
 	img->w = (unsigned)width;
@@ -447,12 +432,18 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 		img->channels = 1;
 		img->bitdepth = (unsigned char)depth;
 		break;
-	case 16: case 24: case 32:
+	case 16: case 32:
+		if (desc->type < dib_info_header) {
+			return wuerr(wu_invalid_header,
+				"Invalid depth for type 2 DIB");
+		}
+		// fallthrough
+	case 24:
 		img->channels = (unsigned char)(depth / 8);
 		img->bitdepth = 8;
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "Invalid DIB depth");
 	}
 
 	switch (compression) {
@@ -462,38 +453,38 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 			img->bitdepth = 16;
 			img->layout = pix_bgra;
 			if (!wuimg_bitfield_from_id(img, 0x1555)) {
-				return wu_alloc_error;
+				return WUERR_HERE(wu_alloc_error);
 			}
 		}
 		break;
 	case dib_8bit_rle:
 		if (depth != 8 || desc->order == dib_top_down || !rle_size) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Bad 8-bit RLE params");
 		}
 		break;
 	case dib_4bit_rle:
 		if (depth != 4 || desc->order == dib_top_down || !rle_size) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Bad 4-bit RLE params");
 		}
 		img->bitdepth = 8;
 		break;
 	case dib_bitfield:
 		if (desc->type < dib_info_header || (depth != 16 && depth != 32)) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Bad bitfield params");
 		}
 		img->channels = 1;
 		img->bitdepth = (unsigned char)depth;
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_unsupported_feature, "Unsupported DIB compression");
 	}
 	desc->depth = (unsigned char)depth;
 	desc->compression = (unsigned char)compression;
 	desc->size = rle_size;
-	return wu_ok;
+	return wuok();
 }
 
-static enum wu_error dib_parse_os2_2x_header(struct dib_desc *desc,
+static struct wu_st dib_parse_os2_2x_header(struct dib_desc *desc,
 struct wuimg *img) {
 	/* OS/2 v2 header (after header size field)
 		Offset  Size    Name
@@ -523,10 +514,10 @@ struct wuimg *img) {
 
 	uint8_t buf[60] = {0};
 	if (!fread(buf, desc->type - 4, 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	enum wu_error status = validate_os2_header(desc, img,
+	struct wu_st status = validate_os2_header(desc, img,
 		buf_endian32(buf, little_endian),
 		buf_endian32(buf + 4, little_endian),
 		buf_endian16(buf + 10, little_endian),
@@ -534,24 +525,17 @@ struct wuimg *img) {
 		buf_endian32(buf + 16, little_endian),
 		buf_endian16(buf + 40, little_endian),
 		buf_endian32(buf + 52, little_endian));
-	if (status != wu_ok) {
-		return status;
+	if (wu_isok(status)) {
+		status = validate_common(desc, img,
+			buf_endian16(buf + 8, little_endian),
+			buf_endian32(buf + 20, little_endian),
+			buf_endian32(buf + 24, little_endian),
+			buf_endian32(buf + 28, little_endian));
 	}
-	status = validate_common(desc, img,
-		buf_endian16(buf + 8, little_endian),
-		buf_endian32(buf + 20, little_endian),
-		buf_endian32(buf + 24, little_endian),
-		buf_endian32(buf + 28, little_endian));
-	if (status != wu_ok) {
-		return status;
-	}
-	if (desc->depth <= 8) {
-		return load_pal(desc, img, fmt_pal_rgbx);
-	}
-	return wu_ok;
+	return status;
 }
 
-static enum wu_error dib_parse_type3_header(struct dib_desc *desc,
+static struct wu_st dib_parse_type3_header(struct dib_desc *desc,
 struct wuimg *img) {
 	/* Type 3 and up DIB header (after header size field)
 
@@ -589,16 +573,16 @@ struct wuimg *img) {
 	uint8_t buf[dib_v5_header - 4];
 	const size_t read = desc->type - 4;
 	if (!fread(buf, read, 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	enum wu_error status = validate_dib_header(desc, img,
+	struct wu_st status = validate_dib_header(desc, img,
 		(int32_t)buf_endian32(buf, little_endian),
 		(int32_t)buf_endian32(buf + 4, little_endian),
 		buf_endian16(buf + 10, little_endian),
 		buf_endian32(buf + 12, little_endian),
 		buf_endian32(buf + 16, little_endian));
-	if (status != wu_ok) {
+	if (!wu_isok(status)) {
 		return status;
 	}
 
@@ -607,36 +591,30 @@ struct wuimg *img) {
 		buf_endian32(buf + 20, little_endian),
 		buf_endian32(buf + 24, little_endian),
 		buf_endian32(buf + 28, little_endian));
-	if (status != wu_ok) {
+	if (!wu_isok(status)) {
 		return status;
 	}
 
 	if (desc->compression == dib_bitfield) {
 		if (desc->type == dib_info_header) {
 			if (!fread(buf + read, 4*3, 1, desc->ifp)) {
-				return wu_unexpected_eof;
+				return WUERR_HERE(wu_unexpected_eof);
 			}
 		}
 		img->layout = pix_rgba;
-		status = load_mask(desc, img, buf + 36);
-		if (status != wu_ok) {
-			return status;
+		enum wu_error err = load_mask(desc, img, buf + 36);
+		if (err != wu_ok) {
+			return wuerr(err, "Couldn't load mask");
 		}
 	}
 
 	if (desc->type >= dib_v4_header) {
 		status = load_colorspace(desc, img, buf + 52);
-		if (status != wu_ok) {
-			return status;
-		}
 	}
-	if (desc->depth <= 8) {
-		return load_pal(desc, img, fmt_pal_rgbx);
-	}
-	return wu_ok;
+	return status;
 }
 
-static enum wu_error dib_parse_core_header(struct dib_desc *desc,
+static struct wu_st dib_parse_core_header(struct dib_desc *desc,
 struct wuimg *img) {
 	/* Type 2 DIB header (after header size)
 		Offset  Size    Name
@@ -652,32 +630,22 @@ struct wuimg *img) {
 
 	uint16_t buf[4];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	enum wu_error status = validate_dib_header(desc, img,
+	struct wu_st status = validate_dib_header(desc, img,
 		(int16_t)endian16(buf[0], little_endian),
 		(int16_t)endian16(buf[1], little_endian),
 		endian16(buf[3], little_endian),
 		dib_no_compression, 0);
-	if (status != wu_ok) {
+	if (!wu_isok(status)) {
 		return status;
 	}
-	status = validate_common(desc, img, endian16(buf[2], little_endian),
+	return validate_common(desc, img, endian16(buf[2], little_endian),
 		0, 0, 0);
-	if (status != wu_ok) {
-		return status;
-	}
-
-	if (desc->depth <= 8) {
-		return load_pal(desc, img, fmt_pal_rgb);
-	} else if (desc->depth != 24) {
-		return wu_invalid_header;
-	}
-	return wu_ok;
 }
 
-static enum wu_error parse_header(struct dib_desc *desc,
+static struct wu_st parse_header(struct dib_desc *desc,
 struct wuimg *img) {
 	/* Common DIB header:
 		Offset  Size    Name
@@ -686,7 +654,7 @@ struct wuimg *img) {
 	*/
 	uint32_t hsize;
 	if (!fread(&hsize, sizeof(hsize), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	hsize = endian32(hsize, little_endian);
 
@@ -707,7 +675,7 @@ struct wuimg *img) {
 		break;
 	default:
 		if (desc->is_os2 == trit_false || !valid_os2_2x(hsize)) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "Bad DIB header size");
 		}
 		desc->is_os2 = trit_true;
 		break;
@@ -717,7 +685,7 @@ struct wuimg *img) {
 	img->align_sh = 2;
 	img->layout = pix_bgra;
 
-	enum wu_error status;
+	struct wu_st status;
 	if (core_header) {
 		status = dib_parse_core_header(desc, img);
 	} else if (desc->is_os2 == trit_true) {
@@ -725,12 +693,28 @@ struct wuimg *img) {
 	} else {
 		status = dib_parse_type3_header(desc, img);
 	}
-
-	if (status == wu_ok) {
-		status = wuimg_verify(img);
-	}
-	if (status != wu_ok) {
+	if (!wu_isok(status)) {
 		return status;
+	}
+
+	enum wu_error err;
+	if (desc->depth <= 8) {
+		img->alpha = alpha_ignore;
+		struct palette *pal = wuimg_palette_init(img);
+		if (!pal) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+		err = fmt_load_pal(desc->ifp, pal,
+			core_header ? fmt_pal_rgb : fmt_pal_rgbx,
+			desc->pal_entries);
+		if (err != wu_ok) {
+			return wuerr(err, "Couldn't load palette");
+		}
+	}
+
+	err = wuimg_verify(img);
+	if (err != wu_ok) {
+		return WUERR_HERE(err);
 	}
 
 	const size_t size = strip_length(img->w, desc->depth, 2) * img->h;
@@ -760,12 +744,13 @@ struct wuimg *img) {
 		}
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_unsupported_feature,
+			"Unsupported compression type");
 	}
-	return wu_ok;
+	return wuok();
 }
 
-enum wu_error dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
+struct wu_st dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
 	if (!desc->bmp_header) {
 		return parse_header(desc, img);
 	}
@@ -784,44 +769,42 @@ enum wu_error dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
 
 	uint32_t buf[3];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	enum wu_error status = parse_header(desc, img);
-	if (status != wu_ok) {
-		return status;
+	const struct wu_st status = parse_header(desc, img);
+	if (wu_isok(status)) {
+		const long bitmap_offset = endian32(buf[2], little_endian);
+		fseek(desc->ifp, bitmap_offset, SEEK_SET);
 	}
-
-	const long bitmap_offset = endian32(buf[2], little_endian);
-	fseek(desc->ifp, bitmap_offset, SEEK_SET);
 	return status;
 }
 
-enum wu_error dib_open_file(struct dib_desc *desc, FILE *ifp, const bool is_bmp,
+struct wu_st dib_open_file(struct dib_desc *desc, FILE *ifp, const bool is_bmp,
 const enum trit is_os2) {
 	*desc = (struct dib_desc) {
 		.ifp = ifp,
 		.bmp_header = is_bmp,
 		.is_os2 = is_os2,
 	};
-	if (!is_bmp) {
-		return wu_ok;
-	}
-
-	const unsigned char magic[][2] = {
-		{'B', 'M'}, // BMP
-		{0, 0}, // DDB
-	};
-	unsigned char sig[2];
-	if (fread(sig, sizeof(sig), 1, ifp)) {
-		if (!memcmp(magic[0], sig, sizeof(sig))) {
-			return wu_ok;
-		} else if (!memcmp(magic[1], sig, sizeof(sig))) {
-			return wu_unsupported_feature;
+	if (is_bmp) {
+		const unsigned char magic[][2] = {
+			{'B', 'M'}, // BMP
+			{0, 0}, // DDB
+		};
+		unsigned char sig[2];
+		if (fread(sig, sizeof(sig), 1, ifp)) {
+			if (!memcmp(magic[0], sig, sizeof(sig))) {
+				return wuok();
+			} else if (!memcmp(magic[1], sig, sizeof(sig))) {
+				return wuerr(wu_unsupported_feature,
+					"DDB files not supported");
+			}
+			return WUERR_HERE(wu_invalid_signature);
 		}
-		return wu_invalid_signature;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	return wu_unexpected_eof;
+	return wuok();
 }
 
 /* ICO functions */
@@ -969,7 +952,7 @@ bool ico_decode(struct ico_desc *desc, struct wuimg *img) {
 	return ico_palette_dec(dib, img);
 }
 
-enum wu_error ico_set_image(struct ico_desc *desc, struct wuimg *img,
+struct wu_st ico_set_image(struct ico_desc *desc, struct wuimg *img,
 const uint16_t i) {
 	/* ICO image components:
 		BITMAPINFOHEADER
@@ -984,14 +967,14 @@ const uint16_t i) {
 	fseek(dib->ifp, desc->images[i].offset, SEEK_SET);
 	dib->is_os2 = trit_false;
 	// dib_parse_header() will drop us at the start of the XOR bitmap.
-	enum wu_error status = dib_parse_header(dib, img);
-	if (status != wu_ok) {
+	struct wu_st status = dib_parse_header(dib, img);
+	if (!wu_isok(status)) {
 		return status;
 	}
 
 	// For bizarre reasons the XOR and AND bitmaps are counted together.
 	if (img->h % 2 != 0) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "Odd height");
 	}
 	img->h /= 2;
 	if (dib->depth != 16) {
@@ -1000,12 +983,12 @@ const uint16_t i) {
 	}
 
 	if (dib->type == dib_info_header && dib->compression == dib_no_compression) {
-		return wu_ok;
+		return wuok();
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "Bad DIB type in ICO file");
 }
 
-enum wu_error ico_parse_header(struct ico_desc *desc) {
+struct wu_st ico_parse_header(struct ico_desc *desc) {
 	/* ICO dir entry (one for each image, stored continuously):
 		Offset  Size    Name
 		0       BYTE    Width
@@ -1021,7 +1004,7 @@ enum wu_error ico_parse_header(struct ico_desc *desc) {
 
 	desc->images = malloc(sizeof(*desc->images) * desc->count);
 	if (!desc->images) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	for (uint16_t i = 0; i < desc->count; ++i) {
@@ -1029,7 +1012,7 @@ enum wu_error ico_parse_header(struct ico_desc *desc) {
 		 * image location and verify the values here are not outrageous. */
 		uint8_t buf[16];
 		if (!fread(buf, sizeof(buf), 1, desc->dib.ifp)) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 
 		const uint16_t x = buf_endian16(buf + 4, little_endian);
@@ -1039,23 +1022,23 @@ enum wu_error ico_parse_header(struct ico_desc *desc) {
 			desc->images[i].y = y;
 		} else {
 			if (x > 1) {
-				return wu_invalid_header;
+				return wuerr(wu_invalid_header, "planes > 1");
 			}
 			switch (y) {
 			case 0: case 1: case 2: case 4: case 8:
 			case 16: case 24: case 32:
 				break;
 			default:
-				return wu_invalid_header;
+				return wuerr(wu_invalid_header, "bad ico depth");
 			}
 		}
 		desc->images[i].size = buf_endian32(buf + 8, little_endian);
 		desc->images[i].offset = buf_endian32(buf + 12, little_endian);
 	}
-	return wu_ok;
+	return wuok();
 }
 
-enum wu_error ico_open_file(struct ico_desc *desc, FILE *ifp) {
+struct wu_st ico_open_file(struct ico_desc *desc, FILE *ifp) {
 	/* ICO header:
 		Offset  Size    Name
 		0       i16     Reserved   // 0
@@ -1077,12 +1060,12 @@ enum wu_error ico_open_file(struct ico_desc *desc, FILE *ifp) {
 				desc->dib.ifp = ifp;
 				desc->type = type;
 				desc->count = count;
-				return wu_ok;
+				return wuok();
 			}
 		}
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 #ifdef WU_ENABLE_BMZ
@@ -1093,10 +1076,12 @@ void bmz_cleanup(struct bmz_desc *desc) {
 	free(desc->buf);
 }
 
-enum wu_error bmz_open(struct bmz_desc *desc, struct mparser mp) {
+struct wu_st bmz_open(struct bmz_desc *desc, struct mparser mp) {
 	const uint8_t magic[4] = {'Z', 'L', 'C', '3'};
-	enum wu_error st = fmt_sigcmp_mem(magic, sizeof(magic), &mp);
-	if (st == wu_ok) {
+	struct wu_st st = (struct wu_st) {
+		.st = fmt_sigcmp_mem(magic, sizeof(magic), &mp),
+	};
+	if (wu_isok(st)) {
 		const struct wuptr z = mp_remaining(&mp);
 		if (z.len > 4) {
 			uLong orig = buf_endian32(z.ptr, little_endian);
@@ -1108,24 +1093,26 @@ enum wu_error bmz_open(struct bmz_desc *desc, struct mparser mp) {
 					if (ifp) {
 						st = dib_open_file(&desc->bmp,
 							ifp, true, trit_false);
-						if (st == wu_ok) {
+						if (wu_isok(st)) {
 							desc->buf = buf;
-							return st;
+						} else {
+							fclose(ifp);
 						}
-						fclose(ifp);
 					} else {
-						st = wu_alloc_error;
+						st = WUERR_HERE(wu_alloc_error);
 					}
 				} else {
-					st = wu_unexpected_eof;
+					st = WUERR_HERE(wu_unexpected_eof);
 				}
 				free(buf);
 			} else {
-				st = wu_alloc_error;
+				st = WUERR_HERE(wu_alloc_error);
 			}
 		} else {
-			st = wu_unexpected_eof;
+			st = WUERR_HERE(wu_unexpected_eof);
 		}
+	} else {
+		st = WUERR_HERE(st.st);
 	}
 	return st;
 }

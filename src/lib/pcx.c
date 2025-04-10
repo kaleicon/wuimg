@@ -35,11 +35,11 @@ const char * pcx_version_string(const enum pcx_version ver) {
 	return "???";
 }
 
-static enum wu_error pcx_unpack_interleave(struct wuimg *img) {
+static struct wu_st pcx_unpack_interleave(struct wuimg *img) {
 	const size_t outstride = strip_length(img->w * img->channels, img->bitdepth, 0);
 	unsigned char *dst = calloc(outstride, img->h);
 	if (!dst) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	const size_t plane_stride = strip_length(img->w, img->bitdepth,
 		img->align_sh);
@@ -70,7 +70,7 @@ static enum wu_error pcx_unpack_interleave(struct wuimg *img) {
 		img->channels = 1;
 	}
 	img->align_sh = 0;
-	return wu_ok;
+	return wuok();
 }
 
 static bool check_cga_mode(const struct pcx_desc *desc,
@@ -165,11 +165,11 @@ struct wuimg *img, const struct pix_rgb8 *pal_data) {
 	return true;
 }
 
-static enum wu_error looking_for_lost_pauline(struct pcx_desc *desc,
+static struct wu_st looking_for_lost_pauline(struct pcx_desc *desc,
 struct wuimg *img, const unsigned char *restrict vga_id,
 const size_t rle_remaining) {
 	if (img->bitdepth * img->channels > 8) {
-		return wu_ok;
+		return wuok();
 	}
 
 	enum pcx_palette_source pal_src = pcx_no_pal;
@@ -191,7 +191,7 @@ const size_t rle_remaining) {
 	const void *pal_data = NULL;
 	switch (pal_src) {
 	case pcx_no_pal:
-		return wu_ok;
+		return wuok();
 	case pcx_ega:
 		break;
 	case pcx_file_header:
@@ -203,9 +203,9 @@ const size_t rle_remaining) {
 	}
 
 	if (!load_palette(desc, img, pal_data)) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return wu_ok;
+	return wuok();
 }
 
 static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
@@ -237,12 +237,12 @@ const unsigned char *restrict rle, const size_t rle_len) {
 	return r;
 }
 
-enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
+struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 	const size_t dims = strip_length(img->w, img->bitdepth, img->align_sh)
 		* img->channels * img->h;
 	img->data = malloc(dims);
 	if (!img->data) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	desc->mp.pos = 128;
@@ -258,24 +258,24 @@ enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 		memcpy(img->data, src.ptr, r);
 	}
 	if (!r) {
-		return wu_unexpected_eof;
+		return wuerr(wu_unexpected_eof, __func__);
 	}
-	enum wu_error fail = looking_for_lost_pauline(desc, img,
+	struct wu_st st = looking_for_lost_pauline(desc, img,
 		src.ptr + r, src.len - r);
-	if (fail != wu_ok) {
-		return fail;
+	if (!wu_isok(st)) {
+		return st;
 	}
 
 	if (img->channels > 1) {
-		fail = pcx_unpack_interleave(img);
-		if (fail != wu_ok) {
-			return fail;
+		st = pcx_unpack_interleave(img);
+		if (!wu_isok(st)) {
+			return st;
 		}
 	}
-	return wuimg_verify(img);
+	return wuerr(wuimg_verify(img), NULL);
 }
 
-enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
+struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 	/* Header continuation
 		Offset  Size    Name
 		0       BYTE    BitsPerPixel;   // 1, 2, 4, or 8
@@ -306,7 +306,7 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 
 	const uint8_t *hdr = mp_slice(&desc->mp, 71);
 	if (!hdr) {
-		return wu_unexpected_eof;
+		return wuerr(wu_unexpected_eof, __func__);
 	}
 
 	desc->horz_res = buf_endian16(hdr + 9, little_endian);
@@ -333,22 +333,24 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 		width = xend;
 	}
 	if (width < 1 || height < 1) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "Zero or negative dimensions");
 	}
 
 	switch (bitdepth) {
 	case 1: case 8:
 		if (planes < 1 || planes > 4) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"Plane number out of range");
 		}
 		break;
 	case 2: case 4:
 		if (planes != 1) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"Planes != 1 for depths 2 and 4");
 		}
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "Bad bitdepth");
 	}
 	img->w = (size_t)width;
 	img->h = (size_t)height;
@@ -356,12 +358,12 @@ enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 	img->bitdepth = bitdepth;
 	img->align_sh = strip_alignment(bytes_per_line, img->w, img->bitdepth);
 	if (img->align_sh < 0 || img->align_sh > 3) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "Bizarre alignment");
 	}
-	return wu_ok;
+	return wuok();
 }
 
-enum wu_error pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
+struct wu_st pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
 	/* PCX header:
 		Offset  Size    Name
 		0	BYTE	IdentifierByte; // Always 0x0A
@@ -387,13 +389,13 @@ enum wu_error pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
 				case pcx_ver30:
 					desc->version = sig[1];
 					desc->compressed = sig[2];
-					return wu_ok;
+					return wuok();
 				}
 			}
-			return wu_invalid_signature;
+			return wuerr(wu_invalid_signature, __func__);
 		}
 	}
-	return wu_unexpected_eof;
+	return wuerr(wu_unexpected_eof, __func__);
 }
 
 
@@ -401,7 +403,7 @@ void dcx_free(struct dcx_desc *desc) {
 	free(desc->off);
 }
 
-enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
+struct wu_st dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
 const uint32_t i) {
 	if (i < dcx->nr) {
 		return pcx_open_file(pcx, wuptr_mem(
@@ -409,10 +411,10 @@ const uint32_t i) {
 			dcx->off[i + 1] - dcx->off[i]
 		));
 	}
-	return wu_invalid_params;
+	return wuerr(wu_invalid_params, __func__);
 }
 
-enum wu_error dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
+struct wu_st dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
 	/* Why would anyone use the most device dependent file format ever for
 	 * sending documents is beyond me.
 
@@ -454,7 +456,7 @@ enum wu_error dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
 			st = wu_alloc_error;
 		}
 	}
-	return st;
+	return wuerr(st, __func__);
 }
 
 /* Ok bye */

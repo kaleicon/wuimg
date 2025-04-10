@@ -35,7 +35,7 @@ const int code, const float dt, const bool shift) {
 		break;
 	// Metadata
 	case 'M':
-		image_file_print(file, 2 + shift, file->nr == 1);
+		image_file_print(file, stdout, 2 + shift, file->nr == 1);
 		return repeat_none;
 
 	// Delete

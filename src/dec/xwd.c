@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 #include "lib/xwd.h"
 #include "misc/common.h"
-#include "rast_utils.h"
+#include "wudefs.h"
 
-static void meta(const void *restrict ptr, struct wutree *meta) {
-	const struct xwd_desc *desc = ptr;
+static void get_metadata(const struct xwd_desc *desc, struct wutree *meta) {
 	tree_add_leaf_utf8(meta, "Version", xwd_version_str(desc->version));
 	tree_add_leaf_utf8(meta, "Format", xwd_format_str(desc->format));
 	tree_add_leaf_utf8(meta, "Visual", xwd_visual_str(desc->visual));
@@ -30,31 +29,38 @@ static void meta(const void *restrict ptr, struct wutree *meta) {
 	}
 }
 
-static void cleanup(struct image_file *infile) {
+static void cleanup_xwd(struct image_file *infile) {
 	xwd_cleanup(infile->dec_state);
 }
 
-static size_t dec(const void *restrict desc, struct wuimg *img) {
-	return xwd_decode(desc, img);
+static enum wu_error callback_xwd(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *_s, const enum image_event ev) {
+	(void)_c; (void)_s;
+	if (ev == ev_subcycle) {
+		return xwd_decode(infile->dec_state, infile->sub_img)
+			? wu_ok : wu_decoding_error;
+	}
+	return wu_no_change;
 }
 
-static enum wu_error parse(void *restrict desc, struct wuimg *img) {
-	return xwd_parse(desc, img);
-}
-
-static enum wu_error open(void *restrict desc, struct image_file *infile) {
-	return xwd_open(desc, infile->ifp);
-}
-
-static enum wu_error xwd_dec(struct image_file *infile,
+static struct wu_st init_xwd(struct image_file *infile,
 const struct wu_conf *conf) {
-	return rast_trivial_dec(infile, conf, infile->dec_state, open, parse,
-		meta, dec);
+	struct wu_st st = xwd_open(infile->dec_state, infile->ifp);
+	if (wu_isok(st)) {
+		st = xwd_parse(infile->dec_state, infile->sub_img);
+		if (wu_isok(st)) {
+			get_metadata(infile->dec_state, &infile->metadata);
+			st.st = wuimg_exceeds_limit(infile->sub_img, conf)
+				? wu_exceeds_size_limit : wu_ok;
+		}
+	}
+	return st;
 }
 
 const struct image_fn xwd_fn = {
-	.mmap = false,
+	.alloc_single = true,
 	.state_size = sizeof(struct xwd_desc),
-	.dec = xwd_dec,
-	.end = cleanup,
+	.init = init_xwd,
+	.callback = callback_xwd,
+	.end = cleanup_xwd,
 };

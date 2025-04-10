@@ -50,6 +50,8 @@ struct image_file {
 	bool stat;
 };
 
+typedef struct wu_st (*fmt_init_t)(struct image_file *infile,
+	const struct wu_conf *wuconf);
 typedef enum wu_error (*fmt_dec_t)(struct image_file *infile,
 	const struct wu_conf *wuconf);
 typedef enum wu_error (*fmt_callback_t)(struct image_file *infile,
@@ -60,7 +62,8 @@ struct image_fn {
 	bool mmap;
 	bool alloc_single;
 	uint16_t state_size;
-	fmt_dec_t dec;
+	fmt_init_t init;
+	fmt_dec_t dec; // Old-style init
 	fmt_callback_t callback;
 	fmt_end_t end;
 };
@@ -89,7 +92,7 @@ struct wuimg * alloc_sub_images(struct image_file *file, size_t nr);
 
 void image_file_free_if_single(struct image_file *file);
 
-void image_file_print(const struct image_file *file, int verbosity,
+void image_file_print(const struct image_file *file, FILE *out, int verbosity,
 bool unloaded_too);
 
 enum wu_error image_file_total_decoded(struct image_file *file, size_t o);

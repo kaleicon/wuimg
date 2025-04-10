@@ -2,16 +2,16 @@
 #include "lib/dib.h"
 #include "wudefs.h"
 
-static enum wu_error dib_common(struct image_file *infile,
+static struct wu_st dib_common(struct image_file *infile,
 const struct wu_conf *wuconf, struct dib_desc *desc) {
 	struct wuimg *img = infile->sub_img;
-	const enum wu_error err = dib_parse_header(desc, img);
-	if (err != wu_ok) {
-		return err;
+	const struct wu_st st = dib_parse_header(desc, img);
+	if (!wu_isok(st)) {
+		return st;
 	}
 
 	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
+		return wuerr(wu_exceeds_size_limit, NULL);
 	}
 
 	if (dib_decode(desc, img)) {
@@ -27,34 +27,34 @@ const struct wu_conf *wuconf, struct dib_desc *desc) {
 				wuptr_wustr(name), NULL);
 			wustr_free(&name);
 		}
-		return wu_ok;
+		return wuok();
 	}
-	return wu_decoding_error;
+	return wuerr(wu_decoding_error, NULL);
 }
 
-static enum wu_error decode_dib(struct image_file *infile,
+static struct wu_st decode_dib(struct image_file *infile,
 const struct wu_conf *wuconf, const bool is_bmp) {
 	struct dib_desc desc;
-	const enum wu_error err = dib_open_file(&desc, infile->ifp, is_bmp,
+	const struct wu_st st = dib_open_file(&desc, infile->ifp, is_bmp,
 		trit_what);
-	if (err == wu_ok) {
+	if (wu_isok(st)) {
 		return dib_common(infile, wuconf, &desc);
 	}
-	return err;
+	return st;
 }
 
-static enum wu_error bmp_dec(struct image_file *infile,
+static struct wu_st init_bmp(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	return decode_dib(infile, wuconf, true);
 }
 
-static enum wu_error dib_dec(struct image_file *infile,
+static struct wu_st init_dib(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	return decode_dib(infile, wuconf, false);
 }
 
-const struct image_fn bmp_fn = {.alloc_single = true, .dec = bmp_dec};
-const struct image_fn dib_fn = {.alloc_single = true, .dec = dib_dec};
+const struct image_fn bmp_fn = {.alloc_single = true, .init = init_bmp};
+const struct image_fn dib_fn = {.alloc_single = true, .init = init_dib};
 
 
 static void ico_end(struct image_file *infile) {
@@ -63,14 +63,14 @@ static void ico_end(struct image_file *infile) {
 
 static enum wu_error wrap_ico(struct wuimg *img, const struct wu_conf *wuconf,
 struct ico_desc *desc, const uint16_t idx) {
-	const enum wu_error st = ico_set_image(desc, img, idx);
-	if (st == wu_ok) {
+	const struct wu_st st = ico_set_image(desc, img, idx);
+	if (wu_isok(st)) {
 		if (!wuimg_exceeds_limit(img, wuconf)) {
 			return ico_decode(desc, img) ? wu_ok : wu_decoding_error;
 		}
 		return wu_exceeds_size_limit;
 	}
-	return st;
+	return st.st;
 }
 
 static enum wu_error ico_callback(struct image_file *infile,
@@ -83,26 +83,26 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 		: wu_no_change;
 }
 
-static enum wu_error ico_dec(struct image_file *infile,
+static struct wu_st init_ico(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct ico_desc *desc = infile->dec_state;
-	enum wu_error err = ico_open_file(desc, infile->ifp);
-	if (err == wu_ok) {
-		err = ico_parse_header(desc);
-		if (err == wu_ok) {
+	struct wu_st st = ico_open_file(desc, infile->ifp);
+	if (wu_isok(st)) {
+		st = ico_parse_header(desc);
+		if (wu_isok(st)) {
 			tree_add_leaf_utf8(&infile->metadata, "Type",
 				ico_type_str(desc->type));
 			return alloc_sub_images(infile, desc->count)
-				? wu_ok : wu_alloc_error;
+				? wuok() : WUERR_HERE(wu_alloc_error);
 		}
 	}
-	return err;
+	return st;
 }
 
 const struct image_fn ico_fn = {
 	.state_size = sizeof(struct ico_desc),
-	.dec = ico_dec,
+	.init = init_ico,
 	.callback = ico_callback,
 	.end = ico_end,
 };
@@ -110,11 +110,11 @@ const struct image_fn ico_fn = {
 
 #include "dec_enable.def"
 #ifdef WU_ENABLE_BMZ
-static enum wu_error bmz_dec(struct image_file *infile,
+static struct wu_st init_bmz(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct bmz_desc desc;
-	enum wu_error st = bmz_open(&desc, mp_wuptr(infile->map));
-	if (st == wu_ok) {
+	struct wu_st st = bmz_open(&desc, mp_wuptr(infile->map));
+	if (wu_isok(st)) {
 		st = dib_common(infile, wuconf, &desc.bmp);
 		bmz_cleanup(&desc);
 	}
@@ -124,6 +124,6 @@ const struct wu_conf *wuconf) {
 const struct image_fn bmz_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.dec = bmz_dec,
+	.init = init_bmz,
 };
 #endif /* WU_ENABLE_BMZ */

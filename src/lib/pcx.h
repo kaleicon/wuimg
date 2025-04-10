@@ -31,11 +31,11 @@ struct pcx_desc {
 
 const char * pcx_version_string(enum pcx_version ver);
 
-enum wu_error pcx_decode(struct pcx_desc *desc, struct wuimg *img);
+struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img);
 
-enum wu_error pcx_read_header(struct pcx_desc *desc, struct wuimg *img);
+struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img);
 
-enum wu_error pcx_open_file(struct pcx_desc *desc, struct wuptr mem);
+struct wu_st pcx_open_file(struct pcx_desc *desc, struct wuptr mem);
 
 
 struct dcx_desc {
@@ -46,9 +46,9 @@ struct dcx_desc {
 
 void dcx_free(struct dcx_desc *desc);
 
-enum wu_error dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
+struct wu_st dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
 uint32_t i);
 
-enum wu_error dcx_open_file(struct dcx_desc *desc, struct wuptr mem);
+struct wu_st dcx_open_file(struct dcx_desc *desc, struct wuptr mem);
 
 #endif /* LIB_PCX */

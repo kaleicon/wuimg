@@ -41,13 +41,13 @@ static void add_metadata(const struct pcx_desc *desc, struct wuimg *img) {
 	}
 }
 
-static enum wu_error common_pcx(struct pcx_desc *desc, struct wuimg *img,
+static struct wu_st common_pcx(struct pcx_desc *desc, struct wuimg *img,
 const struct wu_conf *wuconf) {
-	const enum wu_error st = pcx_read_header(desc, img);
-	if (st == wu_ok) {
+	const struct wu_st st = pcx_read_header(desc, img);
+	if (wu_isok(st)) {
 		add_metadata(desc, img);
 		if (wuimg_exceeds_limit(img, wuconf)) {
-			return wu_exceeds_size_limit;
+			return wuerr(wu_exceeds_size_limit, NULL);
 		}
 		return pcx_decode(desc, img);
 	}
@@ -57,11 +57,14 @@ const struct wu_conf *wuconf) {
 static enum wu_error pcx_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct pcx_desc desc;
-	enum wu_error err = pcx_open_file(&desc, infile->map);
-	if (err == wu_ok) {
-		return common_pcx(&desc, infile->sub_img, wuconf);
+	struct wu_st st = pcx_open_file(&desc, infile->map);
+	if (wu_isok(st)) {
+		st = common_pcx(&desc, infile->sub_img, wuconf);
 	}
-	return err;
+	if (st.msg) {
+		image_file_strerror_append(infile, st.msg);
+	}
+	return st.st;
 }
 
 
@@ -77,11 +80,14 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 		struct wuimg *img = infile->sub_img + i;
 
 		struct pcx_desc pcx;
-		enum wu_error st = dcx_set_file(desc, &pcx, i);
-		if (st == wu_ok) {
-			return common_pcx(&pcx, img, wuconf);
+		struct wu_st st = dcx_set_file(desc, &pcx, i);
+		if (wu_isok(st)) {
+			st = common_pcx(&pcx, img, wuconf);
 		}
-		return st;
+		if (st.msg) {
+			image_file_strerror_append(infile, st.msg);
+		}
+		return st.st;
 	}
 	return wu_no_change;
 }
@@ -90,11 +96,14 @@ static enum wu_error dcx_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct dcx_desc *desc = infile->dec_state;
-	const enum wu_error st = dcx_open_file(desc, infile->map);
-	if (st == wu_ok) {
+	const struct wu_st st = dcx_open_file(desc, infile->map);
+	if (wu_isok(st)) {
 		return alloc_sub_images(infile, desc->nr) ? wu_ok : wu_alloc_error;
 	}
-	return st;
+	if (st.msg) {
+		image_file_strerror_append(infile, st.msg);
+	}
+	return st.st;
 }
 
 const struct image_fn pcx_fn = {

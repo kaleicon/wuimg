@@ -37,6 +37,20 @@ enum wu_error {
 	wu_unknown_error,
 };
 
+struct wu_st {
+	enum wu_error st;
+	const char *msg;
+};
+
+const char * wu_error_message(enum wu_error err);
+
+#define ASSTR(x) ASSTR2(x)
+#define ASSTR2(x) #x
+#define WUERR_HERE(err) wuerr(err, __FILE__ ":" ASSTR(__LINE__) );
+struct wu_st wuerr(enum wu_error err, const char *msg);
+struct wu_st wuok(void);
+bool wu_isok(struct wu_st st);
+
 struct plane_dim {
 	/* Subsampling factor. A ceil division of the image dimensions and
 	 * this returns the plane dimensions. */
@@ -146,9 +160,6 @@ struct wuimg {
 	struct wutree *metadata;
 };
 
-const char * wu_error_message(enum wu_error err);
-
-
 struct wutree * wuimg_get_metadata(struct wuimg *img);
 
 void wuimg_aspect_ratio(struct wuimg *img, unsigned h_size, unsigned v_size);
@@ -210,6 +221,6 @@ void wuimg_clear(struct wuimg *img);
 
 bool wuimg_has_data(const struct wuimg *img);
 
-size_t wuimg_print(const struct wuimg *img, int verbosity);
+size_t wuimg_print(const struct wuimg *img, FILE *out, int verbosity);
 
 #endif /* WUIMG */

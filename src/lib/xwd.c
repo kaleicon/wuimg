@@ -74,10 +74,10 @@ size_t xwd_decode(const struct xwd_desc *desc, struct wuimg *img) {
 }
 
 #define XWD_PAL_ENTRY_SIZE 12
-static enum wu_error load_palette(struct xwd_desc *desc, struct wuimg *img,
+static struct wu_st load_palette(struct xwd_desc *desc, struct wuimg *img,
 const uint32_t ncolors) {
 	if (!ncolors || ncolors > 256) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "bad palette size");
 	}
 	/* XWD palette entry:
 		Offset  Type    Name
@@ -91,49 +91,49 @@ const uint32_t ncolors) {
 
 	uint8_t xwd_pal[XWD_PAL_ENTRY_SIZE*256];
 	if (!fread(xwd_pal, XWD_PAL_ENTRY_SIZE*ncolors, 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return wuerr(wu_unexpected_eof, __func__);
 	}
 	struct palette *pal = img->u.palette;
 	for (size_t i = 0; i < ncolors; ++i) {
 		const size_t base = i*XWD_PAL_ENTRY_SIZE;
 		/* FIXME: Support 16-bit palettes.
-		 * Meanwhile, pick the most significant byte. */
+		 * For now, pick the most significant byte. */
 		pal->color[i].r = xwd_pal[base + 4];
 		pal->color[i].g = xwd_pal[base + 6];
 		pal->color[i].b = xwd_pal[base + 8];
 		pal->color[i].a = 0xff;
 	}
-	return wu_ok;
+	return wuok();
 }
 
-static enum wu_error get_window_name(struct xwd_desc *desc) {
+static struct wu_st get_window_name(struct xwd_desc *desc) {
 	struct wustr *name = &desc->win.name;
 	if (name->len) {
 		if (!wustr_malloc(name, name->len)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 		if (!fread(name->str, name->len, 1, desc->ifp)) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 		if (!name->str[name->len-1]) { // ignore null byte
 			--name->len;
 		}
 	}
-	return wu_ok;
+	return wuok();
 }
 
-static enum wu_error validate_header(struct xwd_desc *desc, struct wuimg *img,
+static struct wu_st validate_header(struct xwd_desc *desc, struct wuimg *img,
 const enum xwd_format format, const uint32_t depth, const uint32_t xoffset,
 const uint32_t byte_order, const uint32_t bit_align, const uint32_t bit_order,
 const uint32_t pix_align, const uint32_t bpp,
 const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 	switch (bit_align) {
 	case 8: case 16: case 32: break;
-	default: return wu_invalid_header;
+	default: return wuerr(wu_invalid_header, "bad bit align");
 	}
 	switch (pix_align) {
 	case 8: case 16: case 32: break;
-	default: return wu_invalid_header;
+	default: return wuerr(wu_invalid_header, "bad pix align");
 	}
 
 	switch (format) {
@@ -141,28 +141,28 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		wuimg_align(img, (uint8_t)(bit_align/8));
 		break;
 	case xwd_xypixmap:
-		return wu_samples_wanted;
+		return wuerr(wu_samples_wanted, "XYPixmap file");
 	case xwd_zpixmap:
 		wuimg_align(img, (uint8_t)(pix_align/8));
 		break;
 	default:
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
 	desc->format = format;
 
 	if (xoffset) {
-		return wu_samples_wanted;
+		return wuerr(wu_samples_wanted, "bit xoffset != 0");
 	}
 
 	switch (byte_order) {
 	case xwd_lsb: desc->byte_endian = little_endian; break;
 	case xwd_msb: desc->byte_endian = big_endian; break;
-	default: return wu_invalid_header;
+	default: return wuerr(wu_invalid_header, "bad byte order");
 	}
 	switch (bit_order) {
 	case xwd_lsb: desc->bit_endian = little_endian; break;
 	case xwd_msb: desc->bit_endian = big_endian; break;
-	default: return wu_invalid_header;
+	default: return wuerr(wu_invalid_header, "bad bit order");
 	}
 
 	bool paletted = false;
@@ -174,15 +174,18 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		switch (bpp) {
 		case 1: img->attr = pix_inverted; break;
 		case 8: break;
-		default: return wu_invalid_header;
+		default:
+			return wuerr(wu_invalid_header,
+				"bad word depth in grayscale image");
 		}
 		if (depth > bpp) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"pixel depth > word depth");
 		}
 		if (paletted) {
 			img->attr = pix_normal;
 			if (!wuimg_palette_init(img)) {
-				return wu_alloc_error;
+				return WUERR_HERE(wu_alloc_error);
 			}
 		} else {
 			img->bitrange = (uint8_t)depth;
@@ -195,40 +198,41 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 			 * we extract according to the masks. */
 			switch (depth) {
 			case 15: case 16: break;
-			default: return wu_invalid_header;
+			default: return WUERR_HERE(wu_invalid_header);
 			}
 			break;
 		case 24:
 			if (bpp != depth) {
-				return wu_invalid_header;
+				return WUERR_HERE(wu_invalid_header);
 			}
 			break;
 		case 32:
 			switch (depth) {
 			case 24: case 32: break;
-			default: return wu_invalid_header;
+			default: return WUERR_HERE(wu_invalid_header);
 			}
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"bad word depth in truecolor image");
 		}
 		const enum wu_error st = wuimg_bitfield_from_mask(img, mask, 3,
 			(uint8_t)bpp);
 		if (st != wu_ok) {
-			return st;
+			return wuerr(st, "couldn't load mask");
 		}
 		break;
-	default: return wu_invalid_header;
+	default: return wuerr(wu_invalid_header, "bad visual class");
 	}
 	desc->bpp = (uint8_t)bpp;
 	desc->depth = (uint8_t)depth;
 	desc->visual = visual_class;
 	img->bitdepth = desc->bpp;
 	img->alpha = alpha_ignore;
-	return wu_ok;
+	return wuok();
 }
 
-enum wu_error xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
+struct wu_st xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	/* XWD header (after HeaderSize and Version):
 		Offset  Type    Name
 		0       u32     Format
@@ -259,16 +263,16 @@ enum wu_error xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	*/
 	uint32_t header[23];
 	if (!fread(header, sizeof(header), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	endian_loop32(header, big_endian, ARRAY_LEN(header));
 	img->w = header[2];
 	img->h = header[3];
 	img->channels = 1;
-	enum wu_error st = validate_header(desc, img, header[0],
+	struct wu_st st = validate_header(desc, img, header[0],
 		header[1], header[4], header[5], header[6], header[7],
 		header[8], header[9], header[11], header + 12);
-	if (st != wu_ok) {
+	if (!wu_isok(st)) {
 		return st;
 	}
 
@@ -278,28 +282,28 @@ enum wu_error xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	desc->win.y = header[21];
 	desc->win.border_w = header[22];
 	st = get_window_name(desc);
-	if (st != wu_ok) {
+	if (!wu_isok(st)) {
 		return st;
 	}
-	st = wuimg_verify(img);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	const size_t stride = strip_length(img->w, desc->bpp, img->align_sh);
-	if (stride != header[10]) {
-		return wu_invalid_header;
+	enum wu_error err = wuimg_verify(img);
+	if (err != wu_ok) {
+		return WUERR_HERE(err);
 	}
 
 	const uint32_t ncolors = header[17];
 	if (img->mode == image_mode_palette) {
-		return load_palette(desc, img, ncolors);
+		st = load_palette(desc, img, ncolors);
+		if (!wu_isok(st)) {
+			return st;
+		}
+	} else {
+		fseek(desc->ifp, XWD_PAL_ENTRY_SIZE*ncolors, SEEK_CUR);
 	}
-	fseek(desc->ifp, XWD_PAL_ENTRY_SIZE*ncolors, SEEK_CUR);
-	return wu_ok;
+	const size_t stride = strip_length(img->w, desc->bpp, img->align_sh);
+	return wuerr(wu_ok, (stride == header[10]) ? NULL : "stride mismatch");
 }
 
-enum wu_error xwd_open(struct xwd_desc *desc, FILE *ifp) {
+struct wu_st xwd_open(struct xwd_desc *desc, FILE *ifp) {
 	/* XWD header:
 		Offset  Type    Name
 		0       u32     HeaderSize  // Size of header (100) + WindowName
@@ -311,18 +315,18 @@ enum wu_error xwd_open(struct xwd_desc *desc, FILE *ifp) {
 		endian_loop32(header, big_endian, ARRAY_LEN(header));
 		if (header[0] >= 100) {
 			switch (header[1]) {
-			case xwd_x10: return wu_samples_wanted;
+			case xwd_x10: return wuerr(wu_samples_wanted, "XWD10 file");
 			case xwd_x11: break;
-			default: return wu_unknown_file_type;
+			default: return wuerr(wu_unknown_file_type, __func__);
 			}
 			*desc = (struct xwd_desc) {
 				.ifp = ifp,
 				.version = (uint8_t)header[1],
 				.win.name.len = header[0] - 100,
 			};
-			return wu_ok;
+			return wuok();
 		}
-		return wu_unknown_file_type;
+		return WUERR_HERE(wu_unknown_file_type);
 	}
-	return wu_unexpected_eof;
+	return wuerr(wu_unexpected_eof, __func__);
 }

@@ -143,7 +143,7 @@ struct test_mode_args args) {
 			if (result == wu_no_change) {
 				result = wu_ok;
 				if (args.metadata) {
-					image_file_print(&image.file, 3, true);
+					image_file_print(&image.file, stdout, 3, true);
 				} else {
 					taken += watch_elapsed(watch) * (j >= args.warmup);
 				}

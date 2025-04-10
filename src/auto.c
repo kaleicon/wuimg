@@ -321,21 +321,8 @@ struct token {
 	} u;
 };
 
-struct parse_err {
-	enum wu_error st;
-	const char *msg;
-};
-
-static struct parse_err perr(const enum wu_error st, const char *msg) {
-	return (struct parse_err){.st = st, .msg = msg};
-}
-
-static struct parse_err pbug(const char *msg) {
-	return perr(wu_string_parse_error, msg);
-}
-
-static struct parse_err pok(void) {
-	return perr(wu_ok, NULL);
+static struct wu_st pbug(const char *msg) {
+	return wuerr(wu_string_parse_error, msg);
 }
 
 static int count_equals(struct mparser *mp, const uint8_t end) {
@@ -355,7 +342,7 @@ static int count_equals(struct mparser *mp, const uint8_t end) {
 	return n;
 }
 
-static struct parse_err get_str(struct mparser *mp, struct token *tok) {
+static struct wu_st get_str(struct mparser *mp, struct token *tok) {
 	const int depth = count_equals(mp, '[');
 	if (depth < 0) {
 		return pbug("Expected '[' delimiter");
@@ -371,13 +358,13 @@ static struct parse_err get_str(struct mparser *mp, struct token *tok) {
 				.ptr = mp->mem + init,
 				.len = end - init,
 			};
-			return pok();
+			return wuok();
 		}
 	}
 	return pbug("Unexpected end of string");
 }
 
-static struct parse_err get_load(struct mparser *mp, struct token *tok) {
+static struct wu_st get_load(struct mparser *mp, struct token *tok) {
 	const int type = mp_next_char(mp);
 	uintmax_t n;
 	switch (type) {
@@ -399,11 +386,11 @@ static struct parse_err get_load(struct mparser *mp, struct token *tok) {
 						if (mp_next_char(mp) == ']') {
 							tok->u.load.array =
 								(uint16_t)n;
-							return pok();
+							return wuok();
 						}
 					}
 				} else {
-					return pok();
+					return wuok();
 				}
 			}
 		}
@@ -411,7 +398,7 @@ static struct parse_err get_load(struct mparser *mp, struct token *tok) {
 	return pbug("Bad type spec");
 }
 
-static struct parse_err get_word(struct mparser *mp, struct token *tok) {
+static struct wu_st get_word(struct mparser *mp, struct token *tok) {
 	const size_t init = mp->pos;
 	for (;;) {
 		const int c = mp_cur_char(mp);
@@ -422,10 +409,10 @@ static struct parse_err get_word(struct mparser *mp, struct token *tok) {
 	}
 	tok->type = token_enum;
 	tok->u.str = (struct wuptr){.ptr = mp->mem + init, .len = mp->pos - init};
-	return pok();
+	return wuok();
 }
 
-static struct parse_err read_token(struct mparser *mp, struct token *tok) {
+static struct wu_st read_token(struct mparser *mp, struct token *tok) {
 	const int type = mp_next_nonspace(mp);
 	switch (type) {
 	case EOF: tok->type = token_eof; break;
@@ -451,7 +438,7 @@ static struct parse_err read_token(struct mparser *mp, struct token *tok) {
 		--mp->pos;
 		return get_word(mp, tok);
 	}
-	return pok();
+	return wuok();
 }
 
 static uint8_t tohex(const uint8_t c) {
@@ -469,9 +456,9 @@ static uint8_t tohex(const uint8_t c) {
 	return 0x10;
 }
 
-static struct parse_err str_file_cmp(const struct wuptr arg, FILE *ifp) {
+static struct wu_st str_file_cmp(const struct wuptr arg, FILE *ifp) {
 	size_t i = 0;
-	const struct parse_err eof = perr(wu_unexpected_eof, NULL);
+	const struct wu_st eof = wuerr(wu_unexpected_eof, NULL);
 	while (i < arg.len) {
 		int c = arg.ptr[i];
 		++i;
@@ -506,13 +493,13 @@ static struct parse_err str_file_cmp(const struct wuptr arg, FILE *ifp) {
 		}
 		int f = getc(ifp);
 		if (c != f) {
-			return perr(wu_invalid_header, "Matching failure");
+			return wuerr(wu_invalid_header, "Matching failure");
 		}
 	}
-	return pok();
+	return wuok();
 }
 
-static struct parse_err load_pal(struct wuimg *img, FILE *ifp,
+static struct wu_st load_pal(struct wuimg *img, FILE *ifp,
 const struct load l) {
 	const size_t elems = l.array ? l.array : (1 << img->bitdepth);
 	if (elems <= 256) {
@@ -522,21 +509,21 @@ const struct load l) {
 			if (pal) {
 				const enum wu_error st = fmt_load_pal(ifp, pal,
 					l.size, elems);
-				return perr(st, "Palette load failure");
+				return wuerr(st, "Palette load failure");
 			}
-			return perr(wu_alloc_error, "Palette alloc error");
+			return wuerr(wu_alloc_error, "Palette alloc error");
 		default: return pbug("Palette must be <u24> or <u32>");
 		}
 	}
 	return pbug("Palette entries must be <= 256");
 }
 
-static struct parse_err load_val(struct image_file *infile, const struct token *tok,
+static struct wu_st load_val(struct image_file *infile, const struct token *tok,
 uint32_t *scalar) {
 	const uint8_t size = tok->u.load.size;
 	void *ptr = scalar;
 	if (!fread(ptr, size, 1, infile->ifp)) {
-		return perr(wu_unexpected_eof, NULL);
+		return wuerr(wu_unexpected_eof, NULL);
 	}
 	const enum endianness e = (enum endianness)infile->dec_state;
 	switch (size) {
@@ -546,12 +533,12 @@ uint32_t *scalar) {
 	default: return pbug("Bad word size");
 	}
 	if (tok->u.load.is_signed && (*scalar & (1u << (size - 1)))) {
-		return perr(wu_invalid_header, "Got negative value from file");
+		return wuerr(wu_invalid_header, "Got negative value from file");
 	}
-	return pok();
+	return wuok();
 }
 
-static struct parse_err set_num(struct wuimg *img, const struct wuptr op,
+static struct wu_st set_num(struct wuimg *img, const struct wuptr op,
 const uintmax_t num) {
 	if (wuptr_eq_str(op, "w")) {
 		img->w = (size_t)num;
@@ -564,10 +551,10 @@ const uintmax_t num) {
 	} else {
 		return pbug("Unknown variable");
 	}
-	return pok();
+	return wuok();
 }
 
-static struct parse_err exec_stmt(struct image_file *infile, const struct wuptr op,
+static struct wu_st exec_stmt(struct image_file *infile, const struct wuptr op,
 const struct token *tok, uint32_t *scalar) {
 	struct wuimg *img = infile->sub_img;
 	switch (tok->type) {
@@ -632,7 +619,7 @@ const struct token *tok, uint32_t *scalar) {
 		} else {
 			return pbug("Unknown variable-enum pair");
 		}
-		return pok();
+		return wuok();
 	case token_num:
 		;const uintmax_t num = tok->u.num;
 		if (wuptr_eq_str(op, "skip")) {
@@ -641,15 +628,15 @@ const struct token *tok, uint32_t *scalar) {
 			img->bitrange = (uint8_t)num;
 		} else if (wuptr_eq_str(op, "bitfield")) {
 			if (!wuimg_bitfield_from_id(img, (uint16_t)num)) {
-				return perr(wu_alloc_error,
+				return wuerr(wu_alloc_error,
 					"Bitfield alloc error");
 			}
 		} else {
 			return set_num(img, op, num);
 		}
-		return pok();
+		return wuok();
 	case token_load:
-		;const struct parse_err err = load_val(infile, tok, scalar);
+		;const struct wu_st err = load_val(infile, tok, scalar);
 		if (!err.st) {
 			if (wuptr_eq_str(op, "match")) {
 				// Do nothing, just leave `scalar` set
@@ -674,7 +661,7 @@ struct parse_state {
 	bool got_match:1;
 };
 
-static struct parse_err parse(struct mparser *mp, struct image_file *infile) {
+static struct wu_st parse(struct mparser *mp, struct image_file *infile) {
 	uint32_t scalar = 0;
 
 	struct parse_state state[4];
@@ -682,13 +669,13 @@ static struct parse_err parse(struct mparser *mp, struct image_file *infile) {
 	state[d] = (struct parse_state) {.exec = true};
 	for (;;) {
 		struct token l;
-		struct parse_err err = read_token(mp, &l);
+		struct wu_st err = read_token(mp, &l);
 		if (err.st != wu_ok) {
 			return err;
 		}
 
 		switch (l.type) {
-		case token_eof: return d ? pbug("Unclosed contexts") : pok();
+		case token_eof: return d ? pbug("Unclosed contexts") : wuok();
 		case token_enum:
 			;struct token r;
 			err = read_token(mp, &r);
@@ -728,7 +715,7 @@ static struct parse_err parse(struct mparser *mp, struct image_file *infile) {
 			break;
 		case token_close_paren:
 			if (!state[d].exec && !state[d].got_match) {
-				return perr(wu_invalid_header, "No matches found");
+				return wuerr(wu_invalid_header, "No matches found");
 			} else if (!d) {
 				return pbug("Excess closing parens");
 			}
@@ -737,7 +724,7 @@ static struct parse_err parse(struct mparser *mp, struct image_file *infile) {
 		default: return pbug("Syntax error");
 		}
 	}
-	return pok();
+	return wuok();
 }
 
 enum wu_error auto_load(struct image_file *infile) {
@@ -751,18 +738,18 @@ enum wu_error auto_load(struct image_file *infile) {
 	return st;
 }
 
-enum wu_error auto_init(struct image_file *infile, const struct wu_conf *conf,
+struct wu_st auto_init(struct image_file *infile, const struct wu_conf *conf,
 const struct wuptr desc) {
 	struct mparser mp = mp_wuptr(desc);
-	const struct parse_err err = parse(&mp, infile);
-	if (err.st != wu_ok) {
-		if (err.msg && getenv("WU_DEBUG")) {
-			term_line_key_val(__func__, err.msg, stderr);
+	const struct wu_st st = parse(&mp, infile);
+	if (!wu_isok(st)) {
+		if (st.msg && getenv("WU_DEBUG")) {
 			term_line_put("Processed:", stderr);
 			fwrite(mp.mem, 1, mp.pos, stderr);
 			fputc('\n', stderr);
 		}
-		return err.st;
+		return st;
 	}
-	return wuimg_exceeds_limit(infile->sub_img, conf) ? wu_exceeds_size_limit : wu_ok;
+	return wuerr(wuimg_exceeds_limit(infile->sub_img, conf)
+		? wu_exceeds_size_limit : wu_ok, NULL);
 }

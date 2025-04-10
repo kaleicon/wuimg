@@ -56,6 +56,16 @@ const char * wu_error_message(const enum wu_error err) {
 		"Pray for my soul.";
 }
 
+struct wu_st wuerr(const enum wu_error err, const char *msg) {
+	return (struct wu_st){.st = err, .msg = msg};
+}
+struct wu_st wuok(void) {
+	return wuerr(wu_ok, NULL);
+}
+bool wu_isok(const struct wu_st st) {
+	return st.st == wu_ok;
+}
+
 struct wutree * wuimg_get_metadata(struct wuimg *img) {
 	if (!img->metadata) {
 		img->metadata = tree_plant("Metadata");
@@ -504,8 +514,9 @@ bool wuimg_has_data(const struct wuimg *img) {
 	return img->data || (img->mode == image_mode_planar && img->u.planes);
 }
 
-static void print_colorspace_data(const struct color_space *cs) {
-	printf("  Colorspace:\n"
+static void print_colorspace_data(const struct color_space *cs, FILE *out) {
+	fprintf(out,
+		"  Colorspace:\n"
 		"   Type: %s\n"
 		"   Range: %s\n"
 		"   Matrix: %s\n",
@@ -514,20 +525,21 @@ static void print_colorspace_data(const struct color_space *cs) {
 		cicp_matrix_str(cs->matrix));
 	switch (cs->type) {
 	case color_profile_enum:
-		printf("   Transfer: %s\n"
+		fprintf(out,
+			"   Transfer: %s\n"
 			"   Primaries: %s\n",
 			cicp_transfer_str(cs->transfer, cs->matrix),
 			cicp_primaries_str(cs->primaries));
 		break;
 	case color_profile_custom:
 		;const struct color_profile *prof = &cs->desc->u.prof;
-		printf("   Gamma: %f %f %f\n", prof->gamma.r, prof->gamma.g,
-			prof->gamma.b);
-		puts("   Primaries:");
+		fprintf(out, "   Gamma: %f %f %f\n",
+			prof->gamma.r, prof->gamma.g, prof->gamma.b);
+		fputs("   Primaries:\n", out);
 		const struct color_xy *p = (const struct color_xy *)&prof->pri;
 		const char *n[4] = {"White", "Red", "Green", "Blue"};
 		for (size_t i = 0; i < 4; ++i) {
-			printf("    %s: %f, %f\n", n[i], p[i].x, p[i].y);
+			fprintf(out, "    %s: %f, %f\n", n[i], p[i].x, p[i].y);
 		}
 		break;
 	case color_profile_icc:
@@ -545,10 +557,12 @@ static const char * alpha_str(enum alpha_interpretation alpha) {
 	return "???";
 }
 
-static void print_more_data(const struct wuimg *img, const int verbosity) {
-	fputs("  Layout: ", stdout);
-	pix_layout_print(img->layout, stdout);
-	printf("  Alignment: %d\n"
+static void print_more_data(const struct wuimg *img, FILE *out,
+const int verbosity) {
+	fputs("  Layout: ", out);
+	pix_layout_print(img->layout, out);
+	fprintf(out,
+		"  Alignment: %d\n"
 		"  Rotation: %d\n"
 		"  Mirror: %s\n"
 		"  Alpha: %s\n"
@@ -557,15 +571,16 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 		img->align_sh, img->rotate, img->mirror ? "yes" : "no",
 		alpha_str(img->alpha), img->ratio, img->bitrange);
 
-	print_colorspace_data(&img->cs);
+	print_colorspace_data(&img->cs, out);
 	if (img->mode == image_mode_planar) {
 		const struct image_planes *planes = img->u.planes;
 		const struct plane_info *p = planes->p;
-		fputs("  Planes:\n", stdout);
-		printf("   Vertical alignment: %d\n", planes->v_pad);
+		fputs("  Planes:\n", out);
+		fprintf(out, "   Vertical alignment: %d\n", planes->v_pad);
 		if (verbosity > 2) {
 			for (int i = 0; i < img->channels; ++i) {
-				printf("   Plane %d:\n"
+				fprintf(out,
+					"   Plane %d:\n"
 					"    Subsampling: %d:%d\n"
 					"    Cositing: %d:%d\n"
 					"    Width: %zu\n"
@@ -577,14 +592,16 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 					p[i].w, p[i].h, p[i].stride);
 			}
 		} else {
-			fputs("   Subsampling: ", stdout);
+			fputs("   Subsampling: ", out);
 			for (int i = 0; i < img->channels; ++i) {
-				printf("%d:%d%c", p[i].x.subsamp, p[i].y.subsamp,
+				fprintf(out, "%d:%d%c",
+					p[i].x.subsamp, p[i].y.subsamp,
 					(i == img->channels - 1) ? '\n' : '/');
 			}
-			fputs("   Positioning: ", stdout);
+			fputs("   Positioning: ", out);
 			for (int i = 0; i < img->channels; ++i) {
-				printf("%d:%d%c", p[i].x.cosit, p[i].y.cosit,
+				fprintf(out, "%d:%d%c",
+					p[i].x.cosit, p[i].y.cosit,
 					(i == img->channels - 1) ? '\n' : '/');
 			}
 		}
@@ -592,11 +609,12 @@ static void print_more_data(const struct wuimg *img, const int verbosity) {
 	if (img->metadata) {
 		const size_t max_x = verbosity > 2 ? SIZE_MAX : 80;
 		const size_t max_y = verbosity > 2 ? SIZE_MAX : 24;
-		tree_print(img->metadata, max_x, max_y, 2, stdout);
+		tree_print(img->metadata, max_x, max_y, 2, out);
 	}
 }
 
-static void print_dimensions(const struct wuimg *img, const size_t memsize) {
+static void print_dimensions(const struct wuimg *img, FILE *out,
+const size_t memsize) {
 	char bf_str[4 + sizeof(uint16_t)*2];
 	const char *mode_str = "";
 	switch (img->mode) {
@@ -610,31 +628,31 @@ static void print_dimensions(const struct wuimg *img, const size_t memsize) {
 		break;
 	}
 
-	printf("%zu x %zu x %d%s x %d ",
+	fprintf(out, "%zu x %zu x %d%s x %d ",
 		img->w, img->h, img->channels, mode_str, img->bitdepth);
 	if (img->attr) {
-		printf("(%s) ", pix_attr_str(img->attr));
+		fprintf(out, "(%s) ", pix_attr_str(img->attr));
 	}
-	printf("= %zu bytes\n", memsize);
+	fprintf(out, "= %zu bytes\n", memsize);
 }
 
-size_t wuimg_print(const struct wuimg *img, const int verbosity) {
+size_t wuimg_print(const struct wuimg *img, FILE *out, const int verbosity) {
 	const size_t memsize = wuimg_size(img);
 	if (verbosity > 0) {
 		if (img->metadata) {
-			fputs("(*) ", stdout);
+			fputs("(*) ", out);
 		}
 		if (img->frames) {
-			printf("frames: %zu, ", img->frames->nr);
+			fprintf(out, "frames: %zu, ", img->frames->nr);
 		}
 
 		if (wuimg_has_data(img)) {
-			print_dimensions(img, memsize);
+			print_dimensions(img, out, memsize);
 		} else {
-			puts("Not loaded");
+			fputs("Not loaded\n", out);
 		}
 		if (verbosity > 1) {
-			print_more_data(img, verbosity);
+			print_more_data(img, out, verbosity);
 		}
 	}
 	return memsize;

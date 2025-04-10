@@ -99,9 +99,9 @@ struct wustr *name);
 
 bool dib_decode(const struct dib_desc *desc, struct wuimg *img);
 
-enum wu_error dib_parse_header(struct dib_desc *desc, struct wuimg *img);
+struct wu_st dib_parse_header(struct dib_desc *desc, struct wuimg *img);
 
-enum wu_error dib_open_file(struct dib_desc *desc, FILE *ifp, bool is_bmp,
+struct wu_st dib_open_file(struct dib_desc *desc, FILE *ifp, bool is_bmp,
 enum trit is_os2);
 
 
@@ -129,11 +129,11 @@ void ico_cleanup(struct ico_desc *desc);
 
 bool ico_decode(struct ico_desc *desc, struct wuimg *img);
 
-enum wu_error ico_set_image(struct ico_desc *desc, struct wuimg *img, uint16_t i);
+struct wu_st ico_set_image(struct ico_desc *desc, struct wuimg *img, uint16_t i);
 
-enum wu_error ico_parse_header(struct ico_desc *desc);
+struct wu_st ico_parse_header(struct ico_desc *desc);
 
-enum wu_error ico_open_file(struct ico_desc *desc, FILE *ifp);
+struct wu_st ico_open_file(struct ico_desc *desc, FILE *ifp);
 
 
 #include "dec_enable.def"
@@ -145,7 +145,7 @@ struct bmz_desc {
 
 void bmz_cleanup(struct bmz_desc *desc);
 
-enum wu_error bmz_open(struct bmz_desc *desc, struct mparser mp);
+struct wu_st bmz_open(struct bmz_desc *desc, struct mparser mp);
 #endif /* WU_ENABLE_BMZ */
 
 #endif /* LIB_BMP */

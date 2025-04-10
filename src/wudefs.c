@@ -56,8 +56,8 @@ void image_file_free_if_single(struct image_file *file) {
 	}
 }
 
-void image_file_print(const struct image_file *file, const int verbosity,
-const bool unloaded_too) {
+void image_file_print(const struct image_file *file, FILE *out,
+const int verbosity, const bool unloaded_too) {
 	size_t max_x = 0;
 	size_t max_y = 0;
 	switch (verbosity) {
@@ -70,31 +70,35 @@ const bool unloaded_too) {
 		max_x = SIZE_MAX; max_y = SIZE_MAX;
 	}
 
-	tree_print(&file->metadata, max_x, max_y, 0, stdout);
+	tree_print(&file->metadata, max_x, max_y, 0, out);
 
 	if (file->errors.str) {
-		fputs("Found warning: ", stdout);
-		wustr_print(&file->errors, stdout);
+		fputs("Library warning: ", out);
+		if (file->errors.len > max_x) {
+			fputs("<omitted long message>\n", out);
+		} else {
+			wustr_print(&file->errors, out);
+		}
 	}
-	printf("Contained sub-images: %zu\n", file->nr);
+	fprintf(out, "Contained sub-images: %zu\n", file->nr);
 
 	size_t overall_size = 0;
 	size_t not_loaded = 0;
 	for (size_t i = 0; i < file->nr; ++i) {
 		const struct wuimg *img = file->sub_img + i;
 		if (unloaded_too || wuimg_has_data(img)) {
-			printf(" %zu/%zu: ", i+1, file->nr);
-			overall_size += wuimg_print(img, verbosity);
+			fprintf(out, " %zu/%zu: ", i+1, file->nr);
+			overall_size += wuimg_print(img, out, verbosity);
 		} else {
 			++not_loaded;
 		}
 	}
 	if (not_loaded) {
-		printf("Sub-images not loaded: %zu\n", not_loaded);
+		fprintf(out, "Sub-images not loaded: %zu\n", not_loaded);
 	}
 
 	if (file->nr > 1) {
-		printf("Total size in memory: %zu\n", overall_size);
+		fprintf(out, "Total size in memory: %zu\n", overall_size);
 	}
 }
 

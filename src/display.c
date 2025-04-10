@@ -15,7 +15,7 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 	const struct image_file *infile = &image->file;
 	const char *what = "Failed";
 	if (result == wu_ok) {
-		image_file_print(infile, 1, infile->nr == 1);
+		image_file_print(infile, stdout, 1, infile->nr == 1);
 		what = "Decoded";
 	} else {
 		term_line_key_val("Decoding error",
