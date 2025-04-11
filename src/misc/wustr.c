@@ -72,7 +72,7 @@ bool wuptr_eq(const struct wuptr w1, const struct wuptr w2) {
 }
 
 bool wuptr_eq_str(const struct wuptr w1, const char *s2) {
-	return !strncmp((const char *)w1.ptr, s2, w1.len);
+	return wuptr_eq(w1, wuptr_str(s2));
 }
 
 

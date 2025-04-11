@@ -84,6 +84,11 @@ DEC_MAP = {
 			"desc": "Over The Air bitmap (uncompliant)",
 			"match": "otb",
 		},
+		"pxy": {
+			"desc": "Eclipse Proxy",
+			"ext": "pxy",
+			"magic": b"\xaf\xcb",
+		},
 
 		# Atari Falcon True Color family
 		"coke": {
@@ -244,6 +249,14 @@ DEC_MAP = {
 					b"SDPX\0\0\0\0V\0.0",
 			),
 			"mime": "dpx",
+		},
+	},
+
+	"eclipse": {
+		"eclipse": {
+			"desc": "Eclipse TILE",
+			"ext": "tile",
+			"magic": b"\x07\x28\x00\x00",
 		},
 	},
 

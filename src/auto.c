@@ -157,6 +157,36 @@ const struct wuptr ota_desc = DESC(
 	"(bitdepth:<u8> 1)"
 );
 
+/* Eclipse Proxy (pxy)
+ * Related to Eclipse TILE (see lib/eclipse.c), but raster is not tiled,
+ * colorspace is always RGB, and there's no metadata, hence it being here. */
+const struct wuptr pxy_desc = DESC(
+	/*
+		Offset  Type    Name
+		0       u16     ID         // 0xaf 0xcb
+		2       u32     RasterSize
+		6       u32     Width
+		10      u32     Height
+		14      u32     OrigWidth  // of the original TILE file
+		18      u32     OrigHeight
+		22      u8      ???[16]    // matches mystery data in TILE file
+		38
+	 * Header is then filled with zeros up to 0x100.
+	*/
+	"endian:big\n"
+	"channels:4\n"
+	"bitdepth:8\n"
+	"layout:abgr\n"
+	"alpha:ignore\n"
+	"mirror:1\n"
+
+	"match:[\xaf\xcb]\n"
+	"skip:4\n"
+	"w:<u32>\n"
+	"h:<u32>\n"
+	"skip:0xf2" // to 0x100
+);
+
 /* Atari Falcon True Color family */
 // COKE
 const struct wuptr coke_desc = DESC(
@@ -538,15 +568,22 @@ uint32_t *scalar) {
 	return wuok();
 }
 
+static bool shorthand(const struct wuptr op, const char *str) {
+	if (op.len == 1) {
+		return op.ptr[0] == str[0];
+	}
+	return wuptr_eq_str(op, str);
+}
+
 static struct wu_st set_num(struct wuimg *img, const struct wuptr op,
 const uintmax_t num) {
-	if (wuptr_eq_str(op, "w")) {
+	if (shorthand(op, "width")) {
 		img->w = (size_t)num;
-	} else if (wuptr_eq_str(op, "h")) {
+	} else if (shorthand(op, "height")) {
 		img->h = (size_t)num;
-	} else if (wuptr_eq_str(op, "channels")) {
+	} else if (shorthand(op, "channels")) {
 		img->channels = (uint8_t)num;
-	} else if (wuptr_eq_str(op, "bitdepth")) {
+	} else if (shorthand(op, "bitdepth")) {
 		img->bitdepth = (uint8_t)num;
 	} else {
 		return pbug("Unknown variable");
@@ -631,6 +668,8 @@ const struct token *tok, uint32_t *scalar) {
 				return wuerr(wu_alloc_error,
 					"Bitfield alloc error");
 			}
+		} else if (wuptr_eq_str(op, "mirror")) {
+			img->mirror = num;
 		} else {
 			return set_num(img, op, num);
 		}

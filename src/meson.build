@@ -6,6 +6,7 @@ fmt_map = {
 		'cbg',
 		'dib',
 		'dpx',
+		'eclipse',
 		'elecbyte',
 		'g00',
 		'gp4',
