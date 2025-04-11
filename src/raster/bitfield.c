@@ -105,7 +105,8 @@ static enum pix_layout sort_masks(struct bf_key *k) {
 	key_swap(k + 0, k + 1);
 	key_swap(k + 2, k + 3);
 	key_swap(k + 1, k + 2);
-	return 0 << k[0].idx*2 | 1 << k[1].idx*2 | 2 << k[2].idx*2 | 3 << k[3].idx*2;
+	return 0u << k[0].idx*2 | 1u << k[1].idx*2
+		| 2u << k[2].idx*2 | 3u << k[3].idx*2;
 }
 
 enum pix_layout bitfield_from_mask(struct bitfield *bf, const uint32_t *mask,

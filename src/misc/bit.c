@@ -6,24 +6,27 @@
 #include "math.h"
 
 uint8_t bit_rev8(uint8_t b) {
-	b = (b & 0xaa) >> 1 | (b & 0x55) << 1;
-	b = (b & 0xcc) >> 2 | (b & 0x33) << 2;
+	uint32_t c = b;
+	c = (c & 0xaa) >> 1 | (c & 0x55) << 1;
+	c = (c & 0xcc) >> 2 | (c & 0x33) << 2;
 	return (uint8_t)(b >> 4 | b << 4);
 }
 
 uint16_t bit_rev16(uint16_t b) {
-	b = (b & 0xaaaa) >> 1 | (b & 0x5555) << 1;
-	b = (b & 0xcccc) >> 2 | (b & 0x3333) << 2;
-	b = (b & 0xf0f0) >> 4 | (b & 0x0f0f) << 4;
-	return (uint16_t)(b >> 8 | b << 8);
+	uint32_t c = b;
+	c = (c & 0xaaaa) >> 1 | (c & 0x5555) << 1;
+	c = (c & 0xcccc) >> 2 | (c & 0x3333) << 2;
+	c = (c & 0xf0f0) >> 4 | (c & 0x0f0f) << 4;
+	return (uint16_t)(c >> 8 | c << 8);
 }
 
 uint32_t bit_rev32(uint32_t b) {
-	b = (b & 0xaaaaaaaa) >> 1 | (b & 0x55555555) << 1;
-	b = (b & 0xcccccccc) >> 2 | (b & 0x33333333) << 2;
-	b = (b & 0xf0f0f0f0) >> 4 | (b & 0x0f0f0f0f) << 4;
-	b = (b & 0xff00ff00) >> 8 | (b & 0x00ff00ff) << 8;
-	return (b >> 16 | b << 16);
+	uint32_t c = b;
+	c = (c & 0xaaaaaaaa) >> 1 | (c & 0x55555555) << 1;
+	c = (c & 0xcccccccc) >> 2 | (c & 0x33333333) << 2;
+	c = (c & 0xf0f0f0f0) >> 4 | (c & 0x0f0f0f0f) << 4;
+	c = (c & 0xff00ff00) >> 8 | (c & 0x00ff00ff) << 8;
+	return (c >> 16 | c << 16);
 }
 
 uint32_t bit_ctz32(uint32_t bits) {

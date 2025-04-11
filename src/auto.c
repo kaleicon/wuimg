@@ -355,6 +355,10 @@ static struct wu_st pbug(const char *msg) {
 	return wuerr(wu_string_parse_error, msg);
 }
 
+static enum endianness get_endian(void *state) {
+	return (enum endianness)(uintptr_t)state;
+}
+
 static int count_equals(struct mparser *mp, const uint8_t end) {
 	int n = 0;
 	int c;
@@ -555,7 +559,7 @@ uint32_t *scalar) {
 	if (!fread(ptr, size, 1, infile->ifp)) {
 		return wuerr(wu_unexpected_eof, NULL);
 	}
-	const enum endianness e = (enum endianness)infile->dec_state;
+	const enum endianness e = get_endian(infile->dec_state);
 	switch (size) {
 	case 1: *scalar = *((uint8_t *)ptr); break;
 	case 2: *scalar = endian16(*((uint16_t *)ptr), e); break;
@@ -770,7 +774,7 @@ enum wu_error auto_load(struct image_file *infile) {
 	struct wuimg *img = infile->sub_img;
 	const enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {
-		const enum endianness e = (enum endianness)infile->dec_state;
+		const enum endianness e = get_endian(infile->dec_state);
 		return fmt_load_raster_swap(img, infile->ifp, e)
 			? wu_ok : wu_unexpected_eof;
 	}
