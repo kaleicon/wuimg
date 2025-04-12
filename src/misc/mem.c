@@ -50,11 +50,13 @@ const size_t nmemb) {
 	uint32_t triple;
 	memcpy(&triple, src, size);
 	size_t i = 0;
-	while (i < nmemb - 1) {
-		memcpy(dst + i*size, &triple, sizeof(triple));
-		++i;
+	if (nmemb) {
+		while (i < nmemb - 1) {
+			memcpy(dst + i*size, &triple, sizeof(triple));
+			++i;
+		}
+		memcpy(dst + i*size, &triple, size);
 	}
-	memcpy(dst + i*size, &triple, size);
 }
 
 void memset16(uint16_t *dst, const void *restrict src, const size_t nmemb) {

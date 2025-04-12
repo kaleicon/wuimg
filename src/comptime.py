@@ -123,6 +123,14 @@ DEC_MAP = {
 		"da4": {"desc": "PaintShop (Atari ST)", "match": "da4"},
 		"doo": {"desc": "Atari Doodle", "match": "doo"},
 	},
+
+	"aliaspix": {
+		"aliaspix": {
+			"desc": "AliasPIX and Vivid",
+			"match": ("als", "pix"), #"img",
+		},
+	},
+
 	"atari": {
 		"dali": {
 			"desc": "Dali uncompressed",
