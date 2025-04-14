@@ -278,7 +278,7 @@ static size_t degas_decomp(struct degas_desc *desc, struct wuimg *img) {
 				return 0;
 			}
 		}
-		const size_t w = decomp_pack_bits(unpack, VIDEO_RAM, pb, pb_len);
+		const size_t w = decomp_packbits(unpack, VIDEO_RAM, pb, pb_len);
 		free(pb);
 		if (unpack != img->data) {
 			degas_deinterleave(img, desc->res, unpack);
@@ -351,7 +351,7 @@ size_t ez_decode(struct mparser mp, struct wuimg *img) {
 		uint8_t *ram = malloc(VIDEO_RAM);
 		if (ram) {
 			const struct wuptr pack = mp_remaining(&mp);
-			w = decomp_pack_bits(ram, VIDEO_RAM,
+			w = decomp_packbits(ram, VIDEO_RAM,
 				(int8_t *)pack.ptr, pack.len);
 			degas_deinterleave(img, atari_st_res_low, ram);
 			free(ram);

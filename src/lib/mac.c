@@ -29,7 +29,7 @@ size_t mac_decode(const struct mac_desc *desc, struct wuimg *main) {
 	if (rle_len && wuimg_alloc_noverify(main)) {
 		int8_t *rle = malloc(rle_len);
 		if (rle) {
-			written = decomp_pack_bits(main->data, dst_len, rle,
+			written = decomp_packbits(main->data, dst_len, rle,
 				fread(rle, 1, rle_len, desc->ifp));
 			free(rle);
 		}

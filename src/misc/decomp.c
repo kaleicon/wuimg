@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: 0BSD
 #include <string.h>
 
-size_t decomp_pack_bits(unsigned char *restrict dst, const size_t dst_len,
+size_t decomp_packbits(unsigned char *restrict dst, const size_t dst_len,
 const signed char *restrict src, const size_t src_len) {
 	size_t d = 0;
 	size_t s = 0;
-	while (s + 1 < src_len) {
+	while (src_len - s >= 2) {
 		const signed char run = src[s];
 		++s;
 		size_t cnt;
 		if (run < 0) {
 			cnt = (size_t)(1 - run);
-			if (d + cnt > dst_len) {
+			if (dst_len - d < cnt) {
 				break;
 			}
 			memset(dst + d, ((const unsigned char *)src)[s], cnt);
 			++s;
 		} else {
 			cnt = (size_t)(1 + run);
-			if (d + cnt > dst_len || s + cnt > src_len) {
+			if (dst_len - d < cnt || src_len - s < cnt) {
 				break;
 			}
 			memcpy(dst + d, src + s, cnt);

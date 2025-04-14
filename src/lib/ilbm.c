@@ -113,7 +113,7 @@ const struct wuptr body) {
 	uint8_t *upack = malloc(upack_len);
 	size_t w = 0;
 	if (upack) {
-		w = decomp_pack_bits(upack, upack_len,
+		w = decomp_packbits(upack, upack_len,
 			(const int8_t *)body.ptr, body.len);
 		expand_body(desc, img, wuptr_mem(upack, w));
 		free(upack);
@@ -234,7 +234,7 @@ const struct wuptr body) {
 			memcpy(img->data, body.ptr, zumin(size, body.len));
 			return 1;
 		case ilbm_compression_packbits:
-			return decomp_pack_bits(img->data, size,
+			return decomp_packbits(img->data, size,
 				(const int8_t *)body.ptr, body.len);
 		case ilbm_compression_vdat:
 			break;
