@@ -118,7 +118,7 @@ void image_file_strerror_append(struct image_file *file, const char *str) {
 }
 
 void image_file_error_append(struct image_file *file, const enum wu_error st) {
-	image_file_strerror_append(file, wu_error_message(st));
+	image_file_strerror_append(file, wu_error_str(st));
 }
 
 void image_file_free(struct image_file *file) {

@@ -156,7 +156,7 @@ struct write_writer *writer) {
 	if (err != wu_ok) {
 		dec_free(image);
 		fprintf(stderr, "Error while opening %s: %s\n", image->name,
-			wu_error_message(err));
+			wu_error_str(err));
 		return false;
 	}
 
@@ -192,7 +192,7 @@ struct write_writer *writer) {
 			break;
 		default:
 			fprintf(stderr, "Error while processing %s: %s\n",
-				image->name, wu_error_message(err));
+				image->name, wu_error_str(err));
 			all_ok = false;
 		}
 		free_write_path(&path);

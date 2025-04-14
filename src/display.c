@@ -7,6 +7,15 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 
+static void print_error(const struct image_file *infile,
+const char *what, const enum wu_error e, FILE *out) {
+	term_line_key_val(what, wu_error_str(e), out);
+	if (infile->errors.str) {
+		fputs("Library message: ", out);
+		wustr_print(&infile->errors, out);
+	}
+}
+
 static enum wu_error decode_with_stats(struct image_context *image) {
 	const watch_t start = watch_look();
 	const enum wu_error result = dec_decode(image);
@@ -18,12 +27,7 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 		image_file_print(infile, stdout, 1, infile->nr == 1);
 		what = "Decoded";
 	} else {
-		term_line_key_val("Decoding error",
-			wu_error_message(result), stdout);
-		if (infile->errors.str) {
-			fputs("Library message: ", stdout);
-			wustr_print(&infile->errors, stdout);
-		}
+		print_error(infile, "Decoding error", result, stdout);
 	}
 	nanosec_report(what, diff, report_normal);
 	return result;
@@ -218,10 +222,8 @@ const bool allow_cycle, const bool allow_delete) {
 				upload = true;
 				break;
 			default:
-				term_line_key_val("Callback failed",
-					wu_error_message(err), stdout);
-				fputs("Library message: ", stdout);
-				wustr_print(&infile->errors, stdout);
+				print_error(infile, "Callback error", err,
+					stdout);
 				break;
 			}
 		}

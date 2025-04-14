@@ -884,7 +884,7 @@ const struct wuimg *src, const bool wont_modify) {
 
 	enum wu_error st = init_color(state, dst, src, 1.0/inrange);
 	if (st != wu_ok) {
-		return wu_error_message(st);
+		return wu_error_str(st);
 	}
 
 	state->transfer = !state->color.eotf.srgb_input || needs_transfer(dst, src);
@@ -912,7 +912,7 @@ const struct wuimg *src, const bool wont_modify) {
 		if (src->rotate & 1 || src->mode == image_mode_planar) {
 			st = init_tmp_img(state, src);
 			if (st != wu_ok) {
-				return wu_error_message(st);
+				return wu_error_str(st);
 			}
 		} else {
 			const void *arg = (state->op == op_bitfield)

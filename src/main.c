@@ -159,7 +159,7 @@ struct test_mode_args args) {
 			}
 		} else {
 			printf("Error in %s: %s\n", entries->name[i],
-				wu_error_message(result));
+				wu_error_str(result));
 			++failures;
 		}
 	}
