@@ -51,11 +51,15 @@ struct image_file {
 };
 
 typedef struct wu_st (*fmt_init_t)(struct image_file *infile,
-	const struct wu_conf *wuconf);
+	const struct wu_conf *conf);
+typedef struct wu_st (*fmt_event_t)(struct image_file *infile,
+	const struct wu_conf *conf, struct wu_state *state, enum image_event ev);
+
 typedef enum wu_error (*fmt_dec_t)(struct image_file *infile,
-	const struct wu_conf *wuconf);
+	const struct wu_conf *conf);
 typedef enum wu_error (*fmt_callback_t)(struct image_file *infile,
-	const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev);
+	const struct wu_conf *conf, struct wu_state *state, enum image_event ev);
+
 typedef void (*fmt_end_t)(struct image_file *infile);
 
 struct image_fn {
@@ -63,8 +67,9 @@ struct image_fn {
 	bool alloc_single;
 	uint16_t state_size;
 	fmt_init_t init;
+	fmt_event_t event;
 	fmt_dec_t dec; // Old-style init
-	fmt_callback_t callback;
+	fmt_callback_t callback; // Old-style event
 	fmt_end_t end;
 };
 

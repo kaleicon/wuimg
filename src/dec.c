@@ -24,6 +24,25 @@ void dec_free(struct image_context *image) {
 	image_file_free(&image->file);
 }
 
+static enum wu_error call_event(struct image_context *image,
+const enum image_event event) {
+	const struct fmt_desc *desc = &image->desc;
+	struct wu_st st;
+	if (desc->is_auto) {
+		st = auto_load(&image->file);
+	} else if (desc->dec.fn->event) {
+		st = desc->dec.fn->event(&image->file, &image->conf,
+			&image->state, event);
+	} else {
+		return desc->dec.fn->callback(&image->file, &image->conf,
+			&image->state, event);
+	}
+	if (st.msg) {
+		image_file_strerror_append(&image->file, st.msg);
+	}
+	return st.st;
+}
+
 enum wu_error dec_callback(struct image_context *image,
 enum image_event event) {
 	struct image_file *infile = &image->file;
@@ -40,10 +59,7 @@ enum image_event event) {
 	default:
 		break;
 	}
-	const struct fmt_desc *desc = &image->desc;
-	return desc->is_auto
-		? auto_load(infile)
-		: desc->dec.fn->callback(infile, &image->conf, state, event);
+	return call_event(image, event);
 }
 
 static enum wu_error init_metadata(struct image_file *infile,

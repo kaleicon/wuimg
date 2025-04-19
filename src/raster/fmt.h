@@ -35,8 +35,11 @@ fmt_load_callback_t fn, void *restrict ptr);
 size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, enum endianness e);
 
 
+struct wu_st fmt_load_pal_bitrange(struct palette *pal, enum fmt_pal_type type,
+size_t nmemb, FILE *ifp, uint8_t range);
+
 enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
-enum fmt_pal_type type, size_t entries);
+enum fmt_pal_type type, size_t nmemb);
 
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig, size_t size,
 struct mparser *mp);

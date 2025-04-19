@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: 0BSD
 option('aliaspix', type : 'feature', description : 'AliasPIX and Vivid')
 option('atari', type : 'feature', description : 'Atari image formats')
+option('bethesda', type : 'feature', description : 'Bethesda BSI and GXA')
 option('bmz', type : 'feature', description : 'GSD engine compressed BMP, requires DIB')
 option('c64', type : 'feature', description : 'C64 image formats')
 option('cbg', type : 'feature', description : 'BGI/Ethornell CompressedBG (v1)')

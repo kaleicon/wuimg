@@ -770,15 +770,15 @@ static struct wu_st parse(struct mparser *mp, struct image_file *infile) {
 	return wuok();
 }
 
-enum wu_error auto_load(struct image_file *infile) {
+struct wu_st auto_load(struct image_file *infile) {
 	struct wuimg *img = infile->sub_img;
-	const enum wu_error st = wuimg_alloc(img);
+	enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {
 		const enum endianness e = get_endian(infile->dec_state);
-		return fmt_load_raster_swap(img, infile->ifp, e)
-			? wu_ok : wu_unexpected_eof;
+		return wuerr_partial(fmt_load_raster_swap(img, infile->ifp, e),
+			wuimg_size(img));
 	}
-	return st;
+	return wuerr(st, NULL);
 }
 
 struct wu_st auto_init(struct image_file *infile, const struct wu_conf *conf,

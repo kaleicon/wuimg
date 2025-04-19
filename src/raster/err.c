@@ -54,9 +54,16 @@ const char * wu_error_str(const enum wu_error err) {
 struct wu_st wuerr(const enum wu_error err, const char *msg) {
 	return (struct wu_st){.st = err, .msg = msg};
 }
+
+struct wu_st wuerr_partial(const size_t written, const size_t max) {
+	return wuerr(written ? wu_ok : wu_decoding_error,
+		written == max ? NULL : "truncated stream");
+}
+
 struct wu_st wuok(void) {
 	return wuerr(wu_ok, NULL);
 }
+
 bool wu_isok(const struct wu_st st) {
 	return st.st == wu_ok;
 }

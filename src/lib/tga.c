@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stddef.h>
 
+#include "misc/decomp.h"
 #include "misc/endian.h"
 #include "misc/file.h"
 #include "misc/math.h"
@@ -48,32 +49,6 @@ size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp) {
 	return 0;
 }
 
-static void rle_decode(unsigned char *restrict output,
-const unsigned char *restrict output_limit, const unsigned char *restrict rle,
-const unsigned char *restrict rle_limit, const size_t pixel_size) {
-	do {
-		const unsigned char packet = *rle;
-		const size_t len = (packet & 0x7f) + 1U;
-		const size_t bytes = len*pixel_size;
-		if (output + bytes > output_limit) {
-			break;
-		}
-
-		++rle;
-		if (packet & 0x80) {
-			memwordset(output, rle, pixel_size, len);
-			rle += pixel_size;
-		} else {
-			if (rle + bytes > rle_limit) {
-				break;
-			}
-			memcpy(output, rle, bytes);
-			rle += bytes;
-		}
-		output += bytes;
-	} while (rle + pixel_size < rle_limit);
-}
-
 static size_t rle_load(const struct tga_desc *desc, struct wuimg *img) {
 	const size_t dims = img->w * img->h;
 	const size_t bytedepth = ((size_t)desc->depth + 7) / 8;
@@ -85,19 +60,17 @@ static size_t rle_load(const struct tga_desc *desc, struct wuimg *img) {
 
 	const size_t rle_len = zumin(pathological_rle, file_len);
 	unsigned char *rle = malloc(rle_len);
+	size_t written = 0;
 	if (rle) {
-		const size_t read = fread(rle, 1, rle_len, desc->ifp);
-
 		const size_t dst_len = dims * bytedepth;
-		rle_decode(img->data, img->data + dst_len, rle, rle + read,
-			bytedepth);
+		written = decomp_topbitrle(img->data, dst_len, rle,
+			fread(rle, 1, rle_len, desc->ifp), bytedepth);
 		free(rle);
 		if (img->bitdepth == 16) {
 			endian_loop16((uint16_t *)img->data, little_endian, dims);
 		}
-		return dst_len;
 	}
-	return 0;
+	return written;
 
 }
 

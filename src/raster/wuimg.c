@@ -205,6 +205,10 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 	return wu_ok;
 }
 
+struct wu_st wuimg_verify_st(struct wuimg *img) {
+	return wuerr(wuimg_verify(img), NULL);
+}
+
 bool wuimg_exceeds_limit(const struct wuimg *img,
 const struct wu_conf *wuconf) {
 	return zumax(img->w, img->h) > wuconf->max_img_size;

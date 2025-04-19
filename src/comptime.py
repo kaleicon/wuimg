@@ -166,6 +166,19 @@ DEC_MAP = {
 		},
 	},
 
+	"bethesda": {
+		"bsi": {
+			"desc": "Bethesda BSI texture (IFHD, BSIF)",
+			"ext": "bsi",
+			"magic": (b"IFHD\0\0\0\x2c", b"BSIF\0\0\0\0BHDR"),
+		},
+		"gxa": {
+			"desc": "Bethesda GXA image (BMHD)",
+			"ext": ("bmp", "gxa"),
+			"magic": b"BMHD\0\0\0\x22",
+		},
+	},
+
 	"c64": {
 		"c64": {
 			"desc": "Art Studio (OCP), Artist64, Blazing Paddles"

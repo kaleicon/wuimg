@@ -133,6 +133,8 @@ void wuimg_exif_orientation(struct wuimg *img, int orientation);
 
 enum wu_error wuimg_verify(struct wuimg *img);
 
+struct wu_st wuimg_verify_st(struct wuimg *img);
+
 bool wuimg_exceeds_limit(const struct wuimg *img, const struct wu_conf *wuconf);
 
 size_t wuimg_stride(const struct wuimg *img);

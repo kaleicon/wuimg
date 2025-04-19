@@ -1,4 +1,4 @@
-68 decoders, 102 formats supported
+69 decoders, 104 formats supported
 
 Decoder   Format    Description
 --------------------------------
@@ -30,6 +30,8 @@ auto      pxy       Eclipse Proxy
 auto      tcp       Atari Rembrandt
 auto      trp       Spooky Sprites uncompressed
 avif|heif avif      AV1 Image File Format
+bethesda  bsi       Bethesda BSI texture (IFHD, BSIF)
+bethesda  gxa       Bethesda GXA image (BMHD)
 c64       c64       Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Hi-Eddi, Image System, Interpaint, KoalaPainter (raw & compressed), Picasso 64, Runpaint, Saracen Paint, Vidcom 64
 cbg       cbg       BGI/Ethornell CompressedBG (v1)
 dib       bmp       Microsoft Bitmap
@@ -105,14 +107,16 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 237
-a64, aas, als, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bw, cdu, che, clm, cps, cr2, cur, cwg, da4, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, ff, flif, fnt, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grp, hed, heic, heics, heif, heifs, hel, hg3, hgr, hif, hir, hpi, icn, ico, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lzs, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, otb, p2, p64, p7, pam, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pix, png, pnm, pntg, ppm, prt, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwl, s16, s17, s1a, s1c, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sd0, sd1, sd2, sff, sgi, six, sixel, spr, spr32, sr5, sr6, sr7, sr8, srs, stj, sun, svg, svgz, tcp, tg1, tga, thm, tif, tiff, tile, tim, tlg, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 239
+a64, aas, als, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, che, clm, cps, cr2, cur, cwg, da4, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, ff, flif, fnt, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grp, gxa, hed, heic, heics, heif, heifs, hel, hg3, hgr, hif, hir, hpi, icn, ico, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lzs, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, otb, p2, p64, p7, pam, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pix, png, pnm, pntg, ppm, prt, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwl, s16, s17, s1a, s1c, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sd0, sd1, sd2, sff, sgi, six, sixel, spr, spr32, sr5, sr6, sr7, sr8, srs, stj, sun, svg, svgz, tcp, tg1, tga, thm, tif, tiff, tile, tim, tlg, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 110
+Known magic sequences: 113
 avif      b'\x00\x00\x00\x00ftypavic'
 avif      b'\x00\x00\x00\x00ftypavif'
 bmp       b'BM'
 bmz       b'ZLC3'
+bsi       b'BSIF\x00\x00\x00\x00BHDR'
+bsi       b'IFHD\x00\x00\x00,'
 cbg       b'CompressedBG___\x00'
 coke      b'COKE format.'
 dcx       b'\xb1h\xde:'
@@ -129,6 +133,7 @@ gemview   b'B&W256'
 gif       b'GIF87a'
 gif       b'GIF89a'
 gpc       b'PC98)GPCFILE   \x00'
+gxa       b'BMHD\x00\x00\x00"'
 heif      b'\x00\x00\x00\x00ftypheic'
 heif      b'\x00\x00\x00\x00ftypheim'
 heif      b'\x00\x00\x00\x00ftypheix'

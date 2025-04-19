@@ -32,11 +32,16 @@ struct wu_st {
 
 const char * wu_error_str(enum wu_error err);
 
+struct wu_st wuerr(enum wu_error err, const char *msg);
+
 #define TOSTR(x) TOSTR2(x)
 #define TOSTR2(x) #x
-#define WUERR_HERE(err) wuerr(err, __FILE__ ":" TOSTR(__LINE__) );
-struct wu_st wuerr(enum wu_error err, const char *msg);
+#define WUERR_HERE(err) wuerr((err), __FILE__ ":" TOSTR(__LINE__) );
+
+struct wu_st wuerr_partial(size_t written, size_t max);
+
 struct wu_st wuok(void);
+
 bool wu_isok(struct wu_st st);
 
 #endif /* WUERRCODE */
