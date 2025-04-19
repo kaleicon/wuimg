@@ -3,6 +3,7 @@
 #define LIB_ILBM
 
 #include "misc/endian.h"
+#include "misc/iff.h"
 #include "raster/wuimg.h"
 
 struct ilbm_tiny {
@@ -29,15 +30,16 @@ enum ilbm_format {
 	ilbm_format_pbm = FOURCC('P', 'B', 'M', ' '),
 };
 
-typedef enum wu_error (*ilbm_callback_t)(uint32_t type, struct wuptr data,
-	void *ptr);
+typedef void (*ilbm_callback_t)(void *ptr, struct iff_chunk chunk,
+struct wuptr data);
 
 struct ilbm_desc {
+	struct mparser mp;
+
 	ilbm_callback_t callback;
-	ilbm_callback_t text_callback;
 	void *restrict usr_ptr;
 
-	struct mparser mp;
+	struct wuimg *img;
 	struct wuptr body;
 	struct palette *pal;
 	struct palette_cycle *cycle;
@@ -57,18 +59,18 @@ const char * ilbm_compression_str(enum ilbm_compression comp);
 
 void ilbm_cleanup(struct ilbm_desc *desc);
 
-size_t ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
+struct wu_st ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
 struct wuimg *tiny);
 
-size_t ilbm_decode_main(const struct ilbm_desc *desc, struct wuimg *img);
+struct wu_st ilbm_decode_main(const struct ilbm_desc *desc, struct wuimg *img);
 
-enum wu_error ilbm_parse_footer(struct ilbm_desc *desc);
+struct wu_st ilbm_parse_footer(struct ilbm_desc *desc);
 
-enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img);
+struct wu_st ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img);
 
 void ilbm_set_callbacks(struct ilbm_desc *desc, ilbm_callback_t callback,
-ilbm_callback_t text_callback, void *restrict usr_ptr);
+void *restrict usr_ptr);
 
-enum wu_error ilbm_open(struct ilbm_desc *desc, struct wuptr mem);
+struct wu_st ilbm_open(struct ilbm_desc *desc, struct wuptr mem);
 
 #endif /* LIB_ILBM */

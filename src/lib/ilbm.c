@@ -26,20 +26,6 @@ void ilbm_cleanup(struct ilbm_desc *desc) {
 	free(desc->cycle);
 }
 
-static bool next_chunk(struct mparser *mp, uint32_t *restrict id,
-uint32_t *restrict len, struct wuptr *data) {
-	const uint8_t *slice = mp_slice(mp, 8);
-	if (slice) {
-		*id = buf_endian32(slice, big_endian);
-		*len = buf_endian32(slice + 4, big_endian);
-		*data = mp_avail(mp, *len);
-		if (*len % 2) {
-			mp_seek_cur(mp, 1);
-		}
-	}
-	return (bool)slice;
-}
-
 static size_t interleave_bitplanes(const struct ilbm_desc *desc,
 struct wuimg *img, uint8_t *restrict dst, const struct wuptr body,
 const uint8_t planes) {
@@ -50,14 +36,16 @@ const uint8_t planes) {
 		bitplane_interleave_row(dst + y*outstride,
 			body.ptr + y*instride, img->w, planes, 1);
 	}
-	return 1;
+	return rows;
 }
 
 static void expand_ham(const struct ilbm_desc *desc, struct wuimg *img,
 const size_t offset) {
-	const uint8_t color_bits = (desc->planes > 6) ? 6 : 4;
+	// Use 2-bit HAM for even plane numbers, 1-bit HAM for odds
+	const uint8_t color_bits = (uint8_t)((desc->planes - 1) & ~0x1u);
+	const uint8_t nc_bits = 8 - color_bits;
 	const uint8_t mask = (uint8_t)((1 << color_bits) - 1);
-	const uint8_t antimask = (uint8_t)((1 << (8 - color_bits)) - 1);
+	const uint8_t antimask = (uint8_t)((1 << nc_bits) - 1);
 
 	uint8_t *dst = img->data;
 	const uint8_t *src = img->data + offset;
@@ -85,7 +73,7 @@ const size_t offset) {
 				uint8_t ch = (ham ^ 2);
 				ch ^= ch >> 1;
 
-				dst[pix + ch] = (uint8_t)(entry << (8 - color_bits))
+				dst[pix + ch] = (uint8_t)(entry << nc_bits)
 					| (dst[pix + ch] & antimask);
 			} else {
 				memcpy(dst + pix, pal->color + entry, HAM_CH);
@@ -94,31 +82,32 @@ const size_t offset) {
 	}
 }
 
-static size_t expand_body(const struct ilbm_desc *desc, struct wuimg *img,
+static struct wu_st expand_body(const struct ilbm_desc *desc, struct wuimg *img,
 const struct wuptr body) {
 	size_t offset = 0;
 	if (desc->ham) {
 		offset = wuimg_size(img) - img->w*img->h;
 	}
-	interleave_bitplanes(desc, img, img->data + offset, body, desc->planes);
+	const size_t w = interleave_bitplanes(desc, img, img->data + offset,
+		body, desc->planes);
 	if (desc->ham) {
 		expand_ham(desc, img, offset);
 	}
-	return 1;
+	return wuerr_partial(w, img->h);
 }
 
-static size_t decompress_ilbm(const struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr body) {
+static struct wu_st decompress_ilbm(const struct ilbm_desc *desc,
+struct wuimg *img, const struct wuptr body) {
 	const size_t upack_len = strip_length(img->w, 1, 1) * desc->planes * img->h;
 	uint8_t *upack = malloc(upack_len);
-	size_t w = 0;
 	if (upack) {
-		w = decomp_packbits(upack, upack_len,
+		const size_t w = decomp_packbits(upack, upack_len,
 			(const int8_t *)body.ptr, body.len);
 		expand_body(desc, img, wuptr_mem(upack, w));
 		free(upack);
+		return wuerr_partial(w, upack_len);
 	}
-	return w;
+	return WUERR_HERE(wu_alloc_error);
 }
 
 static void unscramble_vdat(uint16_t *restrict dst, const uint16_t *restrict src,
@@ -131,6 +120,18 @@ const size_t plane_stride, const size_t h, const uint8_t planes) {
 			}
 		}
 	}
+}
+
+static bool next_vdat(struct mparser *mp, struct wuptr *body) {
+	struct iff_chunk chunk = {0};
+	const uint8_t *data = mp_slice(mp, sizeof(chunk));
+	if (data) {
+		memcpy(&chunk, data, sizeof(chunk));
+		*body = mp_avail(mp, endian32(chunk.len, big_endian));
+		const uint32_t vdat = FOURCC('V', 'D', 'A', 'T');
+		return endian32(chunk.id, big_endian) == vdat && body->len > 2;
+	}
+	return false;
 }
 
 static size_t decomp_vdat(uint16_t *restrict dst, const size_t dst_len,
@@ -146,10 +147,8 @@ const uint8_t *restrict src, const size_t src_len) {
 	*/
 	struct mparser mp = mp_mem(src_len, src);
 	size_t d = 0;
-	uint32_t id, _l;
 	struct wuptr body;
-	const uint32_t vdat = FOURCC('V', 'D', 'A', 'T');
-	while (next_chunk(&mp, &id, &_l, &body) && id == vdat && body.len > 2) {
+	while (next_vdat(&mp, &body)) {
 		const uint16_t data_off = buf_endian16(body.ptr, big_endian);
 		size_t data_pos = data_off;
 		for (size_t s = 2; s < data_off; ++s) {
@@ -192,29 +191,30 @@ const uint8_t *restrict src, const size_t src_len) {
 	return d;
 }
 
-static size_t decomp_vertical_rle(const struct ilbm_desc *desc,
+static struct wu_st decomp_vertical_rle(const struct ilbm_desc *desc,
 struct wuimg *img, const struct wuptr body) {
 	const size_t stride = strip_length(img->w, 1, 1);
 	const size_t upack_len = stride * desc->planes * img->h;
 	uint16_t *upack = malloc(upack_len*2);
-	size_t w = 0;
 	if (upack) {
-		w = decomp_vdat(upack, upack_len/2, body.ptr, body.len);
+		size_t w = decomp_vdat(upack, upack_len/2, body.ptr, body.len);
 		uint16_t *linear = upack + upack_len/2;
-		unscramble_vdat(linear, upack, stride/2, img->h, desc->planes);
+		unscramble_vdat(linear, upack, stride/2, img->h,
+			desc->planes);
 		expand_body(desc, img, wuptr_mem(linear, upack_len));
 		free(upack);
+		return wuerr_partial(w, upack_len/2);
 	}
-	return w;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-static size_t ilbm_decode(const struct ilbm_desc *desc, struct wuimg *img,
+static struct wu_st ilbm_decode(const struct ilbm_desc *desc, struct wuimg *img,
 const struct wuptr body) {
 	if (desc->planes == 0) {
-		return 1;
+		return wuok();
 	}
 	if (!wuimg_alloc_noverify(img)) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	switch (desc->format) {
 	case ilbm_format_ilbm:
@@ -231,44 +231,46 @@ const struct wuptr body) {
 		;const size_t size = wuimg_size(img);
 		switch (desc->compression) {
 		case ilbm_compression_none:
-			memcpy(img->data, body.ptr, zumin(size, body.len));
-			return 1;
+			;const size_t cpy = zumin(size, body.len);
+			memcpy(img->data, body.ptr, cpy);
+			return wuerr_partial(cpy, size);
 		case ilbm_compression_packbits:
-			return decomp_packbits(img->data, size,
-				(const int8_t *)body.ptr, body.len);
+			return wuerr_partial(decomp_packbits(img->data, size,
+				(const int8_t *)body.ptr, body.len), size);
 		case ilbm_compression_vdat:
 			break;
 		}
 		break;
 	}
-	return 0;
+	return WUERR_HERE(wu_invalid_params);
 }
 
-size_t ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
+struct wu_st ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
 struct wuimg *tiny) {
 	if (desc->tiny.present && wuimg_clone(tiny, main)) {
 		tiny->w = desc->tiny.w;
 		tiny->h = desc->tiny.h;
-		const enum wu_error st = wuimg_verify(tiny);
-		if (st == wu_ok) {
+		struct wu_st st = wuimg_verify_st(tiny);
+		if (wu_isok(st)) {
 			if (tiny->mode == image_mode_palette && desc->cycle) {
 				memcpy(tiny->u.palette->color, desc->cycle->color,
 					sizeof(desc->cycle->color));
 			}
 			return ilbm_decode(desc, tiny, desc->tiny.data);
 		}
+		return st;
 	}
-	return 0;
+	return WUERR_HERE(wu_decoding_error);
 }
 
-size_t ilbm_decode_main(const struct ilbm_desc *desc, struct wuimg *img) {
+struct wu_st ilbm_decode_main(const struct ilbm_desc *desc, struct wuimg *img) {
 	return ilbm_decode(desc, img, desc->body);
 }
 
-static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
+static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 	if (desc->planes == 0) {
 		if (desc->colors == 0) {
-			return wu_no_image_data;
+			return wuerr(wu_no_image_data, NULL);
 		}
 		img->data = (uint8_t *)desc->pal;
 		memmove(img->data, desc->pal->color, sizeof(desc->pal->color));
@@ -278,71 +280,85 @@ static enum wu_error tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		img->channels = 4;
 		img->bitdepth = 8;
 		img->evolving = false;
-	} else {
-		if (desc->pal) {
-			if (desc->ham) {
-				img->channels = HAM_CH;
-				img->alpha = alpha_ignore;
-				if (desc->cycle) {
-					// TODO
-					// Sample: AH_Swimmer.iff
-					free(desc->cycle);
-					desc->cycle = NULL;
-				}
-			} else {
-				img->channels = 1;
-				struct palette *pal = desc->pal;
-				if (desc->extra_half_brite) {
-					for (size_t i = 0; i < 32; ++i) {
-						pal->color[i+32] = (struct pix_rgba8) {
-							.r = pal->color[i].r >> 1,
-							.g = pal->color[i].g >> 1,
-							.b = pal->color[i].b >> 1,
-							.a = pal->color[i].a,
-						};
-					}
-				}
-				switch (desc->masking) {
-				case ilbm_masking_bitplane:
-					;const uint8_t items = (uint8_t)(1 << desc->planes);
-					for (uint8_t i = 0; i < items; ++i) {
-						memcpy(pal->color + items + i,
-							pal->color + i,
-							sizeof(*pal->color));
-						pal->color[items + i].a = 0;
-					}
-					desc->planes += 1;
-					break;
-				case ilbm_masking_value:
-					pal->color[desc->trans_value].a = 0;
-					break;
-				case ilbm_masking_none:
-				case ilbm_masking_lasso:
-					break;
-				}
-				wuimg_palette_set(img, palette_ref(pal));
-				if (desc->cycle) {
-					palette_cycle_set(desc->cycle, pal);
-				}
+	} else if (desc->pal) {
+		if (desc->ham) {
+			img->channels = HAM_CH;
+			img->alpha = alpha_ignore;
+			if (desc->cycle) {
+				// TODO
+				// Sample: AH_Swimmer.iff
+				free(desc->cycle);
+				desc->cycle = NULL;
 			}
 		} else {
-			if (desc->ham || desc->cycle) {
-				return wu_invalid_header;
+			img->channels = 1;
+			struct palette *pal = desc->pal;
+			if (desc->extra_half_brite) {
+				for (size_t i = 0; i < 32; ++i) {
+					pal->color[i+32] = (struct pix_rgba8) {
+						.r = pal->color[i].r >> 1,
+						.g = pal->color[i].g >> 1,
+						.b = pal->color[i].b >> 1,
+						.a = pal->color[i].a,
+					};
+				}
 			}
-			if (desc->planes > 8) {
-				img->channels = 4;
-				img->bitrange = 8;
-			} else {
-				img->channels = 1;
-				img->bitrange = desc->planes;
+			switch (desc->masking) {
+			case ilbm_masking_bitplane:
+				;const uint8_t items = (uint8_t)(1 << desc->planes);
+				for (uint8_t i = 0; i < items; ++i) {
+					memcpy(pal->color + items + i,
+						pal->color + i,
+						sizeof(*pal->color));
+					pal->color[items + i].a = 0;
+				}
+				desc->planes += 1;
+				break;
+			case ilbm_masking_value:
+				pal->color[desc->trans_value].a = 0;
+				break;
+			case ilbm_masking_none:
+			case ilbm_masking_lasso:
+				break;
+			}
+			wuimg_palette_set(img, palette_ref(pal));
+			if (desc->cycle) {
+				palette_cycle_set(desc->cycle, pal);
 			}
 		}
+	} else {
+		if (desc->ham || desc->cycle) {
+			return wuerr(wu_invalid_header,
+				"HAM or CRNG with non-paletted image");
+		}
+		if (desc->planes > 8) {
+			img->channels = 4;
+			img->bitrange = 8;
+		} else {
+			img->channels = 1;
+			img->bitrange = desc->planes;
+		}
 	}
-	return wuimg_verify(img);
+	return wuimg_verify_st(img);
 }
 
-static enum wu_error parse_tiny(struct ilbm_desc *desc, const uint32_t id,
-const struct wuptr data) {
+static struct wu_st finish_chunk(struct ilbm_desc *desc,
+const struct iff_chunk chunk, const char *msg) {
+	mp_seek_cur(&desc->mp, iff_chunk_padding(chunk));
+	return wuerr(wu_ok, msg);
+}
+
+static struct wu_st body_stop(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
+	(void)iff;
+	struct ilbm_desc *desc = ptr;
+	desc->body = mp_avail(&desc->mp, chunk.len);
+	mp_seek_cur(&desc->mp, iff_chunk_padding(chunk));
+	return wuerr(wu_no_change, NULL);
+}
+
+static struct wu_st parse_tiny(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
 	/* TINY structure:
 		Offset  Size    Name
 		0       u16     Width
@@ -350,33 +366,30 @@ const struct wuptr data) {
 		4       [Len-4] Data
 	 * Data is compressed just like the main image.
 	*/
-	(void)id;
-	if (data.len > 4 && desc->planes) {
-		/* TODO: Find ILBM samples with TINY.
-		 * All valid TINY samples I've seen are PBM.
+	(void)iff;
+	struct ilbm_desc *desc = ptr;
+	const char *msg = "unusable TINY chunk";
+	if (chunk.len > 4 && desc->planes) {
+		/* TODO: Find non-PBM samples with TINY.
 		 * FONA.LBM has a thumbnail, but has 0 height and unknown
 		 * data.
 		 * Maybe also find a source that's not a mysterious edit in
 		 * Wikipedia. */
+		const struct wuptr data = mp_avail(&desc->mp, chunk.len);
 		uint16_t w = buf_endian16(data.ptr, big_endian);
 		uint16_t h = buf_endian16(data.ptr + 2, big_endian);
 		desc->tiny = (struct ilbm_tiny) {
-			.present = w & h,
+			.present = w && h,
 			.w = w, .h = h,
 			.data = wuptr_mem(data.ptr + 4, data.len - 4),
 		};
-		return wu_ok;
+		msg = NULL;
 	}
-	return wu_invalid_header;
+	return finish_chunk(desc, chunk, msg);
 }
 
-static enum wu_error parse_text(struct ilbm_desc *desc, const uint32_t id,
-const struct wuptr data) {
-	return (*desc->text_callback)(id, data, desc->usr_ptr);
-}
-
-static enum wu_error parse_crng(struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr data) {
+static struct wu_st parse_crng(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
 	/* CRNG structure:
 		Offset  Size    Name
 		0       u16     _pad
@@ -388,14 +401,21 @@ const struct wuptr data) {
 
 	 * [1] Where 16384 is 1/60 of a second, 8192 is 1/30, etc.
 	*/
-
-	if (data.len == 8) {
+	(void)iff;
+	struct ilbm_desc *desc = ptr;
+	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
+	if (!data) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	const char *msg = "CRNG length != 8";
+	if (chunk.len == 8) {
+		msg = NULL;
 		const uint8_t MAX_SLOTS = 16;
 		struct palette_cycle *cycle = desc->cycle;
 		if (!cycle) {
 			cycle = palette_cycle_new(MAX_SLOTS);
 			if (!cycle) {
-				return wu_alloc_error;
+				return WUERR_HERE(wu_alloc_error);
 			}
 			desc->cycle = cycle;
 		}
@@ -404,12 +424,12 @@ const struct wuptr data) {
 			const uint16_t ACTIVE = 0x1;
 			const uint16_t REVERSE = 0x2;
 			const float TO_SECS = 273.0f + 1.0f/15;
-			const uint16_t rate = buf_endian16(data.ptr + 2,
+			const uint16_t rate = buf_endian16(data + 2,
 				big_endian);
-			const uint16_t flags = buf_endian16(data.ptr + 4,
+			const uint16_t flags = buf_endian16(data + 4,
 				big_endian);
-			const uint8_t lo = data.ptr[6];
-			const uint8_t hi = data.ptr[7];
+			const uint8_t lo = data[6];
+			const uint8_t hi = data[7];
 
 			const bool active = (flags & ACTIVE) && rate && lo < hi;
 			cycle->crng[cycle->len] = (struct palette_crng) {
@@ -421,39 +441,53 @@ const struct wuptr data) {
 			};
 			++cycle->len;
 			cycle->active_nr += active;
-			img->evolving |= active;
+			desc->img->evolving |= active;
 		} else {
 			cycle->too_many = true;
 		}
-		return wu_ok;
 	}
-	return wu_invalid_header;
+	return finish_chunk(desc, chunk, msg);
 }
 
-static enum wu_error parse_cmap(struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr data) {
+static struct wu_st parse_cmap(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
 	/* CMAP structure:
 		Offset  Size    Name
 		0       u8      RGB[len/3][3]
 	*/
-	(void)img;
-	const size_t colors = data.len/3;
-	if (desc->pal || desc->planes > 8 || data.len % 3 || colors > 256) {
-		return wu_invalid_header;
+	(void)iff;
+	struct ilbm_desc *desc = ptr;
+	const unsigned colors = chunk.len/3;
+	const char *msg = NULL;
+	if (desc->pal) {
+		msg = "repeated CMAP";
+	} else if (desc->planes > 8) {
+		msg = "CMAP with depth > 8";
+	} else if (chunk.len % 3) {
+		msg = "CMAP length not divisible by 3";
+	} else if (colors > 256) {
+		msg = "CMAP has more than 256 colors";
 	}
-	desc->colors = (unsigned)colors;
+	if (msg) {
+		return wuerr(wu_invalid_header, msg);
+	}
+	desc->colors = colors;
 	if (desc->colors) {
+		const uint8_t *data = mp_slice(&desc->mp, chunk.len);
+		if (!data) {
+			return WUERR_HERE(wu_unexpected_eof);
+		}
 		desc->pal = palette_new();
 		if (!desc->pal) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
-		palette_from_rgb8(desc->pal, data.ptr, colors);
+		palette_from_rgb8(desc->pal, data, colors);
 	}
-	return wu_ok;
+	return finish_chunk(desc, chunk, NULL);
 }
 
-static enum wu_error parse_camg(struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr data) {
+static struct wu_st parse_camg(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
 	/* CAMG structure:
 		Offset  Size    Name
 		0       u32     Flags
@@ -463,29 +497,39 @@ const struct wuptr data) {
 		7:  Extra Half-Brite
 		11: HAM
 	*/
-	(void)img;
-	if (data.len != 4 || desc->format != ilbm_format_ilbm) {
-		return wu_invalid_header;
+	(void)iff;
+	struct ilbm_desc *desc = ptr;
+	if (chunk.len != 4) {
+		return wuerr(wu_invalid_header, "unexpected CAMG size");
+	} else if (desc->format != ilbm_format_ilbm) {
+		return wuerr(wu_unsupported_feature, "CAMG with non-ILBM image");
 	}
-	const uint32_t flags = buf_endian32(data.ptr, big_endian);
+	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
+	if (!data) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	const uint32_t flags = buf_endian32(data, big_endian);
 	desc->extra_half_brite = flags & 0x80;
 	desc->ham = flags & 0x800;
 	if (desc->extra_half_brite && desc->planes != 6) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"Extra Half-Brite with planes != 6");
 	}
 	if (desc->ham) {
 		if (desc->planes < 5 || desc->planes > 8) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"HAM with planes < 5 or > 8");
 		}
 		if (desc->masking) {
-			return wu_unsupported_feature;
+			return wuerr(wu_unsupported_feature,
+				"HAM mode with masking");
 		}
 	}
-	return wu_ok;
+	return finish_chunk(desc, chunk, NULL);
 }
 
-static enum wu_error parse_bmhd(struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr data) {
+static struct wu_st parse_bmhd(struct iff_state *iff, struct ilbm_desc *desc,
+const struct iff_chunk chunk) {
 	/* BMHD structure:
 		Offset  Size    Name
 		0       u16     Width
@@ -503,24 +547,30 @@ const struct wuptr data) {
 		18      u16     PageHeight
 		20
 	*/
-	if (data.len != 20) {
-		return wu_invalid_header;
+	(void)iff;
+	if (chunk.len != 20) {
+		return wuerr(wu_invalid_header, "BMHD with length != 20");
 	}
-	img->w = buf_endian16(data.ptr, big_endian);
-	img->h = buf_endian16(data.ptr + 2, big_endian);
+	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
+	if (!data) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	struct wuimg *img = desc->img;
+	img->w = buf_endian16(data, big_endian);
+	img->h = buf_endian16(data + 2, big_endian);
 	img->bitdepth = 8;
-	desc->planes = data.ptr[8];
-	desc->masking = data.ptr[9];
-	desc->compression = data.ptr[10];
+	desc->planes = data[8];
+	desc->masking = data[9];
+	desc->compression = data[10];
 	if (desc->format == ilbm_format_pbm) {
 		if (desc->planes != 8) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "PBM with depth != 8");
 		}
 		img->align_sh = 1;
 	} else {
 		switch (desc->planes) {
 		case 0: // A colormap-only file
-			return wu_ok;
+			return finish_chunk(desc, chunk, NULL);
 		case 1: case 2: case 3: case 4:
 		case 5: case 6: case 7: case 8:
 			break;
@@ -531,7 +581,7 @@ const struct wuptr data) {
 				? alpha_ignore : alpha_unassociated;
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "unexpected depth");
 		}
 	}
 
@@ -539,155 +589,105 @@ const struct wuptr data) {
 	case ilbm_masking_none: break;
 	case ilbm_masking_bitplane:
 		if (desc->planes >= 8) {
-			return wu_unsupported_feature;
+			return wuerr(wu_unsupported_feature,
+				"mask plane with depth >= 8");
 		}
 		break;
 	case ilbm_masking_value:
-		;const uint16_t value = buf_endian16(data.ptr + 12, big_endian);
+		;const uint16_t value = buf_endian16(data + 12, big_endian);
 		if (desc->planes > 8 || value > 255) {
-			return wu_unsupported_feature;
+			return wuerr(wu_unsupported_feature,
+				"mask value > 255 or with depth > 8");
 		}
 		desc->trans_value = (uint8_t)value;
 		break;
 	default:
-		return wu_unsupported_feature;
+		return wuerr(wu_unsupported_feature, "unknown masking method");
 	}
 	switch (desc->compression) {
 	case ilbm_compression_vdat:
 		if (desc->format != ilbm_format_ilbm) {
-			return wu_uncertain_validity;
+			return wuerr(wu_uncertain_validity,
+				"VDAT compression with non-ILBM format");
 		}
 		// fallthrough
 	case ilbm_compression_none:
 	case ilbm_compression_packbits:
-		wuimg_aspect_ratio(img, data.ptr[14], data.ptr[15]);
-		return wu_ok;
+		wuimg_aspect_ratio(img, data[14], data[15]);
+		return finish_chunk(desc, chunk, NULL);
 	}
-	return wu_samples_wanted;
+	return wuerr(wu_uncertain_validity, "unknown compression method");
 }
 
-typedef enum wu_error (*chunk_parser_img_t)(struct ilbm_desc *desc,
-	struct wuimg *img, struct wuptr data);
-
-typedef enum wu_error (*chunk_parser_other_t)(struct ilbm_desc *desc,
-	uint32_t id, struct wuptr data);
-
-enum ilbm_chunk_special {
-	ilbm_chunk_bmhd = FOURCC('B', 'M', 'H', 'D'),
-	ilbm_chunk_body = FOURCC('B', 'O', 'D', 'Y'),
+static const struct iff_table CHUNK_MAP[] = {
+	{FOURCC('B', 'O', 'D', 'Y'), body_stop},
+	{FOURCC('C', 'A', 'M', 'G'), parse_camg},
+	{FOURCC('C', 'M', 'A', 'P'), parse_cmap},
+	{FOURCC('C', 'R', 'N', 'G'), parse_crng},
+	{FOURCC('T', 'I', 'N', 'Y'), parse_tiny},
 };
 
-struct ilbm_chunk_def {
-	uint32_t id;
-	bool essential;
-	union {
-		chunk_parser_other_t m;
-		chunk_parser_img_t img;
-	} fn;
-};
-
-// Must be kept in ASCII order
-static const struct ilbm_chunk_def CHUNK_MAP[] = {
-	{FOURCC('(', 'C', ')', ' '), false, .fn.m = parse_text},
-	{FOURCC('A', 'N', 'N', 'O'), false, .fn.m = parse_text},
-	{FOURCC('A', 'U', 'T', 'H'), false, .fn.m = parse_text},
-	{FOURCC('B', 'M', 'H', 'D'), true, .fn.img = parse_bmhd},
-	{FOURCC('C', 'A', 'M', 'G'), true, .fn.img = parse_camg},
-	{FOURCC('C', 'M', 'A', 'P'), true, .fn.img = parse_cmap},
-	{FOURCC('C', 'R', 'N', 'G'), true, .fn.img = parse_crng},
-	{FOURCC('D', 'O', 'C', ' '), false, .fn.m = parse_text},
-	{FOURCC('F', 'O', 'O', 'T'), false, .fn.m = parse_text},
-	{FOURCC('H', 'E', 'A', 'D'), false, .fn.m = parse_text},
-	{FOURCC('P', 'A', 'R', 'A'), false, .fn.m = parse_text},
-	{FOURCC('P', 'D', 'E', 'F'), false, .fn.m = parse_text},
-	{FOURCC('T', 'A', 'B', 'S'), false, .fn.m = parse_text},
-	{FOURCC('T', 'E', 'X', 'T'), false, .fn.m = parse_text},
-	{FOURCC('T', 'I', 'N', 'Y'), false, .fn.m = parse_tiny},
-	{FOURCC('V', 'E', 'R', 'S'), false, .fn.m = parse_text},
-};
-
-static int chunk_cmp(const void *k1, const void *k2) {
-	const uint32_t *id = k1;
-	const struct ilbm_chunk_def *entry = k2;
-	return (int)(*id - entry->id);
+static struct wu_st start_ilbm(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
+	iff->table = CHUNK_MAP;
+	iff->table_len = ARRAY_LEN(CHUNK_MAP);
+	return parse_bmhd(iff, ptr, chunk);
 }
 
-static const struct ilbm_chunk_def * search_chunk_def(const uint32_t id) {
-	return bsearch(&id, CHUNK_MAP, ARRAY_LEN(CHUNK_MAP),
-		sizeof(*CHUNK_MAP), chunk_cmp);
-}
+static const struct iff_table START_TABLE[] = {
+	{FOURCC('B', 'M', 'H', 'D'), start_ilbm},
+};
 
-enum wu_error ilbm_parse_footer(struct ilbm_desc *desc) {
-	uint32_t id, len;
-	struct wuptr data;
-	enum wu_error st = wu_ok;
-	while (st == wu_ok && next_chunk(&desc->mp, &id, &len, &data)) {
-		const struct ilbm_chunk_def *def = search_chunk_def(id);
-		if (def && !def->essential) {
-			st = def->fn.m(desc, id, data);
-		} else {
-			st = desc->callback(id, data, desc->usr_ptr);
-		}
+static struct wu_st ilbm_fallback(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
+	(void)iff;
+	struct ilbm_desc *desc = ptr;
+	if (desc->callback) {
+		const struct wuptr data = mp_avail(&desc->mp, chunk.len);
+		desc->callback(desc->usr_ptr, chunk, data);
+	} else {
+		mp_seek_cur(&desc->mp, chunk.len);
 	}
-	return st;
+	return finish_chunk(desc, chunk, NULL);
 }
 
-enum wu_error ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
-	// Chunks describing the image must appear between BMHD and BODY.
-	bool bmhd_found = false;
-	enum wu_error st = wu_ok;
+static struct wu_st ilbm_parse(struct ilbm_desc *desc,
+const struct iff_table *table, const unsigned table_len) {
+	struct iff_state iff = {
+		.table = table,
+		.table_len = table_len,
+		.endian = big_endian,
+		.fallback = ilbm_fallback,
+		.user = desc,
+	};
+	struct wu_st st;
 	do {
-		uint32_t id, len;
-		struct wuptr data;
-		if (!next_chunk(&desc->mp, &id, &len, &data)) {
-			if (!desc->planes) { // Colormap only
-				return tidy_up(desc, img);
-			}
-			return wu_unexpected_eof;
-		}
-
-		if (id == ilbm_chunk_body) {
-			desc->body = data;
-			return tidy_up(desc, img);
-		}
-		if (data.len < len) {
-			return wu_unexpected_eof;
-		}
-		const struct ilbm_chunk_def *def = search_chunk_def(id);
-		if (def) {
-			if (def->essential) {
-				if (id == ilbm_chunk_bmhd) {
-					if (bmhd_found) {
-						return wu_invalid_header;
-					}
-					bmhd_found = true;
-				} else if (!bmhd_found) {
-					return wu_invalid_header;
-				}
-				st = def->fn.img(desc, img, data);
-			} else {
-				st = def->fn.m(desc, id, data);
-			}
-		} else {
-			st = desc->callback(id, data, desc->usr_ptr);
-		}
-	} while (st == wu_ok);
+		st = iff_next_mparser(&iff, &desc->mp, (struct iff_chunk){0});
+	} while (wu_isok(st));
 	return st;
 }
 
-static enum wu_error dont_callback(uint32_t type, struct wuptr data, void *ptr) {
-	(void)type; (void)data; (void)ptr;
-	return wu_ok;
+struct wu_st ilbm_parse_footer(struct ilbm_desc *desc) {
+	ilbm_parse(desc, NULL, 0);
+	return wuok();
+}
+
+struct wu_st ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
+	desc->img = img;
+	struct wu_st st = ilbm_parse(desc, START_TABLE, ARRAY_LEN(START_TABLE));
+	if (st.st == wu_no_change) {
+		return tidy_up(desc, img);
+	}
+	return st;
 }
 
 void ilbm_set_callbacks(struct ilbm_desc *desc, ilbm_callback_t cb,
-ilbm_callback_t tcb, void *restrict usr_ptr) {
-	desc->callback = cb ? cb : dont_callback;
-	desc->text_callback = tcb ? tcb : dont_callback;
+void *restrict usr_ptr) {
+	desc->callback = cb;
 	desc->usr_ptr = usr_ptr;
 }
 
-enum wu_error ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
+struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 	/* IFF structure:
 		Offset  Size    Name
 		0       u8      ChunkID[4]   // "FORM" in this case
@@ -703,8 +703,6 @@ enum wu_error ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 		[Len+4]
 	*/
 	*desc = (struct ilbm_desc) {
-		.callback = dont_callback,
-		.text_callback = dont_callback,
 		.mp = mp_wuptr(mem),
 	};
 	const uint8_t *data = mp_slice(&desc->mp, 12);
@@ -713,22 +711,18 @@ enum wu_error ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 			const uint32_t len = buf_endian32(data + 4, big_endian);
 			const uint32_t id = buf_endian32(data + 8, big_endian);
 			if (len < desc->mp.len - 8) {
-				if (len < 4) {
-					return wu_invalid_header;
-				}
 				desc->mp.len = (size_t)len + 8;
 			}
 			switch (id) {
 			case ilbm_format_ilbm:
 			case ilbm_format_pbm:
 				desc->format = id;
-				break;
-			default:
-				return wu_unknown_file_type;
+				return wuok();
 			}
-			return wu_ok;
+			return wuerr(wu_unknown_file_type,
+				"unknown IFF image format");
 		}
-		return wu_unknown_file_type;
+		return WUERR_HERE(wu_unknown_file_type);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
