@@ -62,7 +62,7 @@ const size_t pos, const size_t bits) {
 	for (uint8_t z = 0; z < planes; ++z) {
 		const uint8_t byte = src[pos + z*plane_stride];
 		for (uint8_t bit = 0; bit < bits; ++bit) {
-			buf[bit] |= ((byte >> (7-bit)) & 1) << z;
+			buf[bit] |= ((byte >> (7-bit)) & 1u) << z;
 		}
 	}
 }
