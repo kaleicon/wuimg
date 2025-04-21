@@ -48,6 +48,8 @@ bool wuptr_eq(struct wuptr w1, struct wuptr w2);
 
 bool wuptr_eq_str(struct wuptr w1, const char *s2);
 
+size_t wuptr_print(const struct wuptr w, FILE *out);
+
 
 void wustr_free(struct wustr *w);
 

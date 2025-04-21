@@ -75,6 +75,10 @@ bool wuptr_eq_str(const struct wuptr w1, const char *s2) {
 	return wuptr_eq(w1, wuptr_str(s2));
 }
 
+size_t wuptr_print(const struct wuptr w, FILE *out) {
+	return fwrite(w.ptr, 1, w.len, out);
+}
+
 
 void wustr_free(struct wustr *w) {
 	free(w->str);
@@ -107,9 +111,7 @@ bool wustr_memdup(struct wustr *w, const char *str, const size_t len) {
 
 bool wustr_append_line(struct wustr *w, const char *str,
 const bool strip_trailing_spaces) {
-	if (!str) {
-		str = "(null)";
-	}
+	str = str ? str : "(null)";
 	size_t len = strlen(str);
 	if (strip_trailing_spaces) {
 		while (len && isspace(str[len-1])) {
@@ -128,5 +130,5 @@ const bool strip_trailing_spaces) {
 }
 
 size_t wustr_print(const struct wustr *w, FILE *out) {
-	return fwrite(w->str, 1, w->len, out);
+	return wuptr_print(wuptr_wustr(*w), out);
 }

@@ -102,6 +102,9 @@ bool unloaded_too);
 
 enum wu_error image_file_total_decoded(struct image_file *file, size_t o);
 
+void image_file_error_print(const struct image_file *file, enum wu_error err,
+FILE *out);
+
 void image_file_strerror_append(struct image_file *file, const char *str);
 
 void image_file_error_append(struct image_file *file, enum wu_error status);

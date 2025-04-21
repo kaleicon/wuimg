@@ -113,6 +113,17 @@ enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) 
 	return wu_ok;
 }
 
+void image_file_error_print(const struct image_file *file, enum wu_error err,
+FILE *out) {
+	fputs(wu_error_str(err), out);
+	if (file->errors.str) {
+		fputs(" (\"", out);
+		wuptr_print(wuptr_trim_end(wuptr_wustr(file->errors), '\n'), out);
+		fputs("\")", out);
+	}
+	fputc('\n', out);
+}
+
 void image_file_strerror_append(struct image_file *file, const char *str) {
 	wustr_append_line(&file->errors, str, true);
 }

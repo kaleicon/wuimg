@@ -149,14 +149,19 @@ const struct image_context *image) {
 	return false;
 }
 
+static void print_dec_error(const enum wu_error e, const char *what,
+const struct image_context *image) {
+	fprintf(stderr, "Error while %s %s: ", what, image->name);
+	image_file_error_print(&image->file, e, stderr);
+}
+
 bool write_image(struct image_context *image, const struct write_args *args,
 struct write_writer *writer) {
 	struct wuimg *cur;
 	enum wu_error err = dec_iter(image, &cur);
 	if (err != wu_ok) {
+		print_dec_error(err, "opening", image);
 		dec_free(image);
-		fprintf(stderr, "Error while opening %s: %s\n", image->name,
-			wu_error_str(err));
 		return false;
 	}
 
@@ -191,8 +196,7 @@ struct write_writer *writer) {
 		case wu_no_change: case wu_ok:
 			break;
 		default:
-			fprintf(stderr, "Error while processing %s: %s\n",
-				image->name, wu_error_str(err));
+			print_dec_error(err, "processing", image);
 			all_ok = false;
 		}
 		free_write_path(&path);

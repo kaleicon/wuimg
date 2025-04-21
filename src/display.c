@@ -9,11 +9,9 @@
 
 static void print_error(const struct image_file *infile,
 const char *what, const enum wu_error e, FILE *out) {
-	term_line_key_val(what, wu_error_str(e), out);
-	if (infile->errors.str) {
-		fputs("Library message: ", out);
-		wustr_print(&infile->errors, out);
-	}
+	fputs(what, out);
+	fputs(": ", out);
+	image_file_error_print(infile, e, out);
 }
 
 static enum wu_error decode_with_stats(struct image_context *image) {
