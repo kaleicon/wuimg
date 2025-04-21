@@ -14,32 +14,35 @@ struct wu_st eclipse_load(struct eclipse_desc *desc, struct wuimg *img) {
 	fseek(desc->ifp, 0x1000, SEEK_SET);
 	const uint32_t tw = desc->w >> 8;
 	const uint32_t th = desc->h >> 8;
-	uint32_t *dst = (uint32_t *)img->data;
+	const size_t stride = (size_t)desc->w * img->channels;
+	const size_t tstride = TSIZE * img->channels;
+	uint8_t *dst = img->data;
 	for (uint32_t ty = 0; ty < th; ++ty) {
 		for (uint32_t tx = 0; tx < tw; ++tx) {
-			uint32_t *d = dst + ty*TSIZE*desc->w + tx*TSIZE;
+			uint8_t *d = dst + ty*TSIZE*stride + tx*tstride;
 			const uint32_t lim = (ty + 1 < th)
 				? TSIZE : img->h & 0xff;
 			for (uint32_t y = 0; y < lim; ++y) {
-				r += fread(d + y*desc->w, 4, TSIZE, desc->ifp);
+				r += fread(d + y*stride, 1, tstride, desc->ifp);
 			}
-			fseek(desc->ifp, (long)(TSIZE - lim)*0x400, SEEK_CUR);
+			fseek(desc->ifp, (long)((TSIZE - lim)*tstride), SEEK_CUR);
 		}
 	}
-	return wuerr(r ? wu_ok : wu_unexpected_eof, NULL);
+	return wuerr_partial(r, wuimg_size(img));
 }
 
 struct wu_st eclipse_init(struct eclipse_desc *desc, struct wuimg *img,
 FILE *ifp) {
 	/* Eclipse TILE header:
 		Offset  Type    Name
-		0       u32     ID?        // 07 28 00 00
+		0       u16     ID?        // 07 28
+		2       u16     Version?   // 0 or 1
 		4       u32     Width
 		8       u32     Height
-		12      u32     Colorspace // 0 (RGB) or 1 (CMYK)
+		12      u32     Colorspace
 		16      u8      Name1[32]  // "Eclipse" padded with zeros
 		48      u8      Name2[32]  // A short zero terminated string
-		80      u32     Channels   // 3 for RGB, 4 for CMYK
+		80      u32     ???        // 3 or 0 for RGB, 4 for CMYK?
 		84      u32     Num1       // 40 27 9f 3e
 		88      u32     Num2       // 7c f9 f3 e8
 		92      u32     Num1       // Same as prev Num1
@@ -58,49 +61,50 @@ FILE *ifp) {
 	desc->ifp = ifp;
 	uint32_t hdr[31];
 	if (fread(hdr, sizeof(hdr), 1, ifp)) {
-		const uint8_t sig[4] = {0x07, 0x28, 0, 0};
-		if (!memcmp(hdr, sig, sizeof(sig))) {
-			memcpy(desc->software, hdr + 4, sizeof(desc->software));
-			memcpy(desc->revision, hdr + 12, sizeof(desc->revision));
-			img->w = endian32(hdr[1], big_endian);
-			img->h = endian32(hdr[2], big_endian);
-			desc->w = (img->w + 0xff) & ~0xffu;
-			desc->h = (img->h + 0xff) & ~0xffu;
-			const uint32_t colorspace = endian32(hdr[3], big_endian);
-			const uint32_t comps = endian32(hdr[20], big_endian);
-			switch (colorspace) {
-			case eclipse_rgb:
-				// solarclips has comps == 0
-				if (comps != 0 && comps != 3) {
-					return wuerr(wu_samples_wanted,
-						"channels != 3 for RGB image");
-				}
-				img->alpha = alpha_ignore;
-				img->attr = pix_normal;
-				break;
-			case eclipse_cmyk:
-				if (comps != 4) {
-					return wuerr(wu_samples_wanted,
-						"channels != 4 for CMYK image");
-				}
-				img->attr = pix_inverted;
-				img->alpha = alpha_key;
-				break;
-			default:
-				return wuerr(wu_samples_wanted,
-					"unknown colorspace");
-			}
-			desc->colorspace = colorspace;
-			img->channels = 4;
-			img->bitdepth = 8;
-			img->layout = pix_abgr;
-			img->mirror = true;
-			/* Set alignment so we don't have to worry about right
-			 * edge tiles. */
-			img->align_sh = 10; // log2(0x100 * sizeof(uint32_t))
-			return wuerr(wuimg_verify(img), NULL);
+		const uint32_t sig = endian32(hdr[0], big_endian);
+		desc->version = sig & 0xffff;
+		if (sig >> 16 != 0x0728) {
+			return WUERR_HERE(wu_unknown_file_type);
+		} else if (desc->version > 1) {
+			return wuerr(wu_uncertain_validity,
+				"eclipse tile version > 1");
 		}
-		return WUERR_HERE(wu_unknown_file_type);
+		memcpy(desc->software, hdr + 4, sizeof(desc->software));
+		memcpy(desc->revision, hdr + 12, sizeof(desc->revision));
+		img->w = endian32(hdr[1], big_endian);
+		img->h = endian32(hdr[2], big_endian);
+		desc->w = (img->w + 0xff) & ~0xffu;
+		desc->h = (img->h + 0xff) & ~0xffu;
+		img->channels = 4;
+		img->bitdepth = 8;
+		img->layout = pix_abgr;
+		img->mirror = true;
+		/* Set alignment such that we don't have to worry about
+		 * right edge tiles.
+		 * Equivalent to log2(0x100 * sizeof(uint32_t)) */
+		img->align_sh = 10;
+
+		const uint32_t colorspace = endian32(hdr[3], big_endian);
+		switch (colorspace) {
+		case eclipse_rgb:
+			img->alpha = alpha_ignore;
+			img->attr = pix_normal;
+			break;
+		case eclipse_cmyk:
+			img->alpha = alpha_key;
+			img->attr = pix_inverted;
+			break;
+		case eclipse_alpha:
+			img->channels = 1;
+			img->layout = pix_gray;
+			img->attr = pix_normal;
+			break;
+		default:
+			return wuerr(wu_samples_wanted,
+				"unknown colorspace");
+		}
+		desc->colorspace = colorspace;
+		return wuerr(wuimg_verify(img), NULL);
 	}
 	return WUERR_HERE(wu_unexpected_eof);
 }

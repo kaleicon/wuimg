@@ -276,8 +276,8 @@ DEC_MAP = {
 	"eclipse": {
 		"eclipse": {
 			"desc": "Eclipse TILE",
-			"ext": "tile",
-			"magic": b"\x07\x28\x00\x00",
+			"ext": ("tile", "tmsk"),
+			"mask": (b"\xff\xff\xff\xfe", b"\x07\x28\x00\x00"),
 		},
 	},
 

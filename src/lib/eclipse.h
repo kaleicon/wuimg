@@ -7,6 +7,7 @@
 enum eclipse_colorspace {
 	eclipse_rgb = 0,
 	eclipse_cmyk = 1,
+	eclipse_alpha = 2,
 };
 
 struct eclipse_desc {
@@ -15,6 +16,7 @@ struct eclipse_desc {
 	char revision[32];
 	uint32_t w, h;
 	enum eclipse_colorspace colorspace;
+	uint16_t version;
 };
 
 struct wu_st eclipse_load(struct eclipse_desc *desc, struct wuimg *img);

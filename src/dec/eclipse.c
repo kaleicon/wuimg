@@ -8,6 +8,7 @@ const struct wu_conf *conf) {
 	struct wuimg *img = infile->sub_img;
 	struct wu_st st = eclipse_init(&desc, img, infile->ifp);
 	if (wu_isok(st)) {
+		tree_bud_leaf_u(&infile->metadata, "Version", desc.version);
 		tree_add_leaf_utf8_limit(&infile->metadata, "Software",
 			wuptr_mem(desc.software, sizeof(desc.software)));
 		tree_add_leaf_utf8_limit(&infile->metadata, "Revision",
