@@ -29,6 +29,8 @@ typedef void (*fmt_load_callback_t)(void *restrict data, size_t len,
 
 size_t fmt_load_raster(struct wuimg *img, FILE *ifp);
 
+struct wu_st fmt_load_raster_st(struct wuimg *img, FILE *ifp);
+
 size_t fmt_load_raster_callback(struct wuimg *img, FILE *ifp,
 fmt_load_callback_t fn, void *restrict ptr);
 

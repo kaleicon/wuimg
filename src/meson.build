@@ -6,6 +6,7 @@ fmt_map = {
 		'bethesda',
 		'c64',
 		'cbg',
+		'croteam',
 		'dib',
 		'dpx',
 		'eclipse',

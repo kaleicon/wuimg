@@ -9,6 +9,10 @@ size_t fmt_load_raster(struct wuimg *img, FILE *ifp) {
 	return fread(img->data, 1, wuimg_size(img), ifp);
 }
 
+struct wu_st fmt_load_raster_st(struct wuimg *img, FILE *ifp) {
+	return wuerr_partial(fmt_load_raster(img, ifp), wuimg_size(img));
+}
+
 bool fmt_will_swap(const struct fmt_swap_info info) {
 	switch (info.depth) {
 	case 16: case 24: case 32: case 64:

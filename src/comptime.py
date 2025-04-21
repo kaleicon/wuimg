@@ -232,6 +232,14 @@ DEC_MAP = {
 		}
 	},
 
+	"croteam": {
+		"tbn": {
+			"desc": "Croteam Texture",
+			"ext": ("tbn", "tex"),
+			"magic": b"TVER\x04\0\0\0TDAT",
+		},
+	},
+
 	"dib": {
 		"bmp": {
 			"desc": "Microsoft Bitmap",
