@@ -95,7 +95,13 @@ const struct wuptr hpicon_desc = DESC(
 	"h:<u16>"
 );
 
-// InShape IIM
+/* InShape IIM
+https://temlib.org/AtariForumWiki/index.php/InShape_file_format
+
+ * According to their website, 32-bit files use the extra channel as alpha,
+ * and in the only such sample I've tested with it's unassociated.
+http://inshape.lutece.net/boutique.html
+*/
 const struct wuptr iim_desc = DESC(
 	"endian:big\n"
 	"channels:1\n"
@@ -108,7 +114,7 @@ const struct wuptr iim_desc = DESC(
 		"4 channels:3\n"
 		"5 channels:4 layout:argb\n"
 	")\n"
-	"skip:2\n" // ???
+	"skip:2\n" // "bit planes", sometimes. not neccesary for decoding
 	"w:<u16>\n"
 	"h:<u16>"
 );
