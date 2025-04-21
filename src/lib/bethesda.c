@@ -227,7 +227,8 @@ const uint16_t i) {
 		uint32_t len = u32min(desc->w, desc->comp_len - off);
 		uint8_t *dst = img->data + y*img->w;
 		memcpy(dst, src + off, len);
-		memset(dst + len, 0, desc->w - len);
+		// wuimg_alloc() uses calloc(), so this is redundant
+		//memset(dst + len, 0, desc->w - len);
 		written += len;
 	}
 	return wuerr_partial(written, img->w*img->h);
