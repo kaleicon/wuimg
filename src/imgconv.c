@@ -791,13 +791,11 @@ const struct wuimg *src) {
 	return wu_alloc_error;
 }
 
-static bool needs_transfer(const struct wuimg *dst, const struct wuimg *src) {
+static bool needs_transfer(const struct wuimg *src) {
 	switch (src->alpha) {
 	case alpha_associated: case alpha_key:
 		return true;
-	case alpha_ignore:
-		return pix_layout_offset(dst->layout, pix_alpha) < dst->channels;
-	case alpha_unassociated:
+	case alpha_ignore: case alpha_unassociated:
 		break;
 	}
 	return false;
@@ -887,11 +885,12 @@ const struct wuimg *src, const bool wont_modify) {
 		return wu_error_str(st);
 	}
 
-	state->transfer = !state->color.eotf.srgb_input || needs_transfer(dst, src);
+	state->transfer = !state->color.eotf.srgb_input || needs_transfer(src);
 	const enum color_steps omit = (!state->transfer ? color_step_eotf : 0)
 		| (inrange == outrange ? color_step_map : 0);
 	const enum color_steps steps = (state->color.steps & ~omit);
-	state->color_passthrough = steps == 0 && src->bitrange == dst->bitrange;
+	state->color_passthrough = steps == 0 && src->bitrange == dst->bitrange
+		&& src->alpha == alpha_unassociated;
 
 	if (getenv("WU_DEBUG")) {
 		fprintf(stderr, "Color steps:"
