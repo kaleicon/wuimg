@@ -179,6 +179,19 @@ DEC_MAP = {
 		},
 	},
 
+	"c": {
+		"c": {
+			"desc": "C code formats: DEGAS Elite Icon, XBM X10 and X11",
+			"ext": ("icn", "icon"),
+			"match": "xbm",
+			"magic": (
+				b"/*",
+				b"#define ",
+			),
+			"mime": "xbm",
+		},
+	},
+
 	"c64": {
 		"c64": {
 			"desc": "Art Studio (OCP), Artist64, Blazing Paddles"
@@ -723,19 +736,6 @@ DEC_MAP = {
 			"desc": "Wild-Bug engine image sequence",
 			"ext": "wia",
 			"magic": b"WPX\x1aIA2\0",
-		},
-	},
-
-	"xbm": {
-		"xbm": {
-			"desc": "X10 and X11 Bitmap",
-			"match": "xbm",
-			"magic": (
-				b"/*",
-				b"//",
-				b"#define ",
-			),
-			"mime": "xbm",
 		},
 	},
 

@@ -77,13 +77,14 @@ size_t mp_skip_space(struct mparser *mp) {
 	return k;
 }
 
-void mp_skip_until(struct mparser *mp, int c) {
-	const unsigned char *loc = memchr(mp->mem + mp->pos, c, mp->len - mp->pos);
+bool mp_skip_until(struct mparser *mp, int c) {
+	const uint8_t *loc = memchr(mp->mem + mp->pos, c, mp->len - mp->pos);
 	if (loc) {
-		mp->pos = (size_t)loc + 1 - (size_t)mp->mem;
+		mp->pos = (size_t)loc - (size_t)mp->mem + 1;
 	} else {
 		mp->pos = mp->len;
 	}
+	return loc;
 }
 
 int mp_cur_char(struct mparser *mp) {
@@ -151,12 +152,11 @@ struct wuptr mp_remaining(struct mparser *mp) {
 }
 
 bool mp_upto(struct mparser *mp, struct wuptr *out, const char chr) {
-	const size_t rem = mp->len - mp->pos;
-	const uint8_t *start = mp->mem + mp->pos;
-	const uint8_t *end = memchr(start, chr, rem);
 	out->ptr = mp->mem + mp->pos;
+	const size_t rem = mp->len - mp->pos;
+	const uint8_t *end = memchr(out->ptr, chr, rem);
 	if (end) {
-		out->len = (size_t)(end - start);
+		out->len = (size_t)(end - out->ptr);
 		mp->pos = (size_t)(end - mp->mem) + 1;
 	} else {
 		out->len = rem;

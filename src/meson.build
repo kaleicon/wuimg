@@ -4,6 +4,7 @@ fmt_map = {
 		'aliaspix',
 		'atari',
 		'bethesda',
+		'c',
 		'c64',
 		'cbg',
 		'croteam',
@@ -51,7 +52,6 @@ fmt_map = {
 		'wbmp',
 		'wgtspr',
 		'wpx',
-		'xbm',
 		'xcursor',
 		'xwd',
 		'xyz'
