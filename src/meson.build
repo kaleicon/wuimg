@@ -38,6 +38,7 @@ fmt_map = {
 		'qoi',
 		'quake',
 		'sgi',
+		'siff',
 		'signum',
 		'sixel',
 		'skyroads',

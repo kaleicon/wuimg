@@ -2,6 +2,7 @@
 #ifndef MISC_DECOMP
 #define MISC_DECOMP
 
+#include <stddef.h>
 #include <stdint.h>
 
 size_t decomp_topbitrle(uint8_t *restrict dst, const size_t dst_len,

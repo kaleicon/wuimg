@@ -417,6 +417,7 @@ struct wu_st bsi_init(struct bsi_desc *desc, FILE *ifp) {
 		.table_len = ARRAY_LEN(bsi_init_table),
 		.user = desc,
 		.endian = big_endian,
+		.align_sh = 1,
 	};
 	return iff_next_FILE(&iff, ifp, (struct iff_chunk){0});
 }

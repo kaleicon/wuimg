@@ -4,6 +4,7 @@
 #include "misc/endian.h"
 #include "misc/mparser.h"
 #include "raster/err.h"
+#include "raster/strip.h"
 
 struct iff_chunk {
 	uint32_t id;
@@ -23,12 +24,13 @@ struct iff_table {
 struct iff_state {
 	const struct iff_table *table;
 	unsigned table_len;
-	enum endianness endian;
+	enum endianness endian:8;
+	align_t align_sh;
 	iff_fn_t fallback;
 	void *user;
 };
 
-uint32_t iff_chunk_padding(struct iff_chunk chunk);
+uint32_t iff_chunk_padding(const struct iff_state *iff, struct iff_chunk chunk);
 
 bool iff_is_text(uint32_t id);
 

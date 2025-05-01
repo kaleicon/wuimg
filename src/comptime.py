@@ -586,6 +586,17 @@ DEC_MAP = {
 		},
 	},
 
+	"siff": {
+		"pim": {
+			"desc": "SIFF PIM sprite and animation (first frame only)",
+			"ext": "pim",
+			"mask": (
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+				b"SIFF\0\0\0\0PXAN",
+			),
+		},
+	},
+
 	"signum": {
 		"imc": {
 			"desc": "Signum! IMC",

@@ -343,8 +343,8 @@ static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 }
 
 static struct wu_st finish_chunk(struct ilbm_desc *desc,
-const struct iff_chunk chunk, const char *msg) {
-	mp_seek_cur(&desc->mp, iff_chunk_padding(chunk));
+const struct iff_state *iff, const struct iff_chunk chunk, const char *msg) {
+	mp_seek_cur(&desc->mp, iff_chunk_padding(iff, chunk));
 	return wuerr(wu_ok, msg);
 }
 
@@ -353,7 +353,7 @@ const struct iff_chunk chunk) {
 	(void)iff;
 	struct ilbm_desc *desc = ptr;
 	desc->body = mp_avail(&desc->mp, chunk.len);
-	mp_seek_cur(&desc->mp, iff_chunk_padding(chunk));
+	mp_seek_cur(&desc->mp, iff_chunk_padding(iff, chunk));
 	return wuerr(wu_no_change, NULL);
 }
 
@@ -385,7 +385,7 @@ const struct iff_chunk chunk) {
 		};
 		msg = NULL;
 	}
-	return finish_chunk(desc, chunk, msg);
+	return finish_chunk(desc, iff, chunk, msg);
 }
 
 static struct wu_st parse_crng(struct iff_state *iff, void *ptr,
@@ -446,7 +446,7 @@ const struct iff_chunk chunk) {
 			cycle->too_many = true;
 		}
 	}
-	return finish_chunk(desc, chunk, msg);
+	return finish_chunk(desc, iff, chunk, msg);
 }
 
 static struct wu_st parse_cmap(struct iff_state *iff, void *ptr,
@@ -483,7 +483,7 @@ const struct iff_chunk chunk) {
 		}
 		palette_from_rgb8(desc->pal, data, colors);
 	}
-	return finish_chunk(desc, chunk, NULL);
+	return finish_chunk(desc, iff, chunk, NULL);
 }
 
 static struct wu_st parse_camg(struct iff_state *iff, void *ptr,
@@ -525,7 +525,7 @@ const struct iff_chunk chunk) {
 				"HAM mode with masking");
 		}
 	}
-	return finish_chunk(desc, chunk, NULL);
+	return finish_chunk(desc, iff, chunk, NULL);
 }
 
 static struct wu_st parse_bmhd(struct iff_state *iff, struct ilbm_desc *desc,
@@ -570,7 +570,7 @@ const struct iff_chunk chunk) {
 	} else {
 		switch (desc->planes) {
 		case 0: // A colormap-only file
-			return finish_chunk(desc, chunk, NULL);
+			return finish_chunk(desc, iff, chunk, NULL);
 		case 1: case 2: case 3: case 4:
 		case 5: case 6: case 7: case 8:
 			break;
@@ -614,7 +614,7 @@ const struct iff_chunk chunk) {
 	case ilbm_compression_none:
 	case ilbm_compression_packbits:
 		wuimg_aspect_ratio(img, data[14], data[15]);
-		return finish_chunk(desc, chunk, NULL);
+		return finish_chunk(desc, iff, chunk, NULL);
 	}
 	return wuerr(wu_uncertain_validity, "unknown compression method");
 }
@@ -648,7 +648,7 @@ const struct iff_chunk chunk) {
 	} else {
 		mp_seek_cur(&desc->mp, chunk.len);
 	}
-	return finish_chunk(desc, chunk, NULL);
+	return finish_chunk(desc, iff, chunk, NULL);
 }
 
 static struct wu_st ilbm_parse(struct ilbm_desc *desc,
@@ -657,6 +657,7 @@ const struct iff_table *table, const unsigned table_len) {
 		.table = table,
 		.table_len = table_len,
 		.endian = big_endian,
+		.align_sh = 1,
 		.fallback = ilbm_fallback,
 		.user = desc,
 	};

@@ -5,8 +5,10 @@
 #include "misc/common.h"
 #include "misc/iff.h"
 
-uint32_t iff_chunk_padding(const struct iff_chunk chunk) {
-	return chunk.len & 1;
+uint32_t iff_chunk_padding(const struct iff_state *iff,
+const struct iff_chunk chunk) {
+	const uint32_t a = ~(uint32_t)0 << iff->align_sh;
+	return ((chunk.len + ~a) & a) - chunk.len;
 }
 
 bool iff_is_text(const uint32_t id) {
@@ -59,7 +61,7 @@ struct wu_st iff_swap(struct iff_state *iff, void *_p, struct iff_chunk chunk) {
 
 struct wu_st iff_next_FILE(struct iff_state *iff, FILE *fp,
 struct iff_chunk prev_chunk) {
-	fseek(fp, iff_chunk_padding(prev_chunk), SEEK_CUR);
+	fseek(fp, iff_chunk_padding(iff, prev_chunk), SEEK_CUR);
 	struct iff_chunk next;
 	return fread(&next, sizeof(next), 1, fp)
 		? iff_swap(iff, fp, next)
@@ -74,7 +76,7 @@ struct iff_chunk prev_chunk) {
 
 struct wu_st iff_next_mparser(struct iff_state *iff, struct mparser *mp,
 struct iff_chunk prev_chunk) {
-	mp_seek_cur(mp, iff_chunk_padding(prev_chunk));
+	mp_seek_cur(mp, iff_chunk_padding(iff, prev_chunk));
 	const uint8_t *c = mp_slice(mp, sizeof(prev_chunk));
 	if (c) {
 		struct iff_chunk next;
