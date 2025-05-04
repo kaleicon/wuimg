@@ -186,6 +186,19 @@ static uint32_t bitstrm_lsb_peek_32(struct bitstrm *bs) {
 	return (uint32_t)bs->buf[i+4] << 1 << (31 - o) | f >> o;
 }
 
+static uint32_t lsb_code_adv(struct bitstrm *bs) {
+	const uint32_t bits = bitstrm_lsb_peek_32(bs);
+	const uint32_t z = bit_ctz32(bits);
+	bs->pos += z+1;
+	return z;
+}
+
+static uint32_t lsb_code_val(struct bitstrm *bs, const uint32_t z) {
+	const uint32_t val = bitstrm_lsb_peek_32(bs);
+	bitstrm_seek(bs, z);
+	return val;
+}
+
 uint32_t bitstrm_lsb_gamma_one(struct bitstrm *bs) {
 	/* LSB Gamma bit encoding (1 delimited):
 		Range   Coding
@@ -195,12 +208,17 @@ uint32_t bitstrm_lsb_gamma_one(struct bitstrm *bs) {
 		8-15   xxx1000
 	 * There's a caveat... The encoded bits have to be reversed.
 	*/
-	const uint32_t bits = bitstrm_lsb_peek_32(bs);
-	const uint32_t z = bit_ctz32(bits);
-	bs->pos += z+1;
-	const uint32_t val = bitstrm_lsb_peek_32(bs);
-	bitstrm_seek(bs, z);
+	const uint32_t z = lsb_code_adv(bs);
+	const uint32_t val = lsb_code_val(bs, z);
 	return 1u << z | bit_rev32(val) >> 1 >> (31 - z);
+}
+
+uint32_t bitstrm_lsb_exp_golomb(struct bitstrm *bs) {
+	/* Like Gamma encoding, but starts at zero. */
+	const uint32_t z = lsb_code_adv(bs);
+	const uint32_t val = lsb_code_val(bs, z);
+	const uint32_t mask = (1u << z) - 1;
+	return (val & mask) + mask;
 }
 
 

@@ -36,7 +36,7 @@ struct wu_st wuerr(enum wu_error err, const char *msg);
 
 #define TOSTR(x) TOSTR2(x)
 #define TOSTR2(x) #x
-#define WUERR_HERE(err) wuerr((err), __FILE__ ":" TOSTR(__LINE__) );
+#define WUERR_HERE(err) wuerr((err), __FILE__ ":" TOSTR(__LINE__) )
 
 struct wu_st wuerr_partial(size_t written, size_t max);
 

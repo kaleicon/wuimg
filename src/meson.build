@@ -7,6 +7,7 @@ fmt_map = {
 		'c',
 		'c64',
 		'cbg',
+		'chunsoft',
 		'croteam',
 		'dib',
 		'dpx',

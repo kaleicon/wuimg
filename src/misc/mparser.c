@@ -127,7 +127,7 @@ struct wuptr mp_avail_at(const struct mparser *mp, const size_t pos,
 const size_t len) {
 	return (struct wuptr) {
 		.ptr = mp->mem + pos,
-		.len = (pos <= mp->len) ? zumin(mp->len - mp->pos, len) : 0,
+		.len = (pos < mp->len) ? zumin(mp->len - pos, len) : 0,
 	};
 }
 

@@ -245,6 +245,20 @@ DEC_MAP = {
 		}
 	},
 
+	"chunsoft": {
+		"at6p": {
+			"desc": "999 AT6P",
+			"ext": "dat",
+			"magic": b"AT6P",
+		},
+
+		"sir0": {
+			"desc": "999 SIR0 sprites",
+			"ext": "dat",
+			"magic": b"SIR0",
+		},
+	},
+
 	"croteam": {
 		"tbn": {
 			"desc": "Croteam Texture",
