@@ -855,9 +855,8 @@ const double scale) {
 
 cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,
 const cmsUInt32Number in_fmt, const cmsUInt32Number out_fmt) {
-//	cmsUInt32Number colorspace = channels < 3 ? PT_GRAY : PT_RGB;
 	return cmsCreateTransform(cs->desc->u.icc.in, in_fmt,
-			out, out_fmt, INTENT_PERCEPTUAL, 0);
+			out, out_fmt, INTENT_PERCEPTUAL, cmsFLAGS_COPY_ALPHA);
 }
 
 static cmsCIExyY primary_to_xyY(const struct color_xy xy) {

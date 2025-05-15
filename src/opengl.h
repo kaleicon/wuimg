@@ -94,15 +94,13 @@ struct gl_reader_context {
 	struct gl_context context;
 	struct wu_state state;
 	const struct wuimg *dst;
-	uint8_t *row;
 };
 
-void gl_reader_close(struct gl_reader_context *reader);
-
-uint8_t * gl_reader_read_row(struct gl_reader_context *reader, size_t y);
+void gl_reader_read_row(struct gl_reader_context *reader, size_t y,
+void *restrict tgt);
 
 const char * gl_reader_set(struct gl_reader_context *reader,
-const struct wuimg *dst, const struct wuimg *src, bool _read_only);
+const struct wuimg *dst, const struct wuimg *src);
 
 bool gl_reader_init(struct gl_reader_context *reader, struct wu_conf *wuconf);
 

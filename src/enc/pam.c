@@ -4,9 +4,11 @@
 #include "misc/bit.h"
 #include "misc/endian.h"
 
-#include "pam.h"
+#include "enc.h"
 
-size_t pam_write_row(uint8_t *restrict row, const struct wuimg *dst, FILE *ofp) {
+static size_t write_row(void *state, const struct wuimg *dst, FILE *ofp,
+uint8_t *restrict row) {
+	(void)state;
 	const size_t len = dst->w * dst->channels;
 	if (dst->bitdepth == 16) {
 		endian_loop16((uint16_t *)row, big_endian, len);
@@ -26,7 +28,9 @@ static void write_tuple(const uint8_t ch, FILE *ofp) {
 	fprintf(ofp, "TUPLTYPE %s\n", tupl);
 }
 
-void pam_write_header(const struct wuimg *dst, FILE *ofp) {
+static const char * init_pam(void *state, const struct wuimg *dst,
+const struct wuimg *src, FILE *ofp) {
+	(void)state; (void)src;
 	const uint32_t maxval = bit_set32(dst->bitrange);
 	fprintf(ofp,
 		"P7\n"
@@ -36,14 +40,10 @@ void pam_write_header(const struct wuimg *dst, FILE *ofp) {
 		"MAXVAL %" PRIu16 "\n",
 		dst->w, dst->h, dst->channels, (uint16_t)maxval);
 	write_tuple(dst->channels, ofp);
-	fputs("ENDHDR\n", ofp);
+	return fputs("ENDHDR\n", ofp) > 0 ? NULL : "output error";
 }
 
-bool pam_wont_modify_row(const struct wuimg *dst) {
-	return dst->bitdepth == 8 || which_end() == big_endian;
-}
-
-void pam_best_fit(struct wuimg *dst, const struct wuimg *src) {
+static void best_fit(struct wuimg *dst, const struct wuimg *src) {
 	dst->w = (src->rotate & 1) ? src->h : src->w;
 	dst->h = (src->rotate & 1) ? src->w : src->h;
 	switch (src->mode) {
@@ -63,3 +63,9 @@ void pam_best_fit(struct wuimg *dst, const struct wuimg *src) {
 	}
 	dst->alpha = alpha_unassociated;
 }
+
+const struct enc_fn pam_enc = {
+	.best_fit = best_fit,
+	.init = init_pam,
+	.write_row = write_row,
+};

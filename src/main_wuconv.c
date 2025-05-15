@@ -45,15 +45,15 @@ static enum what_to_do first_arg(int argc, char **argv) {
 	return convert_images;
 }
 
-static void close_conv(void *ptr) {
-	imgconv_close(ptr);
+static void close_conv(void *state) {
+	imgconv_close(state);
 }
-static uint8_t * get_row(void *ptr, size_t y) {
-	return imgconv_get_row(ptr, y);
+static void get_row(void *state, size_t y, void *restrict tgt) {
+	imgconv_get_row(state, y, tgt);
 }
-static const char * init_conv(void *ptr, const struct wuimg *dst,
-const struct wuimg *src, const bool wont_modify) {
-	return imgconv_init(ptr, dst, src, wont_modify);
+static const char * init_conv(void *state, const struct wuimg *dst,
+const struct wuimg *src) {
+	return imgconv_init(state, dst, src);
 }
 
 int main(const int argc, char **argv) {

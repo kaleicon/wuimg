@@ -12,12 +12,13 @@ struct write_args {
 	bool overwrite;
 	bool stdout;
 	bool null;
+	int codec;
 };
 
 typedef void (*writer_close_t)(void *state);
-typedef uint8_t * (*writer_get_row_t)(void *state, size_t y);
+typedef void (*writer_get_row_t)(void *state, size_t y, void *restrict tgt);
 typedef const char * (*writer_set_image_t)(void *state,
-	const struct wuimg *dst, const struct wuimg *src, bool read_only);
+	const struct wuimg *dst, const struct wuimg *src);
 
 struct write_writer {
 	void *state;

@@ -16,43 +16,105 @@
 #include "misc/term.h"
 #include "misc/time.h"
 
-#include "enc/pam.h"
+#include "enc.h"
 
-struct write_path {
+#include "dec_enable.def"
+
+struct enc_info {
+	const char ext[4];
+	const struct enc_fn *enc;
+};
+
+#ifdef WU_ENABLE_JPEGXL
+extern const struct enc_fn jpegxl_enc;
+#endif
+extern const struct enc_fn pam_enc;
+
+static const struct enc_info ENC_TABLE[] = {
+	// Entry 0 will be the default
+	{"pam", &pam_enc},
+#ifdef WU_ENABLE_JPEGXL
+	{"jxl", &jpegxl_enc},
+#endif
+};
+
+struct write_file {
 	struct wustr parent;
 	struct wustr file;
 	size_t name_base;
+	FILE *ofp;
 	int dirfd;
 	bool with_idx;
+	void *enc_state;
+	struct wuimg dst;
 };
 
-static size_t write_pam(const struct wuimg *dst, FILE *ofp,
-struct write_writer *writer) {
-	pam_write_header(dst, ofp);
-	size_t w = 0;
-	for (size_t y = 0; y < dst->h; ++y) {
-		w += pam_write_row(writer->get_row(writer->state, y), dst, ofp);
+static int find_codec(const char *ext) {
+	for (int i = 0; i < (int)ARRAY_LEN(ENC_TABLE); ++i) {
+		if (!strncmp(ext, ENC_TABLE[i].ext, sizeof(ENC_TABLE[i].ext))) {
+			return i;
+		}
 	}
-	return w;
+	return -1;
 }
 
-static const char * write_sub_img(const struct wuimg *src, FILE *ofp,
-struct write_writer *writer) {
-	const char *err_msg = NULL;
-	struct wuimg dst = {0};
-	pam_best_fit(&dst, src);
-	if (wuimg_verify(&dst) == wu_ok) {
-		const watch_t w = watch_look();
-		err_msg = writer->set_image(writer->state, &dst, src,
-			pam_wont_modify_row(&dst));
-		if (!err_msg) {
-			write_pam(&dst, ofp, writer);
-			watch_report("Converted", w, report_info);
+static const char * write_frame(const struct enc_fn *enc,
+const struct wuimg *dst, const struct wuimg *src, struct write_file *out,
+struct write_writer *writer, const int frame) {
+	const char *msg = NULL;
+	if (frame == 0 || !enc->anim) {
+		msg = enc->init(out->enc_state, dst, src, out->ofp);
+	}
+	if (!msg) {
+		size_t w = 0;
+		const size_t stride = wuimg_stride(dst);
+		for (size_t y = 0; y < dst->h; ++y) {
+			uint8_t *tgt = dst->data + (enc->write_row ? 0 : stride*y);
+			writer->get_row(writer->state, y, tgt);
+			if (enc->write_row) {
+				w += enc->write_row(out->enc_state, dst,
+					out->ofp, tgt);
+			}
 		}
-		writer->close(writer->state);
-	} else {
-		err_msg = "Output image failed verification. This is likely a"
-			" programmer oversight.";
+		if (!enc->write_row) {
+			w = enc->write_frame(out->enc_state, dst, out->ofp, frame);
+		}
+		if (!w) {
+			msg = "No data written";
+		}
+	}
+	return msg;
+}
+
+static const char * write_sub_img(const struct wuimg *src,
+struct write_file *out, struct write_writer *writer, const struct enc_fn *enc,
+const int frame) {
+	const char *err_msg = NULL;
+	struct wuimg *dst = &out->dst;
+	if (frame == 0) {
+		*dst = (struct wuimg){0};
+		enc->best_fit(dst, src);
+		if (wuimg_verify(dst) == wu_ok) {
+			dst->data = calloc(wuimg_stride(dst),
+				enc->write_row ? 1 : dst->h);
+			if (!dst->data) {
+				err_msg = "Output image allocation failure";
+			}
+		} else {
+			err_msg = "Output image failed verification."
+				" This is likely a programmer oversight.";
+		}
+	}
+	if (!err_msg) {
+		const watch_t w = watch_look();
+		err_msg = writer->set_image(writer->state, dst, src);
+		if (!err_msg) {
+			err_msg = write_frame(enc, dst, src, out, writer, frame);
+		}
+		if (writer->close) {
+			writer->close(writer->state);
+		}
+		watch_report("Converted", w, report_info);
 	}
 	return err_msg;
 }
@@ -60,36 +122,37 @@ struct write_writer *writer) {
 static const size_t SUFFIX_SPACE = sizeof(int)*3*2 // index and frame number
 	+ sizeof(uint32_t)*3*2 // frame time numerator and denominator
 	+ 5 // delimiters and extension dot
-	+ 3 // extension
+	+ sizeof(ENC_TABLE->ext) // extension
 	+ 1; // ending nul
 
-static FILE * create_file(struct write_path *path, const struct wu_state *state,
-const bool overwrite, const struct image_frames *frames) {
-	const char ext[] = "pam";
-	char *suffix = (char *)path->file.str + path->name_base;
+static FILE * create_file(struct write_file *out, const struct wu_state *state,
+const bool overwrite, const struct image_frames *frames, const char ext[static 4]) {
+	char *suffix = (char *)out->file.str + out->name_base;
 	const size_t rem = SUFFIX_SPACE;
 
 	const int prec = 5;
+	const int ext_len = sizeof(ENC_TABLE->ext);
 	int w;
 	if (frames) {
 		const struct frame_time sec = frames->f[state->frame].sec;
 		w = snprintf(suffix, rem,
-			"_%.*d:%.*d:%" PRIu32 ":%" PRIu32 ".%s",
+			"_%.*d:%.*d:%" PRIu32 ":%" PRIu32 ".%.*s",
 			prec, state->idx,
 			prec, state->frame,
 			sec.num, sec.den,
-			ext);
-	} else if (path->with_idx) {
-		w = snprintf(suffix, rem, "_%.*d.%s", prec, state->idx, ext);
+			ext_len, ext);
+	} else if (out->with_idx) {
+		w = snprintf(suffix, rem, "_%.*d.%.*s", prec, state->idx,
+			ext_len, ext);
 	} else {
-		w = snprintf(suffix, rem, ".%s", ext);
+		w = snprintf(suffix, rem, ".%.*s", ext_len, ext);
 	}
 
 	FILE *ofp = NULL;
 	if (w > 0 && (size_t)w < rem) {
-		path->file.len = path->name_base + (size_t)w;
+		out->file.len = out->name_base + (size_t)w;
 		errno = 0;
-		const int fd = openat(path->dirfd, (char *)path->file.str,
+		const int fd = openat(out->dirfd, (char *)out->file.str,
 			O_WRONLY | O_CREAT | O_TRUNC | (overwrite ? 0 : O_EXCL),
 			S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if (fd >= 0) {
@@ -102,49 +165,83 @@ const bool overwrite, const struct image_frames *frames) {
 	return ofp;
 }
 
-static FILE * get_file(const struct write_args *args, struct write_path *path,
-const struct image_context *image, struct wuimg *in) {
-	if (args->stdout) {
-		return stdout;
+static const char * get_file(struct write_file *out,
+const struct write_args *args, const struct image_context *image,
+struct wuimg *src) {
+	const char *msg = NULL;
+	if (!out->ofp) {
+		if (args->stdout) {
+			out->ofp = stdout;
+		} else {
+			const bool supports_anim = ENC_TABLE[args->codec].enc->anim;
+			errno = 0;
+			out->ofp = create_file(out, &image->state, args->overwrite,
+				supports_anim ? NULL : src->frames,
+				ENC_TABLE[args->codec].ext);
+			msg = out->ofp ? NULL : strerror(errno);
+		}
 	}
-	return create_file(path, &image->state, args->overwrite, in->frames);
+	return msg;
 }
 
-static void free_write_path(struct write_path *path) {
-	close(path->dirfd);
-	wustr_free(&path->parent);
-	wustr_free(&path->file);
+static bool close_file(struct write_file *out, const struct write_args *args,
+const struct image_context *image, const struct wuimg *src, const bool failed) {
+	const bool final_frame = failed
+		|| (size_t)(image->state.frame + 1) == wuimg_frames_nr(src);
+	const struct enc_fn *enc = ENC_TABLE[args->codec].enc;
+	if (final_frame || !enc->anim) {
+		if (final_frame) {
+			wuimg_free(&out->dst);
+		}
+		if (enc->end) {
+			enc->end(out->enc_state);
+		}
+		if (out->ofp) {
+			fclose(out->ofp);
+			out->ofp = NULL;
+			return true;
+		}
+	}
+	return false;
 }
 
-static void print_write_path(const struct write_path *path, FILE *out) {
-	wustr_print(&path->parent, out);
-	wustr_print(&path->file, out);
+static void free_write_file(struct write_file *out) {
+	if (out->dirfd >= 0) {
+		close(out->dirfd);
+	}
+	wustr_free(&out->parent);
+	wustr_free(&out->file);
+	free(out->enc_state);
 }
 
-static void print_write_error(const struct write_path *path, const char *msg,
-FILE *out) {
-	fputs("Failed to write to ", out);
-	print_write_path(path, out);
-	fputs(": ", out);
-	term_line_put(msg, out);
+static void print_write_file(const struct write_file *out, FILE *ofp) {
+	wustr_print(&out->parent, ofp);
+	wustr_print(&out->file, ofp);
 }
 
-static bool set_write_path(struct write_path *out, const char *outdir,
-const struct image_context *image) {
+static void print_write_error(const struct write_file *out, const char *msg,
+FILE *ofp) {
+	fputs("Failed to write to ", ofp);
+	print_write_file(out, ofp);
+	fputs(": ", ofp);
+	term_line_put(msg, ofp);
+}
+
+static bool init_write_file(struct write_file *out,
+const struct write_args *args, const struct image_context *image) {
 	struct fs_path path;
-	out->dirfd = fs_get_parent_dir(&path, outdir ? outdir : image->name,
-		false);
+	out->dirfd = fs_get_parent_dir(&path,
+		args->outdir ? args->outdir : image->name, false);
 	if (out->dirfd >= 0) {
 		fs_path_set_file(&path, wuptr_str(image->name));
 		out->name_base = path.file.len;
+		out->parent = path.parent;
 		if (wustr_malloc(&out->file, out->name_base + SUFFIX_SPACE)) {
 			memcpy(out->file.str, path.file.ptr, out->name_base);
-			out->parent = path.parent;
 			out->with_idx = image->file.nr > 1;
-			return true;
+			out->enc_state = malloc(ENC_TABLE[args->codec].enc->state_size);
+			return out->enc_state;
 		}
-		close(out->dirfd);
-		fs_path_free(&path);
 	}
 	return false;
 }
@@ -165,30 +262,28 @@ struct write_writer *writer) {
 		return false;
 	}
 
-	struct write_path path;
+	struct write_file out = {0};
 	errno = 0;
-	bool all_ok = set_write_path(&path, args->outdir, image);
+	bool all_ok = init_write_file(&out, args, image);
 	if (all_ok) {
 		do {
-			FILE *ofp = get_file(args, &path, image, cur);
-			if (!ofp) {
-				print_write_error(&path, strerror(errno), stderr);
+			const char *msg = get_file(&out, args, image, cur);
+			if (!msg) {
+				msg = write_sub_img(cur, &out, writer,
+					ENC_TABLE[args->codec].enc,
+					image->state.frame);
+			}
+			bool print = close_file(&out, args, image, cur, msg);
+			if (msg) {
+				print_write_error(&out, msg, stderr);
 				all_ok = false;
+				break;
+			}
+			if (print) {
 				if (args->stdout) {
 					break;
 				}
-				continue;
-			}
-			const char *msg = write_sub_img(cur, ofp, writer);
-			fclose(ofp);
-			if (msg) {
-				print_write_error(&path, msg, stderr);
-				all_ok = false;
-			}
-			if (args->stdout) {
-				break;
-			} else if (!msg) {
-				print_write_path(&path, stdout);
+				print_write_file(&out, stdout);
 				fputc(args->null ? 0 : '\n', stdout);
 			}
 		} while (wu_ok == (err = dec_iter(image, &cur)));
@@ -199,10 +294,10 @@ struct write_writer *writer) {
 			print_dec_error(err, "processing", image);
 			all_ok = false;
 		}
-		free_write_path(&path);
 	} else {
-		perror("Failed to open output directory");
+		perror("Writer state setup failed");
 	}
+	free_write_file(&out);
 	dec_free(image);
 	return all_ok;
 }
@@ -251,6 +346,13 @@ const char write_switches[] =
 	"\t-d OUTDIR\n"
 	"\t\tWrite files to OUTDIR instead of the file's parent.\n"
 
+	"\t-e ENCODER\n"
+	"\t\tOutput format. Supported encoders are\n"
+#ifdef WU_ENABLE_JPEGXL
+	"\t\t* jxl\n"
+#endif
+	"\t\t* pam\n"
+
 	"\t-f\n"
 	"\t\tForce overwriting output file(s).\n"
 
@@ -265,6 +367,7 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 	*args = (struct write_args){0};
 	while (idx < argc) {
 		switch (short_opt(argv[idx])) {
+		case 'h': return -1;
 		case 'd':
 			if (idx + 1 >= argc) {
 				return idx;
@@ -272,10 +375,19 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 			++idx;
 			args->outdir = argv[idx];
 			break;
+		case 'e':
+			if (idx + 1 >= argc) {
+				return idx;
+			}
+			++idx;
+			args->codec = find_codec(argv[idx]);
+			if (args->codec < 0) {
+				return -1;
+			}
+			break;
 		case 'f': args->overwrite = true; break;
 		case 's': args->stdout = true; break;
 		case 'z': args->null = true; break;
-		case 'h': return -1;
 		default:
 			return idx;
 		}

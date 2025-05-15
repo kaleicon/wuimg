@@ -94,6 +94,11 @@ pkg_map = {
 	'svg': ['librsvg-2.0'],
 	'webp': ['libwebpdecoder', 'libwebpdemux']
 }
+
+encoders = [
+	'jpegxl'
+]
+
 dep_list = []
 src_list = []
 dec_enable = configuration_data()
@@ -120,12 +125,17 @@ foreach cat, fmts : fmt_map
 		if state.require(enable).allowed()
 			dec_enable.set('WU_ENABLE_' + f.to_upper(), true)
 			dep_list += deps
+			fmtfile = f.to_lower() + '.c'
 			if cat != 'freerider'
-				src_list += ''.join(['dec/', f.to_lower(), '.c'])
+				src_list += 'dec' / fmtfile
 				if cat == 'internal'
-					src_list += ''.join(['lib/', f.to_lower(), '.c'])
+					src_list += 'lib' / fmtfile
 				endif
 			endif
+			if f in encoders
+				src_list += 'enc' / fmtfile
+			endif
+
 		endif
 	endforeach
 endforeach

@@ -373,7 +373,7 @@ const struct imgconv *state) {
 	const bool icc = (channels >= 3 ? convert_row_color : convert_row_gray)
 		(row, w, channels, src->alpha, state);
 	if (icc) {
-		cmsDoTransform(state->xfr, tgt, row, (cmsUInt32Number)w);
+		cmsDoTransform(state->xfr, row, tgt, (cmsUInt32Number)w);
 		return tgt;
 	}
 	return pack_row(tgt, row, w, channels, depth > 8);
@@ -387,14 +387,14 @@ const struct wuimg *src, const struct imgconv *state) {
 	 * order. */
 	const uint8_t ud = state->unpack_depth/8;
 	const uint8_t *u = unpack;
-	float *tmp = (float *)state->row;
+	float *row = (float *)state->row;
 	for (size_t x = 0; x < w; ++x) {
 		for (uint8_t z = 0; z < channels; ++z) {
-			tmp[x*channels + z] = get_ch(u, state->swz[z], ud);
+			row[x*channels + z] = get_ch(u, state->swz[z], ud);
 		}
 		u += pix_stride;
 	}
-	return convert_row(tgt, tmp, w, channels, bitdepth, src, state);
+	return convert_row(tgt, row, w, channels, bitdepth, src, state);
 }
 
 static void * raw_convert(void *restrict tgt, void *restrict unpack,
@@ -408,38 +408,31 @@ const struct wuimg *restrict src, const struct imgconv *state) {
 	if (state->color_passthrough) {
 		// Input/unpacked data matches output colorspace
 		const uint8_t comp_size = state->unpack_depth/8;
-		const size_t pix = comp_size*channels;
-		uint8_t *t = tgt;
+		const size_t pix_size = comp_size*channels;
+		uint8_t *t = src->attr == pix_float ? state->row : tgt;
 		if (src->layout != state->dst->layout) {
 			// Only swizzling is needed
 			for (size_t x = 0; x < w; ++x) {
 				for (uint8_t z = 0; z < channels; ++z) {
-					memcpy(t + x*pix + z*comp_size,
+					memcpy(t + x*pix_size + z*comp_size,
 						u + state->swz[z]*comp_size,
 						comp_size);
 				}
 				u += pix_stride;
 			}
-		} else if ((ptrdiff_t)pix != pix_stride) {
+		} else if ((ptrdiff_t)pix_size != pix_stride) {
 			// Read across the image
 			for (size_t x = 0; x < w; ++x) {
-				memcpy(t + x*pix, u, pix);
+				memcpy(t + x*pix_size, u, pix_size);
 				u += pix_stride;
 			}
 		} else if (src->attr == pix_float) {
 			// Input is floating-point. Send to pack_row()
 			t = u;
-		} else if (state->op != op_noop || state->wont_modify) {
-			/* Input is linear, and is a pointer into our buffer
-			 * or to the source data which the caller promises
-			 * not to modify. */
-			return u;
 		} else {
 			/* Input is linear and a pointer to the source image.
-			 * Caller may modify what we return (i.e. byte swaps)
-			 * and decoder may need it later on (i.e. animations)
-			 * so return a copy instead. */
-			memcpy(t, u, pix*w);
+			 * Copy to output. */
+			memcpy(t, u, pix_size*w);
 		}
 		if (src->attr == pix_float) {
 			return pack_row(tgt, (float *)t, w, channels, bitdepth > 8);
@@ -467,8 +460,6 @@ const int add) {
 	const bool match_grid = d->cosit | (sub == 1);
 	c->samp = 1.f/sub;
 	c->off = match_grid ? 0 : -.5f + fractf(1.f/(sub*sub));
-	//c->init = add ? (add < 0 ? sub - 1 : 0) : 0;
-	//c->wrap = add ? (add < 0 ? 0 : sub - 1) : 0;
 	c->init = add < 0 ? sub - 1 : 0;
 	c->wrap = add < 0 ? 0 : sub - 1;
 	c->chg = match_grid
@@ -591,7 +582,8 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	}
 }
 
-static uint8_t * planar_convert(const struct imgconv *state, size_t y) {
+static uint8_t * planar_convert(const struct imgconv *state, size_t y,
+void *restrict tgt) {
 	/* Produce one row of interleaved output out of a planar and possibly
 	 * rotated image, doing linear interpolation on subsampled planes. */
 	const struct wuimg *src = state->tmp ? state->tmp : state->src;
@@ -619,12 +611,12 @@ static uint8_t * planar_convert(const struct imgconv *state, size_t y) {
 		yadd = 0;
 	}
 
-	const size_t rowdims = dst->w * channels;
-	float *tgt = (float *)state->row;
-	const float *limit = tgt + rowdims;
+	const size_t rowlen = dst->w * channels;
+	float *row = (float *)state->row;
+	const float *limit = row + rowlen;
 	for (uint8_t out_z = 0; out_z < channels; ++out_z) {
 		const uint8_t z = state->swz[out_z];
-		float *pix = tgt + out_z;
+		float *pix = row + out_z;
 		if (p[z].x.subsamp <= 1 && p[z].y.subsamp <= 1) {
 			full_plane(pix, limit, channels, p+z, ix, xadd, iy,
 				yadd, ud);
@@ -634,8 +626,8 @@ static uint8_t * planar_convert(const struct imgconv *state, size_t y) {
 		}
 	}
 	return (state->color_passthrough)
-		? pack_row_nomul(state->row, tgt, dst->w, channels, dst->bitdepth > 8)
-		: convert_row(state->row, tgt, dst->w, channels, dst->bitdepth,
+		? pack_row_nomul(tgt, row, dst->w, channels, dst->bitdepth > 8)
+		: convert_row(tgt, row, dst->w, channels, dst->bitdepth,
 			src, state);
 }
 
@@ -650,9 +642,8 @@ const ptrdiff_t stride, const struct palette *pal, const size_t w) {
 	return tgt;
 }
 
-static uint8_t * interleaved_convert(void *restrict unpack,
+static uint8_t * interleaved_convert(void *restrict tgt, void *restrict unpack,
 const ptrdiff_t stride, const struct wuimg *src, const struct imgconv *state) {
-	void *restrict tgt = state->row;
 	const struct wuimg *dst = state->dst;
 	if (state->pal) {
 		return pal_convert(tgt, unpack, stride, state->pal, dst->w);
@@ -679,7 +670,8 @@ const struct wuimg *src, const size_t y) {
 	return u_row;
 }
 
-static uint8_t * get_row(const struct imgconv *state, size_t y) {
+static uint8_t * get_row(const struct imgconv *state, size_t y,
+void *restrict tgt) {
 	/* Image may have half-rotations and may be mirrored. It's not
 	 * planar, but may require unpacking before accessing pixels. */
 	const struct wuimg *src = state->src;
@@ -692,10 +684,11 @@ static uint8_t * get_row(const struct imgconv *state, size_t y) {
 		u_row += (src->w - 1) * (size_t)pix_size;
 		pix_size = -pix_size;
 	}
-	return interleaved_convert(u_row, pix_size, src, state);
+	return interleaved_convert(tgt, u_row, pix_size, src, state);
 }
 
-static uint8_t * get_rotated_row(const struct imgconv *state, size_t col) {
+static uint8_t * get_rotated_row(const struct imgconv *state, size_t col,
+void *restrict tgt) {
 	/* Image has a quarter rotation and may be mirrored. It's not planar,
 	 * and any required unpacking was done during initialization. */
 
@@ -718,16 +711,17 @@ static uint8_t * get_rotated_row(const struct imgconv *state, size_t col) {
 			stride = -stride;
 		}
 	}
-	return interleaved_convert(data, stride, src, state);
+	return interleaved_convert(tgt, data, stride, src, state);
 }
 
-uint8_t * imgconv_get_row(const struct imgconv *state, size_t y) {
+uint8_t * imgconv_get_row(const struct imgconv *state, size_t y,
+void *restrict tgt) {
 	if (state->src->mode == image_mode_planar) {
-		return planar_convert(state, y);
+		return planar_convert(state, y, tgt);
 	} else if (state->src->rotate & 1) {
-		return get_rotated_row(state, y);
+		return get_rotated_row(state, y, tgt);
 	}
-	return get_row(state, y);
+	return get_row(state, y, tgt);
 }
 
 static void data_unpack(uint8_t *restrict t, const uint8_t *restrict s,
@@ -831,7 +825,7 @@ const struct wuimg *src, const double range) {
 }
 
 const char * imgconv_init(struct imgconv *state, const struct wuimg *dst,
-const struct wuimg *src, const bool wont_modify) {
+const struct wuimg *src) {
 	if (src->attr == pix_float && src->bitdepth < 32) {
 		return "Conversion from half-precision floats not yet supported";
 	} else if (src->channels > 4) {
@@ -842,7 +836,6 @@ const struct wuimg *src, const bool wont_modify) {
 		.src = src,
 		.dst = dst,
 		.op = op_noop,
-		.wont_modify = wont_modify,
 		.unpack_depth = dst->bitdepth,
 		.unpack_ch = dst->channels,
 	};

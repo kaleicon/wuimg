@@ -18,9 +18,6 @@ struct imgconv {
 	bool transfer;
 	bool color_passthrough;
 
-	// caller pinky-promises not to modify returned data
-	bool wont_modify;
-
 	struct color_convert color;
 	cmsHTRANSFORM xfr;
 	size_t row_len;
@@ -34,9 +31,10 @@ struct imgconv {
 
 void imgconv_close(struct imgconv *state);
 
-uint8_t * imgconv_get_row(const struct imgconv *state, size_t y);
+uint8_t * imgconv_get_row(const struct imgconv *state, size_t y,
+void *restrict tgt);
 
 const char * imgconv_init(struct imgconv *state, const struct wuimg *dst,
-const struct wuimg *src, bool wont_modify);
+const struct wuimg *src);
 
 #endif /* WU_IMGCONV */

@@ -75,15 +75,12 @@ static void pos_print(const size_t i, const struct file_list *entries) {
 	printf("%zu/%zu, %s\n", i+1, entries->nr, entries->name[i]);
 }
 
-static void conv_gl_close(void *ptr) {
-	gl_reader_close(ptr);
+static void conv_get_row(void *state, size_t y, void *restrict tgt) {
+	gl_reader_read_row(state, y, tgt);
 }
-static uint8_t * conv_get_row(void *ptr, size_t y) {
-	return gl_reader_read_row(ptr, y);
-}
-static const char * conv_set_image(void *ptr, const struct wuimg *dst,
-const struct wuimg *src, const bool read_only) {
-	return gl_reader_set(ptr, dst, src, read_only);
+static const char * conv_set_image(void *state, const struct wuimg *dst,
+const struct wuimg *src) {
+	return gl_reader_set(state, dst, src);
 }
 
 static enum wu_error convert_files(const struct file_list *entries,
@@ -102,7 +99,6 @@ const struct write_args *args) {
 		.state = &reader,
 		.set_image = conv_set_image,
 		.get_row = conv_get_row,
-		.close = conv_gl_close,
 	};
 	const int r = write_filelist(args, &writer, (int)entries->nr,
 		entries->name, &conf);

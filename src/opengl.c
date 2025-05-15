@@ -923,11 +923,8 @@ const struct wu_state *state) {
 	return mode_upload(context, img, &params, region);
 }
 
-void gl_reader_close(struct gl_reader_context *reader) {
-	free(reader->row);
-}
-
-uint8_t * gl_reader_read_row(struct gl_reader_context *reader, const size_t y) {
+void gl_reader_read_row(struct gl_reader_context *reader, const size_t y,
+void *restrict tgt) {
 	reader->state.y_offset = (float)y;
 	reader->context.update = gl_update_matrix;
 	gl_draw(&reader->context, &reader->state);
@@ -935,19 +932,11 @@ uint8_t * gl_reader_read_row(struct gl_reader_context *reader, const size_t y) {
 	const struct wuimg *dst = reader->dst;
 	const struct gl_tex_params tex = get_tex_params(dst->bitdepth,
 		dst->channels, pix_normal);
-	glReadPixels(0, 0, (GLsizei)dst->w, 1, tex.fmt, tex.type, reader->row);
-	return reader->row;
+	glReadPixels(0, 0, (GLsizei)dst->w, 1, tex.fmt, tex.type, tgt);
 }
 
 const char * gl_reader_set(struct gl_reader_context *reader,
-const struct wuimg *dst, const struct wuimg *src, const bool _read_only) {
-	(void)_read_only;
-	// Alloc row first so that it's always safe to call gl_reader_close()
-	reader->row = malloc(wuimg_stride(dst));
-	if (!reader->row) {
-		return "Failed to allocate row memory";
-	}
-
+const struct wuimg *dst, const struct wuimg *src) {
 	reader->dst = dst;
 	const enum gl_upload_status st = gl_texture_upload(&reader->context, src,
 		heed_never);
@@ -971,14 +960,8 @@ const struct wuimg *dst, const struct wuimg *src, const bool _read_only) {
 		.h = (int)dst->h,
 	};
 	gl_viewport(&reader->context, &dims);
-
-	/*if (dst->layout == pix_gray) {
-		tex_2d_swizzle(pix_rgba);
-	}*/
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		return "GL framebuffer not complete";
-	}
-	return NULL;
+	return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+		? NULL : "GL framebuffer not complete";
 }
 
 static void enable_bind_tex(const GLint idx, const GLuint *texs,
