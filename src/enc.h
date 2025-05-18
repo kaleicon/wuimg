@@ -4,7 +4,7 @@
 
 #include "raster/wuimg.h"
 
-typedef void (*enc_best_fit_t)(struct wuimg *dst, const struct wuimg *src);
+typedef bool (*enc_best_fit_t)(struct wuimg *dst, const struct wuimg *src);
 typedef const char * (*enc_init_t)(void *state, const struct wuimg *dst,
 	const struct wuimg *src, FILE *ofp);
 typedef size_t (*enc_write_row_t)(void *state, const struct wuimg *dst,

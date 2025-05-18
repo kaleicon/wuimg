@@ -45,6 +45,7 @@ struct write_file {
 	FILE *ofp;
 	int dirfd;
 	bool with_idx;
+	bool passthrough; // Skip conversion, pass original image to encoder
 	void *enc_state;
 	struct wuimg dst;
 };
@@ -61,27 +62,35 @@ static int find_codec(const char *ext) {
 static const char * write_frame(const struct enc_fn *enc,
 const struct wuimg *dst, const struct wuimg *src, struct write_file *out,
 struct write_writer *writer, const int frame) {
-	const char *msg = NULL;
-	if (frame == 0 || !enc->anim) {
+	const char *msg = out->passthrough
+		? NULL : writer->set_image(writer->state, dst, src);
+	if (!msg && (frame == 0 || !enc->anim)) {
 		msg = enc->init(out->enc_state, dst, src, out->ofp);
 	}
 	if (!msg) {
 		size_t w = 0;
-		const size_t stride = wuimg_stride(dst);
-		for (size_t y = 0; y < dst->h; ++y) {
-			uint8_t *tgt = dst->data + (enc->write_row ? 0 : stride*y);
-			writer->get_row(writer->state, y, tgt);
-			if (enc->write_row) {
-				w += enc->write_row(out->enc_state, dst,
-					out->ofp, tgt);
+		if (!out->passthrough) {
+			const size_t stride = wuimg_stride(dst);
+			for (size_t y = 0; y < dst->h; ++y) {
+				uint8_t *tgt = dst->data
+					+ (enc->write_row ? 0 : stride*y);
+				writer->get_row(writer->state, y, tgt);
+				if (enc->write_row) {
+					w += enc->write_row(out->enc_state, dst,
+						out->ofp, tgt);
+				}
 			}
 		}
-		if (!enc->write_row) {
-			w = enc->write_frame(out->enc_state, dst, out->ofp, frame);
+		if (out->passthrough || !enc->write_row) {
+			w = enc->write_frame(out->enc_state, dst,
+				out->ofp, frame);
 		}
 		if (!w) {
 			msg = "No data written";
 		}
+	}
+	if (!out->passthrough && writer->close) {
+		writer->close(writer->state);
 	}
 	return msg;
 }
@@ -90,30 +99,26 @@ static const char * write_sub_img(const struct wuimg *src,
 struct write_file *out, struct write_writer *writer, const struct enc_fn *enc,
 const int frame) {
 	const char *err_msg = NULL;
-	struct wuimg *dst = &out->dst;
 	if (frame == 0) {
-		*dst = (struct wuimg){0};
-		enc->best_fit(dst, src);
-		if (wuimg_verify(dst) == wu_ok) {
-			dst->data = calloc(wuimg_stride(dst),
-				enc->write_row ? 1 : dst->h);
-			if (!dst->data) {
-				err_msg = "Output image allocation failure";
+		out->dst = (struct wuimg){0};
+		out->passthrough = enc->best_fit(&out->dst, src);
+		if (!out->passthrough) {
+			if (wuimg_verify(&out->dst) == wu_ok) {
+				const size_t rows = enc->write_row ? 1 : out->dst.h;
+				out->dst.data = malloc(wuimg_stride(&out->dst) * rows);
+				if (!out->dst.data) {
+					err_msg = "Output image allocation failure";
+				}
+			} else {
+				err_msg = "Output image failed verification."
+					" This is likely a programmer oversight.";
 			}
-		} else {
-			err_msg = "Output image failed verification."
-				" This is likely a programmer oversight.";
 		}
 	}
 	if (!err_msg) {
 		const watch_t w = watch_look();
-		err_msg = writer->set_image(writer->state, dst, src);
-		if (!err_msg) {
-			err_msg = write_frame(enc, dst, src, out, writer, frame);
-		}
-		if (writer->close) {
-			writer->close(writer->state);
-		}
+		const struct wuimg *dst = out->passthrough ? src : &out->dst;
+		err_msg = write_frame(enc, dst, src, out, writer, frame);
 		watch_report("Converted", w, report_info);
 	}
 	return err_msg;
@@ -189,10 +194,10 @@ const struct image_context *image, const struct wuimg *src, const bool failed) {
 	const bool final_frame = failed
 		|| (size_t)(image->state.frame + 1) == wuimg_frames_nr(src);
 	const struct enc_fn *enc = ENC_TABLE[args->codec].enc;
+	if (final_frame || (!enc->anim && args->stdout)) {
+		wuimg_free(&out->dst);
+	}
 	if (final_frame || !enc->anim) {
-		if (final_frame) {
-			wuimg_free(&out->dst);
-		}
 		if (enc->end) {
 			enc->end(out->enc_state);
 		}

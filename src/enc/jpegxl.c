@@ -137,7 +137,7 @@ const struct wuimg *src, FILE *ofp) {
 	return process_output(js, ofp) ? NULL : "couldn't write header";
 }
 
-static void best_fit(struct wuimg *dst, const struct wuimg *src) {
+static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
 	/* JXL can handle rotations and colorspaces like we do, the issue is
 	 * passing data directly. Until then, we convert everything to sRGB as
 	 * with PAM. */
@@ -159,6 +159,7 @@ static void best_fit(struct wuimg *dst, const struct wuimg *src) {
 		break;
 	}
 	dst->alpha = alpha_unassociated;
+	return false;
 }
 
 const struct enc_fn jpegxl_enc = {
