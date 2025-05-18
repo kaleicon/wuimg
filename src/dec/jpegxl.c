@@ -4,15 +4,18 @@
 
 #include "wudefs.h"
 #include "misc/bit.h"
+#include "misc/endian.h"
 #include "misc/math.h"
 #include "misc/metadata.h"
 
 struct jpegxl_state {
 	JxlDecoder *jd;
 	struct wustr box;
+	size_t box_written;
 	void *runner;
 	int idx;
-	enum metadata_type pending;
+	bool decompress;
+	enum metadata_type pending:8;
 	JxlBasicInfo info;
 	JxlPixelFormat fmt;
 };
@@ -26,41 +29,84 @@ static void jpegxl_end(struct image_file *infile) {
 	wustr_free(&ds->box);
 }
 
+static bool require_box_buf(struct wustr *box, const uint64_t size) {
+	return (box->len < size) ? wustr_realloc(box, size) : true;
+}
+
+static bool bigger_box_buf(struct wustr *box) {
+	return wustr_realloc(box, box->len + (box->len/2));
+}
+
+static size_t release_box_buf(struct jpegxl_state *ds) {
+	return ds->box.len - JxlDecoderReleaseBoxBuffer(ds->jd);
+}
+
 static void process_metadata(struct image_file *infile,
 struct jpegxl_state *ds) {
 	if (ds->pending) {
-		if (JxlDecoderReleaseBoxBuffer(ds->jd) == 0) {
-			metadata_parse(ds->pending, ds->box.str,
-				ds->box.len, &infile->metadata);
+		size_t written = release_box_buf(ds);
+		uint8_t *buf = ds->box.str;
+		if (ds->pending == metadata_exif) {
+			if (written > 4) {
+				uint32_t off = buf_endian32(ds->box.str, big_endian);
+				written -= 4;
+				buf += 4;
+				if (off < written) {
+					buf += off;
+					written -= off;
+				}
+			} else {
+				written = 0;
+			}
+		}
+		if (written) {
+			metadata_parse(ds->pending, buf, written,
+				&infile->metadata);
 		}
 		ds->pending = metadata_none;
 	}
 }
 
-static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
-	process_metadata(infile, ds);
-	;JxlBoxType type;
-	if (JxlDecoderGetBoxType(ds->jd, type, JXL_TRUE) == JXL_DEC_SUCCESS) {
-		enum metadata_type pending = metadata_none;
-		if (!memcmp(type, "Exif", sizeof(type))) {
-			pending = metadata_exif;
-		} else if (!memcmp(type, "xml ", sizeof(type))) {
-			pending = metadata_xmp;
-		} else {
-			if (!memcmp(type, "jbrd", sizeof(type))) {
-				tree_bud_leaf_bool(&infile->metadata,
-					"JPEG source", true);
-			}
-			return;
-		}
+static void realloc_metadata(struct jpegxl_state *ds) {
+	const size_t written = release_box_buf(ds);
+	if (bigger_box_buf(&ds->box)) {
+		JxlDecoderSetBoxBuffer(ds->jd, ds->box.str + written,
+			ds->box.len - written);
+	}
+}
 
-		uint64_t size;
-		if (JxlDecoderGetBoxSizeRaw(ds->jd, &size) == JXL_DEC_SUCCESS
-		&& wustr_realloc(&ds->box, size)
-		&& JxlDecoderSetBoxBuffer(ds->jd, ds->box.str, ds->box.len)
-		== JXL_DEC_SUCCESS) {
-			ds->pending = pending;
+static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
+	ds->pending = metadata_none;
+	ds->box_written = 0;
+	JxlBoxType type;
+	if (JxlDecoderGetBoxType(ds->jd, type, ds->decompress) != JXL_DEC_SUCCESS) {
+		return;
+	}
+
+	enum metadata_type pending = metadata_none;
+	if (!memcmp(type, "Exif", sizeof(type))) {
+		pending = metadata_exif;
+	} else if (!memcmp(type, "xml ", sizeof(type))) {
+		pending = metadata_xmp;
+	} else {
+		if (!memcmp(type, "jbrd", sizeof(type))) {
+			tree_bud_leaf_bool(&infile->metadata,
+				"JPEG source", true);
 		}
+		return;
+	}
+
+	uint64_t size;
+	if (JxlDecoderGetBoxSizeContents(ds->jd, &size) != JXL_DEC_SUCCESS
+	&& !ds->box.len) {
+		size = BUFSIZ;
+	}
+	if (!require_box_buf(&ds->box, size)) {
+		return;
+	}
+	if (JxlDecoderSetBoxBuffer(ds->jd, ds->box.str, ds->box.len)
+	== JXL_DEC_SUCCESS) {
+		ds->pending = pending;
 	}
 }
 
@@ -146,9 +192,9 @@ static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 				!= JXL_DEC_SUCCESS) {
 					return wu_invalid_params;
 				}
-				/* Notice that time units are given as ticks
-				 * _per second_. Hence, you have to do 'den/num'
-				 * to get the duration of a tick. */
+				/* Time units are given as ticks per second.
+				 * Hence, a frame is displayed for
+				 * 'den * duration / num' seconds. */
 				const uint32_t num = ds->info.animation.tps_numerator;
 				const uint32_t den = ds->info.animation.tps_denominator;
 				const uint32_t duration = den*header.duration;
@@ -174,9 +220,6 @@ static void input_init(struct image_file *infile, struct jpegxl_state *ds) {
 
 static void rewind_anim(struct image_file *infile, struct jpegxl_state *ds) {
 	JxlDecoderRewind(ds->jd);
-	/* Supposedly SubscribeEvents is kept between rewinds, but that's a lie.
-	 * That was a fun bug to hunt. */
-	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE);
 	input_init(infile, ds);
 }
 
@@ -236,9 +279,6 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 		case JXL_DEC_COLOR_ENCODING:
 			set_colorspace(img, ds->jd);
 			break;
-		case JXL_DEC_BOX:
-			read_metadata(infile, ds);
-			break;
 		case JXL_DEC_FRAME:
 			++ds->idx;
 			JxlFrameHeader header;
@@ -247,14 +287,22 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 				return wu_invalid_params;
 			}
 			break;
-		case JXL_DEC_SUCCESS:
+		case JXL_DEC_BOX:
+			read_metadata(infile, ds);
+			break;
+		case JXL_DEC_BOX_NEED_MORE_OUTPUT:
+			realloc_metadata(ds);
+			break;
+		case JXL_DEC_BOX_COMPLETE:
 			process_metadata(infile, ds);
+			break;
+		case JXL_DEC_SUCCESS:
 			return wu_ok;
 		default:
-			return wu_invalid_params;
+			return wu_invalid_header;
 		}
 	}
-	return wu_invalid_params;
+	return wu_invalid_header;
 }
 
 static enum wu_error jpegxl_dec(struct image_file *infile,
@@ -271,9 +319,9 @@ const struct wu_conf *wuconf) {
 	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_BASIC_INFO
 		| JXL_DEC_COLOR_ENCODING
 		| JXL_DEC_BOX
-		| JXL_DEC_FRAME);
-	// TODO: requires growing buffers as data is decompressed
-	JxlDecoderSetDecompressBoxes(ds->jd, JXL_FALSE);
+		| JXL_DEC_FRAME
+		| JXL_DEC_BOX_COMPLETE);
+	ds->decompress = JxlDecoderSetDecompressBoxes(ds->jd, JXL_TRUE) == JXL_DEC_SUCCESS;
 
 	enum wu_error st = gather_info(infile, wuconf, ds);
 	if (st != wu_ok) {
@@ -291,6 +339,7 @@ const struct wu_conf *wuconf) {
 	}
 
 	rewind_anim(infile, infile->dec_state);
+	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE);
 	const uint32_t threads = JxlResizableParallelRunnerSuggestThreads(
 		img->w, img->h);
 	if (threads > 1) {
