@@ -181,12 +181,14 @@ window_dep_list += [
 
 if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 	wayland_scanner = find_program('wayland-scanner')
+	wayland_proto = dependency('wayland-protocols')
+	base_path = wayland_proto.get_variable('pkgdatadir')
 	protocol_names = ['xdg-shell']
 	type = [['private-code', '.c'], ['client-header', '.h']]
 	foreach p : protocol_names
 		foreach t : type
 			name = '-'.join([p, t[0]])
-			path = '/usr/share/wayland-protocols/stable/%/%.xml'.replace('%', p)
+			path = base_path / 'stable/%/%.xml'.replace('%', p)
 			window_src_list += custom_target(name,
 				output : [name + t[1]],
 				command : [wayland_scanner, t[0], path, '@OUTPUT@'])
