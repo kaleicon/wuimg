@@ -170,6 +170,7 @@ dep_list += [cc.find_library('m', required : false),
 	dependency('exiv2'),
 	dependency('lcms2'),
 	dependency('icu-i18n'),
+	dependency('icu-uc'),
 	dependency('uchardet')]
 window_dep_list += [dependency('libarchive'),
 	dependency('epoxy')]
