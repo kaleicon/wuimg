@@ -166,14 +166,18 @@ foreach backend, libs : window_map
 	endif
 endforeach
 
-dep_list += [cc.find_library('m', required : false),
+dep_list += [
+	cc.find_library('m', required : false),
 	dependency('exiv2'),
 	dependency('lcms2'),
 	dependency('icu-i18n'),
 	dependency('icu-uc'),
-	dependency('uchardet')]
-window_dep_list += [dependency('libarchive'),
-	dependency('epoxy')]
+	dependency('uchardet')
+]
+window_dep_list += [
+	dependency('libarchive', required : false),
+	dependency('epoxy', required : false)
+]
 
 if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 	wayland_scanner = find_program('wayland-scanner')
