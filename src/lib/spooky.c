@@ -25,7 +25,8 @@ static size_t tre_rle(uint16_t *dst, const size_t dst_len,
 const uint8_t *restrict src, size_t src_len) {
 	size_t d = 0;
 	size_t s = 0;
-	if (!src[s]) { // Prevent out of bounds read at the beginning
+	// Prevent out of bounds read on the second iteration
+	if (!src[s]) {
 		return s;
 	}
 	for (bool rle = false; s + 1 < src_len; rle = !rle) {
@@ -71,6 +72,7 @@ static enum wu_error common_setup(struct wuimg *img, const bool alpha) {
 	img->channels = 1;
 	img->bitdepth = alpha ? 24 : 16;
 	img->layout = pix_bgra;
+	// Never thought something as bizarre as 0x1565 would ever happen
 	if (wuimg_bitfield_from_id(img, alpha << 12 | 0x565)) {
 		return wuimg_verify(img);
 	}
@@ -113,9 +115,9 @@ const uint16_t xres) {
 
 	 * TRS Chunk:
 		Offset  Type    Name
-		0       u16     Skip         // Advance this many _bytes_
+		0       u16     Skip         // Advance this many screen *bytes*
 		2       u16     Len          // Nr of Pixels minus 1
-		4       u16     Pixels[len]
+		4       u16     Pixels[Len]
 
 	 * The sprite is meant to be drawn on a screen that's `xres` pixels
 	 * wide, with appropiate skips to get from one line to the next.
@@ -127,7 +129,10 @@ const uint16_t xres) {
 		s += 2;
 
 		size_t screen_ptr = 0;
+		const uint8_t shl = which_end() == big_endian ? 8 : 0;
 		for (uint16_t chunk = 0; chunk < nr && s + 4 < src_len; ++chunk) {
+			/* Not sure if skips can be odd, but it'd be too much
+			 * trouble to handle that so lets pretend they won't. */
 			const uint16_t skip = buf_endian16(src + s, big_endian) / 2;
 			const size_t len = buf_endian16(src + s + 2, big_endian) + 1;
 			s += 4;
@@ -140,8 +145,9 @@ const uint16_t xres) {
 				break;
 			}
 			for (size_t i = 0; i < len; ++i) {
-				uint32_t p = 1 << 16 | buf_endian16(src + s, big_endian);
-				p <<= (which_end() == big_endian) ? 8 : 0;
+				uint32_t p = 1 << 16 // alpha bit
+					| buf_endian16(src + s, big_endian);
+				p <<= shl;
 				memcpy(dst + d*3, &p, 3);
 				++d;
 				s += 2;
@@ -160,10 +166,11 @@ const uint16_t i) {
 		const uint32_t unpacked = buf_endian32(sprite + 2, big_endian);
 		const uint32_t packed = buf_endian32(sprite + 6, big_endian);
 		const uint32_t pos = packed ? packed : unpacked;
-		if (pos) {
-			const size_t len = img->w * img->h;
-			struct mparser mp = desc->mp;
+		struct mparser mp = desc->mp;
+		if (pos && pos < mp.len) {
+			mp.pos = pos;
 			struct wuptr src = mp_remaining(&mp);
+			const size_t len = img->w * img->h;
 			if (packed) {
 				w = sprite_unpack(img->data, len, src.ptr,
 					src.len, img->w, desc->xres);
@@ -191,7 +198,6 @@ const uint16_t i) {
 	const uint8_t *sprite = desc->sprites + 10*i;
 	img->w = sprite[0];
 	img->h = sprite[1];
-	// Never thought something as bizarre as 0x1565 would ever exist
 	const bool packed = buf_endian32(sprite + 6, big_endian);
 	return common_setup(img, packed);
 }
