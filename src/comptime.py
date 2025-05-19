@@ -1040,6 +1040,8 @@ def graph_or_hex(i, readable):
 	return '0x{:02x}'.format(i)
 
 def u8_array(b, limit=None, readable=False):
+	if isinstance(b, str):
+		b = b.encode()
 	if not limit:
 		limit = len(b)
 	elif len(b) > limit:
@@ -1084,7 +1086,9 @@ class FmtExt(collections.namedtuple('ext', ('ext', 'id'))):
 	def declare(self, ext_limit):
 		if len(self.ext) > ext_limit:
 			raise BaseException('extension exceeds length limit: ' + self.ext)
-		return '\t{{ .ext="{}", .id={} }},'.format(*self)
+		return '\t{{ .ext={{ {} }}, .id={} }},'.format(
+			u8_array(self.ext, ext_limit, True),
+			self.id)
 
 	def __lt__(self, other):
 		if self[0] == other[0]:
@@ -1141,11 +1145,12 @@ class FmtDesc(collections.namedtuple('desc', ('dec', 'name', 'info'))):
 		suffix = 'desc' if is_auto else 'fn'
 		return '''\
 		{{
-			.name = "{0}",
+			.name = {{ {0} }},
 			.description = "{1}",
 			.is_auto = {2},
-			.dec.{3} = &{0}_{3},
-		}},'''.format(name, info['desc'], is_auto_str, suffix)
+			.dec.{3} = &{4}_{3},
+		}},'''.format(u8_array(name, name_limit, True),
+			info['desc'], is_auto_str, suffix, name)
 
 	def get_exts(self, id):
 		yield from ext_iter(self.info.get('ext'))
