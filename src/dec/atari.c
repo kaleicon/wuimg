@@ -105,6 +105,23 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+/* STAD PAC, Arabesque */
+static struct wu_st init_stad(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct wuimg *img = infile->sub_img;
+	struct stad_desc desc;
+	struct wu_st st = stad_init(&desc, img, infile->map);
+	if (wu_isok(st)) {
+		tree_add_leaf_utf8_limit(&infile->metadata, "Variant",
+			wuptr_mem(desc.sig, sizeof(desc.sig)));
+		if (wuimg_exceeds_limit(img, conf)) {
+			return WUERR_HERE(wu_exceeds_size_limit);
+		}
+		st = stad_decode(&desc, img);
+	}
+	return st;
+}
+
 /* Tiny Stuff */
 static void tiny_end(struct image_file *infile) {
 	struct tiny_desc *desc = infile->dec_state;
@@ -167,6 +184,12 @@ const struct image_fn ez_fn = {
 const struct image_fn bld_fn = {
 	.alloc_single = true,
 	.dec = bld_dec,
+};
+
+const struct image_fn stad_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.init = init_stad,
 };
 
 const struct image_fn tiny_fn = {

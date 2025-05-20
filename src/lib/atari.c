@@ -152,6 +152,7 @@ const void *restrict pal) {
 	return wu_invalid_header;
 }
 
+
 /* Dali */
 
 size_t dali_decode(struct dali_desc *desc, struct wuimg *img) {
@@ -196,6 +197,7 @@ const uint8_t ext[static 3]) {
 	}
 	return wu_unknown_file_type;
 }
+
 
 /* DEGAS */
 
@@ -345,7 +347,9 @@ FILE *ifp) {
 	return wu_unexpected_eof;
 }
 
+
 /* EZ-Art Professional */
+
 size_t ez_decode(struct mparser mp, struct wuimg *img) {
 	size_t w = 0;
 	if (wuimg_alloc_noverify(img)) {
@@ -383,6 +387,7 @@ const struct wuptr mem) {
 	}
 	return wu_unexpected_eof;
 }
+
 
 /* MegaPaint */
 
@@ -459,6 +464,181 @@ enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
 	}
 	return wu_unexpected_eof;
 }
+
+
+/* STAD PAC, Arabesque
+ * Arabesque headers from "All Files 46.zip/MI-3/BINARY_1/STAD.PAC/PAC_A_OS.S"
+https://www.mirari.fr/file/browse/506?folder=1319
+*/
+
+static void transpose_bytes(uint8_t *restrict dst, const uint8_t *restrict src) {
+	const size_t w = 640/8;
+	const size_t h = 400;
+	for (size_t y = 0; y < h; ++y) {
+		for (size_t x = 0; x < w; ++x) {
+			dst[x + y*w] = src[h*x + y];
+		}
+	}
+}
+
+struct wu_st stad_decode(const struct stad_desc *desc, struct wuimg *img) {
+	if (!wuimg_alloc_noverify(img)) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+
+	struct mparser mp = desc->mp;
+	const size_t dst_len = wuimg_size(img);
+	size_t d = 0;
+	uint8_t *dst;
+	if (desc->sig[3] == '6') {
+		dst = calloc(dst_len, 1);
+		if (!dst) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+	} else {
+		dst = img->data;
+	}
+
+	/* For Arabesque 89a, output pointer must be decreased by 2.
+	 * For 88b, pointer must be decreased by 1.
+	 * For the rest, stream contains only one block so this doesn't
+	 * matter. */
+	const uint8_t rewind = desc->block_nr > 1 && desc->sig[4] == '9'
+		? 2 : 1;
+	for (uint16_t i = 0; i < desc->block_nr; ++i) {
+		const struct wuptr src = mp_avail(&mp, desc->block[i]);
+		if (src.len > 3) {
+			d -= d >= rewind ? rewind : 0;
+			const uint8_t from_header = src.ptr[0];
+			const uint8_t header_val = src.ptr[1];
+			const uint8_t from_stream = src.ptr[2];
+			size_t s = 3;
+			while (s < src.len) {
+				const uint8_t flag = src.ptr[s];
+				++s;
+				size_t count = 1;
+				uint8_t val = flag;
+				if (flag == from_header) {
+					if (src.len - s < 1) {
+						break;
+					}
+					val = header_val;
+					count += src.ptr[s];
+					++s;
+				} else if (flag == from_stream) {
+					if (src.len - s < 2) {
+						break;
+					}
+					val = src.ptr[s];
+					++s;
+					count += src.ptr[s];
+					++s;
+				}
+				if (dst_len - d < count) {
+					/* Plenty of PAC files want to write
+					 * out of bounds. */
+					count = dst_len - d;
+					s = src.len;
+				}
+				memset(dst + d, val, count);
+				d += count;
+			}
+		}
+	}
+	if (dst != img->data) {
+		transpose_bytes(img->data, dst);
+		free(dst);
+	}
+	return wuerr_partial(d, dst_len);
+}
+
+static void block_from_filesize(struct stad_desc *desc) {
+	desc->block_nr = 1;
+	desc->block[0] = (uint16_t)zumin(0xffff, desc->mp.len - desc->mp.pos);
+}
+
+#define TWOCC(a, b) (a << 8 | b)
+struct wu_st stad_init(struct stad_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
+	/* STAD PAC header:
+		Offset  Type    Name
+		0       u8      Packing[4] // pM85 (horizontal) or pM86 (vertical)
+		4
+
+	 * Arabesque header:
+		0       u8      ID[6]      // ESO88a, ESO88b, ESO89a
+		6       u16     Width
+		8       u16     Height
+		10
+
+	 * Arabesque with ID == "ESO88b":
+		10      u16     BlockSizes[4]
+		18
+
+	 * Arabesque with ID == "ESO89a":
+		10      u16     BlockNr
+		12      u16     BlockSizes[BlockNr]
+
+	 * All cases are followed by the compressed data.
+	*/
+	*desc = (struct stad_desc) {
+		.mp = mp_wuptr(mem),
+		.block_nr = 4,
+	};
+	const uint8_t *hdr = mp_slice(&desc->mp, 10);
+	if (hdr) {
+		img->channels = 1;
+		img->bitdepth = 1;
+		img->align_sh = 1;
+		img->attr = pix_inverted;
+		const uint8_t stad[3] = {'p', 'M', '8'};
+		const uint8_t arabesque[4] = {'E', 'S', 'O', '8'};
+		if (!memcmp(hdr, stad, sizeof(stad))) {
+			memcpy(desc->sig, hdr, 4);
+			switch (hdr[3]) {
+			case '6':
+			case '5':
+				img->w = 640;
+				img->h = 400;
+				desc->mp.pos = 4;
+				block_from_filesize(desc);
+				return wuimg_verify_st(img);
+			}
+		} else if (!memcmp(hdr, arabesque, sizeof(arabesque))) {
+			memcpy(desc->sig, hdr, 6);
+			img->w = buf_endian16(hdr + 6, big_endian);
+			img->h = buf_endian16(hdr + 8, big_endian);
+			const uint16_t version = (uint16_t)(hdr[4] << 8 | hdr[5]);
+			switch (version) {
+			case TWOCC('9', 'a'):
+				hdr = mp_slice(&desc->mp, 2);
+				if (!hdr) {
+					return WUERR_HERE(wu_unexpected_eof);
+				}
+				desc->block_nr = buf_endian16(hdr, big_endian);
+				if (desc->block_nr < 1 || desc->block_nr > 4) {
+					return wuerr(wu_invalid_header,
+						"bad number of blocks");
+				}
+				// fallthrough
+			case TWOCC('8', 'b'):
+				hdr = mp_slice(&desc->mp, 2 * desc->block_nr);
+				if (!hdr) {
+					return WUERR_HERE(wu_unexpected_eof);
+				}
+				memcpy(desc->block, hdr, 2 * desc->block_nr);
+				endian_loop16(desc->block, big_endian, desc->block_nr);
+				return wuimg_verify_st(img);
+			case TWOCC('8', 'a'):
+				block_from_filesize(desc);
+				return wuimg_verify_st(img);
+			}
+		}
+		return WUERR_HERE(wu_unknown_file_type);
+	}
+	return WUERR_HERE(wu_unexpected_eof);
+}
+
 
 /* Tiny Stuff */
 

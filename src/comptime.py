@@ -132,6 +132,9 @@ DEC_MAP = {
 		},
 	},
 
+	"arabesque": {
+	},
+
 	"atari": {
 		"dali": {
 			"desc": "Dali uncompressed",
@@ -155,6 +158,22 @@ DEC_MAP = {
 		"bld": {
 			"desc": "MegaPaint",
 			"match": "bld"
+		},
+
+		"stad": {
+			"desc": "STAD PAC, Arabesque",
+			"ext": (
+				"pac",        # STAD PAC
+				"abm", "puf"  # Arabesque
+			),
+			"magic": (
+				b"pM85", b"pM86", # STAD PAC
+				b"ESO88b",        # Arabesque
+			),
+			"mask": (
+				# match Arabesque "ESO88a" and "ESO89a"
+				b"\xff\xff\xff\xff\xfe\xff", b"ESO88a",
+			),
 		},
 
 		"tiny": {

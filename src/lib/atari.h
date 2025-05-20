@@ -57,6 +57,19 @@ size_t bld_decode(struct bld_desc *desc, struct wuimg *img);
 
 enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp);
 
+/* STAD PAC, Arabesque */
+struct stad_desc {
+	struct mparser mp;
+	uint8_t sig[6];
+	uint16_t block_nr;
+	uint16_t block[4];
+};
+
+struct wu_st stad_decode(const struct stad_desc *desc, struct wuimg *img);
+
+struct wu_st stad_init(struct stad_desc *desc, struct wuimg *img,
+struct wuptr mem);
+
 /* Tiny Stuff */
 struct tiny_desc {
 	struct mparser mp;
