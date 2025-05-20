@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-
+// SPDX-FileCopyrightText: 2022 kaleido
 #include "misc/math.h"
 
 uint32_t uadd8_32(const uint32_t x, const uint32_t y) {

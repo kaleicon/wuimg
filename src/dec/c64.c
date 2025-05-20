@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2023 kaleido
 #include "rast_utils.h"
 #include "lib/c64.h"
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2023 kaleido
 #include <string.h>
 
 #include "misc/decomp.h"

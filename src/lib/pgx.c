@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2020 kaleido
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "pgx.h"

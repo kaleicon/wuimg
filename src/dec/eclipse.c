@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2025 kaleido
 #include "lib/eclipse.h"
 #include "wudefs.h"
 

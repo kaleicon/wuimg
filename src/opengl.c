@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2019 kaleido
 #include "opengl.h"
 #include "misc/bit.h"
 #include "misc/common.h"

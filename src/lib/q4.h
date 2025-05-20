@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2024 kaleido
 #ifndef LIB_Q4
 #define LIB_Q4
 

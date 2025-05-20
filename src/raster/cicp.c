@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2022 kaleido
 #include "cicp.h"
 
 static const char BT709[] = "BT.709-6";

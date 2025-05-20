@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2020 kaleido
 #include <exiv2/exif.hpp>
 #include <exiv2/xmp_exiv2.hpp>
 #include <exiv2/iptc.hpp>

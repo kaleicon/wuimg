@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2020 kaleido
 #ifndef WU_DISPLAY
 #define WU_DISPLAY
 

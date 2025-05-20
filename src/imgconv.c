@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2024 kaleido
 #include "misc/common.h"
 #include "misc/math.h"
 #include "imgconv.h"

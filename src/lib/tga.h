@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2020 kaleido
 #ifndef LIB_TGA
 #define LIB_TGA
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2025 kaleido
 #ifndef LIB_PXAN
 #define LIB_PXAN
 

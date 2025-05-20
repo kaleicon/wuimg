@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2021 kaleido
 #ifndef LIB_BMP
 #define LIB_BMP
 

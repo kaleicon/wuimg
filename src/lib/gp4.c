@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-
+// SPDX-FileCopyrightText: 2024 kaleido
 #include "lib/gp4.h"
 #include "misc/bit.h"
 #include "misc/endian.h"

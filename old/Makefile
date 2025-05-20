@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2019 kaleido
 CFLAGS = -Ofast -march=native -g -flto -std=gnu11 \
 	-Wall -Wextra -Werror -Wconversion -Wwrite-strings -Winline \
 	-Wpedantic -Wformat-signedness  -Wno-aggressive-loop-optimizations \

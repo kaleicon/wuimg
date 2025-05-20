@@ -1,0 +1,11 @@
+version = 1
+
+[[annotations]]
+path = "README"
+SPDX-License-Identifier = "CC0-1.0"
+SPDX-FileCopyrightText = "2023 kaleido"
+
+[[annotations]]
+path = "FORMATS.txt"
+SPDX-License-Identifier = "CC0-1.0"
+SPDX-FileCopyrightText = "NONE"

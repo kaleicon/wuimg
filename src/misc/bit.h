@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2022 kaleido
 #ifndef RASTER_BITSTREAM
 #define RASTER_BITSTREAM
 

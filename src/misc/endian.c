@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2022 kaleido
 #include "misc/endian.h"
 
 static uint16_t swap16(const uint16_t val) {

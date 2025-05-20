@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2024 kaleido
 #ifndef LIB_SPOOKY
 #define LIB_SPOOKY
 

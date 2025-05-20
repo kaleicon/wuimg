@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2021 kaleido
 #ifndef RASTER_PAL
 #define RASTER_PAL
 

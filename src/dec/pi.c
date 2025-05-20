@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2019 kaleido
 #include "rast_utils.h"
 #include "lib/pi.h"
 

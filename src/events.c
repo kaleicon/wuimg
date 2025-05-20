@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2020 kaleido
 #include "events.h"
 #include "wudefs.h"
 #include "misc/math.h"

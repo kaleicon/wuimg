@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2024 kaleido
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>

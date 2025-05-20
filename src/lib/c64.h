@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2023 kaleido
 #ifndef LIB_C64
 #define LIB_C64
 

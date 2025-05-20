@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2023 kaleido
 import os
 import sys
 import argparse

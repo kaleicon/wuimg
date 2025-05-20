@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2024 kaleido
 #ifndef WU_IMGCONV
 #define WU_IMGCONV
 

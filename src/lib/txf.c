@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2024 kaleido
 #include "misc/bit.h"
 #include "raster/fmt.h"
 #include "lib/txf.h"

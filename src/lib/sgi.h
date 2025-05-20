@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2020 kaleido
 #ifndef LIB_SGI
 #define LIB_SGI
 #include <stdio.h>

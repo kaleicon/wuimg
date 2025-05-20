@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2024 kaleido
 import sys
 import collections
 from itertools import batched, chain, starmap

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2023 kaleido
 #ifndef MISC_DECOMP
 #define MISC_DECOMP
 

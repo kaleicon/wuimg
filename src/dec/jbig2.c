@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: 0BSD
-// Headers that jbig2.h should include but doesn't
+// SPDX-FileCopyrightText: 2024 kaleido
 #include <stddef.h>
 #include <stdint.h>
 

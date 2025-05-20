@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2020 kaleido
 option('aliaspix', type : 'feature', description : 'AliasPIX and Vivid')
 option('atari', type : 'feature', description : 'Atari image formats')
 option('bethesda', type : 'feature', description : 'Bethesda BSI and GXA')

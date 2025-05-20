@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2022 kaleido
 import re
 import os
 import sys

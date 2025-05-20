@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2022 kaleido
 #include "wudefs.h"
 #include "misc/math.h"
 #include "lib/px.h"

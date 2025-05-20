@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2020 kaleido
 #ifndef LIB_SIXEL
 #define LIB_SIXEL
 #include "raster/wuimg.h"
