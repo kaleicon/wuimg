@@ -146,6 +146,8 @@ DEC_MAP = {
 			"match": (
 				"pi1", "pi2", "pi3",
 				"pc1", "pc2", "pc3",
+				# Uncompressed high-resolution GFA raytrace
+				"suh",
 			)
 		},
 
