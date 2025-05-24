@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/decomp.h"
 #include "misc/endian.h"
@@ -386,6 +387,301 @@ const struct wuptr mem) {
 		return wu_invalid_header;
 	}
 	return wu_unexpected_eof;
+}
+
+
+/* GFA Raytrace
+ * Referenced from
+https://github.com/th-otto/zview/blob/master/zview/plugins/gfartimg/gfartimg.c
+
+ * Raster decompression routine
+zview/plugins/gfartani/gfadepac.c
+
+ * Sample images
+zview/zview/tests/gfa_artist
+*/
+static unsigned gfa_colormap(unsigned idx, unsigned x) {
+	/* Reference code indexes into a 320*16-bytes array (gfatable.c),
+	 * but we don't like them look-up tables around here, so here's math
+	 * that produces the same results. It may be slower, idk, idc. */
+	switch (idx) {
+	case 0: break;
+	case 0xf:
+		if (!x) {
+			// Only case where output is 0
+			return 0;
+		}
+		// fallthrough
+	default:
+		;unsigned hi = (idx >> 1) * 20;
+		unsigned lo = (idx & 1);
+		unsigned first_band = hi + lo*4 + 40;
+		unsigned second_band = hi + lo*16 + 188;
+		idx += (x > first_band)*0xfu;
+		idx += (x > second_band)*0xfu;
+	}
+	return idx + 1; // output is at most 43
+}
+
+static void gfa_unpack(uint16_t *restrict dst, const size_t dst_len,
+const uint8_t *restrict src, const size_t src_len) {
+	struct bitstrm bs = bitstrm_from_bytes(src, src_len);
+	for (size_t i = 0; i < dst_len; ++i) {
+		const uint32_t b = bitstrm_msb_peek_high25(&bs);
+		uint16_t val;
+		uint32_t adv;
+		switch (b >> 30) {
+		case 0: case 1:
+			val = 0;
+			adv = 1;
+			break;
+		case 2:
+			val = 0xffff;
+			adv = 2;
+			break;
+		case 3:
+			/* bitstrm yields words in native-endian order,
+			 * but we need big-endian for High-Res 1-bit data
+			 * (read MSB to LSB, byte-per-byte) and for consistency
+			 * with uncompressed Low-Res. */
+			val = endian16((uint16_t)(b >> 14), big_endian);
+			adv = 18;
+			break;
+		}
+		dst[i] = val;
+		bitstrm_seek(&bs, adv);
+	}
+}
+
+static struct wu_st gfa_load_decompress(uint16_t *restrict dst,
+const size_t dst_len, FILE *ifp) {
+	// Worst case is two bits of overhead per every 16-bit word.
+	const size_t max = strip_base(dst_len, 18);
+	size_t len = zumin(max, file_remaining(ifp));
+	uint8_t *pack = malloc(len);
+	struct wu_st st;
+	if (pack) {
+		len = fread(pack, 1, len, ifp);
+		if (len) {
+			gfa_unpack(dst, dst_len, pack, len);
+			st = wuok();
+		} else {
+			st = WUERR_HERE(wu_unexpected_eof);
+		}
+		free(pack);
+	} else {
+		st = WUERR_HERE(wu_alloc_error);
+	}
+	return st;
+}
+
+static struct wu_st gfa_low(const struct gfa_desc *desc, struct wuimg *img) {
+	const size_t raster_size = VIDEO_RAM/desc->factor;
+	const size_t pal_elems = 9200/desc->factor;
+
+	/* For static images, the first 63 words of the palette are zeros,
+	 * with the file palette appended to it.
+	 * For animations it's the same, but with 47 words instead.
+	 * Since each scanline is paired with a 46-word palette (and can only
+	 * access 44 entries, the other two are out of reach), this means the
+	 * first scanline will always be full black, regardless of its
+	 * contents.
+	 * (The palette stored in the file is already 9200 (46*200) words in
+	 * size, so when adding the zeroed entries, the last 63 or 47 words
+	 * read from file also become unaccessible. Why all this wackiness?) */
+	const size_t pal_start = desc->frames ? 47 : 63;
+	const size_t pal_len = pal_elems + pal_start;
+	uint16_t *buf = calloc(raster_size + pal_len*sizeof(*buf), 1);
+	if (!buf) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+
+	/* For scl, first comes the palette then the compressed raster.
+	 * For sul, it's the uncompressed raster then the palette */
+	uint16_t *pal = buf;
+	uint16_t *src = buf + pal_len;
+	if (desc->compressed) {
+		fread(pal + pal_start, pal_elems, sizeof(*pal), desc->ifp);
+		struct wu_st st = gfa_load_decompress(src, raster_size/2,
+			desc->ifp);
+		if (!wu_isok(st)) {
+			return st;
+		}
+	} else {
+		fread(src, 1, raster_size, desc->ifp);
+		if (!fread(pal + pal_start, 1, pal_elems*2, desc->ifp)) {
+			return WUERR_HERE(wu_unexpected_eof);
+		}
+	}
+
+	/* Palette colors are in format 0000rrrrggggbbbb, but with the
+	 * least significant bit of each color moved to the top. */
+	for (size_t i = pal_start; i < pal_elems; ++i) {
+		pal[i] = (uint16_t)(
+			(pal[i] & 0x7777) << 1 | (pal[i] & 0x8888) >> 3
+		);
+	}
+
+	uint16_t *dst = (uint16_t *)img->data;
+	const size_t d_stride = ST_LOW_WIDTH;
+	const size_t s_stride = ST_LOW_WIDTH/4;
+	/* Skip the first row, as the image buffer comes zeroed and animations
+	 * can't modify it either.
+	 * (Why show it, anyway? Couldn't we set height to 319? People might
+	 * think it's a bug and get confused though. Or perhaps angry, maybe
+	 * even violent.) */
+	for (size_t y = 1; y < img->h; ++y) {
+		for (unsigned group = 0; group < ST_LOW_WIDTH/16; ++group) {
+			const size_t d_base = y*d_stride + group*16;
+			const size_t s_base = y*s_stride + group*4;
+			uint16_t planes[4];
+			for (uint8_t i = 0; i < ARRAY_LEN(planes); ++i) {
+				planes[i] = endian16(src[s_base+i], big_endian);
+			};
+			for (unsigned bit = 0; bit < 16; ++bit) {
+				unsigned idx = 0;
+				for (uint8_t plane = 0; plane < 4; ++plane) {
+					idx |= ((planes[plane] >> (15-bit)) & 1u)
+						<< plane;
+				}
+				idx = gfa_colormap(idx, group*16 + bit);
+				dst[d_base + bit] = pal[y*46 + idx];
+			}
+		}
+	}
+	free(buf);
+	return wuok();
+}
+
+struct wu_st gfa_decode(const struct gfa_desc *desc, struct wuimg *img,
+uint8_t frame) {
+	if (img->data || wuimg_alloc_noverify(img)) {
+		const long off = desc->frames
+			? (long)desc->frame[frame].off : 8;
+		fseek(desc->ifp, off, SEEK_SET);
+		if (desc->res == atari_st_res_high) {
+			return gfa_load_decompress((uint16_t *)img->data,
+				VIDEO_RAM/desc->factor/2, desc->ifp);
+		}
+		return gfa_low(desc, img);
+	}
+	return WUERR_HERE(wu_alloc_error);
+}
+
+static struct wu_st gfa_set_dims(struct gfa_desc *desc, struct wuimg *img) {
+	/* TODO: Should we divide Width by Factor? All images fill the right
+	 * side with black, but then again, "all" is just the 12 images linked
+	 * up there. */
+	if (desc->res == atari_st_res_low) {
+		img->w = ST_LOW_WIDTH;
+		img->h = ST_LOW_HEIGHT / desc->factor;
+		img->channels = 4;
+		img->bitdepth = 4;
+		img->alpha = alpha_ignore;
+		img->layout = pix_argb;
+	} else {
+		img->w = ST_HIGH_WIDTH;
+		img->h = ST_HIGH_HEIGHT / desc->factor;
+		img->channels = 1;
+		img->bitdepth = 1;
+		img->attr = pix_inverted;
+	}
+	return wuimg_verify_st(img);
+}
+
+static struct wu_st gfa_anim_setup(struct gfa_desc *desc, struct wuimg *img,
+const uint8_t hdr[53]) {
+	struct wu_st st = gfa_set_dims(desc, img);
+	if (!wu_isok(st)) {
+		return st;
+	}
+	struct image_frames *f = wuimg_frames_init(img, desc->frames);
+	if (!f) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+
+	uint32_t file_off = 53;
+	const uint32_t pal_size = (hdr[2] == 'h' ? 0 : 18400)/desc->factor;
+	for (uint8_t i = 0; i < desc->frames; ++i) {
+		desc->frame[i].off = file_off;
+		desc->frame[i].len = buf_endian32(hdr + 13 + i*4, big_endian);
+		file_off += pal_size + desc->frame[i].len;
+		wuimg_frame_set(img, i, 0, 0, img->w, img->h, 10, 100, true);
+	}
+	return wuok();
+}
+
+struct wu_st gfa_init(struct gfa_desc *desc, struct wuimg *img, FILE *ifp) {
+	/* GFA Raytrace headers:
+		Offset  Type    Name
+		0       u8      ID[3]         // "s[acu][hl]"
+		3       u8      CRLF[2]       // "\r\n"
+		5
+	 * 's' stands for screen.
+	 * 'u' and 'c' stand for uncompressed and compressed
+	 * 'a' stands for animated (and compressed)
+	 * 'l' and 'h' for low and high resolution.
+	 * "suh" is unused. PI3 DEGAS files are used instead.
+
+	 * GFA animated header continuation:
+		5       u32     Frames        // Bias of -1, max is 9 (10)
+		9       u32     SizeFactor    // 1, 2, 4, or 8
+		13      u32     FrameSize[10] // 0 for unused entries
+		53
+
+	 * GFA compressed and uncompressed header continuation:
+		5       u8      SizeFactor    // '1', '2', '4', or '8'
+		6       u8      CRLF[2]
+		8
+
+	 * Dimensions are the same as Low and High Atari modes, but with
+	 * Height divided by SizeFactor.
+	*/
+	uint8_t hdr[53];
+	if (fread(hdr, sizeof(hdr), 1, ifp)) {
+		const uint8_t crlf[2] = {'\r', '\n'};
+		if (hdr[0] == 's' && !memcmp(hdr + 3, crlf, sizeof(crlf))
+		&& (hdr[2] == 'h' || hdr[2] == 'l')) {
+			*desc = (struct gfa_desc) {
+				.ifp = ifp,
+				.compressed = true,
+				.res = hdr[2] == 'h'
+					? atari_st_res_high
+					: atari_st_res_low,
+			};
+			switch (hdr[1]) {
+			case 'u':
+				if (hdr[2] == 'h') {
+					break;
+				}
+				desc->compressed = false;
+				// fallthrough
+			case 'c':
+				if (!memcmp(hdr + 6, crlf, sizeof(crlf))) {
+					switch (hdr[5]) {
+					case '1': case '2': case '4': case '8':
+						desc->factor = hdr[5] - '0';
+						return gfa_set_dims(desc, img);
+					}
+				}
+				break;
+			case 'a':
+				desc->frames = buf_endian32(hdr + 5, big_endian);
+				if (desc->frames <= 9) {
+					++desc->frames;
+					desc->factor = buf_endian32(hdr + 9,
+						big_endian);
+					switch (desc->factor) {
+					case 1: case 2: case 4: case 8:
+						return gfa_anim_setup(desc, img,
+							hdr);
+					}
+				}
+			}
+		}
+		return WUERR_HERE(wu_invalid_header);
+	}
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 

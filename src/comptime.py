@@ -157,6 +157,22 @@ DEC_MAP = {
 			"magic": b"EZ\0\xc8",
 		},
 
+		"gfa": {
+			"desc": "GFA Raytrace",
+			"ext": ("sah", "sal", "sch", "scl", "sul"),
+			"mask": (
+				# "sah", "sal"
+				b"\xff\xff\xfb\xff\xff" b"\xff\xff\xff\xf0" b"\xff\xff\xff\xf0",
+				b"sah\r\n" b"\0\0\0\0" b"\0\0\0\0",
+				# "sch", "scl"
+				b"\xff\xff\xfb\xff\xff" b"\xf0\xff\xff",
+				b"sch\r\n" b"0\r\n",
+				# "sul"
+				b"\xff\xff\xff\xff\xff" b"\xf0\xff\xff",
+				b"sul\r\n" b"0\r\n",
+			),
+		},
+
 		"bld": {
 			"desc": "MegaPaint",
 			"match": "bld"

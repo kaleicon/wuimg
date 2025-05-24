@@ -47,6 +47,23 @@ size_t ez_decode(struct mparser mp, struct wuimg *img);
 
 enum wu_error ez_parse(struct mparser *mp, struct wuimg *img, struct wuptr mem);
 
+/* GFA Raytrace */
+struct gfa_desc {
+	FILE *ifp;
+	bool compressed;
+	enum atari_st_res res:8;
+	uint32_t factor;
+	uint32_t frames;
+	struct gfa_frame {
+		uint32_t off, len;
+	} frame[10];
+};
+
+struct wu_st gfa_decode(const struct gfa_desc *desc, struct wuimg *img,
+uint8_t frame);
+
+struct wu_st gfa_init(struct gfa_desc *desc, struct wuimg *img, FILE *ifp);
+
 /* MegaPaint */
 struct bld_desc {
 	FILE *ifp;

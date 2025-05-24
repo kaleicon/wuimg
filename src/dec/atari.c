@@ -87,6 +87,31 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+/* GFA Raytrace */
+static struct wu_st event_gfa(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
+	(void)_c;
+	switch (ev) {
+	case ev_subcycle: case ev_frame:
+		;uint8_t frame = (uint8_t)state->frame;
+		return gfa_decode(infile->dec_state, infile->sub_img, frame);
+	default: break;
+	}
+	return wuerr(wu_no_change, NULL);
+}
+
+static struct wu_st init_gfa(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct wu_st st = gfa_init(infile->dec_state, infile->sub_img,
+		infile->ifp);
+	if (wu_isok(st)) {
+		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		}
+	}
+	return st;
+}
+
 /* MegaPaint */
 static enum wu_error bld_dec(struct image_file *infile,
 const struct wu_conf *conf) {
@@ -179,6 +204,13 @@ const struct image_fn ez_fn = {
 	.state_size = sizeof(struct mparser),
 	.dec = ez_dec,
 	.callback = ez_callback,
+};
+
+const struct image_fn gfa_fn = {
+	.alloc_single = true,
+	.state_size = sizeof(struct gfa_desc),
+	.init = init_gfa,
+	.event = event_gfa,
 };
 
 const struct image_fn bld_fn = {
