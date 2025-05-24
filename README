@@ -151,11 +151,23 @@ candidate is '~/.local' if that's on your $PATH.
 That's it. Run 'wu -h' to get some help text. Its help screen is short (it
 may actually fit in your screen) and contains all the information you need.
 
-wu is able to convert images to PAM, but uses an OpenGL context for this. To
-build a pure-software converter with no dependencies on a windowing system, run
+A converter tool into PAM and JXL (if compiled with libjxl) is also provided.
+To build it, run
 
 	# Creates a binary at BUILDDIR/src/wuconv
 	meson compile -C BUILDDIR wuconv
+
+Lastly, there's a fuzzer tool to test decoders with AFL++ using persistent mode
+
+	# You need AFL++ installed and a dedicated build directory
+	CC=afl-cc CXX=afl-c++ meson setup FUZZBUILD
+	# Disable everything but the decoder to test (ILBM in this case)
+	meson configure --auto-features disabled -D ilbm=enabled FUZZBUILD
+	meson compile -C FUZZBUILD wufuzz
+	# Create a minimal corpus
+	afl-cmin -i ilbm_samples/ -o uniq/ -- wufuzz ilbm
+	# Fuzz
+	afl-fuzz -i uniq/ -o out/ -- wufuzz ilbm
 
 
 Usage
