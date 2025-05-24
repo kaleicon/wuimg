@@ -120,6 +120,19 @@ const struct wuptr iim_desc = DESC(
 	"h:<u16>"
 );
 
+// IBM KIPS
+const struct wuptr kips_desc = DESC(
+	"endian:little\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+
+	"match:[DFIMAG00]\n"
+	"h:<u16>\n"
+	"w:<u16>\n"
+	"match:[\x01\0\0\0]\n"
+	"skip:0x10"
+);
+
 // KRO - Kolor Raw
 const struct wuptr kro_desc = DESC(
 	"endian:big\n"

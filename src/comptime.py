@@ -68,6 +68,11 @@ DEC_MAP = {
 			"ext": "iim",
 			"magic": b"IS_IMAGE\0",
 		},
+		"kips": {
+			"desc": "IBM KIPS (no palette)",
+			"ext": "kps",
+			"magic": b"DFIMAG00",
+		},
 		"kro": {
 			"desc": "Kolor Raw",
 			"ext": "kro",
