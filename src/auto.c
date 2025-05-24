@@ -11,6 +11,23 @@
 
 #define DESC(arg) {.ptr = (const uint8_t *)(arg), .len = sizeof(arg) - 1}
 
+// AIPD NI
+const struct wuptr aipd_desc = DESC(
+	"endian:big\n"
+	"bitdepth:8\n"
+
+	"match:[AIPD]\n"
+	"skip:4\n"
+	"match:<u16>(\n"
+		"8 c:1 match:[\0\x01]\n"
+		"32 c:4 alpha:ignore skip:2\n"
+	")\n"
+	"match:[\0\x02\x0\0]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"skip:0x1ec"
+);
+
 /* AVS
  * Defined in Appendix E-3 of the AVS user guide:
 http://bitsavers.informatik.uni-stuttgart.de/pdf/stardent/002424-001_Rev_A_Application_Visualization_System_Users_Guide_1989.pdf

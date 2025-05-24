@@ -27,6 +27,11 @@ RAW_TIFF_EXTS = ("arw", "cr2", "dcr", "dng", "erf", "k25", "kdc", "nef", "nrw", 
 DEC_MAP = {
 	# Homemade decoders first
 	"auto": {
+		"aipd": {
+			"desc": "National Instruments AIPD",
+			"ext": "apd",
+			"magic": b"AIPD",
+		},
 		"avs": {
 			"desc": "Stardent AVS X",
 			"match": (
