@@ -23,9 +23,9 @@ enum alpha_interpretation alpha);
 
 void icc_profile_free(struct icc_profile *icc);
 
+bool icc_profile_mem_own(struct icc_profile *icc, void *data, size_t size);
+
 bool icc_profile_mem_copy(struct icc_profile *icc, const void *data,
 size_t size);
-
-bool icc_profile_mem_own(struct icc_profile *icc, void *data, size_t size);
 
 #endif /* RASTER_ICC */

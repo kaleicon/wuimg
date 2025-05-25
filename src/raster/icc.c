@@ -19,12 +19,6 @@ const enum alpha_interpretation alpha) {
 	return icc_fmt_colorspace(ch, bytedepth, alpha, PT_ANY);
 }
 
-void icc_profile_free(struct icc_profile *icc) {
-	if (icc->in) {
-		cmsCloseProfile(icc->in);
-	}
-}
-
 static cmsUInt32Number read_fn(struct _cms_io_handler *io, void *buf,
 const cmsUInt32Number size, const cmsUInt32Number nmemb) {
 	struct mparser *mp = io->stream;
@@ -65,15 +59,16 @@ static void init_profile(void) {
 	cmsSetLogErrorHandler(err_fn);
 }
 
-bool icc_profile_mem_copy(struct icc_profile *icc, const void *data,
-const size_t len) {
-	init_profile();
-	icc->in = cmsOpenProfileFromMem(data, (cmsUInt32Number)len);
-	return (bool)icc->in;
+void icc_profile_free(struct icc_profile *icc) {
+	if (icc->in) {
+		cmsCloseProfile(icc->in);
+	}
 }
 
 bool icc_profile_mem_own(struct icc_profile *icc, void *data,
 const size_t len) {
+	/* Use a custom IO handler, as cmsOpenProfileFromMem() creates
+	 * a memory copy. */
 	init_profile();
 	icc->mp = mp_mem(len, data);
 	icc->io = (struct _cms_io_handler) {
@@ -88,4 +83,16 @@ const size_t len) {
 	};
 	icc->in = cmsOpenProfileFromIOhandler2THR(NULL, &icc->io, false);
 	return (bool)icc->in;
+}
+
+bool icc_profile_mem_copy(struct icc_profile *icc, const void *data,
+const size_t len) {
+	/* Memory is probably owned by the decoder, but we want a copy in case
+	 * we need to encode into a format that supports ICC profiles. */
+	void *cpy = malloc(len);
+	if (cpy) {
+		memcpy(cpy, data, len);
+		return icc_profile_mem_own(icc, cpy, len);
+	}
+	return false;
 }

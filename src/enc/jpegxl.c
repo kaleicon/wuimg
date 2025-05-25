@@ -11,11 +11,13 @@
 #include "enc.h"
 
 static const uint16_t APPROX_TIME_RES = 10000;
+static const int NO_TRANSFER = -1;
 
 struct jxl_state {
 	JxlEncoder *enc;
 	JxlEncoderFrameSettings *settings;
 	JxlPixelFormat fmt;
+	JxlBitDepth depth;
 	bool round_time;
 	const struct image_frames *frames;
 	uint8_t buf[BUFSIZ];
@@ -59,6 +61,7 @@ const int frame) {
 		}
 		JxlEncoderSetFrameHeader(js->settings, &header);
 	}
+	JxlEncoderSetFrameBitDepth(js->settings, &js->depth);
 	JxlEncoderAddImageFrame(js->settings, &js->fmt, dst->data, wuimg_size(dst));
 	if (final) {
 		JxlEncoderCloseInput(js->enc);
@@ -75,6 +78,33 @@ static uint32_t same_time_res(const struct image_frames *frames) {
 		}
 	}
 	return den;
+}
+
+static int get_transfer(const struct wuimg *img) {
+	switch (img->cs.transfer) {
+	case cicp_transfer_iec_61966_2_1: return JXL_TRANSFER_FUNCTION_SRGB;
+	case cicp_transfer_bt709_6: return JXL_TRANSFER_FUNCTION_709;
+	case cicp_transfer_unspecified: return JXL_TRANSFER_FUNCTION_UNKNOWN;
+	case cicp_transfer_linear: return JXL_TRANSFER_FUNCTION_LINEAR;
+	case cicp_transfer_smpte_st_2084: return JXL_TRANSFER_FUNCTION_PQ;
+	case cicp_transfer_smpte_st_428_1: return JXL_TRANSFER_FUNCTION_DCI;
+	case cicp_transfer_arib_std_b67: return JXL_TRANSFER_FUNCTION_HLG;
+	default: break;
+	}
+	return img->cs.transfer == 0 ? JXL_TRANSFER_FUNCTION_SRGB : NO_TRANSFER;
+}
+
+static JxlOrientation get_orientation(const struct wuimg *img) {
+	switch (img->mirror << 2 | img->rotate) {
+	case 1: return JXL_ORIENT_ROTATE_90_CW;
+	case 2: return JXL_ORIENT_ROTATE_180;
+	case 3: return JXL_ORIENT_ROTATE_90_CCW;
+	case 4: return JXL_ORIENT_FLIP_VERTICAL;
+	case 5: return JXL_ORIENT_ANTI_TRANSPOSE;
+	case 6: return JXL_ORIENT_FLIP_HORIZONTAL;
+	case 7: return JXL_ORIENT_TRANSPOSE;
+	}
+	return JXL_ORIENT_IDENTITY;
 }
 
 static const char * init_jxl(void *state, const struct wuimg *dst,
@@ -95,6 +125,11 @@ const struct wuimg *src, FILE *ofp) {
 		.endianness = JXL_NATIVE_ENDIAN,
 		.align = 1 << dst->align_sh,
 	};
+	js->depth = (JxlBitDepth) {
+		.type = dst->attr == pix_float
+			? JXL_BIT_DEPTH_FROM_PIXEL_FORMAT
+			: JXL_BIT_DEPTH_FROM_CODESTREAM,
+	};
 	js->frames = src->frames;
 	js->round_time = false;
 
@@ -102,12 +137,13 @@ const struct wuimg *src, FILE *ofp) {
 	JxlEncoderInitBasicInfo(&info);
 	info.xsize = (uint32_t)dst->w;
 	info.ysize = (uint32_t)dst->h;
-	info.bits_per_sample = dst->bitdepth;
+	info.bits_per_sample = dst->bitrange;
 	info.num_color_channels = (dst->channels >= 3) ? 3 : 1;
 	info.num_extra_channels = (dst->channels & 1) ? 0 : 1;
 	info.alpha_bits = (dst->channels & 1) ? 0 : info.bits_per_sample;
 	info.alpha_premultiplied = dst->alpha == alpha_associated;
 	info.uses_original_profile = JXL_TRUE;
+	info.orientation = get_orientation(dst);
 	if (js->frames) {
 		info.have_animation = JXL_TRUE;
 		info.animation.tps_denominator = 1;
@@ -121,10 +157,23 @@ const struct wuimg *src, FILE *ofp) {
 		return "couldn't set basic info";
 	}
 
-	JxlColorEncoding color;
-	JxlColorEncodingSetToSRGB(&color, dst->channels < 3);
-	if (JxlEncoderSetColorEncoding(js->enc, &color) != JXL_ENC_SUCCESS) {
-		return "couldn't set color encoding";
+	if (dst->cs.type == color_profile_icc) {
+		const struct icc_profile *icc = &dst->cs.desc->u.icc;
+		printf("len: %zu\n", icc->mp.len);
+		if (JxlEncoderSetICCProfile(js->enc, icc->mp.mem, icc->mp.len)
+		!= JXL_ENC_SUCCESS) {
+			return "couldn't set ICC profile";
+		}
+	} else {
+		JxlColorEncoding color;
+		JxlColorEncodingSetToSRGB(&color, dst->channels < 3);
+		const int transfer = get_transfer(dst);
+		if (transfer != NO_TRANSFER) {
+			color.transfer_function = (JxlTransferFunction)transfer;
+		}
+		if (JxlEncoderSetColorEncoding(js->enc, &color) != JXL_ENC_SUCCESS) {
+			return "couldn't set color encoding";
+		}
 	}
 
 	JxlEncoderSetFrameLossless(js->settings, JXL_TRUE);
@@ -138,10 +187,44 @@ const struct wuimg *src, FILE *ofp) {
 	return process_output(js, ofp) ? NULL : "couldn't write header";
 }
 
+static bool passthrough(const struct wuimg *src) {
+	switch (src->bitdepth) {
+	case 8: case 16: break;
+	default: return false;
+	}
+
+	if (src->alpha == alpha_key) {
+		return false;
+	} else if (src->alpha == alpha_ignore && (src->channels & 1) == 0) {
+		return false;
+	}
+
+	enum pix_layout l_expect;
+	switch (src->channels) {
+	case 1: case 2: l_expect = pix_gray; break;
+	case 3: case 4: l_expect = pix_rgba; break;
+	default: return false;
+	}
+
+	const struct color_space *cs = &src->cs;
+	if (src->layout == l_expect && src->attr == pix_normal
+	&& cs->matrix == cicp_matrix_rgb) {
+		switch (cs->type) {
+		case color_profile_enum:
+			return cs->limited == false
+				&& get_transfer(src) != NO_TRANSFER
+				&& (cs->primaries == 0
+					|| cs->primaries == cicp_primaries_bt709_6);
+		case color_profile_icc:
+			return true;
+		default:
+			break;
+		}
+	}
+	return false;
+}
+
 static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
-	/* JXL can handle rotations and colorspaces like we do, the issue is
-	 * passing data directly. Until then, we convert everything to sRGB as
-	 * with PAM. */
 	dst->w = (src->rotate & 1) ? src->h : src->w;
 	dst->h = (src->rotate & 1) ? src->w : src->h;
 	switch (src->mode) {
@@ -149,6 +232,9 @@ static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
 	case image_mode_planar:
 		dst->channels = src->channels;
 		dst->bitdepth = src->bitdepth > 8 ? 16 : 8;
+		if (src->mode == image_mode_raw) {
+			return passthrough(src);
+		}
 		break;
 	case image_mode_palette:
 		dst->channels = 4;
@@ -159,7 +245,6 @@ static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
 		dst->bitdepth = src->u.bitfield->outdepth;
 		break;
 	}
-	dst->alpha = alpha_unassociated;
 	return false;
 }
 
