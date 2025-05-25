@@ -64,6 +64,27 @@ const struct wuptr bru_desc = DESC(
 	"attr:inverted"
 );
 
+/* CHKY - IFF Chunky.
+ * This format is rare, and this decoder is fragile. It should use an IFF
+ * parser instead. */
+const struct wuptr chky_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+	"alpha:ignore\n"
+
+	"match:[FORM]\n"
+	"skip:4\n"
+	"match:[CHKYCHHD\0\0\0\x0e]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"skip:10\n"
+	"match:[RGBA\0\0\x04\0]\n"
+	"pal:<u32>[]\n"
+	"match:[CBDY]\n"
+	"skip:4"
+);
+
 // FARBFELD
 const struct wuptr farbfeld_desc = DESC(
 	"endian:big\n"
@@ -137,7 +158,9 @@ const struct wuptr iim_desc = DESC(
 	"h:<u16>"
 );
 
-// IBM KIPS
+/* IBM KIPS
+ * This format depends on an external palette. Here it's rendered as
+ * greyscale. */
 const struct wuptr kips_desc = DESC(
 	"endian:little\n"
 	"channels:1\n"

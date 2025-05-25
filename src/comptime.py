@@ -42,6 +42,14 @@ DEC_MAP = {
 		},
 		"bob": {"desc": "Bob raytracer raster", "match": "bob"},
 		"bru": {"desc": "Degas Brush", "match": "bru"},
+		"chky": {
+			"desc": "IFF Chunky",
+			"ext": "ciff",
+			"mask": (
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+				b"FORM" b"\0\0\0\0" b"CHKY",
+			),
+		},
 		"farbfeld": {
 			"desc": "farbfeld",
 			"ext": "ff",
