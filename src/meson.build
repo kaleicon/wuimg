@@ -100,9 +100,17 @@ encoders = [
 	'jpegxl'
 ]
 
-dep_list = []
+# Core setup
 src_list = []
 dec_enable = configuration_data()
+dep_list = [
+	cc.find_library('m', required : false),
+	dependency('exiv2'),
+	dependency('lcms2'),
+	dependency('icu-i18n'),
+	dependency('icu-uc'),
+	dependency('uchardet')
+]
 
 foreach cat, fmts : fmt_map
 	foreach f : fmts
@@ -140,62 +148,6 @@ foreach cat, fmts : fmt_map
 		endif
 	endforeach
 endforeach
-
-window_map = {
-	'window_wayland': ['wayland-client', 'wayland-egl', 'xkbcommon'],
-	'window_drm': ['gbm', 'libdrm'],
-	'window_glfw': ['glfw3'],
-}
-window_dep_list = []
-window_src_list = []
-window_enable = configuration_data()
-
-foreach backend, libs : window_map
-	state = get_option(backend)
-	deps = []
-	enable = true
-	foreach lib : libs
-		d = dependency(lib, required : state)
-		deps += d
-		enable = enable and d.found()
-	endforeach
-
-	if state.require(enable).allowed()
-		window_enable.set('WU_ENABLE_' + backend.to_upper(), true)
-		window_dep_list += deps
-		window_src_list += backend.replace('_', '/') + '.c'
-	endif
-endforeach
-
-dep_list += [
-	cc.find_library('m', required : false),
-	dependency('exiv2'),
-	dependency('lcms2'),
-	dependency('icu-i18n'),
-	dependency('icu-uc'),
-	dependency('uchardet')
-]
-window_dep_list += [
-	dependency('libarchive', required : false),
-	dependency('epoxy', required : false)
-]
-
-if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
-	wayland_scanner = find_program('wayland-scanner')
-	wayland_proto = dependency('wayland-protocols')
-	base_path = wayland_proto.get_variable('pkgdatadir')
-	protocol_names = ['xdg-shell']
-	type = [['private-code', '.c'], ['client-header', '.h']]
-	foreach p : protocol_names
-		foreach t : type
-			name = '-'.join([p, t[0]])
-			path = base_path / 'stable/%/%.xml'.replace('%', p)
-			window_src_list += custom_target(name,
-				output : [name + t[1]],
-				command : [wayland_scanner, t[0], path, '@OUTPUT@'])
-		endforeach
-	endforeach
-endif
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
 python = find_program('python3')
@@ -255,24 +207,81 @@ src_list += [custom_target('dec_maps',
 	'raster/unpack.c',
 	'raster/wuimg.c']
 
+# FIXME: seriously?
+libuwu = static_library('uwu', src_list, dependencies : dep_list)
+
+# Viewer setup
+window_map = {
+	'window_wayland': ['wayland-client', 'wayland-egl', 'xkbcommon'],
+	'window_drm': ['gbm', 'libdrm'],
+	'window_glfw': ['glfw3'],
+}
+window_enable = configuration_data()
+window_src_list = []
+window_dep_list = [
+	dependency('epoxy', required : false),
+	dependency('libarchive', required : false),
+]
+
+foreach backend, libs : window_map
+	state = get_option(backend)
+	deps = []
+	enable = true
+	foreach lib : libs
+		d = dependency(lib, required : state)
+		deps += d
+		enable = enable and d.found()
+	endforeach
+
+	if state.require(enable).allowed()
+		window_enable.set('WU_ENABLE_' + backend.to_upper(), true)
+		window_dep_list += deps
+		window_src_list += backend.replace('_', '/') + '.c'
+	endif
+endforeach
+
+if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
+	wayland_scanner = find_program('wayland-scanner')
+	wayland_proto = dependency('wayland-protocols')
+	base_path = wayland_proto.get_variable('pkgdatadir')
+	protocol_names = ['xdg-shell']
+	type = [['private-code', '.c'], ['client-header', '.h']]
+	foreach p : protocol_names
+		foreach t : type
+			name = '-'.join([p, t[0]])
+			path = base_path / 'stable/%/%.xml'.replace('%', p)
+			window_src_list += custom_target(name,
+				output : [name + t[1]],
+				command : [wayland_scanner, t[0], path, '@OUTPUT@'])
+		endforeach
+	endforeach
+endif
+
 window_enable = configure_file(output : 'window_enable.def', configuration : window_enable)
-window_src_list += ['display.c',
+window_src_list += [
+	'main.c',
+
+	'display.c',
 	'events.c',
 	'extract.c',
 	'opengl.c',
 
 	'window.c',
 	'window/base.c',
-	'window/egl.c']
+	'window/egl.c',
+]
 
-executable('wu', ['main.c'] + src_list + window_src_list,
+executable('wu', window_src_list,
 	dependencies : dep_list + window_dep_list,
+	link_with : libuwu,
 	install : true)
-executable('wuconv', ['main_wuconv.c', 'imgconv.c'] + src_list,
+executable('wuconv', ['main_wuconv.c', 'imgconv.c'],
 	dependencies : dep_list,
+	link_with : libuwu,
 	build_by_default : false)
-executable('wufuzz', ['main_fuzz.c'] + src_list,
+executable('wufuzz', ['main_fuzz.c'],
 	dependencies : dep_list,
+	link_with : libuwu,
 	build_by_default : false)
 custom_target('formats',
 	capture : true,
