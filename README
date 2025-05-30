@@ -17,6 +17,7 @@ Features
 * Can browse archives, via libarchive
 * Doesn't modify the original file when rotating!
 * Runs on Wayland, DRM/KMS, and X11
+* Transcode into PAM or JXL
 
 
 Supported formats
@@ -98,7 +99,7 @@ For image decoding:
 * libjpeg
 * libopenjp2 (JPEG2000)
 * libcharls (JPEG-LS)
-* libjxl
+* libjxl (needed for encoding, too)
 * liblerc
 * libpng
 * libraw
@@ -112,8 +113,8 @@ To actually run the program you'll need
 * 128MB of RAM minimum, 256MB recommended
 
 
-Compiling
----------
+Compiling the viewer
+--------------------
 Pick a good name for a build directory and run
 
 	meson BUILDDIR
@@ -135,7 +136,7 @@ don't trust me or the C language in general), run some of the following:
 	# Disable everything by default
 	meson configure --auto-features disabled BUILDDIR
 
-Once you're ready, just run
+Once you're ready, run
 
 	meson install -C BUILDDIR
 
@@ -151,13 +152,29 @@ candidate is '~/.local' if that's on your $PATH.
 That's it. Run 'wu -h' to get some help text. Its help screen is short (it
 may actually fit in your screen) and contains all the information you need.
 
-A converter tool into PAM and JXL (if compiled with libjxl) is also provided.
-To build it, run
+
+Compiling wuconv
+----------------
+wu is able to encode most images into PAM or JXL (`wu write FILES...`), but
+uses an OpenGL and windowing context to perform rotations and color conversion.
+For headless machines or where speed is more important, there's a pure-software
+converter, `wuconv`
 
 	# Creates a binary at BUILDDIR/src/wuconv
 	meson compile -C BUILDDIR wuconv
 
-Lastly, there's a fuzzer tool to test decoders with AFL++ using persistent mode
+Both tools feature the same options and mostly the same output, upsampling
+quality and roundoff errors notwithstanding. Main differences are
+* `wuconv` is faster (GPU roundtrips may not be well implemented, or may simply
+   be slow, not sure which)
+* `wu write` supports half-precision floating point formats, which is only used
+   in PHM and, rarely, TIFF
+
+
+Compiling the fuzzer
+--------------------
+Lastly, there's a fuzzer tool to test decoders with AFL++ in persistent mode.
+This is used for debugging.
 
 	# You need AFL++ installed and a dedicated build directory
 	CC=afl-cc CXX=afl-c++ meson setup FUZZBUILD
@@ -202,6 +219,10 @@ no_window_decorations = true  # bool. Specified as 'true' or 'false'. Don't you
 
 Party tricks
 ------------
+Have a .kra|ora file, and don't want to launch your editor for a preview?
+
+	wu a my_masterpiece.kra  # .kra are secretly zip files
+
 Have a weird file from the twentieth century, and want to use it in a modern
 environment?
 
