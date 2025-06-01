@@ -196,6 +196,12 @@ DEC_MAP = {
 			"match": "bld"
 		},
 
+		"spu": {
+			"desc": "Spectrum 512 Uncompressed (3/4/5-bits)",
+			"match": "spu",
+			"magic": b"5BIT",
+		},
+
 		"stad": {
 			"desc": "STAD PAC, Arabesque",
 			"ext": (

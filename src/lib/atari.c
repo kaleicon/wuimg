@@ -60,6 +60,12 @@ const char * atari_st_res_str(const enum atari_st_res res) {
 
 /* Common functions */
 
+static uint16_t ste_pal_rotate(uint16_t p) {
+	/* Palette is 0000rrrrggggbbbb, but the least-significant bit of each
+	 * color comes first. That is, they are in 0321 order. */
+	return (uint16_t)((p & 0x7777) << 1 | (p & 0x8888) >> 3);
+}
+
 static void st_interleave(struct wuimg *img, const uint16_t *src,
 const enum atari_st_res res) {
 	const uint8_t planes = (res == atari_st_res_low)
@@ -514,22 +520,16 @@ static struct wu_st gfa_low(const struct gfa_desc *desc, struct wuimg *img) {
 		}
 	}
 
-	/* Palette colors are in format 0000rrrrggggbbbb, but with the
-	 * least significant bit of each color moved to the top. */
+	// Don't convert to native-endian, img->layout takes care of that.
 	for (size_t i = pal_start; i < pal_elems; ++i) {
-		pal[i] = (uint16_t)(
-			(pal[i] & 0x7777) << 1 | (pal[i] & 0x8888) >> 3
-		);
+		pal[i] = ste_pal_rotate(pal[i]);
 	}
 
 	uint16_t *dst = (uint16_t *)img->data;
 	const size_t d_stride = ST_LOW_WIDTH;
 	const size_t s_stride = ST_LOW_WIDTH/4;
-	/* Skip the first row, as the image buffer comes zeroed and animations
-	 * can't modify it either.
-	 * (Why show it, anyway? Couldn't we set height to 319? People might
-	 * think it's a bug and get confused though. Or perhaps angry, maybe
-	 * even violent.) */
+	/* Like with Spectrum 512, skip the first row as the image buffer comes
+	 * zeroed and animations can't modify it either. */
 	for (size_t y = 1; y < img->h; ++y) {
 		for (unsigned group = 0; group < ST_LOW_WIDTH/16; ++group) {
 			const size_t d_base = y*d_stride + group*16;
@@ -761,6 +761,134 @@ enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
 	return wu_unexpected_eof;
 }
 
+
+/* Spectrum 512 */
+
+static unsigned spu_colormap(unsigned idx, unsigned x) {
+	// A branchless equivalent to the algo given in the wiki
+	unsigned hi = (idx >> 1) * 20;
+	unsigned lo = (idx & 1);
+	unsigned band = hi + lo*4;
+	idx += (x > band)*0x10u;
+	idx += (x > band + 160)*0x10u;
+	return idx;
+}
+
+static uint16_t enhanced_spu(uint16_t in, uint16_t pos) {
+	uint16_t down = in >> (4*pos);
+	return (uint16_t)(
+		(down & 0x7) << 2 | (down & 0x8) >> 1 | ((in >> (pos+13)) & 0x1)
+	);
+}
+
+struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img) {
+	if (!wuimg_alloc_noverify(img)) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+
+	const size_t s_stride = ST_LOW_WIDTH/4;
+	const size_t raster_len = 199*s_stride;
+	const size_t pal_len = 199*3*16;
+	const size_t bufsize = raster_len + pal_len;
+	uint16_t *buf = malloc(bufsize*sizeof(*buf));
+	if (!buf) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+
+	fseek(desc->ifp, (long)(s_stride*sizeof(*buf)) - 4, SEEK_CUR);
+	if (!fread(buf, bufsize*sizeof(*buf), 1, desc->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+
+	const uint16_t *src = buf - s_stride;
+	uint16_t *pal = buf + raster_len;
+	if (desc->enhanced) {
+		for (size_t i = 0; i < pal_len; ++i) {
+			const uint16_t p = endian16(pal[i], big_endian);
+			uint16_t col = 0;
+			for (uint8_t ch = 0; ch < 3; ++ch) {
+				col |= enhanced_spu(p, ch) << (ch*5);
+			}
+			pal[i] = col;
+		}
+	} else {
+		bool is_ste = false;
+		for (size_t i = 0; i < pal_len; ++i) {
+			/* Assume STe format first, ask questions later.
+			 * No need to do multiple passes over the palette. */
+			pal[i] = ste_pal_rotate(endian16(pal[i], big_endian));
+			is_ste |= pal[i] & 0x1111;
+		}
+		if (!is_ste) {
+			// We've asked the question
+			const uint32_t masks[3] = {0x7 << 9, 0x7 << 5, 0x7 << 1};
+			img->layout = bitfield_from_mask(img->u.bitfield, masks,
+				ARRAY_LEN(masks), img->bitdepth);
+		}
+	}
+
+	pal -= 3*16;
+	uint16_t *dst = (uint16_t *)img->data;
+	const size_t d_stride = ST_LOW_WIDTH;
+	for (unsigned y = 1; y < ST_LOW_HEIGHT; ++y) {
+		for (unsigned group = 0; group < ST_LOW_WIDTH/16; ++group) {
+			const size_t d_base = y*d_stride + group*16;
+			const size_t s_base = y*s_stride + group*4;
+			uint16_t planes[4];
+			for (uint8_t i = 0; i < ARRAY_LEN(planes); ++i) {
+				planes[i] = endian16(src[s_base+i], big_endian);
+			};
+			for (unsigned bit = 0; bit < 16; ++bit) {
+				unsigned idx = 0;
+				for (uint8_t plane = 0; plane < 4; ++plane) {
+					idx |= ((planes[plane] >> (15-bit)) & 1u)
+						<< plane;
+				}
+				idx = spu_colormap(idx, group*16 + bit);
+				dst[d_base + bit] = pal[y*3*16 + idx];
+			}
+		}
+	}
+	free(buf);
+	return wuok();
+}
+
+struct wu_st spu_init(struct spu_desc *desc, struct wuimg *img, FILE *ifp) {
+	/* SPU format:
+		uint16_t raster[200*80];
+		uint16_t palettes[199*3*16];
+	 * Images are 320x200, and each scanline uses a different palette.
+	 * The first scanline is always black though, and even though it's
+	 * included, it's corresponding palette isn't.
+
+	 * There are three uncompressed variants:
+	 * - Atari ST: 3-bit palette
+	 * - Atari STe: 4-bit palette
+	 * - Enhanced: 5-bit palette, first scanline begins with "5BIT"
+	 * Each is backwards-compatible with previous ones by adding bits in
+	 * unused parts of the palette. The only way to tell 3-bit and 4-bit
+	 * variants apart is by checking these bits.
+	 */
+	const uint8_t sig[] = {'5', 'B', 'I', 'T'};
+	uint8_t hdr[sizeof(sig)];
+	if (!fread(hdr, sizeof(hdr), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	*desc = (struct spu_desc) {
+		.ifp = ifp,
+		.enhanced = !memcmp(hdr, sig, sizeof(sig)),
+	};
+	img->w = ST_LOW_WIDTH;
+	img->h = ST_LOW_HEIGHT;
+	img->channels = 1;
+	img->bitdepth = 16;
+	img->alpha = alpha_ignore;
+	img->layout = pix_bgra;
+	if (!wuimg_bitfield_from_id(img, desc->enhanced ? 0x555 : 0x444)) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+	return wuimg_verify_st(img);
+}
 
 /* STAD PAC, Arabesque
  * Arabesque headers from "All Files 46.zip/MI-3/BINARY_1/STAD.PAC/PAC_A_OS.S"

@@ -74,6 +74,16 @@ size_t bld_decode(struct bld_desc *desc, struct wuimg *img);
 
 enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp);
 
+/* Spectrum 512 */
+struct spu_desc {
+	FILE *ifp;
+	bool enhanced;
+};
+
+struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img);
+
+struct wu_st spu_init(struct spu_desc *desc, struct wuimg *img, FILE *ifp);
+
 /* STAD PAC, Arabesque */
 struct stad_desc {
 	struct mparser mp;

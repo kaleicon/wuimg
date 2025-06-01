@@ -130,6 +130,19 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+/* Spectrum 512 */
+static struct wu_st init_spu(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct spu_desc desc;
+	struct wu_st st = spu_init(&desc, infile->sub_img, infile->ifp);
+	if (wu_isok(st)) {
+		st = wuimg_exceeds_limit(infile->sub_img, conf)
+			? WUERR_HERE(wu_exceeds_size_limit)
+			: spu_decode(&desc, infile->sub_img);
+	}
+	return st;
+}
+
 /* STAD PAC, Arabesque */
 static struct wu_st init_stad(struct image_file *infile,
 const struct wu_conf *conf) {
@@ -216,6 +229,11 @@ const struct image_fn gfa_fn = {
 const struct image_fn bld_fn = {
 	.alloc_single = true,
 	.dec = bld_dec,
+};
+
+const struct image_fn spu_fn = {
+	.alloc_single = true,
+	.init = init_spu,
 };
 
 const struct image_fn stad_fn = {
