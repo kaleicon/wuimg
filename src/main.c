@@ -385,8 +385,8 @@ static void print_help(void) {
 		"\t\tConvert each FILE to FILE(_sub#:frame#).pam, with sub-images\n"
 		"\t\tand animation frames on separate files. Output names are\n"
 		"\t\twritten to stdout.\n"
-		"\t\tThis converter uses an OpenGL context for rendering. Refer\n"
-		"\t\tto `wuconv` for a software renderer.\n"
+		"\t\tThis converter creates an OpenGL context for rendering.\n"
+		"\t\tRefer to `wuconv` for a software converter.\n"
 
 		"\n"
 		SOLE_MODE " switches:\n"
@@ -469,6 +469,7 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 
 		if (mode_match) {
 			mode->type = (enum work_mode)arg[0];
+			++read;
 		} else {
 			if (!strcmp(arg, HELP_SHORT)
 			|| !strcmp(arg, HELP_LONG)) {
@@ -480,15 +481,24 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 			|| !strcmp(arg, FMTS_LONG)) {
 				mode->type = formats;
 			}
-			return 0;
+			if (mode->type != guess) {
+				return 0;
+			}
 		}
 
-		++read;
 		int r = 0;
 		switch (mode->type) {
 		case sole:
+		case guess:
 			r = sole_args(argc - read, argv + read,
 				&mode->arg.raw);
+			if (mode->type == guess) {
+				if (r > 0) {
+					mode->type = sole;
+				} else {
+					r = 0;
+				}
+			}
 			break;
 		case test:
 			r = test_args(argc - read, argv + read,

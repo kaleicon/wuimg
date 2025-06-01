@@ -1,6 +1,6 @@
-73 decoders, 114 formats supported
+73 families, 114 formats supported
 
-Decoder   Format    Description
+Family    Format    Description
 --------------------------------
 aliaspix  aliaspix  AliasPIX and Vivid
 atari     bld       MegaPaint

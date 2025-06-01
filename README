@@ -14,7 +14,7 @@ Features
 * Displays EXIF, XMP, and format-specific metadata
 * Support for embedded ICC profiles and format-specific colorspaces
   * At the moment, images are converted to sRGB for display
-* Can browse archives, via libarchive
+* Browse archives, via libarchive
 * Doesn't modify the original file when rotating!
 * Runs on Wayland, DRM/KMS, and X11
 * Transcode into PAM or JXL
@@ -75,7 +75,7 @@ and at a very minimum the development files for
 * liblcms2
 * libuchardet
 
-Window backends and image decoders can be enabled or disabled independently.
+Window backends and decoder families can be enabled or disabled independently.
 The default is to compile them if the required dev files are detected, so
 usually no further configuration is needed beyond having them installed.
 
@@ -167,8 +167,8 @@ Both tools feature the same options and mostly the same output, upsampling
 quality and roundoff errors notwithstanding. Main differences are
 * `wuconv` is faster (GPU roundtrips may not be well implemented, or may simply
    be slow, not sure which)
-* `wu write` supports half-precision floating point formats, which is only used
-   in PHM and, rarely, TIFF
+* `wu write` supports half-precision floating point formats, which is used in
+   PHM and occasionally JXL and TIFF
 
 
 Compiling the fuzzer
@@ -178,13 +178,15 @@ This is used for debugging.
 
 	# You need AFL++ installed and a dedicated build directory
 	CC=afl-cc CXX=afl-c++ meson setup FUZZBUILD
-	# Disable everything but the decoder to test (ILBM in this case)
-	meson configure --auto-features disabled -D ilbm=enabled FUZZBUILD
+	# For better performance, disable all but the format family to fuzz.
+	# To test, say, BMP decoding, you need the DIB family enabled,
+	# which also includes ICO and DIB.
+	meson configure --auto-features disabled -D dib=enabled FUZZBUILD
 	meson compile -C FUZZBUILD wufuzz
 	# Create a minimal corpus
-	afl-cmin -i ilbm_samples/ -o uniq/ -- wufuzz ilbm
+	afl-cmin -i ilbm_samples/ -o uniq/ -- wufuzz bmp
 	# Fuzz
-	afl-fuzz -i uniq/ -o out/ -- wufuzz ilbm
+	afl-fuzz -i uniq/ -o out/ -- wufuzz bmp
 
 
 Usage
@@ -221,7 +223,7 @@ Party tricks
 ------------
 Have a .kra|ora file, and don't want to launch your editor for a preview?
 
-	wu a my_masterpiece.kra  # .kra are secretly zip files
+	wu a my_masterpiece.kra  # .kra are really zip files
 
 Have a weird file from the twentieth century, and want to use it in a modern
 environment?
@@ -232,3 +234,13 @@ Same, but you'd rather keep it in a more compact format?
 
 	wu w -s weird.pi | convert - weird.png   # using imagemagick, or...
 	wu w -s weird.pi | pamtopng > weird.png  # using netpbm
+
+Have some raw files?
+
+	# 640x480 8-bit RGB. Remember to quote the string!
+	wu -r 'w:640 h:480 channels:3 bitdepth:8' RAW_FILE1 ...
+
+Some unknown but uncompressed format?
+
+	# 1-bit monochrome, dimensions read from file
+	wu -r 'endian:little w:<u16> h:<u16> c:1 b:1 skip:0x14' FILE

@@ -1329,10 +1329,10 @@ def show_supported(fmt_map):
 	tpl = '{:{width}}{:{width}}{}'
 	print_tab = lambda t: print(tpl.format(*t, width=width))
 
-	# Decoder and format table
-	print(len(DEC_MAP), 'decoders,', len(fmt_map), 'formats supported\n')
+	# Format families table
+	print(len(DEC_MAP), 'families,', len(fmt_map), 'formats supported\n')
 
-	header = tpl.format('Decoder', 'Format', 'Description', width=width)
+	header = tpl.format('Family', 'Format', 'Description', width=width)
 	print(header)
 	print('-' * (len(header) + 1))
 	foreach(print_tab, sorted(
