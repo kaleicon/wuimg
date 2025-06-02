@@ -121,7 +121,9 @@ const struct wuimg *src, FILE *ofp) {
 
 	js->fmt = (JxlPixelFormat) {
 		.num_channels = dst->channels,
-		.data_type = dst->bitdepth > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8,
+		.data_type = dst->attr == pix_float
+			? (dst->bitdepth > 16 ? JXL_TYPE_FLOAT : JXL_TYPE_FLOAT16)
+			: (dst->bitdepth > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8),
 		.endianness = JXL_NATIVE_ENDIAN,
 		.align = 1 << dst->align_sh,
 	};
@@ -138,9 +140,14 @@ const struct wuimg *src, FILE *ofp) {
 	info.xsize = (uint32_t)dst->w;
 	info.ysize = (uint32_t)dst->h;
 	info.bits_per_sample = dst->bitrange;
+	info.exponent_bits_per_sample = dst->attr == pix_float
+		? (dst->bitdepth > 16 ? 8 : 5)
+		: 0;
 	info.num_color_channels = (dst->channels >= 3) ? 3 : 1;
 	info.num_extra_channels = (dst->channels & 1) ? 0 : 1;
 	info.alpha_bits = (dst->channels & 1) ? 0 : info.bits_per_sample;
+	info.alpha_exponent_bits = (dst->channels & 1)
+		? 0 : info.exponent_bits_per_sample;
 	info.alpha_premultiplied = dst->alpha == alpha_associated;
 	info.uses_original_profile = JXL_TRUE;
 	info.orientation = get_orientation(dst);
@@ -159,7 +166,6 @@ const struct wuimg *src, FILE *ofp) {
 
 	if (dst->cs.type == color_profile_icc) {
 		const struct icc_profile *icc = &dst->cs.desc->u.icc;
-		printf("len: %zu\n", icc->mp.len);
 		if (JxlEncoderSetICCProfile(js->enc, icc->mp.mem, icc->mp.len)
 		!= JXL_ENC_SUCCESS) {
 			return "couldn't set ICC profile";
@@ -188,8 +194,19 @@ const struct wuimg *src, FILE *ofp) {
 }
 
 static bool passthrough(const struct wuimg *src) {
-	switch (src->bitdepth) {
-	case 8: case 16: break;
+	switch (src->attr) {
+	case pix_normal:
+		switch (src->bitdepth) {
+		case 8: case 16: break;
+		default: return false;
+		}
+		break;
+	case pix_float:
+		switch (src->bitdepth) {
+		case 16: case 32: break;
+		default: return false;
+		}
+		break;
 	default: return false;
 	}
 
@@ -207,8 +224,7 @@ static bool passthrough(const struct wuimg *src) {
 	}
 
 	const struct color_space *cs = &src->cs;
-	if (src->layout == l_expect && src->attr == pix_normal
-	&& cs->matrix == cicp_matrix_rgb) {
+	if (src->layout == l_expect && cs->matrix == cicp_matrix_rgb) {
 		switch (cs->type) {
 		case color_profile_enum:
 			return cs->limited == false
