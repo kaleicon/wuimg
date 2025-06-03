@@ -20,7 +20,7 @@ const struct wuptr aipd_desc = DESC(
 	"skip:4\n"
 	"match:<u16>(\n"
 		"8 c:1 match:[\0\x01]\n"
-		"32 c:4 alpha:ignore skip:2\n"
+		"32 c:4 alpha:ignore layout:argb skip:2\n"
 	")\n"
 	"match:[\0\x02\x0\0]\n"
 	"w:<u16>\n"

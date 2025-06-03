@@ -11,7 +11,7 @@ atari     gfa       GFA Raytrace
 atari     spu       Spectrum 512 Uncompressed (3/4/5-bits)
 atari     stad      STAD PAC, Arabesque
 atari     tiny      Tiny Stuff
-auto      aipd      National Instruments AIPD
+auto      aipd      National Instruments AIPD (uncertain color interpretation)
 auto      avs       Stardent AVS X
 auto      bob       Bob raytracer raster
 auto      bru       Degas Brush

@@ -28,7 +28,7 @@ DEC_MAP = {
 	# Homemade decoders first
 	"auto": {
 		"aipd": {
-			"desc": "National Instruments AIPD",
+			"desc": "National Instruments AIPD (uncertain color interpretation)",
 			"ext": "apd",
 			"magic": b"AIPD",
 		},
