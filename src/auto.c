@@ -11,7 +11,7 @@
 
 #define DESC(arg) {.ptr = (const uint8_t *)(arg), .len = sizeof(arg) - 1}
 
-// AIPD NI
+// National Instruments AIPD
 const struct wuptr aipd_desc = DESC(
 	"endian:big\n"
 	"bitdepth:8\n"
@@ -26,6 +26,35 @@ const struct wuptr aipd_desc = DESC(
 	"w:<u16>\n"
 	"h:<u16>\n"
 	"skip:0x1ec"
+);
+
+/* AMI BIOS Logo
+http://fileformats.archiveteam.org/wiki/GRFX
+ * AMI to PPM converter code:
+https://web.archive.org/web/20250430055528/https://kannegieser.net/veit/quelle/index_e.htm#ami_ppm.arj
+*/
+const struct wuptr amibios_desc = DESC(
+	"endian:little\n"
+	"channels:1\n"
+	"bitrange:6\n"
+
+	"match:[GRFX]\n"
+	"skip:2\n"
+	"match:[\x08\0]\n" /* Size of this header section, or an offset to what
+		follows. Apparently always 8. */
+
+	"skip:4\n"
+	"match:[\x4e\0]\n" // Size of this header section.
+	"skip:4\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"skip:4\n"
+	"match:<u16>(\n"
+		"16 bitdepth:4\n"
+	")\n"
+	"match:[\0IMA]\n"
+	"pal:<u24>[]\n"
+	"skip:6\n"
 );
 
 /* AVS

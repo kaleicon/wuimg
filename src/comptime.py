@@ -32,6 +32,16 @@ DEC_MAP = {
 			"ext": "apd",
 			"magic": b"AIPD",
 		},
+		"amibios": {
+			"desc": "AMI BIOS Logo",
+			"ext": "grf",
+			"magic": b"GRFX",
+		},
+		"amibios": {
+			"desc": "AMI BIOS Logo",
+			"ext": "grf",
+			"magic": b"GRFX",
+		},
 		"avs": {
 			"desc": "Stardent AVS X",
 			"match": (
