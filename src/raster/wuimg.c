@@ -471,25 +471,30 @@ static void print_colorspace_data(const struct color_space *cs, FILE *out) {
 		cicp_matrix_str(cs->matrix));
 	switch (cs->type) {
 	case color_profile_enum:
-		fprintf(out,
-			"   Transfer: %s\n"
-			"   Primaries: %s\n",
-			cicp_transfer_str(cs->transfer, cs->matrix),
-			cicp_primaries_str(cs->primaries));
-		break;
 	case color_profile_custom:
 		;const struct color_profile *prof = &cs->desc->u.prof;
-		fprintf(out, "   Gamma: %f %f %f\n",
-			prof->gamma.r, prof->gamma.g, prof->gamma.b);
-		fputs("   Primaries:\n", out);
-		const struct color_xy *p = (const struct color_xy *)&prof->pri;
-		const char *n[4] = {"White", "Red", "Green", "Blue"};
-		for (size_t i = 0; i < 4; ++i) {
-			fprintf(out, "    %s: %f, %f\n", n[i], p[i].x, p[i].y);
+		if (cs->transfer == 0 && cs->type == color_profile_custom) {
+			fprintf(out, "   Gamma: %f %f %f\n",
+				prof->gamma.r, prof->gamma.g, prof->gamma.b);
+		} else {
+			fprintf(out, "   Transfer: %s\n",
+				cicp_transfer_str(cs->transfer, cs->matrix));
+		}
+		if (cs->primaries == 0 && cs->type == color_profile_custom) {
+			fputs("   Primaries:\n", out);
+			const struct color_xy *p = (const struct color_xy *)&prof->pri;
+			const char *n[4] = {"White", "Red", "Green", "Blue"};
+			for (size_t i = 0; i < 4; ++i) {
+				fprintf(out, "    %s: %f, %f\n",
+					n[i], p[i].x, p[i].y);
+			}
+		} else {
+			fprintf(out, "   Primaries: %s\n",
+				cicp_primaries_str(cs->primaries));
 		}
 		break;
 	case color_profile_icc:
-		return;
+		break;
 	}
 }
 

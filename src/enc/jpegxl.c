@@ -80,7 +80,14 @@ static uint32_t same_time_res(const struct image_frames *frames) {
 	return den;
 }
 
-static int get_transfer(const struct wuimg *img) {
+static int get_transfer(const struct wuimg *img, double *gamma) {
+	const double g = color_space_get_gamma(&img->cs);
+	if (g) {
+		if (gamma) {
+			*gamma = 1.0/g;
+		}
+		return JXL_TRANSFER_FUNCTION_GAMMA;
+	}
 	switch (img->cs.transfer) {
 	case cicp_transfer_iec_61966_2_1: return JXL_TRANSFER_FUNCTION_SRGB;
 	case cicp_transfer_bt709_6: return JXL_TRANSFER_FUNCTION_709;
@@ -89,9 +96,43 @@ static int get_transfer(const struct wuimg *img) {
 	case cicp_transfer_smpte_st_2084: return JXL_TRANSFER_FUNCTION_PQ;
 	case cicp_transfer_smpte_st_428_1: return JXL_TRANSFER_FUNCTION_DCI;
 	case cicp_transfer_arib_std_b67: return JXL_TRANSFER_FUNCTION_HLG;
-	default: break;
+	default:
+		if (img->cs.transfer == 0) {
+			return JXL_TRANSFER_FUNCTION_SRGB;
+		}
 	}
-	return img->cs.transfer == 0 ? JXL_TRANSFER_FUNCTION_SRGB : NO_TRANSFER;
+	return NO_TRANSFER;
+}
+
+static JxlPrimaries get_primaries(const struct wuimg *img) {
+	if (img->cs.type == color_profile_enum) {
+		switch (img->cs.primaries) {
+		case cicp_primaries_bt709_6: return JXL_PRIMARIES_SRGB;
+		case cicp_primaries_bt2020_2: return JXL_PRIMARIES_2100;
+		case cicp_primaries_smpte_rp_431_2: return JXL_PRIMARIES_P3;
+		default:
+			if (!img->cs.primaries) {
+				return JXL_PRIMARIES_SRGB;
+			}
+			break;
+		}
+	}
+	return JXL_PRIMARIES_CUSTOM;
+}
+
+static JxlWhitePoint get_white_point(const struct wuimg *img) {
+	switch (color_space_white_point_type(&img->cs)) {
+	case color_white_other:
+	case color_white_c:
+		break;
+	case color_white_d65: return JXL_WHITE_POINT_D65;
+	case color_white_e: return JXL_WHITE_POINT_E;
+	case color_white_dci: return JXL_WHITE_POINT_DCI;
+	}
+	if (!img->cs.primaries) {
+		return JXL_WHITE_POINT_D65;
+	}
+	return JXL_WHITE_POINT_CUSTOM;
 }
 
 static JxlOrientation get_orientation(const struct wuimg *img) {
@@ -173,7 +214,24 @@ const struct wuimg *src, FILE *ofp) {
 	} else {
 		JxlColorEncoding color;
 		JxlColorEncodingSetToSRGB(&color, dst->channels < 3);
-		const int transfer = get_transfer(dst);
+		const struct color_primaries *pri = color_space_get_primaries(&dst->cs);
+		if (pri) {
+			color.white_point = get_white_point(dst);
+			if (color.white_point == JXL_WHITE_POINT_CUSTOM) {
+				color.white_point_xy[0] = pri->w.x;
+				color.white_point_xy[1] = pri->w.y;
+			}
+			color.primaries = get_primaries(dst);
+			if (color.primaries == JXL_PRIMARIES_CUSTOM) {
+				color.primaries_red_xy[0] = pri->r.x;
+				color.primaries_red_xy[1] = pri->r.y;
+				color.primaries_green_xy[0] = pri->g.x;
+				color.primaries_green_xy[1] = pri->g.y;
+				color.primaries_blue_xy[0] = pri->b.x;
+				color.primaries_blue_xy[1] = pri->b.y;
+			}
+		}
+		const int transfer = get_transfer(dst, &color.gamma);
 		if (transfer != NO_TRANSFER) {
 			color.transfer_function = (JxlTransferFunction)transfer;
 		}
@@ -227,14 +285,11 @@ static bool passthrough(const struct wuimg *src) {
 	if (src->layout == l_expect && cs->matrix == cicp_matrix_rgb) {
 		switch (cs->type) {
 		case color_profile_enum:
+		case color_profile_custom:
 			return cs->limited == false
-				&& get_transfer(src) != NO_TRANSFER
-				&& (cs->primaries == 0
-					|| cs->primaries == cicp_primaries_bt709_6);
+				&& get_transfer(src, NULL) != NO_TRANSFER;
 		case color_profile_icc:
 			return true;
-		default:
-			break;
 		}
 	}
 	return false;

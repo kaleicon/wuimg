@@ -5,6 +5,7 @@
 
 #include "wudefs.h"
 #include "misc/bit.h"
+#include "misc/common.h"
 #include "misc/endian.h"
 #include "misc/math.h"
 #include "misc/metadata.h"
@@ -111,6 +112,34 @@ static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
 	}
 }
 
+static void get_primaries(struct color_space *cs, JxlColorEncoding *enc) {
+	struct broken_cicp {
+		JxlWhitePoint white;
+		JxlPrimaries primaries;
+		enum cicp_primaries cicp;
+	} pairs[] = {
+		{JXL_WHITE_POINT_D65, JXL_PRIMARIES_SRGB, cicp_primaries_bt709_6},
+		{JXL_WHITE_POINT_D65, JXL_PRIMARIES_2100, cicp_primaries_bt2020_2},
+		{JXL_WHITE_POINT_DCI, JXL_PRIMARIES_P3, cicp_primaries_smpte_rp_431_2},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(pairs); ++i) {
+		if (enc->primaries == pairs[i].primaries
+		&& enc->white_point == pairs[i].white) {
+			cs->primaries = pairs[i].cicp;
+			return;
+		}
+	}
+	color_space_set_primaries(cs,
+		enc->white_point_xy[0],
+		enc->white_point_xy[1],
+		enc->primaries_red_xy[0],
+		enc->primaries_red_xy[1],
+		enc->primaries_green_xy[0],
+		enc->primaries_green_xy[1],
+		enc->primaries_blue_xy[0],
+		enc->primaries_blue_xy[1]);
+}
+
 static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
 	const JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
 	JxlColorEncoding enc;
@@ -118,15 +147,7 @@ static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
 	== JXL_DEC_SUCCESS) {
 		switch (enc.color_space) {
 		case JXL_COLOR_SPACE_RGB:
-			color_space_set_primaries(&img->cs,
-				enc.white_point_xy[0],
-				enc.white_point_xy[1],
-				enc.primaries_red_xy[0],
-				enc.primaries_red_xy[1],
-				enc.primaries_green_xy[0],
-				enc.primaries_green_xy[1],
-				enc.primaries_blue_xy[0],
-				enc.primaries_blue_xy[1]);
+			get_primaries(&img->cs, &enc);
 			// fallthrough
 		case JXL_COLOR_SPACE_GRAY:
 			if (enc.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {

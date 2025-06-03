@@ -103,6 +103,10 @@ const int frame) {
 	if (frame == 0) {
 		out->dst = (struct wuimg){0};
 		out->passthrough = enc->best_fit(&out->dst, src);
+		if (getenv("WU_DEBUG")) {
+			fprintf(stderr, "passthrough: %s\n",
+				out->passthrough ? "yes" : "no");
+		}
 		if (!out->passthrough) {
 			if (wuimg_verify(&out->dst) == wu_ok) {
 				const size_t rows = enc->write_row ? 1 : out->dst.h;

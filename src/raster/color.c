@@ -327,6 +327,48 @@ struct color_transfer *eotf) {
 	return false;
 }
 
+double color_space_get_gamma(const struct color_space *cs) {
+	if (cs->type != color_profile_icc) {
+		switch (cs->transfer) {
+		case cicp_transfer_bt470_6_system_m: return 2.2;
+		case cicp_transfer_bt470_6_system_b_g: return 2.8;
+		default: break;
+		}
+		if (cs->transfer == 0 && cs->type == color_profile_custom) {
+			return cs->desc->u.prof.gamma.r;
+		}
+	}
+	return 0;
+}
+
+enum color_white_point color_space_white_point_type(const struct color_space *cs) {
+	if (cs->type == color_profile_enum) {
+		if (cs->matrix == cicp_matrix_bt2100_2_ictcp) {
+			return color_white_d65;
+		}
+		switch (cs->primaries) {
+		case cicp_primaries_bt709_6:
+		case cicp_primaries_bt470_6_system_b_g:
+		case cicp_primaries_bt601_7:
+		case cicp_primaries_smpte_st_240:
+		case cicp_primaries_bt2020_2:
+		case cicp_primaries_smpte_eg_432_1:
+		case cicp_primaries_the_unidentified:
+			return color_white_d65;
+		case cicp_primaries_unspecified:
+			break;
+		case cicp_primaries_bt470_6_system_m:
+		case cicp_primaries_generic_film:
+			return color_white_c;
+		case cicp_primaries_smpte_st_428_1:
+			return color_white_e;
+		case cicp_primaries_smpte_rp_431_2:
+			return color_white_dci;
+		}
+	}
+	return color_white_other;
+}
+
 static const struct color_primaries * get_cicp_primaries(
 const enum cicp_primaries primaries, const enum cicp_matrix matrix,
 const struct color_primaries *fallback) {
@@ -428,6 +470,11 @@ const struct color_space *cs, const struct color_primaries *fallback) {
 		break;
 	}
 	return fallback;
+}
+
+const struct color_primaries * color_space_get_primaries(
+const struct color_space *cs) {
+	return get_primaries(cs, NULL);
 }
 
 static double range_offset(const bool limited) {
@@ -610,7 +657,7 @@ static void vec3_set_primaries(double vec[static 3], const struct color_xy xy) {
 
 static bool kb_kr_from_chroma(double *restrict kb, double *restrict kr,
 const struct color_space *cs) {
-	const struct color_primaries *p = get_primaries(cs, NULL);
+	const struct color_primaries *p = color_space_get_primaries(cs);
 	if (p) {
 		double w[3], r[3], g[3], b[3];
 		vec3_set_primaries(w, p->w);

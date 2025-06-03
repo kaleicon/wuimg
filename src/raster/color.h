@@ -41,6 +41,14 @@ struct color_convert {
 	struct mat3f linear;
 };
 
+enum color_white_point {
+	color_white_other = 0,
+	color_white_d65,
+	color_white_c,
+	color_white_e,
+	color_white_dci,
+};
+
 struct color_xy {
 	double x, y;
 };
@@ -83,6 +91,13 @@ struct color_space {
 };
 
 const char * color_space_type_str(const struct color_space *cs);
+
+double color_space_get_gamma(const struct color_space *cs);
+
+enum color_white_point color_space_white_point_type(const struct color_space *cs);
+
+const struct color_primaries * color_space_get_primaries(
+const struct color_space *cs);
 
 bool color_space_to_linear_sRGB(const struct color_space *cs,
 struct color_convert *conv, bool grayscale, bool maybe_yuv, double scale);
