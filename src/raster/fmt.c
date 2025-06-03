@@ -77,7 +77,7 @@ size_t nmemb, FILE *ifp, uint8_t range) {
 		}
 		return wuok();
 	}
-	return WUERR_HERE(wu_unexpected_eof);;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,

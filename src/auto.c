@@ -217,6 +217,20 @@ const struct wuptr ota_desc = DESC(
 	"(bitdepth:<u8> 1)"
 );
 
+/* Pictris */
+const struct wuptr pictris_desc = DESC(
+	"w:320\n"
+	"h:200\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+	"bitrange:6\n"
+
+	"match:[$PICTURE FOR PICTRIS (c) by Kai Lemke]\n"
+	"seek:0xfa25\n"
+	"pal:<u24>[]\n"
+	"seek:0x25\n"
+);
+
 /* Eclipse Proxy (pxy)
  * Related to Eclipse TILE (see lib/eclipse.c), but raster is not tiled,
  * colorspace is always RGB, and there's no metadata, hence it being here. */
@@ -601,9 +615,11 @@ const struct load l) {
 		case 3: case 4:
 			;struct palette *pal = wuimg_palette_init(img);
 			if (pal) {
-				const enum wu_error st = fmt_load_pal(ifp, pal,
-					l.size, elems);
-				return wuerr(st, "Palette load failure");
+				const uint8_t range = img->bitrange
+					? img->bitrange : 8;
+				img->bitrange = img->bitdepth;
+				return fmt_load_pal_bitrange(pal, l.size, elems,
+					ifp, range);
 			}
 			return wuerr(wu_alloc_error, "Palette alloc error");
 		default: return pbug("Palette must be <u24> or <u32>");
@@ -725,6 +741,8 @@ const struct token *tok, uint32_t *scalar) {
 		;const uintmax_t num = tok->u.num;
 		if (wuptr_eq_str(op, "skip")) {
 			fseek(infile->ifp, (long)num, SEEK_CUR);
+		} else if (wuptr_eq_str(op, "seek")) {
+			fseek(infile->ifp, (long)num, SEEK_SET);
 		} else if (wuptr_eq_str(op, "bitrange")) {
 			img->bitrange = (uint8_t)num;
 		} else if (wuptr_eq_str(op, "bitfield")) {

@@ -103,6 +103,11 @@ DEC_MAP = {
 			"desc": "Over The Air bitmap (uncompliant)",
 			"match": "otb",
 		},
+		"pictris": {
+			"desc": "Pictris",
+			"ext": "pic",
+			"magic": b"$PICTURE FOR PICTRIS (c) by Kai Lemke",
+		},
 		"pxy": {
 			"desc": "Eclipse Proxy",
 			"ext": "pxy",
