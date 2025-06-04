@@ -23,10 +23,13 @@ struct palette * palette_new(void);
 void palette_expand(void *restrict dst, const uint8_t *restrict src,
 const struct palette *cm, size_t width, uint8_t bitdepth);
 
-void palette_from_rgb8(struct palette *dst, const void *src, size_t nmemb);
-
 void palette_from_rgb8_bitrange(struct palette *dst, const void *src,
 size_t nmemb, uint8_t bitrange);
+
+void palette_from_rgb8(struct palette *dst, const void *src, size_t nmemb);
+
+bool palette_from_file(struct palette *dst, uint8_t size, size_t nmemb,
+FILE *src, uint8_t bitrange);
 
 
 struct palette_crng {

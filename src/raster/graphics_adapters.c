@@ -160,27 +160,21 @@ const size_t dwords, const struct palette *yae) {
 
 // Can't be bothered to write tables
 struct pix_rgba8 ega_palette(const size_t idx) {
-	const size_t r = ((idx >> 1) & 2) | ((idx >> 5) & 1);
-	const size_t g = ((idx     ) & 2) | ((idx >> 4) & 1);
-	const size_t b = ((idx << 1) & 2) | ((idx >> 3) & 1);
 	return (struct pix_rgba8) {
-		.r = (uint8_t)(r * 0x55),
-		.g = (uint8_t)(g * 0x55),
-		.b = (uint8_t)(b * 0x55),
-		.a = 0xff,
+		.r = (uint8_t)(((idx >> 1) & 2) | ((idx >> 5) & 1)),
+		.g = (uint8_t)(((idx     ) & 2) | ((idx >> 4) & 1)),
+		.b = (uint8_t)(((idx << 1) & 2) | ((idx >> 3) & 1)),
+		.a = 0x03,
 	};
 }
 
 struct pix_rgba8 cga_palette(const size_t idx) {
 	const bool brown_circuit = (idx == 6);
 	const size_t bright = idx >> 3;
-	const size_t r = ((idx >> 1) & 2) | bright;
-	const size_t g = ((idx       & 2) | bright) - brown_circuit;
-	const size_t b = ((idx << 1) & 2) | bright;
 	return (struct pix_rgba8) {
-		.r = (uint8_t)(r * 0x55),
-		.g = (uint8_t)(g * 0x55),
-		.b = (uint8_t)(b * 0x55),
-		.a = 0xff,
+		.r = (uint8_t)(((idx >> 1) & 2) | bright),
+		.g = (uint8_t)(((idx       & 2) | bright) - brown_circuit),
+		.b = (uint8_t)(((idx << 1) & 2) | bright),
+		.a = 0x03,
 	};
 }

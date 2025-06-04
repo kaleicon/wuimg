@@ -235,6 +235,7 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 		{0, 10, 12, 14},
 		{0, 11, 12, 15},
 	};
+	img->bitrange = 2;
 	switch (pal_type) {
 	case pictor_no_palette:
 		if (bpp == 2) {
@@ -267,7 +268,8 @@ const enum pictor_palette_type pal_type, const uint16_t size) {
 		break;
 	case pictor_vga_palette:
 	case pictor_vga_too_i_think:
-		palette_from_rgb8_bitrange(pal, buf, size/3, 6);
+		img->bitrange = 6;
+		palette_from_rgb8_bitrange(pal, buf, size/3, img->bitrange);
 		break;
 	}
 	return wu_ok;

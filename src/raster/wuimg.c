@@ -344,12 +344,44 @@ struct image_planes * wuimg_plane_init(struct wuimg *img) {
 			+ img->channels * sizeof(*img->u.planes->p)));
 }
 
+
 struct palette * wuimg_palette_set(struct wuimg *img, struct palette *pal) {
 	return set_img_mode(img, image_mode_palette, pal);
 }
 
 struct palette * wuimg_palette_init(struct wuimg *img) {
 	return set_img_mode(img, image_mode_palette, palette_new());
+}
+
+struct wu_st wuimg_palette_from_file(struct wuimg *img, uint8_t size,
+size_t nmemb, FILE *ifp) {
+	struct palette *pal = wuimg_palette_init(img);
+	if (pal) {
+		if (!img->bitrange) {
+			img->bitrange = img->bitdepth;
+		}
+		return palette_from_file(pal, size, nmemb, ifp, img->bitrange)
+			? wuok() : WUERR_HERE(wu_unexpected_eof);
+	}
+	return WUERR_HERE(wu_alloc_error);
+}
+
+struct wu_st wuimg_palette_from_buf(struct wuimg *img, uint8_t size,
+size_t nmemb, const uint8_t *src) {
+	struct palette *pal = wuimg_palette_init(img);
+	if (pal) {
+		if (!img->bitrange) {
+			img->bitrange = img->bitdepth;
+		}
+		if (size == 3) {
+			palette_from_rgb8_bitrange(pal, src, nmemb,
+				img->bitrange);
+		} else {
+			memcpy(pal->color, src, size*nmemb);
+		}
+		return wuok();
+	}
+	return WUERR_HERE(wu_alloc_error);
 }
 
 

@@ -6,10 +6,8 @@
 #include "misc/mparser.h"
 #include "raster/wuimg.h"
 
-size_t jam_decode(struct mparser mp, struct wuimg *img);
+struct wu_st jam_decode(struct mparser mp, struct wuimg *img);
 
-enum wu_error jam_parse(struct mparser *mp, struct wuimg *img);
-
-enum wu_error jam_identify(struct mparser *mp, struct wuptr map);
+struct wu_st jam_parse(struct mparser *mp, struct wuimg *img);
 
 #endif /* LIB_JAM */

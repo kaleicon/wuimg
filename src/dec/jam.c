@@ -1,26 +1,22 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/jam.h"
 
-static size_t dec(const void *restrict ptr, struct wuimg *img) {
-	const struct mparser *mp = ptr;
-	return jam_decode(*mp, img);
-}
-static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
-	return jam_parse(ptr, img);
-}
-static enum wu_error init(void *restrict ptr, struct image_file *infile) {
-	return jam_identify(ptr, infile->map);
-}
-
-static enum wu_error jam_dec(struct image_file *infile,
+static struct wu_st init_jam(struct image_file *infile,
 const struct wu_conf *conf) {
-	struct mparser mp;
-	return rast_trivial_dec(infile, conf, &mp, init, parse, NULL, dec);
+	struct mparser mp = mp_wuptr(infile->map);
+	struct wu_st st = jam_parse(&mp, infile->sub_img);
+	if (wu_isok(st)) {
+		st = wuimg_exceeds_limit(infile->sub_img, conf)
+			? WUERR_HERE(wu_exceeds_size_limit)
+			: jam_decode(mp, infile->sub_img);
+	}
+	return st;
 }
 
 const struct image_fn jam_fn = {
+	.alloc_single = true,
 	.mmap = true,
-	.dec = jam_dec,
+	.init = init_jam,
 };

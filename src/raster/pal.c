@@ -101,28 +101,31 @@ const struct palette *cm, const size_t width, const uint8_t bitdepth) {
 	}
 }
 
-void palette_from_rgb8(struct palette *dst, const void *src,
-const size_t nmemb) {
-	const struct pix_rgb8 *s = src;
-	for (size_t i = 0; i < nmemb; ++i) {
-		memmove(dst->color + i, s + i, (i + 1 < nmemb) ? 4 : 3);
-		dst->color[i].a = 0xff;
-	}
-}
-
 void palette_from_rgb8_bitrange(struct palette *dst, const void *src,
 const size_t nmemb, const uint8_t bitrange) {
 	const uint8_t max = (uint8_t)bit_set32(bitrange);
-	const uint32_t scale = (0xffu << 8) / max + 1;
 	const struct pix_rgb8 *s = src;
 	for (size_t i = 0; i < nmemb; ++i) {
-		dst->color[i] = (struct pix_rgba8) {
-			.r = (uint8_t)((s[i].r * scale) >> 8),
-			.g = (uint8_t)((s[i].g * scale) >> 8),
-			.b = (uint8_t)((s[i].b * scale) >> 8),
-			.a = 0xff,
-		};
+		memmove(dst->color + i, s + i, (i + 1 < nmemb) ? 4 : 3);
+		dst->color[i].a = max;
 	}
+}
+
+void palette_from_rgb8(struct palette *dst, const void *src,
+const size_t nmemb) {
+	palette_from_rgb8_bitrange(dst, src, nmemb, 8);
+}
+
+bool palette_from_file(struct palette *dst, const uint8_t size,
+const size_t nmemb, FILE *ifp, const uint8_t bitrange) {
+	uint8_t *src = (uint8_t *)dst->color + (4 - size) * nmemb;
+	if (fread(src, size*nmemb, 1, ifp)) {
+		if (size == 3) {
+			palette_from_rgb8_bitrange(dst, src, nmemb, bitrange);
+		}
+		return true;
+	}
+	return false;
 }
 
 

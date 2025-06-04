@@ -166,6 +166,12 @@ struct palette * wuimg_palette_set(struct wuimg *img, struct palette *pal);
 
 struct palette * wuimg_palette_init(struct wuimg *img);
 
+struct wu_st wuimg_palette_from_file(struct wuimg *img, uint8_t size,
+size_t nmemb, FILE *ifp);
+
+struct wu_st wuimg_palette_from_buf(struct wuimg *img, uint8_t size,
+size_t nmemb, const uint8_t *src);
+
 
 /* With `shown` as the currently shown frame, get the closest starting point
  * needed to render frame `i`. */

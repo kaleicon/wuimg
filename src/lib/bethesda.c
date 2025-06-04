@@ -72,6 +72,9 @@ struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
 
 	img->w = endian16(info[1], little_endian);
 	img->h = endian16(info[2], little_endian);
+	img->channels = 1;
+	img->bitdepth = 8;
+	img->bitrange = 6;
 	desc->compression = endian16(info[5], little_endian);
 	switch (desc->compression) {
 	case gxa_none: break;
@@ -92,21 +95,21 @@ struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
 		return wuerr(wu_uncertain_validity,
 			"unknown compression method > 2");
 	}
-	img->channels = 1;
-	img->bitdepth = 8;
 	wuimg_palette_set(img, palette_ref(desc->pal));
 	return wuimg_verify_st(img);
 }
 
 static struct wu_st load_pal(struct palette **pal, FILE *ifp,
 const uint32_t chunk_len) {
-	if (chunk_len != 0x300) {
-		return wuerr(wu_invalid_header, "palette length != 256*3");
+	if (chunk_len == 0x300) {
+		*pal = palette_new();
+		if (*pal) {
+			return palette_from_file(*pal, 3, 256, ifp, 6)
+				? wuok() : WUERR_HERE(wu_unexpected_eof);
+		}
+		return WUERR_HERE(wu_alloc_error);
 	}
-	*pal = palette_new();
-	return *pal
-		? fmt_load_pal_bitrange(*pal, fmt_pal_rgb, 256, ifp, 6)
-		: WUERR_HERE(wu_alloc_error);
+	return wuerr(wu_invalid_header, "palette length != 256*3");
 }
 
 static struct wu_st bbmp(struct iff_state *iff, void *ptr,
@@ -256,6 +259,7 @@ struct wu_st bsi_set_image(struct bsi_desc *desc, struct wuimg *img) {
 	img->channels = 1;
 	img->bitdepth = 8;
 	if (desc->pal) {
+		img->bitrange = 6;
 		wuimg_palette_set(img, palette_ref(desc->pal));
 	}
 	return wuimg_verify_st(img);

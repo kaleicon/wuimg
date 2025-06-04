@@ -7,9 +7,9 @@
 https://moddingwiki.shikadi.net/wiki/JAM_Format
 */
 
-size_t jam_decode(struct mparser mp, struct wuimg *img) {
+struct wu_st jam_decode(struct mparser mp, struct wuimg *img) {
 	if (!wuimg_alloc_noverify(img)) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	const struct wuptr src = mp_remaining(&mp);
@@ -46,7 +46,7 @@ size_t jam_decode(struct mparser mp, struct wuimg *img) {
 		}
 		d += len;
 	}
-	return d;
+	return wuerr_partial(d, dst_len);
 }
 
 enum jam_direction {
@@ -54,54 +54,52 @@ enum jam_direction {
 	jam_vertical = 9,
 };
 
-enum wu_error jam_parse(struct mparser *mp, struct wuimg *img) {
+struct wu_st jam_parse(struct mparser *mp, struct wuimg *img) {
 	/* JAM structure (after ID):
 		Offset  Type    Name
-		0       u16     FileSize
-		2       u16     Width
-		4       u16     Height
-		6       u16     Direction
-		8       u16     Bitdepth?
-		10      u16     PalElems
-		12      u8      Palette[PalElems]
+		0       u8      ID[4]
+		4       u16     FileSize
+		6       u16     Width
+		8       u16     Height
+		10      u16     Direction
+		12      u16     Bitdepth?
+		14      u16     PalElems
+		16      u8      Palette[PalElems]
 		--      u8      CompressedData
 	*/
-	const uint8_t *hdr = mp_slice(mp, 12);
+	const uint8_t *hdr = mp_slice(mp, 16);
 	if (!hdr) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	uint16_t w = buf_endian16(hdr + 2, little_endian);
-	uint16_t h = buf_endian16(hdr + 4, little_endian);
-	const uint16_t direction = buf_endian16(hdr + 6, little_endian);
-	const uint16_t depth = buf_endian16(hdr + 8, little_endian);
-	const uint16_t elems = buf_endian16(hdr + 10, little_endian);
-	if ((direction != jam_horizontal && direction != jam_vertical)
+	const uint8_t sig[] = {'X', 'C', 'O', 'M'};
+	uint16_t w = buf_endian16(hdr + 6, little_endian);
+	uint16_t h = buf_endian16(hdr + 8, little_endian);
+	const uint16_t direction = buf_endian16(hdr + 10, little_endian);
+	const uint16_t depth = buf_endian16(hdr + 12, little_endian);
+	const uint16_t elems = buf_endian16(hdr + 14, little_endian);
+	if (memcmp(sig, hdr, sizeof(sig))
+	|| (direction != jam_horizontal && direction != jam_vertical)
 	|| depth != 8 || !elems || elems > 256*3) {
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
 	const bool vert = direction == jam_vertical;
 	img->w = vert ? h : w;
 	img->h = vert ? w : h;
 	img->channels = 1;
 	img->bitdepth = 8;
+	img->bitrange = 6;
 	img->rotate = vert ? 1 : 0;
 	img->mirror = vert;
 
-	hdr = mp_slice(mp, elems);
-	if (!hdr) {
-		return wu_unexpected_eof;
-	}
-	struct palette *pal = wuimg_palette_init(img);
+	const uint8_t *pal = mp_slice(mp, elems);
 	if (!pal) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	palette_from_rgb8_bitrange(pal, hdr, elems/3, 6);
-	return wuimg_verify(img);
-}
 
-enum wu_error jam_identify(struct mparser *mp, const struct wuptr map) {
-	const uint8_t sig[] = {'X', 'C', 'O', 'M'};
-	*mp = mp_wuptr(map);
-	return fmt_sigcmp_mem(sig, sizeof(sig), mp);
+	struct wu_st st = wuimg_palette_from_buf(img, 3, elems/3, pal);
+	if (wu_isok(st)) {
+		return wuimg_verify_st(img);
+	}
+	return st;
 }

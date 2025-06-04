@@ -642,15 +642,7 @@ const struct load l) {
 	if (elems <= 256) {
 		switch (l.size) {
 		case 3: case 4:
-			;struct palette *pal = wuimg_palette_init(img);
-			if (pal) {
-				const uint8_t range = img->bitrange
-					? img->bitrange : 8;
-				img->bitrange = img->bitdepth;
-				return fmt_load_pal_bitrange(pal, l.size, elems,
-					ifp, range);
-			}
-			return wuerr(wu_alloc_error, "Palette alloc error");
+			return wuimg_palette_from_file(img, l.size, elems, ifp);
 		default: return pbug("Palette must be <u24> or <u32>");
 		}
 	}

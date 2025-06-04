@@ -6,9 +6,9 @@
 #include "misc/mparser.h"
 #include "raster/wuimg.h"
 
-size_t skyroads_decode(struct mparser mp, struct wuimg *img);
+struct wu_st skyroads_decode(struct mparser mp, struct wuimg *img);
 
-enum wu_error skyroads_parse(struct mparser *mp, struct wuimg *img,
+struct wu_st skyroads_parse(struct mparser *mp, struct wuimg *img,
 struct wuptr mem);
 
 #endif // LIB_SKYROADS

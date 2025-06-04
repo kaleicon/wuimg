@@ -125,6 +125,7 @@ struct wuimg *img, const struct pix_rgb8 *pal_data) {
 			pal->color[1] = (struct pix_rgba8){0xff, 0xff, 0xff, 0xff};
 		}
 	} else if (check_cga_mode(desc, img)) {
+		img->bitrange = 2;
 		unsigned palnum;
 		bool intensity, colorburst;
 		if (desc->palette_type) {
@@ -159,6 +160,7 @@ struct wuimg *img, const struct pix_rgb8 *pal_data) {
 	} else if (pal_data) { // Header or trailing palette
 		palette_from_rgb8(pal, pal_data, entries);
 	} else { // Standard EGA palette (CGA)
+		img->bitrange = 2;
 		for (size_t i = 0; i < entries; ++i) {
 			pal->color[i] = cga_palette(i);
 		}
@@ -259,7 +261,7 @@ struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 		memcpy(img->data, src.ptr, r);
 	}
 	if (!r) {
-		return wuerr(wu_unexpected_eof, __func__);
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	struct wu_st st = looking_for_lost_pauline(desc, img,
 		src.ptr + r, src.len - r);
@@ -307,7 +309,7 @@ struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 
 	const uint8_t *hdr = mp_slice(&desc->mp, 71);
 	if (!hdr) {
-		return wuerr(wu_unexpected_eof, __func__);
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	desc->horz_res = buf_endian16(hdr + 9, little_endian);
@@ -393,10 +395,10 @@ struct wu_st pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
 					return wuok();
 				}
 			}
-			return wuerr(wu_invalid_signature, __func__);
+			return WUERR_HERE(wu_invalid_signature);
 		}
 	}
-	return wuerr(wu_unexpected_eof, __func__);
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 
@@ -412,7 +414,7 @@ const uint32_t i) {
 			dcx->off[i + 1] - dcx->off[i]
 		));
 	}
-	return wuerr(wu_invalid_params, __func__);
+	return WUERR_HERE(wu_invalid_params);
 }
 
 struct wu_st dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
@@ -457,7 +459,7 @@ struct wu_st dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
 			st = wu_alloc_error;
 		}
 	}
-	return wuerr(st, __func__);
+	return WUERR_HERE(st);
 }
 
 /* Ok bye */

@@ -62,27 +62,10 @@ size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, const enum endianness 
 }
 
 
-struct wu_st fmt_load_pal_bitrange(struct palette *pal, enum fmt_pal_type type,
-size_t nmemb, FILE *ifp, uint8_t range) {
-	const size_t size = (size_t)type;
-	unsigned char *buf = (unsigned char *)pal->color + (4 - size) * nmemb;
-	if (fread(buf, size*nmemb, 1, ifp)) {
-		if (size == 3) {
-			if (range == 8) {
-				palette_from_rgb8(pal, buf, nmemb);
-			} else {
-				palette_from_rgb8_bitrange(pal, buf, nmemb,
-					range);
-			}
-		}
-		return wuok();
-	}
-	return WUERR_HERE(wu_unexpected_eof);
-}
-
 enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
 const enum fmt_pal_type type, const size_t nmemb) {
-	return fmt_load_pal_bitrange(pal, type, nmemb, ifp, 8).st;
+	return palette_from_file(pal, type, nmemb, ifp, 8)
+		? wu_ok : wu_unexpected_eof;
 }
 
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig,
