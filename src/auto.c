@@ -114,6 +114,23 @@ const struct wuptr chky_desc = DESC(
 	"skip:4"
 );
 
+/* CKiSS - Cherry KiSS CEL
+ * 32-bit RGBA variant of
+https://otakuworld.com/kiss/download/kissfrmt.txt
+*/
+const struct wuptr ckiss_desc = DESC(
+	"endian:little\n"
+	"channels:4\n"
+	"bitdepth:8\n"
+
+	"match:[KiSS\x20\x20]\n"
+	"skip:2\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"skip:4\n" // X and Y offset
+	"skip:16\n" // Reserved. All 0
+);
+
 // FARBFELD
 const struct wuptr farbfeld_desc = DESC(
 	"endian:big\n"

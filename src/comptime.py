@@ -60,6 +60,11 @@ DEC_MAP = {
 				b"FORM" b"\0\0\0\0" b"CHKY",
 			),
 		},
+		"ckiss": {
+			"desc": "Cherry KiSS CEL",
+			"ext": "cel",
+			"magic": b"KiSS\x20\x20"
+		},
 		"farbfeld": {
 			"desc": "farbfeld",
 			"ext": "ff",
