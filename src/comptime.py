@@ -122,6 +122,11 @@ DEC_MAP = {
 				b"\xff\xff\xff\xff\xff\xfc", b"NLM \x01\x00",
 			),
 		},
+		"olpc565": {
+			"desc": "OLPC 565",
+			"ext": "565",
+			"magic": b"C565",
+		},
 		"ota": {
 			"desc": "Over The Air bitmap (uncompliant)",
 			"match": "otb",

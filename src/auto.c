@@ -260,6 +260,20 @@ const struct wuptr nlm_desc = DESC(
 	"match:[\x01]" // ???
 );
 
+/* OLPC 565
+https://github.com/openbios/openfirmware/blob/master/cpu/x86/pc/olpc/images/README
+*/
+const struct wuptr olpc565_desc = DESC(
+	"endian:little\n"
+	"channels:1\n"
+	"bitdepth:16\n"
+	"bitfield:0x565\n"
+
+	"match:[C565]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+);
+
 /* OTA - Over The Air bitmap
 https://web.archive.org/web/20120624211208/http://www.csoft.co.uk/documents/sms3_0_0.pdf
  * Unlike every monochrome format ever, there are no padding bits between rows.
