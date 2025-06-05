@@ -246,6 +246,38 @@ const struct wuptr ota_desc = DESC(
 	"(bitdepth:<u8> 1)"
 );
 
+/* PIC/CEL - Autodesk Animator PIC/CEL
+https://github.com/AnimatorPro/docs/blob/main/text/v/FILES.DOC
+ * Used in video games, too
+https://moddingwiki.shikadi.net/wiki/CEL_Format_(Chasm)
+*/
+const struct wuptr piccel_desc = DESC(
+	/* PIC/CEL header:
+		Offset  Type    Name
+		0       u16     ID           // 0x19 0x91
+		2       u16     Width
+		4       u16     Height
+		6       u16     X
+		8       u16     Y
+		10      u8      Bitdepth     // 8
+		11      u8      Compression  // Should be 0, but sometimes isn't
+		12      u32     DataSize     // Sometimes unset
+		16      u8      Reserved[16] // Should be 0
+		32      u8      Palette[256][3]
+	*/
+	"endian:little\n"
+	"channels:1\n"
+	"bitrange:6\n"
+
+	"match:[\x19\x91]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"skip:4\n"
+	"(bitdepth:<u8> 8)\n"
+	"skip:21\n"
+	"pal:<u24>[]\n"
+);
+
 /* Pictris */
 const struct wuptr pictris_desc = DESC(
 	"w:320\n"

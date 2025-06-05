@@ -113,6 +113,11 @@ DEC_MAP = {
 			"desc": "Over The Air bitmap (uncompliant)",
 			"match": "otb",
 		},
+		"piccel": {
+			"desc": "Autodesk Animator PIC/CEL",
+			"ext": ("pic", "cel"),
+			"magic": b"\x19\x91",
+		},
 		"pictris": {
 			"desc": "Pictris",
 			"ext": "pic",
