@@ -106,6 +106,14 @@ DEC_MAP = {
 			"ext": "kro",
 			"magic": b"KRO\x01",
 		},
+		"megapat": {
+			"desc": "MegaPaint Pattern",
+			"ext": "pat",
+			"mask": (
+				b"\xff\xff\xff\xff" b"\xff\0\xff\0",
+				b"\x07PAT" b" \0.\0"
+			),
+		},
 		"nlm": {
 			"desc": "Nokia Logo Manager",
 			"ext": "nlm",

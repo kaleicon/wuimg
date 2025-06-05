@@ -230,6 +230,21 @@ const struct wuptr kro_desc = DESC(
 	"(channels:<u32> 3 4)"
 );
 
+/* MegaPaint Pattern */
+const struct wuptr megapat_desc = DESC(
+	"w:32\n"
+	"h:1024\n" // There are always 32 patterns, each 32x32
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted\n"
+
+	"match:[\x07PAT ]\n"
+	"skip:1\n"
+	"match:[.]\n"
+	"skip:1\n"
+	// There are 292 bytes of unknown data after the patterns
+);
+
 // Nokia Logo Manager
 // TODO: Report logo type, multiple images
 const struct wuptr nlm_desc = DESC(
