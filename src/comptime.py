@@ -123,7 +123,7 @@ DEC_MAP = {
 			),
 		},
 		"olpc565": {
-			"desc": "OLPC 565",
+			"desc": "OLPC 565 boot graphic",
 			"ext": "565",
 			"magic": b"C565",
 		},

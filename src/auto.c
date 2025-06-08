@@ -268,6 +268,7 @@ const struct wuptr olpc565_desc = DESC(
 	"channels:1\n"
 	"bitdepth:16\n"
 	"bitfield:0x565\n"
+	"layout:bgra\n"
 
 	"match:[C565]\n"
 	"w:<u16>\n"
