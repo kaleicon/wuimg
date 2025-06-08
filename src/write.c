@@ -188,7 +188,11 @@ struct wuimg *src) {
 			out->ofp = create_file(out, &image->state, args->overwrite,
 				supports_anim ? NULL : src->frames,
 				ENC_TABLE[args->codec].ext);
-			msg = out->ofp ? NULL : strerror(errno);
+		}
+		if (out->ofp) {
+			setbuf(out->ofp, NULL);
+		} else {
+			msg = strerror(errno);
 		}
 	}
 	return msg;
