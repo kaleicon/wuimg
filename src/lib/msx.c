@@ -382,7 +382,11 @@ static enum msx_screen mode_from_ext(const uint8_t ext[static 3]) {
 	case msx_screen7:
 	case msx_screen8:
 	case msx_screen10:
+		return ext[2];
 	case msx_screen12:
+		if (ext[0] == 'p' && ext[1] == 'i') {
+			return msx_screen8;
+		}
 		return ext[2];
 	}
 	const uint8_t grp[][4] = {
@@ -476,7 +480,7 @@ const uint8_t ext[static 3]) {
 		img->w = 256;
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 8;
-		img->layout = pix_layout_mul(img->layout, pix_bgra);
+		img->layout = pix_layout_pack(1, 2, 0, 3);
 		if (!wuimg_bitfield_from_id(img, 0x332)) {
 			return wu_alloc_error;
 		}
