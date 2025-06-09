@@ -346,14 +346,16 @@ const int len, char **names, const struct wu_conf *conf) {
 }
 
 const char write_description[] =
-	"\tConvert each FILE to FILE[_sub:frame:num:den].pam, with sub-images\n"
-	"\tand animation frames on separate files. Output names are written\n"
-	"\tto stdout.\n"
-	"\tFor images with multiple sub-images, output names contain the\n"
-	"\tsub-image index.\n"
-	"\tWhen a sub-image is an animation, name additionally contains the\n"
-	"\tframe index, then the frame duration in seconds expressed as\n"
-	"\tnumerator and denominator.\n"
+	"\tTranscode each FILE into the selected format, with output names\n"
+	"\twritten to stdout. Exact behavior depends on input and output formats:\n\n"
+	"\t * If the input contains multiple sub-images, each is written to a\n"
+	"\t   different file (\"FILE\" -> \"FILE_#subindex.ext\").\n\n"
+	"\t * If the output doesn't support animations, each frame is written\n"
+	"\t   to a different file, containing the sub-image index, frame number,\n"
+	"\t   and the duration in seconds as numerator and denominator\n"
+	"\t   (\"FILE\" -> \"FILE_#subindex:#frame:#num:#den.ext\").\n\n"
+	"\t * Input colorspace is preserved when supported by the output, otherwise\n"
+	"\t   the image is converted to sRGB.\n"
 ;
 
 const char write_switches[] =
@@ -363,7 +365,7 @@ const char write_switches[] =
 	"\t-e ENCODER\n"
 	"\t\tOutput format. Supported encoders are\n"
 #ifdef WU_ENABLE_JPEGXL
-	"\t\t* jxl\n"
+	"\t\t* jxl (animation, ICC profiles, floating-point data)\n"
 #endif
 	"\t\t* pam\n"
 
