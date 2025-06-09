@@ -640,9 +640,9 @@ static struct wu_st read_token(struct mparser *mp, struct token *tok) {
 	case '0': case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
 		--mp->pos;
-		mp_scan_xint(mp, 6, &tok->u.num);
-		if (tok->u.num > 0xffff) {
-			return pbug("Number literals greater than 65535 (0xffff)"
+		mp_scan_xint(mp, 11, &tok->u.num);
+		if (tok->u.num > 0xffffffff) {
+			return pbug("Number literals greater than 32 bits"
 				" not supported");
 		}
 		tok->type = token_num;
