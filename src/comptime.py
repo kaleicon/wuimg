@@ -184,11 +184,9 @@ DEC_MAP = {
 	"aliaspix": {
 		"aliaspix": {
 			"desc": "AliasPIX and Vivid",
-			"match": ("als", "pix"), #"img",
+			"ext": "img",
+			"match": ("als", "lux", "pix"),
 		},
-	},
-
-	"arabesque": {
 	},
 
 	"atari": {
@@ -489,6 +487,14 @@ DEC_MAP = {
 			"desc": "Kyss graphics format (KYG)",
 			"ext": "kyg",
 			"magic": b"KYGformat ver.0.10\x0d\x0a",
+		},
+	},
+
+	"lwi": {
+		"lwi": {
+			"desc": "LightWork Image",
+			"ext": "lwi",
+			"magic": b"\x18\x31Copyright",
 		},
 	},
 

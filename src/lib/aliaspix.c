@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
 #include "lib/aliaspix.h"
+#include "misc/decomp.h"
 #include "misc/endian.h"
 #include "misc/mem.h"
 
@@ -11,25 +12,12 @@ struct wuimg *img) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
-	const uint8_t ch = img->channels;
-	const size_t packet_size = ch + 1;
 	const size_t dims = img->w * img->h;
-	const size_t max = dims * packet_size;
-	const struct wuptr src = mp_avail_at(&desc->mp, desc->mp.pos, max);
-	size_t d = 0;
-	size_t s = 0;
-	while (src.len - s >= packet_size) {
-		const uint8_t cnt = src.ptr[s];
-		++s;
-		if (dims - d < cnt) {
-			break;
-		}
-		memwordset(img->data + d*ch, src.ptr + s, ch, cnt);
-		s += ch;
-		d += cnt;
-	}
-	return wuerr(d ? wu_ok : wu_unexpected_eof,
-		d == dims ? NULL : "truncated input");
+	struct mparser mp = desc->mp;
+	const struct wuptr src = mp_remaining(&mp);
+	return wuerr_partial(
+		decomp_topbyterle(img->data, dims, src.ptr, src.len, img->channels),
+		dims);
 }
 
 struct wu_st aliaspix_init(struct aliaspix_desc *desc, struct wuimg *img,

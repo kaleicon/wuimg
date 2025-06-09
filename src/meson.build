@@ -22,6 +22,7 @@ fmt_map = {
 		'ilbm',
 		'jam',
 		'kyg',
+		'lwi',
 		'mac',
 		'mag',
 		'maki',

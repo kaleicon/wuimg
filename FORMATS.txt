@@ -1,4 +1,4 @@
-73 families, 120 formats supported
+73 families, 121 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -34,7 +34,7 @@ auto      kips      IBM KIPS (no palette)
 auto      kro       Kolor Raw
 auto      megapat   MegaPaint Pattern
 auto      nlm       Nokia Logo Manager
-auto      olcp565   OLPC 565
+auto      olpc565   OLPC 565 boot graphic
 auto      ota       Over The Air bitmap (uncompliant)
 auto      piccel    Autodesk Animator PIC/CEL
 auto      pictris   Pictris
@@ -78,6 +78,7 @@ jpegls    jpegls    JPEG LS
 jpegxl    jpegxl    JPEG XL
 kyg       kyg       Kyss graphics format (KYG)
 lerc      lerc      Limited Error Raster Compression
+lwi       lwi       LightWork Image
 mac       mac       MacPaint
 mag       mag       MAG (MAKI02)
 maki      maki      MAKIchan (MAKI01)
@@ -123,10 +124,10 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 262
-565, a64, aas, abm, als, apd, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, cps, cr2, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, ff, flif, fnt, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hed, heic, heics, heif, heifs, hel, hg3, hgr, hif, hir, hpi, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lzs, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, otb, p2, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, six, sixel, spr, spr32, spu, sr5, sr6, sr7, sr8, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 265
+565, a64, aas, abm, als, apd, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, cps, cr2, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, ff, flif, fnt, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hed, heic, heics, heif, heifs, hel, hg3, hgr, hif, hir, hpi, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, otb, p2, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, six, sixel, spr, spr32, spu, sr5, sr6, sr7, sr8, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 133
+Known magic sequences: 134
 aipd      b'AIPD'
 amibios   b'GRFX'
 at6p      b'AT6P'
@@ -191,13 +192,14 @@ kro       b'KRO\x01'
 kyg       b'KYGformat ver.0.10\r\n'
 lerc      b'CntZImage '
 lerc      b'Lerc2 '
+lwi       b'\x181Copyright'
 mag       b'MAKI02  '
 maki      b'MAKI01A '
 maki      b'MAKI01B '
 megapat   b'\x07PAT \x00.\x00'
 msx       b'\xfe\x00\x00\x00j\x00\x00'
 nlm       b'NLM \x01\x00'
-olcp565   b'C565'
+olpc565   b'C565'
 pcf       b'\x01fcp'
 pcx       b'\n\x00\x00'
 pcx       b'\n\x02\x00'

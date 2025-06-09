@@ -3,7 +3,26 @@
 #include <string.h>
 
 #include "misc/decomp.h"
+#include "misc/math.h"
 #include "misc/mem.h"
+
+size_t decomp_topbyterle(uint8_t *restrict dst, const size_t dst_elems,
+const uint8_t *restrict src, const size_t src_len, const size_t size) {
+	const size_t packet_size = size + 1;
+	const size_t src_elems = zumin(src_len/packet_size, dst_elems);
+	size_t s = 0;
+	size_t d = 0;
+	while (s < src_elems) {
+		const uint8_t cnt = src[s*packet_size];
+		if (dst_elems - d < cnt) {
+			break;
+		}
+		memwordset(dst + d*size, src + s*packet_size + 1, size, cnt);
+		d += cnt;
+		++s;
+	}
+	return d;
+}
 
 size_t decomp_topbitrle(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len, const size_t pixel_size) {
