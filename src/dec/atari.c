@@ -30,20 +30,20 @@ static void degas_end(struct image_file *infile) {
 	degas_cleanup(desc);
 }
 
-static enum wu_error degas_callback(struct image_file *infile,
+static struct wu_st event_degas(struct image_file *infile,
 const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	(void)_c;
 	struct degas_desc *desc = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
 	switch (ev) {
 	case ev_subcycle:
-		return degas_decode(desc, img) ? wu_ok : wu_decoding_error;
+		return degas_decode(desc, img);
 	case ev_time:
 		palette_cycle_render(img->u.palette, desc->cycle, state->time);
-		return wu_ok;
+		return wuok();
 	default: break;
 	}
-	return wu_no_change;
+	return wuerr(wu_no_change, NULL);
 }
 
 static void degas_metadata(struct wutree *meta, const struct degas_desc *desc) {
@@ -52,15 +52,17 @@ static void degas_metadata(struct wutree *meta, const struct degas_desc *desc) {
 	tree_bud_leaf_bool(meta, "Elite", desc->is_elite);
 }
 
-static enum wu_error degas_dec(struct image_file *infile,
+static struct wu_st init_degas(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct degas_desc *desc = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
-	enum wu_error st = degas_parse(desc, img, infile->ifp);
-	if (st == wu_ok) {
-		degas_metadata(&infile->metadata, desc);
-		st = wuimg_exceeds_limit(img, conf)
-			? wu_exceeds_size_limit : wu_ok;
+	struct wu_st st = degas_parse(desc, img, infile->ifp);
+	if (wu_isok(st)) {
+		if (wuimg_exceeds_limit(img, conf)) {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		} else {
+			degas_metadata(&infile->metadata, desc);
+		}
 	}
 	return st;
 }
@@ -206,8 +208,8 @@ const struct image_fn dali_fn = {
 const struct image_fn degas_fn = {
 	.alloc_single = true,
 	.state_size = sizeof(struct degas_desc),
-	.dec = degas_dec,
-	.callback = degas_callback,
+	.init = init_degas,
+	.event = event_degas,
 	.end = degas_end,
 };
 

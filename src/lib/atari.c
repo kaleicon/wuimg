@@ -72,10 +72,9 @@ const enum atari_st_res res) {
 		? ST_LOW_DEPTH : ST_MEDIUM_DEPTH;
 	const size_t width = (res == atari_st_res_low)
 		? ST_LOW_WIDTH : ST_MEDIUM_WIDTH;
-	const size_t height = 200;
 
 	const size_t src_stride = width/(16/planes);
-	for (size_t y = 0; y < height; ++y) {
+	for (size_t y = 0; y < img->h; ++y) {
 		for (size_t group = 0; group < width/16; ++group) {
 			const size_t d_base = y*width + group*16;
 			const size_t s_base = y*src_stride + (group * planes);
@@ -91,20 +90,26 @@ const enum atari_st_res res) {
 	}
 }
 
-static size_t load_raw(struct wuimg *img, const enum atari_st_res res, FILE *ifp) {
+static size_t load_raw_size(struct wuimg *img, const enum atari_st_res res,
+FILE *ifp, const size_t ram_len) {
 	size_t w = 0;
 	if (wuimg_alloc_noverify(img)) {
 		if (res == atari_st_res_high) {
-			return fread(img->data, 1, VIDEO_RAM, ifp);
+			return fread(img->data, 1, ram_len, ifp);
 		}
-		uint16_t *ram = malloc(VIDEO_RAM);
+		uint16_t *ram = malloc(ram_len);
 		if (ram) {
-			w = fread(ram, 1, VIDEO_RAM, ifp);
+			w = fread(ram, 1, ram_len, ifp);
 			st_interleave(img, ram, res);
 			free(ram);
 		}
 	}
 	return w;
+}
+
+static size_t load_raw(struct wuimg *img, const enum atari_st_res res,
+FILE *ifp) {
+	return load_raw_size(img, res, ifp, VIDEO_RAM);
 }
 
 static enum wu_error set_pal(struct wuimg *img, const uint8_t src[static 32]) {
@@ -129,7 +134,7 @@ static enum wu_error set_pal(struct wuimg *img, const uint8_t src[static 32]) {
 				.a = 0xff,
 			};
 		}
-		return wuimg_verify(img);
+		return wu_ok;
 	}
 	return wu_alloc_error;
 }
@@ -154,7 +159,7 @@ const void *restrict pal) {
 		img->bitdepth = 1;
 		img->attr = (buf_endian16(pal, big_endian) & 1)
 			? pix_inverted : pix_normal;
-		return wuimg_verify(img);
+		return wu_ok;
 	}
 	return wu_invalid_header;
 }
@@ -196,7 +201,11 @@ const uint8_t ext[static 3]) {
 		uint32_t header[32];
 		if (fread(header, sizeof(header), 1, ifp)) {
 			if (!header[0]) {
-				return set_dims(img, desc->res, header+1);
+				const enum wu_error st = set_dims(img,
+					desc->res, header+1);
+				if (st == wu_ok) {
+					return wuimg_verify(img);
+				}
 			}
 			return wu_invalid_signature;
 		}
@@ -268,50 +277,55 @@ const uint8_t *src) {
 
 	const size_t outstride = wuimg_stride(img);
 	const size_t instride = strip_length(img->w, 1, 1) * planes;
-	for (size_t y = 0; y < 200; ++y) {
+	for (size_t y = 0; y < img->h; ++y) {
 		bitplane_interleave_row8(img->data + outstride*y,
 			src + instride*y, img->w, planes, 1);
 	}
 }
 
-static size_t degas_decomp(struct degas_desc *desc, struct wuimg *img) {
+static struct wu_st degas_decomp(struct degas_desc *desc, struct wuimg *img) {
 	int8_t *pb = malloc(desc->size);
 	if (pb) {
 		const size_t pb_len = fread(pb, 1, desc->size, desc->ifp);
+		const size_t unpack_len = VIDEO_RAM << desc->paintpro;
 		uint8_t *unpack;
 		if (desc->res == atari_st_res_high) {
 			unpack = img->data;
 		} else {
-			unpack = malloc(VIDEO_RAM);
+			unpack = malloc(unpack_len);
 			if (!unpack) {
 				free(pb);
-				return 0;
+				return WUERR_HERE(wu_alloc_error);
 			}
 		}
-		const size_t w = decomp_packbits(unpack, VIDEO_RAM, pb, pb_len);
+		const size_t w = decomp_packbits(unpack, unpack_len, pb, pb_len);
 		free(pb);
 		if (unpack != img->data) {
 			degas_deinterleave(img, desc->res, unpack);
 			free(unpack);
 			load_elite_crng(desc, img);
 		}
-		return w;
+		return wuerr_partial(w, wuimg_size(img));
 	}
-	return 0;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-size_t degas_decode(struct degas_desc *desc, struct wuimg *img) {
-	if (desc->compressed && wuimg_alloc_noverify(img)) {
-		return degas_decomp(desc, img);
+struct wu_st degas_decode(struct degas_desc *desc, struct wuimg *img) {
+	if (desc->compressed) {
+		if (wuimg_alloc_noverify(img)) {
+			return degas_decomp(desc, img);
+		}
+		return WUERR_HERE(wu_alloc_error);
 	}
-	const size_t w = load_raw(img, desc->res, desc->ifp);
+	const size_t w = load_raw_size(img, desc->res, desc->ifp,
+		VIDEO_RAM << desc->paintpro);
 	if (w && desc->is_elite && desc->res != atari_st_res_high) {
 		load_elite_crng(desc, img);
 	}
-	return w;
+	return wuerr_partial(w, wuimg_size(img));
 }
 
-enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img,
+struct wu_st degas_parse(struct degas_desc *desc, struct wuimg *img,
 FILE *ifp) {
 	/* DEGAS format:
 		Offset  Type    Name
@@ -324,6 +338,8 @@ FILE *ifp) {
 	 *   at the end.
 	 * For compressed files, the color animation struct is always present,
 	 *   and so the size of Data is the file size minus header and footer.
+	 * PaintPro/PlusPaint files are the same, but the bitmap may be twice
+	 *   the size.
 	*/
 
 	desc->cycle = NULL;
@@ -332,26 +348,42 @@ FILE *ifp) {
 		const uint16_t flags = endian16(src[0], big_endian);
 		const bool compressed = flags & 0x8000;
 		const enum atari_st_res res = flags & ~0x8000;
-		const size_t size_limit = compressed
-			? VIDEO_RAM*2 : VIDEO_RAM;
-		size_t rem = file_remaining(ifp);
-		if (compressed) {
+		switch (res) {
+		case atari_st_res_low:
+		case atari_st_res_medium:
+		case atari_st_res_high:
+			;size_t rem = file_remaining(ifp);
+			const bool paintpro = rem >= 64000;
+			size_t size_limit = compressed
+				? VIDEO_RAM*2 : VIDEO_RAM;
+			size_limit <<= paintpro;
+
 			const size_t crng_size = 4*4*2;
-			if (rem <= crng_size) {
-				return wu_unexpected_eof;
+			if (compressed) {
+				if (rem <= crng_size) {
+					return WUERR_HERE(wu_unexpected_eof);
+				}
+				rem -= crng_size;
 			}
-			rem -= crng_size;
+			*desc = (struct degas_desc) {
+				.ifp = ifp,
+				.res = res,
+				.compressed = compressed,
+				.is_elite = compressed
+					|| (rem - size_limit >= crng_size),
+				.paintpro = paintpro,
+				.size = zumin(rem, size_limit),
+			};
+			const enum wu_error st = set_dims(img, desc->res, src + 1);
+			if (st == wu_ok) {
+				img->h <<= paintpro;
+				return wuimg_verify_st(img);
+			}
+			return WUERR_HERE(st);
 		}
-		*desc = (struct degas_desc) {
-			.ifp = ifp,
-			.res = res,
-			.compressed = compressed,
-			.is_elite = compressed || rem + 34 >= 32066,
-			.size = zumin(rem, size_limit),
-		};
-		return set_dims(img, desc->res, src + 1);
+		return WUERR_HERE(wu_invalid_header);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 
@@ -388,7 +420,12 @@ const struct wuptr mem) {
 	if (hdr) {
 		const uint8_t sig[] = {'E', 'Z', 0, 0xc8};
 		if (!memcmp(hdr, sig, sizeof(sig))) {
-			return set_dims(img, atari_st_res_low, hdr+4);
+			const enum wu_error st = set_dims(img,
+				atari_st_res_low, hdr+4);
+			if (st == wu_ok) {
+				return wuimg_verify(img);
+			}
+			return st;
 		}
 		return wu_invalid_header;
 	}
@@ -1195,7 +1232,10 @@ const struct wuptr mem) {
 	desc->data = buf_endian16(header + 34, big_endian);
 	desc->res = res;
 	enum wu_error st = set_dims(img, res, header);
-	if (crng && img->mode == image_mode_palette && st == wu_ok) {
+	if (st != wu_ok) {
+		return st;
+	}
+	if (crng && img->mode == image_mode_palette) {
 		struct palette_cycle *cycle = palette_cycle_new(1);
 		if (!cycle) {
 			return wu_alloc_error;
@@ -1215,5 +1255,5 @@ const struct wuptr mem) {
 		cycle->active_nr = (bool)speed;
 		img->evolving = speed;
 	}
-	return st;
+	return wuimg_verify(img);
 }

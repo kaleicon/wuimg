@@ -196,7 +196,8 @@ DEC_MAP = {
 		},
 
 		"degas": {
-			"desc": "DEGAS and DEGAS Elite",
+			"desc": "DEGAS, DEGAS Elite, PaintPro",
+			"ext": "pic", # PaintPro
 			"match": (
 				"pi1", "pi2", "pi3",
 				"pc1", "pc2", "pc3",

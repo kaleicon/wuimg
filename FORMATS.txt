@@ -5,7 +5,7 @@ Family    Format    Description
 aliaspix  aliaspix  AliasPIX and Vivid
 atari     bld       MegaPaint
 atari     dali      Dali uncompressed
-atari     degas     DEGAS and DEGAS Elite
+atari     degas     DEGAS, DEGAS Elite, PaintPro
 atari     ez        EZ-Art Professional
 atari     gfa       GFA Raytrace
 atari     spu       Spectrum 512 Uncompressed (3/4/5-bits)

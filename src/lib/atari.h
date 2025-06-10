@@ -32,14 +32,15 @@ struct degas_desc {
 	enum atari_st_res res:8;
 	bool compressed;
 	bool is_elite;
+	bool paintpro;
 	struct palette_cycle *cycle;
 };
 
 void degas_cleanup(struct degas_desc *desc);
 
-size_t degas_decode(struct degas_desc *desc, struct wuimg *img);
+struct wu_st degas_decode(struct degas_desc *desc, struct wuimg *img);
 
-enum wu_error degas_parse(struct degas_desc *desc, struct wuimg *img,
+struct wu_st degas_parse(struct degas_desc *desc, struct wuimg *img,
 FILE *ifp);
 
 /* EZ-Art Professional */
