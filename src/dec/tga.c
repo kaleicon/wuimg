@@ -13,16 +13,16 @@ const struct tga_metadata *meta) {
 		return;
 	}
 
-	tree_add_leaf_len(tree, "Author name", WUPTR_ARRAY(meta->author.name),
+	tree_add_leaf_limit(tree, "Author name", WUPTR_ARRAY(meta->author.name),
 		NULL);
-	tree_add_leaf_len(tree, "Author comment", WUPTR_ARRAY(meta->author.comment),
+	tree_add_leaf_limit(tree, "Author comment", WUPTR_ARRAY(meta->author.comment),
 		NULL);
 
 	if (meta->timestamp) {
 		tree_bud_leaf_time(tree, "Timestamp", meta->timestamp);
 	}
 
-	tree_add_leaf_len(tree, "Job ID", WUPTR_ARRAY(meta->job.name), NULL);
+	tree_add_leaf_limit(tree, "Job ID", WUPTR_ARRAY(meta->job.name), NULL);
 
 	if (meta->job.hour || meta->job.minute || meta->job.second) {
 		const char fmt[] = "%.2hu:%.2hu:%.2hu";
@@ -32,7 +32,7 @@ const struct tga_metadata *meta) {
 		tree_add_leaf_utf8_len(tree, "Job time", wuptr_mem(buf, w));
 	}
 
-	tree_add_leaf_len(tree, "Software ID", WUPTR_ARRAY(meta->software.id),
+	tree_add_leaf_limit(tree, "Software ID", WUPTR_ARRAY(meta->software.id),
 		NULL);
 
 	if (isgraph(meta->software.version_letter)) {
