@@ -1095,7 +1095,7 @@ DEC_MAP = {
 	"tiff": {
 		"tiff": {
 			"desc": "Tag Image File Format, BigTIFF",
-			"ext": ("tif", "tiff") + RAW_TIFF_EXTS,
+			"ext": ("g3n", "tif", "tiff") + RAW_TIFF_EXTS,
 			"magic": (
 				b"II\x2a\x00",
 				b"MM\x00\x2a",
