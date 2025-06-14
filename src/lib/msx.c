@@ -464,7 +464,7 @@ const uint8_t ext[static 3]) {
 		img->h = (desc->end < 0x69ff) ? 192 : 212;
 		break;
 	case msx_screen6:
-		min = 0x5fff;
+		min = 0x56ff; // Fix for IMAGE5.SC6 (0x5700)
 		img->w = 512;
 		img->h = (desc->end < 0x69ff) ? 192 : 212;
 		img->bitdepth = 2;

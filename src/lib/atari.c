@@ -172,13 +172,10 @@ size_t dali_decode(struct dali_desc *desc, struct wuimg *img) {
 }
 
 static bool dali_ext(struct dali_desc *desc, const uint8_t ext[static 3]) {
-	const char pre[] = {'s', 'd'};
-	if (!memcmp(ext, pre, sizeof(pre))) {
-		switch (ext[2]) {
-		case '0': case '1': case '2':
-			desc->res = ext[2] - '0';
-			return true;
-		}
+	switch (ext[2]) {
+	case '0': case '1': case '2':
+		desc->res = ext[2] - '0';
+		return true;
 	}
 	return false;
 }

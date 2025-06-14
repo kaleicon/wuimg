@@ -101,6 +101,8 @@ void image_file_free_if_single(struct image_file *file);
 void image_file_print(const struct image_file *file, FILE *out, int verbosity,
 bool unloaded_too);
 
+size_t image_file_size(const struct image_file *file);
+
 enum wu_error image_file_total_decoded(struct image_file *file, size_t o);
 
 void image_file_error_print(const struct image_file *file, enum wu_error err,

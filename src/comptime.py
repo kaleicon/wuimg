@@ -8,10 +8,18 @@ EXT_LIMIT = 6
 MAGIC_LIMIT = 12
 NAME_LIMIT = 8
 
-# These RAW formats are actually TIFF with extra data, and can only be
+# Various RAW camera formats are actually TIFF with extra data, and can only be
 # distinguished by their extension. Still, they may contain a thumbnail that
 # libtiff can handle, so we define these for both formats.
 RAW_TIFF_EXTS = ("arw", "cr2", "dcr", "dng", "erf", "k25", "kdc", "nef", "nrw", "pef")
+TIFF_MAGICS = (
+	b"II\x2a\x00",
+	b"MM\x00\x2a",
+
+	# BigTIFF
+	b"II\x2b\x00\x08\x00\0\0",
+	b"MM\x00\x2b\x00\x08\0\0",
+)
 
 # "desc" = Format description
 # "ext" = File extensions that are just informative (i.e. for filtering file lists)
@@ -22,6 +30,8 @@ RAW_TIFF_EXTS = ("arw", "cr2", "dcr", "dng", "erf", "k25", "kdc", "nef", "nrw", 
 #     A single byte string or a sequence of such
 # "mask" = An AND mask plus magic signature. Only set bits need to match
 #     A sequence of byte strings, where even terms are masks, and odd terms signatures
+# "size" = Common file sizes. Unused at the moment
+#     An integer or a sequence of such
 # "mime" = Format mime types, with "image/" prefix omitted. Unused at the moment
 #     Same format as "ext"
 DEC_MAP = {
@@ -51,7 +61,11 @@ DEC_MAP = {
 			),
 		},
 		"bob": {"desc": "Bob raytracer raster", "match": "bob"},
-		"bru": {"desc": "Degas Brush", "match": "bru"},
+		"bru": {
+			"desc": "Degas Brush",
+			"match": "bru",
+			"size": 64,
+		},
 		"chky": {
 			"desc": "IFF Chunky",
 			"ext": "ciff",
@@ -113,6 +127,7 @@ DEC_MAP = {
 				b"\xff\xff\xff\xff" b"\xff\0\xff\0",
 				b"\x07PAT" b" \0.\0"
 			),
+			"size": 0x112c,
 		},
 		"nlm": {
 			"desc": "Nokia Logo Manager",
@@ -130,6 +145,14 @@ DEC_MAP = {
 		"ota": {
 			"desc": "Over The Air bitmap (uncompliant)",
 			"match": "otb",
+			"mask": (
+				# u8 dims
+				b"\xff\0\0\xff",
+				b"\x00\0\0\x01",
+				# u16 dims
+				b"\xff\0\0\0\0\xff",
+				b"\x10\0\0\0\0\x01",
+			),
 		},
 		"piccel": {
 			"desc": "Autodesk Animator PIC/CEL",
@@ -140,6 +163,7 @@ DEC_MAP = {
 			"desc": "Pictris",
 			"ext": "pic",
 			"magic": b"$PICTURE FOR PICTRIS (c) by Kai Lemke",
+			"size": 0xfd25,
 		},
 		"pxy": {
 			"desc": "Eclipse Proxy",
@@ -158,7 +182,11 @@ DEC_MAP = {
 			"ext": "trp",
 			"magic": b"TRUP",
 		},
-		"ftc": {"desc": "Falcon True Color", "match": "ftc"},
+		"ftc": {
+			"desc": "Falcon True Color",
+			"match": "ftc",
+			"size": 0x2d000,
+		},
 		"god": {"desc": "GodPaint", "match": "god"},
 		"indy": {
 			"desc": "IndyPaint",
@@ -177,22 +205,36 @@ DEC_MAP = {
 		},
 
 		# Atari ST High Resolution
-		"da4": {"desc": "PaintShop (Atari ST)", "match": "da4"},
-		"doo": {"desc": "Atari Doodle", "match": "doo"},
+		"da4": {
+			"desc": "PaintShop (Atari ST)",
+			"match": "da4",
+			"size": 0xfa00,
+		},
+		"doo": {
+			"desc": "Atari Doodle",
+			"match": "doo",
+			"size": 0x7d00,
+		},
 	},
 
 	"aliaspix": {
 		"aliaspix": {
 			"desc": "AliasPIX and Vivid",
-			"ext": "img",
-			"match": ("als", "lux", "pix"),
+			"match": ("als", "img", "lux", "pix"),
+			"mask": (
+				# match 8- and 24-bits
+				b"\0\0\0\0\0\0\0\0" b"\xff\xef",
+				b"\0\0\0\0\0\0\0\0" b"\x00\x08",
+			),
 		},
 	},
 
 	"atari": {
 		"dali": {
 			"desc": "Dali uncompressed",
-			"match": ("sd0", "sd1", "sd2")
+			"match": ("sd0", "sd1", "sd2"),
+			"magic": b"\0\0\0\0",
+			"size": 0x7d80,
 		},
 
 		"degas": {
@@ -203,7 +245,12 @@ DEC_MAP = {
 				"pc1", "pc2", "pc3",
 				# Uncompressed high-resolution GFA raytrace
 				"suh",
-			)
+			),
+			"mask": (
+				b"\x7f\xfe", b"\0\0", # Low and Medium res
+				b"\x7f\xff", b"\0\x02", # High res
+			),
+			"size": (0x7d22, 0x7d42),
 		},
 
 		"ez": {
@@ -230,13 +277,14 @@ DEC_MAP = {
 
 		"bld": {
 			"desc": "MegaPaint",
-			"match": "bld"
+			"match": "bld",
 		},
 
 		"spu": {
 			"desc": "Spectrum 512 Uncompressed (3/4/5-bits)",
 			"match": "spu",
 			"magic": b"5BIT",
+			"size": 0xc7a0,
 		},
 
 		"stad": {
@@ -261,7 +309,11 @@ DEC_MAP = {
 				"tny",
 				"tn1", "tn2", "tn3",
 				"tn4", "tn5", "tn6",
-			)
+			),
+			"mask": (
+				b"\xfc", b"\x00", # Resolution 0-3
+				b"\xfe", b"\x04", # Resolution 4-5
+			),
 		},
 	},
 
@@ -334,6 +386,20 @@ DEC_MAP = {
 				"vid",
 			),
 			#"mask": (b"\xff\x03", b"\x00\x00"),
+			"size": (
+				9002, 9003, 9009, # Art Studio
+				9026, 9217, 9346, # Doodle
+				9194, # Hi-Eddi
+				9218, # Doodle, Hi-Eddi
+				10001, 10003, 10004, 10006, 10007, # KoalaPainter
+				10018, # Advanced Art Studio
+				10050, # Picasso 64, Vidcom 64
+				10218, # Image System
+				10219, # Saracen Paint
+				10242, # Artist64, Blazing Paddles,
+				10277, # CDU-Paint
+				20482, # Cheese
+			),
 		},
 	},
 
@@ -537,9 +603,15 @@ DEC_MAP = {
 				"sca", "s1a",
 				"scc", "s1c", "srs", "yjk"
 			),
-			"magic":
-				# Graph saurus SR5
-				b"\xfe\x00\x00\x00\x6a\x00\x00",
+			"magic": (
+				b"\xfe\0\0\x00\x6a\0\0", # Graph saurus SR5
+			),
+			"mask": (
+				# MSX uncompressed
+				b"\xff\xff\xff\0\0\xff\xff", b"\xfe\0\0\0\0\0\0",
+				# MSX compressed
+				b"\xff\xff\xff\0\0\xff\xff", b"\xfd\0\0\0\0\0\0",
+			),
 		},
 	},
 
@@ -790,6 +862,10 @@ DEC_MAP = {
 			"desc": "Truevision TGA (TARGA)",
 			"match": "tga",
 			# Depending on the version, TGA has a signature... at the end
+			"mask": (
+				b"\x00\xfe\xf6",
+				b"\x00\x00\x00",
+			),
 			"mime": "x-tga",
 		},
 	},
@@ -797,8 +873,11 @@ DEC_MAP = {
 	"tim": {
 		"tim": {
 			"desc": "PlayStation image",
-			"ext": "tim",
-			"magic": b"\x10\x00\x00\x00",
+			"match": "tim",
+			"mask": (
+				b"\xff\xff\xff\xff" b"\xf0\xff\xff\xff",
+				b"\x10\x00\x00\x00" b"\x00\x00\x00\x00",
+			),
 			"mime": "x-sony-tim",
 		},
 	},
@@ -827,6 +906,7 @@ DEC_MAP = {
 	"wbmp": {
 		"wbmp": {
 			"desc": "Wireless Bitmap",
+			"magic": b"\0\0",
 			"match": "wbmp",
 			"mime": "vnd.wap.wbmp",
 		},
@@ -862,7 +942,17 @@ DEC_MAP = {
 
 	"xcursor": {"xcursor": {"desc": "X11 cursor", "magic": b"Xcur"}},
 
-	"xwd": {"xwd": {"desc": "X11 Window Dump", "match": ("dmp", "xwd")}},
+	"xwd": {
+		"xwd": {
+			"desc": "X11 Window Dump",
+			"match": ("dmp", "xwd"),
+			"mask": (
+				# Match X10 and X11 (0x06 and 0x07)
+				b"\0\0\0\0" b"\xff\xff\xff\xfe",
+				b"\0\0\0\0" b"\x00\x00\x00\x06",
+			),
+		},
+	},
 
 	"xyz": {
 		"xyz": {
@@ -1020,10 +1110,12 @@ DEC_MAP = {
 
 	"jpegls": {
 		"jpegls": {
-			# JPEG-LS and JPEG share the same structure, so it's not
-			# possible to tell them apart without parsing
+			# JPEG-LS and JPEG share the same structure, but
+			# JPEG-LS uses the F7 marker. Hopefully that's always
+			# at offset 2.
 			"desc": "JPEG LS",
-			"match": "jls",
+			"ext": "jls",
+			"magic": b"\xff\xd8\xff\xf7",
 			"mime": "jls",
 		},
 	},
@@ -1068,7 +1160,7 @@ DEC_MAP = {
 				"orf", "raf", "raw", "rw2", "rwl", # it's RWL, not RW1!
 			),
 			"match": RAW_TIFF_EXTS,
-			"magic": (
+			"magic": TIFF_MAGICS + (
 				# Olympus ORF
 				b"IIRS",
 				b"IIRO",
@@ -1088,6 +1180,10 @@ DEC_MAP = {
 		"svg": {
 			"desc": "Scalable Vector Graphics",
 			"match": ("svg", "svgz"),
+			"magic": (
+				b"<svg ",
+				b"<?xml ",
+			),
 			"mime": "svg+xml",
 		},
 	},
@@ -1096,14 +1192,7 @@ DEC_MAP = {
 		"tiff": {
 			"desc": "Tag Image File Format, BigTIFF",
 			"ext": ("g3n", "tif", "tiff") + RAW_TIFF_EXTS,
-			"magic": (
-				b"II\x2a\x00",
-				b"MM\x00\x2a",
-
-				# BigTIFF
-				b"II\x2b\x00\x08\x00\0\0",
-				b"MM\x00\x2b\x00\x08\0\0",
-			),
+			"magic": TIFF_MAGICS,
 			"mime": "tiff",
 		},
 	},
@@ -1138,11 +1227,11 @@ def foreach(fn, it):
 def eprint(*p):
 	print(*p, file=sys.stderr)
 
-def maskcmp(b):
+def maskbits(b):
 	return int.from_bytes(b).bit_count()
 
 def graph_or_hex(i, readable):
-	if i >= 0x20 and i < 0x80:
+	if readable and i >= 0x20 and i < 0x80:
 		return "'{}'".format(chr(i))
 	return '0x{:02x}'.format(i)
 
@@ -1154,6 +1243,20 @@ def u8_array(b, limit=None, readable=False):
 	elif len(b) > limit:
 		eprint('array exceeds length limit. will truncate:', b)
 	return ','.join(map(lambda i: graph_or_hex(i, readable), b[0:limit]))
+
+class FmtSize(collections.namedtuple('size', ('size', 'id'))):
+	__slots__ = ()
+	@staticmethod
+	def struct(limit):
+		return '''\
+		struct fmt_size {{
+			const uint{}_t size;
+			const int id;
+		}};'''.format(limit)
+
+	def declare(self):
+		return '\t{{ .size={}, .id={} }},'.format(
+			self.size, self.id)
 
 class FmtMagic(collections.namedtuple('magic', ('mask', 'bytes', 'id'))):
 	__slots__ = ()
@@ -1174,11 +1277,12 @@ class FmtMagic(collections.namedtuple('magic', ('mask', 'bytes', 'id'))):
 
 	def __lt__(self, other):
 		# Compare number of mask bits, then magic bytes
-		m1 = maskcmp(self.mask)
-		m2 = maskcmp(other.mask)
-		if m1 == m2:
-			return self.bytes < other.bytes
-		return m1 < m2
+		d = maskbits(self.bytes) - maskbits(other.bytes)
+		if d == 0:
+			d = len(self.bytes) - len(other.bytes)
+			if d == 0:
+				return self.bytes < other.bytes
+		return d < 0
 
 class FmtExt(collections.namedtuple('ext', ('ext', 'id'))):
 	__slots__ = ()
@@ -1267,6 +1371,13 @@ class FmtDesc(collections.namedtuple('desc', ('dec', 'name', 'info'))):
 		yield from mask_extract(self.name, self.info, id)
 		yield from mask_from_magic(self.info, id)
 
+	def get_sizes(self, id):
+		sizes = self.info.get('size')
+		if isinstance(sizes, int):
+			yield FmtSize(sizes, id)
+		elif sizes:
+			yield from map(lambda s: FmtSize(s, id), sizes)
+
 	def get_mimes(self, _id):
 		mime = self.info.get('mime')
 		if isinstance(mime, str):
@@ -1331,9 +1442,22 @@ def print_fmt_ext(fmt_map, limit):
 	end_def()
 	return min_len, max_len
 
+def print_fmt_size(fmt_map):
+	sizes = sorted(fmt_map_iter(FmtDesc.get_sizes, fmt_map), reverse=True)
+	struct_and_define(FmtSize, 32)
+	for size in sizes:
+		print(size.declare())
+	end_def()
+
 def print_fmt_desc(fmt_map, limit):
 	begin_map_def('desc')
 	foreach(lambda fmt: print(fmt.declare(limit)), fmt_map)
+	end_def()
+
+def print_fmt_enum(fmt_map):
+	print('enum fmt_id {')
+	print('\tfmt_unknown = -1,')
+	foreach(lambda fmt: print('\tfmt_', fmt.name, ',', sep=''), fmt_map)
 	end_def()
 
 def print_include(name):
@@ -1343,12 +1467,16 @@ def gen_maps(fmt_map):
 	# Include the output of dec_header()
 	print_include('dec_fn.h')
 
-	# Generate three arrays out of the format map:
-	# metadata and decoder pointers, magic sequences, and extensions
+	# Genrate `fmt_XXX` enums
+	print_fmt_enum(fmt_map)
+	# Generate four arrays out of the format map:
+	# metadata and decoder pointers, magic sequences, extensions, and file
+	# sizes.
 	# These are sorted so that the program won't need initialization routines
 	print_fmt_desc(fmt_map, NAME_LIMIT)
 	min_mag_len, max_mag_len = print_fmt_magic(fmt_map, MAGIC_LIMIT)
 	min_ext_len, max_ext_len = print_fmt_ext(fmt_map, EXT_LIMIT)
+	print_fmt_size(fmt_map)
 
 	# Print length bounds
 	print(f'''
@@ -1392,13 +1520,21 @@ def show_supported(fmt_map):
 	print('Known extensions:', len(exts))
 	print(', '.join(exts), end='\n\n')
 
-	# Nagic sequences
+	# Magic sequences
 	tpl = '{:{width}}{}'
 	magics = sorted(map(lambda m: (fmt_map[m.id].name, m.bytes),
 		fmt_map_iter(FmtDesc.get_magics, fmt_map)
 	))
 	print('Known magic sequences:', len(magics))
 	foreach(print_tab, magics)
+	print()
+
+	# File sizes
+	sizes = sorted(map(lambda s: (fmt_map[s.id].name, s.size),
+		fmt_map_iter(FmtDesc.get_sizes, fmt_map)
+	))
+	print('Fixed file sizes:', len(sizes))
+	foreach(print_tab, sizes)
 
 def extract_fmt(dec, fmts):
 	return map(lambda t: FmtDesc(dec, *t), fmts.items())

@@ -103,6 +103,18 @@ const int verbosity, const bool unloaded_too) {
 	}
 }
 
+size_t image_file_size(const struct image_file *file) {
+	if (file->map.ptr) {
+		return file->map.len;
+	}
+	FILE *ifp = file->ifp;
+	const long cur = ftell(ifp);
+	fseek(ifp, 0, SEEK_END);
+	const long size = ftell(ifp);
+	fseek(ifp, cur, SEEK_SET);
+	return (size_t)lmax(0, size);
+}
+
 enum wu_error image_file_total_decoded(struct image_file *file, const size_t o) {
 	if (!o) {
 		return wu_decoding_error;
