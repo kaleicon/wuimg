@@ -204,7 +204,7 @@ DEC_MAP = {
 			"magic": b"tru?",
 		},
 
-		# Atari ST High Resolution
+		# Atari ST
 		"da4": {
 			"desc": "PaintShop (Atari ST)",
 			"match": "da4",
@@ -214,6 +214,11 @@ DEC_MAP = {
 			"desc": "Atari Doodle",
 			"match": "doo",
 			"size": 0x7d00,
+		},
+		"imgscan": {
+			"desc": "IMG Scan",
+			"match": ("rwl", "rwh", "raw"),
+			"size": (64000, 256000, 128000),
 		},
 	},
 

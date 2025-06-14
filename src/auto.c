@@ -11,7 +11,7 @@
 
 #define DESC(arg) {.ptr = (const uint8_t *)(arg), .len = sizeof(arg) - 1}
 
-// National Instruments AIPD
+/* AIPD National Instruments */
 const struct wuptr aipd_desc = DESC(
 	"endian:big\n"
 	"bitdepth:8\n"
@@ -486,7 +486,7 @@ const struct wuptr trp_desc = DESC(
 	"h:<u16>"
 );
 
-/* Atari ST High Resolution */
+/* Atari ST */
 // DA4 (PaintShop)
 const struct wuptr da4_desc = DESC(
 	"w:640\n"
@@ -505,6 +505,19 @@ const struct wuptr doo_desc = DESC(
 	"attr:inverted"
 );
 
+/* IMG Scan */
+const struct wuptr imgscan_desc = DESC(
+	"channels:1\n"
+	"bitdepth:8\n"
+	"attr:inverted\n"
+
+	"match:filesize("
+		"64000 w:320 h:200\n" // RWL
+		"256000 w:640 h:400\n" // RWH
+		"128000 w:640 h:200\n" // RAW
+	")"
+);
+
 enum token_type {
 	token_num,
 	token_enum,
@@ -521,7 +534,6 @@ struct load {
 	bool is_signed;
 	uint8_t size;
 	uint16_t array;
-	uint32_t value;
 };
 
 struct token {
@@ -729,9 +741,10 @@ const struct load l) {
 }
 
 static struct wu_st load_val(struct image_file *infile, const struct token *tok,
-uint32_t *scalar) {
+uintmax_t *scalar) {
 	const uint8_t size = tok->u.load.size;
-	void *ptr = scalar;
+	uint32_t tmp;
+	void *ptr = &tmp;
 	if (!fread(ptr, size, 1, infile->ifp)) {
 		return wuerr(wu_unexpected_eof, NULL);
 	}
@@ -739,7 +752,7 @@ uint32_t *scalar) {
 	switch (size) {
 	case 1: *scalar = *((uint8_t *)ptr); break;
 	case 2: *scalar = endian16(*((uint16_t *)ptr), e); break;
-	case 4: *scalar = endian32(*scalar, e); break;
+	case 4: *scalar = endian32(tmp, e); break;
 	default: return pbug("Bad word size");
 	}
 	if (tok->u.load.is_signed && (*scalar & (1u << (size - 1)))) {
@@ -772,7 +785,7 @@ const uintmax_t num) {
 }
 
 static struct wu_st exec_stmt(struct image_file *infile, const struct wuptr op,
-const struct token *tok, uint32_t *scalar) {
+const struct token *tok, uintmax_t *scalar) {
 	struct wuimg *img = infile->sub_img;
 	switch (tok->type) {
 	case token_str:
@@ -833,6 +846,12 @@ const struct token *tok, uint32_t *scalar) {
 			} else {
 				return pbug("Bad alpha value");
 			}
+		} else if (wuptr_eq_str(op, "match")) {
+			if (wuptr_eq_str(arg, "filesize")) {
+				*scalar = image_file_size(infile);
+			} else {
+				return pbug("Bad match value");
+			}
 		} else {
 			return pbug("Unknown variable-enum pair");
 		}
@@ -883,7 +902,7 @@ struct parse_state {
 };
 
 static struct wu_st parse(struct mparser *mp, struct image_file *infile) {
-	uint32_t scalar = 0;
+	uintmax_t scalar = 0;
 
 	struct parse_state state[4];
 	uint8_t d = 0;

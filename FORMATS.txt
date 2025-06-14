@@ -1,4 +1,4 @@
-73 families, 121 formats supported
+73 families, 122 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -29,6 +29,7 @@ auto      god       GodPaint
 auto      hir       Print-Technik Raw
 auto      hpicon    HP Palmtop Icon
 auto      iim       InShape IIM
+auto      imgscan   IMG Scan
 auto      indy      IndyPaint
 auto      kips      IBM KIPS (no palette)
 auto      kro       Kolor Raw
@@ -45,7 +46,7 @@ avif|heif avif      AV1 Image File Format
 bethesda  bsi       Bethesda BSI texture (IFHD, BSIF)
 bethesda  gxa       Bethesda GXA image (BMHD)
 c         c         C code formats: DEGAS Elite Icon, XBM X10 and X11
-c64       c64       Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Hi-Eddi, Image System, Interpaint, KoalaPainter (raw & compressed), Picasso 64, Runpaint, Saracen Paint, Vidcom 64
+c64       c64       Hires and Multicolor formats: Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Faces Painter, Hi-Eddi, HiPic Creator, HiRes Editor, Image System, Interpaint, KoalaPainter (raw & compressed), Picasso 64, Runpaint, Saracen Paint, Vidcom 64, probably others by accident
 cbg       cbg       BGI/Ethornell CompressedBG (v1)
 chunsoft  at6p      999 AT6P
 chunsoft  sir0      999 SIR0 sprites
@@ -124,11 +125,12 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 265
-565, a64, aas, abm, als, apd, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, cps, cr2, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, ff, flif, fnt, ftc, g00, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hed, heic, heics, heif, heifs, hel, hg3, hgr, hif, hir, hpi, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, otb, p2, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, six, sixel, spr, spr32, spu, sr5, sr6, sr7, sr8, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 275
+565, a64, aas, abm, als, apd, art, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, cps, cr2, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, ff, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hg3, hgr, hif, hir, hpi, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mki, mpo, mtv, nef, nlm, nrw, ocp, orf, otb, p2, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr5, sr6, sr7, sr8, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 134
+Known magic sequences: 165
 aipd      b'AIPD'
+aliaspix  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08'
 amibios   b'GRFX'
 at6p      b'AT6P'
 avif      b'\x00\x00\x00\x00ftypavic'
@@ -139,11 +141,25 @@ bsi       b'BSIF\x00\x00\x00\x00BHDR'
 bsi       b'IFHD\x00\x00\x00,'
 c         b'#define '
 c         b'/*'
+c64       b'\x00\x18'
+c64       b'\x00\x1c'
+c64       b'\x00 '
+c64       b'\x00<'
+c64       b'\x00@'
+c64       b'\x00X'
+c64       b'\x00`'
+c64       b'\x00x'
+c64       b'\x00\x80'
+c64       b'\x00\xa0'
+c64       b'\xef~'
 cbg       b'CompressedBG___\x00'
 chky      b'FORM\x00\x00\x00\x00CHKY'
 ckiss     b'KiSS  '
 coke      b'COKE format.'
+dali      b'\x00\x00\x00\x00'
 dcx       b'\xb1h\xde:'
+degas     b'\x00\x00'
+degas     b'\x00\x02'
 dpx       b'SDPX\x00\x00\x00\x00V\x00.0'
 dpx       b'XPDS\x00\x00\x00\x00V\x00.0'
 eb_fnt    b'ElecbyteFnt\x00'
@@ -185,6 +201,7 @@ jbig2     b'\x97JB2\r\n\x1a\n'
 jp2       b'\x00\x00\x00\x00jP  \r\n\x87\n'
 jp2       b'\r\n\x87\n'
 jpeg      b'\xff\xd8'
+jpegls    b'\xff\xd8\xff\xf7'
 jpegxl    b'\x00\x00\x00\x00JXL \r\n\x87\n'
 jpegxl    b'\xff\n'
 kips      b'DFIMAG00'
@@ -197,9 +214,13 @@ mag       b'MAKI02  '
 maki      b'MAKI01A '
 maki      b'MAKI01B '
 megapat   b'\x07PAT \x00.\x00'
+msx       b'\xfd\x00\x00\x00\x00\x00\x00'
+msx       b'\xfe\x00\x00\x00\x00\x00\x00'
 msx       b'\xfe\x00\x00\x00j\x00\x00'
 nlm       b'NLM \x01\x00'
 olpc565   b'C565'
+ota       b'\x00\x00\x00\x01'
+ota       b'\x10\x00\x00\x00\x00\x01'
 pcf       b'\x01fcp'
 pcx       b'\n\x00\x00'
 pcx       b'\n\x02\x00'
@@ -228,9 +249,13 @@ prt       b'PRT\x00'
 pxy       b'\xaf\xcb'
 qoi       b'qoif'
 raw       b'FUJIFILMCCD-RAW '
+raw       b'II*\x00'
+raw       b'II+\x00\x08\x00\x00\x00'
 raw       b'IIRO'
 raw       b'IIRS'
 raw       b'IIU\x00'
+raw       b'MM\x00*'
+raw       b'MM\x00+\x00\x08\x00\x00'
 raw       b'MMOR'
 sgi       b'\x01\xda'
 sir0      b'SIR0'
@@ -243,22 +268,64 @@ stad      b'ESO88b'
 stad      b'pM85'
 stad      b'pM86'
 sun       b'Y\xa6j\x95'
+svg       b'<?xml '
+svg       b'<svg '
 tbn       b'TVER\x04\x00\x00\x00TDAT'
 tcp       b'TRUECOLR'
+tga       b'\x00\x00\x00'
 tiff      b'II*\x00'
 tiff      b'II+\x00\x08\x00\x00\x00'
 tiff      b'MM\x00*'
 tiff      b'MM\x00+\x00\x08\x00\x00'
-tim       b'\x10\x00\x00\x00'
+tim       b'\x10\x00\x00\x00\x00\x00\x00\x00'
+tiny      b'\x00'
+tiny      b'\x04'
 tlg       b'TLG5.0\x00raw\x1a'
 tre       b'tre1'
 trp       b'tru?'
 trs       b'TCSF'
 txf       b'\xfftxf'
 wbm       b'WPX\x1aBMP\x00'
+wbmp      b'\x00\x00'
 webp      b'RIFF\x00\x00\x00\x00WEBP'
 wgtspr    b'\x00\x00 Sprite File '
 wgtspr    b'\x04\x00 Sprite File '
 wia       b'WPX\x1aIA2\x00'
 xcursor   b'Xcur'
+xwd       b'\x00\x00\x00\x00\x00\x00\x00\x06'
 xyz       b'XYZ1'
+
+Fixed file sizes: 33
+bru       64
+c64       9002
+c64       9003
+c64       9009
+c64       9026
+c64       9194
+c64       9217
+c64       9218
+c64       9346
+c64       10001
+c64       10003
+c64       10004
+c64       10006
+c64       10007
+c64       10018
+c64       10050
+c64       10218
+c64       10219
+c64       10242
+c64       10277
+c64       20482
+da4       64000
+dali      32128
+degas     32034
+degas     32066
+doo       32000
+ftc       184320
+imgscan   64000
+imgscan   128000
+imgscan   256000
+megapat   4396
+pictris   64805
+spu       51104
