@@ -9,6 +9,7 @@
 enum c64_mode {
 	c64_hires,
 	c64_multicolor,
+	c64_multicolor_nobg,
 };
 
 enum c64_fmt {
@@ -23,6 +24,7 @@ enum c64_fmt {
 	c64_image_system_m,
 	c64_koalapainter,
 	c64_picasso_64,
+	c64_rainbow_painter,
 	c64_saracen_paint,
 	c64_vidcom_64,
 };
@@ -35,7 +37,7 @@ enum c64_field {
 };
 
 struct c64_layout {
-	uint16_t seek;
+	uint16_t skip;
 	enum c64_field field:8;
 };
 
@@ -55,11 +57,11 @@ const char * c64_mode_str(const enum c64_mode mode);
 
 const char * c64_fmt_str(enum c64_fmt fmt);
 
-bool c64_decode(const struct c64_desc *desc, struct wuimg *img);
+struct wu_st c64_decode(const struct c64_desc *desc, struct wuimg *img);
 
-enum wu_error c64_set(const struct c64_desc *desc, struct wuimg *img);
+struct wu_st c64_set(const struct c64_desc *desc, struct wuimg *img);
 
-enum wu_error c64_guess(struct c64_desc *desc, struct wuptr mem,
+struct wu_st c64_guess(struct c64_desc *desc, struct wuptr mem,
 const uint8_t ext[static 4]);
 
 #endif /* LIB_C64 */

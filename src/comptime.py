@@ -345,21 +345,29 @@ DEC_MAP = {
 
 	"c64": {
 		"c64": {
-			"desc": "Art Studio (OCP), Artist64, Blazing Paddles"
+			"desc": "Hires and Multicolor formats"
+				": Art Studio (OCP), Artist64, Blazing Paddles"
 				", CDU-Paint, Cheese, Create With Garfield"
-				", Doodle (raw & compressed), Hi-Eddi"
+				", Doodle (raw & compressed), Faces Painter"
+				", Hi-Eddi, HiPic Creator, HiRes Editor"
 				", Image System, Interpaint"
 				", KoalaPainter (raw & compressed)"
 				", Picasso 64, Runpaint, Saracen Paint"
-				", Vidcom 64",
-			"match": (
-				# Omit conflicting extensions until we improve detection capabilities
+				", Vidcom 64, probably others by accident",
+			"ext": (
+				# Extensions too generic to be of any use
 				# Art Studio
-				"aas", "hpi", "ocp", #"art,"
+				"art",
+				# Blazing Paddles
+				"pi",
+			),
+			"match": (
+				# Art Studio
+				"aas", "hcp", "ocp", "shp",
 				# Wigmore Artist64
 				"a64", "wig",
 				# Blazing Paddles
-				"bp", "bpl", #"pi",
+				"bp", "bpl",
 				# CDU-Paint
 				"cdu",
 				# Cheese
@@ -368,8 +376,14 @@ DEC_MAP = {
 				"cwg",
 				# Doodle
 				"dd", "ddl", "jj",
+				# Faces Painter
+				"fcp", "fcs", "fpt",
 				# Hi-Eddi
 				"hed",
+				# HiPic Creator
+				"hpi",
+				# HiRes Editor
+				"het",
 				# Image System
 				"ims", "ish", "ism",
 				# Interpaint
@@ -384,8 +398,35 @@ DEC_MAP = {
 				"sar",
 				# Vidcom 64
 				"vid",
+				# Generic C64, according to FileFormat Wiki
+				"vic",
 			),
-			#"mask": (b"\xff\x03", b"\x00\x00"),
+			"magic": (
+				# Picasso 64
+				b"\x00\x18",
+				# Art Studio, HiEddi
+				b"\x00\x20",
+				# Image System
+				b"\x00\x3c",
+				# Interpaint, Image System, Wigmore Artist64, FacesPainter
+				b"\x00\x40",
+				# Vidcom 64
+				b"\x00\x58",
+				# HiPic, KoalaPainter, Runpaint
+				b"\x00\x60",
+				# Saracen Paint
+				b"\x00\x78",
+				# Blazing Paddles
+				b"\x00\xa0",
+				# CDU-Paint
+				b"\xef\x7e",
+				# Cheese
+				b"\x00\x80",
+			),
+			"mask": (
+				# Doodle (0x1c00 and 0x5c00)
+				b"\xff\xbf", b"\x00\x1c",
+			),
 			"size": (
 				9002, 9003, 9009, # Art Studio
 				9026, 9217, 9346, # Doodle

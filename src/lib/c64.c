@@ -55,38 +55,39 @@ struct c64_mem_offsets {
 	const uint8_t *restrict bitmap;
 	const uint8_t *restrict screen;
 	const uint8_t *restrict color;
-	const uint8_t *restrict bg;
+	uint8_t bg;
 };
 
 const char * c64_mode_str(const enum c64_mode mode) {
 	switch (mode) {
 	case c64_hires: return "Hires";
 	case c64_multicolor: return "Multicolor";
+	case c64_multicolor_nobg: return "Multicolor, no background";
 	}
 	return "???";
 }
 
 const char * c64_fmt_str(const enum c64_fmt fmt) {
 	switch (fmt) {
-	case c64_art_studio: return "Art Studio";
+	case c64_art_studio: return "Art Studio, HiPic";
 	case c64_advanced_art_studio: return "Advanced Art Studio";
 	case c64_artist64: return "Wigmore Artist64";
 	case c64_blazing_paddles: return "Blazing Paddles";
 	case c64_cdu_paint: return "CDU-Paint";
 	case c64_cheese: return "Cheese";
-	case c64_doodle: return "Doodle";
+	case c64_doodle: return "Doodle, HiRes Editor";
 	case c64_picasso_64: return "Picasso 64";
 	case c64_hi_eddi: return "Hi-Eddi";
 	case c64_image_system_m: return "Image System";
 	case c64_koalapainter: return "KoalaPainter";
 	case c64_saracen_paint: return "Saracen Paint";
+	case c64_rainbow_painter: return "RainbowPainter";
 	case c64_vidcom_64: return "Vidcom 64";
 	}
 	return "???";
 }
 
 static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off) {
-	const uint8_t bg = *off->bg & 0x0f;
 	for (size_t tile_y = 0; tile_y < TH; ++tile_y) {
 		for (size_t tile_x = 0; tile_x < TW; ++tile_x) {
 			const size_t tile = tile_y*TW + tile_x;
@@ -98,7 +99,7 @@ static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off) 
 
 			/* OR them into a word, arranged such that we can
 			 * retrieve them using a bit couple as shr argument. */
-			const uint16_t src = c << 12 | sb << 8 | st << 4 | bg;
+			const uint16_t src = c << 12 | sb << 8 | st << 4 | off->bg;
 
 			for (size_t y = 0; y < 8; ++y) {
 				const uint8_t byte = off->bitmap[tile*8 + y];
@@ -135,24 +136,37 @@ static void hires_expand(uint32_t *dst, const struct c64_mem_offsets *off) {
 	}
 }
 
+static uint8_t get_tbl_len(const enum c64_mode mode) {
+	switch (mode) {
+	case c64_hires: return 2;
+	case c64_multicolor: return 4;
+	case c64_multicolor_nobg: return 3;
+	}
+	return 0;
+}
+
 static bool get_offsets(struct mparser *mp, struct c64_mem_offsets *off,
 const struct c64_fmt_info *info) {
-	const uint8_t len = info->mode == c64_multicolor ? 4 : 2;
+	const uint8_t len = get_tbl_len(info->mode);
+	const uint8_t *bg = NULL;
 	for (uint8_t i = 0; i < len; ++i) {
-		mp_seek_cur(mp, info->tbl[i].seek);
+		mp_seek_cur(mp, info->tbl[i].skip);
 		switch (info->tbl[i].field) {
 		case c64_bitmap: off->bitmap = mp_slice(mp, BITMAP_LEN); break;
 		case c64_screen: off->screen = mp_slice(mp, SCREEN_LEN); break;
 		case c64_color: off->color = mp_slice(mp, COLOR_LEN); break;
-		case c64_bg: off->bg = mp_slice(mp, BG_LEN); break;
+		case c64_bg: bg = mp_slice(mp, BG_LEN); break;
 		}
 	}
+	off->bg = bg ? *bg & 0x0f : 0;
 	const bool base = off->bitmap && off->screen;
-	const bool color = off->color && off->bg;
-	if (info->mode == c64_multicolor) {
-		return base && color;
+	const bool color = off->color;
+	switch (info->mode) {
+	case c64_multicolor: return base && color && bg;
+	case c64_multicolor_nobg: return base && color && !bg;
+	case c64_hires: return base && !color && !bg;
 	}
-	return base && !color;
+	return false;
 }
 
 static bool ggjj_decode(uint8_t *restrict dst, const size_t dst_len,
@@ -165,7 +179,7 @@ struct mparser *rle) {
 			dst_len - d, rle->len - r);
 		d += w;
 		r += w;
-		if (r + 3 > rle->len) {
+		if (rle->len - r < 3) {
 			if (dst_len - d == 1) {
 				// Fix for a file that omits Background byte
 				dst[d] = 0;
@@ -177,7 +191,7 @@ struct mparser *rle) {
 		uint8_t val = rle->mem[r+1];
 		size_t count = rle->mem[r+2];
 		r += 3;
-		if (d + count > dst_len) {
+		if (dst_len - d < count) {
 			// The stream goes on, but we've got all we need
 			count = dst_len - d;
 		}
@@ -192,35 +206,40 @@ static unsigned ggjj_needed(const enum c64_fmt fmt) {
 	return fmt == c64_doodle ? 9026 : 10003;
 }
 
-bool c64_decode(const struct c64_desc *desc, struct wuimg *img) {
-	bool ok = false;
+struct wu_st c64_decode(const struct c64_desc *desc, struct wuimg *img) {
 	if (wuimg_alloc_noverify(img)) {
 		struct mparser mp = desc->mp;
 		struct c64_mem_offsets off = {0};
 		uint8_t *uncomp = NULL;
+		struct wu_st st = wuok();
 		if (desc->compressed) {
 			const unsigned upack_len = ggjj_needed(desc->fmt);
 			uncomp = malloc(upack_len);
 			if (uncomp) {
-				ok = ggjj_decode(uncomp, upack_len, &mp);
+				if (!ggjj_decode(uncomp, upack_len, &mp)) {
+					st = wuerr(wu_decoding_error,
+						"truncated rle stream");
+				}
+			} else {
+				return WUERR_HERE(wu_alloc_error);
 			}
-		} else {
-			ok = true;
 		}
 
-		if (ok) {
-			ok = get_offsets(&mp, &off, &desc->info);
-			if (ok) {
+		if (wu_isok(st)) {
+			if (get_offsets(&mp, &off, &desc->info)) {
 				if (desc->info.mode == c64_hires) {
 					hires_expand((uint32_t *)img->data, &off);
 				} else {
 					multicolor_expand((uint16_t *)img->data, &off);
 				}
+			} else {
+				st = WUERR_HERE(wu_unexpected_eof);
 			}
 		}
 		free(uncomp);
+		return st;
 	}
-	return ok;
+	return WUERR_HERE(wu_alloc_error);
 }
 
 inline static struct pix_rgb8 gen_e(const uint8_t level, const uint8_t angle) {
@@ -252,7 +271,7 @@ inline static struct pix_rgb8 gen_e(const uint8_t level, const uint8_t angle) {
 	};
 }
 
-enum wu_error c64_set(const struct c64_desc *desc, struct wuimg *img) {
+struct wu_st c64_set(const struct c64_desc *desc, struct wuimg *img) {
 	img->w = desc->info.mode == c64_hires ? HR_WIDTH : MC_WIDTH;
 	img->h = HEIGHT;
 	img->channels = 1;
@@ -282,9 +301,9 @@ enum wu_error c64_set(const struct c64_desc *desc, struct wuimg *img) {
 			gen_e(20, 0),
 		};
 		palette_from_rgb8(pal, c64_pal, ARRAY_LEN(c64_pal));
-		return wuimg_verify(img);
+		return wuimg_verify_st(img);
 	}
-	return wu_alloc_error;
+	return WUERR_HERE(wu_alloc_error);
 }
 
 static struct c64_fmt_info get_info(const enum c64_fmt fmt) {
@@ -374,6 +393,16 @@ static struct c64_fmt_info get_info(const enum c64_fmt fmt) {
 				{0xc0, c64_color},
 			},
 		};
+	case c64_rainbow_painter:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor_nobg,
+			.tbl = {
+				// Like Saracen Paint, but background is omitted
+				{2, c64_screen},
+				{0x18, c64_bitmap},
+				{0xc0, c64_color},
+			},
+		};
 	case c64_artist64:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
@@ -418,7 +447,7 @@ static struct c64_fmt_info get_info(const enum c64_fmt fmt) {
 	return (struct c64_fmt_info) {0};
 }
 
-enum wu_error c64_guess(struct c64_desc *desc, const struct wuptr mem,
+struct wu_st c64_guess(struct c64_desc *desc, const struct wuptr mem,
 const uint8_t ext[static 4]) {
 	*desc = (struct c64_desc) {
 		.mp = mp_wuptr(mem),
@@ -434,7 +463,8 @@ const uint8_t ext[static 4]) {
 		//   e.g. 0xfe 0x01 0xfe  0xfe 0x01 0xfe ...
 		const unsigned upack_len = ggjj_needed(f);
 		if (mem.len >= upack_len * 3) {
-			return wu_unknown_file_type;
+			return wuerr(wu_unknown_file_type,
+				"suspiciously big compressed stream");
 		}
 	} else {
 		switch (mem.len) {
@@ -464,17 +494,24 @@ const uint8_t ext[static 4]) {
 			 * Padding with zeros makes them display fine. */
 			f = c64_saracen_paint; break;
 		case 10242:
-			f = (!strcmp(e, "a64") || !strcmp(e, "wig"))
-				? c64_artist64 : c64_blazing_paddles;
+			if (!strcmp(e, "rp")) {
+				f = c64_rainbow_painter;
+			} else if (!strcmp(e, "a64") || !strcmp(e, "wig")) {
+				f = c64_artist64;
+			} else { // "bp", "bpl", "pi"
+				f = c64_blazing_paddles;
+			}
 			break;
 		case 10277:
 			// TODO: Show text near the beginning
 			f = c64_cdu_paint; break;
 		case 20482: f = c64_cheese; break;
-		default: return wu_unknown_file_type;
+		default:
+			return wuerr(wu_unknown_file_type,
+				"couldn't determine format from size");
 		}
 	}
 	desc->fmt = f;
 	desc->info = get_info(f);
-	return desc->info.tbl[0].seek ? wu_ok : wu_invalid_params;
+	return desc->info.tbl[0].skip ? wuok() : WUERR_HERE(wu_invalid_params);
 }
