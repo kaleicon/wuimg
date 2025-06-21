@@ -339,6 +339,15 @@ const struct wuptr pictris_desc = DESC(
 	"seek:0x25\n"
 );
 
+/* Portfolio Graphics uncompressed */
+const struct wuptr pgf_desc = DESC(
+	"w:240\n"
+	"h:64\n"
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted"
+);
+
 /* Eclipse Proxy (pxy)
  * Related to Eclipse TILE (see lib/eclipse.c), but raster is not tiled,
  * colorspace is always RGB, and there's no metadata, hence it being here. */

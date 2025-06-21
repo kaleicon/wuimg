@@ -165,6 +165,11 @@ DEC_MAP = {
 			"magic": b"$PICTURE FOR PICTRIS (c) by Kai Lemke",
 			"size": 0xfd25,
 		},
+		"pgf": {
+			"desc": "Portfolio Graphics uncompressed",
+			"ext": "pgf",
+			"size": 0x780,
+		},
 		"pxy": {
 			"desc": "Eclipse Proxy",
 			"ext": "pxy",
