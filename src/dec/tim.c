@@ -1,10 +1,29 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#include "rast_utils.h"
 #include "lib/tim.h"
+#include "wudefs.h"
 
-static void metadata(const void *restrict ptr, struct wutree *tree) {
-	const struct tim_desc *desc = ptr;
+static void end_tim(struct image_file *infile) {
+	tim_cleanup(infile->dec_state);
+}
+
+static struct wu_st event_tim(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
+	(void)_c;
+	if (ev == ev_subcycle) {
+		const uint16_t idx = (uint16_t)state->idx;
+		struct wuimg *img = infile->sub_img + idx;
+		struct tim_desc *desc = infile->dec_state;
+		if (idx) {
+			tim_alt_clut(desc, infile->sub_img, img, idx);
+			return wuok();
+		}
+		return tim_decode_main(desc, img);
+	}
+	return wuerr(wu_no_change, NULL);
+}
+
+static void get_metadata(const struct tim_desc *desc, struct wutree *tree) {
 	struct wutree *offset = tree_add_branch(tree, "Offset");
 	if (offset) {
 		tree_bud_leaf_u(offset, "X", desc->x);
@@ -14,28 +33,35 @@ static void metadata(const void *restrict ptr, struct wutree *tree) {
 	if (desc->clut.nb) {
 		struct wutree *pal = tree_add_branch(tree, "CLUT");
 		if (pal) {
-			tree_bud_leaf_u(pal, "Nb.", desc->clut.nb);
 			tree_bud_leaf_u(pal, "X", desc->clut.x);
 			tree_bud_leaf_u(pal, "Y", desc->clut.y);
 		}
 	}
 }
 
-static size_t dec(const void *restrict ptr, struct wuimg *img) {
-	return tim_decode(ptr, img);
-}
-static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
-	return tim_parse_header(ptr, img);
-}
-static enum wu_error open(void *restrict ptr, struct image_file *infile) {
-	return tim_open_file(ptr, infile->ifp);
+static struct wu_st init_tim(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct tim_desc *desc = infile->dec_state;
+	struct wu_st st = tim_parse(desc, infile->sub_img, infile->ifp);
+	if (wu_isok(st)) {
+		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		} else {
+			get_metadata(desc, &infile->metadata);
+			if (desc->clut.nb > 1
+			&& !realloc_sub_images(infile, desc->clut.nb)) {
+				st.msg = "couldn't allocate alternate palettes"
+					", will only show first";
+			}
+		}
+	}
+	return st;
 }
 
-static enum wu_error tim_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	struct tim_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec);
-}
-
-const struct image_fn tim_fn = {.dec = tim_dec};
+const struct image_fn tim_fn = {
+	.state_size = sizeof(struct tim_desc),
+	.alloc_single = true,
+	.init = init_tim,
+	.event = event_tim,
+	.end = end_tim,
+};

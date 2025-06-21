@@ -113,7 +113,7 @@ sun       sun       Sun Raster
 svg       svg       Scalable Vector Graphics
 tga       tga       Truevision TGA (TARGA)
 tiff      tiff      Tag Image File Format, BigTIFF
-tim       tim       PlayStation image
+tim       tim       PlayStation image, multiple palettes
 tlg       tlg       KiriKiri engine image (v5)
 txf       txf       TexFont Texture Mapped Font
 wbmp      wbmp      Wireless Bitmap

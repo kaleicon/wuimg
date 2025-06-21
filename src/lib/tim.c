@@ -6,6 +6,11 @@
 #include "raster/fmt.h"
 #include "tim.h"
 
+void tim_cleanup(struct tim_desc *desc) {
+	free(desc->raster);
+	palette_unref(desc->clut.clut);
+}
+
 static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 	const uint16_t stp_bit = 1 << 15;
 	const uint16_t mask = stp_bit - 1;
@@ -19,58 +24,72 @@ static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 }
 
 static void stp_callback(void *restrict data, const size_t len,
-void *restrict user) {
-	(void)user;
+void *restrict _u) {
+	(void)_u;
 	special_transparency_process(data, len/2);
 }
 
-size_t tim_decode(const struct tim_desc *desc, struct wuimg *img) {
-	size_t read = 0;
-	if (wuimg_alloc_noverify(img)) {
-		if (img->mode == image_mode_bitfield) {
-			read = fmt_load_raster_callback(img, desc->ifp,
-				stp_callback, NULL);
-		} else {
-			read = fmt_load_raster(img, desc->ifp);
-			if (img->bitdepth == 4) {
-				const size_t dims = wuimg_size(img);
-				uint8_t *d = img->data;
-				for (size_t i = 0; i < dims; ++i) {
-					d[i] = (uint8_t)(d[i] << 4 | d[i] >> 4);
-				}
-			}
-		}
+static void swap4_callback(void *restrict data, const size_t len,
+void *restrict _u) {
+	(void)_u;
+	uint8_t *d = data;
+	for (size_t i = 0; i < len; ++i) {
+		d[i] = (uint8_t)(d[i] << 4 | d[i] >> 4);
 	}
-	return read;
 }
 
-static enum wu_error read_cluts(struct tim_desc *desc, struct wuimg *img,
+void tim_alt_clut(struct tim_desc *desc, const struct wuimg *main,
+struct wuimg *alt, const uint16_t clut_nb) {
+	*alt = *main;
+	alt->u.palette = palette_ref(desc->clut.clut + clut_nb);
+}
+
+struct wu_st tim_decode_main(struct tim_desc *desc, struct wuimg *img) {
+	const size_t size = wuimg_size(img);
+	desc->raster = malloc(size);
+	if (!desc->raster) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+	img->data = desc->raster;
+	img->borrowed = true;
+
+	fmt_load_callback_t cb = NULL;
+	if (img->mode == image_mode_bitfield) {
+		cb = stp_callback;
+	} else if (img->bitdepth == 4) {
+		cb = swap4_callback;
+	}
+	return wuerr_partial((cb
+		? fmt_load_raster_callback(img, desc->ifp, cb, NULL)
+		: fmt_load_raster(img, desc->ifp)),
+		size);
+}
+
+static struct wu_st read_cluts(struct tim_desc *desc, struct wuimg *img,
 unsigned char header[static 12]) {
 	struct tim_clut *clut = &desc->clut;
 	clut->x = buf_endian16(header + 4, little_endian);
 	clut->y = buf_endian16(header + 6, little_endian);
 	clut->nb = buf_endian16(header + 10, little_endian);
 	if (!clut->nb) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "palette count is 0");
 	}
 
-	const size_t colors = 1 << img->bitdepth;
-	if (colors != buf_endian16(header + 8, little_endian)) {
-		return wu_invalid_header;
+	const size_t colors = buf_endian16(header + 8, little_endian);
+	if (colors > 0x100) {
+		return wuerr(wu_invalid_header, "palette entries > 256");
 	}
 
-	struct palette *palette = small_malloc(clut->nb, sizeof(*palette));
-	if (!palette) {
-		return wu_alloc_error;
+	clut->clut = small_calloc(clut->nb, sizeof(*clut->clut));
+	if (!clut->clut) {
+		return WUERR_HERE(wu_alloc_error);
 	}
-	wuimg_palette_set(img, palette);
-
+	wuimg_palette_set(img, palette_ref(clut->clut));
 	for (size_t n = 0; n < clut->nb; ++n) {
-		struct palette *pal = palette + n;
-		pal->refs = 0;
+		struct palette *pal = clut->clut + n;
 		uint16_t *buf = (uint16_t *)(pal + 1) - colors;
 		if (fread(buf, sizeof(*buf), colors, desc->ifp) != colors) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 
 		special_transparency_process(buf, colors);
@@ -78,13 +97,14 @@ unsigned char header[static 12]) {
 		bitfield_from_id(&bf, 0x1555, 16);
 		bitfield_unpack(&bf, pal->color, buf, colors);
 	}
-	return wu_ok;
+	return wuok();
 }
 
-enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
-	/* TIM header (little-endian) (after id):
+struct wu_st tim_parse(struct tim_desc *desc, struct wuimg *img, FILE *ifp) {
+	/* TIM header:
 		Offset  Size    Name
-		0       DWORD   Flags:
+		0       BYTE    ID[4]
+		4       DWORD   Flags:
 		|
 		|       Bits    Name
 		|       0-2     Bitmap type:
@@ -124,20 +144,24 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
 	 *     is pure black (0,0,0), then if set it means it's opaque.
 	 */
 
-	unsigned char header[16];
+	unsigned char header[20];
+	const unsigned char sig[] = {0x10, 0, 0, 0};
+	*desc = (struct tim_desc) {.ifp = ifp};
 	if (!fread(header, sizeof(header), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(header, sig, sizeof(sig))) {
+		return wuerr(wu_invalid_header, "ID != 0x10");
 	}
 
-	const uint32_t flags = buf_endian32(header, little_endian);
+	const uint32_t flags = buf_endian32(header + 4, little_endian);
 	uint8_t depth;
 	switch (flags & 0x7) {
 	case 0: depth = 4; break;
 	case 1: depth = 8; break;
 	case 2: depth = 16; break;
 	case 3: depth = 24; break;
-	case 4: return wu_samples_wanted;
-	default: return wu_invalid_header;
+	case 4: return wuerr(wu_samples_wanted, "mixed bitdepth");
+	default: return wuerr(wu_invalid_header, "unknown bitdepth");
 	}
 
 	if (depth == 24) {
@@ -147,38 +171,33 @@ enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img) {
 		img->channels = 1;
 		img->bitdepth = depth;
 		if (depth == 16 && !wuimg_bitfield_from_id(img, 0x1555)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 	}
 
-	desc->clut.nb = 0;
 	if (flags & 0x8) {
 		if (depth > 8) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"paletted image with depth > 8");
 		}
 
-		const enum wu_error status = read_cluts(desc, img, header + 4);
-		if (status != wu_ok) {
+		const struct wu_st status = read_cluts(desc, img, header + 8);
+		if (!wu_isok(status)) {
 			return status;
 		}
-		const size_t image_header = sizeof(header) - 4;
-		if (!fread(header + 4, image_header, 1, desc->ifp)) {
-			return wu_unexpected_eof;
+		const size_t off = 8;
+		const size_t image_header = sizeof(header) - off;
+		if (!fread(header + off, image_header, 1, desc->ifp)) {
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 	}
 
-	desc->x = buf_endian16(header + 8, little_endian);
-	desc->y = buf_endian16(header + 10, little_endian);
+	desc->x = buf_endian16(header + 12, little_endian);
+	desc->y = buf_endian16(header + 14, little_endian);
 
-	const size_t line_len = buf_endian16(header + 12, little_endian);
+	const size_t line_len = buf_endian16(header + 16, little_endian);
 	img->w = line_len * 16 / depth;
-	img->h = buf_endian16(header + 14, little_endian);
+	img->h = buf_endian16(header + 18, little_endian);
 	img->align_sh = 1;
-	return wuimg_verify(img);
-}
-
-enum wu_error tim_open_file(struct tim_desc *desc, FILE *ifp) {
-	desc->ifp = ifp;
-	const unsigned char sig[] = {0x10, 0, 0, 0};
-	return fmt_sigcmp(sig, sizeof(sig), ifp);
+	return wuimg_verify_st(img);
 }

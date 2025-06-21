@@ -918,7 +918,7 @@ DEC_MAP = {
 
 	"tim": {
 		"tim": {
-			"desc": "PlayStation image",
+			"desc": "PlayStation image, multiple palettes",
 			"match": "tim",
 			"mask": (
 				b"\xff\xff\xff\xff" b"\xf0\xff\xff\xff",

@@ -10,18 +10,24 @@
 struct tim_clut {
 	uint16_t nb;
 	uint16_t x, y;
+	struct palette *clut;
 };
 
 struct tim_desc {
 	FILE *ifp;
+	void *raster;
 	uint16_t x, y;
 	struct tim_clut clut;
 };
 
-size_t tim_decode(const struct tim_desc *desc, struct wuimg *img);
+void tim_cleanup(struct tim_desc *desc);
 
-enum wu_error tim_parse_header(struct tim_desc *desc, struct wuimg *img);
+void tim_alt_clut(struct tim_desc *desc, const struct wuimg *main,
+struct wuimg *alt, const uint16_t clut_nb);
 
-enum wu_error tim_open_file(struct tim_desc *desc, FILE *ifp);
+struct wu_st tim_decode_main(struct tim_desc *desc, struct wuimg *img);
+
+struct wu_st tim_parse(struct tim_desc *desc, struct wuimg *img,
+FILE *ifp);
 
 #endif /* LIB_TIM */
