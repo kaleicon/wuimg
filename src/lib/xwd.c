@@ -21,6 +21,10 @@
  * particular images.
 */
 
+/* Various 1-bit samples:
+http://stuff.mit.edu/afs/athena/contrib/graphics/images/xpix/
+*/
+
 enum xwd_order { // Whether byte or bit order
 	xwd_lsb = 0,
 	xwd_msb = 1,
@@ -104,6 +108,12 @@ const uint32_t ncolors) {
 		pal->color[i].b = xwd_pal[base + 8];
 		pal->color[i].a = 0xff;
 	}
+	if (img->attr == pix_inverted) { // 1-bit files
+		const struct pix_rgba8 tmp = pal->color[0];
+		pal->color[0] = pal->color[1];
+		pal->color[1] = tmp;
+		img->attr = pix_normal;
+	}
 	return wuok();
 }
 
@@ -184,7 +194,6 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 				"pixel depth > word depth");
 		}
 		if (paletted) {
-			img->attr = pix_normal;
 			if (!wuimg_palette_init(img)) {
 				return WUERR_HERE(wu_alloc_error);
 			}
@@ -286,10 +295,6 @@ struct wu_st xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	if (!wu_isok(st)) {
 		return st;
 	}
-	enum wu_error err = wuimg_verify(img);
-	if (err != wu_ok) {
-		return WUERR_HERE(err);
-	}
 
 	const uint32_t ncolors = header[17];
 	if (img->mode == image_mode_palette) {
@@ -300,6 +305,12 @@ struct wu_st xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
 	} else {
 		fseek(desc->ifp, XWD_PAL_ENTRY_SIZE*ncolors, SEEK_CUR);
 	}
+
+	st = wuimg_verify_st(img);
+	if (!wu_isok(st)) {
+		return st;
+	}
+
 	const size_t stride = strip_length(img->w, desc->bpp, img->align_sh);
 	return wuerr(wu_ok, (stride == header[10]) ? NULL : "stride mismatch");
 }
