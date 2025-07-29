@@ -52,6 +52,7 @@ fmt_map = {
 		'tim',
 		'tlg',
 		'txf',
+		'utahrle',
 		'wbmp',
 		'wgtspr',
 		'wpx',

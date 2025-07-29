@@ -954,6 +954,14 @@ DEC_MAP = {
 		},
 	},
 
+	"utahrle": {
+		"utahrle": {
+			"desc": "Utah RLE",
+			"ext": "rle",
+			"magic": b"\x52\xcc",
+		},
+	},
+
 	"wbmp": {
 		"wbmp": {
 			"desc": "Wireless Bitmap",
