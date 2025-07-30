@@ -212,7 +212,9 @@ const struct wu_conf *wuconf, struct png_state *png) {
 	}
 
 	// We've already checked the signature for this stream
+	fseek(infile->ifp, 8, SEEK_CUR);
 	png_init_io(png->png, infile->ifp);
+	png_set_sig_bytes(png->png, 8);
 #ifdef PNG_SET_USER_LIMITS_SUPPORTED
 	png_set_user_limits(png->png, wuconf->max_img_size, wuconf->max_img_size);
 #endif

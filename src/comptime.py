@@ -1205,9 +1205,12 @@ DEC_MAP = {
 
 	"png": {
 		"png": {
-			"desc": "Portable Network Graphics",
-			"ext": "png",
-			"magic": b"\x89PNG\r\n\x1a\n",
+			"desc": "Portable Network Graphics, Malie engine MGF",
+			"ext": ("png", "mgf"),
+			"magic": (
+				b"\x89PNG\r\n\x1a\n",
+				b"MalieGF\0",
+			),
 			"mime": "png",
 		},
 	},
