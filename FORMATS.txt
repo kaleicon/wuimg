@@ -1,4 +1,4 @@
-74 families, 124 formats supported
+75 families, 124 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -46,6 +46,7 @@ auto      trp       Spooky Sprites uncompressed
 avif|heif avif      AV1 Image File Format
 bethesda  bsi       Bethesda BSI texture (IFHD, BSIF)
 bethesda  gxa       Bethesda GXA image (BMHD)
+bmz       bmz       GSD engine compressed BMP. Requires DIB
 c         c         C code formats: DEGAS Elite Icon, XBM X10 and X11
 c64       c64       Hires and Multicolor formats: Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Faces Painter, Hi-Eddi, HiPic Creator, HiRes Editor, Image System, Interpaint, KoalaPainter (raw & compressed), Picasso 64, Runpaint, Saracen Paint, Vidcom 64, probably others by accident
 cbg       cbg       BGI/Ethornell CompressedBG (v1)
@@ -53,7 +54,6 @@ chunsoft  at6p      999 AT6P
 chunsoft  sir0      999 SIR0 sprites
 croteam   tbn       Croteam Texture
 dib       bmp       Microsoft Bitmap
-dib       bmz       GSD engine BMZ
 dib       dib       Microsoft DIB
 dib       ico       Microsoft Icon
 dpx       dpx       Digital Picture Exchange
@@ -94,7 +94,7 @@ pi        pi        Yanagisawa's Pi
 pic       pic       Yanagisawa's PIC
 pic2      pic2      Yanagisawa's PIC2
 pictor    pictor    PCPaint PICtor
-png       png       Portable Network Graphics, MalieGF
+png       png       Portable Network Graphics, Malie engine MGF
 pnm       pnm       PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)
 prt       prt       Kid engine image
 px        px        Leaf engine image

@@ -3,6 +3,7 @@
 import sys
 import collections
 from itertools import batched, chain, starmap
+from functools import partial
 
 EXT_LIMIT = 6
 MAGIC_LIMIT = 12
@@ -34,8 +35,9 @@ TIFF_MAGICS = (
 #     An integer or a sequence of such
 # "mime" = Format mime types, with "image/" prefix omitted. Unused at the moment
 #     Same format as "ext"
+
 DEC_MAP = {
-	# Homemade decoders first
+	# Simple raw formats, implemented in auto.c
 	"auto": {
 		"aipd": {
 			"desc": "National Instruments AIPD (uncertain color interpretation)",
@@ -227,6 +229,7 @@ DEC_MAP = {
 		},
 	},
 
+	# Formats implemented in lib/
 	"aliaspix": {
 		"aliaspix": {
 			"desc": "AliasPIX and Vivid",
@@ -337,6 +340,14 @@ DEC_MAP = {
 			"desc": "Bethesda GXA image (BMHD)",
 			"ext": ("bmp", "gxa"),
 			"magic": b"BMHD\0\0\0\x22",
+		},
+	},
+
+	"bmz": {
+		"bmz": {
+			"desc": "GSD engine compressed BMP. Requires DIB",
+			"ext": "bmz",
+			"magic": b"ZLC3",
 		},
 	},
 
@@ -501,12 +512,6 @@ DEC_MAP = {
 			"desc": "Microsoft Icon",
 			"match": ("cur", "ico"),
 			"mime": ("vnd.microsoft.icon", "x-icon"),
-		},
-
-		"bmz": {
-			"desc": "GSD engine BMZ",
-			"ext": "bmz",
-			"magic": b"ZLC3",
 		},
 	},
 
@@ -1021,7 +1026,7 @@ DEC_MAP = {
 		},
 	},
 
-	# External decoders
+	# Formats requiring external libraries
 	"avif|heif": {
 		"avif": {
 			"desc": "AV1 Image File Format",
@@ -1601,10 +1606,14 @@ def show_supported(fmt_map):
 def extract_fmt(dec, fmts):
 	return map(lambda t: FmtDesc(dec, *t), fmts.items())
 
+def enabled_filter(enabled, t):
+	return any(map(enabled.__contains__, t[0].split('|')))
+
 def fmts_from_decs(dec, enabled=None):
 	it = dec.items()
 	if enabled:
-		it = filter(lambda t: any(map(enabled.__contains__, t[0].split('|'))), it)
+		fn = partial(enabled_filter, enabled)
+		it = filter(fn, it)
 	return chain.from_iterable(starmap(extract_fmt, it))
 
 def enabled_formats(file, include=tuple()):
@@ -1615,9 +1624,17 @@ def enabled_formats(file, include=tuple()):
 		)
 	))
 
+def print_names(dec_map):
+	foreach(print, set(chain.from_iterable(
+		map(lambda s: s.split('|'), filter(lambda s: s != 'auto', dec_map.keys()))
+	)))
+
 if __name__ == '__main__':
 	enabled = None
 	i = 1
+	if sys.argv[i] == 'names':
+		print_names(DEC_MAP)
+		sys.exit(0)
 	if sys.argv[i] == '-all':
 		i += 1
 	else:

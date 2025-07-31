@@ -1,106 +1,40 @@
 # SPDX-License-Identifier: 0BSD
 # SPDX-FileCopyrightText: 2020 kaleido
-fmt_map = {
-	'internal': [
-		'aliaspix',
-		'atari',
-		'bethesda',
-		'c',
-		'c64',
-		'cbg',
-		'chunsoft',
-		'croteam',
-		'dib',
-		'dpx',
-		'eclipse',
-		'elecbyte',
-		'g00',
-		'gp4',
-		'gpc',
-		'hel',
-		'hg3',
-		'ilbm',
-		'jam',
-		'kyg',
-		'lwi',
-		'mac',
-		'mag',
-		'maki',
-		'msx',
-		'pcf',
-		'pcx',
-		'pdt',
-		'pgx',
-		'pi',
-		'pic',
-		'pic2',
-		'pictor',
-		'pnm',
-		'prt',
-		'px',
-		'q4',
-		'qoi',
-		'quake',
-		'sgi',
-		'siff',
-		'signum',
-		'sixel',
-		'skyroads',
-		'spooky',
-		'sun',
-		'tga',
-		'tim',
-		'tlg',
-		'txf',
-		'utahrle',
-		'wbmp',
-		'wgtspr',
-		'wpx',
-		'xcursor',
-		'xwd',
-		'xyz'
-	],
+python = find_program('python3')
+comptime = files('comptime.py')
+fmt_names = run_command(python, comptime, 'names', check : true).stdout().split()
 
-	'external': [
-		'avif',
-		'flif',
-		'gif',
-		'heif',
-		'jbig',
-		'jbig2',
-		'jpeg',
-		'jpeg2000',
-		'jpegls',
-		'jpegxl',
-		'Lerc',
-		'png',
-		'raw',
-		'svg',
-		'tiff',
-		'webp'
-	],
-
-	'freerider': [
-		'bmz',
-	],
-}
-
-pkg_map = {
-	'bmz': ['zlib'],
-	'hg3': ['zlib'],
-	'xyz': ['zlib'],
+external_map = {
+	# For empty arrays, use cc.find_library(key) instead of dependency()
+	'avif': [],
+	'flif': [],
+	'gif': [],
+	'heif': [],
+	'jbig': [],
+	'jpeg': [],
+	'png': [],
+	'raw': [],
+	'tiff': [],
 
 	'jbig2': ['jbig2dec'],
 	'jpeg2000': ['libopenjp2'],
 	'jpegls': ['charls'],
 	'jpegxl': ['libjxl', 'libjxl_threads'],
+	'lerc' : ['Lerc'],
 	'svg': ['librsvg-2.0'],
 	'webp': ['libwebpdecoder', 'libwebpdemux']
 }
 
-encoders = [
-	'jpegxl'
-]
+pkg_map = external_map + {
+	'bmz': ['zlib'],
+	'hg3': ['zlib'],
+	'xyz': ['zlib'],
+}
+
+attr_map = {
+	'encoder': ['jpegxl'],
+	'freerider': ['bmz'],
+}
 
 # Core setup
 src_list = []
@@ -114,46 +48,46 @@ dep_list = [
 	dependency('uchardet')
 ]
 
-foreach cat, fmts : fmt_map
-	foreach f : fmts
-		state = get_option(f).disable_auto_if(
-			cat == 'external' and get_option('disable_external')
-		)
-		deps = []
-		if f in pkg_map
+foreach f : fmt_names
+	is_external = f in external_map
+	state = get_option(f).disable_auto_if(
+		is_external and get_option('disable_external')
+	)
+
+	deps = []
+	if f in pkg_map
+		if pkg_map[f].length() == 0
+			deps += cc.find_library(f, required : state)
+		else
 			foreach lib : pkg_map[f]
 				deps += dependency(lib, required : state)
 			endforeach
-		elif cat == 'external'
-			deps += cc.find_library(f, required : state)
 		endif
+	endif
 
-		enable = true
-		foreach d : deps
-			enable = enable and d.found()
-		endforeach
-
-		if state.require(enable).allowed()
-			dec_enable.set('WU_ENABLE_' + f.to_upper(), true)
-			dep_list += deps
-			fmtfile = f.to_lower() + '.c'
-			if cat != 'freerider'
-				src_list += 'dec' / fmtfile
-				if cat == 'internal'
-					src_list += 'lib' / fmtfile
-				endif
-			endif
-			if f in encoders
-				src_list += 'enc' / fmtfile
-			endif
-
-		endif
+	enable = true
+	foreach d : deps
+		enable = enable and d.found()
 	endforeach
+
+	if state.require(enable).allowed()
+		dec_enable.set('WU_ENABLE_' + f.to_upper(), true)
+		dep_list += deps
+		fmtfile = f.to_lower() + '.c'
+		if f not in attr_map['freerider']
+			src_list += 'dec' / fmtfile
+			if not is_external
+				src_list += 'lib' / fmtfile
+			endif
+		endif
+		if f in attr_map['encoder']
+			src_list += 'enc' / fmtfile
+		endif
+
+	endif
 endforeach
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
-python = find_program('python3')
-comptime = files('comptime.py')
 
 src_list += [custom_target('dec_maps',
 		input : [dec_enable],
