@@ -25,7 +25,29 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+static struct wu_st init_npm(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct npm_desc desc;
+	struct wu_st st = npm_parse(&desc, infile->sub_img, infile->ifp);
+	if (wu_isok(st)) {
+		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		} else {
+			tree_add_leaf_len(&infile->metadata, "Comment",
+				npm_get_comment(&desc), NULL);
+			tree_bud_leaf_u(&infile->metadata, "Mystery number",
+				desc.mystery);
+			st = npm_load(&desc, infile->sub_img);
+		}
+	}
+	return st;
+}
+
 const struct image_fn nol_fn = {
 	.alloc_single = true,
 	.init = init_nol,
+};
+const struct image_fn npm_fn = {
+	.alloc_single = true,
+	.init = init_npm,
 };

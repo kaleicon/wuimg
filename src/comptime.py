@@ -680,6 +680,12 @@ DEC_MAP = {
 				b"NOL\0\x01\x00",
 			),
 		},
+
+		"npm": {
+			"desc": "Nokia Picture Message",
+			"ext": "npm",
+			"magic": b"NPM\0",
+		},
 	},
 
 	"pcf": {

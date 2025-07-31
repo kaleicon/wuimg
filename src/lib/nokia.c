@@ -3,6 +3,7 @@
 #include "misc/endian.h"
 #include "raster/fmt.h"
 #include "nokia.h"
+
 static void txt2bin(void *restrict data, const size_t len,
 void *restrict _n) {
 	(void)_n;
@@ -38,11 +39,12 @@ struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp) {
 		+6      u16     Unknown2 # 1
 		+8      u16     Unknown3 # ???
 		+10
+	 * This is followed by a monochrome raster encoded as ASCII '0' and '1'
 	*/
-	uint16_t hdr[10];
-	if (!fread(hdr, 16, 1, ifp)) {
+	uint16_t buf[10];
+	if (!fread(buf, 16, 1, ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
-	} else if (endian16(hdr[2], little_endian) != 1) {
+	} else if (endian16(buf[2], little_endian) != 1) {
 		return WUERR_HERE(wu_invalid_header);
 	}
 
@@ -52,31 +54,81 @@ struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp) {
 	const uint8_t nol[] = {'N', 'O', 'L', 0};
 	const uint8_t ngg[] = {'N', 'G', 'G', 0};
 	size_t i = 3;
-	if (!memcmp(hdr, nol, sizeof(nol))) {
-		if (!fread(hdr + 8, 4, 1, ifp)) {
+	if (!memcmp(buf, nol, sizeof(nol))) {
+		if (!fread(buf + 8, 4, 1, ifp)) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
 		desc->is_nol = true;
-		desc->country = endian16(hdr[i], little_endian);
-		desc->network = endian16(hdr[i+1], little_endian);
+		desc->country = endian16(buf[i], little_endian);
+		desc->network = endian16(buf[i+1], little_endian);
 		i += 2;
-	} else if (!memcmp(hdr, ngg, sizeof(ngg))) {
+	} else if (!memcmp(buf, ngg, sizeof(ngg))) {
 		// nothing
 	} else {
 		return WUERR_HERE(wu_invalid_header);
 	}
 
-	desc->mystery = endian16(hdr[i+4], little_endian);
-	if (endian16(hdr[i+2], little_endian) != 1
-	|| endian16(hdr[i+3], little_endian) != 1) {
+	desc->mystery = endian16(buf[i+4], little_endian);
+	if (endian16(buf[i+2], little_endian) != 1
+	|| endian16(buf[i+3], little_endian) != 1) {
 		return wuerr(wu_uncertain_validity, "mystery fields != 1");
 	}
 
-	img->w = endian16(hdr[i], little_endian);
-	img->h = endian16(hdr[i+1], little_endian);
+	img->w = endian16(buf[i], little_endian);
+	img->h = endian16(buf[i+1], little_endian);
 	img->channels = 1;
 	img->bitdepth = 8;
 	img->bitrange = 1;
+	img->attr = pix_inverted;
+	return wuimg_verify_st(img);
+}
+
+struct wuptr npm_get_comment(const struct npm_desc *desc) {
+	return (struct wuptr) {.len = desc->len, .ptr = desc->comment};
+}
+
+struct wu_st npm_load(struct npm_desc *desc, struct wuimg *img) {
+	if (wuimg_alloc_noverify(img)) {
+		return fmt_load_raster_st(img, desc->ifp);
+	}
+	return WUERR_HERE(wu_alloc_error);
+}
+
+struct wu_st npm_parse(struct npm_desc *desc, struct wuimg *img, FILE *ifp) {
+	/* Nokia Picture Message header:
+		Offset  Type    Name
+		0       u8      Magic[4] # "NPM\0"
+		4       u8      Length
+		5       char    Comment[Length]
+		+0      u8      Zero
+		+1      u8      Width
+		+2      u8      Height
+		+3      u8      One
+		+4      u8      One
+		+5      u8      Unknown
+		+6
+	 * This is followed by a 1-bit raster. */
+	const uint8_t magic[4] = {'N', 'P', 'M', 0};
+	uint8_t buf[6];
+	if (!fread(buf, 5, 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(buf, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_header);
+	}
+
+	desc->ifp = ifp;
+	desc->len = buf[4];
+	if (!fread(desc->comment, desc->len, 1, ifp)
+	|| !fread(buf, sizeof(buf), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (buf[0] || buf[3] != 1 || buf[4] != 1) {
+		return wuerr(wu_uncertain_validity, "bytes[0,3,4] != {0,1,1}");
+	}
+	desc->mystery = buf[5];
+	img->w = buf[1];
+	img->h = buf[2];
+	img->channels = 1;
+	img->bitdepth = 1;
 	img->attr = pix_inverted;
 	return wuimg_verify_st(img);
 }
