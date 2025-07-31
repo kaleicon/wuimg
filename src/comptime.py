@@ -671,6 +671,17 @@ DEC_MAP = {
 		},
 	},
 
+	"nokia": {
+		"nol": {
+			"desc": "Nokia Operator Logo and Nokia Group Graphics (NOL/NGG)",
+			"ext": ("ngg", "no", "nol"),
+			"magic": (
+				b"NGG\0\x01\x00",
+				b"NOL\0\x01\x00",
+			),
+		},
+	},
+
 	"pcf": {
 		"pcf": {
 			"desc": "PCF bitmap font",
