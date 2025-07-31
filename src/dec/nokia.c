@@ -1,7 +1,43 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
 #include "lib/nokia.h"
+#include "misc/math.h"
 #include "wudefs.h"
+
+static struct wu_st event_nlm(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
+	(void)_c;
+	struct wu_st st = wuerr(wu_no_change, NULL);
+	if (ev == ev_subcycle) {
+		const uint8_t idx = (uint8_t)state->idx;
+		struct wuimg *img = infile->sub_img + idx;
+		st = nlm_image_info(infile->dec_state, img);
+		if (wu_isok(st)) {
+			st = nlm_load(infile->dec_state, img, idx);
+		}
+	}
+	return st;
+}
+
+static struct wu_st init_nlm(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct nlm_desc *desc = infile->dec_state;
+	struct wu_st st = nlm_parse(desc, infile->ifp);
+	if (wu_isok(st)) {
+		if (umax(desc->w, desc->h) > conf->max_img_size) {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		} else {
+			if (!alloc_sub_images(infile, desc->nr_images)) {
+				st = WUERR_HERE(wu_alloc_error);
+			} else {
+				tree_add_leaf_utf8(&infile->metadata,
+					"Logo type",
+					nlm_logo_type_str(desc->logo_type));
+			}
+		}
+	}
+	return st;
+}
 
 static struct wu_st init_nol(struct image_file *infile,
 const struct wu_conf *conf) {
@@ -43,6 +79,11 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+const struct image_fn nlm_fn = {
+	.state_size = sizeof(struct nlm_desc),
+	.init = init_nlm,
+	.event = event_nlm,
+};
 const struct image_fn nol_fn = {
 	.alloc_single = true,
 	.init = init_nol,

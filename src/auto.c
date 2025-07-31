@@ -245,21 +245,6 @@ const struct wuptr megapat_desc = DESC(
 	// There are 292 bytes of unknown data after the patterns
 );
 
-// Nokia Logo Manager
-// TODO: Report logo type, multiple images
-const struct wuptr nlm_desc = DESC(
-	"channels:1\n"
-	"bitdepth:1\n"
-	"attr:inverted\n"
-
-	"match:[NLM \x01]\n"
-	"skip:1\n" // 0: Operator, 1: Caller, 2: Startup, 3: Picture image
-	"match:[\0]\n" // Number of images - 1
-	"w:<u8>\n"
-	"h:<u8>\n"
-	"match:[\x01]" // ???
-);
-
 /* OLPC 565
 https://github.com/openbios/openfirmware/blob/master/cpu/x86/pc/olpc/images/README
 */

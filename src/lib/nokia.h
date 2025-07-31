@@ -5,6 +5,32 @@
 
 #include "raster/wuimg.h"
 
+enum nlm_logo_type {
+	nlm_operator = 0,
+	nlm_caller = 1,
+	nlm_startup = 2,
+	nlm_picture = 3,
+};
+
+struct nlm_desc {
+	FILE *ifp;
+	enum nlm_logo_type logo_type;
+	uint16_t nr_images;
+	uint8_t w, h;
+};
+
+const char * nlm_logo_type_str(enum nlm_logo_type logo);
+
+struct wu_st nlm_load(const struct nlm_desc *desc, struct wuimg *img,
+uint8_t i);
+
+struct wu_st nlm_image_info(const struct nlm_desc *desc, struct wuimg *img);
+
+struct wu_st nlm_parse(struct nlm_desc *desc, FILE *ifp);
+
+
+
+
 struct nol_desc {
 	FILE *ifp;
 	bool is_nol;
@@ -12,7 +38,7 @@ struct nol_desc {
 	uint16_t mystery;
 };
 
-struct wu_st nol_load(struct nol_desc *desc, struct wuimg *img);
+struct wu_st nol_load(const struct nol_desc *desc, struct wuimg *img);
 
 struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp);
 
@@ -26,7 +52,7 @@ struct npm_desc {
 
 struct wuptr npm_get_comment(const struct npm_desc *desc);
 
-struct wu_st npm_load(struct npm_desc *desc, struct wuimg *img);
+struct wu_st npm_load(const struct npm_desc *desc, struct wuimg *img);
 
 struct wu_st npm_parse(struct npm_desc *desc, struct wuimg *img, FILE *ifp);
 

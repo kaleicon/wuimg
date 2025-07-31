@@ -34,7 +34,6 @@ auto      indy      IndyPaint
 auto      kips      IBM KIPS (no palette)
 auto      kro       Kolor Raw
 auto      megapat   MegaPaint Pattern
-auto      nlm       Nokia Logo Manager
 auto      olpc565   OLPC 565 boot graphic
 auto      ota       Over The Air bitmap (uncompliant)
 auto      pgf       Portfolio Graphics uncompressed
@@ -85,7 +84,8 @@ mac       mac       MacPaint
 mag       mag       MAG (MAKI02)
 maki      maki      MAKIchan (MAKI01)
 msx       msx       MSX-BASIC dump, Graph Saurus
-nokia     nol       Nokia Operator Logo (NOL and NGG)
+nokia     nlm       Nokia Logo Manager
+nokia     nol       Nokia Operator Logo and Nokia Group Graphics (NOL/NGG)
 nokia     npm       Nokia Picture Message
 pcf       pcf       PCF bitmap font
 pcx       dcx       Multi-image PCX

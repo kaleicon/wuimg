@@ -131,14 +131,6 @@ DEC_MAP = {
 			),
 			"size": 0x112c,
 		},
-		"nlm": {
-			"desc": "Nokia Logo Manager",
-			"ext": "nlm",
-			"mask": (
-				# Sixth byte is version, 0 to 3
-				b"\xff\xff\xff\xff\xff\xfc", b"NLM \x01\x00",
-			),
-		},
 		"olpc565": {
 			"desc": "OLPC 565 boot graphic",
 			"ext": "565",
@@ -672,6 +664,14 @@ DEC_MAP = {
 	},
 
 	"nokia": {
+		"nlm": {
+			"desc": "Nokia Logo Manager",
+			"ext": "nlm",
+			"mask": (
+				# Sixth byte is version, 0 to 3
+				b"\xff\xff\xff\xff\xff\xfc", b"NLM \x01\x00",
+			),
+		},
 		"nol": {
 			"desc": "Nokia Operator Logo and Nokia Group Graphics (NOL/NGG)",
 			"ext": ("ngg", "no", "nol"),
@@ -680,7 +680,6 @@ DEC_MAP = {
 				b"NOL\0\x01\x00",
 			),
 		},
-
 		"npm": {
 			"desc": "Nokia Picture Message",
 			"ext": "npm",
