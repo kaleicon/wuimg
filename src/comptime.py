@@ -493,9 +493,9 @@ DEC_MAP = {
 
 	"dib": {
 		"bmp": {
-			"desc": "Microsoft Bitmap",
-			"ext": ("dt", "bmp", "bmp24"),
-			"magic": b"BM",
+			"desc": "Microsoft Bitmap, Jigsaw Puzzle image",
+			"ext": ("dt", "bmp", "bmp24", "jig"),
+			"magic": (b"BM", b"JG"),
 			"mime": ("bmp", "x-bmp"),
 		},
 

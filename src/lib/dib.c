@@ -789,15 +789,15 @@ const enum trit is_os2) {
 		.is_os2 = is_os2,
 	};
 	if (is_bmp) {
-		const unsigned char magic[][2] = {
-			{'B', 'M'}, // BMP
-			{0, 0}, // DDB
-		};
+		const unsigned char bmp[] = {'B', 'M'};
+		const unsigned char jigsaw[] = {'J', 'G'};
+		const unsigned char ddb[] = {0, 0};
 		unsigned char sig[2];
 		if (fread(sig, sizeof(sig), 1, ifp)) {
-			if (!memcmp(magic[0], sig, sizeof(sig))) {
+			if (!memcmp(bmp, sig, sizeof(sig))
+			|| !memcmp(jigsaw, sig, sizeof(sig))) {
 				return wuok();
-			} else if (!memcmp(magic[1], sig, sizeof(sig))) {
+			} else if (!memcmp(ddb, sig, sizeof(sig))) {
 				return wuerr(wu_unsupported_feature,
 					"DDB files not supported");
 			}
