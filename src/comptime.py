@@ -169,6 +169,11 @@ DEC_MAP = {
 			"ext": "pxy",
 			"magic": b"\xaf\xcb",
 		},
+		"trs80hr": {
+			"desc": "TRS-80 High Resolution",
+			"match": "hr",
+			"size": (0x4b00, 0x4b80, 0x4c00),
+		},
 
 		# Atari Falcon True Color family
 		"coke": {

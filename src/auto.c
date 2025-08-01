@@ -339,7 +339,7 @@ const struct wuptr pgf_desc = DESC(
 const struct wuptr pxy_desc = DESC(
 	/*
 		Offset  Type    Name
-		0       u16     ID         // 0xaf 0xcb
+		0       u8      ID[2]      // 0xaf 0xcb
 		2       u32     RasterSize
 		6       u32     Width
 		10      u32     Height
@@ -361,6 +361,14 @@ const struct wuptr pxy_desc = DESC(
 	"w:<u32>\n"
 	"h:<u32>\n"
 	"skip:0xf2" // to 0x100
+);
+
+// TRS-80 High Resolution
+const struct wuptr trs80hr_desc = DESC(
+	"w:640\n"
+	"h:240\n"
+	"channels:1\n"
+	"bitdepth:1"
 );
 
 /* Atari Falcon True Color family */
