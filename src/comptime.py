@@ -169,11 +169,6 @@ DEC_MAP = {
 			"ext": "pxy",
 			"magic": b"\xaf\xcb",
 		},
-		"trs80hr": {
-			"desc": "TRS-80 High Resolution",
-			"match": "hr",
-			"size": (0x4b00, 0x4b80, 0x4c00),
-		},
 
 		# Atari Falcon True Color family
 		"coke": {
@@ -223,6 +218,31 @@ DEC_MAP = {
 			"desc": "IMG Scan",
 			"match": ("rwl", "rwh", "raw"),
 			"size": (64000, 256000, 128000),
+		},
+
+		# TRS-80
+		"trs80clp": {
+			"desc": "TRS-80 Clip Art",
+			"ext": "clp",
+			"magic":
+				b"\x00\x00\x00\x03" b"\x01\x5e\x00\x00"
+				b"\x20\x00\x20\x01" b"\x01\x2c\x00\x0a"
+				b"\x00\x38\x00\x20" b"\x00\x38\x00\x20\x05",
+			"size": 0x132,
+		},
+		"trs80hr": {
+			"desc": "TRS-80 High Resolution",
+			"match": "hr",
+			"size": (0x4b00, 0x4b80, 0x4c00),
+		},
+		"trs80max": {
+			"desc": "TRS-80 MAX",
+			"ext": ("grf", "max", "p41", "pix"),
+			"mask": (
+				b"\xff\xff\xfe\xff\xff",
+				b"\x00\x18\x00\x0e\x00",
+			),
+			"size": (0x1c00, 0x1880, 0x180b, 0x180a),
 		},
 	},
 

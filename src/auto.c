@@ -363,14 +363,6 @@ const struct wuptr pxy_desc = DESC(
 	"skip:0xf2" // to 0x100
 );
 
-// TRS-80 High Resolution
-const struct wuptr trs80hr_desc = DESC(
-	"w:640\n"
-	"h:240\n"
-	"channels:1\n"
-	"bitdepth:1"
-);
-
 /* Atari Falcon True Color family */
 // COKE
 const struct wuptr coke_desc = DESC(
@@ -518,6 +510,41 @@ const struct wuptr imgscan_desc = DESC(
 		"256000 w:640 h:400\n" // RWH
 		"128000 w:640 h:200\n" // RAW
 	")"
+);
+
+/* TRS-80 family */
+// TRS-80 Clip Art
+const struct wuptr trs80clp_desc = DESC(
+	"w:0x28\n"
+	"h:0x38\n"
+	"channels:1\n"
+	"bitdepth:1\n"
+	"attr:inverted\n"
+
+	/* It's hard to make sense of the header, so match against it and move
+	 * on. */
+	"match:[\x00\x00\x00\x03\x01\x5e\x00\x00\x20\x00\x20\x01]\n"
+	"match:[\x01\x2c\x00\x0a\x00\x38\x00\x20\x00\x38\x00\x20\x05]"
+);
+
+// TRS-80 High Resolution
+const struct wuptr trs80hr_desc = DESC(
+	"w:640\n"
+	"h:240\n"
+	"channels:1\n"
+	"bitdepth:1"
+);
+
+// TRS-80 MAX
+const struct wuptr trs80max_desc = DESC(
+	"w:256\n"
+	"h:192\n"
+	"channels:1\n"
+	"bitdepth:1\n"
+
+	"match:[\x00\x18]\n"
+	"match:<u8>(0 1)\n"
+	"match:[\x0e\x00]"
 );
 
 enum token_type {

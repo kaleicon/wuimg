@@ -1,4 +1,4 @@
-76 families, 127 formats supported
+76 families, 129 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -42,7 +42,9 @@ auto      pictris   Pictris
 auto      pxy       Eclipse Proxy
 auto      tcp       Atari Rembrandt
 auto      trp       Spooky Sprites uncompressed
+auto      trs80clp  TRS-80 Clip Art
 auto      trs80hr   TRS-80 High Resolution
+auto      trs80max  TRS-80 MAX
 avif|heif avif      AV1 Image File Format
 bethesda  bsi       Bethesda BSI texture (IFHD, BSIF)
 bethesda  gxa       Bethesda GXA image (BMHD)
@@ -130,10 +132,10 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 284
-565, a64, aas, abm, als, apd, art, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, cps, cr2, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, ff, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hg3, hgr, hif, hir, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mpo, mtv, nef, ngg, nlm, no, nol, npm, nrw, ocp, orf, otb, p2, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr5, sr6, sr7, sr8, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 286
+565, a64, aas, abm, als, apd, art, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cps, cr2, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, ff, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hg3, hgr, hif, hir, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mpo, mtv, nef, ngg, nlm, no, nol, npm, nrw, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr5, sr6, sr7, sr8, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 171
+Known magic sequences: 173
 aipd      b'AIPD'
 aliaspix  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08'
 amibios   b'GRFX'
@@ -294,6 +296,8 @@ tlg       b'TLG5.0\x00raw\x1a'
 tre       b'tre1'
 trp       b'tru?'
 trs       b'TCSF'
+trs80clp  b'\x00\x00\x00\x03\x01^\x00\x00 \x00 \x01\x01,\x00\n\x008\x00 \x008\x00 \x05'
+trs80max  b'\x00\x18\x00\x0e\x00'
 txf       b'\xfftxf'
 utahrle   b'R\xcc'
 wbm       b'WPX\x1aBMP\x00'
@@ -306,7 +310,7 @@ xcursor   b'Xcur'
 xwd       b'\x00\x00\x00\x00\x00\x00\x00\x06'
 xyz       b'XYZ1'
 
-Fixed file sizes: 37
+Fixed file sizes: 42
 bru       64
 c64       9002
 c64       9003
@@ -341,6 +345,11 @@ megapat   4396
 pgf       1920
 pictris   64805
 spu       51104
+trs80clp  306
 trs80hr   19200
 trs80hr   19328
 trs80hr   19456
+trs80max  6154
+trs80max  6155
+trs80max  6272
+trs80max  7168
