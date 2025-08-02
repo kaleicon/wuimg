@@ -1682,9 +1682,9 @@ def enabled_formats(file, include=tuple()):
 	))
 
 def print_names(dec_map):
-	foreach(print, set(chain.from_iterable(
+	foreach(print, sorted(set(chain.from_iterable(
 		map(lambda s: s.split('|'), filter(lambda s: s != 'auto', dec_map.keys()))
-	)))
+	))))
 
 if __name__ == '__main__':
 	enabled = None
