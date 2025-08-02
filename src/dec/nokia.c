@@ -79,6 +79,28 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+static void end_nsl(struct image_file *infile) {
+	nsl_clean(infile->dec_state);
+}
+
+static struct wu_st init_nsl(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct nsl_desc *desc = infile->dec_state;
+	struct wu_st st = nsl_parse(desc, infile->sub_img, infile->ifp);
+	if (wu_isok(st)) {
+		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		} else {
+			tree_add_leaf_len(&infile->metadata, "Version",
+				wuptr_wustr(desc->vers), NULL);
+			tree_add_leaf_len(&infile->metadata, "Model",
+				wuptr_wustr(desc->modl), NULL);
+			st = nsl_load(desc, infile->sub_img);
+		}
+	}
+	return st;
+}
+
 const struct image_fn nlm_fn = {
 	.state_size = sizeof(struct nlm_desc),
 	.init = init_nlm,
@@ -91,4 +113,10 @@ const struct image_fn nol_fn = {
 const struct image_fn npm_fn = {
 	.alloc_single = true,
 	.init = init_npm,
+};
+const struct image_fn nsl_fn = {
+	.alloc_single = true,
+	.state_size = sizeof(struct nsl_desc),
+	.init = init_nsl,
+	.end = end_nsl,
 };

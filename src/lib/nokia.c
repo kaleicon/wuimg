@@ -4,6 +4,10 @@
 #include "raster/fmt.h"
 #include "nokia.h"
 
+/* Various undocumented Nokia formats, with help from
+https://cgit.git.savannah.gnu.org/cgit/gnokii.git/tree/common/gsm-filetypes.c
+*/
+
 /* Nokia Logo Manager */
 
 const char * nlm_logo_type_str(const enum nlm_logo_type logo) {
@@ -198,4 +202,92 @@ struct wu_st npm_parse(struct npm_desc *desc, struct wuimg *img, FILE *ifp) {
 	img->bitdepth = 1;
 	img->attr = pix_inverted;
 	return wuimg_verify_st(img);
+}
+
+
+/* Nokia Startup Logo */
+void nsl_clean(struct nsl_desc *desc) {
+	wustr_free(&desc->vers);
+	wustr_free(&desc->modl);
+}
+
+#define NSL_BUF_SIZE (84*48/8)
+
+struct wu_st nsl_load(struct nsl_desc *desc, struct wuimg *img) {
+	uint8_t buf[NSL_BUF_SIZE];
+	if (!wuimg_alloc_noverify(img)) {
+		return WUERR_HERE(wu_alloc_error);
+	} else if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+
+	/* Raster is laid out in 8-row bands, each byte containing a column. */
+	for (size_t ty = 0; ty < img->h/8; ++ty) {
+		for (size_t x = 0; x < img->w; ++x) {
+			uint8_t c = buf[ty * img->w + x];
+			for (size_t y = 0; y < 8; ++y) {
+				img->data[(ty*8+y)*img->w + x] = (
+					(c >> y) & 1
+				);
+			}
+		}
+	}
+	return wuok();
+}
+
+static struct wu_st load_str(struct wustr *str, FILE *ifp, uint16_t len) {
+	if (!str->str) {
+		if (wustr_malloc(str, len)) {
+			return fread(str->str, len, 1, ifp)
+				? wuok() : WUERR_HERE(wu_unexpected_eof);
+		}
+		return WUERR_HERE(wu_alloc_error);
+	}
+	return wuerr(wu_uncertain_validity, "duplicate chunks");
+}
+
+struct wu_st nsl_parse(struct nsl_desc *desc, struct wuimg *img, FILE *ifp) {
+	/* NSL is an IFF-like format, except lengths are stored as 16-bits. */
+	const uint32_t form = FOURCC('F', 'O', 'R', 'M');
+	const uint32_t vers = FOURCC('V', 'E', 'R', 'S');
+	const uint32_t modl = FOURCC('M', 'O', 'D', 'L');
+	const uint32_t nsld = FOURCC('N', 'S', 'L', 'D');
+	const uint32_t comm = FOURCC('C', 'O', 'M', 'M');
+	uint16_t buf[3];
+	*desc = (struct nsl_desc){.ifp = ifp};
+	for (bool first = true; fread(buf, sizeof(buf), 1, ifp); first = false) {
+		const uint32_t cc = buf_endian32(buf, big_endian);
+		const uint16_t len = endian16(buf[2], big_endian);
+		if (first) {
+			if (cc != form) {
+				return wuerr(wu_invalid_header,
+					"first chunk is not FORM");
+			}
+		} else if (cc == vers || cc == modl) {
+			const struct wu_st st = load_str(
+				cc == vers ? &desc->vers : &desc->modl,
+				ifp, len);
+			if (!wu_isok(st)) {
+				return st;
+			}
+		} else if (cc == comm) {
+			fseek(ifp, len, SEEK_CUR);
+		} else if (cc == nsld) {
+			if (len != 0x1f8) {
+				return wuerr(wu_uncertain_validity,
+					"NSLD chunk len != 0x1f8");
+			}
+			img->w = 84;
+			img->h = 48;
+			img->channels = 1;
+			img->bitdepth = 8;
+			img->bitrange = 1;
+			img->attr = pix_inverted;
+			return wuimg_verify_st(img);
+		} else {
+			return wuerr(wu_uncertain_validity,
+				"unexpected chunk");
+		}
+	}
+	return WUERR_HERE(wu_unexpected_eof);
 }

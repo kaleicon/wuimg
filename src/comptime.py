@@ -718,6 +718,14 @@ DEC_MAP = {
 			"ext": "npm",
 			"magic": b"NPM\0",
 		},
+		"nsl": {
+			"desc": "Nokia Startup Logo",
+			"ext": "nsl",
+			"mask": (
+				b"\xff\xff\xff\xff" b"\0\0" b"\xff\xff\xff\xff",
+				b"FORM" b"\0\0" b"VERS",
+			),
+		},
 	},
 
 	"pcf": {
