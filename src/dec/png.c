@@ -156,59 +156,57 @@ static bool read_palette(const struct png_state *png, struct wuimg *img) {
 	return palette;
 }
 
-static enum wu_error decode_image(struct image_file *infile,
-const struct wu_conf *wuconf, struct png_state *png) {
+static struct wu_st decode_image(struct image_file *infile,
+const struct wu_conf *conf, struct png_state *png) {
 	struct wuimg *img = infile->sub_img;
 	img->w = png_get_image_width(png->png, png->info);
 	img->h = png_get_image_height(png->png, png->info);
 	img->channels = png_get_channels(png->png, png->info);
 	img->bitdepth = png_get_bit_depth(png->png, png->info);
 	img->alpha = alpha_unassociated;
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
-	}
 	if (png_get_color_type(png->png, png->info) == PNG_COLOR_TYPE_PALETTE) {
 		if (!read_palette(png, img)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 	}
 	img->ratio = png_get_pixel_aspect_ratio(png->png, png->info);
 
-	const enum wu_error st = wuimg_alloc(img);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	const size_t stride = wuimg_stride(img);
-	int passes = 1;
+	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	if (err == wu_ok) {
+		const size_t stride = wuimg_stride(img);
+		int passes = 1;
 #ifdef PNG_READ_INTERLACING_SUPPORTED
-	passes = png_set_interlace_handling(png->png);
+		passes = png_set_interlace_handling(png->png);
 #endif
 
-	/* We swap bytes ourselves as it's slightly faster for some reason.
-	 * Perhaps not enabling any transforms at all speeds things up. */
-	for (int p = 0; p < passes; ++p) {
-		for (size_t y = 0; y < img->h; ++y) {
-			void *row = img->data + stride*y;
-			png_read_row(png->png, row, NULL);
-			if (p == passes - 1 && img->bitdepth > 8) {
-				endian_loop16(row, big_endian, stride/2);
+		/* We swap bytes ourselves as it's slightly faster for some
+		 * reason.
+		 * Perhaps not enabling any transforms at all speeds things up.
+		 * Perhaps it's due to different compiler flags. */
+		for (int p = 0; p < passes; ++p) {
+			for (size_t y = 0; y < img->h; ++y) {
+				void *row = img->data + stride*y;
+				png_read_row(png->png, row, NULL);
+				if (p == passes - 1 && img->bitdepth > 8) {
+					endian_loop16(row, big_endian, stride/2);
+				}
 			}
 		}
+		get_color_profile(png->png, png->info, &img->cs);
+		return WU_OK;
 	}
-	get_color_profile(png->png, png->info, &img->cs);
-	return wu_ok;
+	return WUERR_HERE(err);
 }
 
-static enum wu_error dec_wrap(struct image_file *infile,
-const struct wu_conf *wuconf, struct png_state *png) {
+static struct wu_st dec_wrap(struct image_file *infile,
+const struct wu_conf *conf, struct png_state *png) {
 	png->info = png_create_info_struct(png->png);
 	if (!png->info) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	if (setjmp(png_jmpbuf(png->png))) {
-		return wu_decoding_error;
+		return WUERR_HERE(wu_decoding_error);
 	}
 
 	// We've already checked the signature for this stream
@@ -216,39 +214,37 @@ const struct wu_conf *wuconf, struct png_state *png) {
 	png_init_io(png->png, infile->ifp);
 	png_set_sig_bytes(png->png, 8);
 #ifdef PNG_SET_USER_LIMITS_SUPPORTED
-	png_set_user_limits(png->png, wuconf->max_img_size, wuconf->max_img_size);
+	png_set_user_limits(png->png, conf->max_img_size, conf->max_img_size);
 #endif
 	png_set_crc_action(png->png, PNG_CRC_WARN_USE, PNG_CRC_WARN_DISCARD);
 	png_read_info(png->png, png->info);
 
-	const enum wu_error err = decode_image(infile, wuconf, png);
-	if (err != wu_ok) {
-		return err;
-	}
+	const struct wu_st st = decode_image(infile, conf, png);
+	if (wu_isok(st)) {
+		png->end = png_create_info_struct(png->png);
+		if (png->end) {
+			png_read_end(png->png, png->end);
+		}
 
-	png->end = png_create_info_struct(png->png);
-	if (png->end) {
-		png_read_end(png->png, png->end);
+		read_png_metadata(png, infile);
 	}
-
-	read_png_metadata(png, infile);
-	return wu_ok;
+	return st;
 }
 
-static enum wu_error png_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_png(struct image_file *infile,
+const struct wu_conf *conf) {
 	struct png_state png = {0};
 	png.png = png_create_read_struct(PNG_LIBPNG_VER_STRING,
 		infile, big_trouble_fn, little_trouble_fn);
 	if (png.png) {
-		const enum wu_error err = dec_wrap(infile, wuconf, &png);
+		const struct wu_st st = dec_wrap(infile, conf, &png);
 		free_png_state(&png);
-		return err;
+		return st;
 	}
-	return wu_alloc_error;
+	return WUERR_HERE(wu_alloc_error);
 }
 
 const struct image_fn png_fn = {
 	.alloc_single = true,
-	.dec = png_dec
+	.init = init_png
 };

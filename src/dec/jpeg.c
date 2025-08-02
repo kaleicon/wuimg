@@ -54,7 +54,7 @@ static void jerror_exit(struct jpeg_common_struct *dinfo) {
 	longjmp(js->jmp, wu_decoding_error);
 }
 
-static void jpeg_end(struct image_file *infile) {
+static void end_jpeg(struct image_file *infile) {
 	struct jpeg_state *js = infile->dec_state;
 	jpeg_destroy_decompress(&js->dinfo);
 	free(js->soi_offsets);
@@ -203,7 +203,7 @@ static struct marker_info identify_marker(const struct jpeg_marker_struct *mk) {
 	return info;
 }
 
-static enum wu_error parse_markers(const struct jpeg_marker_struct *mk,
+static struct wu_st parse_markers(const struct jpeg_marker_struct *mk,
 struct wutree *metadata, struct image_file *infile, struct jpeg_state *js,
 struct icc_assembler *icc, const bool is_first) {
 	const struct marker_info info = identify_marker(mk);
@@ -214,12 +214,12 @@ struct icc_assembler *icc, const bool is_first) {
 			mk->data + info.data_start,
 			mk->data_length - info.data_start, metadata);
 		if (ok) {
-			return wu_ok;
+			return WU_OK;
 		}
 		break;
 	case icc_marker:
 		if (add_icc_shard(icc, mk)) {
-			return wu_ok;
+			return WU_OK;
 		}
 		break;
 	case mpo_marker:
@@ -229,11 +229,11 @@ struct icc_assembler *icc, const bool is_first) {
 			const size_t nr = search_file_offsets(infile->ifp, js);
 			if (nr > 1) {
 				if (!realloc_sub_images(infile, nr)) {
-					return wu_alloc_error;
+					return WUERR_HERE(wu_alloc_error);
 				}
 			}
 		}
-		return wu_ok;
+		return WU_OK;
 	default:
 		break;
 	}
@@ -248,38 +248,39 @@ struct icc_assembler *icc, const bool is_first) {
 		tree_add_leaf_len(branch, "Data start",
 			wuptr_mem(mk->data, zumin(12, mk->data_length)), NULL);
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error iter_markers(const struct jpeg_marker_struct *mk,
+static struct wu_st iter_markers(const struct jpeg_marker_struct *mk,
 struct image_file *infile, struct wuimg *img, struct jpeg_state *js,
 const bool is_first) {
 	struct icc_assembler icc = {0};
-	enum wu_error status = wu_ok;
 	struct wutree *metadata = wuimg_get_metadata(img);
 	if (!img->metadata) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
+	struct wu_st st = {0}; /* using WU_OK causes a "clobbered"
+		compiler warning, due to setjmp() */
 	while (mk) {
 		if (mk->marker == JPEG_COM) {
 			tree_add_leaf_len(metadata, "Comment",
 				wuptr_mem(mk->data, mk->data_length), NULL);
 		} else {
-			status = parse_markers(mk, metadata, infile, js, &icc,
+			st = parse_markers(mk, metadata, infile, js, &icc,
 				is_first);
-			if (status != wu_ok) {
+			if (!wu_isok(st)) {
 				break;
 			}
 		}
 		mk = mk->next;
 	}
 	if (icc.shards) {
-		if (status == wu_ok) {
+		if (wu_isok(st)) {
 			assemble_icc(img, &icc);
 		}
 		free(icc.shards);
 	}
-	return status;
+	return st;
 }
 
 static void decode_raw(struct wuimg *img,
@@ -342,12 +343,12 @@ const struct jpeg_decompress_struct *dinfo) {
 	return true;
 }
 
-static enum wu_error decode_img(struct image_file *infile,
-const struct wu_conf *wuconf, const int i) {
+static struct wu_st decode_img(struct image_file *infile,
+const struct wu_conf *conf, const int i) {
 	struct jpeg_state *js = infile->dec_state;
 	const int val = setjmp(js->jmp);
 	if (val) {
-		return (enum wu_error)val;
+		return WUERR_HERE((enum wu_error)val);
 	}
 
 	struct jpeg_decompress_struct *dinfo = &js->dinfo;
@@ -371,14 +372,14 @@ const struct wu_conf *wuconf, const int i) {
 	dinfo->raw_data_out = TRUE;
 	dinfo->out_color_space = dinfo->jpeg_color_space;
 	dinfo->do_block_smoothing = FALSE;
-	dinfo->dct_method = wuconf->jpeg_fast_dct
+	dinfo->dct_method = conf->jpeg_fast_dct
 		? JDCT_FASTEST : JDCT_DEFAULT;
 
 	jpeg_calc_output_dimensions(dinfo);
 	img->w = dinfo->output_width;
 	img->h = dinfo->output_height;
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
+	if (wuimg_exceeds_limit(img, conf)) {
+		return WUERR_HERE(wu_exceeds_size_limit);
 	}
 
 	jpeg_start_decompress(dinfo);
@@ -387,38 +388,37 @@ const struct wu_conf *wuconf, const int i) {
 	img->bitdepth = 8;
 	wuimg_align(img, DCTSIZE);
 	if (!set_colorspace(img, dinfo)) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	enum wu_error status = wuimg_alloc(img);
-	if (status != wu_ok) {
-		return status;
-	}
-	decode_raw(img, dinfo);
+	struct wu_st st = WUERR_CHECK(wuimg_alloc(img));
+	if (wu_isok(st)) {
+		decode_raw(img, dinfo);
 
-	if (dinfo->marker_list) {
-		status = iter_markers(dinfo->marker_list, infile, img, js,
-			i == 0);
+		if (dinfo->marker_list) {
+			st = iter_markers(dinfo->marker_list, infile, img,
+				js, i == 0);
+		}
+		jpeg_finish_decompress(dinfo);
+		if (wu_isok(st) && img->metadata) {
+			wuimg_exif_orientation(img,
+				metadata_orientation(img->metadata));
+		}
 	}
-	jpeg_finish_decompress(dinfo);
-	if (status == wu_ok && img->metadata) {
-		wuimg_exif_orientation(img,
-			metadata_orientation(img->metadata));
-	}
-	return status;
+	return st;
 }
 
-static enum wu_error jpeg_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
+static struct wu_st event_jpeg(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state,
 const enum image_event ev) {
 	return (ev == ev_subcycle)
-		? decode_img(infile, wuconf, state->idx)
-		: wu_no_change;
+		? decode_img(infile, conf, state->idx)
+		: WU_NO_CHANGE;
 }
 
-static enum wu_error jpeg_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_jpeg(struct image_file *infile,
+const struct wu_conf *_c) {
+	(void)_c;
 	struct jpeg_state *js = infile->dec_state;
 	js->dinfo.client_data = infile;
 	js->dinfo.err = jpeg_std_error(&js->jerr);
@@ -426,13 +426,13 @@ const struct wu_conf *wuconf) {
 	js->jerr.output_message = joutput_message;
 	js->soi_offsets = NULL;
 	jpeg_create_decompress(&js->dinfo);
-	return wu_ok;
+	return WU_OK;
 }
 
 const struct image_fn jpeg_fn = {
 	.alloc_single = true,
 	.state_size = sizeof(struct jpeg_state),
-	.dec = jpeg_dec,
-	.callback = jpeg_callback,
-	.end = jpeg_end,
+	.init = init_jpeg,
+	.event = event_jpeg,
+	.end = end_jpeg,
 };

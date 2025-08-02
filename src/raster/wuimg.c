@@ -269,6 +269,17 @@ enum wu_error wuimg_alloc(struct wuimg *img) {
 	return st;
 }
 
+enum wu_error wuimg_alloc_limit(struct wuimg *img, const struct wu_conf *conf) {
+	enum wu_error e = wu_exceeds_size_limit;
+	if (!wuimg_exceeds_limit(img, conf)) {
+		e = wuimg_verify(img);
+		if (e == wu_ok && !wuimg_alloc_noverify(img)) {
+			e = wu_alloc_error;
+		}
+	}
+	return e;
+}
+
 
 static void * set_img_mode(struct wuimg *img, const enum image_mode mode,
 void *restrict data) {
@@ -361,7 +372,7 @@ size_t nmemb, FILE *ifp) {
 			img->bitrange = img->bitdepth;
 		}
 		return palette_from_file(pal, size, nmemb, ifp, img->bitrange)
-			? wuok() : WUERR_HERE(wu_unexpected_eof);
+			? WU_OK : WUERR_HERE(wu_unexpected_eof);
 	}
 	return WUERR_HERE(wu_alloc_error);
 }
@@ -379,7 +390,7 @@ size_t nmemb, const uint8_t *src) {
 		} else {
 			memcpy(pal->color, src, size*nmemb);
 		}
-		return wuok();
+		return WU_OK;
 	}
 	return WUERR_HERE(wu_alloc_error);
 }

@@ -15,8 +15,8 @@ void *restrict ptr) {
 	p->output += len;
 }
 
-static enum wu_error dec_wrap(struct image_file *infile,
-const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
+static struct wu_st dec_wrap(struct image_file *infile,
+const struct wu_conf *conf, struct jbg_dec_state *state, const int status) {
 	switch (status) {
 	case JBG_EOK:
 	case JBG_EOK_INTR:
@@ -26,39 +26,37 @@ const struct wu_conf *wuconf, struct jbg_dec_state *state, const int status) {
 		break;
 	default:
 		image_file_strerror_append(infile, jbg_strerror(status));
-		return wu_decoding_error;
+		return WUERR_HERE(wu_decoding_error);
 	}
 
 	if (state->planes > 16) {
-		return wu_unsupported_feature;
+		return WUERR_HERE(wu_unsupported_feature);
 	}
 
 	struct wuimg *img = infile->sub_img;
 	img->w = jbg_dec_getwidth(state);
 	img->h = jbg_dec_getheight(state);
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
-	}
 	img->channels = 1;
 	img->bitdepth = (state->planes > 8) ? 16 : 8;
 	img->bitrange = (uint8_t)state->planes;
 	img->attr = pix_inverted;
-	const enum wu_error st = wuimg_alloc(img);
-	if (st == wu_ok) {
+	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	if (err == wu_ok) {
 		struct out_info out = {.output = img->data};
 		jbg_dec_merge_planes(state, false, scale_write, &out);
+		return WU_OK;
 	}
-	return st;
+	return WUERR_HERE(err);
 }
 
-static enum wu_error jbig_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_jbig(struct image_file *infile,
+const struct wu_conf *conf) {
 	struct jbg_dec_state state;
 	jbg_dec_init(&state);
 	unsigned char *why_isnt_it_const = (unsigned char *)infile->map.ptr;
 	const int status = jbg_dec_in(&state, why_isnt_it_const,
 		infile->map.len, NULL);
-	const enum wu_error st = dec_wrap(infile, wuconf, &state, status);
+	const struct wu_st st = dec_wrap(infile, conf, &state, status);
 	jbg_dec_free(&state);
 	return st;
 }
@@ -66,5 +64,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn jbig_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.dec = jbig_dec
+	.init = init_jbig
 };

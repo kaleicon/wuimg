@@ -35,7 +35,7 @@ struct tile_info {
 	tsize_t len;
 };
 
-static void tiff_end(struct image_file *infile) {
+static void end_tiff(struct image_file *infile) {
 	TIFFCleanup(infile->dec_state);
 }
 
@@ -80,13 +80,13 @@ static void get_metadata_tags(TIFF *tif, struct wuimg *img) {
 }
 
 // Default and safe libtiff decoding.
-static enum wu_error libtiff_decode(TIFF *tif, struct image_file *infile,
-struct wuimg *img) {
+static struct wu_st libtiff_decode(TIFF *tif, struct image_file *infile,
+const struct wu_conf *conf, struct wuimg *img) {
 	TIFFRGBAImage tifimg;
 	char emsg[1024];
 	if (!TIFFRGBAImageBegin(&tifimg, tif, 0, emsg)) {
 		image_file_strerror_append(infile, emsg);
-		return wu_unsupported_feature;
+		return WUERR_HERE(wu_unsupported_feature);
 	}
 
 	image_file_strerror_append(infile, "Using libtiff high-level interface");
@@ -99,11 +99,11 @@ struct wuimg *img) {
 		img->alpha = alpha_ignore;
 	}
 
-	enum wu_error st = wuimg_alloc(img);
-	if (st == wu_ok) {
+	struct wu_st st = WUERR_CHECK(wuimg_alloc_limit(img, conf));
+	if (wu_isok(st)) {
 		st = TIFFRGBAImageGet(&tifimg, (uint32_t *)img->data,
 			tifimg.width, tifimg.height)
-			? wu_ok : wu_decoding_error;
+			? wuok() : WUERR_HERE(wu_decoding_error);
 	}
 	TIFFRGBAImageEnd(&tifimg);
 	return st;
@@ -122,18 +122,18 @@ const uint16_t bps) {
 	}
 }
 
-static enum wu_error read_tiles(TIFF *tif, struct wuimg *img,
+static struct wu_st read_tiles(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info, const enum unpack_op op) {
 	struct tile_info tiles;
 	if (TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tiles.width) != 1
 	|| TIFFGetField(tif, TIFFTAG_TILELENGTH, &tiles.height) != 1) {
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
 
 	tiles.len = TIFFTileSize(tif);
 	tiles.buf = malloc((size_t)tiles.len);
 	if (!tiles.buf) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	const uint32_t comps = info->spp / info->planes;
@@ -171,10 +171,10 @@ const struct tiff_info *info, const enum unpack_op op) {
 	if (op != op_noop) {
 		img->attr = pix_normal;
 	}
-	return wu_ok;
+	return wuok();
 }
 
-static enum wu_error read_strips(TIFF *tif, struct wuimg *img,
+static struct wu_st read_strips(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info) {
 	const tsize_t buflen = TIFFStripSize(tif);
 
@@ -196,7 +196,7 @@ const struct tiff_info *info) {
 			data += stride * h;
 		}
 	}
-	return wu_ok;
+	return wuok();
 }
 
 static bool load_palette(TIFF *tif, struct wuimg *img, uint16_t bps) {
@@ -217,7 +217,7 @@ static bool load_palette(TIFF *tif, struct wuimg *img, uint16_t bps) {
 	return NULL;
 }
 
-static enum wu_error get_color_info(TIFF *tif, struct wuimg *img,
+static struct wu_st get_color_info(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info) {
 	uint16_t cnt;
 	uint16_t *types;
@@ -244,7 +244,7 @@ const struct tiff_info *info) {
 		break;
 	case PHOTOMETRIC_PALETTE:
 		if (!load_palette(tif, img, info->bps)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 		img->bitrange = 8;
 		break;
@@ -262,7 +262,7 @@ const struct tiff_info *info) {
 	void *data;
 	if (TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &data) == 1) {
 		return color_space_set_icc_copy(&img->cs, data, len)
-			? wu_ok : wu_alloc_error;
+			? wuok() : WUERR_HERE(wu_alloc_error);
 	}
 
 	float *w;
@@ -278,11 +278,19 @@ const struct tiff_info *info) {
 	if (TIFFGetField(tif, TIFFTAG_REFERENCEBLACKWHITE, &refbw) == 1) {
 		img->cs.limited = refbw[0] >= 15.0;
 	}
-	return wu_ok;
+	return wuok();
 }
 
-static enum wu_error nih_decode(TIFF *tif, struct wuimg *img,
-struct tiff_info *info) {
+static struct wu_st nih_decode(TIFF *tif, struct wuimg *img,
+const struct wu_conf *conf, struct tiff_info *info) {
+	uint32_t w, h;
+	if (!TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w)
+	|| !TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h)) {
+		return wuerr(wu_invalid_header,
+			"failed to get image dimensions");
+	}
+	img->w = w;
+	img->h = h;
 	img->channels = (unsigned char)info->spp;
 	enum unpack_op op;
 	if (info->is_tiled && info->bps % 8) {
@@ -295,21 +303,22 @@ struct tiff_info *info) {
 	}
 
 	if (info->planes > 1 && !wuimg_plane_init(img)) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	uint16_t orientation;
 	TIFFGetFieldDefaulted(tif, TIFFTAG_ORIENTATION, &orientation);
 	wuimg_exif_orientation(img, orientation);
 
-	enum wu_error st = get_color_info(tif, img, info);
-	if (st == wu_ok) {
-		st = wuimg_alloc(img);
-		if (st == wu_ok) {
+	struct wu_st st = get_color_info(tif, img, info);
+	if (wu_isok(st)) {
+		enum wu_error err = wuimg_alloc_limit(img, conf);
+		if (err == wu_ok) {
 			return (info->is_tiled)
 				? read_tiles(tif, img, info, op)
 				: read_strips(tif, img, info);
 		}
+		st = WUERR_HERE(err);
 	}
 	return st;
 }
@@ -401,40 +410,25 @@ static const char * get_tiff_info(TIFF *tif, struct tiff_info *info) {
 	return NULL;
 }
 
-static enum wu_error get_dir(struct image_file *infile,
-const struct wu_conf *wuconf, TIFF *tif, struct wuimg *img, const tdir_t i) {
+static struct wu_st get_dir(struct image_file *infile,
+const struct wu_conf *conf, TIFF *tif, struct wuimg *img, const tdir_t i) {
 	if (!TIFFSetDirectory(tif, (tdir_t)i)) {
-		return wu_invalid_header;
-	}
-
-	uint32_t w, h;
-	if (!TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w)
-	|| !TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h)) {
-		image_file_strerror_append(infile,
-			"Failed to get image dimensions");
-		return wu_invalid_header;
-	}
-
-	img->w = w;
-	img->h = h;
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
+		return wuerr(wu_invalid_header, "couldn't set TIFF directory");
 	}
 
 	struct tiff_info info;
 	const char *err = get_tiff_info(tif, &info);
 	if (err) {
-		image_file_strerror_append(infile, err);
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, err);
 	}
-	const bool do_it_ourselves = wuconf->tiff_use_homegrown_unpacker
+	const bool do_it_ourselves = conf->tiff_use_homegrown_unpacker
 		&& check_support(&info);
 
-	enum wu_error status = -1;
+	struct wu_st st;
 	switch ((int)do_it_ourselves) {
 	case true:
-		status = nih_decode(tif, img, &info);
-		if (status == wu_ok) {
+		st = nih_decode(tif, img, conf, &info);
+		if (wu_isok(st)) {
 			break;
 		}
 		wuimg_clear(img);
@@ -442,42 +436,42 @@ const struct wu_conf *wuconf, TIFF *tif, struct wuimg *img, const tdir_t i) {
 			"failed, falling back on libtiff.");
 		// fallthrough
 	case false:
-		status = libtiff_decode(tif, infile, img);
+		st = libtiff_decode(tif, infile, conf, img);
 	}
 
-	if (status == wu_ok) {
+	if (wu_isok(st)) {
 		get_metadata_tags(tif, img);
 	}
-	return status;
+	return st;
 }
 
-static enum wu_error tiff_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+static struct wu_st event_tiff(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	TIFF *tif = infile->dec_state;
 	const tdir_t idx = (tdir_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
 	return (ev == ev_subcycle)
-		? get_dir(infile, wuconf, tif, img, idx)
-		: wu_no_change;
+		? get_dir(infile, conf, tif, img, idx)
+		: wuerr(wu_no_change, NULL);
 }
 
-static enum wu_error tiff_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_tiff(struct image_file *infile,
+const struct wu_conf *_c) {
+	(void)_c;
 	const int fd = fileno(infile->ifp);
 	// libtiff insists on knowing the filename for some of its errors.
 	TIFF *tif = TIFFFdOpen(fd, "", "r");
 	if (!tif) {
-		return wu_open_error;
+		return WUERR_HERE(wu_open_error);
 	}
 
 	infile->dec_state = tif;
 	return alloc_sub_images(infile, TIFFNumberOfDirectories(tif))
-		? wu_ok : wu_alloc_error;
+		? wuok() : WUERR_HERE(wu_alloc_error);
 }
 
 const struct image_fn tiff_fn = {
-	.dec = tiff_dec,
-	.callback = tiff_callback,
-	.end = tiff_end,
+	.init = init_tiff,
+	.event = event_tiff,
+	.end = end_tiff,
 };

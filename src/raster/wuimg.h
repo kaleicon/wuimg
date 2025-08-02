@@ -146,6 +146,8 @@ bool wuimg_alloc_noverify(struct wuimg *img);
 
 enum wu_error wuimg_alloc(struct wuimg *img);
 
+enum wu_error wuimg_alloc_limit(struct wuimg *img, const struct wu_conf *conf);
+
 
 enum wu_error wuimg_bitfield_from_mask(struct wuimg *img,
 const uint32_t *mask, uint8_t ch, uint8_t word_depth);

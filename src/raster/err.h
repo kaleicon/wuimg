@@ -35,9 +35,15 @@ const char * wu_error_str(enum wu_error err);
 
 struct wu_st wuerr(enum wu_error err, const char *msg);
 
+struct wu_st wuerr_check(enum wu_error err, const char *msg);
+
 #define TOSTR(x) TOSTR2(x)
 #define TOSTR2(x) #x
-#define WUERR_HERE(err) wuerr((err), __FILE__ ":" TOSTR(__LINE__) )
+#define WUERR_HERE(err) (struct wu_st){(err), __FILE__ ":" TOSTR(__LINE__) }
+#define WUERR_CHECK(err) wuerr_check((err), __FILE__ ":" TOSTR(__LINE__) )
+
+static const struct wu_st WU_OK = {wu_ok, NULL};
+static const struct wu_st WU_NO_CHANGE = {wu_no_change, NULL};
 
 struct wu_st wuerr_partial(size_t written, size_t max);
 

@@ -9,7 +9,7 @@
 #include "misc/metadata.h"
 #include "raster/unpack.h"
 
-static void avif_end(struct image_file *infile) {
+static void end_avif(struct image_file *infile) {
 	avifDecoderDestroy(infile->dec_state);
 }
 
@@ -69,26 +69,22 @@ static void get_transforms(struct wuimg *img, const avifImage *avif) {
 	}
 }
 
-static enum wu_error dec_subimg(struct image_file *infile,
-const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx) {
+static struct wu_st dec_subimg(struct image_file *infile,
+const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
 	avifDecoder *dec = infile->dec_state;
 
 	const avifResult res = avifDecoderNthImage(dec, idx);
 	if (res != AVIF_RESULT_OK) {
 		image_file_strerror_append(infile, dec->diag.error);
-		return wu_decoding_error;
+		return WUERR_HERE(wu_decoding_error);
 	}
 
 	avifImage *avif = dec->image;
-	img->w = avif->width;
-	img->h = avif->height;
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
-	}
-
 	avifPixelFormatInfo info;
 	avifGetPixelFormatInfo(avif->yuvFormat, &info);
 	const uint8_t colors = info.monochrome ? 1 : 3;
+	img->w = avif->width;
+	img->h = avif->height;
 	img->channels = (uint8_t)(colors + dec->alphaPresent);
 	img->bitdepth = (avif->depth > 8) ? 16 : 8;
 	img->align_sh = 2;
@@ -101,7 +97,7 @@ const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx) {
 
 	struct image_planes *planes = wuimg_plane_init(img);
 	if (!planes) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	switch (avif->yuvFormat) {
 	case AVIF_PIXEL_FORMAT_YUV422: wuimg_plane_subsamp(img, 2, 1); break;
@@ -122,78 +118,76 @@ const struct wu_conf *wuconf, struct wuimg *img, const uint32_t idx) {
 
 	/* libavif's memory layout is weird in all sorts of ways, so we need to
 	 * do a full memcpy */
-	const enum wu_error st = wuimg_alloc(img);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	struct wuptr src[4];
-	uint8_t i = 0;
-	while (i < colors) {
-		src[i] = wuptr_mem(avif->yuvPlanes[i], avif->yuvRowBytes[i]);
-		++i;
-	}
-	if (avif->alphaPlane) {
-		src[i] = wuptr_mem(avif->alphaPlane, avif->alphaRowBytes);
-	}
-
-	const struct remap_info nfo = remap_scale_info(
-		bit_set32((uint32_t)avif->depth), img->bitdepth, pix_normal);
-	for (uint8_t z = 0; z < img->channels; ++z) {
-		struct plane_info *p = planes->p + z;
-		for (size_t y = 0; y < p->h; ++y) {
-			remap_scale(p->ptr + p->stride*y,
-				src[z].ptr + src[z].len*y, p->w, nfo);
+	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	if (err == wu_ok) {
+		struct wuptr src[4];
+		uint8_t i = 0;
+		while (i < colors) {
+			src[i] = wuptr_mem(avif->yuvPlanes[i], avif->yuvRowBytes[i]);
+			++i;
 		}
+		if (avif->alphaPlane) {
+			src[i] = wuptr_mem(avif->alphaPlane, avif->alphaRowBytes);
+		}
+
+		const struct remap_info nfo = remap_scale_info(
+			bit_set32((uint32_t)avif->depth),
+			img->bitdepth, pix_normal);
+		for (uint8_t z = 0; z < img->channels; ++z) {
+			struct plane_info *p = planes->p + z;
+			for (size_t y = 0; y < p->h; ++y) {
+				remap_scale(p->ptr + p->stride*y,
+					src[z].ptr + src[z].len*y, p->w, nfo);
+			}
+		}
+		return WU_OK;
 	}
-	return wu_ok;
+	return WUERR_HERE(err);
 }
 
-static enum wu_error avif_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)ev;
+static struct wu_st event_avif(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	const uint32_t idx = (uint32_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
 	return (ev == ev_subcycle)
-		? dec_subimg(infile, wuconf, img, idx)
-		: wu_no_change;
+		? dec_subimg(infile, conf, img, idx)
+		: WU_NO_CHANGE;
 }
 
-static enum wu_error decode_map(struct image_file *infile,
-avifDecoder *dec, avifResult *res) {
+static struct wu_st decode_map(struct image_file *infile, avifDecoder *dec,
+avifResult *res) {
 	dec->strictFlags = AVIF_STRICT_DISABLED;
 	dec->maxThreads = (int)num_cpus();
 	*res = avifDecoderSetIOMemory(dec, infile->map.ptr, infile->map.len);
-	if (*res != AVIF_RESULT_OK) {
-		return wu_invalid_header;
+	if (*res == AVIF_RESULT_OK) {
+		*res = avifDecoderParse(dec);
+		if (*res == AVIF_RESULT_OK) {
+			return alloc_sub_images(infile, (size_t)dec->imageCount)
+				? WU_OK : WUERR_HERE(wu_alloc_error);
+		}
 	}
-	*res = avifDecoderParse(dec);
-	if (*res != AVIF_RESULT_OK) {
-		return wu_invalid_header;
-	}
-	return alloc_sub_images(infile, (size_t)dec->imageCount)
-		? wu_ok : wu_alloc_error;
+	return WUERR_HERE(wu_invalid_header);
 }
 
-static enum wu_error avif_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_avif(struct image_file *infile,
+const struct wu_conf *conf) {
+	(void)conf;
 	avifDecoder *dec = avifDecoderCreate();
 	if (dec) {
 		infile->dec_state = dec;
 		avifResult res;
-		const enum wu_error st = decode_map(infile, dec, &res);
+		const struct wu_st st = decode_map(infile, dec, &res);
 		if (res != AVIF_RESULT_OK) {
 			image_file_strerror_append(infile, dec->diag.error);
 		}
 		return st;
 	}
-	return wu_alloc_error;
+	return WUERR_HERE(wu_alloc_error);
 }
 
 const struct image_fn avif_fn = {
 	.mmap = true,
-	.dec = avif_dec,
-	.callback = avif_callback,
-	.end = avif_end,
+	.init = init_avif,
+	.event = event_avif,
+	.end = end_avif,
 };

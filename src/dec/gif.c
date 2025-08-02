@@ -53,7 +53,7 @@ static enum wu_error map_error_to_wu(const int e) {
 	return wu_unknown_error;
 }
 
-static void gif_end(struct image_file *infile) {
+static void end_gif(struct image_file *infile) {
 	struct gif_state *ds = infile->dec_state;
 	DGifCloseFile(ds->gif_file, NULL);
 	free(ds->previous.buf);
@@ -130,7 +130,7 @@ static bool should_cache_prev(struct gif_state *ds) {
 	return ds->previous.num_of_disposals > 1 || !ds->previous.written;
 }
 
-static enum wu_error render_frame(struct wuimg *img, struct gif_state *ds,
+static struct wu_st render_frame(struct wuimg *img, struct gif_state *ds,
 const int idx) {
 	const GraphicsControlBlock *gcb = ds->gcb + idx;
 	const int trans = gcb->TransparentColor;
@@ -187,29 +187,28 @@ const int idx) {
 		pal = &ds->global_pal;
 	}
 	compost_gif_frame(img, &reg, gif_image->RasterBits, pal, trans);
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error gif_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event event) {
-	(void)wuconf;
+static struct wu_st event_gif(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *state, const enum image_event event) {
+	(void)_c;
 	if (event != ev_frame) {
-		return wu_no_change;
+		return WU_NO_CHANGE;
 	}
 	struct gif_state *ds = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
 	int idx = wuimg_frame_prev_nearest(img, img->frames->current,
 		state->frame);
 	while (idx <= state->frame) {
-		const enum wu_error err = render_frame(infile->sub_img, ds, idx);
+		const struct wu_st st = render_frame(infile->sub_img, ds, idx);
 		++idx;
-		if (err != wu_ok) {
-			return err;
+		if (!wu_isok(st)) {
+			return st;
 		}
 	}
 	img->frames->current = state->frame;
-	return wu_ok;
+	return WU_OK;
 }
 
 static int read_extensions(const int count, ExtensionBlock *ext,
@@ -233,19 +232,19 @@ GraphicsControlBlock *gcb, struct wutree *tree) {
 	return status;
 }
 
-static enum wu_error gather_info(struct image_file *infile,
+static struct wu_st gather_info(struct image_file *infile,
 struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 	GifFileType *gif_file = ds->gif_file;
 
 	const size_t count = (size_t)gif_file->ImageCount;
 	struct wuimg *img = infile->sub_img;
 	if (!wuimg_frames_init(img, count)) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	ds->gcb = small_malloc(count, sizeof(*ds->gcb));
 	if (!ds->gcb) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	const int default_delay = 10;
@@ -289,7 +288,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 			(uint32_t)gcb->DelayTime, 100,
 			gcb->TransparentColor == NO_TRANSPARENT_COLOR);
 		if (!valid_frame) {
-			return wu_invalid_header;
+			return WUERR_HERE(wu_invalid_header);
 		}
 		if (desc->ColorMap) {
 			*pal_num += 1;
@@ -306,7 +305,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 				&& gcb->TransparentColor == gcb[-1].TransparentColor;
 		}
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
 static int dgif_input_fn(GifFileType *gif_file, GifByteType *out, int len) {
@@ -318,8 +317,7 @@ static GifWord gmax(const GifWord x, const GifWord y) {
 	return x > y ? x : y;
 }
 
-static enum wu_error actual_canvas_size(struct wuimg *img,
-const GifFileType *gif_file, const struct wu_conf *conf) {
+static bool actual_canvas_size(struct wuimg *img, const GifFileType *gif_file) {
 	GifWord w = gif_file->SWidth;
 	GifWord h = gif_file->SHeight;
 	for (int i = 0; i < gif_file->ImageCount; ++i) {
@@ -327,37 +325,36 @@ const GifFileType *gif_file, const struct wu_conf *conf) {
 		const GifWord ww = desc->Left + desc->Width;
 		const GifWord hh = desc->Top + desc->Height;
 		if (ww < 0 || hh < 0) {
-			return wu_invalid_header;
+			return false;
 		}
 		w = gmax(w, ww);
 		h = gmax(h, hh);
 	}
 	img->w = (size_t)w;
 	img->h = (size_t)h;
-	return wuimg_exceeds_limit(img, conf) ? wu_exceeds_size_limit : wu_ok;
+	return true;
 }
 
-static enum wu_error gif_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_gif(struct image_file *infile,
+const struct wu_conf *conf) {
 	struct gif_state *ds = infile->dec_state;
 	int error = 0;
 	GifFileType *gif_file = DGifOpen(infile->ifp, dgif_input_fn, &error);
 	if (error) {
 		image_file_strerror_append(infile, GifErrorString(error));
-		return map_error_to_wu(error);
+		return WUERR_HERE(map_error_to_wu(error));
 	}
 	ds->gif_file = gif_file;
 
 	error = DGifSlurp(gif_file);
 	if (error != GIF_OK) {
 		image_file_strerror_append(infile, GifErrorString(gif_file->Error));
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
 
 	struct wuimg *img = infile->sub_img;
-	enum wu_error st = actual_canvas_size(img, gif_file, wuconf);
-	if (st != wu_ok) {
-		return wu_exceeds_size_limit;
+	if (!actual_canvas_size(img, gif_file)) {
+		return WUERR_HERE(wu_invalid_header);
 	}
 
 	img->channels = 4;
@@ -369,9 +366,9 @@ const struct wu_conf *wuconf) {
 	int pal_num = 0;
 	bool enable_paletted_mode = true;
 	ds->opaque_first_frame = true;
-	st = gather_info(infile, ds, &pal_num,
+	struct wu_st st = gather_info(infile, ds, &pal_num,
 		&enable_paletted_mode);
-	if (st != wu_ok) {
+	if (!wu_isok(st)) {
 		return st;
 	}
 
@@ -384,7 +381,7 @@ const struct wu_conf *wuconf) {
 			img->channels = 1;
 			pal = wuimg_palette_init(img);
 			if (!pal) {
-				return wu_alloc_error;
+				return WUERR_HERE(wu_alloc_error);
 			}
 			trans = ds->gcb[0].TransparentColor;
 		} else {
@@ -400,16 +397,16 @@ const struct wu_conf *wuconf) {
 	}
 	tree_bud_leaf_d(&infile->metadata, "Palettes", pal_num);
 
-	st = wuimg_alloc(img);
-	if (st != wu_ok) {
-		return st;
+	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	if (err != wu_ok) {
+		return WUERR_HERE(err);
 	}
 	ds->image_size = wuimg_size(img);
 
 	if (ds->previous.num_of_disposals) {
 		ds->previous.buf = malloc(ds->image_size);
 		if (!ds->previous.buf) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 	}
 	return render_frame(img, ds, 0);
@@ -418,7 +415,7 @@ const struct wu_conf *wuconf) {
 const struct image_fn gif_fn = {
 	.alloc_single = true,
 	.state_size = sizeof(struct gif_state),
-	.dec = gif_dec,
-	.callback = gif_callback,
-	.end = gif_end,
+	.init = init_gif,
+	.event = event_gif,
+	.end = end_gif,
 };

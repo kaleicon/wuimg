@@ -31,13 +31,13 @@ static int comment_handler(const void *data, const size_t size, void *ptr) {
 	return 0;
 }
 
-static enum wu_error read_data(struct image_file *infile,
-const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *err) {
+static struct wu_st read_data(struct image_file *infile,
+const struct wu_conf *conf, charls_jpegls_decoder *dec, charls_jpegls_errc *err) {
 	int32_t found;
 	charls_spiff_header spiff;
 	*err = charls_jpegls_decoder_read_spiff_header(dec, &spiff, &found);
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
 	if (found) {
 		tree_bud_leaf_d(&infile->metadata, "Colorspace", spiff.color_space);
@@ -48,14 +48,17 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 
 	*err = charls_jpegls_decoder_read_header(dec);
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
 
 	charls_frame_info frame;
 	*err = charls_jpegls_decoder_get_frame_info(dec, &frame);
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-		return wu_decoding_error;
+		return WUERR_HERE(wu_decoding_error);
+	} else if (frame.component_count > UINT8_MAX) {
+		return WUERR_HERE(wu_unsupported_feature);
 	}
+
 
 	charls_interleave_mode mode;
 #if CHARLS_VERSION_MAJOR > 2
@@ -65,7 +68,7 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	*err = charls_jpegls_decoder_get_interleave_mode(dec, &mode);
 #endif
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-		return wu_decoding_error;
+		return WUERR_HERE(wu_decoding_error);
 	}
 
 	tree_add_leaf_utf8(&infile->metadata, "Interleave", interleave_str(mode));
@@ -73,11 +76,6 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 	struct wuimg *img = infile->sub_img;
 	img->w = frame.width;
 	img->h = frame.height;
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wu_exceeds_size_limit;
-	} else if (frame.component_count > 4) {
-		return wu_unsupported_feature;
-	}
 	img->channels = (uint8_t)frame.component_count;
 	img->bitdepth = (frame.bits_per_sample > 8) ? 16 : 8;
 	img->bitrange = (uint8_t)frame.bits_per_sample;
@@ -85,27 +83,28 @@ const struct wu_conf *wuconf, charls_jpegls_decoder *dec, charls_jpegls_errc *er
 		wuimg_plane_init(img);
 	}
 
-	const enum wu_error st = wuimg_alloc(img);
+	const enum wu_error st = wuimg_alloc_limit(img, conf);
 	if (st != wu_ok) {
-		return st;
+		return WUERR_HERE(st);
 	}
 
 	const size_t size = wuimg_size(img);
 	*err = charls_jpegls_decoder_decode_to_buffer(dec, img->data, size, 0);
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-		return wu_decoding_error;
+		return WUERR_HERE(wu_decoding_error);
 	}
 
 	int32_t near;
-	if (charls_jpegls_decoder_get_near_lossless(dec, 0, &near) == CHARLS_JPEGLS_ERRC_SUCCESS) {
+	if (charls_jpegls_decoder_get_near_lossless(dec, 0, &near)
+	== CHARLS_JPEGLS_ERRC_SUCCESS) {
 		tree_bud_leaf_d(&infile->metadata, "NEAR", near);
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error jpegls_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	enum wu_error st = wu_alloc_error;
+static struct wu_st init_jpegls(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct wu_st st = WUERR_HERE(wu_alloc_error);
 	charls_jpegls_decoder *dec = charls_jpegls_decoder_create();
 	if (dec) {
 		// Result can't be ignored here
@@ -115,7 +114,7 @@ const struct wu_conf *wuconf) {
 		err = charls_jpegls_decoder_set_source_buffer(dec,
 			infile->map.ptr, infile->map.len);
 		if (err == CHARLS_JPEGLS_ERRC_SUCCESS) {
-			st = read_data(infile, wuconf, dec, &err);
+			st = read_data(infile, conf, dec, &err);
 		}
 
 		if (err != CHARLS_JPEGLS_ERRC_SUCCESS) {
@@ -130,5 +129,5 @@ const struct wu_conf *wuconf) {
 const struct image_fn jpegls_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.dec = jpegls_dec
+	.init = init_jpegls,
 };

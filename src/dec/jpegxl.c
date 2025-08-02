@@ -197,13 +197,14 @@ static bool set_fmt(const struct wuimg *img, JxlPixelFormat *fmt) {
 	return true;
 }
 
-static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
-	for (;;) {
+static struct wu_st render_frame(struct wuimg *img, struct jpegxl_state *ds) {
+	bool ok = true;
+	do {
 		switch (JxlDecoderProcessInput(ds->jd)) {
 		case JXL_DEC_NEED_IMAGE_OUT_BUFFER:
 			if (JxlDecoderSetImageOutBuffer(ds->jd, &ds->fmt,
 			img->data, wuimg_size(img)) != JXL_DEC_SUCCESS) {
-				return wu_invalid_params;
+				return WUERR_HERE(wu_invalid_params);
 			}
 			break;
 		case JXL_DEC_FRAME:
@@ -212,7 +213,7 @@ static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 				JxlFrameHeader header;
 				if (JxlDecoderGetFrameHeader(ds->jd, &header)
 				!= JXL_DEC_SUCCESS) {
-					return wu_invalid_params;
+					return WUERR_HERE(wu_invalid_params);
 				}
 				/* Time units are given as ticks per second.
 				 * Hence, a frame is displayed for
@@ -226,12 +227,12 @@ static enum wu_error render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 			break;
 		case JXL_DEC_FULL_IMAGE:
 		case JXL_DEC_SUCCESS:
-			return wu_ok;
+			return WU_OK;
 		default:
-			return wu_decoding_error;
+			ok = false;
 		}
-	}
-	return wu_decoding_error;
+	} while (ok);
+	return WUERR_HERE(wu_decoding_error);
 }
 
 static void input_init(struct image_file *infile, struct jpegxl_state *ds) {
@@ -245,10 +246,10 @@ static void rewind_anim(struct image_file *infile, struct jpegxl_state *ds) {
 	input_init(infile, ds);
 }
 
-static enum wu_error get_frame(struct image_file *infile, int idx) {
+static struct wu_st get_frame(struct image_file *infile, int idx) {
 	struct jpegxl_state *ds = infile->dec_state;
 	if (idx == ds->idx) {
-		return wu_no_change;
+		return WU_NO_CHANGE;
 	} else if (idx < ds->idx) {
 		rewind_anim(infile, infile->dec_state);
 	}
@@ -260,29 +261,27 @@ static enum wu_error get_frame(struct image_file *infile, int idx) {
 	return render_frame(infile->sub_img, ds);
 }
 
-static enum wu_error jpegxl_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf;
+static struct wu_st event_jpegxl(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
+	(void)_c;
 	return (ev == ev_frame)
 		? get_frame(infile, state->frame)
-		: wu_no_change;
+		: WU_NO_CHANGE;
 }
 
-static enum wu_error gather_info(struct image_file *infile,
-const struct wu_conf *wuconf, struct jpegxl_state *ds) {
+static struct wu_st gather_info(struct image_file *infile,
+struct jpegxl_state *ds) {
 	struct wuimg *img = infile->sub_img;
-	for (;;) {
+	bool ok = true;
+	do {
 		switch (JxlDecoderProcessInput(ds->jd)) {
 		case JXL_DEC_BASIC_INFO:
 			if (JxlDecoderGetBasicInfo(ds->jd, &ds->info)
 			!= JXL_DEC_SUCCESS) {
-				return wu_invalid_header;
+				return WUERR_HERE(wu_invalid_header);
 			}
 			img->w = ds->info.xsize;
 			img->h = ds->info.ysize;
-			if (wuimg_exceeds_limit(img, wuconf)) {
-				return wu_exceeds_size_limit;
-			}
 			img->channels = (uint8_t)(ds->info.num_color_channels
 				+ (bool)ds->info.alpha_bits);
 			img->bitdepth = (uint8_t)(bit_min_wordsize_bits(
@@ -295,7 +294,7 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 				? alpha_associated : alpha_unassociated;
 			wuimg_exif_orientation(img, (int)ds->info.orientation);
 			if (!set_fmt(img, &ds->fmt)) {
-				return wu_unsupported_feature;
+				return WUERR_HERE(wu_unsupported_feature);
 			}
 			break;
 		case JXL_DEC_COLOR_ENCODING:
@@ -306,7 +305,7 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 			JxlFrameHeader header;
 			if (JxlDecoderGetFrameHeader(ds->jd, &header)
 			!= JXL_DEC_SUCCESS) {
-				return wu_invalid_params;
+				return WUERR_HERE(wu_invalid_params);
 			}
 			break;
 		case JXL_DEC_BOX:
@@ -319,20 +318,21 @@ const struct wu_conf *wuconf, struct jpegxl_state *ds) {
 			process_metadata(infile, ds);
 			break;
 		case JXL_DEC_SUCCESS:
-			return wu_ok;
+			return WU_OK;
 		default:
-			return wu_invalid_header;
+			ok = false;
+			break;
 		}
-	}
-	return wu_invalid_header;
+	} while (ok);
+	return WUERR_HERE(wu_invalid_header);
 }
 
-static enum wu_error jpegxl_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_jpegxl(struct image_file *infile,
+const struct wu_conf *conf) {
 	struct jpegxl_state *ds = infile->dec_state;
 	ds->jd = JxlDecoderCreate(NULL);
 	if (!ds->jd) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	struct wuimg *img = infile->sub_img;
@@ -345,19 +345,19 @@ const struct wu_conf *wuconf) {
 		| JXL_DEC_BOX_COMPLETE);
 	ds->decompress = JxlDecoderSetDecompressBoxes(ds->jd, JXL_TRUE) == JXL_DEC_SUCCESS;
 
-	enum wu_error st = gather_info(infile, wuconf, ds);
-	if (st != wu_ok) {
+	struct wu_st st = gather_info(infile, ds);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
 	if (ds->info.have_animation) {
 		if (!wuimg_frames_init(img, (size_t)(ds->idx + 1))) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 	}
-	st = wuimg_alloc(img);
-	if (st != wu_ok) {
-		return st;
+	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	if (err != wu_ok) {
+		return WUERR_HERE(err);
 	}
 
 	rewind_anim(infile, infile->dec_state);
@@ -379,7 +379,7 @@ const struct image_fn jpegxl_fn = {
 	.mmap = true,
 	.alloc_single = true,
 	.state_size = sizeof(struct jpegxl_state),
-	.dec = jpegxl_dec,
-	.callback = jpegxl_callback,
+	.init = init_jpegxl,
+	.event = event_jpegxl,
 	.end = jpegxl_end,
 };

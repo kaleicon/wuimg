@@ -61,6 +61,10 @@ struct wu_st wuerr_partial(const size_t written, const size_t max) {
 		written == max ? NULL : "truncated stream");
 }
 
+struct wu_st wuerr_check(const enum wu_error err, const char *msg) {
+	return wuerr(err, err != wu_ok ? msg : NULL);
+}
+
 struct wu_st wuok(void) {
 	return wuerr(wu_ok, NULL);
 }

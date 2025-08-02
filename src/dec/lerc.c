@@ -16,20 +16,20 @@ const enum wu_error fallback_fail) {
 	return wu_unknown_error;
 }
 
-static enum wu_error set_mask(struct wuimg *img, const unsigned w,
-const unsigned h, const unsigned mask_nb) {
+static struct wu_st set_mask(struct wuimg *img, const struct wu_conf *conf,
+const unsigned w, const unsigned h, const unsigned mask_nb) {
 	img->w = w;
 	img->h = h;
 	img->channels = (unsigned char)mask_nb;
 	img->bitdepth = 8;
 	if (wuimg_plane_init(img)) {
-		return wuimg_alloc(img);
+		return WUERR_CHECK(wuimg_alloc_limit(img, conf));
 	}
-	return wu_alloc_error;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-static enum wu_error set_main(struct wuimg *img, const unsigned w,
-const unsigned h, const unsigned dims, const unsigned bands,
+static struct wu_st set_main(struct wuimg *img, const struct wu_conf *conf,
+const unsigned w, const unsigned h, const unsigned dims, const unsigned bands,
 const unsigned type) {
 	img->w = w;
 	img->h = h;
@@ -46,66 +46,64 @@ const unsigned type) {
 		img->attr = pix_float;
 		break;
 	default:
-		return wu_unsupported_feature;
+		return WUERR_HERE(wu_unsupported_feature);
 	}
 
 	if (bands > 1 && !wuimg_plane_init(img)) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return wuimg_alloc(img);
+	return WUERR_CHECK(wuimg_alloc_limit(img, conf));
 }
 
-static enum wu_error lerc_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_lerc(struct image_file *infile,
+const struct wu_conf *conf) {
 	const struct wuptr *mm = &infile->map;
 	unsigned info[9];
 	enum wu_error err = map_lerc_to_wu(lerc_getBlobInfo(mm->ptr,
 		(unsigned)mm->len, info, NULL, ARRAY_LEN(info), 0),
 		wu_invalid_header);
 	if (err != wu_ok) {
-		image_file_strerror_append(infile, "Failed to get blob info");
-		return wu_invalid_header;
+		return wuerr(err, "failed to get blob info");
 	}
 
 	const unsigned w = info[3];
 	const unsigned h = info[4];
-	if (umax(w, h) > wuconf->max_img_size) {
-		return wu_exceeds_size_limit;
-	}
-
 	const unsigned dims = info[2];
 	const unsigned bands = info[5];
 	const unsigned mask_nb = info[8];
 	if ((dims != 1 && bands != 1) || umax(dims, umax(bands, mask_nb)) > 4) {
-		return wu_unsupported_feature;
+		return WUERR_HERE(wu_unsupported_feature);
 	}
 
 	struct wuimg *img = alloc_sub_images(infile, 1 + (bool)mask_nb);
 	if (!img) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	const unsigned type = info[1];
-	err = set_main(img, w, h, dims, bands, type);
-	if (err != wu_ok) {
-		return err;
+	struct wu_st st = set_main(img, conf, w, h, dims, bands, type);
+	if (!wu_isok(st)) {
+		return st;
 	}
 
 	uint8_t *mask = NULL;
 	if (mask_nb) {
-		err = set_mask(img + 1, w, h, mask_nb);
-		if (err != wu_ok) {
-			return err;
+		st = set_mask(img + 1, conf, w, h, mask_nb);
+		if (!wu_isok(st)) {
+			return st;
 		}
 		mask = img[1].data;
 	}
 
-	return map_lerc_to_wu(
+	return WUERR_HERE(map_lerc_to_wu(
 		lerc_decode(mm->ptr, (unsigned)mm->len, (int)mask_nb, mask,
 			(int)dims, (int)w, (int)h, (int)bands, type,
 			img[0].data),
 		wu_decoding_error
-	);
+	));
 }
 
-const struct image_fn lerc_fn = {.mmap = true, .dec = lerc_dec};
+const struct image_fn lerc_fn = {
+	.mmap = true,
+	.init = init_lerc,
+};
