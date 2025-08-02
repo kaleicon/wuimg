@@ -503,6 +503,14 @@ DEC_MAP = {
 		},
 	},
 
+	"cisrle": {
+		"cisrle": {
+			"desc": "CompuServe RLE (CompuServe Information Service)",
+			"ext": "rle",
+			"magic": (b"\x1bGH", b"\x1bGM"),
+		}
+	},
+
 	"croteam": {
 		"tbn": {
 			"desc": "Croteam Texture",

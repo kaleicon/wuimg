@@ -8,6 +8,7 @@ option('c', type : 'feature', description : 'C code formats: DEGAS Elite Icon, X
 option('c64', type : 'feature', description : 'C64 image formats')
 option('cbg', type : 'feature', description : 'BGI/Ethornell CompressedBG (v1)')
 option('chunsoft', type : 'feature', description : 'Chunsoft AT6P and SIR0 sprites')
+option('cisrle', type : 'feature', description : 'CompuServe RLE')
 option('croteam', type : 'feature', description : 'Croteam Texture (TBN)')
 option('dib', type : 'feature', description : 'DIB family (BMP, ICO, and CUR)')
 option('dpx', type : 'feature')
