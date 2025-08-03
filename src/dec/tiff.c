@@ -103,7 +103,7 @@ const struct wu_conf *conf, struct wuimg *img) {
 	if (wu_isok(st)) {
 		st = TIFFRGBAImageGet(&tifimg, (uint32_t *)img->data,
 			tifimg.width, tifimg.height)
-			? wuok() : WUERR_HERE(wu_decoding_error);
+			? WU_OK : WUERR_HERE(wu_decoding_error);
 	}
 	TIFFRGBAImageEnd(&tifimg);
 	return st;
@@ -171,7 +171,7 @@ const struct tiff_info *info, const enum unpack_op op) {
 	if (op != op_noop) {
 		img->attr = pix_normal;
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st read_strips(TIFF *tif, struct wuimg *img,
@@ -196,7 +196,7 @@ const struct tiff_info *info) {
 			data += stride * h;
 		}
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static bool load_palette(TIFF *tif, struct wuimg *img, uint16_t bps) {
@@ -238,6 +238,9 @@ const struct tiff_info *info) {
 		img->attr = pix_signed;
 	}
 
+	uint32_t len;
+	void *icc;
+	const bool has_icc = TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &icc) == 1;
 	switch (info->photometric) {
 	case PHOTOMETRIC_MINISWHITE:
 		img->attr = pix_inverted;
@@ -252,17 +255,15 @@ const struct tiff_info *info) {
 		img->cs.matrix = cicp_matrix_bt601_7;
 		img->cs.limited = true;
 		break;
-	case PHOTOMETRIC_SEPARATED:
-		img->attr = pix_inverted;
-		img->alpha = alpha_key;
+	case PHOTOMETRIC_SEPARATED: // CMYK
+		img->alpha = has_icc ? alpha_ignore : alpha_key;
+		img->attr = has_icc ? pix_normal : pix_inverted;
 		break;
 	}
 
-	uint32_t len;
-	void *data;
-	if (TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &data) == 1) {
-		return color_space_set_icc_copy(&img->cs, data, len)
-			? wuok() : WUERR_HERE(wu_alloc_error);
+	if (has_icc) {
+		return color_space_set_icc_copy(&img->cs, icc, len)
+			? WU_OK : WUERR_HERE(wu_alloc_error);
 	}
 
 	float *w;
@@ -278,7 +279,7 @@ const struct tiff_info *info) {
 	if (TIFFGetField(tif, TIFFTAG_REFERENCEBLACKWHITE, &refbw) == 1) {
 		img->cs.limited = refbw[0] >= 15.0;
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st nih_decode(TIFF *tif, struct wuimg *img,
@@ -452,7 +453,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	struct wuimg *img = infile->sub_img + idx;
 	return (ev == ev_subcycle)
 		? get_dir(infile, conf, tif, img, idx)
-		: wuerr(wu_no_change, NULL);
+		: WU_NO_CHANGE;
 }
 
 static struct wu_st init_tiff(struct image_file *infile,
@@ -467,7 +468,7 @@ const struct wu_conf *_c) {
 
 	infile->dec_state = tif;
 	return alloc_sub_images(infile, TIFFNumberOfDirectories(tif))
-		? wuok() : WUERR_HERE(wu_alloc_error);
+		? WU_OK : WUERR_HERE(wu_alloc_error);
 }
 
 const struct image_fn tiff_fn = {
