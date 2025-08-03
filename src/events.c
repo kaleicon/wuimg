@@ -147,11 +147,13 @@ const int code, const float dt, const bool shift) {
 		break;
 	case '=':
 	case '0':
-		state->x_offset = 0;
-		state->y_offset = 0;
-		const float fit = gl->tex.fit_zoom;
+		;const float fit = gl->tex.fit_zoom;
 		event->image = image_zoom(image,
 			(code == '0') ? fminf(1.0, fit) : fit);
+		event->image |= ((bool)state->x_offset | (bool)state->y_offset)
+			? ev_transform : ev_none;
+		state->x_offset = 0;
+		state->y_offset = 0;
 		return repeat_none;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
