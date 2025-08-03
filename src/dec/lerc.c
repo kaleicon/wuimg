@@ -22,6 +22,7 @@ const unsigned w, const unsigned h, const unsigned mask_nb) {
 	img->h = h;
 	img->channels = (unsigned char)mask_nb;
 	img->bitdepth = 8;
+	img->bitrange = 1;
 	if (wuimg_plane_init(img)) {
 		return WUERR_CHECK(wuimg_alloc_limit(img, conf));
 	}
