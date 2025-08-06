@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
+#ifndef MISC_IFF
+#define MISC_IFF
 #include <stdint.h>
 
 #include "misc/endian.h"
@@ -47,3 +49,5 @@ struct iff_chunk prev_chunk);
 
 struct wu_st iff_next_mparser(struct iff_state *iff, struct mparser *mp,
 struct iff_chunk prev_chunk);
+
+#endif /* MISC_IFF */
