@@ -209,14 +209,12 @@ struct wuimg *img, const struct wuptr body) {
 	return WUERR_HERE(wu_alloc_error);
 }
 
-static struct wu_st ilbm_decode(const struct ilbm_desc *desc, struct wuimg *img,
-const struct wuptr body) {
+struct wu_st ilbm_decode(const struct ilbm_desc *desc, struct wuimg *img,
+const bool is_tiny) {
 	if (desc->planes == 0) {
-		return wuok();
+		return WU_OK;
 	}
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
+	const struct wuptr body = is_tiny ? desc->tiny.data : desc->body;
 	switch (desc->format) {
 	case ilbm_format_ilbm:
 		switch (desc->compression) {
@@ -246,26 +244,18 @@ const struct wuptr body) {
 	return WUERR_HERE(wu_invalid_params);
 }
 
-struct wu_st ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
+struct wu_st ilbm_setup_tiny(const struct ilbm_desc *desc, struct wuimg *main,
 struct wuimg *tiny) {
-	if (desc->tiny.present && wuimg_clone(tiny, main)) {
+	if (wuimg_clone(tiny, main)) {
 		tiny->w = desc->tiny.w;
 		tiny->h = desc->tiny.h;
-		struct wu_st st = wuimg_verify_st(tiny);
-		if (wu_isok(st)) {
-			if (tiny->mode == image_mode_palette && desc->cycle) {
-				memcpy(tiny->u.palette->color, desc->cycle->color,
-					sizeof(desc->cycle->color));
-			}
-			return ilbm_decode(desc, tiny, desc->tiny.data);
+		if (tiny->mode == image_mode_palette && desc->cycle) {
+			memcpy(tiny->u.palette->color, desc->cycle->color,
+				sizeof(desc->cycle->color));
 		}
-		return st;
+		return WU_OK;
 	}
-	return WUERR_HERE(wu_decoding_error);
-}
-
-struct wu_st ilbm_decode_main(const struct ilbm_desc *desc, struct wuimg *img) {
-	return ilbm_decode(desc, img, desc->body);
+	return WUERR_HERE(wu_alloc_error);
 }
 
 static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
@@ -340,7 +330,7 @@ static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 			img->bitrange = desc->planes;
 		}
 	}
-	return wuimg_verify_st(img);
+	return WU_OK;
 }
 
 static struct wu_st finish_chunk(struct ilbm_desc *desc,
@@ -355,7 +345,7 @@ const struct iff_chunk chunk) {
 	struct ilbm_desc *desc = ptr;
 	desc->body = mp_avail(&desc->mp, chunk.len);
 	mp_seek_cur(&desc->mp, iff_chunk_padding(iff, chunk));
-	return wuerr(wu_no_change, NULL);
+	return WU_NO_CHANGE;
 }
 
 static struct wu_st parse_tiny(struct iff_state *iff, void *ptr,
@@ -669,9 +659,8 @@ const struct iff_table *table, const unsigned table_len) {
 	return st;
 }
 
-struct wu_st ilbm_parse_footer(struct ilbm_desc *desc) {
+void ilbm_parse_footer(struct ilbm_desc *desc) {
 	ilbm_parse(desc, NULL, 0);
-	return wuok();
 }
 
 struct wu_st ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
@@ -719,7 +708,7 @@ struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 			case ilbm_format_ilbm:
 			case ilbm_format_pbm:
 				desc->format = id;
-				return wuok();
+				return WU_OK;
 			}
 			return wuerr(wu_unknown_file_type,
 				"unknown IFF image format");

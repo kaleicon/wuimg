@@ -60,12 +60,13 @@ const char * ilbm_compression_str(enum ilbm_compression comp);
 
 void ilbm_cleanup(struct ilbm_desc *desc);
 
-struct wu_st ilbm_decode_tiny(const struct ilbm_desc *desc, struct wuimg *main,
+struct wu_st ilbm_decode(const struct ilbm_desc *desc, struct wuimg *img,
+bool is_tiny);
+
+struct wu_st ilbm_setup_tiny(const struct ilbm_desc *desc, struct wuimg *main,
 struct wuimg *tiny);
 
-struct wu_st ilbm_decode_main(const struct ilbm_desc *desc, struct wuimg *img);
-
-struct wu_st ilbm_parse_footer(struct ilbm_desc *desc);
+void ilbm_parse_footer(struct ilbm_desc *desc);
 
 struct wu_st ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img);
 

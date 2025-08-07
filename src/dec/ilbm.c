@@ -9,29 +9,25 @@ static void end_ilbm(struct image_file *infile) {
 	ilbm_cleanup(infile->dec_state);
 }
 
-static enum wu_error event_ilbm(struct image_file *infile,
+static struct wu_st event_ilbm(struct image_file *infile,
 const struct wu_conf *conf, struct wu_state *state,
 const enum image_event ev) {
 	struct ilbm_desc *desc = infile->dec_state;
-	struct wuimg *img = infile->sub_img;
+	int idx = state->idx;
+	struct wuimg *img = infile->sub_img + idx;
 	switch (ev) {
 	case ev_subcycle:
-		if (!img[state->idx].data) {
-			if (wuimg_exceeds_limit(img + state->idx, conf)) {
-				return wu_exceeds_size_limit;
-			}
-			const struct wu_st st = state->idx
-				? ilbm_decode_tiny(desc, img, img + state->idx)
-				: ilbm_decode_main(desc, img);
-			return st.st;
+		;enum wu_error err = wuimg_alloc_limit(img, conf);
+		if (err == wu_ok) {
+			return ilbm_decode(desc, img, idx != 0);
 		}
-		break;
+		return WUERR_HERE(err);
 	case ev_time:
 		palette_cycle_render(img->u.palette, desc->cycle, state->time);
-		return wu_ok;
+		return WU_OK;
 	default: break;
 	}
-	return wu_no_change;
+	return WU_NO_CHANGE;
 }
 
 static char tohex(uint8_t c) {
@@ -104,7 +100,8 @@ const struct wu_conf *_c) {
 		ilbm_set_callbacks(desc, chunk_metadata, type_meta);
 	}
 
-	st = ilbm_parse_header(desc, infile->sub_img);
+	struct wuimg *img = infile->sub_img;
+	st = ilbm_parse_header(desc, img);
 	if (!wu_isok(st)) {
 		return st;
 	} else if (desc->cycle && desc->cycle->too_many) {
@@ -114,10 +111,14 @@ const struct wu_conf *_c) {
 	ilbm_parse_footer(desc);
 
 	if (desc->tiny.present) {
-		realloc_sub_images(infile, 2);
+		img = realloc_sub_images(infile, 2);
+		if (!img) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+		ilbm_setup_tiny(desc, img, img + 1);
 	}
 	add_metadata(desc, &infile->metadata);
-	return wuok();
+	return WU_OK;
 }
 
 const struct image_fn ilbm_fn = {
@@ -125,6 +126,6 @@ const struct image_fn ilbm_fn = {
 	.alloc_single = true,
 	.state_size = sizeof(struct ilbm_desc),
 	.init = init_ilbm,
-	.callback = event_ilbm,
+	.event = event_ilbm,
 	.end = end_ilbm,
 };
