@@ -90,29 +90,27 @@ const enum atari_st_res res) {
 	}
 }
 
-static size_t load_raw_size(struct wuimg *img, const enum atari_st_res res,
-FILE *ifp, const size_t ram_len) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		if (res == atari_st_res_high) {
-			return fread(img->data, 1, ram_len, ifp);
-		}
-		uint16_t *ram = malloc(ram_len);
-		if (ram) {
-			w = fread(ram, 1, ram_len, ifp);
-			st_interleave(img, ram, res);
-			free(ram);
-		}
+static struct wu_st load_raw_size(struct wuimg *img,
+const enum atari_st_res res, FILE *ifp, const size_t ram_len) {
+	if (res == atari_st_res_high) {
+		return fmt_load_raster_st(img, ifp);
 	}
-	return w;
+	uint16_t *ram = malloc(ram_len);
+	if (ram) {
+		const size_t w = fread(ram, 1, ram_len, ifp);
+		st_interleave(img, ram, res);
+		free(ram);
+		return wuerr_partial(w, ram_len);
+	}
+	return WUERR_HERE(wu_alloc_error);
 }
 
-static size_t load_raw(struct wuimg *img, const enum atari_st_res res,
+static struct wu_st load_raw(struct wuimg *img, const enum atari_st_res res,
 FILE *ifp) {
 	return load_raw_size(img, res, ifp, VIDEO_RAM);
 }
 
-static enum wu_error set_pal(struct wuimg *img, const uint8_t src[static 32]) {
+static struct wu_st set_pal(struct wuimg *img, const uint8_t src[static 32]) {
 	struct palette *pal = wuimg_palette_init(img);
 	if (pal) {
 		const uint8_t sh = 8;
@@ -134,12 +132,12 @@ static enum wu_error set_pal(struct wuimg *img, const uint8_t src[static 32]) {
 				.a = 0xff,
 			};
 		}
-		return wu_ok;
+		return WU_OK;
 	}
-	return wu_alloc_error;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-static enum wu_error set_dims(struct wuimg *img, const enum atari_st_res res,
+static struct wu_st set_dims(struct wuimg *img, const enum atari_st_res res,
 const void *restrict pal) {
 	img->channels = 1;
 	switch (res) {
@@ -159,15 +157,15 @@ const void *restrict pal) {
 		img->bitdepth = 1;
 		img->attr = (buf_endian16(pal, big_endian) & 1)
 			? pix_inverted : pix_normal;
-		return wu_ok;
+		return WU_OK;
 	}
-	return wu_invalid_header;
+	return WUERR_HERE(wu_invalid_header);
 }
 
 
 /* Dali */
 
-size_t dali_decode(struct dali_desc *desc, struct wuimg *img) {
+struct wu_st dali_decode(struct dali_desc *desc, struct wuimg *img) {
 	return load_raw(img, desc->res, desc->ifp);
 }
 
@@ -180,7 +178,7 @@ static bool dali_ext(struct dali_desc *desc, const uint8_t ext[static 3]) {
 	return false;
 }
 
-enum wu_error dali_parse(struct dali_desc *desc, struct wuimg *img, FILE *ifp,
+struct wu_st dali_parse(struct dali_desc *desc, struct wuimg *img, FILE *ifp,
 const uint8_t ext[static 3]) {
 	/* Dali format:
 		Offset  Type    Name
@@ -198,17 +196,13 @@ const uint8_t ext[static 3]) {
 		uint32_t header[32];
 		if (fread(header, sizeof(header), 1, ifp)) {
 			if (!header[0]) {
-				const enum wu_error st = set_dims(img,
-					desc->res, header+1);
-				if (st == wu_ok) {
-					return wuimg_verify(img);
-				}
+				return set_dims(img, desc->res, header+1);
 			}
-			return wu_invalid_signature;
+			return WUERR_HERE(wu_invalid_signature);
 		}
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	return wu_unknown_file_type;
+	return WUERR_HERE(wu_unknown_file_type);
 }
 
 
@@ -309,17 +303,14 @@ static struct wu_st degas_decomp(struct degas_desc *desc, struct wuimg *img) {
 
 struct wu_st degas_decode(struct degas_desc *desc, struct wuimg *img) {
 	if (desc->compressed) {
-		if (wuimg_alloc_noverify(img)) {
-			return degas_decomp(desc, img);
-		}
-		return WUERR_HERE(wu_alloc_error);
+		return degas_decomp(desc, img);
 	}
-	const size_t w = load_raw_size(img, desc->res, desc->ifp,
+	const struct wu_st st = load_raw_size(img, desc->res, desc->ifp,
 		VIDEO_RAM << desc->paintpro);
-	if (w && desc->is_elite && desc->res != atari_st_res_high) {
+	if (wu_isok(st) && desc->is_elite && desc->res != atari_st_res_high) {
 		load_elite_crng(desc, img);
 	}
-	return wuerr_partial(w, wuimg_size(img));
+	return st;
 }
 
 struct wu_st degas_parse(struct degas_desc *desc, struct wuimg *img,
@@ -371,12 +362,9 @@ FILE *ifp) {
 				.paintpro = paintpro,
 				.size = zumin(rem, size_limit),
 			};
-			const enum wu_error st = set_dims(img, desc->res, src + 1);
-			if (st == wu_ok) {
-				img->h <<= paintpro;
-				return wuimg_verify_st(img);
-			}
-			return WUERR_HERE(st);
+			struct wu_st st = set_dims(img, desc->res, src + 1);
+			img->h <<= paintpro;
+			return st;
 		}
 		return WUERR_HERE(wu_invalid_header);
 	}
@@ -386,22 +374,20 @@ FILE *ifp) {
 
 /* EZ-Art Professional */
 
-size_t ez_decode(struct mparser mp, struct wuimg *img) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		uint8_t *ram = malloc(VIDEO_RAM);
-		if (ram) {
-			const struct wuptr pack = mp_remaining(&mp);
-			w = decomp_packbits(ram, VIDEO_RAM,
-				(int8_t *)pack.ptr, pack.len);
-			degas_deinterleave(img, atari_st_res_low, ram);
-			free(ram);
-		}
+struct wu_st ez_decode(struct mparser mp, struct wuimg *img) {
+	uint8_t *ram = malloc(VIDEO_RAM);
+	if (ram) {
+		const struct wuptr pack = mp_remaining(&mp);
+		const size_t w = decomp_packbits(ram, VIDEO_RAM,
+			(int8_t *)pack.ptr, pack.len);
+		degas_deinterleave(img, atari_st_res_low, ram);
+		free(ram);
+		return wuerr_partial(w, VIDEO_RAM);
 	}
-	return w;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-enum wu_error ez_parse(struct mparser *mp, struct wuimg *img,
+struct wu_st ez_parse(struct mparser *mp, struct wuimg *img,
 const struct wuptr mem) {
 	/* EZ-Art header:
 		Offset  Type    Name
@@ -417,16 +403,11 @@ const struct wuptr mem) {
 	if (hdr) {
 		const uint8_t sig[] = {'E', 'Z', 0, 0xc8};
 		if (!memcmp(hdr, sig, sizeof(sig))) {
-			const enum wu_error st = set_dims(img,
-				atari_st_res_low, hdr+4);
-			if (st == wu_ok) {
-				return wuimg_verify(img);
-			}
-			return st;
+			return set_dims(img, atari_st_res_low, hdr+4);
 		}
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 
@@ -504,7 +485,7 @@ const size_t dst_len, FILE *ifp) {
 		len = fread(pack, 1, len, ifp);
 		if (len) {
 			gfa_unpack(dst, dst_len, pack, len);
-			st = wuok();
+			st = WU_OK;
 		} else {
 			st = WUERR_HERE(wu_unexpected_eof);
 		}
@@ -584,22 +565,18 @@ static struct wu_st gfa_low(const struct gfa_desc *desc, struct wuimg *img) {
 		}
 	}
 	free(buf);
-	return wuok();
+	return WU_OK;
 }
 
 struct wu_st gfa_decode(const struct gfa_desc *desc, struct wuimg *img,
 uint8_t frame) {
-	if (img->data || wuimg_alloc_noverify(img)) {
-		const long off = desc->frames
-			? (long)desc->frame[frame].off : 8;
-		fseek(desc->ifp, off, SEEK_SET);
-		if (desc->res == atari_st_res_high) {
-			return gfa_load_decompress((uint16_t *)img->data,
-				VIDEO_RAM/desc->factor/2, desc->ifp);
-		}
-		return gfa_low(desc, img);
+	const long off = desc->frames ? (long)desc->frame[frame].off : 8;
+	fseek(desc->ifp, off, SEEK_SET);
+	if (desc->res == atari_st_res_high) {
+		return gfa_load_decompress((uint16_t *)img->data,
+			VIDEO_RAM/desc->factor/2, desc->ifp);
 	}
-	return WUERR_HERE(wu_alloc_error);
+	return gfa_low(desc, img);
 }
 
 static struct wu_st gfa_set_dims(struct gfa_desc *desc, struct wuimg *img) {
@@ -620,7 +597,7 @@ static struct wu_st gfa_set_dims(struct gfa_desc *desc, struct wuimg *img) {
 		img->bitdepth = 1;
 		img->attr = pix_inverted;
 	}
-	return wuimg_verify_st(img);
+	return WU_OK;
 }
 
 static struct wu_st gfa_anim_setup(struct gfa_desc *desc, struct wuimg *img,
@@ -642,7 +619,7 @@ const uint8_t hdr[53]) {
 		file_off += pal_size + desc->frame[i].len;
 		wuimg_frame_set(img, i, 0, 0, img->w, img->h, 10, 100, true);
 	}
-	return wuok();
+	return WU_OK;
 }
 
 struct wu_st gfa_init(struct gfa_desc *desc, struct wuimg *img, FILE *ifp) {
@@ -747,26 +724,24 @@ const uint8_t *restrict src, const size_t src_len) {
 	return d;
 }
 
-size_t bld_decode(struct bld_desc *desc, struct wuimg *img) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		if (desc->compressed) {
-			size_t rem = file_remaining(desc->ifp);
-			uint8_t *rle = malloc(rem);
-			if (rle) {
-				const size_t len = fread(rle, 1, rem, desc->ifp);
-				w = bld_rle(img->data, wuimg_size(img),
-					rle, len);
-				free(rle);
-			}
-		} else {
-			w = fmt_load_raster(img, desc->ifp);
+struct wu_st bld_decode(struct bld_desc *desc, struct wuimg *img) {
+	if (desc->compressed) {
+		size_t rle_len = file_remaining(desc->ifp);
+		uint8_t *rle = malloc(rle_len);
+		if (rle) {
+			rle_len = fread(rle, 1, rle_len, desc->ifp);
+			const size_t dst_len = wuimg_size(img);
+			const size_t w = bld_rle(img->data, dst_len, rle,
+				rle_len);
+			free(rle);
+			return wuerr_partial(w, dst_len);
 		}
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return w;
+	return fmt_load_raster_st(img, desc->ifp);
 }
 
-enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
+struct wu_st bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
 	/* MegaPaint format:
 		Offset  Type    Name
 		0       s16     Width  // If width negative, file is compressed
@@ -788,11 +763,11 @@ enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
 			img->channels = 1;
 			img->bitdepth = 1;
 			img->attr = pix_inverted;
-			return wuimg_verify(img);
+			return WU_OK;
 		}
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 
@@ -816,10 +791,6 @@ static uint16_t enhanced_spu(uint16_t in, uint16_t pos) {
 }
 
 struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-
 	const size_t s_stride = ST_LOW_WIDTH/4;
 	const size_t raster_len = 199*s_stride;
 	const size_t pal_len = 199*3*16;
@@ -884,7 +855,7 @@ struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img) {
 		}
 	}
 	free(buf);
-	return wuok();
+	return WU_OK;
 }
 
 struct wu_st spu_init(struct spu_desc *desc, struct wuimg *img, FILE *ifp) {
@@ -921,7 +892,7 @@ struct wu_st spu_init(struct spu_desc *desc, struct wuimg *img, FILE *ifp) {
 	if (!wuimg_bitfield_from_id(img, desc->enhanced ? 0x555 : 0x444)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
-	return wuimg_verify_st(img);
+	return WU_OK;
 }
 
 /* STAD PAC, Arabesque
@@ -940,10 +911,6 @@ static void transpose_bytes(uint8_t *restrict dst, const uint8_t *restrict src) 
 }
 
 struct wu_st stad_decode(const struct stad_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-
 	struct mparser mp = desc->mp;
 	const size_t dst_len = wuimg_size(img);
 	size_t d = 0;
@@ -1060,7 +1027,7 @@ const struct wuptr mem) {
 				img->h = 400;
 				desc->mp.pos = 4;
 				block_from_filesize(desc);
-				return wuimg_verify_st(img);
+				return WU_OK;
 			}
 		} else if (!memcmp(hdr, arabesque, sizeof(arabesque))) {
 			memcpy(desc->sig, hdr, 6);
@@ -1086,10 +1053,10 @@ const struct wuptr mem) {
 				}
 				memcpy(desc->block, hdr, 2 * desc->block_nr);
 				endian_loop16(desc->block, big_endian, desc->block_nr);
-				return wuimg_verify_st(img);
+				return WU_OK;
 			case TWOCC('8', 'a'):
 				block_from_filesize(desc);
-				return wuimg_verify_st(img);
+				return WU_OK;
 			}
 		}
 		return WUERR_HERE(wu_unknown_file_type);
@@ -1162,31 +1129,30 @@ const struct wuptr data) {
 	return opos;
 }
 
-size_t tiny_decode(const struct tiny_desc *desc, struct wuimg *img) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		struct mparser mp = desc->mp;
-		const void *ctrl = mp_slice(&mp, desc->ctrl);
-		struct wuptr data = mp_avail(&mp, desc->data*2);
-		if (ctrl) {
-			const bool high_res = desc->res == atari_st_res_high;
-			uint16_t *buf = malloc(VIDEO_RAM * (high_res ? 1 : 2));
-			if (buf) {
-				w = tiny_rle(buf, ctrl, desc->ctrl, data);
-				void *un = high_res
-					? img->data : (uint8_t *)buf + VIDEO_RAM;
-				tiny_unscramble(un, buf);
-				if (!high_res) {
-					st_interleave(img, un, desc->res);
-				}
-				free(buf);
+struct wu_st tiny_decode(const struct tiny_desc *desc, struct wuimg *img) {
+	struct mparser mp = desc->mp;
+	const void *ctrl = mp_slice(&mp, desc->ctrl);
+	struct wuptr data = mp_avail(&mp, desc->data*2);
+	if (ctrl) {
+		const bool high_res = desc->res == atari_st_res_high;
+		uint16_t *buf = malloc(VIDEO_RAM * (high_res ? 1 : 2));
+		if (buf) {
+			size_t w = tiny_rle(buf, ctrl, desc->ctrl, data);
+			void *un = high_res
+				? img->data : (uint8_t *)buf + VIDEO_RAM;
+			tiny_unscramble(un, buf);
+			if (!high_res) {
+				st_interleave(img, un, desc->res);
 			}
+			free(buf);
+			return wuerr_partial(w, desc->ctrl);
 		}
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return w;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-enum wu_error tiny_parse(struct tiny_desc *desc, struct wuimg *img,
+struct wu_st tiny_parse(struct tiny_desc *desc, struct wuimg *img,
 const struct wuptr mem) {
 	/* Tiny header:
 		Offset  Type    Name
@@ -1211,7 +1177,7 @@ const struct wuptr mem) {
 
 	const uint8_t *header = mp_slice(&desc->mp, 1);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	const uint8_t *crng = NULL;
@@ -1222,20 +1188,20 @@ const struct wuptr mem) {
 	}
 	header = mp_slice(&desc->mp, 36);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	desc->ctrl = buf_endian16(header + 32, big_endian);
 	desc->data = buf_endian16(header + 34, big_endian);
 	desc->res = res;
-	enum wu_error st = set_dims(img, res, header);
-	if (st != wu_ok) {
+	struct wu_st st = set_dims(img, res, header);
+	if (!wu_isok(st)) {
 		return st;
 	}
 	if (crng && img->mode == image_mode_palette) {
 		struct palette_cycle *cycle = palette_cycle_new(1);
 		if (!cycle) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 		desc->cycle = cycle;
 		desc->iters = buf_endian16(crng + 2, big_endian);
@@ -1252,5 +1218,5 @@ const struct wuptr mem) {
 		cycle->active_nr = (bool)speed;
 		img->evolving = speed;
 	}
-	return wuimg_verify(img);
+	return st;
 }

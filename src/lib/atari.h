@@ -20,9 +20,9 @@ struct dali_desc {
 	enum atari_st_res res;
 };
 
-size_t dali_decode(struct dali_desc *desc, struct wuimg *img);
+struct wu_st dali_decode(struct dali_desc *desc, struct wuimg *img);
 
-enum wu_error dali_parse(struct dali_desc *desc, struct wuimg *img, FILE *ifp,
+struct wu_st dali_parse(struct dali_desc *desc, struct wuimg *img, FILE *ifp,
 const uint8_t ext[static 3]);
 
 /* DEGAS */
@@ -44,9 +44,9 @@ struct wu_st degas_parse(struct degas_desc *desc, struct wuimg *img,
 FILE *ifp);
 
 /* EZ-Art Professional */
-size_t ez_decode(struct mparser mp, struct wuimg *img);
+struct wu_st ez_decode(struct mparser mp, struct wuimg *img);
 
-enum wu_error ez_parse(struct mparser *mp, struct wuimg *img, struct wuptr mem);
+struct wu_st ez_parse(struct mparser *mp, struct wuimg *img, struct wuptr mem);
 
 /* GFA Raytrace */
 struct gfa_desc {
@@ -71,9 +71,9 @@ struct bld_desc {
 	bool compressed;
 };
 
-size_t bld_decode(struct bld_desc *desc, struct wuimg *img);
+struct wu_st bld_decode(struct bld_desc *desc, struct wuimg *img);
 
-enum wu_error bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp);
+struct wu_st bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp);
 
 /* Spectrum 512 */
 struct spu_desc {
@@ -110,9 +110,9 @@ struct tiny_desc {
 
 void tiny_cleanup(struct tiny_desc *desc);
 
-size_t tiny_decode(const struct tiny_desc *desc, struct wuimg *img);
+struct wu_st tiny_decode(const struct tiny_desc *desc, struct wuimg *img);
 
-enum wu_error tiny_parse(struct tiny_desc *desc, struct wuimg *img,
+struct wu_st tiny_parse(struct tiny_desc *desc, struct wuimg *img,
 struct wuptr mem);
 
 #endif /* LIB_DEGAS */
