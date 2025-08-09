@@ -141,7 +141,7 @@ static void set_alpha_ops(const struct gl_context *context) {
 
 void gl_alpha_toggle(struct gl_context *context, const int cycle) {
 	context->user_alpha = (uint8_t)imod(context->user_alpha + cycle, 6);
-	context->update = gl_update_redraw;
+	context->update = true;
 	set_alpha_ops(context);
 }
 
@@ -257,19 +257,14 @@ const struct wu_state *state) {
 }
 
 bool gl_draw(struct gl_context *context, const struct wu_state *state) {
-	switch (context->update) {
-	case gl_update_matrix:
-		matrix_update(context, state);
-		// fallthrough
-	case gl_update_redraw:
+	if (context->update) {
 		gl_clock_start(context);
+		matrix_update(context, state);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		gl_clock_end();
-		context->update = gl_update_none;
+		context->update = false;
 		return true;
-	case gl_update_none:
-		break;
 	}
 	return false;
 }
@@ -288,7 +283,7 @@ void gl_viewport(struct gl_context *context, const struct display_dims *dims) {
 	context->pix_size[0] = (float)(1.0/dims->w);
 	context->pix_size[1] = (float)(1.0/dims->h);
 	calc_fit_zoom(context);
-	context->update = gl_update_matrix;
+	context->update = true;
 	glViewport(0, 0, (int)dims->w, (int)dims->h);
 }
 
@@ -895,7 +890,7 @@ const struct wuimg *img, const enum heed_ratio heed) {
 	context->tex.alpha = img->alpha;
 	context->tex.shown_frame = img->frames ? img->frames->current : 0;
 	context->tex.ratio = get_pixel_ratio(img, heed);
-	context->update = gl_update_matrix;
+	context->update = true;
 	set_alpha_ops(context);
 	if (context->tex.w != (float)img->w || context->tex.h != (float)img->h) {
 		context->tex.w = (float)img->w;
@@ -919,7 +914,7 @@ const struct wu_state *state) {
 	if (img->frames && context->tex.shown_frame + 1 == state->frame) {
 		region = &img->frames->f[state->frame].reg;
 	}
-	context->update = gl_update_redraw;
+	context->update = true;
 	context->tex.shown_frame = state->frame;
 	return mode_upload(context, img, &params, region);
 }
@@ -927,7 +922,7 @@ const struct wu_state *state) {
 void gl_reader_read_row(struct gl_reader_context *reader, const size_t y,
 void *restrict tgt) {
 	reader->state.y_offset = (float)y;
-	reader->context.update = gl_update_matrix;
+	reader->context.update = true;
 	gl_draw(&reader->context, &reader->state);
 
 	const struct wuimg *dst = reader->dst;

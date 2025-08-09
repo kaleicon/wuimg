@@ -116,7 +116,8 @@ const enum image_event evs, const bool allow_cycle) {
 	struct wu_event *event = &window->pub.event;
 	struct wu_state *state = &window->pub.image.state;
 
-	for (bool print_time = true;; print_time = !state->anim_playing) {
+	bool print_time = true;
+	do {
 		event->image = ev_time;
 		const double elapsed = draw_rest_poll(window, print_time);
 		if (state->anim_playing && window->pub.win.focused) {
@@ -126,18 +127,13 @@ const enum image_event evs, const bool allow_cycle) {
 			}
 		}
 
-		if ((allow_cycle && event->cycle)
-		|| event->exit || event->rm == rm_yes) {
+		event->cycle *= allow_cycle;
+		if (event->cycle || event->rm == rm_yes || event->exit) {
 			return true;
-		} else if (event->image) {
-			if (event->image & ~ev_time) {
-				window->pub.gl.update = gl_update_matrix;
-			}
-			if (event->image & evs) {
-				break;
-			}
 		}
-	}
+		window->pub.gl.update |= (bool)(event->image & ~ev_time);
+		print_time = !state->anim_playing;
+	} while (!(event->image & evs));
 	return false;
 }
 

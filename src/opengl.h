@@ -12,12 +12,6 @@
 #define WU_GL_MAJOR 3
 #define WU_GL_MINOR 3
 
-enum gl_update {
-	gl_update_none = 0,
-	gl_update_redraw,
-	gl_update_matrix,
-};
-
 enum gl_upload_status {
 	gl_upload_fail = 0,
 	gl_upload_success,
@@ -61,8 +55,8 @@ struct gl_context {
 	} tex;
 	float pix_size[2];
 
-	enum gl_update update:8;
 	uint8_t user_alpha;
+	bool update;
 	bool unmultiply;
 
 	cmsHPROFILE icc;

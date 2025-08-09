@@ -18,7 +18,7 @@ static void callback_focus(GLFWwindow *wnd, const int focused) {
 
 static void callback_damage(GLFWwindow *wnd) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	glfw->pub->gl.update = gl_update_redraw;
+	glfw->pub->gl.update = true;
 }
 
 static void callback_framebuffer(GLFWwindow *wnd, const int w, const int h) {
