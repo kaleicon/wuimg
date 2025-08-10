@@ -12,7 +12,22 @@ NAME_LIMIT = 8
 # Various RAW camera formats are actually TIFF with extra data, and can only be
 # distinguished by their extension. Still, they may contain a thumbnail that
 # libtiff can handle, so we define these for both formats.
-RAW_TIFF_EXTS = ("arw", "cr2", "dcr", "dng", "erf", "k25", "kdc", "nef", "nrw", "pef")
+RAW_TIFF_EXTS = (
+	# Sony
+	"arw",
+	# Canon
+	"cr2",
+	# Adobe
+	"dng",
+	# EPSON
+	"erf",
+	# Kodak
+	"dcr", "k25", "kdc",
+	# Nikon
+	"nef", "nrw",
+	# Pentax
+	"pef"
+)
 TIFF_MAGICS = (
 	b"II\x2a\x00",
 	b"MM\x00\x2a",
@@ -1295,22 +1310,31 @@ DEC_MAP = {
 		"raw": {
 			"desc": "Raw camera formats",
 			"ext": (
-				"orf", "raf", "raw", "rw2", "rwl", # it's RWL, not RW1!
+				"crw", # Canon
+				"orf", # Olympus
+				"raf", # Fuji
+				"raw",
+				"rw2", "rwl", # Panasonic (it's RWL, not RW1!)
 			),
 			"match": RAW_TIFF_EXTS,
 			"magic": TIFF_MAGICS + (
+				# Canon CRW
+				b"II\x1a\0",
 				# Olympus ORF
 				b"IIRS",
 				b"IIRO",
 				b"MMOR",
-
 				# Panasonic RAW/RW2
 				b"IIU\0",
-
 				# Fujifilm Raw
 				b"FUJIFILMCCD-RAW ",
 			),
-			"mime": ("x-canon-cr2", "x-canon-crw", "x-fuji-raf", "x-olympus-orf"),
+			"mime": (
+				"x-dcraw",
+				"x-canon-cr2", "x-canon-crw",
+				"x-fuji-raf",
+				"x-olympus-orf"
+			),
 		},
 	},
 
