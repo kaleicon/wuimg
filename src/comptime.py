@@ -5,6 +5,7 @@ import collections
 import typing
 from itertools import batched, chain, starmap
 from functools import partial
+from collections.abc import Callable, Iterable, Sequence
 
 EXT_LIMIT = 6
 MAGIC_LIMIT = 12
@@ -47,30 +48,33 @@ TIFF_MAGICS = (
 	b"MM\x00\x2b\x00\x08\0\0",
 )
 
+type StrSeq = str | tuple[str, ...]
 class FmtInfo(typing.NamedTuple):
 	desc: str
 	'''Description'''
 
-	ext: str | tuple[str, ...] = tuple()
+	ext: StrSeq = tuple()
 	'''File extensions that are just informative (e.g. filtering file lists)'''
 
-	match: str | tuple[str, ...] = tuple()
+	match: StrSeq = tuple()
 	'''Extensions that aid or are needed for identification'''
 
 	magic: bytes | tuple[bytes, ...] = tuple()
 	'''Byte sequence(s) that must match exactly'''
 
-	mask: bytes | tuple[bytes, ...] = tuple()
+	mask: tuple[bytes, ...] = tuple()
 	'''An AND mask plus magic sequence. Only set bits need to match.
 	Even terms are masks, odd terms are signatures.'''
 
 	size: int | tuple[int, ...] = tuple()
 	'''File size, for formats with constant size'''
 
-	mime: str | tuple[str, ...] = tuple()
+	mime: StrSeq = tuple()
 	'''MIME types, with "image/" prefix omitted'''
 
-DEC_MAP = {
+type DecFmt = dict[str, FmtInfo]
+type DecMap = dict[str, DecFmt]
+DEC_MAP: DecMap = {
 	# Simple raw formats, implemented in auto.c
 	"auto": {
 		"aipd": FmtInfo("National Instruments AIPD (uncertain color interpretation)",
@@ -1313,21 +1317,21 @@ MIME_APPLICATION_MAP = (
 	"x-cbz",
 )
 
-def foreach(fn, it):
+def foreach[T](fn: Callable[[T], typing.Any], it: Iterable[T]) -> None:
 	collections.deque(map(fn, it), maxlen=0)
 
-def eprint(*p):
+def eprint[T](*p: Iterable[T]) -> None:
 	print(*p, file=sys.stderr)
 
-def maskbits(b):
+def maskbits(b: bytes) -> int:
 	return int.from_bytes(b).bit_count()
 
-def graph_or_hex(i, readable):
+def graph_or_hex(i: int, readable: bool) -> str:
 	if readable and i >= 0x20 and i < 0x80:
 		return "'{}'".format(chr(i))
 	return '0x{:02x}'.format(i)
 
-def u8_array(b, limit=None, readable=False):
+def u8_array(b: str | bytes, limit: int = 0, readable: bool = False) -> str:
 	if isinstance(b, str):
 		b = b.encode()
 	if not limit:
@@ -1335,6 +1339,13 @@ def u8_array(b, limit=None, readable=False):
 	elif len(b) > limit:
 		eprint('array exceeds length limit. will truncate:', b)
 	return ','.join(map(lambda i: graph_or_hex(i, readable), b[0:limit]))
+
+class FmtMIME(typing.NamedTuple):
+	mime: str
+	'''MIME type sans "image/" prefix'''
+
+	id: int
+	'''Decoder id'''
 
 class FmtSize(typing.NamedTuple):
 	size: int
@@ -1344,14 +1355,14 @@ class FmtSize(typing.NamedTuple):
 	'''Decoder id'''
 
 	@staticmethod
-	def struct(limit):
+	def struct(bitlimit: int) -> str:
 		return '''\
 		struct fmt_size {{
 			const uint{}_t size;
 			const int id;
-		}};'''.format(limit)
+		}};'''.format(bitlimit)
 
-	def declare(self):
+	def declare(self) -> str:
 		return '\t{{ .size={}, .id={} }},'.format(
 			self.size, self.id)
 
@@ -1366,7 +1377,7 @@ class FmtMagic(typing.NamedTuple):
 	'''Decoder id'''
 
 	@staticmethod
-	def struct(limit):
+	def struct(limit: int) -> str:
 		return '''\
 		struct fmt_magic {{
 			const unsigned char and_mask[{0}];
@@ -1374,19 +1385,19 @@ class FmtMagic(typing.NamedTuple):
 			const short id;
 		}};'''.format(limit)
 
-	def declare(self, limit):
+	def declare(self, limit: int) -> str:
 		return '\t{{ .and_mask={{ {} }}, .bytes={{ {} }}, .id={} }},'.format(
 			u8_array(self.mask, limit, False),
 			u8_array(self.bytes, limit, True),
 			self.id)
 
-	def __lt__(self, other):
+	def __lt__(self, other: typing.Any) -> bool:
 		# Compare number of mask bits, then magic bytes
 		d = maskbits(self.bytes) - maskbits(other.bytes)
 		if d == 0:
 			d = len(self.bytes) - len(other.bytes)
 			if d == 0:
-				return self.bytes < other.bytes
+				return bool(self.bytes < other.bytes)
 		return d < 0
 
 class FmtExt(typing.NamedTuple):
@@ -1397,51 +1408,50 @@ class FmtExt(typing.NamedTuple):
 	'''Decoder id, or -1 if this extension is not needed for identification'''
 
 	@staticmethod
-	def struct(limit):
+	def struct(limit: int) -> str:
 		return '''\
 		struct fmt_ext {{
 			const char ext[{0}];
 			const short id;
 		}};'''.format(limit)
 
-	def declare(self, ext_limit):
+	def declare(self, ext_limit: int) -> str:
 		if len(self.ext) > ext_limit:
 			raise BaseException('extension exceeds length limit: ' + self.ext)
 		return '\t{{ .ext={{ {} }}, .id={} }},'.format(
 			u8_array(self.ext, ext_limit, True),
 			self.id)
 
-	def __lt__(self, other):
+	def __lt__(self, other: typing.Any) -> bool:
 		if self[0] == other[0]:
 			# Reverse id order so that -1 values are last
-			return other[1] < self[1]
-		return self[0] < other[0]
+			return bool(other[1] < self[1])
+		return bool(self[0] < other[0])
 
-def full_mask(mag, id):
+def full_mask(mag: bytes, id: int) -> FmtMagic:
 	if isinstance(mag, bytes):
 		return FmtMagic(b'\xff' * len(mag), mag, id)
 	raise BaseException('magic must be bytes sequence: ' + mag)
 
-def mask_from_magic(info, id):
+def mask_from_magic(info: FmtInfo, id: int) -> Iterable[FmtMagic]:
 	magic = info.magic
-	if isinstance(magic, (bytes, str)):
+	if isinstance(magic, bytes):
 		yield full_mask(magic, id)
 	elif magic:
 		yield from map(lambda m: full_mask(m, id), magic)
 
-def mask_extract(name, info, id):
+def mask_extract(name: str, info: FmtInfo, id: int) -> Iterable[FmtMagic]:
 	masks = info.mask
-	if masks:
-		if len(masks) % 2 != 0:
-			raise BaseException('invalid mask sequence length in ' + name)
-		for mask, mag in batched(masks, 2):
-			if not isinstance(mask, bytes) or not isinstance(mag, bytes):
-				raise BaseException(f'mask must be bytes sequence: {mag}')
-			elif len(mask) != len(mag):
-				raise BaseException(f'AND mask and magic have different lengths: {mag}')
-			yield FmtMagic(mask, mag, id)
+	if len(masks) % 2 != 0:
+		raise BaseException('invalid mask sequence length in ' + name)
+	for mask, mag in batched(masks, 2):
+		if not isinstance(mask, bytes) or not isinstance(mag, bytes):
+			raise BaseException(f'mask must be bytes sequence: {mag}')
+		elif len(mask) != len(mag):
+			raise BaseException(f'AND mask and magic have different lengths: {mag!r}')
+		yield FmtMagic(mask, mag, id)
 
-def ext_iter(exts, id=-1):
+def ext_iter(exts: StrSeq, id: int = -1) -> Iterable[FmtExt]:
 	if isinstance(exts, str):
 		yield FmtExt(exts, id)
 	elif exts:
@@ -1457,14 +1467,14 @@ class FmtDesc(typing.NamedTuple):
 
 	info: FmtInfo
 
-	def extern(self):
+	def extern(self) -> str:
 		dec, name, info = self
 		is_auto = dec == 'auto'
 		suffix = 'desc' if is_auto else 'fn'
 		type = 'wuptr' if is_auto else 'image_fn'
 		return f'extern const struct {type} {name}_{suffix};'
 
-	def declare(self, name_limit):
+	def declare(self, name_limit: int) -> str:
 		dec, name, info = self
 		if len(name) > name_limit:
 			raise BaseException('format name exceeds length limit: ' + name)
@@ -1480,48 +1490,48 @@ class FmtDesc(typing.NamedTuple):
 		}},'''.format(u8_array(name, name_limit, True),
 			info.desc, is_auto_str, suffix, name)
 
-	def get_exts(self, id):
+	def get_exts(self, id: int) -> Iterable[FmtExt]:
 		yield from ext_iter(self.info.ext)
 		yield from ext_iter(self.info.match, id)
 
-	def get_magics(self, id):
+	def get_magics(self, id: int) -> Iterable[FmtMagic]:
 		yield from mask_extract(self.name, self.info, id)
 		yield from mask_from_magic(self.info, id)
 
-	def get_sizes(self, id):
+	def get_sizes(self, id: int) -> Iterable[FmtSize]:
 		sizes = self.info.size
 		if isinstance(sizes, int):
 			yield FmtSize(sizes, id)
 		elif sizes:
 			yield from map(lambda s: FmtSize(s, id), sizes)
 
-	def get_mimes(self, _id):
+	def get_mimes(self, id: int) -> Iterable[FmtMIME]:
 		mime = self.info.mime
 		if isinstance(mime, str):
-			yield mime
+			yield FmtMIME(mime, id)
 		elif mime:
-			yield from mime
+			yield from map(lambda m: FmtMIME(m, id), mime)
 
-	def __lt__(self, other):
-		return self.name < other.name
+	def __lt__(self, other: typing.Any) -> bool:
+		return bool(self.name < other.name)
 
-def begin_map_def(name):
+def begin_map_def(name: str) -> None:
 	print('static const struct fmt_{0} {0}_map[] = {{'.format(name))
 
-def end_def():
+def end_def() -> None:
 	print('};')
 
-def struct_and_define(type, limit):
+def struct_and_define(type: typing.Any, limit: int) -> None:
 	print(type.struct(limit))
 	begin_map_def(type.__name__.replace('Fmt', '').lower())
 
-def fmt_map_iter(getter, fmt_map):
+def fmt_map_iter[T](getter: Callable[[FmtDesc, int], Iterable[T]], fmt_map: Iterable[FmtDesc]) -> Iterable[T]:
 	return chain.from_iterable(starmap(lambda id, fmt: getter(fmt, id), enumerate(fmt_map)))
 
-def minmax(min_len, max_len, n):
+def minmax(min_len: int, max_len: int, n: int) -> tuple[int, int]:
 	return min(min_len, n), max(max_len, n)
 
-def print_fmt_magic(fmt_map, limit):
+def print_fmt_magic(fmt_map: Iterable[FmtDesc], limit: int) -> tuple[int, int]:
 	# Reverse so that masks with more bits come first
 	magic_map = sorted(fmt_map_iter(FmtDesc.get_magics, fmt_map), reverse=True)
 
@@ -1534,7 +1544,7 @@ def print_fmt_magic(fmt_map, limit):
 	end_def()
 	return min_len, min(max_len, limit)
 
-def ext_filter(ext_map, n, cur):
+def ext_filter(ext_map: Sequence[FmtExt], n: int, cur: FmtExt) -> bool:
 	if n:
 		prev = ext_map[n-1]
 		if cur.ext == prev.ext:
@@ -1547,7 +1557,7 @@ def ext_filter(ext_map, n, cur):
 			return False
 	return True
 
-def print_fmt_ext(fmt_map, limit):
+def print_fmt_ext(fmt_map: Iterable[FmtDesc], limit: int) -> tuple[int, int]:
 	ext_map = sorted(fmt_map_iter(FmtDesc.get_exts, fmt_map))
 
 	min_len = limit
@@ -1559,27 +1569,27 @@ def print_fmt_ext(fmt_map, limit):
 	end_def()
 	return min_len, max_len
 
-def print_fmt_size(fmt_map):
+def print_fmt_size(fmt_map: Iterable[FmtDesc]) -> None:
 	sizes = sorted(fmt_map_iter(FmtDesc.get_sizes, fmt_map), reverse=True)
 	struct_and_define(FmtSize, 32)
 	foreach(lambda size: print(size.declare()), sizes)
 	end_def()
 
-def print_fmt_desc(fmt_map, limit):
+def print_fmt_desc(fmt_map: Iterable[FmtDesc], limit: int) -> None:
 	begin_map_def('desc')
 	foreach(lambda fmt: print(fmt.declare(limit)), fmt_map)
 	end_def()
 
-def print_fmt_enum(fmt_map):
+def print_fmt_enum(fmt_map: Iterable[FmtDesc]) -> None:
 	print('enum fmt_id {')
 	print('\tfmt_unknown = -1,')
 	foreach(lambda fmt: print('\tfmt_', fmt.name, ',', sep=''), fmt_map)
 	end_def()
 
-def print_include(name):
+def print_include(name: str) -> None:
 	print('#include "', name, '"', sep='');
 
-def gen_maps(fmt_map):
+def gen_maps(fmt_map: Iterable[FmtDesc]) -> None:
 	# Include the output of dec_header()
 	print_include('dec_fn.h')
 
@@ -1604,11 +1614,11 @@ def gen_maps(fmt_map):
 	# Include the rest of the file
 	print_include('fmtmap.c')
 
-def dec_header(fmt_map):
+def dec_header(fmt_map: Iterable[FmtDesc]) -> None:
 	print_include('wudefs.h');
 	foreach(lambda fmt: print(fmt.extern()), fmt_map)
 
-def show_supported(fmt_map):
+def show_supported(fmt_map: Sequence[FmtDesc]) -> None:
 	width = 1 + max(map(lambda fmt: max(len(fmt.dec), len(fmt.name)), fmt_map))
 	tpl = '{:{width}}{:{width}}{}'
 	print_tab = lambda t: print(tpl.format(*t, width=width))
@@ -1646,43 +1656,28 @@ def show_supported(fmt_map):
 	))
 	print('Fixed file sizes:', len(sizes))
 	foreach(print_tab, sizes)
+	print()
 
-def extract_fmt(dec, fmts):
-	return map(lambda t: FmtDesc(dec, *t), fmts.items())
+	# MIME types
+	if False:
+		mimes = sorted(map(lambda m: (fmt_map[m.id].name, m.mime),
+			fmt_map_iter(FmtDesc.get_mimes, fmt_map)
+		))
+		print('MIME types:', len(mimes))
+		foreach(print_tab, mimes)
 
-def contains_any(contains, t):
-	return any(map(contains, t[0].split('|')))
-
-def fmts_from_decs(dec, enabled=None):
-	it = dec.items()
-	if enabled:
-		fn = partial(contains_any, enabled.__contains__)
-		it = filter(fn, it)
-	return chain.from_iterable(starmap(extract_fmt, it))
-
-def enabled_formats(file, include=tuple()):
-	prefix = '#define WU_ENABLE_'
-	return frozenset(chain(include,
-		map(lambda s: s[len(prefix):-1].lower(),
-			filter(lambda s: s.startswith(prefix), file)
-		)
-	))
-
-def print_names(fmt_map):
-	foreach(print, sorted(set(chain.from_iterable(
-		map(lambda s: s.split('|'), filter(lambda s: s != 'auto', fmt_map.keys()))
-	))))
-
-def mime_fmt(type, it):
+def mime_fmt(type: str, it: Iterable[str]) -> str:
 	return ''.join(map(lambda s: f'{type}/{s};', sorted(set(it))))
 
-def write_desktop(out, entries):
-	with open(out, "w") as fp:
+def write_desktop(outname: str, entries: Iterable[tuple[str, str]]) -> None:
+	with open(outname, "w") as fp:
 		print('[Desktop Entry]', file=fp)
 		foreach(lambda t: print(*t, sep='=', file=fp), entries)
 
-def gen_desktop_file(fmt_map, desktop_file, archive_file):
-	image_mime = mime_fmt('image', fmt_map_iter(FmtDesc.get_mimes, fmt_map))
+def gen_desktop_file(fmt_map: Iterable[FmtDesc], desktop_file: str, archive_file: str) -> None:
+	image_mime = mime_fmt('image',
+		map(lambda m: m.mime, fmt_map_iter(FmtDesc.get_mimes, fmt_map))
+	)
 	common = (
 		('Categories', 'Graphics;Viewer;2DGraphics;'),
 		('Icon', 'applications-graphics'),
@@ -1707,24 +1702,49 @@ def gen_desktop_file(fmt_map, desktop_file, archive_file):
 	write_desktop(desktop_file, desktop + common)
 	write_desktop(archive_file, archive + common)
 
+
+def print_names(map_keys: Iterable[str]) -> int:
+	foreach(print, sorted(set(chain.from_iterable(
+		map(lambda s: s.split('|'), filter(lambda s: s != 'auto', map_keys))
+	))))
+	return 0
+
+def extract_fmt(dec: str, fmts: DecFmt) -> Iterable[FmtDesc]:
+	return map(lambda t: FmtDesc(dec, *t), fmts.items())
+
+def contains_any(contains: Callable[[str], bool], t: tuple[str, DecFmt]) -> bool:
+	return any(map(contains, t[0].split('|')))
+
+def fmts_from_decs(dec: DecMap, enabled: set[str] | None = None) -> Iterable[FmtDesc]:
+	fn = partial(contains_any, enabled.__contains__ if enabled else bool)
+	return chain.from_iterable(starmap(extract_fmt, filter(fn, dec.items())))
+
+def enabled_formats() -> set[str]:
+	prefix = '#define WU_ENABLE_'
+	return set(
+		map(lambda s: s[len(prefix):-1].lower(),
+			filter(lambda s: s.startswith(prefix), sys.stdin)
+		)
+	)
+
 if __name__ == '__main__':
 	enabled = None
 	i = 1
 	if sys.argv[i] == 'names':
-		print_names(DEC_MAP)
-		sys.exit(0)
+		sys.exit(print_names(DEC_MAP.keys()))
 	if sys.argv[i] == '-all':
 		i += 1
 	else:
-		enabled = enabled_formats(sys.stdin, ('auto',))
+		enabled = enabled_formats() | set(("auto",))
 
 	# Filter and flatten the decoder map to get a format list.
 	# After sorting, the position within the list will be the format id.
 	fmt_map = sorted(fmts_from_decs(DEC_MAP, enabled))
 
-	{
+	fn: dict[str, Callable[..., None]] = {
 		'maps': gen_maps,
 		'header': dec_header,
 		'desktop': gen_desktop_file,
 		'show': show_supported,
-	}[sys.argv[i]](fmt_map, *sys.argv[i+1:])
+	}
+	fn[sys.argv[i]](fmt_map, *sys.argv[i+1:])
