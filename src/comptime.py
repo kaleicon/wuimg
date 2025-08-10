@@ -49,11 +49,6 @@ DEC_MAP = {
 			"ext": "grf",
 			"magic": b"GRFX",
 		},
-		"amibios": {
-			"desc": "AMI BIOS Logo",
-			"ext": "grf",
-			"magic": b"GRFX",
-		},
 		"avs": {
 			"desc": "Stardent AVS X",
 			"match": (
@@ -377,7 +372,7 @@ DEC_MAP = {
 				b"/*",
 				b"#define ",
 			),
-			"mime": "xbm",
+			"mime": ("xbm", "x-xbitmap"),
 		},
 	},
 
@@ -619,6 +614,7 @@ DEC_MAP = {
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"FORM\0\0\0\0PBM ",
 			),
+			"mime": "x-ilbm",
 		},
 	},
 
@@ -646,7 +642,13 @@ DEC_MAP = {
 		},
 	},
 
-	"mac": {"mac": {"desc": "MacPaint", "match": ("mac", "pntg")}},
+	"mac": {
+		"mac": {
+			"desc": "MacPaint",
+			"match": ("mac", "pntg"),
+			"mime": "x-macpaint",
+		},
+	},
 
 	"mag": {
 		"mag": {
@@ -750,7 +752,7 @@ DEC_MAP = {
 			"mask": (
 				# Second byte is version. Valid values are
 				# 0,2,3,4,5. (If 1 were a valid version, we
-				# could get away with just two sequences. This
+				# could get away with just two masks. This
 				# damned format truly screws with us at every
 				# possible turn.)
 				# Third byte is compression. Almost always 1,
@@ -759,7 +761,7 @@ DEC_MAP = {
 				b"\xff\xfe\xfe", b"\x0a\x02\x00", # 2,3
 				b"\xff\xfe\xfe", b"\x0a\x04\x00", # 4,5
 			),
-			"mime": "x-pcx",
+			"mime": ("vnd.zbrush.pcx", "x-pcx"),
 		},
 	},
 
@@ -848,6 +850,7 @@ DEC_MAP = {
 				"x-portable-greymap",      # Raw PGM. blame `file` for the spellings
 				"x-portable-pixmap",       # PPM
 				"x-portable-arbitrarymap", # PAM
+				"x-portable-anymap",       # PNM
 				"x-xv-thumbnail",          # Xv
 			),
 		},
@@ -882,6 +885,7 @@ DEC_MAP = {
 			"desc": "QuiteOK image",
 			"ext": "qoi",
 			"magic": b"qoif",
+			"mime": "qoi",
 		},
 	},
 
@@ -902,6 +906,7 @@ DEC_MAP = {
 			"desc": "Silicon Graphics Image",
 			"ext": ("bw", "rgb", "rgba", "sgi"),
 			"magic": b"\x01\xda",
+			"mime": "x-sgi",
 		},
 	},
 
@@ -967,6 +972,7 @@ DEC_MAP = {
 				"ras", "sun"
 			),
 			"magic": b"\x59\xa6\x6a\x95",
+			"mime": "x-sun-raster",
 		},
 	},
 
@@ -1061,7 +1067,13 @@ DEC_MAP = {
 		},
 	},
 
-	"xcursor": {"xcursor": {"desc": "X11 cursor", "magic": b"Xcur"}},
+	"xcursor": {
+		"xcursor": {
+			"desc": "X11 cursor",
+			"magic": b"Xcur",
+			"mime": "x-xcursor",
+		},
+	},
 
 	"xwd": {
 		"xwd": {
@@ -1072,6 +1084,7 @@ DEC_MAP = {
 				b"\0\0\0\0" b"\xff\xff\xff\xfe",
 				b"\0\0\0\0" b"\x00\x00\x00\x06",
 			),
+			"mime": "x-xwindowdump",
 		},
 	},
 
@@ -1212,6 +1225,7 @@ DEC_MAP = {
 			"desc": "JPEG 2000 codestream",
 			"ext": ("j2c", "j2k"),
 			"magic": b"\xff\x4f\xff\x51",
+			"mime": "x-jp2-codestream",
 		},
 
 		"jp2": {
@@ -1308,7 +1322,7 @@ DEC_MAP = {
 				b"<svg ",
 				b"<?xml ",
 			),
-			"mime": "svg+xml",
+			"mime": ("svg+xml", "svg+xml-compressed"),
 		},
 	},
 
@@ -1696,7 +1710,7 @@ def print_names(fmt_map):
 	))))
 
 def mime_fmt(type, it):
-	return ''.join(map(lambda s: f'{type}/{s};', it))
+	return ''.join(map(lambda s: f'{type}/{s};', sorted(set(it))))
 
 def write_desktop(out, entries):
 	with open(out, "w") as fp:
