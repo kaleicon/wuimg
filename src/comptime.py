@@ -15,7 +15,7 @@ NAME_LIMIT = 8
 # libtiff can handle, so we define these for both formats.
 RAW_TIFF_EXTS = (
 	# Sony
-	"arw",
+	"arw", "sr2", "srf",
 	# Canon
 	"cr2",
 	# Adobe
@@ -28,6 +28,15 @@ RAW_TIFF_EXTS = (
 	"nef", "nrw",
 	# Pentax
 	"pef"
+)
+RAW_TIFF_MIMES = (
+	"x-dcraw", # generic
+	"x-adobe-dng",
+	"x-canon-cr2",
+	"x-kodak-dcr", "x-kodak-k25", "x-kodak-kdc",
+	"x-nikon-nef", "x-nikon-nrw",
+	"x-pentax-pef",
+	"x-sony-arw", "x-sony-sr2", "x-sony-srf",
 )
 TIFF_MAGICS = (
 	b"II\x2a\x00",
@@ -1213,30 +1222,36 @@ DEC_MAP = {
 	"raw": {
 		"raw": FmtInfo("Raw camera formats",
 			ext=(
-				"crw", # Canon
+				"raw", # generic
+				"cr3", "crw", # Canon
 				"orf", # Olympus
 				"raf", # Fuji
-				"raw",
 				"rw2", "rwl", # Panasonic (it's RWL, not RW1!)
 			),
-			match=RAW_TIFF_EXTS,
+			match=RAW_TIFF_EXTS + (
+				"mrw", # Minolta MRW
+			),
 			magic=TIFF_MAGICS + (
 				# Canon CRW
 				b"II\x1a\0",
+				# Fujifilm RAF
+				b"FUJIFILMCCD-RAW ",
 				# Olympus ORF
 				b"IIRS",
 				b"IIRO",
 				b"MMOR",
-				# Panasonic RAW/RW2
+				# Panasonic RW/RW2
 				b"IIU\0",
-				# Fujifilm Raw
-				b"FUJIFILMCCD-RAW ",
+				# Sigma X3F
+				b"FOVb",
 			),
-			mime=(
-				"x-dcraw",
-				"x-canon-cr2", "x-canon-crw",
+			mime=RAW_TIFF_MIMES + (
+				"x-canon-cr3", "x-canon-crw",
 				"x-fuji-raf",
-				"x-olympus-orf"
+				"x-minolta-mrw",
+				"x-olympus-orf",
+				"x-panasonic-rw", "x-panasonic-rw2",
+				"x-sigma-x3f",
 			)
 		),
 	},
@@ -1256,7 +1271,7 @@ DEC_MAP = {
 		"tiff": FmtInfo("Tag Image File Format, BigTIFF",
 			ext=("g3n", "tif", "tiff") + RAW_TIFF_EXTS,
 			magic=TIFF_MAGICS,
-			mime="tiff"
+			mime=("tiff", "x-tiff-multipage") + RAW_TIFF_MIMES,
 		),
 	},
 
