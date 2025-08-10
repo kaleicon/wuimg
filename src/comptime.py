@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2024 kaleido
 import sys
 import collections
+import typing
 from itertools import batched, chain, starmap
 from functools import partial
 
@@ -37,272 +38,248 @@ TIFF_MAGICS = (
 	b"MM\x00\x2b\x00\x08\0\0",
 )
 
-# "desc" = Format description
-# "ext" = File extensions that are just informative (i.e. for filtering file lists)
-#     Either a single string or a sequence of such
-# "match" = Extensions that override magic detection, if any
-#     Same format as "ext"
-# "magic" = A signature that must match completely
-#     A single byte string or a sequence of such
-# "mask" = An AND mask plus magic signature. Only set bits need to match
-#     A sequence of byte strings, where even terms are masks, and odd terms signatures
-# "size" = Common file sizes. Unused at the moment
-#     An integer or a sequence of such
-# "mime" = Format mime types, with "image/" prefix omitted. Unused at the moment
-#     Same format as "ext"
+class FmtInfo(typing.NamedTuple):
+	desc: str
+	'''Description'''
+
+	ext: str | tuple[str, ...] = tuple()
+	'''File extensions that are just informative (e.g. filtering file lists)'''
+
+	match: str | tuple[str, ...] = tuple()
+	'''Extensions that aid or are needed for identification'''
+
+	magic: bytes | tuple[bytes, ...] = tuple()
+	'''Byte sequence(s) that must match exactly'''
+
+	mask: bytes | tuple[bytes, ...] = tuple()
+	'''An AND mask plus magic sequence. Only set bits need to match.
+	Even terms are masks, odd terms are signatures.'''
+
+	size: int | tuple[int, ...] = tuple()
+	'''File size, for formats with constant size'''
+
+	mime: str | tuple[str, ...] = tuple()
+	'''MIME types, with "image/" prefix omitted'''
 
 DEC_MAP = {
 	# Simple raw formats, implemented in auto.c
 	"auto": {
-		"aipd": {
-			"desc": "National Instruments AIPD (uncertain color interpretation)",
-			"ext": "apd",
-			"magic": b"AIPD",
-		},
-		"amibios": {
-			"desc": "AMI BIOS Logo",
-			"ext": "grf",
-			"magic": b"GRFX",
-		},
-		"avs": {
-			"desc": "Stardent AVS X",
-			"match": (
+		"aipd": FmtInfo("National Instruments AIPD (uncertain color interpretation)",
+			ext="apd",
+			magic=b"AIPD"
+		),
+		"amibios": FmtInfo("AMI BIOS Logo",
+			ext="grf",
+			magic=b"GRFX"
+		),
+		"avs": FmtInfo("Stardent AVS X",
+			match=(
 				"avs",
 				"mbfavs",
 				"x",
-			),
-		},
-		"bob": {"desc": "Bob raytracer raster", "match": "bob"},
-		"bru": {
-			"desc": "Degas Brush",
-			"match": "bru",
-			"size": 64,
-		},
-		"chky": {
-			"desc": "IFF Chunky",
-			"ext": "ciff",
-			"mask": (
+			)
+		),
+		"bob": FmtInfo("Bob raytracer raster",
+			match="bob"
+		),
+		"bru": FmtInfo("Degas Brush",
+			match="bru",
+			size=64
+		),
+		"chky": FmtInfo("IFF Chunky",
+			ext="ciff",
+			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 				b"FORM" b"\0\0\0\0" b"CHKY",
-			),
-		},
-		"ckiss": {
-			"desc": "Cherry KiSS CEL",
-			"ext": "cel",
-			"magic": b"KiSS\x20\x20"
-		},
-		"farbfeld": {
-			"desc": "farbfeld",
-			"ext": "ff",
-			"magic": b"farbfeld",
-		},
-		"gemview": {
-			"desc": "GEM View-Dither",
-			"ext": "dit",
-			"magic": b"B&W256",
-		},
-		"hir": {
-			"desc": "Print-Technik Raw",
-			"ext": "hir",
-			"mask": (
+			)
+		),
+		"ckiss": FmtInfo("Cherry KiSS CEL",
+			ext="cel",
+			magic=b"KiSS\x20\x20"
+		),
+		"farbfeld": FmtInfo("farbfeld",
+			ext="ff",
+			magic=b"farbfeld"
+		),
+		"gemview": FmtInfo("GEM View-Dither",
+			ext="dit",
+			magic=b"B&W256"
+		),
+		"hir": FmtInfo("Print-Technik Raw",
+			ext="hir",
+			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff",
 				b"\x0f\x0f\x00\x01" b"\0\0\0\0" b"\x00\x01",
-			),
-		},
-		"hpicon": {
-			"desc": "HP Palmtop Icon",
-			"ext": "icn",
-			"magic":
+			)
+		),
+		"hpicon": FmtInfo("HP Palmtop Icon",
+			ext="icn",
+			magic=
 				# 0x002c and 0x0020 are the image dimensions, but
 				# they're always the same so match against them too
-				b"\x01\x00\x01\x00\x2c\x00\x20\x00",
-		},
-		"iim": {
-			"desc": "InShape IIM",
-			"ext": "iim",
-			"magic": b"IS_IMAGE\0",
-		},
-		"kips": {
-			"desc": "IBM KIPS (no palette)",
-			"ext": "kps",
-			"magic": b"DFIMAG00",
-		},
-		"kro": {
-			"desc": "Kolor Raw",
-			"ext": "kro",
-			"magic": b"KRO\x01",
-		},
-		"megapat": {
-			"desc": "MegaPaint Pattern",
-			"ext": "pat",
-			"mask": (
+				b"\x01\x00\x01\x00\x2c\x00\x20\x00"
+		),
+		"iim": FmtInfo("InShape IIM",
+			ext="iim",
+			magic=b"IS_IMAGE\0"
+		),
+		"kips": FmtInfo("IBM KIPS (no palette)",
+			ext="kps",
+			magic=b"DFIMAG00"
+		),
+		"kro": FmtInfo("Kolor Raw",
+			ext="kro",
+			magic=b"KRO\x01"
+		),
+		"megapat": FmtInfo("MegaPaint Pattern",
+			ext="pat",
+			mask=(
 				b"\xff\xff\xff\xff" b"\xff\0\xff\0",
 				b"\x07PAT" b" \0.\0"
 			),
-			"size": 0x112c,
-		},
-		"olpc565": {
-			"desc": "OLPC 565 boot graphic",
-			"ext": "565",
-			"magic": b"C565",
-		},
-		"ota": {
-			"desc": "Over The Air bitmap (uncompliant)",
-			"match": "otb",
-			"mask": (
+			size=0x112c
+		),
+		"olpc565": FmtInfo("OLPC 565 boot graphic",
+			ext="565",
+			magic=b"C565"
+		),
+		"ota": FmtInfo("Over The Air bitmap (uncompliant)",
+			match="otb",
+			mask=(
 				# u8 dims
 				b"\xff\0\0\xff",
 				b"\x00\0\0\x01",
 				# u16 dims
 				b"\xff\0\0\0\0\xff",
 				b"\x10\0\0\0\0\x01",
-			),
-		},
-		"piccel": {
-			"desc": "Autodesk Animator PIC/CEL",
-			"ext": ("pic", "cel"),
-			"magic": b"\x19\x91",
-		},
-		"pictris": {
-			"desc": "Pictris",
-			"ext": "pic",
-			"magic": b"$PICTURE FOR PICTRIS (c) by Kai Lemke",
-			"size": 0xfd25,
-		},
-		"pgf": {
-			"desc": "Portfolio Graphics uncompressed",
-			"ext": "pgf",
-			"size": 0x780,
-		},
-		"pxy": {
-			"desc": "Eclipse Proxy",
-			"ext": "pxy",
-			"magic": b"\xaf\xcb",
-		},
+			)
+		),
+		"piccel": FmtInfo("Autodesk Animator PIC/CEL",
+			ext=("pic", "cel"),
+			magic=b"\x19\x91"
+		),
+		"pictris": FmtInfo("Pictris",
+			ext="pic",
+			magic=b"$PICTURE FOR PICTRIS (c) by Kai Lemke",
+			size=0xfd25
+		),
+		"pgf": FmtInfo("Portfolio Graphics uncompressed",
+			ext="pgf",
+			size=0x780
+		),
+		"pxy": FmtInfo("Eclipse Proxy",
+			ext="pxy",
+			magic=b"\xaf\xcb"
+		),
 
 		# Atari Falcon True Color family
-		"coke": {
-			"desc": "COKE (Atari Falcon)",
-			"ext": "tg1",
-			"magic": b"COKE format.",
-		},
-		"eggpaint": {
-			"desc": "EggPaint",
-			"ext": "trp",
-			"magic": b"TRUP",
-		},
-		"ftc": {
-			"desc": "Falcon True Color",
-			"match": "ftc",
-			"size": 0x2d000,
-		},
-		"god": {"desc": "GodPaint", "match": "god"},
-		"indy": {
-			"desc": "IndyPaint",
-			"ext": ("hgr", "tru"),
-			"magic": b"Indy",
-		},
-		"tcp": {
-			"desc": "Atari Rembrandt",
-			"ext": "tcp",
-			"magic": b"TRUECOLR",
-		},
-		"trp": {
-			"desc": "Spooky Sprites uncompressed",
-			"ext": ("trp", "tru"),
-			"magic": b"tru?",
-		},
+		"coke": FmtInfo("COKE (Atari Falcon)",
+			ext="tg1",
+			magic=b"COKE format."
+		),
+		"eggpaint": FmtInfo("EggPaint",
+			ext="trp",
+			magic=b"TRUP"
+		),
+		"ftc": FmtInfo("Falcon True Color",
+			match="ftc",
+			size=0x2d000
+		),
+		"god": FmtInfo("GodPaint",
+			match="god"
+		),
+		"indy": FmtInfo("IndyPaint",
+			ext=("hgr", "tru"),
+			magic=b"Indy"
+		),
+		"tcp": FmtInfo("Atari Rembrandt",
+			ext="tcp",
+			magic=b"TRUECOLR"
+		),
+		"trp": FmtInfo("Spooky Sprites uncompressed",
+			ext=("trp", "tru"),
+			magic=b"tru?"
+		),
 
 		# Atari ST
-		"da4": {
-			"desc": "PaintShop (Atari ST)",
-			"match": "da4",
-			"size": 0xfa00,
-		},
-		"doo": {
-			"desc": "Atari Doodle",
-			"match": "doo",
-			"size": 0x7d00,
-		},
-		"imgscan": {
-			"desc": "IMG Scan",
-			"match": ("rwl", "rwh", "raw"),
-			"size": (64000, 256000, 128000),
-		},
+		"da4": FmtInfo("PaintShop (Atari ST)",
+			match="da4",
+			size=0xfa00
+		),
+		"doo": FmtInfo("Atari Doodle",
+			match="doo",
+			size=0x7d00
+		),
+		"imgscan": FmtInfo("IMG Scan",
+			match=("rwl", "rwh", "raw"),
+			size=(64000, 256000, 128000)
+		),
 
 		# TRS-80
-		"trs80clp": {
-			"desc": "TRS-80 Clip Art",
-			"ext": "clp",
-			"magic":
+		"trs80clp": FmtInfo("TRS-80 Clip Art",
+			ext="clp",
+			magic=
 				b"\x00\x00\x00\x03" b"\x01\x5e\x00\x00"
 				b"\x20\x00\x20\x01" b"\x01\x2c\x00\x0a"
 				b"\x00\x38\x00\x20" b"\x00\x38\x00\x20\x05",
-			"size": 0x132,
-		},
-		"trs80hr": {
-			"desc": "TRS-80 High Resolution",
-			"match": "hr",
-			"size": (0x4b00, 0x4b80, 0x4c00),
-		},
-		"trs80max": {
-			"desc": "TRS-80 MAX",
-			"ext": ("grf", "max", "p41", "pix"),
-			"mask": (
+			size=0x132
+		),
+		"trs80hr": FmtInfo("TRS-80 High Resolution",
+			match="hr",
+			size=(0x4b00, 0x4b80, 0x4c00)
+		),
+		"trs80max": FmtInfo("TRS-80 MAX",
+			ext=("grf", "max", "p41", "pix"),
+			mask=(
 				b"\xff\xff\xfe\xff\xff",
 				b"\x00\x18\x00\x0e\x00",
 			),
-			"size": (0x1c00, 0x1880, 0x180b, 0x180a),
-		},
+			size=(0x1c00, 0x1880, 0x180b, 0x180a)
+		),
 	},
 
 	# Formats implemented in lib/
 	"aliaspix": {
-		"aliaspix": {
-			"desc": "AliasPIX and Vivid",
-			"match": ("als", "img", "lux", "pix"),
-			"mask": (
+		"aliaspix": FmtInfo("AliasPIX and Vivid",
+			match=("als", "img", "lux", "pix"),
+			mask=(
 				# match 8- and 24-bits
 				b"\0\0\0\0\0\0\0\0" b"\xff\xef",
 				b"\0\0\0\0\0\0\0\0" b"\x00\x08",
-			),
-		},
+			)
+		),
 	},
 
 	"atari": {
-		"dali": {
-			"desc": "Dali uncompressed",
-			"match": ("sd0", "sd1", "sd2"),
-			"magic": b"\0\0\0\0",
-			"size": 0x7d80,
-		},
+		"dali": FmtInfo("Dali uncompressed",
+			match=("sd0", "sd1", "sd2"),
+			magic=b"\0\0\0\0",
+			size=0x7d80
+		),
 
-		"degas": {
-			"desc": "DEGAS, DEGAS Elite, PaintPro",
-			"ext": "pic", # PaintPro
-			"match": (
+		"degas": FmtInfo("DEGAS, DEGAS Elite, PaintPro",
+			ext="pic", # PaintPro
+			match=(
 				"pi1", "pi2", "pi3",
 				"pc1", "pc2", "pc3",
 				# Uncompressed high-resolution GFA raytrace
 				"suh",
 			),
-			"mask": (
+			mask=(
 				b"\x7f\xfe", b"\0\0", # Low and Medium res
 				b"\x7f\xff", b"\0\x02", # High res
 			),
-			"size": (0x7d22, 0x7d42),
-		},
+			size=(0x7d22, 0x7d42)
+		),
 
-		"ez": {
-			"desc": "EZ-Art Professional",
-			"ext": "eza",
-			"magic": b"EZ\0\xc8",
-		},
+		"ez": FmtInfo("EZ-Art Professional",
+			ext="eza",
+			magic=b"EZ\0\xc8"
+		),
 
-		"gfa": {
-			"desc": "GFA Raytrace",
-			"ext": ("sah", "sal", "sch", "scl", "sul"),
-			"mask": (
+		"gfa": FmtInfo("GFA Raytrace",
+			ext=("sah", "sal", "sch", "scl", "sul"),
+			mask=(
 				# "sah", "sal"
 				b"\xff\xff\xfb\xff\xff" b"\xff\xff\xff\xf0" b"\xff\xff\xff\xf0",
 				b"sah\r\n" b"\0\0\0\0" b"\0\0\0\0",
@@ -312,88 +289,79 @@ DEC_MAP = {
 				# "sul"
 				b"\xff\xff\xff\xff\xff" b"\xf0\xff\xff",
 				b"sul\r\n" b"0\r\n",
-			),
-		},
+			)
+		),
 
-		"bld": {
-			"desc": "MegaPaint",
-			"match": "bld",
-		},
+		"bld": FmtInfo("MegaPaint",
+			match="bld"
+		),
 
-		"spu": {
-			"desc": "Spectrum 512 Uncompressed (3/4/5-bits)",
-			"match": "spu",
-			"magic": b"5BIT",
-			"size": 0xc7a0,
-		},
+		"spu": FmtInfo("Spectrum 512 Uncompressed (3/4/5-bits)",
+			match="spu",
+			magic=b"5BIT",
+			size=0xc7a0
+		),
 
-		"stad": {
-			"desc": "STAD PAC, Arabesque",
-			"ext": (
+		"stad": FmtInfo("STAD PAC, Arabesque",
+			ext=(
 				"pac",        # STAD PAC
 				"abm", "puf"  # Arabesque
 			),
-			"magic": (
+			magic=(
 				b"pM85", b"pM86", # STAD PAC
 				b"ESO88b",        # Arabesque
 			),
-			"mask": (
+			mask=(
 				# match Arabesque "ESO88a" and "ESO89a"
 				b"\xff\xff\xff\xff\xfe\xff", b"ESO88a",
-			),
-		},
+			)
+		),
 
-		"tiny": {
-			"desc": "Tiny Stuff",
-			"match": (
+		"tiny": FmtInfo("Tiny Stuff",
+			match=(
 				"tny",
 				"tn1", "tn2", "tn3",
 				"tn4", "tn5", "tn6",
 			),
-			"mask": (
+			mask=(
 				b"\xfc", b"\x00", # Resolution 0-3
 				b"\xfe", b"\x04", # Resolution 4-5
-			),
-		},
+			)
+		),
 	},
 
 	"bethesda": {
-		"bsi": {
-			"desc": "Bethesda BSI texture (IFHD, BSIF)",
-			"ext": "bsi",
-			"magic": (b"IFHD\0\0\0\x2c", b"BSIF\0\0\0\0BHDR"),
-		},
-		"gxa": {
-			"desc": "Bethesda GXA image (BMHD)",
-			"ext": ("bmp", "gxa"),
-			"magic": b"BMHD\0\0\0\x22",
-		},
+		"bsi": FmtInfo("Bethesda BSI texture (IFHD, BSIF)",
+			ext="bsi",
+			magic=(b"IFHD\0\0\0\x2c", b"BSIF\0\0\0\0BHDR")
+		),
+		"gxa": FmtInfo("Bethesda GXA image (BMHD)",
+			ext=("bmp", "gxa"),
+			magic=b"BMHD\0\0\0\x22"
+		),
 	},
 
 	"bmz": {
-		"bmz": {
-			"desc": "GSD engine compressed BMP. Requires DIB",
-			"ext": "bmz",
-			"magic": b"ZLC3",
-		},
+		"bmz": FmtInfo("GSD engine compressed BMP. Requires DIB",
+			ext="bmz",
+			magic=b"ZLC3"
+		),
 	},
 
 	"c": {
-		"c": {
-			"desc": "C code formats: DEGAS Elite Icon, XBM X10 and X11",
-			"ext": ("icn", "icon"),
-			"match": "xbm",
-			"magic": (
+		"c": FmtInfo("C code formats: DEGAS Elite Icon, XBM X10 and X11",
+			ext=("icn", "icon"),
+			match="xbm",
+			magic=(
 				b"/*",
 				b"#define ",
 			),
-			"mime": ("xbm", "x-xbitmap"),
-		},
+			mime=("xbm", "x-xbitmap")
+		),
 	},
 
 	"c64": {
-		"c64": {
-			"desc": "Hires and Multicolor formats"
+		"c64": FmtInfo("Hires and Multicolor formats"
 				": Art Studio (OCP), Artist64, Blazing Paddles"
 				", CDU-Paint, Cheese, Create With Garfield"
 				", Doodle (raw & compressed), Faces Painter"
@@ -402,14 +370,14 @@ DEC_MAP = {
 				", KoalaPainter (raw & compressed)"
 				", Picasso 64, Runpaint, Saracen Paint"
 				", Vidcom 64, probably others by accident",
-			"ext": (
+			ext=(
 				# Extensions too generic to be of any use
 				# Art Studio
 				"art",
 				# Blazing Paddles
 				"pi",
 			),
-			"match": (
+			match=(
 				# Art Studio
 				"aas", "hcp", "ocp", "shp",
 				# Wigmore Artist64
@@ -449,7 +417,7 @@ DEC_MAP = {
 				# Generic C64, according to FileFormat Wiki
 				"vic",
 			),
-			"magic": (
+			magic=(
 				# Picasso 64
 				b"\x00\x18",
 				# Art Studio, HiEddi
@@ -471,11 +439,11 @@ DEC_MAP = {
 				# Cheese
 				b"\x00\x80",
 			),
-			"mask": (
+			mask=(
 				# Doodle (0x1c00 and 0x5c00)
 				b"\xff\xbf", b"\x00\x1c",
 			),
-			"size": (
+			size=(
 				9002, 9003, 9009, # Art Studio
 				9026, 9217, 9346, # Doodle
 				9194, # Hi-Eddi
@@ -488,206 +456,190 @@ DEC_MAP = {
 				10242, # Artist64, Blazing Paddles,
 				10277, # CDU-Paint
 				20482, # Cheese
-			),
-		},
+			)
+		),
 	},
 
 	"cbg": {
-		"cbg": {
-			"desc": "BGI/Ethornell CompressedBG (v1)",
-			"magic": b"CompressedBG___\0",
-		}
+		"cbg": FmtInfo("BGI/Ethornell CompressedBG (v1)",
+			magic=b"CompressedBG___\0",
+		),
 	},
 
 	"chunsoft": {
-		"at6p": {
-			"desc": "999 AT6P",
-			"ext": "dat",
-			"magic": b"AT6P",
-		},
+		"at6p": FmtInfo("999 AT6P",
+			ext="dat",
+			magic=b"AT6P"
+		),
 
-		"sir0": {
-			"desc": "999 SIR0 sprites",
-			"ext": "dat",
-			"magic": b"SIR0",
-		},
+		"sir0": FmtInfo("999 SIR0 sprites",
+			ext="dat",
+			magic=b"SIR0"
+		),
 	},
 
 	"cisrle": {
-		"cisrle": {
-			"desc": "CompuServe RLE (CompuServe Information Service)",
-			"ext": "rle",
-			"magic": (b"\x1bGH", b"\x1bGM"),
-		}
+		"cisrle": FmtInfo("CompuServe RLE (CompuServe Information Service)",
+			ext="rle",
+			magic=(b"\x1bGH", b"\x1bGM")
+		),
 	},
 
 	"croteam": {
-		"tbn": {
-			"desc": "Croteam Texture",
-			"ext": ("tbn", "tex"),
-			"magic": b"TVER\x04\0\0\0TDAT",
-		},
+		"tbn": FmtInfo("Croteam Texture",
+			ext=("tbn", "tex"),
+			magic=b"TVER\x04\0\0\0TDAT"
+		),
 	},
 
 	"dib": {
-		"bmp": {
-			"desc": "Microsoft Bitmap, Jigsaw Puzzle image",
-			"ext": ("dt", "bmp", "bmp24", "jig"),
-			"magic": (b"BM", b"JG"),
-			"mime": ("bmp", "x-bmp"),
-		},
+		"bmp": FmtInfo("Microsoft Bitmap, Jigsaw Puzzle image",
+			ext=("dt", "bmp", "bmp24", "jig"),
+			magic=(b"BM", b"JG"),
+			mime=("bmp", "x-bmp")
+		),
 
-		"dib": {
-			"desc": "Microsoft DIB",
-			"match": "dib",
-			"mime": "x-ms-bmp",
-		},
+		"dib": FmtInfo("Microsoft DIB",
+			match="dib",
+			mime="x-ms-bmp"
+		),
 
-		"ico": {
-			"desc": "Microsoft Icon",
-			"match": ("cur", "ico"),
-			"mime": ("vnd.microsoft.icon", "x-icon"),
-		},
+		"ico": FmtInfo("Microsoft Icon",
+			match=("cur", "ico"),
+			mime=("vnd.microsoft.icon", "x-icon")
+		),
 	},
 
 	"dpx": {
-		"dpx": {
-			"desc": "Digital Picture Exchange",
-			"ext": "dpx",
-			"mask": (
+		"dpx": FmtInfo("Digital Picture Exchange",
+			ext="dpx",
+			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\x00\xff\xff",
 					b"XPDS\0\0\0\0V\0.0",
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\x00\xff\xff",
 					b"SDPX\0\0\0\0V\0.0",
 			),
-			"mime": "dpx",
-		},
+			mime="dpx"
+		),
 	},
 
 	"eclipse": {
-		"eclipse": {
-			"desc": "Eclipse TILE",
-			"ext": ("tile", "tmsk"),
-			"mask": (b"\xff\xff\xff\xfe", b"\x07\x28\x00\x00"),
-		},
+		"eclipse": FmtInfo("Eclipse TILE",
+			ext=("tile", "tmsk"),
+			mask=(b"\xff\xff\xff\xfe", b"\x07\x28\x00\x00")
+		),
 	},
 
 	"elecbyte": {
-		"eb_fnt": {
-			"desc": "Elecbyte M.U.G.E.N. Font v1. Requires PCX",
-			"ext": "fnt",
-			"magic": b"ElecbyteFnt\0",
-		},
+		"eb_fnt": FmtInfo("Elecbyte M.U.G.E.N. Font v1. Requires PCX",
+			ext="fnt",
+			magic=b"ElecbyteFnt\0"
+		),
 
-		"eb_sff": {
-			"desc": "Elecbyte M.U.G.E.N. Sprite v1. Requires PCX",
-			"ext": "sff",
-			"magic": b"ElecbyteSpr\0",
-		},
+		"eb_sff": FmtInfo("Elecbyte M.U.G.E.N. Sprite v1. Requires PCX",
+			ext="sff",
+			magic=b"ElecbyteSpr\0"
+		),
 	},
 
-	"g00": {"g00": {"desc": "RealLive engine G00", "match": "g00"}},
+	"g00": {
+		"g00": FmtInfo("RealLive engine G00",
+			match="g00"
+		),
+	},
 
-	"gp4": {"gp4": {"desc": "elf AI5 engine GP4", "match": "gp4"}},
+	"gp4": {
+		"gp4": FmtInfo("elf AI5 engine GP4",
+			match="gp4"
+		),
+	},
 
 	"gpc": {
-		"gpc": {
-			"desc": "IDES/Fairytale PC-98 visual novel image",
-			"ext": "gpc",
-			"magic": b"PC98)GPCFILE   \0",
-		},
+		"gpc": FmtInfo("IDES/Fairytale PC-98 visual novel image",
+			ext="gpc",
+			magic=b"PC98)GPCFILE   \0"
+		),
 
-		"clm": {
-			"desc": "IDES/Fairytale PC-98 thumbnail? (no palette support)",
-			"match": "clm",
-		},
+		"clm": FmtInfo("IDES/Fairytale PC-98 thumbnail? (no palette support)",
+			match="clm"
+		),
 	},
 
 	"hel": {
-		"hel": {
-			"desc": "Herahera Animation (へらへらアニメ, HEL)",
-			"ext": "hel",
-			"magic": b"he1\0" b"\x01\0\0\0",
-		},
+		"hel": FmtInfo("Herahera Animation (へらへらアニメ, HEL)",
+			ext="hel",
+			magic=b"he1\0" b"\x01\0\0\0"
+		),
 	},
 
 	"hg3": {
-		"hg3": {
-			"desc": "CatSystem engine image",
-			"ext": "hg3",
-			"magic": b"HG-3",
-		},
+		"hg3": FmtInfo("CatSystem engine image",
+			ext="hg3",
+			magic=b"HG-3"
+		),
 	},
 
 	"ilbm": {
-		"ilbm": {
-			"desc": "Interleaved Bitmap (ILBM and PBM) (Extra Half-Brite, HAM, color cycling)",
-			"ext": ("bl1", "iff", "ilbm", "lbm"),
-			"mask": (
+		"ilbm": FmtInfo("Interleaved Bitmap (ILBM and PBM) (Extra Half-Brite, HAM, color cycling)",
+			ext=("bl1", "iff", "ilbm", "lbm"),
+			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"FORM\0\0\0\0ILBM",
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"FORM\0\0\0\0PBM ",
 			),
-			"mime": "x-ilbm",
-		},
+			mime="x-ilbm"
+		),
 	},
 
 	"jam": {
-		"jam": {
-			"desc": "Aladdin JAM format",
-			"ext": "jam",
-			"magic": b"XCOM",
-		},
+		"jam": FmtInfo("Aladdin JAM format",
+			ext="jam",
+			magic=b"XCOM"
+		),
 	},
 
 	"kyg": {
-		"kyg": {
-			"desc": "Kyss graphics format (KYG)",
-			"ext": "kyg",
-			"magic": b"KYGformat ver.0.10\x0d\x0a",
-		},
+		"kyg": FmtInfo("Kyss graphics format (KYG)",
+			ext="kyg",
+			magic=b"KYGformat ver.0.10\x0d\x0a"
+		),
 	},
 
 	"lwi": {
-		"lwi": {
-			"desc": "LightWork Image",
-			"ext": "lwi",
-			"magic": b"\x18\x31Copyright",
-		},
+		"lwi": FmtInfo("LightWork Image",
+			ext="lwi",
+			magic=b"\x18\x31Copyright"
+		),
 	},
 
 	"mac": {
-		"mac": {
-			"desc": "MacPaint",
-			"match": ("mac", "pntg"),
-			"mime": "x-macpaint",
-		},
+		"mac": FmtInfo("MacPaint",
+			match=("mac", "pntg"),
+			mime="x-macpaint"
+		),
 	},
 
 	"mag": {
-		"mag": {
-			"desc": "MAG (MAKI02)",
-			"ext": ("mag", "max"),
-			"magic": b"MAKI02  ",
-		},
+		"mag": FmtInfo("MAG (MAKI02)",
+			ext=("mag", "max"),
+			magic=b"MAKI02  "
+		),
 	},
 
 	"maki": {
-		"maki": {
-			"desc": "MAKIchan (MAKI01)",
-			"ext": "mki",
-			"magic": (b"MAKI01A ", b"MAKI01B "),
-		}
+		"maki": FmtInfo("MAKIchan (MAKI01)",
+			ext="mki",
+			magic=(b"MAKI01A ", b"MAKI01B "),
+		),
 	},
 
 	"msx": {
-		"msx": {
-			"desc": "MSX-BASIC dump, Graph Saurus",
+		"msx": FmtInfo("MSX-BASIC dump, Graph Saurus",
 			# You can sort of tell whether a file is an MSX-BASIC format,
 			# but you can rarely tell the screen mode it uses without the
 			# extension.
-			"match": (
+			match=(
 				# sc? = MSX-BASIC file
 				# s1? = Alternate field of a sc? file
 				# sr? = Graph Saurus file
@@ -701,70 +653,63 @@ DEC_MAP = {
 				"sca", "s1a",
 				"scc", "s1c", "srs", "yjk"
 			),
-			"magic": (
+			magic=(
 				b"\xfe\0\0\x00\x6a\0\0", # Graph saurus SR5
 			),
-			"mask": (
+			mask=(
 				# MSX uncompressed
 				b"\xff\xff\xff\0\0\xff\xff", b"\xfe\0\0\0\0\0\0",
 				# MSX compressed
 				b"\xff\xff\xff\0\0\xff\xff", b"\xfd\0\0\0\0\0\0",
-			),
-		},
+			)
+		),
 	},
 
 	"nokia": {
-		"nlm": {
-			"desc": "Nokia Logo Manager",
-			"ext": "nlm",
-			"mask": (
+		"nlm": FmtInfo("Nokia Logo Manager",
+			ext="nlm",
+			mask=(
 				# Sixth byte is version, 0 to 3
 				b"\xff\xff\xff\xff\xff\xfc", b"NLM \x01\x00",
-			),
-		},
-		"nol": {
-			"desc": "Nokia Operator Logo and Nokia Group Graphics (NOL/NGG)",
-			"ext": ("ngg", "no", "nol"),
-			"magic": (
+			)
+		),
+		"nol": FmtInfo("Nokia Operator Logo and Nokia Group Graphics (NOL/NGG)",
+			ext=("ngg", "no", "nol"),
+			magic=(
 				b"NGG\0\x01\x00",
 				b"NOL\0\x01\x00",
-			),
-		},
-		"npm": {
-			"desc": "Nokia Picture Message",
-			"ext": "npm",
-			"magic": b"NPM\0",
-		},
-		"nsl": {
-			"desc": "Nokia Startup Logo",
-			"ext": "nsl",
-			"mask": (
+			)
+		),
+		"npm": FmtInfo("Nokia Picture Message",
+			ext="npm",
+			magic=b"NPM\0"
+		),
+		"nsl": FmtInfo("Nokia Startup Logo",
+			ext="nsl",
+			mask=(
 				b"\xff\xff\xff\xff" b"\0\0" b"\xff\xff\xff\xff",
 				b"FORM" b"\0\0" b"VERS",
-			),
-		},
+			)
+		),
 	},
 
 	"pcf": {
-		"pcf": {
-			"desc": "PCF bitmap font",
-			"ext": "pcf",
-			"magic": b"\1fcp",
-		},
+		"pcf": FmtInfo("PCF bitmap font",
+			ext="pcf",
+			magic=b"\1fcp"
+		),
 	},
 
 	"pcx": {
-		"dcx": {
-			"desc": "Multi-image PCX",
-			"ext": "dcx",
-			"magic": b"\xb1\x68\xde\x3a",
-			"mime": "x-dcx",
-		},
+		"dcx": FmtInfo("Multi-image PCX",
+			ext="dcx",
+			magic=b"\xb1\x68\xde\x3a",
+			mime="x-dcx"
+		),
 
-		"pcx": {
-			"desc": "PC Paintbrush PCX (all versions, plus CGA mode)",
-			"ext": ("pcc", "pcx"),
-			"mask": (
+		"pcx": FmtInfo("PC Paintbrush PCX (all versions, plus CGA mode)",
+			ext=("pcc", "pcx"),
+			mask=(
 				# Second byte is version. Valid values are
 				# 0,2,3,4,5. (If 1 were a valid version, we
 				# could get away with just two masks. This
@@ -776,72 +721,65 @@ DEC_MAP = {
 				b"\xff\xfe\xfe", b"\x0a\x02\x00", # 2,3
 				b"\xff\xfe\xfe", b"\x0a\x04\x00", # 4,5
 			),
-			"mime": ("vnd.zbrush.pcx", "x-pcx"),
-		},
+			mime=("vnd.zbrush.pcx", "x-pcx")
+		),
 	},
 
 	"pdt": {
-		"pdt": {
-			"desc": "RealLive engine PDT10 and PDT11",
-			"ext": "pdt",
-			"mask": (
+		"pdt": FmtInfo("RealLive engine PDT10 and PDT11",
+			ext="pdt",
+			mask=(
 				# Match "PDT10" and "PDT11"
 				b"\xff\xff\xff\xff\xfe\xff\xff\xff", b"PDT10\x00\x00\x00",
 			)
-		},
+		),
 	},
 
 	"pgx": {
-		"pgx": {
-			"desc": "Glib2 engine image",
-			"ext": "pgx",
-			"magic": b"PGX\0",
-		},
+		"pgx": FmtInfo("Glib2 engine image",
+			ext="pgx",
+			magic=b"PGX\0"
+		),
 	},
 
 	"pi": {
-		"pi": {
-			"desc": "Yanagisawa's Pi",
-			"ext": "pi",
-			"magic": b"Pi",
-		},
+		"pi": FmtInfo("Yanagisawa's Pi",
+			ext="pi",
+			magic=b"Pi"
+		),
 	},
 
 	"pic": {
-		"pic": {
-			"desc": "Yanagisawa's PIC",
-			"ext": "pic",
-			"magic": b"PIC",
-		},
+		"pic": FmtInfo("Yanagisawa's PIC",
+			ext="pic",
+			magic=b"PIC"
+		),
 	},
 
 	"pic2": {
-		"pic2": {
-			"desc": "Yanagisawa's PIC2",
-			"ext": "p2",
-			"magic": b"P2DT",
-		},
+		"pic2": FmtInfo("Yanagisawa's PIC2",
+			ext="p2",
+			magic=b"P2DT"
+		),
 	},
 
 	"pictor": {
-		"pictor": {
-			"desc": "PCPaint PICtor",
-			"ext": "pic",
-			"magic": b"\x34\x12",
-		},
+		"pictor": FmtInfo("PCPaint PICtor",
+			ext="pic",
+			magic=b"\x34\x12"
+		),
 	},
 
 	"pnm": {
-		"pnm": {
-			"desc": "PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)",
-			"ext": (
+		"pnm": FmtInfo("PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)",
+			ext=(
 				"pbm", "pgm", "ppm", "pam", "pnm",
 				"pfm", "phm",
 				"p7",
 				"pgx"
 			),
-			"match": "mtv",
-			"mask": (
+			match="mtv",
+			mask=(
 				# Second byte is ASCII version.
 				b"\xff\xff", b"P1",
 				b"\xff\xfe", b"P2", # '2', '3'
@@ -851,7 +789,7 @@ DEC_MAP = {
 				b"\xff\xdf", b"PF", # 'F', 'f' (color/gray PFM)
 				b"\xff\xdf", b"PH", # 'H', 'h' (color/gray PHM)
 			),
-			"magic": (
+			magic=(
 				b"P7\n", # PAM
 				b"P7 332\n", # Xv thumbnail
 
@@ -859,7 +797,7 @@ DEC_MAP = {
 				b"PG ML ",
 				b"PG LM ",
 			),
-			"mime": (
+			mime=(
 				"x-portable-bitmap",       # PBM
 				"x-portable-graymap",      # Text PGM
 				"x-portable-greymap",      # Raw PGM. blame `file` for the spellings
@@ -867,256 +805,234 @@ DEC_MAP = {
 				"x-portable-arbitrarymap", # PAM
 				"x-portable-anymap",       # PNM
 				"x-xv-thumbnail",          # Xv
-			),
-		},
+			)
+		),
 	},
 
 	"prt": {
-		"prt": {
-			"desc": "Kid engine image",
-			"ext": ("cps", "prt"),
-			"magic": b"PRT\0",
-		},
+		"prt": FmtInfo("Kid engine image",
+			ext=("cps", "prt"),
+			magic=b"PRT\0"
+		),
 	},
 
-	"px": {"px": {"desc": "Leaf engine image", "match": "px"}},
+	"px": {
+		"px": FmtInfo("Leaf engine image",
+			match="px"
+		),
+	},
 
 	"q4": {
-		"q4": {
-			"desc": "MAJYO's Q4 (XLD4)",
+		"q4": FmtInfo("MAJYO's Q4 (XLD4)",
 			# This format has a magic sequence, but until we bump
 			# the signature limit to 16, it's not very useful, so
 			# match on extension
-			"match": "q4",
-			"#mask": (
+			match="q4",
+			mask=(
 				b"\xff\0\0\0" b"\0\0\0\0" b"\0\0\0" b"\xff\xff\xff\xff\xff",
 				b"\x1a\0\0\0" b"\0\0\0\0" b"\0\0\0" b"MAJYO",
-			),
-		},
+			)
+		),
 	},
 
 	"qoi": {
-		"qoi": {
-			"desc": "QuiteOK image",
-			"ext": "qoi",
-			"magic": b"qoif",
-			"mime": "qoi",
-		},
+		"qoi": FmtInfo("QuiteOK image",
+			ext="qoi",
+			magic=b"qoif",
+			mime="qoi"
+		),
 	},
 
 	"quake": {
-		"idsp": {
-			"desc": "id Software Sprite (Quake, Half-Life, and 32-bit variants)",
-			"ext": ("spr", "spr32"),
-			"magic": b"IDSP",
-		},
-		"lmp": {
-			"desc": "Quake LMP",
-			"match": "lmp",
-		},
+		"idsp": FmtInfo("id Software Sprite (Quake, Half-Life, and 32-bit variants)",
+			ext=("spr", "spr32"),
+			magic=b"IDSP"
+		),
+		"lmp": FmtInfo("Quake LMP",
+			match="lmp"
+		),
 	},
 
 	"sgi": {
-		"sgi": {
-			"desc": "Silicon Graphics Image",
-			"ext": ("bw", "rgb", "rgba", "sgi"),
-			"magic": b"\x01\xda",
-			"mime": "x-sgi",
-		},
+		"sgi": FmtInfo("Silicon Graphics Image",
+			ext=("bw", "rgb", "rgba", "sgi"),
+			magic=b"\x01\xda",
+			mime="x-sgi"
+		),
 	},
 
 	"siff": {
-		"pim": {
-			"desc": "SIFF PIM sprite and animation (first frame only)",
-			"ext": "pim",
-			"mask": (
+		"pim": FmtInfo("SIFF PIM sprite and animation (first frame only)",
+			ext="pim",
+			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 				b"SIFF\0\0\0\0PXAN",
-			),
-		},
+			)
+		),
 	},
 
 	"signum": {
-		"imc": {
-			"desc": "Signum! IMC",
-			"ext": "imc",
-			"magic": b"bimc0002",
-		},
+		"imc": FmtInfo("Signum! IMC",
+			ext="imc",
+			magic=b"bimc0002"
+		),
 	},
 
 	"sixel": {
-		"sixel": {
-			"desc": "SIXEL terminal graphics",
-			"match": ("six", "sixel"),
-			"magic": (
+		"sixel": FmtInfo("SIXEL terminal graphics",
+			match=("six", "sixel"),
+			magic=(
 				# SIXEL files may contain arbitrary terminal
 				# sequences, so detection is not foolproof.
 				b"\x90",  # 8-bit espace sequence
 				b"\x1bP", # 7-bit escape sequence
-			),
-		},
+			)
+		),
 	},
 
 	"skyroads": {
-		"skyroads": {
-			"desc": "SkyRoads LZS graphics",
-			"ext": "lzs",
-			"magic": b"CMAP",
-		},
+		"skyroads": FmtInfo("SkyRoads LZS graphics",
+			ext="lzs",
+			magic=b"CMAP"
+		),
 	},
 
 	"spooky": {
-		"tre": {
-			"desc": "Spooky Sprites Run-Length Encoded",
-			"ext": ("dta", "tre"),
-			"magic": b"tre1",
-		},
+		"tre": FmtInfo("Spooky Sprites Run-Length Encoded",
+			ext=("dta", "tre"),
+			magic=b"tre1"
+		),
 
-		"trs": {
-			"desc": "Spooky Sprites sprite",
-			"ext": "trs",
-			"magic": b"TCSF",
-		},
+		"trs": FmtInfo("Spooky Sprites sprite",
+			ext="trs",
+			magic=b"TCSF"
+		),
 	},
 
 	"sun": {
-		"sun": {
-			"desc": "Sun Raster",
-			"ext": (
+		"sun": FmtInfo("Sun Raster",
+			ext=(
 				"im1", "im4", "im8", "im24", "im32",
 				"ras", "sun"
 			),
-			"magic": b"\x59\xa6\x6a\x95",
-			"mime": "x-sun-raster",
-		},
+			magic=b"\x59\xa6\x6a\x95",
+			mime="x-sun-raster"
+		),
 	},
 
 	"tga": {
-		"tga": {
-			"desc": "Truevision TGA (TARGA)",
-			"match": "tga",
+		"tga": FmtInfo("Truevision TGA (TARGA)",
+			match="tga",
 			# Depending on the version, TGA has a signature... at the end
-			"mask": (
+			mask=(
 				b"\x00\xfe\xf6",
 				b"\x00\x00\x00",
 			),
-			"mime": "x-tga",
-		},
+			mime="x-tga"
+		),
 	},
 
 	"tim": {
-		"tim": {
-			"desc": "PlayStation image, multiple palettes",
-			"match": "tim",
-			"mask": (
+		"tim": FmtInfo("PlayStation image, multiple palettes",
+			match="tim",
+			mask=(
 				b"\xff\xff\xff\xff" b"\xf0\xff\xff\xff",
 				b"\x10\x00\x00\x00" b"\x00\x00\x00\x00",
 			),
-			"mime": "x-sony-tim",
-		},
+			mime="x-sony-tim"
+		),
 	},
 
 	"tlg": {
-		"tlg": {
-			"desc": "KiriKiri engine image (v5)",
-			"ext": "tlg",
-			"magic": (
+		"tlg": FmtInfo("KiriKiri engine image (v5)",
+			ext="tlg",
+			magic=(
 				b"TLG5.0\x00raw\x1a",
 				# Not supported
 				#b"TLG6.0\x00raw\x1a",
 				#b"TLG0.0\x00sds\x1a",
-			),
-		},
+			)
+		),
 	},
 
 	"txf": {
-		"txf": {
-			"desc": "TexFont Texture Mapped Font",
-			"ext": "txf",
-			"magic": b"\xfftxf",
-		},
+		"txf": FmtInfo("TexFont Texture Mapped Font",
+			ext="txf",
+			magic=b"\xfftxf"
+		),
 	},
 
 	"utahrle": {
-		"utahrle": {
-			"desc": "Utah RLE",
-			"ext": "rle",
-			"magic": b"\x52\xcc",
-		},
+		"utahrle": FmtInfo("Utah RLE",
+			ext="rle",
+			magic=b"\x52\xcc"
+		),
 	},
 
 	"wbmp": {
-		"wbmp": {
-			"desc": "Wireless Bitmap",
-			"magic": b"\0\0",
-			"match": "wbmp",
-			"mime": "vnd.wap.wbmp",
-		},
+		"wbmp": FmtInfo("Wireless Bitmap",
+			magic=b"\0\0",
+			match="wbmp",
+			mime="vnd.wap.wbmp"
+		),
 	},
 
 	"wgtspr": {
-		"wgtspr": {
-			"desc": "WGT Sprite",
-			"ext": "spr",
-			"mask": (
+		"wgtspr": FmtInfo("WGT Sprite",
+			ext="spr",
+			mask=(
 				# First byte is version.
 				b"\xfc\xff\xff\xff" b"\xff\xff\xff\xff" b"\xff\xff\xff\xff" b"\xff\xff\xff",
 					b"\x00\0 Sprite File ", # 0..3
 				b"\xff\xff\xff\xff" b"\xff\xff\xff\xff" b"\xff\xff\xff\xff" b"\xff\xff\xff",
 					b"\x04\0 Sprite File ", # 4
-			),
-		},
+			)
+		),
 	},
 
 	"wpx": {
-		"wbm": {
-			"desc": "Wild-Bug engine image",
-			"ext": "wbm",
-			"magic": b"WPX\x1aBMP\0",
-		},
+		"wbm": FmtInfo("Wild-Bug engine image",
+			ext="wbm",
+			magic=b"WPX\x1aBMP\0"
+		),
 
-		"wia": {
-			"desc": "Wild-Bug engine image sequence",
-			"ext": "wia",
-			"magic": b"WPX\x1aIA2\0",
-		},
+		"wia": FmtInfo("Wild-Bug engine image sequence",
+			ext="wia",
+			magic=b"WPX\x1aIA2\0"
+		),
 	},
 
 	"xcursor": {
-		"xcursor": {
-			"desc": "X11 cursor",
-			"magic": b"Xcur",
-			"mime": "x-xcursor",
-		},
+		"xcursor": FmtInfo("X11 cursor",
+			magic=b"Xcur",
+			mime="x-xcursor"
+		),
 	},
 
 	"xwd": {
-		"xwd": {
-			"desc": "X11 Window Dump",
-			"match": ("dmp", "xwd"),
-			"mask": (
+		"xwd": FmtInfo("X11 Window Dump",
+			match=("dmp", "xwd"),
+			mask=(
 				# Match X10 and X11 (0x06 and 0x07)
 				b"\0\0\0\0" b"\xff\xff\xff\xfe",
 				b"\0\0\0\0" b"\x00\x00\x00\x06",
 			),
-			"mime": "x-xwindowdump",
-		},
+			mime="x-xwindowdump"
+		),
 	},
 
 	"xyz": {
-		"xyz": {
-			"desc": "RPG Maker image",
-			"ext": "xyz",
-			"magic": b"XYZ1",
-		},
+		"xyz": FmtInfo("RPG Maker image",
+			ext="xyz",
+			magic=b"XYZ1"
+		),
 	},
 
 	# Formats requiring external libraries
 	"avif|heif": {
-		"avif": {
-			"desc": "AV1 Image File Format",
-			"ext": ("avif", "avifs"),
-			"mask": (
+		"avif": FmtInfo("AV1 Image File Format",
+			ext=("avif", "avifs"),
+			mask=(
 				# See heif definition for notes
 				# avic|avis
 				b"\0\0\0\x03" b"\xff\xff\xff\xff" b"\xff\xff\xff\xff",
@@ -1126,39 +1042,36 @@ DEC_MAP = {
 				#b"\0\0\0\x03" b"\xff\xff\xff\xff" b"\xff\xff\xff\xff",
 				#	b"\0\0\0\0" b"ftypavis",
 			),
-			"mime": "avif",
-		},
+			mime="avif"
+		),
 	},
 
 	"flif": {
-		"flif": {
-			"desc": "Free Lossless Image Format",
-			"ext": "flif",
-			"magic": b"FLIF",
-		},
+		"flif": FmtInfo("Free Lossless Image Format",
+			ext="flif",
+			magic=b"FLIF"
+		),
 	},
 
 	"gif": {
-		"gif": {
-			"desc": "Graphics Interchange Format",
-			"ext": ("gif", "gif87", "gif89"),
-			"magic": (
+		"gif": FmtInfo("Graphics Interchange Format",
+			ext=("gif", "gif87", "gif89"),
+			magic=(
 				b"GIF87a",
 				b"GIF89a",
 			),
-			"mime": "gif",
-		},
+			mime="gif"
+		),
 	},
 
 	"heif": {
-		"heif": {
-			"desc": "High Efficiency Image File Format",
-			"ext": (
+		"heif": FmtInfo("High Efficiency Image File Format",
+			ext=(
 				"heic", "heics",
 				"heif", "heifs",
 				"hif",
 			),
-			"mask": (
+			mask=(
 				# HEIF follows ISOBMFF, so we can't stop at 'ftyp'
 				# or we could match a few hundred other formats.
 				# https://github.com/file/file/blob/master/magic/Magdir/animation
@@ -1194,30 +1107,27 @@ DEC_MAP = {
 				b"\0\0\0\x03" b"\xff\xff\xff\xff" b"\xff\xff\xff\xff",
 					b"\0\0\0\0" b"ftypmsf1",
 			),
-			"mime": ("heic", "heif", "heic-sequence", "heif-sequence"),
-		},
+			mime=("heic", "heif", "heic-sequence", "heif-sequence")
+		),
 	},
 
 	"jbig": {
-		"jbig": {
-			"desc": "JBIG",
-			"match": ("bie", "jbg", "jbig"),
-			"mime": "jbig",
-		},
+		"jbig": FmtInfo("JBIG",
+			match=("bie", "jbg", "jbig"),
+			mime="jbig"
+		),
 	},
 
 	"jbig2": {
-		"jbig2": {
-			"desc": "JBIG2",
-			"ext": "jb2",
-			"magic": b"\x97JB2\x0d\x0a\x1a\x0a",
-		},
+		"jbig2": FmtInfo("JBIG2",
+			ext="jb2",
+			magic=b"\x97JB2\x0d\x0a\x1a\x0a"
+		),
 	},
 
 	"jpeg": {
-		"jpeg": {
-			"desc": "JPEG, MPO",
-			"ext": (
+		"jpeg": FmtInfo("JPEG, MPO",
+			ext=(
 				"dt2", # Microsoft Messenger
 				"jfi", "jfif", "jif",
 				"jpe", "jpeg", "jpg",
@@ -1230,94 +1140,87 @@ DEC_MAP = {
 			),
 			# In a well written JPEG the third byte would be 0xff.
 			# Not all JPEG files are well written.
-			"magic": b"\xff\xd8",
-			"mime": "jpeg",
-		},
+			magic=b"\xff\xd8",
+			mime="jpeg"
+		),
 	},
 
 	"jpeg2000": {
-		"j2k": {
-			"desc": "JPEG 2000 codestream",
-			"ext": ("j2c", "j2k"),
-			"magic": b"\xff\x4f\xff\x51",
-			"mime": "x-jp2-codestream",
-		},
+		"j2k": FmtInfo("JPEG 2000 codestream",
+			ext=("j2c", "j2k"),
+			magic=b"\xff\x4f\xff\x51",
+			mime="x-jp2-codestream"
+		),
 
-		"jp2": {
-			"desc": "JPEG 2000",
-			"ext": (
+		"jp2": FmtInfo("JPEG 2000",
+			ext=(
 				"jp2", "jpc",
 				"jhc", "jph", # High troughput
 			),
-			"magic": b"\r\n\x87\n",
-			"mask": (
+			magic=b"\r\n\x87\n",
+			mask=(
 				b"\xff\xff\xff\x00" b"\xff\xff\xff\xff" b"\xff\xff\xff\xff",
 					b"\0\0\0\0" b"jP\x20\x20" b"\r\n\x87\n",
 			),
-			"mime": "jp2",
-		},
+			mime="jp2"
+		),
 	},
 
 	"jpegls": {
-		"jpegls": {
+		"jpegls": FmtInfo("JPEG LS",
 			# JPEG-LS and JPEG share the same structure, but
 			# JPEG-LS uses the F7 marker. Hopefully that's always
 			# at offset 2.
-			"desc": "JPEG LS",
-			"ext": "jls",
-			"magic": b"\xff\xd8\xff\xf7",
-			"mime": "jls",
-		},
+			ext="jls",
+			magic=b"\xff\xd8\xff\xf7",
+			mime="jls"
+		),
 	},
 
 	"jpegxl": {
-		"jpegxl": {
-			"desc": "JPEG XL",
-			"ext": "jxl",
-			"magic": b"\xff\x0a",
-			"mask": (
+		"jpegxl": FmtInfo("JPEG XL",
+			ext="jxl",
+			magic=b"\xff\x0a",
+			mask=(
 				b"\xff\xff\xff\x00" b"\xff\xff\xff\xff" b"\xff\xff\xff\xff",
 					b"\0\0\0\0" b"JXL\x20" b"\r\n\x87\n",
 			),
-			"mime": "jxl",
-		},
+			mime="jxl"
+		),
 	},
 
 	"lerc": {
-		"lerc": {
-			"desc": "Limited Error Raster Compression",
-			"ext": ("lrc", "lerc", "lerc1", "lerc2"),
-			"magic": (
+		"lerc": FmtInfo("Limited Error Raster Compression",
+			ext=("lrc", "lerc", "lerc1", "lerc2"),
+			magic=(
 				b"CntZImage ",
 				b"Lerc2 ",
-			),
-		},
+			)
+		),
 	},
 
 	"png": {
-		"png": {
-			"desc": "Portable Network Graphics, Malie engine MGF",
-			"ext": ("png", "mgf"),
-			"magic": (
+		"png": FmtInfo("Portable Network Graphics, Malie engine MGF",
+			ext=("png", "mgf"),
+			magic=(
 				b"\x89PNG\r\n\x1a\n",
 				b"MalieGF\0",
 			),
-			"mime": "png",
-		},
+			mime="png"
+		),
 	},
 
 	"raw": {
-		"raw": {
-			"desc": "Raw camera formats",
-			"ext": (
+		"raw": FmtInfo("Raw camera formats",
+			ext=(
 				"crw", # Canon
 				"orf", # Olympus
 				"raf", # Fuji
 				"raw",
 				"rw2", "rwl", # Panasonic (it's RWL, not RW1!)
 			),
-			"match": RAW_TIFF_EXTS,
-			"magic": TIFF_MAGICS + (
+			match=RAW_TIFF_EXTS,
+			magic=TIFF_MAGICS + (
 				# Canon CRW
 				b"II\x1a\0",
 				# Olympus ORF
@@ -1329,46 +1232,43 @@ DEC_MAP = {
 				# Fujifilm Raw
 				b"FUJIFILMCCD-RAW ",
 			),
-			"mime": (
+			mime=(
 				"x-dcraw",
 				"x-canon-cr2", "x-canon-crw",
 				"x-fuji-raf",
 				"x-olympus-orf"
-			),
-		},
+			)
+		),
 	},
 
 	"svg": {
-		"svg": {
-			"desc": "Scalable Vector Graphics",
-			"match": ("svg", "svgz"),
-			"magic": (
+		"svg": FmtInfo("Scalable Vector Graphics",
+			match=("svg", "svgz"),
+			magic=(
 				b"<svg ",
 				b"<?xml ",
 			),
-			"mime": ("svg+xml", "svg+xml-compressed"),
-		},
+			mime=("svg+xml", "svg+xml-compressed")
+		),
 	},
 
 	"tiff": {
-		"tiff": {
-			"desc": "Tag Image File Format, BigTIFF",
-			"ext": ("g3n", "tif", "tiff") + RAW_TIFF_EXTS,
-			"magic": TIFF_MAGICS,
-			"mime": "tiff",
-		},
+		"tiff": FmtInfo("Tag Image File Format, BigTIFF",
+			ext=("g3n", "tif", "tiff") + RAW_TIFF_EXTS,
+			magic=TIFF_MAGICS,
+			mime="tiff"
+		),
 	},
 
 	"webp": {
-		"webp": {
-			"desc": "WebP",
-			"ext": "webp",
-			"mask": (
+		"webp": FmtInfo("WebP",
+			ext="webp",
+			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"RIFF\0\0\0\0WEBP",
 			),
-			"mime": "webp",
-		},
+			mime="webp"
+		),
 	},
 }
 
@@ -1385,7 +1285,7 @@ MIME_APPLICATION_MAP = (
 	"x-xar",
 	"zip",
 
-	# ORA - OpenRaster
+	# OpenRaster (.ora)
 	"openraster",
 	# Krita KRA/KRZ
 	"x-krita",
@@ -1421,8 +1321,13 @@ def u8_array(b, limit=None, readable=False):
 		eprint('array exceeds length limit. will truncate:', b)
 	return ','.join(map(lambda i: graph_or_hex(i, readable), b[0:limit]))
 
-class FmtSize(collections.namedtuple('size', ('size', 'id'))):
-	__slots__ = ()
+class FmtSize(typing.NamedTuple):
+	size: int
+	'''Expected file size'''
+
+	id: int
+	'''Decoder id'''
+
 	@staticmethod
 	def struct(limit):
 		return '''\
@@ -1435,8 +1340,16 @@ class FmtSize(collections.namedtuple('size', ('size', 'id'))):
 		return '\t{{ .size={}, .id={} }},'.format(
 			self.size, self.id)
 
-class FmtMagic(collections.namedtuple('magic', ('mask', 'bytes', 'id'))):
-	__slots__ = ()
+class FmtMagic(typing.NamedTuple):
+	mask: bytes
+	'''AND mask to be applied to the file before comparison'''
+
+	bytes: bytes
+	'''Magic sequence'''
+
+	id: int
+	'''Decoder id'''
+
 	@staticmethod
 	def struct(limit):
 		return '''\
@@ -1461,8 +1374,13 @@ class FmtMagic(collections.namedtuple('magic', ('mask', 'bytes', 'id'))):
 				return self.bytes < other.bytes
 		return d < 0
 
-class FmtExt(collections.namedtuple('ext', ('ext', 'id'))):
-	__slots__ = ()
+class FmtExt(typing.NamedTuple):
+	ext: str
+	'''This extension'''
+
+	id: int
+	'''Decoder id, or -1 if this extension is not needed for identification'''
+
 	@staticmethod
 	def struct(limit):
 		return '''\
@@ -1490,14 +1408,14 @@ def full_mask(mag, id):
 	raise BaseException('magic must be bytes sequence: ' + mag)
 
 def mask_from_magic(info, id):
-	magic = info.get('magic')
+	magic = info.magic
 	if isinstance(magic, (bytes, str)):
 		yield full_mask(magic, id)
 	elif magic:
 		yield from map(lambda m: full_mask(m, id), magic)
 
 def mask_extract(name, info, id):
-	masks = info.get('mask')
+	masks = info.mask
 	if masks:
 		if len(masks) % 2 != 0:
 			raise BaseException('invalid mask sequence length in ' + name)
@@ -1515,8 +1433,15 @@ def ext_iter(exts, id=-1):
 		yield from map(lambda e: FmtExt(e, id), exts)
 
 # fmt_desc is defined in wudefs.h
-class FmtDesc(collections.namedtuple('desc', ('dec', 'name', 'info'))):
-	__slots__ = ()
+class FmtDesc(typing.NamedTuple):
+	dec: str
+	'''Decoder family'''
+
+	name: str
+	'''Format name'''
+
+	info: FmtInfo
+
 	def extern(self):
 		dec, name, info = self
 		is_auto = dec == 'auto'
@@ -1538,25 +1463,25 @@ class FmtDesc(collections.namedtuple('desc', ('dec', 'name', 'info'))):
 			.is_auto = {2},
 			.dec.{3} = &{4}_{3},
 		}},'''.format(u8_array(name, name_limit, True),
-			info['desc'], is_auto_str, suffix, name)
+			info.desc, is_auto_str, suffix, name)
 
 	def get_exts(self, id):
-		yield from ext_iter(self.info.get('ext'))
-		yield from ext_iter(self.info.get('match'), id)
+		yield from ext_iter(self.info.ext)
+		yield from ext_iter(self.info.match, id)
 
 	def get_magics(self, id):
 		yield from mask_extract(self.name, self.info, id)
 		yield from mask_from_magic(self.info, id)
 
 	def get_sizes(self, id):
-		sizes = self.info.get('size')
+		sizes = self.info.size
 		if isinstance(sizes, int):
 			yield FmtSize(sizes, id)
 		elif sizes:
 			yield from map(lambda s: FmtSize(s, id), sizes)
 
 	def get_mimes(self, _id):
-		mime = self.info.get('mime')
+		mime = self.info.mime
 		if isinstance(mime, str):
 			yield mime
 		elif mime:
@@ -1680,7 +1605,7 @@ def show_supported(fmt_map):
 	print(header)
 	print('-' * (len(header) + 1))
 	foreach(print_tab, sorted(
-		map(lambda fmt: (fmt.dec, fmt.name, fmt.info['desc']), fmt_map)
+		map(lambda fmt: (fmt.dec, fmt.name, fmt.info.desc), fmt_map)
 	))
 	print()
 
@@ -1710,13 +1635,13 @@ def show_supported(fmt_map):
 def extract_fmt(dec, fmts):
 	return map(lambda t: FmtDesc(dec, *t), fmts.items())
 
-def enabled_filter(enabled, t):
-	return any(map(enabled.__contains__, t[0].split('|')))
+def contains_any(contains, t):
+	return any(map(contains, t[0].split('|')))
 
 def fmts_from_decs(dec, enabled=None):
 	it = dec.items()
 	if enabled:
-		fn = partial(enabled_filter, enabled)
+		fn = partial(contains_any, enabled.__contains__)
 		it = filter(fn, it)
 	return chain.from_iterable(starmap(extract_fmt, it))
 
