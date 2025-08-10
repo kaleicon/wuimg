@@ -140,9 +140,9 @@ Once you're ready, run
 
 	meson install -C BUILDDIR
 
-A lone executable `wu` will be produced, and copied to whatever location meson
-uses as default. This might require root privileges though. To set a different
-location, do
+A lone executable `wu` and a .desktop file will be installed to whatever
+location meson uses as default. This is typically /usr/local, which typically
+requires root privileges. To set a different location, do
 
 	meson configure --prefix PREFIX BUILDDIR
 
@@ -235,12 +235,13 @@ Same, but you'd rather keep it in a more compact format?
 	wu w -s weird.pi | convert - weird.png   # using imagemagick, or...
 	wu w -s weird.pi | pamtopng > weird.png  # using netpbm
 
-Have some raw files?
+Have a raw data dump?
 
-	# 640x480 8-bit RGB. Remember to quote the string!
-	wu -r 'w:640 h:480 channels:3 bitdepth:8' RAW_FILE1 ...
+	# Interpret as 640x480 8-bit RGB. Remember to quote the string!
+	wu -r 'w:640 h:480 channels:3 bitdepth:8' DUMP_FILE
 
-Some unknown but uncompressed format?
+Have a simple uncompressed format we don't know about?
 
-	# 1-bit monochrome, dimensions read from file
+	# 1-bit monochrome. Interpret first u16 word as width, next word
+	# as height, then skip 20 bytes before reading the image.
 	wu -r 'endian:little w:<u16> h:<u16> c:1 b:1 skip:0x14' FILE

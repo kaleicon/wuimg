@@ -1336,13 +1336,28 @@ DEC_MAP = {
 
 # application/ mimetypes supported by libarchive
 MIME_APPLICATION_MAP = (
-	"gzip",
+	"vnd.rar",
 	"x-7z-compressed",
+	"x-archive", # .ar
 	"x-cpio",
+	"x-iso9660-image",
 	"x-lzh-compressed",
-	"x-rar",
+	"x-rar-compressed", # deprecated
 	"x-tar",
+	"x-xar",
 	"zip",
+
+	# ORA - OpenRaster
+	"openraster",
+	# Krita KRA/KRZ
+	"x-krita",
+
+	# Comic book archives
+	"vnd.comicbook-rar",
+	"vnd.comicbook+zip",
+	# Deprecated comic book types
+	"x-cbr",
+	"x-cbz",
 )
 
 def foreach(fn, it):
@@ -1569,8 +1584,7 @@ def print_fmt_ext(fmt_map, limit):
 def print_fmt_size(fmt_map):
 	sizes = sorted(fmt_map_iter(FmtDesc.get_sizes, fmt_map), reverse=True)
 	struct_and_define(FmtSize, 32)
-	for size in sizes:
-		print(size.declare())
+	foreach(lambda size: print(size.declare()), sizes)
 	end_def()
 
 def print_fmt_desc(fmt_map, limit):
@@ -1615,11 +1629,6 @@ def gen_maps(fmt_map):
 def dec_header(fmt_map):
 	print_include('wudefs.h');
 	foreach(lambda fmt: print(fmt.extern()), fmt_map)
-
-def get_mimes(fmt_map):
-	image = map('image/'.__add__, fmt_map_iter(FmtDesc.get_mimes, fmt_map))
-	application = map('application/'.__add__, MIME_APPLICATION_MAP)
-	foreach(print, chain(image, application, ('inode/directory',)))
 
 def show_supported(fmt_map):
 	width = 1 + max(map(lambda fmt: max(len(fmt.dec), len(fmt.name)), fmt_map))
@@ -1681,10 +1690,44 @@ def enabled_formats(file, include=tuple()):
 		)
 	))
 
-def print_names(dec_map):
+def print_names(fmt_map):
 	foreach(print, sorted(set(chain.from_iterable(
-		map(lambda s: s.split('|'), filter(lambda s: s != 'auto', dec_map.keys()))
+		map(lambda s: s.split('|'), filter(lambda s: s != 'auto', fmt_map.keys()))
 	))))
+
+def mime_fmt(type, it):
+	return ''.join(map(lambda s: f'{type}/{s};', it))
+
+def write_desktop(out, entries):
+	with open(out, "w") as fp:
+		print('[Desktop Entry]', file=fp)
+		foreach(lambda t: print(*t, sep='=', file=fp), entries)
+
+def gen_desktop_file(fmt_map, desktop_file, archive_file):
+	image_mime = mime_fmt('image', fmt_map_iter(FmtDesc.get_mimes, fmt_map))
+	common = (
+		('Categories', 'Graphics;Viewer;2DGraphics;'),
+		('Icon', 'applications-graphics'),
+		('Terminal', 'true'),
+		('TryExec', 'wu'),
+		('Type', 'Application'),
+	)
+
+	desktop = (
+		('Name', 'wu'),
+		('GenericName', 'Image viewer'),
+		('Exec', 'wu %F'),
+		('MimeType', image_mime + 'inode/directory;'),
+	)
+	archive = (
+		('Name', 'wu archive'),
+		('GenericName', 'Comic book/archive image viewer'),
+		('Exec', 'wu archive %f'),
+		('MimeType', mime_fmt('application', MIME_APPLICATION_MAP)),
+	)
+
+	write_desktop(desktop_file, desktop + common)
+	write_desktop(archive_file, archive + common)
 
 if __name__ == '__main__':
 	enabled = None
@@ -1704,6 +1747,6 @@ if __name__ == '__main__':
 	{
 		'maps': gen_maps,
 		'header': dec_header,
-		'mime': get_mimes,
+		'desktop': gen_desktop_file,
 		'show': show_supported,
-	}[sys.argv[i]](fmt_map)
+	}[sys.argv[i]](fmt_map, *sys.argv[i+1:])

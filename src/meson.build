@@ -90,14 +90,14 @@ endforeach
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
 
 src_list += [custom_target('dec_maps',
-		input : [dec_enable],
-		output : ['dec_maps.c'],
+		input : dec_enable,
+		output : 'dec_maps.c',
 		capture : true,
 		feed : true,
 		command : [python, comptime, 'maps']),
 	custom_target('dec_fn',
-		input : [dec_enable],
-		output : ['dec_fn.h'],
+		input : dec_enable,
+		output : 'dec_fn.h',
 		capture : true,
 		feed : true,
 		command : [python, comptime, 'header']),
@@ -152,12 +152,23 @@ window_map = {
 	'window_drm': ['gbm', 'libdrm'],
 	'window_glfw': ['glfw3'],
 }
-window_enable = configuration_data()
-window_src_list = []
 window_dep_list = [
 	dependency('epoxy', required : false),
 	dependency('libarchive', required : false),
 ]
+window_src_list = [
+	'main.c',
+
+	'display.c',
+	'events.c',
+	'extract.c',
+	'opengl.c',
+
+	'window.c',
+	'window/base.c',
+	'window/egl.c',
+]
+window_enable = configuration_data()
 
 foreach backend, libs : window_map
 	state = get_option(backend)
@@ -194,18 +205,6 @@ if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 endif
 
 window_enable = configure_file(output : 'window_enable.def', configuration : window_enable)
-window_src_list += [
-	'main.c',
-
-	'display.c',
-	'events.c',
-	'extract.c',
-	'opengl.c',
-
-	'window.c',
-	'window/base.c',
-	'window/egl.c',
-]
 
 executable('wu', window_src_list,
 	dependencies : dep_list + window_dep_list,
@@ -219,6 +218,13 @@ executable('wufuzz', ['main_fuzz.c'],
 	dependencies : dep_list,
 	link_with : libuwu,
 	build_by_default : false)
+custom_target('desktop',
+	feed : true,
+	input : dec_enable,
+	output : ['wu.desktop', 'wu-archive.desktop'],
+	command : [python, comptime, 'desktop', '@OUTPUT@'],
+	install : true,
+	install_dir: get_option('datadir') / 'applications')
 custom_target('formats',
 	capture : true,
 	output : 'FORMATS.txt',

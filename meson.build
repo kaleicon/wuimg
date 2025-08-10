@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: 0BSD
 # SPDX-FileCopyrightText: 2020 kaleido
 project('wu', 'c', 'cpp',
-	default_options : ['optimization=3', 'warning_level=3',
-		'b_lto=true', 'b_pie=true', 'c_std=c99'],
+	default_options : [
+		'optimization=3',
+		'warning_level=3',
+		'b_lto=true',
+		'b_pie=true',
+		'c_std=c99'
+	],
 	license : '0BSD')
 
 cc = meson.get_compiler('c')
