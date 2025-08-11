@@ -12,9 +12,6 @@
 #include "misc/math.h"
 #include "raster/fmt.h"
 
-#define MACRO_CASE_SPACE case ' ': case '\f': case '\n': case '\r': case '\t': case '\v':
-#define MACRO_CASE_DIGIT case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
-
 static const size_t LINE_HEIGHT = 6;
 
 struct sixel_colormap {
@@ -258,7 +255,7 @@ struct wu_st sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 		case color_introducer:
 			read_color(&tp, &map);
 			break;
-		MACRO_CASE_SPACE
+		case '\n': case '\r':
 			break;
 		default:
 			write_color(dst + line + x, &map, img->w, c, 1);
@@ -322,7 +319,7 @@ struct wuimg *img) {
 				msg = "stopping at bad color";
 			}
 			break;
-		MACRO_CASE_SPACE
+		case '\n': case '\r':
 			break;
 		default:
 			if (c >= 0x80) {
@@ -357,21 +354,14 @@ unsigned int *raster, const size_t len) {
 	 * Pad (aspect denominator) is the horizontal aspect ratio. Required.
 	 * Ph is the horizontal image size in pixels. Optional.
 	 * Pv in the vertical size. Optional. */
-	for (size_t i = 0; i < len;) {
+	for (size_t i = 0; i < len; ++i) {
+		uintmax_t val;
+		mp_scan_uint(tp, 5, &val);
+		raster[i] = (unsigned)val;
 		const int c = mp_next_char(tp);
 		switch (c) {
-		MACRO_CASE_DIGIT
-			;const unsigned prev = raster[i];
-			raster[i] = raster[i] * 10 - '0' + (unsigned)c;
-			if (raster[i] < prev) {
-				return WUERR_HERE(wu_int_overflow);
-			}
-			break;
-		case ';':
-			++i;
-			break;
-		case EOF:
-			return WUERR_HERE(wu_unexpected_eof);
+		case ';': break;
+		case EOF: return WUERR_HERE(wu_unexpected_eof);
 		default:
 			--tp->pos;
 			return WU_OK;
@@ -381,48 +371,41 @@ unsigned int *raster, const size_t len) {
 }
 
 static struct wu_st dcs_parse(struct mparser *tp,
-unsigned char *macro, const size_t len) {
-	int num_len = 0;
-	for (size_t i = 0; i < len;) {
-		int c = mp_next_char(tp);
+unsigned *macro, const size_t len) {
+	/* Format (after DCS): P1 ; P2 ; P3 ; 'q'
+	 * P1 is the pixel vertical aspect ratio, in range 0-9. 0 if omitted.
+	 * P2 is whether 0 pixels are set to the background color or not
+	 *     modified. In range 0-2.
+	 * P3 is the horizontal grid size, the distance between two pixels.
+	 *     No idea how/if this influences anything.
+	 * Any of these components may be omitted. The last semicolon may or
+	 * may not be present. */
+	int c;
+	for (size_t i = 0; i < len; ++i) {
+		uintmax_t val;
+		mp_scan_uint(tp, 1, &val);
+		macro[i] = (unsigned)val;
+		c = mp_next_char(tp);
 		switch (c) {
-		MACRO_CASE_DIGIT
-			if (num_len > 0) {
-				return wuerr(wu_invalid_header,
-					"DCS parameter exceeds range");
-			}
-			macro[i] = (unsigned char)(c - '0');
-			++num_len;
-			break;
-		case ';':
-			num_len = 0;
-			++i;
-			break;
-		case 'q':
-			return WU_OK;
-		case EOF:
-			return WUERR_HERE(wu_unexpected_eof);
-		default:
-			return wuerr(wu_invalid_header, "bad DCS character");
+		case ';': break;
+		case 'q': return WU_OK;
+		case EOF: return WUERR_HERE(wu_unexpected_eof);
+		default: return wuerr(wu_invalid_header, "bad DCS character");
 		}
 	}
-	return (mp_next_char(tp) == 'q')
-		? WU_OK
-		: wuerr(wu_invalid_header, "badly terminated DCS");
+	c = mp_next_char(tp);
+	switch (c) {
+	case 'q': return WU_OK;
+	case EOF: return WUERR_HERE(wu_unexpected_eof);
+	}
+	return wuerr(wu_invalid_header, "badly terminated DCS");
 }
 
 static struct wu_st sixel_calc_parameters(struct sixel_desc *desc,
 struct wuimg *img) {
-	/* Format (after DCS): P1 ; P2 ; P3 ; 'q'
-	 * P1 is the pixel vertical aspect ratio, in range 0-9. 2 if omitted.
-	 * P2 is whether 0 pixels are set to the background color or not
-	 *     modified. In range 0-2.
-	 * P3 is the horizontal grid size, the distance between two pixels.
-	 *     I don't know its range.
-	 * Any of these components may be omitted. */
 	struct mparser *tp = &desc->tp;
 
-	unsigned char macro[3] = {0};
+	unsigned macro[3] = {0};
 	struct wu_st status = dcs_parse(tp, macro, ARRAY_LEN(macro));
 	if (!wu_isok(status)) {
 		return status;
@@ -444,7 +427,7 @@ struct wuimg *img) {
 		pan = 2;
 		break;
 	default:
-		return WUERR_HERE(wu_invalid_header);
+		return wuerr(wu_invalid_header, "DCS aspect ratio out of range");
 	}
 	switch (macro[1]) {
 	case 0: case 2:
@@ -454,13 +437,13 @@ struct wuimg *img) {
 		desc->p2 = sixel_retain;
 		break;
 	default:
-		return WUERR_HERE(wu_invalid_header);
+		return wuerr(wu_invalid_header, "bad DCS background setting");
 	}
 	desc->horizontal_grid_size = macro[2];
 
 	const int c = mp_next_nonspace(tp);
 	if (c == raster_attributes) {
-		unsigned int raster[4] = {0};
+		unsigned raster[4];
 		status = get_raster_attributes(tp, raster, ARRAY_LEN(raster));
 		if (!wu_isok(status)) {
 			return status;

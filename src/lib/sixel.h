@@ -14,7 +14,7 @@ struct sixel_desc {
 	struct mparser tp;
 
 	enum sixel_background_color p2;
-	unsigned char horizontal_grid_size;
+	unsigned horizontal_grid_size;
 };
 
 struct wu_st sixel_decode(const struct sixel_desc *desc, struct wuimg *img);
