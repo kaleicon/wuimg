@@ -36,6 +36,7 @@ struct icc_assembler {
 struct jpeg_state {
 	struct jpeg_decompress_struct dinfo;
 	struct jpeg_error_mgr jerr;
+	long file_offset;
 	long *soi_offsets;
 
 	jmp_buf jmp;
@@ -353,7 +354,7 @@ const struct wu_conf *conf, const int i) {
 
 	struct jpeg_decompress_struct *dinfo = &js->dinfo;
 
-	const long pos = i ? js->soi_offsets[i-1] : 0;
+	const long pos = i ? js->soi_offsets[i-1] : js->file_offset;
 	fseek(infile->ifp, pos, SEEK_SET);
 	jpeg_stdio_src(dinfo, infile->ifp);
 
@@ -416,10 +417,20 @@ const enum image_event ev) {
 		: WU_NO_CHANGE;
 }
 
+static long header_skip(int c) {
+	switch (c) {
+	case 'E': return 0x15; // Esm Software PIX
+	case 0x80: return 0x200; // Ricoh J6I
+	}
+	return 0;
+}
+
 static struct wu_st init_jpeg(struct image_file *infile,
 const struct wu_conf *_c) {
 	(void)_c;
 	struct jpeg_state *js = infile->dec_state;
+	const int c = fgetc(infile->ifp);
+	js->file_offset = header_skip(c);
 	js->dinfo.client_data = infile;
 	js->dinfo.err = jpeg_std_error(&js->jerr);
 	js->jerr.error_exit = jerror_exit;

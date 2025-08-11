@@ -1139,7 +1139,7 @@ DEC_MAP: DecMap = {
 	},
 
 	"jpeg": {
-		"jpeg": FmtInfo("JPEG, MPO",
+		"jpeg": FmtInfo("JPEG, MPO, Esm Software PIX, Ricoh J6I",
 			ext=(
 				"dt2", # Microsoft Messenger
 				"jfi", "jfif", "jif",
@@ -1150,10 +1150,18 @@ DEC_MAP: DecMap = {
 				"thm",
 				# Not sure where I got this from. Conflicts with Tiny Stuff
 				"tn3",
+				"pix", # ESM
+				"j6i", # Ricoh J6I
 			),
-			# In a well written JPEG the third byte would be 0xff.
-			# Not all JPEG files are well written.
-			magic=b"\xff\xd8",
+			magic=(
+				# In a well written JPEG the third byte would be 0xff.
+				# Not all JPEG files are well written.
+				b"\xff\xd8",
+				# ESM
+				b"Esm Software PIX file\xff\xd8",
+				# Ricoh
+				b"\x80\x3eDSCIM\0",
+			),
 			mime="jpeg"
 		),
 	},
