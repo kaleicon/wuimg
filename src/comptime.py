@@ -1659,12 +1659,11 @@ def show_supported(fmt_map: Sequence[FmtDesc]) -> None:
 	print()
 
 	# MIME types
-	if False:
-		mimes = sorted(map(lambda m: (fmt_map[m.id].name, m.mime),
-			fmt_map_iter(FmtDesc.get_mimes, fmt_map)
-		))
-		print('MIME types:', len(mimes))
-		foreach(print_tab, mimes)
+	mimes = sorted(map(lambda m: (fmt_map[m.id].name, m.mime),
+		fmt_map_iter(FmtDesc.get_mimes, fmt_map)
+	))
+	print('MIME types:', len(mimes))
+	foreach(print_tab, mimes)
 
 def mime_fmt(type: str, it: Iterable[str]) -> str:
 	return ''.join(map(lambda s: f'{type}/{s};', sorted(set(it))))

@@ -134,10 +134,10 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 287
-565, a64, aas, abm, als, apd, art, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cps, cr2, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, ff, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hg3, hgr, hif, hir, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mpo, mtv, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr5, sr6, sr7, sr8, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 292
+565, a64, aas, abm, als, apd, art, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cps, cr2, cr3, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, ff, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hg3, hgr, hif, hir, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mpo, mrw, mtv, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 176
+Known magic sequences: 179
 aipd      b'AIPD'
 aliaspix  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08'
 amibios   b'GRFX'
@@ -264,8 +264,11 @@ pnm       b'PG ML '
 pnm       b'PH'
 prt       b'PRT\x00'
 pxy       b'\xaf\xcb'
+q4        b'\x1a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00MAJYO'
 qoi       b'qoif'
+raw       b'FOVb'
 raw       b'FUJIFILMCCD-RAW '
+raw       b'II\x1a\x00'
 raw       b'II*\x00'
 raw       b'II+\x00\x08\x00\x00\x00'
 raw       b'IIRO'
@@ -358,3 +361,83 @@ trs80max  6154
 trs80max  6155
 trs80max  6272
 trs80max  7168
+
+MIME types: 78
+avif      avif
+bmp       bmp
+bmp       x-bmp
+c         x-xbitmap
+c         xbm
+dcx       x-dcx
+dib       x-ms-bmp
+dpx       dpx
+gif       gif
+heif      heic
+heif      heic-sequence
+heif      heif
+heif      heif-sequence
+ico       vnd.microsoft.icon
+ico       x-icon
+ilbm      x-ilbm
+j2k       x-jp2-codestream
+jbig      jbig
+jp2       jp2
+jpeg      jpeg
+jpegls    jls
+jpegxl    jxl
+mac       x-macpaint
+pcx       vnd.zbrush.pcx
+pcx       x-pcx
+png       png
+pnm       x-portable-anymap
+pnm       x-portable-arbitrarymap
+pnm       x-portable-bitmap
+pnm       x-portable-graymap
+pnm       x-portable-greymap
+pnm       x-portable-pixmap
+pnm       x-xv-thumbnail
+qoi       qoi
+raw       x-adobe-dng
+raw       x-canon-cr2
+raw       x-canon-cr3
+raw       x-canon-crw
+raw       x-dcraw
+raw       x-fuji-raf
+raw       x-kodak-dcr
+raw       x-kodak-k25
+raw       x-kodak-kdc
+raw       x-minolta-mrw
+raw       x-nikon-nef
+raw       x-nikon-nrw
+raw       x-olympus-orf
+raw       x-panasonic-rw
+raw       x-panasonic-rw2
+raw       x-pentax-pef
+raw       x-sigma-x3f
+raw       x-sony-arw
+raw       x-sony-sr2
+raw       x-sony-srf
+sgi       x-sgi
+sun       x-sun-raster
+svg       svg+xml
+svg       svg+xml-compressed
+tga       x-tga
+tiff      tiff
+tiff      x-adobe-dng
+tiff      x-canon-cr2
+tiff      x-dcraw
+tiff      x-kodak-dcr
+tiff      x-kodak-k25
+tiff      x-kodak-kdc
+tiff      x-nikon-nef
+tiff      x-nikon-nrw
+tiff      x-pentax-pef
+tiff      x-sony-arw
+tiff      x-sony-sr2
+tiff      x-sony-srf
+tiff      x-tiff-multipage
+tim       x-sony-tim
+wbmp      vnd.wap.wbmp
+webp      webp
+xcursor   x-xcursor
+xwd       x-xwindowdump
