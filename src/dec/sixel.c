@@ -1,22 +1,28 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
-#include "rast_utils.h"
 #include "lib/sixel.h"
+#include "wudefs.h"
 
-static size_t dec(const void *ptr, struct wuimg *img) {
-	return sixel_decode(ptr, img);
-}
-static enum wu_error parse(void *ptr, struct wuimg *img) {
-	return sixel_calc_parameters(ptr, img);
-}
-static enum wu_error open(void *ptr, struct image_file *infile) {
-	return sixel_open_mem(ptr, infile->map);
-}
-
-static enum wu_error sixel_dec(struct image_file *infile,
+static struct wu_st init_sixel(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct sixel_desc desc;
-	return rast_trivial_dec(infile, conf, &desc, open, parse, NULL, dec);
+	struct wu_st st = sixel_try_parse(&desc, infile->sub_img, infile->map,
+		4096);
+	if (wu_isok(st)) {
+		tree_bud_leaf_u(&infile->metadata, "Horizontal grid size",
+			desc.horizontal_grid_size);
+		enum wu_error err = wuimg_alloc_limit(infile->sub_img, conf);
+		if (err == wu_ok) {
+			st = sixel_decode(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(err);
+		}
+	}
+	return st;
 }
 
-const struct image_fn sixel_fn = {.mmap = true, .dec = sixel_dec};
+const struct image_fn sixel_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.init = init_sixel,
+};

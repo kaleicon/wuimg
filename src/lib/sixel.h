@@ -12,17 +12,14 @@ enum sixel_background_color {
 
 struct sixel_desc {
 	struct mparser tp;
-	size_t data_end;
 
 	enum sixel_background_color p2;
 	unsigned char horizontal_grid_size;
 };
 
-size_t sixel_decode(const struct sixel_desc *desc, struct wuimg *img);
+struct wu_st sixel_decode(const struct sixel_desc *desc, struct wuimg *img);
 
-enum wu_error sixel_calc_parameters(struct sixel_desc *desc,
-struct wuimg *img);
-
-enum wu_error sixel_open_mem(struct sixel_desc *desc, struct wuptr mem);
+struct wu_st sixel_try_parse(struct sixel_desc *desc, struct wuimg *img,
+struct wuptr mem, size_t dcs_search_limit);
 
 #endif // LIB_SIXEL
