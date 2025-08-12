@@ -12,6 +12,10 @@
 #include "misc/math.h"
 #include "raster/fmt.h"
 
+/* Reference:
+https://vt100.net/docs/vt3xx-gp/chapter14.html
+*/
+
 static const size_t LINE_HEIGHT = 6;
 
 struct sixel_colormap {
