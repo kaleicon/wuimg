@@ -375,10 +375,13 @@ DEC_MAP: DecMap = {
 
 	"c64": {
 		"c64": FmtInfo("Hires and Multicolor formats"
-				": Art Studio (OCP), Artist64, Blazing Paddles"
+				": AFLI editor"
+				", Art Studio (OCP), Artist64, Blazing Paddles"
 				", CDU-Paint, Cheese, Create With Garfield"
 				", Doodle (raw & compressed), Faces Painter"
+				", FLI Designer"
 				", Hi-Eddi, HiPic Creator, HiRes Editor"
+				", Hires FLI (HFC)"
 				", Image System, Interpaint"
 				", KoalaPainter (raw & compressed)"
 				", Picasso 64, Runpaint, Saracen Paint"
@@ -391,8 +394,10 @@ DEC_MAP: DecMap = {
 				"pi",
 			),
 			match=(
+				# AFLI editor
+				"afl",
 				# Art Studio
-				"aas", "hcp", "ocp", "shp",
+				"aas", "hcp", "hpi", "ocp", "shp",
 				# Wigmore Artist64
 				"a64", "wig",
 				# Blazing Paddles
@@ -407,12 +412,16 @@ DEC_MAP: DecMap = {
 				"dd", "ddl", "jj",
 				# Faces Painter
 				"fcp", "fcs", "fpt",
+				# FLI Designer
+				"fd2", "fli",
 				# Hi-Eddi
 				"hed",
 				# HiPic Creator
-				"hpi",
+				"hpc",
 				# HiRes Editor
 				"het",
+				# Hires FLI
+				"hfc",
 				# Image System
 				"ims", "ish", "ism",
 				# Interpaint
@@ -435,9 +444,10 @@ DEC_MAP: DecMap = {
 				b"\x00\x18",
 				# Art Studio, HiEddi
 				b"\x00\x20",
-				# Image System
+				# Image System, FLI Designer
 				b"\x00\x3c",
-				# Interpaint, Image System, Wigmore Artist64, FacesPainter
+				# Interpaint, Image System, Wigmore Artist64,
+				# FacesPainter, AFLI editor, Hires FLI
 				b"\x00\x40",
 				# Vidcom 64
 				b"\x00\x58",
@@ -468,6 +478,9 @@ DEC_MAP: DecMap = {
 				10219, # Saracen Paint
 				10242, # Artist64, Blazing Paddles,
 				10277, # CDU-Paint
+				16385, # AFLI editor
+				16386, # Hires FLI
+				17218, 17409, # FLI Designer
 				20482, # Cheese
 			)
 		),

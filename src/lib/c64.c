@@ -13,11 +13,14 @@ https://codebase64.org/doku.php?id=base:c64_grafix_files_specs_list_v0.03
  * Subtract the Load Address and add 2 to get the actual memory positions in
  * the file.
 
+ * Graphic modes reference:
+https://studiostyle.sk/dmagic/gallery/gfxmodes.htm
+
  * In Hires mode, there are two memory sections: Bitmap and Screen.
  * Bitmap is a series of tiles that are 8 bytes in size, corresponding to a
  * 8x8 pixel area. Each byte is a 8 pixel row, and each bit a pixel.
  * Upper bits are leftmost, and tiles go left to right, top to bottom.
- * To render, keep track of the tile number, read bit from a tile byte,
+ * To render, keep track of the tile number, read a bit from a tile byte,
  * and select a nibble from Screen according to its value:
  *   0: Use Screen[TileN] lower nibble
  *   1: Use Screen[TileN] upper nibble
@@ -26,7 +29,7 @@ https://codebase64.org/doku.php?id=base:c64_grafix_files_specs_list_v0.03
  * Multicolor mode has four sections to make use of four colors per tile:
  * Bitmap, Screen, Color, and a single Background byte. Tiles are still
  * 8 bytes, but now use bit pairs to select the color source, and so they span
- * a 4x8 pixel area. The image must be stretched afterwards (its width doubled)
+ * a 4x8 pixel area. The image must be stretched to double its width afterwards
  * to match the size of Hires mode.
  * To render, keep track of the tile number, read 2 bits from a tile byte, and
  * read a nibble according to their value:
@@ -36,6 +39,10 @@ https://codebase64.org/doku.php?id=base:c64_grafix_files_specs_list_v0.03
  *   3: Use Color[TileN] lower nibble
  * Even though only the lower nibble of Background and Color is used, they
  * may contain junk on the upper bits, so they must be masked regardless.
+
+ * FLI mode (for multicolor) and AFLI (for hires) increase the number of colors
+ * by switching between 8 Screens for each row of a tile. Screens are padded to
+ * 0x400 bytes.
 */
 
 static const size_t TW = 40; // Width in tiles, both modes
@@ -49,6 +56,7 @@ static const size_t RAM_LEN = TW * TH;
 static const size_t COLOR_LEN = RAM_LEN;
 static const size_t SCREEN_LEN = RAM_LEN;
 static const size_t BITMAP_LEN = RAM_LEN * 8;
+static const size_t FLI_SCREEN_LEN = 0x400;
 static const size_t BG_LEN = 1;
 
 struct c64_mem_offsets {
@@ -60,6 +68,7 @@ struct c64_mem_offsets {
 
 const char * c64_mode_str(const enum c64_mode mode) {
 	switch (mode) {
+	case c64_none: break;
 	case c64_hires: return "Hires";
 	case c64_multicolor: return "Multicolor";
 	case c64_multicolor_nobg: return "Multicolor, no background";
@@ -69,17 +78,20 @@ const char * c64_mode_str(const enum c64_mode mode) {
 
 const char * c64_fmt_str(const enum c64_fmt fmt) {
 	switch (fmt) {
-	case c64_art_studio: return "Art Studio, HiPic";
 	case c64_advanced_art_studio: return "Advanced Art Studio";
+	case c64_afli_editor: return "AFLI-editor";
+	case c64_art_studio: return "Art Studio, HiPic";
 	case c64_artist64: return "Wigmore Artist64";
 	case c64_blazing_paddles: return "Blazing Paddles";
 	case c64_cdu_paint: return "CDU-Paint";
 	case c64_cheese: return "Cheese";
 	case c64_doodle: return "Doodle, HiRes Editor";
-	case c64_picasso_64: return "Picasso 64";
+	case c64_fli_designer: return "FLI Designer";
 	case c64_hi_eddi: return "Hi-Eddi";
+	case c64_hires_fli_crest: return "Hires FLI (by Crest)";
 	case c64_image_system_m: return "Image System";
 	case c64_koalapainter: return "KoalaPainter";
+	case c64_picasso_64: return "Picasso 64";
 	case c64_saracen_paint: return "Saracen Paint";
 	case c64_rainbow_painter: return "RainbowPainter";
 	case c64_vidcom_64: return "Vidcom 64";
@@ -87,22 +99,19 @@ const char * c64_fmt_str(const enum c64_fmt fmt) {
 	return "???";
 }
 
-static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off) {
+static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off,
+const bool fli) {
 	for (size_t tile_y = 0; tile_y < TH; ++tile_y) {
 		for (size_t tile_x = 0; tile_x < TW; ++tile_x) {
 			const size_t tile = tile_y*TW + tile_x;
-
-			// Grab all colors sources unconditionally
-			const uint8_t st = off->screen[tile] >> 4,
-				sb = off->screen[tile] & 0x0f,
-				c = off->color[tile];
-
-			/* OR them into a word, arranged such that we can
-			 * retrieve them using a bit couple as shr argument. */
-			const uint16_t src = c << 12 | sb << 8 | st << 4 | off->bg;
-
 			for (size_t y = 0; y < 8; ++y) {
+				// Grab all colors sources unconditionally
+				const uint8_t screen = off->screen[tile + y*fli*FLI_SCREEN_LEN];
 				const uint8_t byte = off->bitmap[tile*8 + y];
+				const uint16_t src = off->color[tile] << 12
+					| (screen & 0xf) << 8
+					| (screen >> 4) << 4
+					| off->bg;
 				uint16_t out = 0;
 				for (size_t x = 0; x < 4; ++x) {
 					uint8_t couple = (byte >> (x*2)) & 3;
@@ -116,13 +125,14 @@ static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off) 
 	}
 }
 
-static void hires_expand(uint32_t *dst, const struct c64_mem_offsets *off) {
+static void hires_expand(uint32_t *dst, const struct c64_mem_offsets *off,
+const bool fli) {
 	for (size_t tile_y = 0; tile_y < TH; ++tile_y) {
 		for (size_t tile_x = 0; tile_x < TW; ++tile_x) {
 			const size_t tile = tile_y*TW + tile_x;
 			for (size_t y = 0; y < 8; ++y) {
 				uint8_t byte = off->bitmap[tile*8 + y];
-				uint8_t src = off->screen[tile];
+				uint8_t src = off->screen[tile + y*fli*FLI_SCREEN_LEN];
 				uint32_t out = 0;
 				for (size_t x = 0; x < 8; ++x) {
 					uint8_t b = (byte >> x) & 1;
@@ -136,32 +146,29 @@ static void hires_expand(uint32_t *dst, const struct c64_mem_offsets *off) {
 	}
 }
 
-static uint8_t get_tbl_len(const enum c64_mode mode) {
-	switch (mode) {
-	case c64_hires: return 2;
-	case c64_multicolor: return 4;
-	case c64_multicolor_nobg: return 3;
-	}
-	return 0;
-}
-
 static bool get_offsets(struct mparser *mp, struct c64_mem_offsets *off,
 const struct c64_fmt_info *info) {
-	const uint8_t len = get_tbl_len(info->mode);
+	const uint8_t len = ARRAY_LEN(info->tbl);
 	const uint8_t *bg = NULL;
+	const size_t screen_len = info->fli ? FLI_SCREEN_LEN*8 : SCREEN_LEN;
 	for (uint8_t i = 0; i < len; ++i) {
-		mp_seek_cur(mp, info->tbl[i].skip);
-		switch (info->tbl[i].field) {
-		case c64_bitmap: off->bitmap = mp_slice(mp, BITMAP_LEN); break;
-		case c64_screen: off->screen = mp_slice(mp, SCREEN_LEN); break;
-		case c64_color: off->color = mp_slice(mp, COLOR_LEN); break;
-		case c64_bg: bg = mp_slice(mp, BG_LEN); break;
+		const enum c64_field f = i;
+		const uint16_t pos = info->tbl[f];
+		if (pos) {
+			mp_seek_set(mp, pos);
+			switch (f & 0x3) {
+			case c64_bitmap: off->bitmap = mp_slice(mp, BITMAP_LEN); break;
+			case c64_screen: off->screen = mp_slice(mp, screen_len); break;
+			case c64_color: off->color = mp_slice(mp, COLOR_LEN); break;
+			case c64_bg: bg = mp_slice(mp, BG_LEN); break;
+			}
 		}
 	}
-	off->bg = bg ? *bg & 0x0f : 0;
+	off->bg = (bg ? *bg : 0) & 0x0f;
 	const bool base = off->bitmap && off->screen;
 	const bool color = off->color;
 	switch (info->mode) {
+	case c64_none: break;
 	case c64_multicolor: return base && color && bg;
 	case c64_multicolor_nobg: return base && color && !bg;
 	case c64_hires: return base && !color && !bg;
@@ -227,10 +234,11 @@ struct wu_st c64_decode(const struct c64_desc *desc, struct wuimg *img) {
 
 		if (wu_isok(st)) {
 			if (get_offsets(&mp, &off, &desc->info)) {
+				void *dst = img->data;
 				if (desc->info.mode == c64_hires) {
-					hires_expand((uint32_t *)img->data, &off);
+					hires_expand(dst, &off, desc->info.fli);
 				} else {
-					multicolor_expand((uint16_t *)img->data, &off);
+					multicolor_expand(dst, &off, desc->info.fli);
 				}
 			} else {
 				st = WUERR_HERE(wu_unexpected_eof);
@@ -308,89 +316,109 @@ struct wu_st c64_set(const struct c64_desc *desc, struct wuimg *img) {
 
 static struct c64_fmt_info get_info(const enum c64_fmt fmt) {
 	switch (fmt) {
+	/* Hires */
 	case c64_art_studio:
 		return (struct c64_fmt_info) {
 			.mode = c64_hires,
 			.tbl = {
-				{2, c64_bitmap},
-				{0, c64_screen},
+				[c64_bitmap] = 2,
+				[c64_screen] = 0x1f42,
 			},
 		};
 	case c64_doodle:
 		return (struct c64_fmt_info) {
 			.mode = c64_hires,
 			.tbl = {
-				{2, c64_screen},
-				{0x18, c64_bitmap},
+				[c64_screen] = 2,
+				[c64_bitmap] = 0x402,
 			},
 		};
 	case c64_hi_eddi:
 		return (struct c64_fmt_info) {
 			.mode = c64_hires,
 			.tbl = {
-				{2, c64_bitmap},
-				{0xc0, c64_screen},
+				[c64_bitmap] = 2,
+				[c64_screen] = 0x2002,
+			},
+		};
+	case c64_afli_editor:
+		return (struct c64_fmt_info) {
+			.mode = c64_hires,
+			.fli = true,
+			.tbl = {
+				[c64_screen] = 2,
+				[c64_bitmap] = 0x2002,
+			},
+		};
+	case c64_hires_fli_crest:
+		return (struct c64_fmt_info) {
+			.mode = c64_hires,
+			.fli = true,
+			.tbl = {
+				[c64_bitmap] = 2,
+				[c64_screen] = 0x2002,
 			},
 		};
 
+	/* Multicolor */
 	case c64_koalapainter:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_bitmap},
-				{0, c64_screen},
-				{0, c64_color},
-				{0, c64_bg},
+				[c64_bitmap] = 2,
+				[c64_screen] = 0x1f42,
+				[c64_color] = 0x232a,
+				[c64_bg] = 0x2712,
 			},
 		};
 	case c64_advanced_art_studio:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_bitmap},
-				{0, c64_screen},
-				{1 /* border */, c64_bg},
-				{0xe, c64_color},
+				[c64_bitmap] = 2,
+				[c64_screen] = 0x1f42,
+				[c64_bg] = 0x232a + 1 /* border */,
+				[c64_color] = 0x233a,
 			},
 		};
 	case c64_vidcom_64:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_color},
-				{0x18, c64_screen},
-				{0, c64_bg},
-				{0x17, c64_bitmap},
+				[c64_color] = 2,
+				[c64_screen] = 0x402,
+				[c64_bg] = 0x7ea,
+				[c64_bitmap] = 0x802,
 			},
 		};
 	case c64_picasso_64:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_color},
-				{0x18, c64_screen},
-				{0x17, c64_bg},
-				{0, c64_bitmap},
+				[c64_color] = 2,
+				[c64_screen] = 0x402,
+				[c64_bg] = 0x801,
+				[c64_bitmap] = 0x802,
 			},
 		};
 	case c64_image_system_m:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_color},
-				{0x18, c64_bitmap},
-				{0xbf, c64_bg},
-				{0, c64_screen},
+				[c64_color] = 2,
+				[c64_bitmap] = 0x402,
+				[c64_bg] = 0x2401,
+				[c64_screen] = 0x2402,
 			},
 		};
 	case c64_saracen_paint:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_screen},
-				{0x8, c64_bg},
-				{0xf, c64_bitmap},
-				{0xc0, c64_color},
+				[c64_screen] = 2,
+				[c64_bg] = 0x3f2,
+				[c64_bitmap] = 0x402,
+				[c64_color] = 0x2402,
 			},
 		};
 	case c64_rainbow_painter:
@@ -398,49 +426,59 @@ static struct c64_fmt_info get_info(const enum c64_fmt fmt) {
 			.mode = c64_multicolor_nobg,
 			.tbl = {
 				// Like Saracen Paint, but background is omitted
-				{2, c64_screen},
-				{0x18, c64_bitmap},
-				{0xc0, c64_color},
+				[c64_screen] = 2,
+				[c64_bitmap] = 0x402,
+				[c64_color] = 0x2402,
 			},
 		};
 	case c64_artist64:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_bitmap},
-				{0xc0, c64_screen},
-				{0x18, c64_color},
-				{0x17, c64_bg},
+				[c64_bitmap] = 2,
+				[c64_screen] = 0x2002,
+				[c64_color] = 0x2402,
+				[c64_bg] = 0x2801,
 			},
 		};
 	case c64_blazing_paddles:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_bitmap},
-				{0x40, c64_bg},
-				{0x7f, c64_screen},
-				{0x18, c64_color},
+				[c64_bitmap] = 2,
+				[c64_bg] = 0x1f82,
+				[c64_screen] = 0x2002,
+				[c64_color] = 0x2402,
 			},
 		};
 	case c64_cdu_paint:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{0x113, c64_bitmap},
-				{0, c64_screen},
-				{0, c64_color},
-				{0, c64_bg},
+				[c64_bitmap] = 2 + 0x111 /* display routine */,
+				[c64_screen] = 0x2053,
+				[c64_color] = 0x243b,
+				[c64_bg] = 0x2823,
 			},
 		};
 	case c64_cheese:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
 			.tbl = {
-				{2, c64_bitmap},
-				{0x22c0, c64_screen},
-				{0x218, c64_color},
-				{0x415, c64_bg},
+				[c64_bitmap] = 2,
+				[c64_screen] = 0x4202,
+				[c64_color] = 0x4802,
+				[c64_bg] = 0x4fff,
+			},
+		};
+	case c64_fli_designer:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor_nobg,
+			.fli = true,
+			.tbl = {
+				[c64_color] = 2,
+				[c64_screen] = 0x402,
+				[c64_bitmap] = 0x2402,
 			},
 		};
 	}
@@ -502,9 +540,11 @@ const uint8_t ext[static 4]) {
 				f = c64_blazing_paddles;
 			}
 			break;
-		case 10277:
-			// TODO: Show text near the beginning
-			f = c64_cdu_paint; break;
+		case 10277: f = c64_cdu_paint; break;
+		case 16385: f = c64_afli_editor; break;
+		case 16386: f = c64_hires_fli_crest; break;
+		case 17218:
+		case 17409: f = c64_fli_designer; break;
 		case 20482: f = c64_cheese; break;
 		default:
 			return wuerr(wu_unknown_file_type,
@@ -513,5 +553,5 @@ const uint8_t ext[static 4]) {
 	}
 	desc->fmt = f;
 	desc->info = get_info(f);
-	return desc->info.tbl[0].skip ? wuok() : WUERR_HERE(wu_invalid_params);
+	return desc->info.mode != c64_none ? WU_OK : WUERR_HERE(wu_invalid_params);
 }

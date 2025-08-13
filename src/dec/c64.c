@@ -6,6 +6,7 @@
 static void get_meta(const struct c64_desc *desc, struct wutree *tree) {
 	tree_add_leaf_utf8(tree, "Type", c64_fmt_str(desc->fmt));
 	tree_add_leaf_utf8(tree, "Mode", c64_mode_str(desc->info.mode));
+	tree_bud_leaf_bool(tree, "FLI", desc->info.fli);
 }
 
 static struct wu_st dec_c64(struct image_file *infile,

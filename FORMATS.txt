@@ -50,7 +50,7 @@ bethesda  bsi       Bethesda BSI texture (IFHD, BSIF)
 bethesda  gxa       Bethesda GXA image (BMHD)
 bmz       bmz       GSD engine compressed BMP. Requires DIB
 c         c         C code formats: DEGAS Elite Icon, XBM X10 and X11
-c64       c64       Hires and Multicolor formats: Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Faces Painter, Hi-Eddi, HiPic Creator, HiRes Editor, Image System, Interpaint, KoalaPainter (raw & compressed), Picasso 64, Runpaint, Saracen Paint, Vidcom 64, probably others by accident
+c64       c64       Hires and Multicolor formats: AFLI editor, Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Faces Painter, FLI Designer, Hi-Eddi, HiPic Creator, HiRes Editor, Hires FLI (HFC), Image System, Interpaint, KoalaPainter (raw & compressed), Picasso 64, Runpaint, Saracen Paint, Vidcom 64, probably others by accident
 cbg       cbg       BGI/Ethornell CompressedBG (v1)
 chunsoft  at6p      999 AT6P
 chunsoft  sir0      999 SIR0 sprites
@@ -134,8 +134,8 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 293
-565, a64, aas, abm, als, apd, art, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cps, cr2, cr3, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, ff, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hg3, hgr, hif, hir, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mpo, mrw, mtv, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 298
+565, a64, aas, abm, afl, als, apd, art, arw, avif, avifs, avs, bie, bl1, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cps, cr2, cr3, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, fd2, ff, fli, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mpo, mrw, mtv, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
 Known magic sequences: 181
 aipd      b'AIPD'
@@ -320,7 +320,7 @@ xcursor   b'Xcur'
 xwd       b'\x00\x00\x00\x00\x00\x00\x00\x06'
 xyz       b'XYZ1'
 
-Fixed file sizes: 42
+Fixed file sizes: 46
 bru       64
 c64       9002
 c64       9003
@@ -341,6 +341,10 @@ c64       10218
 c64       10219
 c64       10242
 c64       10277
+c64       16385
+c64       16386
+c64       17218
+c64       17409
 c64       20482
 da4       64000
 dali      32128

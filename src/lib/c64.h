@@ -7,12 +7,14 @@
 #include "raster/wuimg.h"
 
 enum c64_mode {
+	c64_none = 0,
 	c64_hires,
-	c64_multicolor,
 	c64_multicolor_nobg,
+	c64_multicolor,
 };
 
 enum c64_fmt {
+	c64_afli_editor,
 	c64_art_studio,
 	c64_advanced_art_studio,
 	c64_artist64,
@@ -20,7 +22,9 @@ enum c64_fmt {
 	c64_cdu_paint,
 	c64_cheese,
 	c64_doodle,
+	c64_fli_designer,
 	c64_hi_eddi,
+	c64_hires_fli_crest,
 	c64_image_system_m,
 	c64_koalapainter,
 	c64_picasso_64,
@@ -36,14 +40,10 @@ enum c64_field {
 	c64_bg,
 };
 
-struct c64_layout {
-	uint16_t skip;
-	enum c64_field field:8;
-};
-
 struct c64_fmt_info {
 	enum c64_mode mode:8;
-	struct c64_layout tbl[4];
+	bool fli;
+	uint16_t tbl[4];
 };
 
 struct c64_desc {
