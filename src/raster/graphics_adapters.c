@@ -36,7 +36,7 @@ const uint8_t planes, const size_t plane_stride, const size_t pos, const size_t 
 	}
 }
 
-static void interleave_row8_with_stride(uint8_t *restrict dst,
+static void bitplane_interleave_row8_with_stride(uint8_t *restrict dst,
 const uint8_t *restrict src, const size_t w, const uint8_t planes,
 const size_t stride) {
 	const size_t items = w/8;
@@ -51,7 +51,7 @@ const size_t stride) {
 
 void bitplane_interleave_row8(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t w, const uint8_t planes, const align_t align) {
-	interleave_row8_with_stride(dst, src, w, planes,
+	bitplane_interleave_row8_with_stride(dst, src, w, planes,
 		strip_length(w, 1, align));
 }
 
@@ -68,10 +68,9 @@ const size_t pos, const size_t bits) {
 	}
 }
 
-static void bitplane_interleave_row32(uint8_t *restrict dst,
+static void bitplane_interleave_row32_with_stride(uint8_t *restrict dst,
 const uint8_t *restrict src, const size_t w, const uint8_t planes,
-const align_t align) {
-	const size_t plane_stride = strip_length(w, 1, align);
+const size_t plane_stride) {
 	const size_t spread = 4;
 	const size_t items = w/8;
 	const size_t remain = w%8;
@@ -83,16 +82,23 @@ const align_t align) {
 	}
 }
 
-void bitplane_interleave_row(void *restrict dst, const uint8_t *restrict src,
-const size_t w, const uint8_t planes, const align_t align) {
+void bitplane_interleave_row_with_stride(void *restrict dst,
+const uint8_t *restrict src, const size_t w, const uint8_t planes,
+const size_t stride) {
 	switch ((planes - 1) / 8) {
 	case 0:
-		bitplane_interleave_row8(dst, src, w, planes, align);
+		bitplane_interleave_row8_with_stride(dst, src, w, planes, stride);
 		break;
 	case 2: case 3:
-		bitplane_interleave_row32(dst, src, w, planes, align);
+		bitplane_interleave_row32_with_stride(dst, src, w, planes, stride);
 		break;
 	}
+}
+
+void bitplane_interleave_row(void *restrict dst, const uint8_t *restrict src,
+const size_t w, const uint8_t planes, const align_t align) {
+	bitplane_interleave_row_with_stride(dst, src, w, planes,
+		strip_length(w, 1, align));
 }
 
 void bitplane_interleave_plane(uint8_t *restrict dst,
@@ -101,8 +107,8 @@ const align_t align, const size_t h) {
 	const size_t stride = strip_length(w, 1, align);
 	const size_t size = stride*h;
 	for (size_t y = 0; y < h; ++y) {
-		interleave_row8_with_stride(dst + w*y, src + stride*y, w,
-			planes, size);
+		bitplane_interleave_row8_with_stride(dst + w*y, src + stride*y,
+			w, planes, size);
 	}
 }
 

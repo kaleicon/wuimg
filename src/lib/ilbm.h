@@ -28,9 +28,10 @@ enum ilbm_compression {
 };
 
 enum ilbm_format {
+	ilbm_format_acbm = FOURCC('A', 'C', 'B', 'M'),
 	ilbm_format_ilbm = FOURCC('I', 'L', 'B', 'M'),
-	ilbm_format_pbm = FOURCC('P', 'B', 'M', ' '),
 	ilbm_format_mldf = FOURCC('M', 'L', 'D', 'F'),
+	ilbm_format_pbm = FOURCC('P', 'B', 'M', ' '),
 };
 
 typedef void (*ilbm_callback_t)(void *ptr, struct iff_chunk chunk,

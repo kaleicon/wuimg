@@ -28,21 +28,8 @@ void ilbm_cleanup(struct ilbm_desc *desc) {
 	free(desc->cycle);
 }
 
-static size_t interleave_bitplanes(const struct ilbm_desc *desc,
-struct wuimg *img, uint8_t *restrict dst, const struct wuptr body,
-const uint8_t planes) {
-	const size_t outstride = img->w * (desc->ham ? 1 : img->channels);
-	const size_t instride = strip_length(img->w, 1, 1) * desc->planes;
-	const size_t rows = zumin(body.len / instride, img->h);
-	for (size_t y = 0; y < rows; ++y) {
-		bitplane_interleave_row(dst + y*outstride,
-			body.ptr + y*instride, img->w, planes, 1);
-	}
-	return rows;
-}
-
 static void expand_ham(const struct ilbm_desc *desc, struct wuimg *img,
-const size_t offset) {
+const uint8_t *src, const size_t h) {
 	// Use 2-bit HAM for even plane numbers, 1-bit HAM for odds
 	const uint8_t color_bits = (uint8_t)((desc->planes - 1) & ~0x1u);
 	const uint8_t nc_bits = 8 - color_bits;
@@ -50,11 +37,10 @@ const size_t offset) {
 	const uint8_t antimask = (uint8_t)((1 << nc_bits) - 1);
 
 	uint8_t *dst = img->data;
-	const uint8_t *src = img->data + offset;
 	const struct palette *pal = desc->pal;
 	const size_t stride = img->w*HAM_CH;
 
-	for (size_t y = 0; y < img->h; ++y) {
+	for (size_t y = 0; y < h; ++y) {
 		for (size_t x = 0; x < img->w; ++x) {
 			const size_t pix = y*stride + x*HAM_CH;
 			const uint8_t s = src[y*img->w + x];
@@ -82,6 +68,28 @@ const size_t offset) {
 			}
 		}
 	}
+	memset(dst + h*stride, 0, (img->h - h)*stride);
+}
+
+static size_t interleave_bitplanes(const struct ilbm_desc *desc,
+struct wuimg *img, uint8_t *restrict dst, struct wuptr body,
+const uint8_t planes) {
+	size_t row_stride = strip_length(img->w, 1, 1);
+	size_t plane_stride = row_stride;
+	if (desc->format == ilbm_format_acbm) {
+		plane_stride *= img->h;
+		const size_t sub = plane_stride * (planes - 1);
+		body.len = body.len > sub ? body.len - sub : 0;
+	} else {
+		row_stride *= desc->planes;
+	}
+	const size_t rows = zumin(body.len / row_stride, img->h);
+	const size_t out_stride = img->w * (desc->ham ? 1 : img->channels);
+	for (size_t y = 0; y < rows; ++y) {
+		bitplane_interleave_row_with_stride(dst + y*out_stride,
+			body.ptr + y*row_stride, img->w, planes, plane_stride);
+	}
+	return rows;
 }
 
 static struct wu_st expand_body(const struct ilbm_desc *desc, struct wuimg *img,
@@ -90,24 +98,25 @@ const struct wuptr body) {
 	if (desc->ham) {
 		offset = wuimg_size(img) - img->w*img->h;
 	}
-	const size_t w = interleave_bitplanes(desc, img, img->data + offset,
+	const size_t h = interleave_bitplanes(desc, img, img->data + offset,
 		body, desc->planes);
 	if (desc->ham) {
-		expand_ham(desc, img, offset);
+		expand_ham(desc, img, img->data + offset, h);
 	}
-	return wuerr_partial(w, img->h);
+	return wuerr_partial(h, img->h);
 }
 
 static struct wu_st decompress_ilbm(const struct ilbm_desc *desc,
 struct wuimg *img, const struct wuptr body) {
-	const size_t upack_len = strip_length(img->w, 1, 1) * desc->planes * img->h;
+	const size_t stride = strip_length(img->w, 1, 1);
+	const size_t upack_len = stride * desc->planes * img->h;
 	uint8_t *upack = malloc(upack_len);
 	if (upack) {
-		const size_t w = decomp_packbits(upack, upack_len,
+		size_t w = decomp_packbits(upack, upack_len,
 			(const int8_t *)body.ptr, body.len);
-		expand_body(desc, img, wuptr_mem(upack, w));
+		const struct wu_st st = expand_body(desc, img, wuptr_mem(upack, w));
 		free(upack);
-		return wuerr_partial(w, upack_len);
+		return st;
 	}
 	return WUERR_HERE(wu_alloc_error);
 }
@@ -224,6 +233,8 @@ const bool is_tiny) {
 	}
 	const struct wuptr body = is_tiny ? desc->tiny.data : desc->body;
 	switch (desc->format) {
+	case ilbm_format_acbm:
+		return expand_body(desc, img, body);
 	case ilbm_format_ilbm:
 		switch (desc->compression) {
 		case ilbm_compression_none:
@@ -232,8 +243,7 @@ const bool is_tiny) {
 			return decompress_ilbm(desc, img, body);
 		case ilbm_compression_vdat:
 			return decomp_vertical_rle(desc, img, body);
-		case ilbm_compression_mldf:
-			break;
+		default: break;
 		}
 		break;
 	case ilbm_format_mldf:
@@ -246,8 +256,7 @@ const bool is_tiny) {
 			;const size_t size = wuimg_size(img);
 			return wuerr_partial(decomp_packbits(img->data, size,
 				(const int8_t *)body.ptr, body.len), size);
-		case ilbm_compression_vdat:
-		case ilbm_compression_mldf:
+		default:
 			break;
 		}
 		break;
@@ -358,6 +367,22 @@ static struct wu_st body_stop(struct iff_state *iff, void *ptr,
 const struct iff_chunk chunk) {
 	(void)iff;
 	struct ilbm_desc *desc = ptr;
+	switch (chunk.id) {
+	case FOURCC('A', 'B', 'I', 'T'):
+		if (desc->format != ilbm_format_acbm) {
+			return wuerr(wu_invalid_header,
+				"ABIT chunk on non-ACBM file");
+		}
+		break;
+	case FOURCC('B', 'O', 'D', 'Y'):
+		if (desc->format == ilbm_format_acbm) {
+			return wuerr(wu_invalid_header,
+				"BODY chunk on ACBM file");
+		}
+		break;
+	default:
+		fatal_bug("ilbm", "unexpected chunk ID in stop function");
+	}
 	desc->body = mp_avail(&desc->mp, chunk.len);
 	mp_seek_cur(&desc->mp, iff_chunk_padding(iff, chunk));
 	return WU_NO_CHANGE;
@@ -507,8 +532,6 @@ const struct iff_chunk chunk) {
 	struct ilbm_desc *desc = ptr;
 	if (chunk.len != 4) {
 		return wuerr(wu_invalid_header, "unexpected CAMG size");
-	} else if (desc->format != ilbm_format_ilbm) {
-		return wuerr(wu_unsupported_feature, "CAMG with non-ILBM image");
 	}
 	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
 	if (!data) {
@@ -522,6 +545,14 @@ const struct iff_chunk chunk) {
 			"Extra Half-Brite with planes != 6");
 	}
 	if (desc->ham) {
+		switch (desc->format) {
+		case ilbm_format_ilbm:
+		case ilbm_format_acbm:
+			break;
+		default:
+			return wuerr(wu_unsupported_feature,
+				"HAM supported only for ILBM and ACBM images");
+		}
 		if (desc->planes < 5 || desc->planes > 8) {
 			return wuerr(wu_invalid_header,
 				"HAM with planes < 5 or > 8");
@@ -569,14 +600,46 @@ const struct iff_chunk chunk) {
 	desc->masking = data[9];
 	desc->compression = data[10];
 	switch (desc->format) {
-	case ilbm_format_pbm:
 	case ilbm_format_mldf:
 		if (desc->planes != 8) {
-			return wuerr(wu_invalid_header, "PBM with depth != 8");
+			return wuerr(wu_invalid_header, "MLDF depth != 8");
+		} else if (desc->compression != ilbm_compression_mldf) {
+			return wuerr(wu_invalid_header, "MLDF compression != 0xff");
 		}
-		img->align_sh = desc->format == ilbm_format_mldf ? 4 : 1;
+		img->align_sh = 4;
+		break;
+	case ilbm_format_pbm:
+		if (desc->planes != 8) {
+			return wuerr(wu_invalid_header, "PBM depth != 8");
+		}
+		switch (desc->compression) {
+		case ilbm_compression_none:
+		case ilbm_compression_packbits:
+			break;
+		default:
+			return wuerr(wu_invalid_header,
+				"unknown PBM compression method");
+		}
+		img->align_sh = 1;
+		break;
+	case ilbm_format_acbm:
+		if (!desc->planes || desc->planes > 8) {
+			return wuerr(wu_invalid_header, "ACBM planes > 8 or == 0");
+		}
+		/* ACBM files are uncompressed, regardless of what the chunk
+		 * says. It was really fun to figure this out. Thanks guys. */
+		desc->compression = ilbm_compression_none;
 		break;
 	case ilbm_format_ilbm:
+		switch (desc->compression) {
+		case ilbm_compression_none:
+		case ilbm_compression_packbits:
+		case ilbm_compression_vdat:
+			break;
+		default:
+			return wuerr(wu_unsupported_feature,
+				"unknown ILBM compression method");
+		}
 		switch (desc->planes) {
 		case 0: // A colormap-only file
 			return finish_chunk(desc, iff, chunk, NULL);
@@ -613,31 +676,13 @@ const struct iff_chunk chunk) {
 	default:
 		return wuerr(wu_unsupported_feature, "unknown masking method");
 	}
-	switch (desc->compression) {
-	case ilbm_compression_vdat:
-		if (desc->format != ilbm_format_ilbm) {
-			return wuerr(wu_uncertain_validity,
-				"VDAT compression with non-ILBM format");
-		}
-		break;
-	case ilbm_compression_mldf:
-		if (desc->format != ilbm_format_mldf) {
-			return wuerr(wu_invalid_header,
-				"MLDF file with compression != 0xff");
-		}
-		break;
-	case ilbm_compression_none:
-	case ilbm_compression_packbits:
-		break;
-	default:
-		return wuerr(wu_uncertain_validity, "unknown compression method");
-	}
 	wuimg_aspect_ratio(img, data[14], data[15]);
 	return finish_chunk(desc, iff, chunk, NULL);
 }
 
 static const struct iff_table CHUNK_MAP[] = {
 	{FOURCC('B', 'O', 'D', 'Y'), body_stop},
+	{FOURCC('A', 'B', 'I', 'T'), body_stop},
 	{FOURCC('C', 'A', 'M', 'G'), parse_camg},
 	{FOURCC('C', 'M', 'A', 'P'), parse_cmap},
 	{FOURCC('C', 'R', 'N', 'G'), parse_crng},
@@ -731,6 +776,7 @@ struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 				desc->mp.len = (size_t)len + 8;
 			}
 			switch (id) {
+			case ilbm_format_acbm:
 			case ilbm_format_ilbm:
 			case ilbm_format_pbm:
 			case ilbm_format_mldf:

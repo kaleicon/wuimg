@@ -10,6 +10,9 @@
 void bitplane_interleave_row8(uint8_t *restrict dst, const uint8_t *restrict src,
 size_t w, uint8_t planes, align_t align);
 
+void bitplane_interleave_row_with_stride(void *restrict dst,
+const uint8_t *restrict src, size_t w, uint8_t planes, size_t stride);
+
 void bitplane_interleave_row(void *restrict dst, const uint8_t *restrict src,
 size_t w, uint8_t planes, align_t align);
 
