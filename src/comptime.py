@@ -606,13 +606,20 @@ DEC_MAP: DecMap = {
 	},
 
 	"ilbm": {
-		"ilbm": FmtInfo("Interleaved Bitmap (ILBM and PBM) (Extra Half-Brite, HAM, color cycling)",
-			ext=("bl1", "iff", "ilbm", "lbm"),
+		"ilbm": FmtInfo("Interleaved Bitmap (ILBM, PBM, Mean Streets MLDF), "
+			" supports Extra Half-Brite, HAM, color cycling",
+			ext=(
+				"iff", "ilbm", "lbm",
+				"bl1", "bl2", "bl3",
+				"mld", "bru" # MLDF
+			),
 			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"FORM\0\0\0\0ILBM",
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"FORM\0\0\0\0PBM ",
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+					b"FORM\0\0\0\0MLDF",
 			),
 			mime="x-ilbm"
 		),

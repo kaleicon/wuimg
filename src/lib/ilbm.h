@@ -24,11 +24,13 @@ enum ilbm_compression {
 	ilbm_compression_none = 0,
 	ilbm_compression_packbits = 1,
 	ilbm_compression_vdat = 2,
+	ilbm_compression_mldf = 0xff,
 };
 
 enum ilbm_format {
 	ilbm_format_ilbm = FOURCC('I', 'L', 'B', 'M'),
 	ilbm_format_pbm = FOURCC('P', 'B', 'M', ' '),
+	ilbm_format_mldf = FOURCC('M', 'L', 'D', 'F'),
 };
 
 typedef void (*ilbm_callback_t)(void *ptr, struct iff_chunk chunk,

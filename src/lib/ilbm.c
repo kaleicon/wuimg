@@ -18,6 +18,7 @@ const char * ilbm_compression_str(const enum ilbm_compression comp) {
 	case ilbm_compression_none: return "None";
 	case ilbm_compression_packbits: return "PackBits";
 	case ilbm_compression_vdat: return "VDAT";
+	case ilbm_compression_mldf: return "None (MLDF)";
 	}
 	return "???";
 }
@@ -209,6 +210,13 @@ struct wuimg *img, const struct wuptr body) {
 	return WUERR_HERE(wu_alloc_error);
 }
 
+static struct wu_st raw_cpy(struct wuimg *img, const struct wuptr body) {
+	const size_t size = wuimg_size(img);
+	const size_t cpy = zumin(size, body.len);
+	memcpy(img->data, body.ptr, cpy);
+	return wuerr_partial(cpy, size);
+}
+
 struct wu_st ilbm_decode(const struct ilbm_desc *desc, struct wuimg *img,
 const bool is_tiny) {
 	if (desc->planes == 0) {
@@ -224,19 +232,22 @@ const bool is_tiny) {
 			return decompress_ilbm(desc, img, body);
 		case ilbm_compression_vdat:
 			return decomp_vertical_rle(desc, img, body);
+		case ilbm_compression_mldf:
+			break;
 		}
 		break;
+	case ilbm_format_mldf:
+		return raw_cpy(img, body);
 	case ilbm_format_pbm:
-		;const size_t size = wuimg_size(img);
 		switch (desc->compression) {
 		case ilbm_compression_none:
-			;const size_t cpy = zumin(size, body.len);
-			memcpy(img->data, body.ptr, cpy);
-			return wuerr_partial(cpy, size);
+			return raw_cpy(img, body);
 		case ilbm_compression_packbits:
+			;const size_t size = wuimg_size(img);
 			return wuerr_partial(decomp_packbits(img->data, size,
 				(const int8_t *)body.ptr, body.len), size);
 		case ilbm_compression_vdat:
+		case ilbm_compression_mldf:
 			break;
 		}
 		break;
@@ -259,6 +270,7 @@ struct wuimg *tiny) {
 }
 
 static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
+	struct wu_st st = WU_OK;
 	if (desc->planes == 0) {
 		if (desc->colors == 0) {
 			return wuerr(wu_no_image_data, NULL);
@@ -318,9 +330,12 @@ static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 			}
 		}
 	} else {
-		if (desc->ham || desc->cycle) {
+		img->evolving = false;
+		if (desc->ham) {
 			return wuerr(wu_invalid_header,
-				"HAM or CRNG with non-paletted image");
+				"HAM with non-paletted image");
+		} else if (desc->cycle) {
+			st = wuerr(wu_ok, "CRNG with non-paletted image");
 		}
 		if (desc->planes > 8) {
 			img->channels = 4;
@@ -330,7 +345,7 @@ static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 			img->bitrange = desc->planes;
 		}
 	}
-	return WU_OK;
+	return st;
 }
 
 static struct wu_st finish_chunk(struct ilbm_desc *desc,
@@ -553,12 +568,15 @@ const struct iff_chunk chunk) {
 	desc->planes = data[8];
 	desc->masking = data[9];
 	desc->compression = data[10];
-	if (desc->format == ilbm_format_pbm) {
+	switch (desc->format) {
+	case ilbm_format_pbm:
+	case ilbm_format_mldf:
 		if (desc->planes != 8) {
 			return wuerr(wu_invalid_header, "PBM with depth != 8");
 		}
-		img->align_sh = 1;
-	} else {
+		img->align_sh = desc->format == ilbm_format_mldf ? 4 : 1;
+		break;
+	case ilbm_format_ilbm:
 		switch (desc->planes) {
 		case 0: // A colormap-only file
 			return finish_chunk(desc, iff, chunk, NULL);
@@ -601,13 +619,21 @@ const struct iff_chunk chunk) {
 			return wuerr(wu_uncertain_validity,
 				"VDAT compression with non-ILBM format");
 		}
-		// fallthrough
+		break;
+	case ilbm_compression_mldf:
+		if (desc->format != ilbm_format_mldf) {
+			return wuerr(wu_invalid_header,
+				"MLDF file with compression != 0xff");
+		}
+		break;
 	case ilbm_compression_none:
 	case ilbm_compression_packbits:
-		wuimg_aspect_ratio(img, data[14], data[15]);
-		return finish_chunk(desc, iff, chunk, NULL);
+		break;
+	default:
+		return wuerr(wu_uncertain_validity, "unknown compression method");
 	}
-	return wuerr(wu_uncertain_validity, "unknown compression method");
+	wuimg_aspect_ratio(img, data[14], data[15]);
+	return finish_chunk(desc, iff, chunk, NULL);
 }
 
 static const struct iff_table CHUNK_MAP[] = {
@@ -707,6 +733,7 @@ struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 			switch (id) {
 			case ilbm_format_ilbm:
 			case ilbm_format_pbm:
+			case ilbm_format_mldf:
 				desc->format = id;
 				return WU_OK;
 			}
