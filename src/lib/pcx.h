@@ -36,7 +36,8 @@ struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img);
 
 struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img);
 
-struct wu_st pcx_open_file(struct pcx_desc *desc, struct wuptr mem);
+struct wu_st pcx_open_file(struct pcx_desc *desc, struct wuptr mem,
+bool word_for_dos_variant);
 
 
 struct dcx_desc {

@@ -71,7 +71,7 @@ static struct wu_st pcx_unpack_interleave(struct wuimg *img) {
 		img->channels = 1;
 	}
 	img->align_sh = 0;
-	return wuok();
+	return WU_OK;
 }
 
 static bool check_cga_mode(const struct pcx_desc *desc,
@@ -172,7 +172,7 @@ static struct wu_st looking_for_lost_pauline(struct pcx_desc *desc,
 struct wuimg *img, const unsigned char *restrict vga_id,
 const size_t rle_remaining) {
 	if (img->bitdepth * img->channels > 8) {
-		return wuok();
+		return WU_OK;
 	}
 
 	enum pcx_palette_source pal_src = pcx_no_pal;
@@ -194,7 +194,7 @@ const size_t rle_remaining) {
 	const void *pal_data = NULL;
 	switch (pal_src) {
 	case pcx_no_pal:
-		return wuok();
+		return WU_OK;
 	case pcx_ega:
 		break;
 	case pcx_file_header:
@@ -208,7 +208,7 @@ const size_t rle_remaining) {
 	if (!load_palette(desc, img, pal_data)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
@@ -363,16 +363,18 @@ struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 	if (img->align_sh < 0 || img->align_sh > 3) {
 		return wuerr(wu_invalid_header, "Bizarre alignment");
 	}
-	return wuok();
+	return WU_OK;
 }
 
-struct wu_st pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
+struct wu_st pcx_open_file(struct pcx_desc *desc, const struct wuptr mem,
+const bool word_for_dos_variant) {
 	/* PCX header:
 		Offset  Size    Name
-		0	BYTE	IdentifierByte; // Always 0x0A
+		0	BYTE	IdentifierByte; // Always 0x0A [1]
 		1	BYTE	Version;
-		2	BYTE	Encoding;       // 0 or 1 [*]
+		2	BYTE	Encoding;       // 0 or 1 [2]
 		3
+	 * [1] Except for Word for DOS screen captures, where it's 0xCD
 	 * [*] The only valid value is 1, meaning RLE encoding, and virtually
 	 *     all files in the wild follow this. Alas, imagemagick allows
 	 *     creating uncompressed files with Encoding = 0, while
@@ -383,17 +385,27 @@ struct wu_st pcx_open_file(struct pcx_desc *desc, const struct wuptr mem) {
 	if (desc->mp.len > 128) {
 		const uint8_t *sig = mp_slice(&desc->mp, 3);
 		if (sig) {
-			if (sig[0] == 0x0a && sig[2] <= 1) {
-				switch (sig[1]) {
-				case pcx_ver25:
-				case pcx_ver28_egapal:
-				case pcx_ver28_nopal:
-				case pcx_paintbrush:
-				case pcx_ver30:
-					desc->version = sig[1];
-					desc->compressed = sig[2];
-					return wuok();
+			desc->version = sig[1];
+			desc->compressed = sig[2];
+			switch (sig[0]) {
+			case 0x0a:
+				if (sig[2] <= 1) {
+					switch (sig[1]) {
+					case pcx_ver25:
+					case pcx_ver28_egapal:
+					case pcx_ver28_nopal:
+					case pcx_paintbrush:
+					case pcx_ver30:
+						return WU_OK;
+					}
 				}
+				break;
+			case 0xcd:
+				if (word_for_dos_variant && sig[2] == 1
+				&& sig[1] == pcx_ver30) {
+					return WU_OK;
+				}
+				break;
 			}
 			return WUERR_HERE(wu_invalid_signature);
 		}
@@ -412,7 +424,7 @@ const uint32_t i) {
 		return pcx_open_file(pcx, wuptr_mem(
 			dcx->mp.mem + dcx->off[i],
 			dcx->off[i + 1] - dcx->off[i]
-		));
+		), false);
 	}
 	return WUERR_HERE(wu_invalid_params);
 }

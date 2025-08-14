@@ -58,7 +58,7 @@ const struct wu_conf *wuconf) {
 static enum wu_error pcx_dec(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	struct pcx_desc desc;
-	struct wu_st st = pcx_open_file(&desc, infile->map);
+	struct wu_st st = pcx_open_file(&desc, infile->map, true);
 	if (wu_isok(st)) {
 		st = common_pcx(&desc, infile->sub_img, wuconf);
 	}

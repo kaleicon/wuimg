@@ -733,8 +733,12 @@ DEC_MAP: DecMap = {
 			mime="x-dcx"
 		),
 
-		"pcx": FmtInfo("PC Paintbrush PCX (all versions, plus CGA mode)",
-			ext=("pcc", "pcx"),
+		"pcx": FmtInfo("PC Paintbrush PCX (all versions, plus CGA mode)"
+			", Word for DOS screen capture",
+			ext=(
+				"pcc", "pcx",
+				"mwg", "scr", # Word for DOS
+			),
 			mask=(
 				# Second byte is version. Valid values are
 				# 0,2,3,4,5. (If 1 were a valid version, we
@@ -746,6 +750,11 @@ DEC_MAP: DecMap = {
 				b"\xff\xff\xfe", b"\x0a\x00\x00", # 0
 				b"\xff\xfe\xfe", b"\x0a\x02\x00", # 2,3
 				b"\xff\xfe\xfe", b"\x0a\x04\x00", # 4,5
+			),
+			magic=(
+				# Word for DOS variant. Version and compression
+				# are assumed to be constant
+				b"\xcd\x05\x01",
 			),
 			mime=("vnd.zbrush.pcx", "x-pcx")
 		),
