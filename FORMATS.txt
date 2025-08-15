@@ -1,4 +1,4 @@
-77 families, 131 formats supported
+78 families, 132 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -110,6 +110,7 @@ qoi       qoi       QuiteOK image
 quake     idsp      id Software Sprite (Quake, Half-Life, and 32-bit variants)
 quake     lmp       Quake LMP
 raw       raw       Raw camera formats
+sgf       sgf       Somera Graphic Format
 sgi       sgi       Silicon Graphics Image
 siff      pim       SIFF PIM sprite and animation (first frame only)
 signum    imc       Signum! IMC
@@ -134,10 +135,10 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 304
-565, a64, aas, abm, acbm, afl, als, apd, art, arw, avif, avifs, avs, bie, bl1, bl2, bl3, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cps, cr2, cr3, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, fd2, ff, fli, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mld, mpo, mrw, mtv, mwg, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, scr, sd0, sd1, sd2, sff, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 305
+565, a64, aas, abm, acbm, afl, als, apd, art, arw, avif, avifs, avs, bie, bl1, bl2, bl3, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cps, cr2, cr3, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, fd2, ff, fli, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mld, mpo, mrw, mtv, mwg, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, q4, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, scr, sd0, sd1, sd2, sff, sgf, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 184
+Known magic sequences: 185
 aipd      b'AIPD'
 aliaspix  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08'
 amibios   b'GRFX'
@@ -282,6 +283,7 @@ raw       b'IIU\x00'
 raw       b'MM\x00*'
 raw       b'MM\x00+\x00\x08\x00\x00'
 raw       b'MMOR'
+sgf       b'\x00SoMERA GRaPHIc FORMAT r10 - by T.Pomar a.k.a. Sobakus'
 sgi       b'\x01\xda'
 sir0      b'SIR0'
 sixel     b'\x1bP'

@@ -898,6 +898,20 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"sgf": {
+		"sgf": FmtInfo("Somera Graphic Format",
+			ext="sgf",
+			mask=(
+				b"\0" + b"\xff"*0x35,
+
+				b"\0SoMERA GRaPHIc "
+				b"FORMAT r10 - by "
+				b"T.Pomar a.k.a. S"
+				b"obakus",
+			)
+		),
+	},
+
 	"sgi": {
 		"sgi": FmtInfo("Silicon Graphics Image",
 			ext=("bw", "rgb", "rgba", "sgi"),
