@@ -75,7 +75,7 @@ gpc       gpc       IDES/Fairytale PC-98 visual novel image
 heif      heif      High Efficiency Image File Format
 hel       hel       Herahera Animation (へらへらアニメ, HEL)
 hg3       hg3       CatSystem engine image
-ilbm      ilbm      Interleaved Bitmap (ILBM, PBM, ACBM, Mean Streets MLDF), supports Extra Half-Brite, HAM, color cycling
+ilbm      ilbm      Interleaved Bitmap & Co.: ILBM, PBM, ACBM, RGB8, RGBN and Mean Streets MLDF.
 jam       jam       Aladdin JAM format
 jbig      jbig      JBIG
 jbig2     jbig2     JBIG2
@@ -141,7 +141,7 @@ xyz       xyz       RPG Maker image
 Known extensions: 309
 565, a64, aas, abm, acbm, afl, als, apd, art, arw, avif, avifs, avs, bie, bl1, bl2, bl3, bld, bmp, bmp24, bmz, bob, bp, bpl, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, cm, cps, cr2, cr3, crg, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpx, dt, dt2, dta, erf, eza, fcp, fcs, fd2, ff, fli, flif, fnt, fpt, ftc, g00, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, icn, ico, icon, iff, iim, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lux, lwi, lzs, mac, mag, max, mbfavs, mgf, mki, mld, mpo, mrw, mtv, mwg, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, otb, p2, p41, p64, p7, pac, pam, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, png, pnm, pntg, ppm, prt, puf, px, pxy, pzl, q4, qdv, qoi, raf, ras, raw, rgb, rgba, rle, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, scr, sd0, sd1, sd2, sff, sgf, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tlg, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 186
+Known magic sequences: 188
 aipd      b'AIPD'
 aliaspix  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08'
 amibios   b'GRFX'
@@ -212,6 +212,8 @@ ilbm      b'FORM\x00\x00\x00\x00ACBM'
 ilbm      b'FORM\x00\x00\x00\x00ILBM'
 ilbm      b'FORM\x00\x00\x00\x00MLDF'
 ilbm      b'FORM\x00\x00\x00\x00PBM '
+ilbm      b'FORM\x00\x00\x00\x00RGB8'
+ilbm      b'FORM\x00\x00\x00\x00RGBN'
 imc       b'bimc0002'
 indy      b'Indy'
 j2k       b'\xffO\xffQ'

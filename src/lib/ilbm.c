@@ -18,6 +18,7 @@ const char * ilbm_compression_str(const enum ilbm_compression comp) {
 	case ilbm_compression_none: return "None";
 	case ilbm_compression_packbits: return "PackBits";
 	case ilbm_compression_vdat: return "VDAT";
+	case ilbm_compression_impulse: return "Impulse's Turbo Silver";
 	case ilbm_compression_mldf: return "None (MLDF)";
 	}
 	return "???";
@@ -219,6 +220,50 @@ struct wuimg *img, const struct wuptr body) {
 	return WUERR_HERE(wu_alloc_error);
 }
 
+static struct wu_st decompress_impulse(const struct ilbm_desc *desc,
+struct wuimg *img, const struct wuptr src) {
+	size_t d = 0;
+	size_t dst_len = img->w*img->h;
+	size_t s = 0;
+	const uint8_t pix_size = desc->format == ilbm_format_rgb8 ? 4 : 2;
+	while (src.len - s >= pix_size) {
+		size_t cnt;
+		uint8_t pix[4];
+		if (pix_size == 4) {
+			memcpy(pix, src.ptr + s, 4);
+			cnt = pix[3] & 0x7f;
+			pix[3] &= 0x80;
+			pix[3] ^= (pix[3] & 0x80) ? 0x80 : 0xff;
+		} else {
+			memcpy(pix, src.ptr + s, 2);
+			cnt = pix[1] & 0x7;
+			pix[1] &= 0xf8;
+			pix[1] ^= (pix[1] & 0x8) ? 0x8 : 0xf;
+		}
+		s += pix_size;
+		if (!cnt) {
+			if (src.len - s < 1) {
+				break;
+			}
+			cnt = src.ptr[s];
+			++s;
+			if (!cnt) {
+				if (src.len - s < 2) {
+					break;
+				}
+				cnt = buf_endian16(src.ptr + s, big_endian);
+				s += 2;
+			}
+		}
+		if (dst_len - d < cnt) {
+			break;
+		}
+		memwordset(img->data + d*pix_size, pix, pix_size, cnt);
+		d += cnt;
+	}
+	return wuerr_partial(d, dst_len);
+}
+
 static struct wu_st raw_cpy(struct wuimg *img, const struct wuptr body) {
 	const size_t size = wuimg_size(img);
 	const size_t cpy = zumin(size, body.len);
@@ -260,6 +305,9 @@ const bool is_tiny) {
 			break;
 		}
 		break;
+	case ilbm_format_rgb8:
+	case ilbm_format_rgbn:
+		return decompress_impulse(desc, img, body);
 	}
 	return WUERR_HERE(wu_invalid_params);
 }
@@ -348,7 +396,7 @@ static struct wu_st tidy_up(struct ilbm_desc *desc, struct wuimg *img) {
 		}
 		if (desc->planes > 8) {
 			img->channels = 4;
-			img->bitrange = 8;
+			img->bitrange = desc->format == ilbm_format_rgbn ? 4 : 8;
 		} else {
 			img->channels = 1;
 			img->bitrange = desc->planes;
@@ -492,8 +540,6 @@ const struct iff_chunk chunk) {
 	const char *msg = NULL;
 	if (desc->pal) {
 		msg = "repeated CMAP";
-	} else if (desc->planes > 8) {
-		msg = "CMAP with depth > 8";
 	} else if (chunk.len % 3) {
 		msg = "CMAP length not divisible by 3";
 	} else if (colors > 256) {
@@ -502,17 +548,20 @@ const struct iff_chunk chunk) {
 	if (msg) {
 		return wuerr(wu_invalid_header, msg);
 	}
-	desc->colors = colors;
-	if (desc->colors) {
-		const uint8_t *data = mp_slice(&desc->mp, chunk.len);
-		if (!data) {
-			return WUERR_HERE(wu_unexpected_eof);
+
+	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
+	if (!data) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	if (desc->planes <= 8) {
+		desc->colors = colors;
+		if (desc->colors) {
+			desc->pal = palette_new();
+			if (!desc->pal) {
+				return WUERR_HERE(wu_alloc_error);
+			}
+			palette_from_rgb8(desc->pal, data, colors);
 		}
-		desc->pal = palette_new();
-		if (!desc->pal) {
-			return WUERR_HERE(wu_alloc_error);
-		}
-		palette_from_rgb8(desc->pal, data, colors);
 	}
 	return finish_chunk(desc, iff, chunk, NULL);
 }
@@ -548,18 +597,22 @@ const struct iff_chunk chunk) {
 		switch (desc->format) {
 		case ilbm_format_ilbm:
 		case ilbm_format_acbm:
+			if (desc->planes < 5 || desc->planes > 8) {
+				return wuerr(wu_invalid_header,
+					"HAM with planes < 5 or > 8");
+			}
+			if (desc->masking) {
+				return wuerr(wu_unsupported_feature,
+					"HAM mode with masking");
+			}
+			break;
+		case ilbm_format_rgb8:
+		case ilbm_format_rgbn:
+			desc->ham = false; // Just no
 			break;
 		default:
 			return wuerr(wu_unsupported_feature,
 				"HAM supported only for ILBM and ACBM images");
-		}
-		if (desc->planes < 5 || desc->planes > 8) {
-			return wuerr(wu_invalid_header,
-				"HAM with planes < 5 or > 8");
-		}
-		if (desc->masking) {
-			return wuerr(wu_unsupported_feature,
-				"HAM mode with masking");
 		}
 	}
 	return finish_chunk(desc, iff, chunk, NULL);
@@ -600,6 +653,14 @@ const struct iff_chunk chunk) {
 	desc->masking = data[9];
 	desc->compression = data[10];
 	switch (desc->format) {
+	case ilbm_format_acbm:
+		if (!desc->planes || desc->planes > 8) {
+			return wuerr(wu_invalid_header, "ACBM planes > 8 or == 0");
+		}
+		/* ACBM files are uncompressed, regardless of what the chunk
+		 * says. It was really fun to figure this out. Thanks guys. */
+		desc->compression = ilbm_compression_none;
+		break;
 	case ilbm_format_mldf:
 		if (desc->planes != 8) {
 			return wuerr(wu_invalid_header, "MLDF depth != 8");
@@ -622,13 +683,18 @@ const struct iff_chunk chunk) {
 		}
 		img->align_sh = 1;
 		break;
-	case ilbm_format_acbm:
-		if (!desc->planes || desc->planes > 8) {
-			return wuerr(wu_invalid_header, "ACBM planes > 8 or == 0");
+	case ilbm_format_rgb8:
+		if (desc->planes != 25) {
+			return wuerr(wu_invalid_header, "RGB8 depth != 25");
 		}
-		/* ACBM files are uncompressed, regardless of what the chunk
-		 * says. It was really fun to figure this out. Thanks guys. */
-		desc->compression = ilbm_compression_none;
+		desc->compression = ilbm_compression_impulse;
+		break;
+	case ilbm_format_rgbn:
+		if (desc->planes != 13) {
+			return wuerr(wu_invalid_header, "RGBN depth != 13");
+		}
+		img->bitdepth = 4;
+		desc->compression = ilbm_compression_impulse;
 		break;
 	case ilbm_format_ilbm:
 		switch (desc->compression) {
@@ -778,8 +844,10 @@ struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 			switch (id) {
 			case ilbm_format_acbm:
 			case ilbm_format_ilbm:
-			case ilbm_format_pbm:
 			case ilbm_format_mldf:
+			case ilbm_format_pbm:
+			case ilbm_format_rgb8:
+			case ilbm_format_rgbn:
 				desc->format = id;
 				return WU_OK;
 			}
