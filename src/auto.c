@@ -333,7 +333,7 @@ const struct wuptr pgf_desc = DESC(
 	"attr:inverted"
 );
 
-/* Eclipse Proxy (pxy)
+/* PXY - Eclipse Proxy
  * Related to Eclipse TILE (see lib/eclipse.c), but raster is not tiled,
  * colorspace is always RGB, and there's no metadata, hence it being here. */
 const struct wuptr pxy_desc = DESC(
@@ -361,6 +361,18 @@ const struct wuptr pxy_desc = DESC(
 	"w:<u32>\n"
 	"h:<u32>\n"
 	"skip:0xf2" // to 0x100
+);
+
+/* PZL - X11 puzzle */
+const struct wuptr pzl_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+
+	"w:<u32>\n"
+	"h:<u32>\n"
+	"palentries:<u8>\n"
+	"pal:<u24>[]"
 );
 
 /* Atari Falcon True Color family */
@@ -574,12 +586,14 @@ struct token {
 	} u;
 };
 
+struct auto_state {
+	enum endianness e;
+	uint16_t pal_entries;
+	uintmax_t scalar;
+};
+
 static struct wu_st pbug(const char *msg) {
 	return wuerr(wu_string_parse_error, msg);
-}
-
-static enum endianness get_endian(void *state) {
-	return (enum endianness)(uintptr_t)state;
 }
 
 static int count_equals(struct mparser *mp, const uint8_t end) {
@@ -615,7 +629,7 @@ static struct wu_st get_str(struct mparser *mp, struct token *tok) {
 				.ptr = mp->mem + init,
 				.len = end - init,
 			};
-			return wuok();
+			return WU_OK;
 		}
 	}
 	return pbug("Unexpected end of string");
@@ -643,11 +657,11 @@ static struct wu_st get_load(struct mparser *mp, struct token *tok) {
 						if (mp_next_char(mp) == ']') {
 							tok->u.load.array =
 								(uint16_t)n;
-							return wuok();
+							return WU_OK;
 						}
 					}
 				} else {
-					return wuok();
+					return WU_OK;
 				}
 			}
 		}
@@ -666,7 +680,7 @@ static struct wu_st get_word(struct mparser *mp, struct token *tok) {
 	}
 	tok->type = token_enum;
 	tok->u.str = (struct wuptr){.ptr = mp->mem + init, .len = mp->pos - init};
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st read_token(struct mparser *mp, struct token *tok) {
@@ -695,7 +709,7 @@ static struct wu_st read_token(struct mparser *mp, struct token *tok) {
 		--mp->pos;
 		return get_word(mp, tok);
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static uint8_t tohex(const uint8_t c) {
@@ -753,12 +767,15 @@ static struct wu_st str_file_cmp(const struct wuptr arg, FILE *ifp) {
 			return wuerr(wu_invalid_header, "Matching failure");
 		}
 	}
-	return wuok();
+	return WU_OK;
 }
 
-static struct wu_st load_pal(struct wuimg *img, FILE *ifp,
-const struct load l) {
-	const size_t elems = l.array ? l.array : (1 << img->bitdepth);
+static struct wu_st load_pal(struct auto_state *state, struct wuimg *img,
+FILE *ifp, const struct load l) {
+	const size_t elems = l.array
+		? l.array
+		: state->pal_entries
+			? state->pal_entries : (1 << img->bitdepth);
 	if (elems <= 256) {
 		switch (l.size) {
 		case 3: case 4:
@@ -769,25 +786,24 @@ const struct load l) {
 	return pbug("Palette entries must be <= 256");
 }
 
-static struct wu_st load_val(struct image_file *infile, const struct token *tok,
-uintmax_t *scalar) {
+static struct wu_st load_val(struct auto_state *state,
+struct image_file *infile, const struct token *tok) {
 	const uint8_t size = tok->u.load.size;
 	uint32_t tmp;
 	void *ptr = &tmp;
 	if (!fread(ptr, size, 1, infile->ifp)) {
 		return wuerr(wu_unexpected_eof, NULL);
 	}
-	const enum endianness e = get_endian(infile->dec_state);
 	switch (size) {
-	case 1: *scalar = *((uint8_t *)ptr); break;
-	case 2: *scalar = endian16(*((uint16_t *)ptr), e); break;
-	case 4: *scalar = endian32(tmp, e); break;
+	case 1: state->scalar = *((uint8_t *)ptr); break;
+	case 2: state->scalar = endian16(*((uint16_t *)ptr), state->e); break;
+	case 4: state->scalar = endian32(tmp, state->e); break;
 	default: return pbug("Bad word size");
 	}
-	if (tok->u.load.is_signed && (*scalar & (1u << (size - 1)))) {
+	if (tok->u.load.is_signed && (state->scalar & (1u << (size - 1)))) {
 		return wuerr(wu_invalid_header, "Got negative value from file");
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static bool shorthand(const struct wuptr op, const char *str) {
@@ -810,11 +826,11 @@ const uintmax_t num) {
 	} else {
 		return pbug("Unknown variable");
 	}
-	return wuok();
+	return WU_OK;
 }
 
-static struct wu_st exec_stmt(struct image_file *infile, const struct wuptr op,
-const struct token *tok, uintmax_t *scalar) {
+static struct wu_st exec_stmt(struct auto_state *state,
+struct image_file *infile, const struct wuptr op, const struct token *tok) {
 	struct wuimg *img = infile->sub_img;
 	switch (tok->type) {
 	case token_str:
@@ -826,9 +842,9 @@ const struct token *tok, uintmax_t *scalar) {
 		;const struct wuptr arg = tok->u.str;
 		if (wuptr_eq_str(op, "endian")) {
 			if (wuptr_eq_str(arg, "little")) {
-				infile->dec_state = (void *)little_endian;
+				state->e = little_endian;
 			} else if (wuptr_eq_str(arg, "big")) {
-				infile->dec_state = (void *)big_endian;
+				state->e = big_endian;
 			} else {
 				return pbug("Bad endian value");
 			}
@@ -877,14 +893,14 @@ const struct token *tok, uintmax_t *scalar) {
 			}
 		} else if (wuptr_eq_str(op, "match")) {
 			if (wuptr_eq_str(arg, "filesize")) {
-				*scalar = image_file_size(infile);
+				state->scalar = image_file_size(infile);
 			} else {
 				return pbug("Bad match value");
 			}
 		} else {
 			return pbug("Unknown variable-enum pair");
 		}
-		return wuok();
+		return WU_OK;
 	case token_num:
 		;const uintmax_t num = tok->u.num;
 		if (wuptr_eq_str(op, "skip")) {
@@ -903,20 +919,22 @@ const struct token *tok, uintmax_t *scalar) {
 		} else {
 			return set_num(img, op, num);
 		}
-		return wuok();
+		return WU_OK;
 	case token_load:
-		;const struct wu_st err = load_val(infile, tok, scalar);
+		;const struct wu_st err = load_val(state, infile, tok);
 		if (!err.st) {
 			if (wuptr_eq_str(op, "match")) {
 				// Do nothing, just leave `scalar` set
+			} else if (wuptr_eq_str(op, "palentries")) {
+				state->pal_entries = (uint16_t)state->scalar;
 			} else {
-				return set_num(img, op, *scalar);
+				return set_num(img, op, state->scalar);
 			}
 		}
 		return err;
 	case token_load_array:
 		if (wuptr_eq_str(op, "pal")) {
-			return load_pal(img, infile->ifp, tok->u.load);
+			return load_pal(state, img, infile->ifp, tok->u.load);
 		}
 		return pbug("Unknown variable-array pair");
 	default:
@@ -925,17 +943,16 @@ const struct token *tok, uintmax_t *scalar) {
 	return pbug("Syntax error");
 }
 
-struct parse_state {
+struct parse_stack {
 	bool exec:1;
 	bool got_match:1;
 };
 
-static struct wu_st parse(struct mparser *mp, struct image_file *infile) {
-	uintmax_t scalar = 0;
-
-	struct parse_state state[4];
+static struct wu_st parse(struct mparser *mp, struct auto_state *state,
+struct image_file *infile) {
+	struct parse_stack stack[4];
 	uint8_t d = 0;
-	state[d] = (struct parse_state) {.exec = true};
+	stack[d] = (struct parse_stack) {.exec = true};
 	for (;;) {
 		struct token l;
 		struct wu_st err = read_token(mp, &l);
@@ -944,7 +961,7 @@ static struct wu_st parse(struct mparser *mp, struct image_file *infile) {
 		}
 
 		switch (l.type) {
-		case token_eof: return d ? pbug("Unclosed contexts") : wuok();
+		case token_eof: return d ? pbug("Unclosed contexts") : WU_OK;
 		case token_enum:
 			;struct token r;
 			err = read_token(mp, &r);
@@ -956,34 +973,34 @@ static struct wu_st parse(struct mparser *mp, struct image_file *infile) {
 			err = read_token(mp, &r);
 			if (err.st != wu_ok) {
 				return err;
-			} else if (state[d].exec) {
-				scalar = 0;
-				err = exec_stmt(infile, l.u.str, &r, &scalar);
+			} else if (stack[d].exec) {
+				state->scalar = 0;
+				err = exec_stmt(state, infile, l.u.str, &r);
 				if (err.st != wu_ok) {
 					return err;
 				}
 			}
 			break;
 		case token_num:
-			if (state[d].got_match) {
-				state[d].exec = false;
+			if (stack[d].got_match) {
+				stack[d].exec = false;
 			} else {
-				state[d].exec = l.u.num == scalar;
-				state[d].got_match = state[d].exec;
+				stack[d].exec = l.u.num == state->scalar;
+				stack[d].got_match = stack[d].exec;
 			}
 			break;
 		case token_open_paren:
 			++d;
-			if (d >= ARRAY_LEN(state)) {
+			if (d >= ARRAY_LEN(stack)) {
 				return pbug("Max depth reached");
 			}
-			state[d] = (struct parse_state) {
-				.exec = state[d-1].exec,
-				.got_match = !state[d-1].exec & state[d-1].got_match,
+			stack[d] = (struct parse_stack) {
+				.exec = stack[d-1].exec,
+				.got_match = !stack[d-1].exec & stack[d-1].got_match,
 			};
 			break;
 		case token_close_paren:
-			if (!state[d].exec && !state[d].got_match) {
+			if (!stack[d].exec && !stack[d].got_match) {
 				return wuerr(wu_invalid_header, "No matches found");
 			} else if (!d) {
 				return pbug("Excess closing parens");
@@ -993,14 +1010,14 @@ static struct wu_st parse(struct mparser *mp, struct image_file *infile) {
 		default: return pbug("Syntax error");
 		}
 	}
-	return wuok();
+	return WU_OK;
 }
 
 struct wu_st auto_load(struct image_file *infile) {
 	struct wuimg *img = infile->sub_img;
 	enum wu_error st = wuimg_alloc(img);
 	if (st == wu_ok) {
-		const enum endianness e = get_endian(infile->dec_state);
+		const enum endianness e = (enum endianness)(uintptr_t)infile->dec_state;
 		return wuerr_partial(fmt_load_raster_swap(img, infile->ifp, e),
 			wuimg_size(img));
 	}
@@ -1010,7 +1027,8 @@ struct wu_st auto_load(struct image_file *infile) {
 struct wu_st auto_init(struct image_file *infile, const struct wu_conf *conf,
 const struct wuptr desc) {
 	struct mparser mp = mp_wuptr(desc);
-	const struct wu_st st = parse(&mp, infile);
+	struct auto_state state = {0};
+	const struct wu_st st = parse(&mp, &state, infile);
 	if (!wu_isok(st)) {
 		if (st.msg && getenv("WU_DEBUG")) {
 			term_line_put("Processed:", stderr);
@@ -1019,6 +1037,7 @@ const struct wuptr desc) {
 		}
 		return st;
 	}
+	infile->dec_state = (void *)state.e;
 	return wuerr(wuimg_exceeds_limit(infile->sub_img, conf)
 		? wu_exceeds_size_limit : wu_ok, NULL);
 }

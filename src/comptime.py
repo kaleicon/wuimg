@@ -184,6 +184,9 @@ DEC_MAP: DecMap = {
 			ext="pxy",
 			magic=b"\xaf\xcb"
 		),
+		"pzl": FmtInfo("X11 Puzzle",
+			match=("cm", "pzl"),
+		),
 
 		# Atari Falcon True Color family
 		"coke": FmtInfo("COKE (Atari Falcon)",
