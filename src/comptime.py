@@ -187,6 +187,9 @@ DEC_MAP: DecMap = {
 		"pzl": FmtInfo("X11 Puzzle",
 			match=("cm", "pzl"),
 		),
+		"qdv": FmtInfo("Giffer QDV",
+			match="qdv",
+		),
 
 		# Atari Falcon True Color family
 		"coke": FmtInfo("COKE (Atari Falcon)",

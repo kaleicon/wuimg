@@ -375,6 +375,18 @@ const struct wuptr pzl_desc = DESC(
 	"pal:<u24>[]"
 );
 
+/* QDV - Giffer image */
+const struct wuptr qdv_desc = DESC(
+	"endian:big\n"
+	"channels:1\n"
+	"bitdepth:8\n"
+
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"palentries:<u8+1>\n"
+	"pal:<u24>[]"
+);
+
 /* Atari Falcon True Color family */
 // COKE
 const struct wuptr coke_desc = DESC(
@@ -575,6 +587,7 @@ struct load {
 	bool is_signed;
 	uint8_t size;
 	uint16_t array;
+	int16_t bias;
 };
 
 struct token {
@@ -641,14 +654,27 @@ static struct wu_st get_load(struct mparser *mp, struct token *tok) {
 	switch (type) {
 	case 'i': case 'u':
 		mp_scan_uint(mp, 2, &n);
-		switch (n) {
-		case 8: case 16: case 24: case 32:
-			if (mp_next_char(mp) == '>') {
-				int c = mp_cur_char(mp);
+		int c = mp_cur_char(mp);
+		int16_t bias = 0;
+		if (c == '+' || c == '-') {
+			++mp->pos;
+			uintmax_t bias_tmp;
+			mp_scan_xint(mp, 5, &bias_tmp);
+			if (bias_tmp > 0x7fff) {
+				return pbug("bias > 0x7fff");
+			}
+			bias = (int16_t)((c == '-') ? -bias_tmp : bias_tmp);
+		}
+		c = mp_next_char(mp);
+		if (c == '>') {
+			switch (n) {
+			case 8: case 16: case 24: case 32:
+				c = mp_cur_char(mp);
 				tok->type = c == '[' ? token_load_array : token_load;
 				tok->u.load = (struct load) {
 					.is_signed = type == 'i',
 					.size = (uint8_t)(n/8),
+					.bias = bias,
 				};
 				if (tok->type == token_load_array) {
 					++mp->pos;
@@ -803,6 +829,7 @@ struct image_file *infile, const struct token *tok) {
 	if (tok->u.load.is_signed && (state->scalar & (1u << (size - 1)))) {
 		return wuerr(wu_invalid_header, "Got negative value from file");
 	}
+	state->scalar += (uintmax_t)(intmax_t)tok->u.load.bias;
 	return WU_OK;
 }
 
