@@ -267,6 +267,11 @@ DEC_MAP: DecMap = {
 	},
 
 	"atari": {
+		"crg": FmtInfo("Calamus Raster Graphic",
+			ext=("crg", "img"),
+			magic=b"CALAMUSCRG",
+		),
+
 		"dali": FmtInfo("Dali uncompressed",
 			match=("sd0", "sd1", "sd2"),
 			magic=b"\0\0\0\0",

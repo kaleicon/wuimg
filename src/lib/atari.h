@@ -14,6 +14,11 @@ enum atari_st_res {
 
 const char * atari_st_res_str(enum atari_st_res res);
 
+/* Calamus Raster Graphic */
+struct wu_st crg_decode(struct wuptr mem, struct wuimg *img);
+
+struct wu_st crg_get_info(struct wuptr mem, struct wuimg *img);
+
 /* Dali */
 struct dali_desc {
 	FILE *ifp;

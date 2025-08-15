@@ -163,6 +163,47 @@ const void *restrict pal) {
 }
 
 
+/* Calamus Raster Graphic
+http://fileformats.archiveteam.org/wiki/Calamus_Raster_Graphic
+*/
+static const size_t CRG_HEADER_SIZE = 42;
+
+struct wu_st crg_decode(const struct wuptr mem, struct wuimg *img) {
+	const size_t sixe = wuimg_size(img);
+	return wuerr_partial(decomp_topbitrle(img->data, sixe,
+		mem.ptr + CRG_HEADER_SIZE, mem.len - CRG_HEADER_SIZE, 1), sixe);
+}
+
+struct wu_st crg_get_info(const struct wuptr mem, struct wuimg *img) {
+	/* CRG header:
+		Offset  Type    Name
+		0       char    ID[10]
+		10      u8      ???[4]
+		14      u32     FileSize  // minus 24
+		18      u16     ???
+		20      u32     Width
+		24      u32     Height
+		28      u8      ???[10]
+		38      u32     StreamSize
+		42      u8      RLEStream[StreamSize]
+	*/
+	const uint8_t magic[] = {
+		'C', 'A', 'L', 'A', 'M', 'U', 'S',
+		'C', 'R', 'G'
+	};
+	if (mem.len < CRG_HEADER_SIZE) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(mem.ptr, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	img->w = buf_endian32(mem.ptr + 20, big_endian);
+	img->h = buf_endian32(mem.ptr + 24, big_endian);
+	img->channels = 1;
+	img->bitdepth = 1;
+	img->attr = pix_inverted;
+	return WU_OK;
+}
+
 /* Dali */
 
 struct wu_st dali_decode(struct dali_desc *desc, struct wuimg *img) {

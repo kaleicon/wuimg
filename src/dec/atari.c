@@ -7,6 +7,19 @@ static void res_metadata(struct wutree *meta, const enum atari_st_res res) {
 	tree_add_leaf_utf8(meta, "Resolution", atari_st_res_str(res));
 }
 
+/* Calamus Raster Graphic */
+static struct wu_st init_crg(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct wu_st st = crg_get_info(infile->map, infile->sub_img);
+	if (wu_isok(st)) {
+		st = WUERR_CHECK(wuimg_alloc_limit(infile->sub_img, conf));
+		if (wu_isok(st)) {
+			st = crg_decode(infile->map, infile->sub_img);
+		}
+	}
+	return st;
+}
+
 /* Dali */
 static struct wu_st init_dali(struct image_file *infile,
 const struct wu_conf *conf) {
@@ -191,6 +204,11 @@ const struct wu_conf *_c) {
 }
 
 
+const struct image_fn crg_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.init = init_crg,
+};
 const struct image_fn dali_fn = {
 	.alloc_single = true,
 	.init = init_dali,
