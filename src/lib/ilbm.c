@@ -12,6 +12,8 @@
 /* Output channels for HAM. 3 are required, but 4 is much faster as rendering
  * makes heavy use of memcpy */
 static const uint8_t HAM_CH = 4;
+/* Palette cycling slots */
+static const uint8_t MAX_CYCLE_SLOTS = 16;
 
 const char * ilbm_compression_str(const enum ilbm_compression comp) {
 	switch (comp) {
@@ -467,6 +469,41 @@ const struct iff_chunk chunk) {
 	return finish_chunk(desc, iff, chunk, msg);
 }
 
+static struct wu_st add_crng(struct ilbm_desc *desc, bool active,
+const bool reverse, const float rate, const uint8_t lo, const uint8_t hi,
+const bool garbage) {
+	struct palette_cycle *cycle = desc->cycle;
+	if (!cycle) {
+		cycle = palette_cycle_new(MAX_CYCLE_SLOTS);
+		if (!cycle) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+		desc->cycle = cycle;
+	}
+
+	if (cycle->len < cycle->alloc) {
+		for (size_t i = 0; i < cycle->len; ++i) {
+			if (cycle->crng[i].lo == lo && cycle->crng[i].hi == hi) {
+				return WU_OK;
+			}
+		}
+		active = active && rate != 0 && lo < hi && !garbage;
+		cycle->crng[cycle->len] = (struct palette_crng) {
+			.lo = lo,
+			.hi = hi,
+			.active = active,
+			.reverse = reverse,
+			.secs = rate,
+		};
+		++cycle->len;
+		cycle->active_nr += active;
+		desc->img->evolving |= active;
+	} else {
+		cycle->too_many = true;
+	}
+	return WU_OK;
+}
+
 static struct wu_st parse_crng(struct iff_state *iff, void *ptr,
 const struct iff_chunk chunk) {
 	/* CRNG structure:
@@ -486,48 +523,25 @@ const struct iff_chunk chunk) {
 	if (!data) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	const char *msg = "CRNG length != 8";
 	if (chunk.len == 8) {
-		msg = NULL;
-		const uint8_t MAX_SLOTS = 16;
-		struct palette_cycle *cycle = desc->cycle;
-		if (!cycle) {
-			cycle = palette_cycle_new(MAX_SLOTS);
-			if (!cycle) {
-				return WUERR_HERE(wu_alloc_error);
-			}
-			desc->cycle = cycle;
-		}
+		const uint16_t ACTIVE = 0x1;
+		const uint16_t REVERSE = 0x2;
+		const float TO_SECS = 273.0f + 1.0f/15;
+		const bool garbage = data[0] | data[1];
+		const uint16_t rate = buf_endian16(data + 2,
+			iff->endian);
+		const uint16_t flags = buf_endian16(data + 4,
+			iff->endian);
+		const uint8_t lo = data[6];
+		const uint8_t hi = data[7];
 
-		if (cycle->len < cycle->alloc) {
-			const uint16_t ACTIVE = 0x1;
-			const uint16_t REVERSE = 0x2;
-			const float TO_SECS = 273.0f + 1.0f/15;
-			const bool garbage = data[0] | data[1];
-			const uint16_t rate = buf_endian16(data + 2,
-				iff->endian);
-			const uint16_t flags = buf_endian16(data + 4,
-				iff->endian);
-			const uint8_t lo = data[6];
-			const uint8_t hi = data[7];
-
-			const bool active = (flags & ACTIVE) && rate && lo < hi
-				&& !garbage;
-			cycle->crng[cycle->len] = (struct palette_crng) {
-				.lo = lo,
-				.hi = hi,
-				.active = active,
-				.reverse = flags & REVERSE,
-				.secs = TO_SECS/rate,
-			};
-			++cycle->len;
-			cycle->active_nr += active;
-			desc->img->evolving |= active;
-		} else {
-			cycle->too_many = true;
+		struct wu_st st = add_crng(desc, flags & ACTIVE,
+			flags & REVERSE, TO_SECS/rate, lo, hi, garbage);
+		if (!wu_isok(st)) {
+			return st;
 		}
 	}
-	return finish_chunk(desc, iff, chunk, msg);
+	return finish_chunk(desc, iff, chunk, NULL);
 }
 
 static struct wu_st parse_cmap(struct iff_state *iff, void *ptr,
@@ -568,6 +582,41 @@ const struct iff_chunk chunk) {
 	return finish_chunk(desc, iff, chunk, NULL);
 }
 
+static struct wu_st parse_ccrt(struct iff_state *iff, void *ptr,
+const struct iff_chunk chunk) {
+	/* CCRT structure:
+		Offset  Size    Name
+		0       s16     Direction // 0, 1, or -1
+		2       u8      LowIdx
+		3       u8      HighIdx
+		4       u32     Seconds
+		8       u32     Microseconds
+		12      u16     Pad
+		14
+	*/
+	(void)iff;
+	struct ilbm_desc *desc = ptr;
+	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
+	if (!data) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	if (chunk.len == 14) {
+		const int16_t direction = (int16_t)buf_endian16(data,
+			iff->endian);
+		const uint8_t lo = data[2];
+		const uint8_t hi = data[3];
+		const uint32_t sec = buf_endian16(data + 4, iff->endian);
+		const uint32_t usec = buf_endian16(data + 8, iff->endian);
+		const bool garbage = data[12] | data[13];
+		struct wu_st st = add_crng(desc, direction, direction == -1,
+			(float)sec + (float)usec/1000000.f, lo, hi, garbage);
+		if (!wu_isok(st)) {
+			return st;
+		}
+	}
+	return finish_chunk(desc, iff, chunk, NULL);
+}
+
 static struct wu_st parse_camg(struct iff_state *iff, void *ptr,
 const struct iff_chunk chunk) {
 	/* CAMG structure:
@@ -581,26 +630,26 @@ const struct iff_chunk chunk) {
 	*/
 	(void)iff;
 	struct ilbm_desc *desc = ptr;
-	if (chunk.len != 4) {
-		return wuerr(wu_invalid_header, "unexpected CAMG size");
-	}
 	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
 	if (!data) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	const uint32_t flags = buf_endian32(data, iff->endian);
-	if (desc->planes == 6) {
-		desc->extra_half_brite = flags & 0x80;
-	}
-	switch (desc->format) {
-	case ilbm_format_ilbm:
-	case ilbm_format_acbm:
-		if (desc->planes >= 5 && desc->planes <= 8 && !desc->masking) {
-			desc->ham = flags & 0x800;
+	if (chunk.len == 4) {
+		const uint32_t flags = buf_endian32(data, iff->endian);
+		if (desc->planes == 6) {
+			desc->extra_half_brite = flags & 0x80;
 		}
-		break;
-	default:
-		break;
+		switch (desc->format) {
+		case ilbm_format_ilbm:
+		case ilbm_format_acbm:
+			if (desc->planes >= 5 && desc->planes <= 8
+			&& !desc->masking) {
+				desc->ham = flags & 0x800;
+			}
+			break;
+		default:
+			break;
+		}
 	}
 	return finish_chunk(desc, iff, chunk, NULL);
 }
@@ -737,6 +786,7 @@ static const struct iff_table CHUNK_MAP[] = {
 	{FOURCC('B', 'O', 'D', 'Y'), body_stop},
 	{FOURCC('A', 'B', 'I', 'T'), body_stop},
 	{FOURCC('C', 'A', 'M', 'G'), parse_camg},
+	{FOURCC('C', 'C', 'R', 'T'), parse_ccrt},
 	{FOURCC('C', 'M', 'A', 'P'), parse_cmap},
 	{FOURCC('C', 'R', 'N', 'G'), parse_crng},
 	{FOURCC('T', 'I', 'N', 'Y'), parse_tiny},
