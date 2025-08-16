@@ -133,7 +133,11 @@ don't trust me or the C language in general), run some of the following:
 	# Disable all formats requiring external libraries
 	meson configure -D disable_external=true BUILDDIR
 
-	# Disable everything by default
+	# Optimize for the current CPU, at the expense of probably not
+	# running on a different machine.
+	meson configure -D c_args=-march=native FUZZBUILD
+
+	# Disable all decoders and window backends by default
 	meson configure --auto-features disabled BUILDDIR
 
 Once you're ready, run
@@ -182,9 +186,14 @@ This is used for debugging.
 	# To test, say, BMP decoding, you need the DIB family enabled,
 	# which also includes ICO and DIB.
 	meson configure --auto-features disabled -D dib=enabled FUZZBUILD
+	# Optimize for the current CPU
+	meson configure -D c_args=-march=native FUZZBUILD
+	# Enable a sanitizer to make sure it crashes
+	meson configure -D b_sanitize=address FUZZBUILD
+
 	meson compile -C FUZZBUILD wufuzz
 	# Create a minimal corpus
-	afl-cmin -i ilbm_samples/ -o uniq/ -- wufuzz bmp
+	afl-cmin -i bmp_samples/ -o uniq/ -- wufuzz bmp
 	# Fuzz
 	afl-fuzz -i uniq/ -o out/ -- wufuzz bmp
 
