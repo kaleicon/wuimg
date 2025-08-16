@@ -575,12 +575,12 @@ DEC_MAP: DecMap = {
 	},
 
 	"elecbyte": {
-		"eb_fnt": FmtInfo("Elecbyte M.U.G.E.N. Font v1. Requires PCX",
+		"eb_fnt": FmtInfo("Elecbyte M.U.G.E.N. Font. Requires PCX",
 			ext="fnt",
 			magic=b"ElecbyteFnt\0"
 		),
 
-		"eb_sff": FmtInfo("Elecbyte M.U.G.E.N. Sprite v1. Requires PCX",
+		"eb_sff": FmtInfo("Elecbyte M.U.G.E.N. Sprite. PCX and PNG recommended",
 			ext="sff",
 			magic=b"ElecbyteSpr\0"
 		),

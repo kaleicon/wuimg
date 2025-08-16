@@ -65,8 +65,8 @@ dib       ico       Microsoft Icon
 dpx       dpx       Digital Picture Exchange
 dvm       dvm       Magic Software DVM
 eclipse   eclipse   Eclipse TILE
-elecbyte  eb_fnt    Elecbyte M.U.G.E.N. Font v1. Requires PCX
-elecbyte  eb_sff    Elecbyte M.U.G.E.N. Sprite v1. Requires PCX
+elecbyte  eb_fnt    Elecbyte M.U.G.E.N. Font. Requires PCX
+elecbyte  eb_sff    Elecbyte M.U.G.E.N. Sprite. PCX and PNG recommended
 flif      flif      Free Lossless Image Format
 g00       g00       RealLive engine G00
 gif       gif       Graphics Interchange Format
