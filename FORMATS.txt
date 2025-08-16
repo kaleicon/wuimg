@@ -76,7 +76,7 @@ gpc       gpc       IDES/Fairytale PC-98 visual novel image
 heif      heif      High Efficiency Image File Format
 hel       hel       Herahera Animation (へらへらアニメ, HEL)
 hg3       hg3       CatSystem engine image
-ilbm      ilbm      Interleaved Bitmap & Co.: ILBM, PBM, ACBM, RGB8, RGBN and Mean Streets MLDF.
+ilbm      ilbm      Interleaved Bitmap & Co.: ILBM, PBM, ACBM, RGB8, RGBN, Mean Streets MLDF, Command Simulations little-endian ILBM
 jam       jam       Aladdin JAM format
 jbig      jbig      JBIG
 jbig2     jbig2     JBIG2
