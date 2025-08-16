@@ -694,6 +694,13 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"mgx": {
+		"mgxicn": FmtInfo("Micrografx ICN",
+			ext="icn",
+			magic=b"ZZZZ",
+		),
+	},
+
 	"msx": {
 		"msx": FmtInfo("MSX-BASIC dump, Graph Saurus",
 			# You can sort of tell whether a file is an MSX-BASIC format,
