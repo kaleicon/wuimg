@@ -60,6 +60,7 @@ struct ilbm_desc {
 	uint8_t trans_value;
 	bool extra_half_brite;
 	bool ham;
+	enum endianness endian:8;
 };
 
 const char * ilbm_compression_str(enum ilbm_compression comp);

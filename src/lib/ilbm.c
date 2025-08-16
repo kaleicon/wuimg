@@ -455,8 +455,8 @@ const struct iff_chunk chunk) {
 		 * Maybe also find a source that's not a mysterious edit in
 		 * Wikipedia. */
 		const struct wuptr data = mp_avail(&desc->mp, chunk.len);
-		uint16_t w = buf_endian16(data.ptr, big_endian);
-		uint16_t h = buf_endian16(data.ptr + 2, big_endian);
+		uint16_t w = buf_endian16(data.ptr, iff->endian);
+		uint16_t h = buf_endian16(data.ptr + 2, iff->endian);
 		desc->tiny = (struct ilbm_tiny) {
 			.present = w && h,
 			.w = w, .h = h,
@@ -503,14 +503,16 @@ const struct iff_chunk chunk) {
 			const uint16_t ACTIVE = 0x1;
 			const uint16_t REVERSE = 0x2;
 			const float TO_SECS = 273.0f + 1.0f/15;
+			const bool garbage = data[0] | data[1];
 			const uint16_t rate = buf_endian16(data + 2,
-				big_endian);
+				iff->endian);
 			const uint16_t flags = buf_endian16(data + 4,
-				big_endian);
+				iff->endian);
 			const uint8_t lo = data[6];
 			const uint8_t hi = data[7];
 
-			const bool active = (flags & ACTIVE) && rate && lo < hi;
+			const bool active = (flags & ACTIVE) && rate && lo < hi
+				&& !garbage;
 			cycle->crng[cycle->len] = (struct palette_crng) {
 				.lo = lo,
 				.hi = hi,
@@ -586,34 +588,19 @@ const struct iff_chunk chunk) {
 	if (!data) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	const uint32_t flags = buf_endian32(data, big_endian);
-	desc->extra_half_brite = flags & 0x80;
-	desc->ham = flags & 0x800;
-	if (desc->extra_half_brite && desc->planes != 6) {
-		return wuerr(wu_invalid_header,
-			"Extra Half-Brite with planes != 6");
+	const uint32_t flags = buf_endian32(data, iff->endian);
+	if (desc->planes == 6) {
+		desc->extra_half_brite = flags & 0x80;
 	}
-	if (desc->ham) {
-		switch (desc->format) {
-		case ilbm_format_ilbm:
-		case ilbm_format_acbm:
-			if (desc->planes < 5 || desc->planes > 8) {
-				return wuerr(wu_invalid_header,
-					"HAM with planes < 5 or > 8");
-			}
-			if (desc->masking) {
-				return wuerr(wu_unsupported_feature,
-					"HAM mode with masking");
-			}
-			break;
-		case ilbm_format_rgb8:
-		case ilbm_format_rgbn:
-			desc->ham = false; // Just no
-			break;
-		default:
-			return wuerr(wu_unsupported_feature,
-				"HAM supported only for ILBM and ACBM images");
+	switch (desc->format) {
+	case ilbm_format_ilbm:
+	case ilbm_format_acbm:
+		if (desc->planes >= 5 && desc->planes <= 8 && !desc->masking) {
+			desc->ham = flags & 0x800;
 		}
+		break;
+	default:
+		break;
 	}
 	return finish_chunk(desc, iff, chunk, NULL);
 }
@@ -646,8 +633,8 @@ const struct iff_chunk chunk) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 	struct wuimg *img = desc->img;
-	img->w = buf_endian16(data, big_endian);
-	img->h = buf_endian16(data + 2, big_endian);
+	img->w = buf_endian16(data, iff->endian);
+	img->h = buf_endian16(data + 2, iff->endian);
 	img->bitdepth = 8;
 	desc->planes = data[8];
 	desc->masking = data[9];
@@ -732,7 +719,7 @@ const struct iff_chunk chunk) {
 		}
 		break;
 	case ilbm_masking_value:
-		;const uint16_t value = buf_endian16(data + 12, big_endian);
+		;const uint16_t value = buf_endian16(data + 12, iff->endian);
 		if (desc->planes > 8 || value > 255) {
 			return wuerr(wu_unsupported_feature,
 				"mask value > 255 or with depth > 8");
@@ -784,7 +771,7 @@ const struct iff_table *table, const unsigned table_len) {
 	struct iff_state iff = {
 		.table = table,
 		.table_len = table_len,
-		.endian = big_endian,
+		.endian = desc->endian,
 		.align_sh = 1,
 		.fallback = ilbm_fallback,
 		.user = desc,
@@ -835,19 +822,26 @@ struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 	};
 	const uint8_t *data = mp_slice(&desc->mp, 12);
 	if (data) {
-		if (!memcmp(data, "FORM", 4)) {
-			const uint32_t len = buf_endian32(data + 4, big_endian);
-			const uint32_t id = buf_endian32(data + 8, big_endian);
+		// Command Simulations games use little-endian ILBM
+		const bool commsim = !memcmp(data, "MROF", 4);
+		if (!memcmp(data, "FORM", 4) || commsim) {
+			desc->endian = commsim ? little_endian : big_endian;
+			const uint32_t len = buf_endian32(data + 4, desc->endian);
+			const uint32_t id = buf_endian32(data + 8, desc->endian);
 			if (len < desc->mp.len - 8) {
 				desc->mp.len = (size_t)len + 8;
 			}
 			switch (id) {
 			case ilbm_format_acbm:
-			case ilbm_format_ilbm:
 			case ilbm_format_mldf:
 			case ilbm_format_pbm:
 			case ilbm_format_rgb8:
 			case ilbm_format_rgbn:
+				if (commsim) {
+					break;
+				}
+				// fallthrough
+			case ilbm_format_ilbm:
 				desc->format = id;
 				return WU_OK;
 			}

@@ -638,6 +638,8 @@ DEC_MAP: DecMap = {
 					b"FORM\0\0\0\0RGB8",
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"FORM\0\0\0\0RGBN",
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+					b"MROF\0\0\0\0MBLI",
 			),
 			mime="x-ilbm"
 		),
