@@ -560,6 +560,13 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"dvm": {
+		"dvm": FmtInfo("Magic Software DVM",
+			ext="dvm",
+			magic=b"DVM",
+		),
+	},
+
 	"eclipse": {
 		"eclipse": FmtInfo("Eclipse TILE",
 			ext=("tile", "tmsk"),
