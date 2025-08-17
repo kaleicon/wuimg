@@ -627,7 +627,8 @@ const size_t memsize) {
 	if (img->attr) {
 		fprintf(out, "(%s) ", pix_attr_str(img->attr));
 	}
-	fprintf(out, "= %zu bytes\n", memsize);
+	fprintf(out, "= %zu bytes%s", memsize,
+		wuimg_has_data(img) ? "\n" : " (Not loaded)\n");
 }
 
 size_t wuimg_print(const struct wuimg *img, FILE *out, const int verbosity) {
@@ -639,12 +640,7 @@ size_t wuimg_print(const struct wuimg *img, FILE *out, const int verbosity) {
 		if (img->frames) {
 			fprintf(out, "frames: %zu, ", img->frames->nr);
 		}
-
-		if (wuimg_has_data(img)) {
-			print_dimensions(img, out, memsize);
-		} else {
-			fputs("Not loaded\n", out);
-		}
+		print_dimensions(img, out, memsize);
 		if (verbosity > 1) {
 			print_more_data(img, out, verbosity);
 		}
