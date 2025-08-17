@@ -113,7 +113,8 @@ struct test_mode_args args) {
 		args.warmup = 1;
 		args.iters = 0;
 	} else {
-		printf("Testing %u times with %u extra runs for warmup.\n\n",
+		fprintf(stdout,
+			"Testing %u times with %u extra runs for warmup.\n\n",
 			args.iters, args.warmup);
 	}
 
@@ -140,7 +141,9 @@ struct test_mode_args args) {
 			if (result == wu_no_change) {
 				result = wu_ok;
 				if (args.metadata) {
+					fprintf(stdout, "File: %s\n", image.name);
 					image_file_print(&image.file, stdout, 3, true);
+					fputc('\n', stdout);
 				} else {
 					taken += watch_elapsed(watch) * (j >= args.warmup);
 				}
@@ -151,11 +154,11 @@ struct test_mode_args args) {
 		if (result == wu_ok) {
 			if (args.iters) {
 				grand_total += taken;
-				printf("Average: %" PRIu64 " %s\n",
+				fprintf(stdout, "Average: %" PRIu64 " %s\n",
 					taken / args.iters, entries->name[i]);
 			}
 		} else {
-			printf("Error in %s: %s\n", entries->name[i],
+			fprintf(stdout, "Error in %s: %s\n", entries->name[i],
 				wu_error_str(result));
 			++failures;
 		}
@@ -163,9 +166,9 @@ struct test_mode_args args) {
 	putchar('\n');
 
 	if (entries->nr * args.iters > 1) {
-		printf("Total: %" PRIu64 "\n", grand_total);
+		fprintf(stdout, "Total: %" PRIu64 "\n", grand_total);
 	}
-	printf("%zu successful, %zu failed\n", entries->nr - failures,
+	fprintf(stdout, "%zu successful, %zu failed\n", entries->nr - failures,
 		failures);
 	return result;
 }
