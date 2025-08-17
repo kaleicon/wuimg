@@ -840,8 +840,8 @@ static bool shorthand(const struct wuptr op, const char *str) {
 	return wuptr_eq_str(op, str);
 }
 
-static struct wu_st set_num(struct wuimg *img, const struct wuptr op,
-const uintmax_t num) {
+static struct wu_st set_num(struct wuimg *img, struct image_file *infile,
+const struct wuptr op, const uintmax_t num) {
 	if (shorthand(op, "width")) {
 		img->w = (size_t)num;
 	} else if (shorthand(op, "height")) {
@@ -850,6 +850,10 @@ const uintmax_t num) {
 		img->channels = (uint8_t)num;
 	} else if (shorthand(op, "bitdepth")) {
 		img->bitdepth = (uint8_t)num;
+	} else if (wuptr_eq_str(op, "skip")) {
+		fseek(infile->ifp, (long)num, SEEK_CUR);
+	} else if (wuptr_eq_str(op, "seek")) {
+		fseek(infile->ifp, (long)num, SEEK_SET);
 	} else {
 		return pbug("Unknown variable");
 	}
@@ -930,11 +934,7 @@ struct image_file *infile, const struct wuptr op, const struct token *tok) {
 		return WU_OK;
 	case token_num:
 		;const uintmax_t num = tok->u.num;
-		if (wuptr_eq_str(op, "skip")) {
-			fseek(infile->ifp, (long)num, SEEK_CUR);
-		} else if (wuptr_eq_str(op, "seek")) {
-			fseek(infile->ifp, (long)num, SEEK_SET);
-		} else if (wuptr_eq_str(op, "bitrange")) {
+		if (wuptr_eq_str(op, "bitrange")) {
 			img->bitrange = (uint8_t)num;
 		} else if (wuptr_eq_str(op, "bitfield")) {
 			if (!wuimg_bitfield_from_id(img, (uint16_t)num)) {
@@ -944,7 +944,7 @@ struct image_file *infile, const struct wuptr op, const struct token *tok) {
 		} else if (wuptr_eq_str(op, "mirror")) {
 			img->mirror = num;
 		} else {
-			return set_num(img, op, num);
+			return set_num(img, infile, op, num);
 		}
 		return WU_OK;
 	case token_load:
@@ -955,7 +955,7 @@ struct image_file *infile, const struct wuptr op, const struct token *tok) {
 			} else if (wuptr_eq_str(op, "palentries")) {
 				state->pal_entries = (uint16_t)state->scalar;
 			} else {
-				return set_num(img, op, state->scalar);
+				return set_num(img, infile, op, state->scalar);
 			}
 		}
 		return err;
