@@ -27,6 +27,7 @@ enum c64_fmt {
 	c64_hires_fli_crest,
 	c64_image_system_m,
 	c64_koalapainter,
+	c64_paint_magic,
 	c64_picasso_64,
 	c64_rainbow_painter,
 	c64_saracen_paint,
@@ -42,7 +43,8 @@ enum c64_field {
 
 struct c64_fmt_info {
 	enum c64_mode mode:8;
-	bool fli;
+	bool fli:1;
+	bool crippled:1;
 	uint16_t tbl[4];
 };
 

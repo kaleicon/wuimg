@@ -91,6 +91,7 @@ const char * c64_fmt_str(const enum c64_fmt fmt) {
 	case c64_hires_fli_crest: return "Hires FLI (by Crest)";
 	case c64_image_system_m: return "Image System";
 	case c64_koalapainter: return "KoalaPainter";
+	case c64_paint_magic: return "Paint Magic";
 	case c64_picasso_64: return "Picasso 64";
 	case c64_saracen_paint: return "Saracen Paint";
 	case c64_rainbow_painter: return "RainbowPainter";
@@ -100,7 +101,7 @@ const char * c64_fmt_str(const enum c64_fmt fmt) {
 }
 
 static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off,
-const bool fli) {
+const bool fli, const bool crippled) {
 	for (size_t tile_y = 0; tile_y < TH; ++tile_y) {
 		for (size_t tile_x = 0; tile_x < TW; ++tile_x) {
 			const size_t tile = tile_y*TW + tile_x;
@@ -108,7 +109,8 @@ const bool fli) {
 				// Grab all colors sources unconditionally
 				const uint8_t screen = off->screen[tile + y*fli*FLI_SCREEN_LEN];
 				const uint8_t byte = off->bitmap[tile*8 + y];
-				const uint16_t src = off->color[tile] << 12
+				const uint16_t src =
+					off->color[crippled ? 0 : tile] << 12
 					| (screen & 0xf) << 8
 					| (screen >> 4) << 4
 					| off->bg;
@@ -238,7 +240,9 @@ struct wu_st c64_decode(const struct c64_desc *desc, struct wuimg *img) {
 				if (desc->info.mode == c64_hires) {
 					hires_expand(dst, &off, desc->info.fli);
 				} else {
-					multicolor_expand(dst, &off, desc->info.fli);
+					multicolor_expand(dst, &off,
+						desc->info.fli,
+						desc->info.crippled);
 				}
 			} else {
 				st = WUERR_HERE(wu_unexpected_eof);
@@ -361,6 +365,17 @@ static struct c64_fmt_info get_info(const enum c64_fmt fmt) {
 		};
 
 	/* Multicolor */
+	case c64_paint_magic:
+		return (struct c64_fmt_info) {
+			.mode = c64_multicolor,
+			.crippled = 1,
+			.tbl = {
+				[c64_bitmap] = 0x74,
+				[c64_screen] = 0x2074,
+				[c64_color] = 0x1fb7,
+				[c64_bg] = 0x1fb4,
+			},
+		};
 	case c64_koalapainter:
 		return (struct c64_fmt_info) {
 			.mode = c64_multicolor,
@@ -516,6 +531,7 @@ const uint8_t ext[static 4]) {
 		case 9218:
 			f = !strcmp(e, "hed") ? c64_hi_eddi : c64_doodle;
 			break;
+		case 9332: f = c64_paint_magic; break;
 
 		case 10001:
 		case 10003:

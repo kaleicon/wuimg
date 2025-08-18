@@ -395,6 +395,7 @@ DEC_MAP: DecMap = {
 				", Hires FLI (HFC)"
 				", Image System, Interpaint"
 				", KoalaPainter (raw & compressed)"
+				", Paint Magic"
 				", Picasso 64, Runpaint, Saracen Paint"
 				", Vidcom 64, probably others by accident",
 			ext=(
@@ -439,6 +440,8 @@ DEC_MAP: DecMap = {
 				"ip64h", "iph", "ipt",
 				# KoalaPainter
 				"gg", "gig", "kla", "koa", "koala",
+				# Paint Magic
+				"pmg",
 				# Picasso 64
 				"p64",
 				# Runpaint
@@ -457,6 +460,8 @@ DEC_MAP: DecMap = {
 				b"\x00\x20",
 				# Image System, FLI Designer
 				b"\x00\x3c",
+				# Paint Magic
+				b"\x8e\x3f",
 				# Interpaint, Image System, Wigmore Artist64,
 				# FacesPainter, AFLI editor, Hires FLI
 				b"\x00\x40",
@@ -482,6 +487,7 @@ DEC_MAP: DecMap = {
 				9026, 9217, 9346, # Doodle
 				9194, # Hi-Eddi
 				9218, # Doodle, Hi-Eddi
+				9332, # Paint Magic
 				10001, 10003, 10004, 10006, 10007, # KoalaPainter
 				10018, # Advanced Art Studio
 				10050, # Picasso 64, Vidcom 64
