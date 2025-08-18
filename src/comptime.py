@@ -863,6 +863,13 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"pmg": {
+		"pmg": FmtInfo("Print Magic Graphic (PMGRAF)",
+			ext="pmg",
+			magic=b"PMGRAF",
+		),
+	},
+
 	"pnm": {
 		"pnm": FmtInfo("PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)",
 			ext=(
