@@ -567,6 +567,21 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"ea": {
+		"eafnt": FmtInfo("Electronic Arts Fonts (FNTF, FNTS, FNTI)",
+			ext=("ffn", "sfn"),
+			mask=(
+				# Middle letters can be upper or lowercase
+				b"\xff\xdf\xdf\xff",
+				b"FNTF",
+				b"\xff\xdf\xdf\xff",
+				b"FNTI",
+				b"\xff\xdf\xdf\xff",
+				b"FNTS",
+			),
+		),
+	},
+
 	"eclipse": {
 		"eclipse": FmtInfo("Eclipse TILE",
 			ext=("tile", "tmsk"),
