@@ -116,7 +116,7 @@ q4        q4        MAJYO's Q4 (XLD4)
 qoi       qoi       QuiteOK image
 quake     idsp      id Software Sprite (Quake, Half-Life, and 32-bit variants)
 quake     lmp       Quake LMP
-raw       raw       Raw camera formats
+raw       raw       Raw camera formats: Adobe DNG, Canon CR2/CR3/CRW, EPSON ERF, Fujifilm RAF, Kodak DCR/K25/KDC, Minolta MRW, Nikon NEF/NRW, Olympus ORF, Panasonic RW2/RWL, Pentax PEF, Sigma X3F, Sony ARW/SR2/SRF
 sgf       sgf       Somera Graphic Format
 sgi       sgi       Silicon Graphics Image
 siff      pim       SIFF PIM sprite and animation (first frame only)

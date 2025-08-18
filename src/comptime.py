@@ -1339,7 +1339,19 @@ DEC_MAP: DecMap = {
 	},
 
 	"raw": {
-		"raw": FmtInfo("Raw camera formats",
+		"raw": FmtInfo("Raw camera formats"
+				": Adobe DNG"
+				", Canon CR2/CR3/CRW"
+				", EPSON ERF"
+				", Fujifilm RAF"
+				", Kodak DCR/K25/KDC"
+				", Minolta MRW"
+				", Nikon NEF/NRW"
+				", Olympus ORF"
+				", Panasonic RW2/RWL"
+				", Pentax PEF"
+				", Sigma X3F"
+				", Sony ARW/SR2/SRF",
 			ext=(
 				"raw", # generic
 				"cr3", "crw", # Canon
