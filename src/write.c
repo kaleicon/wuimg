@@ -146,7 +146,7 @@ const bool overwrite, const struct image_frames *frames, const char ext[static 4
 	if (frames) {
 		const struct frame_time sec = frames->f[state->frame].sec;
 		w = snprintf(suffix, rem,
-			"_%.*d:%.*d:%" PRIu32 ":%" PRIu32 ".%.*s",
+			"_%.*d.%.*d.%" PRIu32 ".%" PRIu32 ".%.*s",
 			prec, state->idx,
 			prec, state->frame,
 			sec.num, sec.den,
@@ -353,7 +353,7 @@ const char write_description[] =
 	"\t * If the output doesn't support animations, each frame is written\n"
 	"\t   to a different file, containing the sub-image index, frame number,\n"
 	"\t   and the duration in seconds as numerator and denominator\n"
-	"\t   (\"FILE\" -> \"FILE_#subindex:#frame:#num:#den.ext\").\n\n"
+	"\t   (\"FILE\" -> \"FILE_#subindex.#frame.#num.#den.ext\").\n\n"
 	"\t * Input colorspace is preserved when supported by the output, otherwise\n"
 	"\t   the image is converted to sRGB.\n"
 ;

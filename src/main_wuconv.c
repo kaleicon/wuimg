@@ -31,7 +31,7 @@ static int print_help(FILE *ofp) {
 		"\t\tPrint supported formats.\n"
 
 		"\n"
-		"conversion switches:\n",
+		"Conversion switches:\n",
 		ofp);
 	return fputs(write_switches, ofp);
 }
