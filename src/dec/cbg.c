@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/cbg.h"
 
-static void metadata(const void *restrict ptr, struct wutree *metadata) {
-	const struct cbg_desc *desc = ptr;
-	tree_bud_leaf_u(metadata, "Version", desc->version);
-}
-static size_t dec(const void *restrict desc, struct wuimg *img) {
-	return cbg_decode(desc, img);
-}
-static enum wu_error parse(void *restrict desc, struct wuimg *img) {
-	return cbg_parse(desc, img);
-}
-static enum wu_error init(void *restrict desc, struct image_file *infile) {
-	return cbg_init(desc, infile->map);
-}
-
-static enum wu_error cbg_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_cbg(struct image_file *infile,
+const struct wu_conf *conf) {
 	struct cbg_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, init, parse,
-		metadata, dec);
+	struct wu_st st = cbg_parse(&desc, infile->sub_img, infile->map);
+	if (wu_isok(st)) {
+		enum wu_error err = wuimg_alloc_limit(infile->sub_img, conf);
+		if (err == wu_ok) {
+			tree_bud_leaf_u(&infile->metadata, "Version",
+				desc.version);
+			st = cbg_decode(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(err);
+		}
+	}
+	return st;
 }
 
-const struct image_fn cbg_fn = {.mmap = true, .dec = cbg_dec};
+const struct image_fn cbg_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.init = init_cbg,
+};

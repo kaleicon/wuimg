@@ -19,10 +19,9 @@ struct cbg_desc {
 	enum cbg_version version:8;
 };
 
-size_t cbg_decode(const struct cbg_desc *desc, struct wuimg *img);
+struct wu_st cbg_decode(const struct cbg_desc *desc, struct wuimg *img);
 
-enum wu_error cbg_parse(struct cbg_desc *desc, struct wuimg *img);
-
-enum wu_error cbg_init(struct cbg_desc *desc, struct wuptr mem);
+struct wu_st cbg_parse(struct cbg_desc *desc, struct wuimg *img,
+struct wuptr mem);
 
 #endif /* LIB_CBG */
