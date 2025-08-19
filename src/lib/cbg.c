@@ -14,7 +14,6 @@
 static const bool CHECK_CHECKSUM = false;
 
 static const size_t V1_NODES = 0x100;
-static const int HUFFMAN_EOF = EOF;
 
 struct huffman_node {
 	short int child[2];
@@ -22,7 +21,6 @@ struct huffman_node {
 
 struct huffman_tree {
 	int root;
-	int cutoff;
 	struct huffman_node *nodes;
 	struct bitstrm bs;
 };
@@ -84,7 +82,7 @@ static uint8_t decryptor_feed(struct decryptor *dec, const uint8_t byte) {
 }
 
 static enum trit leb128_feed(struct leb128_state *leb, const uint8_t byte) {
-	if (leb->off < 7*4) {
+	if (leb->off != 7*4) {
 		leb->val |= (byte & 0x7fu) << leb->off;
 		leb->off += 7;
 		return !(byte & 0x80) ? trit_true : trit_false;
@@ -92,17 +90,18 @@ static enum trit leb128_feed(struct leb128_state *leb, const uint8_t byte) {
 	return trit_what;
 }
 
-static int huffman_next(struct huffman_tree *tree) {
+static int huffman_next(struct huffman_tree *tree, uint8_t *c) {
 	int idx = tree->root;
 	while (tree->bs.pos < tree->bs.len) {
 		const bool bit = bit_get(tree->bs.buf, tree->bs.pos);
 		++tree->bs.pos;
 		idx = tree->nodes[idx].child[bit];
-		if (idx < tree->cutoff) {
-			return idx;
+		if (idx < (int)V1_NODES) {
+			*c = (uint8_t)idx;
+			return true;
 		}
 	}
-	return HUFFMAN_EOF;
+	return false;
 }
 
 static size_t unpack_rle(struct wuimg *img, struct huffman_tree *tree) {
@@ -113,11 +112,11 @@ static size_t unpack_rle(struct wuimg *img, struct huffman_tree *tree) {
 		struct leb128_state leb = {0};
 		enum trit t;
 		do {
-			const int c = huffman_next(tree);
-			if (c == HUFFMAN_EOF) {
+			uint8_t c;
+			if (!huffman_next(tree, &c)) {
 				return d;
 			}
-			t = leb128_feed(&leb, (uint8_t)c);
+			t = leb128_feed(&leb, c);
 		} while (t == trit_false);
 		if (t != trit_true) {
 			break;
@@ -133,11 +132,9 @@ static size_t unpack_rle(struct wuimg *img, struct huffman_tree *tree) {
 			d += count;
 		} else {
 			for (size_t i = 0; i < count; ++i) {
-				const int c = huffman_next(tree);
-				if (c == HUFFMAN_EOF) {
+				if (!huffman_next(tree, dst + d)) {
 					return d;
 				}
-				dst[d] = (uint8_t)c;
 				++d;
 			}
 		}
@@ -195,9 +192,8 @@ const size_t nodes, const uint32_t total_weight, struct mparser *mp) {
 					weight[dst->child[c]] = 0;
 				}
 			}
-			if (weight[n] >= total_weight) {
+			if (weight[n] == total_weight) {
 				tree->root = (int)n;
-				tree->cutoff = (int)nodes;
 				tree->bs = bitstrm_from_wuptr(mp_remaining(mp));
 				return true;
 			}
