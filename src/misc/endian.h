@@ -35,10 +35,14 @@ uint32_t endian32(uint32_t val, enum endianness e);
 float endianf32(uint32_t val, enum endianness e);
 
 /* Read data from unaligned buffers. */
+uint16_t buf_endian16b(const void *data);
+uint16_t buf_endian16l(const void *data);
 uint16_t buf_endian16(const void *data, enum endianness e);
 
 uint32_t buf_endian24(const void *data, enum endianness e);
 
+uint32_t buf_endian32b(const void *data);
+uint32_t buf_endian32l(const void *data);
 uint32_t buf_endian32(const void *data, enum endianness e);
 
 uint64_t buf_endian64(const void *data, enum endianness e);

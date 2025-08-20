@@ -52,11 +52,16 @@ float endianf32(const uint32_t val, const enum endianness e) {
 	return f.real;
 }
 
-uint16_t buf_endian16(const void *data, const enum endianness e) {
+uint16_t buf_endian16b(const void *data) {
 	const uint8_t *d = data;
-	return (uint16_t)(e == big_endian
-		? d[0] << 8 | d[1]
-		: d[1] << 8 | d[0]);
+	return (uint16_t)(d[0] << 8 | d[1]);
+}
+uint16_t buf_endian16l(const void *data) {
+	const uint8_t *d = data;
+	return (uint16_t)(d[0] | d[1] << 8);
+}
+uint16_t buf_endian16(const void *data, const enum endianness e) {
+	return e == big_endian ? buf_endian16b(data) : buf_endian16l(data);
 }
 
 uint32_t buf_endian24(const void *data, const enum endianness e) {
@@ -66,11 +71,16 @@ uint32_t buf_endian24(const void *data, const enum endianness e) {
 		: d[2] << 16 | d[1] << 8 | d[0]);
 }
 
-uint32_t buf_endian32(const void *data, const enum endianness e) {
+uint32_t buf_endian32b(const void *data) {
 	const uint8_t *d = data;
-	return (uint32_t)(e == big_endian
-		? d[0] << 24 | d[1] << 16 | d[2] << 8 | d[3]
-		: d[3] << 24 | d[2] << 16 | d[1] << 8 | d[0]);
+	return (uint32_t)(d[0] << 24 | d[1] << 16 | d[2] << 8 | d[3]);
+}
+uint32_t buf_endian32l(const void *data) {
+	const uint8_t *d = data;
+	return (uint32_t)(d[0] | d[1] << 8 | d[2] << 16 | d[3] << 24);
+}
+uint32_t buf_endian32(const void *data, const enum endianness e) {
+	return (e == big_endian) ? buf_endian32b(data) : buf_endian32l(data);
 }
 
 uint64_t buf_endian64(const void *data, const enum endianness e) {

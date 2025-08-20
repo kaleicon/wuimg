@@ -132,20 +132,20 @@ uint32_t bitstrm_msb_adv(struct bitstrm *bs, const size_t n) {
 uint32_t bitstrm_msb_peek_max25(const struct bitstrm *bs, const uint8_t n) {
 	size_t i = bs->pos / 8;
 	size_t o = bs->pos % 8;
-	const uint32_t ret = buf_endian32(bs->buf + i, big_endian);
+	const uint32_t ret = buf_endian32b(bs->buf + i);
 	return ret >> (32 - o - n) & bit_set32(n);
 }
 
 uint32_t bitstrm_msb_peek_high25(const struct bitstrm *bs) {
 	size_t i = bs->pos / 8;
 	size_t o = bs->pos % 8;
-	return buf_endian32(bs->buf + i, big_endian) << o;
+	return buf_endian32b(bs->buf + i) << o;
 }
 
 uint32_t bitstrm_msb_peek_32(const struct bitstrm *bs) {
 	size_t i = bs->pos / 8;
 	size_t o = bs->pos % 8;
-	const uint32_t f = buf_endian32(bs->buf + i, big_endian);
+	const uint32_t f = buf_endian32b(bs->buf + i);
 	return f << o | (uint32_t)bs->buf[i+4] >> (8 - o);
 }
 
@@ -183,7 +183,7 @@ bool bitstrm_lsb_next(struct bitstrm *bs) {
 static uint32_t bitstrm_lsb_peek_32(struct bitstrm *bs) {
 	size_t i = bs->pos / 8;
 	size_t o = bs->pos % 8;
-	const uint32_t f = buf_endian32(bs->buf + i, little_endian);
+	const uint32_t f = buf_endian32l(bs->buf + i);
 	return (uint32_t)bs->buf[i+4] << 1 << (31 - o) | f >> o;
 }
 
