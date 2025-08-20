@@ -482,7 +482,8 @@ static struct wu_st at6p_decomp(struct at6p_desc *desc) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
-	struct bitstrm bs = bitstrm_from_wuptr(mp_remaining(&desc->mp));
+	struct bitstrm bs;
+	bitstrm_from_wuptr(&bs, mp_remaining(&desc->mp));
 	uint32_t d = 0;
 	uint8_t val = hdr[16];
 	uint8_t prev = hdr[17]; /* I don't think this is correct, but it'd be

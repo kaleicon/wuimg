@@ -94,7 +94,8 @@ static void decode_delta(struct wuimg *img, const size_t img_size) {
 
 static uint8_t * decode_zrle(uint8_t *restrict ext, const size_t ext_len,
 uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
-	struct bitstrm bs = bitstrm_from_bytes(ctrl, ctrl_len);
+	struct bitstrm bs;
+	bitstrm_from_bytes(&bs, ctrl, ctrl_len);
 
 	bool copy = bitstrm_lsb_next(&bs);
 	const size_t stream_len = bitstrm_lsb_gamma_one(&bs);

@@ -223,16 +223,16 @@ uint32_t bitstrm_lsb_exp_golomb(struct bitstrm *bs) {
 }
 
 
-struct bitstrm bitstrm_from_bytes(const void *mem, const size_t bytes) {
-	struct bitstrm bs = (struct bitstrm){
+void bitstrm_from_bytes(struct bitstrm *bs, const void *restrict mem,
+const size_t len) {
+	*bs = (struct bitstrm){
 		.buf = mem,
 		.pos = 0,
-		.len = bytes*8,
+		.len = len*8,
 	};
-	bitstrm_seek(&bs, 0);
-	return bs;
+	bitstrm_seek(bs, 0);
 }
 
-struct bitstrm bitstrm_from_wuptr(const struct wuptr data) {
-	return bitstrm_from_bytes(data.ptr, data.len);
+void bitstrm_from_wuptr(struct bitstrm *bs, const struct wuptr data) {
+	bitstrm_from_bytes(bs, data.ptr, data.len);
 }

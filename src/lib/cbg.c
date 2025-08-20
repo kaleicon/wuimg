@@ -241,13 +241,12 @@ struct mparser *mp) {
 				node_set_child(dst, c, val);
 				weight[n] += weight[val];
 				weight[val] = 0;
-				if (weight[n] == total_weight) {
-					tree->bs = bitstrm_from_wuptr(
-						mp_remaining(mp)
-					);
-					tabulate_tree(tree, n);
-					return true;
-				}
+			}
+			if (weight[n] == total_weight) {
+				bitstrm_from_wuptr(&tree->bs,
+					mp_remaining(mp));
+				tabulate_tree(tree, n);
+				return true;
 			}
 		}
 	}

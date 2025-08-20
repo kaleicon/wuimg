@@ -520,7 +520,8 @@ static unsigned gfa_colormap(unsigned idx, unsigned x) {
 
 static void gfa_unpack(uint16_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, const size_t src_len) {
-	struct bitstrm bs = bitstrm_from_bytes(src, src_len);
+	struct bitstrm bs;
+	bitstrm_from_bytes(&bs, src, src_len);
 	for (size_t i = 0; i < dst_len; ++i) {
 		const uint32_t b = bitstrm_msb_peek_high25(&bs);
 		uint16_t val;

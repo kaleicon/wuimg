@@ -268,7 +268,8 @@ bool pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 	}
 
 	struct mparser mp = desc->mp;
-	struct bitstrm bs = bitstrm_from_wuptr(mp_remaining(&mp));
+	struct bitstrm bs;
+	bitstrm_from_wuptr(&bs, mp_remaining(&mp));
 
 	const size_t w = img->w;
 	const size_t h = (desc->tiled ? img->h/2 : img->h);
@@ -301,7 +302,8 @@ static bool load_pal(struct pic_desc *desc, struct palette *pal) {
 	const size_t len = strip_base(entries, pal_depth);
 	const uint8_t *buf = mp_slice(&desc->mp, len);
 	if (buf) {
-		struct bitstrm bs = bitstrm_from_bytes(buf, len);
+		struct bitstrm bs;
+		bitstrm_from_bytes(&bs, buf, len);
 		for (size_t i = 0; i < entries; ++i) {
 			read_grb((uint8_t *)(pal->color + i), b, &bs);
 			pal->color[i].a = 0xff;

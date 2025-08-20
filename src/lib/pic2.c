@@ -259,7 +259,7 @@ static size_t arithmetic_decoder(const struct pic2_image *b, struct wuimg *img) 
 	for (size_t i = 0; i < ARRAY_LEN(st.prob); ++i) {
 		st.prob[i] = buf_endian16(b->data.ptr + i*2, big_endian);
 	}
-	st.bs = bitstrm_from_bytes(b->data.ptr + strm_start,
+	bitstrm_from_bytes(&st.bs, b->data.ptr + strm_start,
 		b->data.len - strm_start);
 	st.aa = 0xffff;
 	st.dd = buf_endian16(b->data.ptr + sizeof(st.prob), big_endian);

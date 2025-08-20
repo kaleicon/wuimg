@@ -103,8 +103,8 @@ size_t imc_decode(const struct imc_desc *desc, struct wuimg *img) {
 		uint16_t *dst = calloc(elems, sizeof(*dst));
 		if (dst) {
 			img->data = (uint8_t *)dst;
-			struct bitstrm bs = bitstrm_from_bytes(bits,
-				desc->bitlen);
+			struct bitstrm bs;
+			bitstrm_from_bytes(&bs, bits, desc->bitlen);
 			ok = unpack_imc(desc, dst, &bs, mp);
 			/* XOR even rows with first xor byte, odd rows with
 			 * second byte. */

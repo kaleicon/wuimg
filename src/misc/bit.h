@@ -72,8 +72,9 @@ uint32_t bitstrm_lsb_gamma_one(struct bitstrm *bs);
 uint32_t bitstrm_lsb_exp_golomb(struct bitstrm *bs);
 
 
-struct bitstrm bitstrm_from_bytes(const void *mem, size_t bytes);
+void bitstrm_from_bytes(struct bitstrm *bs, const void *restrict mem,
+size_t len);
 
-struct bitstrm bitstrm_from_wuptr(struct wuptr data);
+void bitstrm_from_wuptr(struct bitstrm *bs, struct wuptr data);
 
 #endif /* RASTER_BITSTREAM */

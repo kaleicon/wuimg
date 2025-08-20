@@ -124,7 +124,8 @@ size_t gp4_decode(const struct gp4_desc *desc, struct wuimg *img) {
 	}
 
 	struct mparser mp = desc->mp;
-	struct bitstrm bs = bitstrm_from_wuptr(mp_remaining(&mp));
+	struct bitstrm bs;
+	bitstrm_from_wuptr(&bs, mp_remaining(&mp));
 
 	const size_t stride = wuimg_stride(img);
 	const size_t bands = stride / BAND_W;

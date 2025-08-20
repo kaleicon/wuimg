@@ -251,9 +251,10 @@ size_t pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 		if (delta_table) {
 			init_delta_table(delta_table, colors);
 
-			struct mparser mp = desc->mp;
-			struct bitstrm bs = bitstrm_from_wuptr(mp_remaining(&mp));
 			const size_t dims = wuimg_size(img);
+			struct mparser mp = desc->mp;
+			struct bitstrm bs;
+			bitstrm_from_wuptr(&bs, mp_remaining(&mp));
 			written = bt_decode_loop(img->data, dims, &bs, img->w,
 				delta_table, colors);
 			free(delta_table);

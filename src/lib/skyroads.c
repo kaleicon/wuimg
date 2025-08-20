@@ -28,7 +28,8 @@ struct wu_st skyroads_decode(struct mparser mp, struct wuimg *img) {
 	const uint32_t cntmask = bit_set32(cbits);
 	const size_t dst_len = wuimg_size(img);
 	uint8_t *dst = img->data;
-	struct bitstrm bs = bitstrm_from_wuptr(mp_remaining(&mp));
+	struct bitstrm bs;
+	bitstrm_from_wuptr(&bs, mp_remaining(&mp));
 	size_t d = 0;
 	while (d < dst_len) {
 		uint32_t c = bitstrm_msb_peek_high25(&bs);

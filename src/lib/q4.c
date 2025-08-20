@@ -87,8 +87,10 @@ const size_t dst_len, size_t src_len) {
 	return d;
 }
 
-static size_t lzwdec(uint8_t *restrict orig_dst, struct q4_block *block,
-struct bitstrm bs) {
+static size_t lzwdec(uint8_t *restrict orig_dst, struct q4_block *block) {
+	struct bitstrm bs;
+	bitstrm_from_wuptr(&bs, block->data);
+
 	const size_t MIN_LZW_CODE = 0x13;
 	uint8_t *rle = block->rle;
 	uint16_t *off = block->off - MIN_LZW_CODE;
@@ -148,7 +150,7 @@ static size_t decode_block(uint8_t *restrict dst, struct q4_block *block) {
 		}
 		block->off_alloc = (uint16_t)alloc;
 	}
-	return lzwdec(dst, block, bitstrm_from_wuptr(block->data));
+	return lzwdec(dst, block);
 }
 
 static bool write_palette(struct mparser *mp, struct q4_block *block,
