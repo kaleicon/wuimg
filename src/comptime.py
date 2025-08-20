@@ -23,12 +23,22 @@ RAW_TIFF_EXTS = (
 	"dng",
 	# EPSON
 	"erf",
+	# Hasselblad
+	"3fr", "fff",
 	# Kodak
 	"dcr", "k25", "kdc",
+	# Leaf
+	"mos",
+	# Mamiya
+	"mef",
 	# Nikon
 	"nef", "nrw",
 	# Pentax
-	"pef"
+	"pef",
+	# Phase One
+	"iiq",
+	# Sinar
+	"sti",
 )
 RAW_TIFF_MIMES = (
 	"x-dcraw", # generic
@@ -230,7 +240,12 @@ DEC_MAP: DecMap = {
 			size=0x7d00
 		),
 		"imgscan": FmtInfo("IMG Scan",
-			match=("rwl", "rwh", "raw"),
+			match=(
+				"rwl",
+				"rwh"
+				# "raw" conflicts with raw camera formats, and
+				# those are probably more common
+			),
 			size=(64000, 256000, 128000)
 		),
 
@@ -1341,6 +1356,7 @@ DEC_MAP: DecMap = {
 	"raw": {
 		"raw": FmtInfo("Raw camera formats"
 				": Adobe DNG"
+				", Apple QuickTake"
 				", Canon CR2/CR3/CRW"
 				", EPSON ERF"
 				", Fujifilm RAF"
@@ -1353,16 +1369,19 @@ DEC_MAP: DecMap = {
 				", Sigma X3F"
 				", Sony ARW/SR2/SRF",
 			ext=(
-				"raw", # generic
 				"cr3", "crw", # Canon
-				"orf", # Olympus
+				"orf", "ori", # Olympus
+				"qtk", # Apple QuickTake
 				"raf", # Fuji
 				"rw2", "rwl", # Panasonic (it's RWL, not RW1!)
 			),
 			match=RAW_TIFF_EXTS + (
+				"raw", # generic, GITUP
 				"mrw", # Minolta MRW
 			),
 			magic=TIFF_MAGICS + (
+				# Apple QuickTake
+				b"qktk", b"qktn",
 				# Canon CRW
 				b"II\x1a\0",
 				# Fujifilm RAF
