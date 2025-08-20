@@ -90,6 +90,39 @@ const enum atari_st_res res) {
 	}
 }
 
+static unsigned gfa_colormap(unsigned idx, unsigned x);
+static unsigned spu_colormap(unsigned idx, unsigned x);
+static void spu_like_dec(struct wuimg *img, const uint16_t *src,
+const uint16_t *pal, const bool is_gfa) {
+	uint16_t *dst = (uint16_t *)img->data;
+	const size_t d_stride = ST_LOW_WIDTH;
+	const size_t s_stride = ST_LOW_WIDTH/4;
+	// Skip first row as it'll always end up black
+	for (size_t y = 1; y < img->h; ++y) {
+		for (unsigned group = 0; group < ST_LOW_WIDTH/16; ++group) {
+			const size_t d_base = y*d_stride + group*16;
+			const size_t s_base = y*s_stride + group*4;
+			uint16_t planes[4];
+			for (uint8_t i = 0; i < ARRAY_LEN(planes); ++i) {
+				planes[i] = endian16(src[s_base+i], big_endian);
+			};
+			for (unsigned bit = 0; bit < 16; ++bit) {
+				unsigned idx = 0;
+				for (uint8_t plane = 0; plane < 4; ++plane) {
+					idx |= (1u & (planes[plane] >> (15-bit)))
+						<< plane;
+				}
+				const unsigned idx2 = group*16 + bit;
+				idx = is_gfa
+					? gfa_colormap(idx, idx2)
+					: spu_colormap(idx, idx2);
+				const unsigned mul = is_gfa ? 46 : 48;
+				dst[d_base + bit] = pal[y*mul + idx];
+			}
+		}
+	}
+}
+
 static struct wu_st load_raw_size(struct wuimg *img,
 const enum atari_st_res res, FILE *ifp, const size_t ram_len) {
 	if (res == atari_st_res_high) {
@@ -155,7 +188,7 @@ const void *restrict pal) {
 		img->w = ST_HIGH_WIDTH;
 		img->h = ST_HIGH_HEIGHT;
 		img->bitdepth = 1;
-		img->attr = (buf_endian16(pal, big_endian) & 1)
+		img->attr = (buf_endian16b(pal) & 1)
 			? pix_inverted : pix_normal;
 		return WU_OK;
 	}
@@ -196,8 +229,8 @@ struct wu_st crg_get_info(const struct wuptr mem, struct wuimg *img) {
 	} else if (memcmp(mem.ptr, magic, sizeof(magic))) {
 		return WUERR_HERE(wu_invalid_signature);
 	}
-	img->w = buf_endian32(mem.ptr + 20, big_endian);
-	img->h = buf_endian32(mem.ptr + 24, big_endian);
+	img->w = buf_endian32b(mem.ptr + 20);
+	img->h = buf_endian32b(mem.ptr + 24);
 	img->channels = 1;
 	img->bitdepth = 1;
 	img->attr = pix_inverted;
@@ -581,30 +614,7 @@ static struct wu_st gfa_low(const struct gfa_desc *desc, struct wuimg *img) {
 		pal[i] = ste_pal_rotate(pal[i]);
 	}
 
-	uint16_t *dst = (uint16_t *)img->data;
-	const size_t d_stride = ST_LOW_WIDTH;
-	const size_t s_stride = ST_LOW_WIDTH/4;
-	/* Like with Spectrum 512, skip the first row as the image buffer comes
-	 * zeroed and animations can't modify it either. */
-	for (size_t y = 1; y < img->h; ++y) {
-		for (unsigned group = 0; group < ST_LOW_WIDTH/16; ++group) {
-			const size_t d_base = y*d_stride + group*16;
-			const size_t s_base = y*s_stride + group*4;
-			uint16_t planes[4];
-			for (uint8_t i = 0; i < ARRAY_LEN(planes); ++i) {
-				planes[i] = endian16(src[s_base+i], big_endian);
-			};
-			for (unsigned bit = 0; bit < 16; ++bit) {
-				unsigned idx = 0;
-				for (uint8_t plane = 0; plane < 4; ++plane) {
-					idx |= ((planes[plane] >> (15-bit)) & 1u)
-						<< plane;
-				}
-				idx = gfa_colormap(idx, group*16 + bit);
-				dst[d_base + bit] = pal[y*46 + idx];
-			}
-		}
-	}
+	spu_like_dec(img, src, pal, true);
 	free(buf);
 	return WU_OK;
 }
@@ -656,7 +666,7 @@ const uint8_t hdr[53]) {
 	const uint32_t pal_size = (hdr[2] == 'h' ? 0 : 18400)/desc->factor;
 	for (uint8_t i = 0; i < desc->frames; ++i) {
 		desc->frame[i].off = file_off;
-		desc->frame[i].len = buf_endian32(hdr + 13 + i*4, big_endian);
+		desc->frame[i].len = buf_endian32b(hdr + 13 + i*4);
 		file_off += pal_size + desc->frame[i].len;
 		wuimg_frame_set(img, i, 0, 0, img->w, img->h, 10, 100, true);
 	}
@@ -718,11 +728,10 @@ struct wu_st gfa_init(struct gfa_desc *desc, struct wuimg *img, FILE *ifp) {
 				}
 				break;
 			case 'a':
-				desc->frames = buf_endian32(hdr + 5, big_endian);
+				desc->frames = buf_endian32b(hdr + 5);
 				if (desc->frames <= 9) {
 					++desc->frames;
-					desc->factor = buf_endian32(hdr + 9,
-						big_endian);
+					desc->factor = buf_endian32b(hdr + 9);
 					switch (desc->factor) {
 					case 1: case 2: case 4: case 8:
 						return gfa_anim_setup(desc, img,
@@ -824,8 +833,8 @@ static unsigned spu_colormap(unsigned idx, unsigned x) {
 	return idx;
 }
 
-static uint16_t enhanced_spu(uint16_t in, uint16_t pos) {
-	uint16_t down = in >> (4*pos);
+static uint16_t enhanced_spu(unsigned in, uint16_t pos) {
+	unsigned down = in >> (4*pos);
 	return (uint16_t)(
 		(down & 0x7) << 2 | (down & 0x8) >> 1 | ((in >> (pos+13)) & 0x1)
 	);
@@ -874,27 +883,7 @@ struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img) {
 	}
 
 	pal -= 3*16;
-	uint16_t *dst = (uint16_t *)img->data;
-	const size_t d_stride = ST_LOW_WIDTH;
-	for (unsigned y = 1; y < ST_LOW_HEIGHT; ++y) {
-		for (unsigned group = 0; group < ST_LOW_WIDTH/16; ++group) {
-			const size_t d_base = y*d_stride + group*16;
-			const size_t s_base = y*s_stride + group*4;
-			uint16_t planes[4];
-			for (uint8_t i = 0; i < ARRAY_LEN(planes); ++i) {
-				planes[i] = endian16(src[s_base+i], big_endian);
-			};
-			for (unsigned bit = 0; bit < 16; ++bit) {
-				unsigned idx = 0;
-				for (uint8_t plane = 0; plane < 4; ++plane) {
-					idx |= ((planes[plane] >> (15-bit)) & 1u)
-						<< plane;
-				}
-				idx = spu_colormap(idx, group*16 + bit);
-				dst[d_base + bit] = pal[y*3*16 + idx];
-			}
-		}
-	}
+	spu_like_dec(img, src, pal, false);
 	free(buf);
 	return WU_OK;
 }
@@ -1072,8 +1061,8 @@ const struct wuptr mem) {
 			}
 		} else if (!memcmp(hdr, arabesque, sizeof(arabesque))) {
 			memcpy(desc->sig, hdr, 6);
-			img->w = buf_endian16(hdr + 6, big_endian);
-			img->h = buf_endian16(hdr + 8, big_endian);
+			img->w = buf_endian16b(hdr + 6);
+			img->h = buf_endian16b(hdr + 8);
 			const uint16_t version = (uint16_t)(hdr[4] << 8 | hdr[5]);
 			switch (version) {
 			case TWOCC('9', 'a'):
@@ -1081,7 +1070,7 @@ const struct wuptr mem) {
 				if (!hdr) {
 					return WUERR_HERE(wu_unexpected_eof);
 				}
-				desc->block_nr = buf_endian16(hdr, big_endian);
+				desc->block_nr = buf_endian16b(hdr);
 				if (desc->block_nr < 1 || desc->block_nr > 4) {
 					return wuerr(wu_invalid_header,
 						"bad number of blocks");
@@ -1144,7 +1133,7 @@ const struct wuptr data) {
 			if (cpos + 2 > clen) {
 				break;
 			}
-			run = buf_endian16(ctrl + cpos, big_endian);
+			run = buf_endian16b(ctrl + cpos);
 			cpos += 2;
 			cpy = (bool)c;
 		}
@@ -1232,8 +1221,8 @@ const struct wuptr mem) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	desc->ctrl = buf_endian16(header + 32, big_endian);
-	desc->data = buf_endian16(header + 34, big_endian);
+	desc->ctrl = buf_endian16b(header + 32);
+	desc->data = buf_endian16b(header + 34);
 	desc->res = res;
 	struct wu_st st = set_dims(img, res, header);
 	if (!wu_isok(st)) {
@@ -1245,7 +1234,7 @@ const struct wuptr mem) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 		desc->cycle = cycle;
-		desc->iters = buf_endian16(crng + 2, big_endian);
+		desc->iters = buf_endian16b(crng + 2);
 		palette_cycle_set(cycle, img->u.palette);
 		const int8_t speed = (int8_t)crng[1];
 		cycle->crng[0] = (struct palette_crng) {
