@@ -13,12 +13,12 @@ struct hg3_desc {
 	uint32_t canvas_w, canvas_h;
 };
 
-bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img);
+struct wu_st hg3_decode(const struct hg3_desc *desc, struct wuimg *img);
 
-enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img);
+struct wu_st hg3_parse_image(struct hg3_desc *desc, struct wuimg *img);
 
-enum wu_error hg3_next_image(struct hg3_desc *desc);
+struct wu_st hg3_next_image(struct hg3_desc *desc);
 
-enum wu_error hg3_open(struct hg3_desc *desc, struct wuptr mem);
+struct wu_st hg3_open(struct hg3_desc *desc, struct wuptr mem);
 
 #endif /* LIB_HG3 */

@@ -6,10 +6,8 @@
 #include "raster/wuimg.h"
 #include "misc/mparser.h"
 
-size_t qoi_decode(struct mparser mp, struct wuimg *img);
+struct wu_st qoi_decode(const struct mparser *mp, struct wuimg *img);
 
-enum wu_error qoi_parse(struct mparser *mp, struct wuimg *img);
-
-enum wu_error qoi_init(struct mparser *mp, struct wuptr mem);
+struct wu_st qoi_parse(struct mparser *mp, struct wuimg *img, struct wuptr mem);
 
 #endif /* LIB_QOI */

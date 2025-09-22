@@ -1,29 +1,28 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include "wudefs.h"
 #include "lib/txf.h"
-#include "rast_utils.h"
 
-static void metadata(const void *restrict ptr, struct wutree *tree) {
-	const struct txf_desc *desc = ptr;
-	tree_bud_leaf_u(tree, "Max ascent", desc->max_ascent);
-	tree_bud_leaf_u(tree, "Max descent", desc->max_descent);
-}
-static size_t dec(const void *restrict desc, struct wuimg *img) {
-	return txf_load(desc, img);
-}
-static enum wu_error parse(void *restrict desc, struct wuimg *img) {
-	return txf_parse(desc, img);
-}
-static enum wu_error init(void *restrict desc, struct image_file *infile) {
-	return txf_init(desc, infile->ifp);
-}
-
-static enum wu_error setup(struct image_file *infile,
+static struct wu_st init_txf(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct txf_desc desc;
-	return rast_trivial_dec(infile, conf, &desc, init, parse, metadata, dec);
+	struct wu_st st = txf_parse(&desc, infile->sub_img, infile->ifp);
+	if (wu_isok(st)) {
+		const enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		if (e == wu_ok) {
+			tree_bud_leaf_u(&infile->metadata, "Max ascent",
+				desc.max_ascent);
+			tree_bud_leaf_u(&infile->metadata, "Max descent",
+				desc.max_descent);
+			st = txf_load(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(e);
+		}
+	}
+	return st;
 }
 
 const struct image_fn txf_fn = {
-	.dec = setup,
+	.alloc_single = true,
+	.init = init_txf,
 };

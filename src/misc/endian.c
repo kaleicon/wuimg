@@ -42,9 +42,21 @@ enum endianness which_end(void) {
 uint16_t endian16(const uint16_t val, const enum endianness e) {
 	return e == which_end() ? val : swap16(val);
 }
+uint16_t endian16b(const uint16_t val) {
+	return endian16(val, big_endian);
+}
+uint16_t endian16l(const uint16_t val) {
+	return endian16(val, little_endian);
+}
 
 uint32_t endian32(const uint32_t val, const enum endianness e) {
 	return e == which_end() ? val : swap32(val);
+}
+uint32_t endian32b(const uint32_t val) {
+	return endian32(val, big_endian);
+}
+uint32_t endian32l(const uint32_t val) {
+	return endian32(val, little_endian);
 }
 
 float endianf32(const uint32_t val, const enum endianness e) {

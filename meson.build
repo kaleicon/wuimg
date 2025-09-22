@@ -32,6 +32,7 @@ if cc.get_id() == 'gcc'
 		'-Wformat-signedness',
 		'-Wstringop-overflow=4',
 		'-Wunsafe-loop-optimizations',
+		'-Wno-unterminated-string-initialization',
 
 		'-fallow-store-data-races',
 		'-fno-signaling-nans',

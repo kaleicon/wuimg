@@ -20,10 +20,8 @@ struct maki_desc {
 
 const char * maki_version_str(enum maki_version version);
 
-size_t maki_decode(const struct maki_desc *desc, struct wuimg *img);
+struct wu_st maki_decode(const struct maki_desc *desc, struct wuimg *img);
 
-enum wu_error maki_parse(struct maki_desc *desc, struct wuimg *img);
-
-enum wu_error maki_open(struct maki_desc *desc, FILE *ifp);
+struct wu_st maki_parse(struct maki_desc *desc, struct wuimg *img, FILE *ifp);
 
 #endif /* LIB_MAKI */

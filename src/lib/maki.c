@@ -22,7 +22,7 @@ const char * maki_version_str(enum maki_version version) {
 	return "???";
 }
 
-size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
+struct wu_st maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	/* Compressed data is composed of three sections.
 	 * The first two are FlagA (1000 bytes) and FlagB (variable size),
 	 * which are used to create a Mask buffer that is 8000 16-bit words
@@ -42,10 +42,6 @@ size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	 * rows. This obviously doesn't apply to the starting rows.
 	*/
 
-	if (!wuimg_alloc_noverify(img)) {
-		return 0;
-	}
-
 	/* The section sizes fields are unreliable, so we'll allocate for the
 	 * worst case. This would be where all FlagA bits are one, thus making
 	 * FlagB the same size as Mask, and where all Mask bits are one, making
@@ -60,7 +56,7 @@ size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	const size_t alloc = mask_len * 2 + raster_len;
 	uint8_t *buf = malloc(alloc);
 	if (!buf) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	uint8_t *flag_a = buf + mask_len - flag_a_len;
@@ -68,7 +64,7 @@ size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	const size_t read = fread(flag_a, 1, read_max, desc->ifp);
 	if (read <= flag_a_len) {
 		free(buf);
-		return 0;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	const uint16_t *flag_b = (uint16_t *)(flag_a + flag_a_len);
@@ -107,10 +103,10 @@ size_t maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	for (size_t i = look_back; i < MAKI_H * row_len; ++i) {
 		img->data[i] ^= img->data[i - look_back];
 	}
-	return read;
+	return wuerr_partial(read, read_max);
 }
 
-enum wu_error maki_parse(struct maki_desc *desc, struct wuimg *img) {
+struct wu_st maki_parse(struct maki_desc *desc, struct wuimg *img, FILE *ifp) {
 	/* MAKI01 header (after magic bytes):
 		Offset  Size    Name
 		0       u8	ComputerModel[4]
@@ -131,50 +127,31 @@ enum wu_error maki_parse(struct maki_desc *desc, struct wuimg *img) {
 	 * [3] The algorithm always outputs 640*480 pixels, so this is
 	 *     informative only.
 	*/
-	uint16_t buf[8];
-	if (!fread(desc->model, sizeof(desc->model), 1, desc->ifp)
-	|| !fread(desc->comment, sizeof(desc->comment), 1, desc->ifp)
-	|| !fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
 
-	desc->x = endian16(buf[4], big_endian);
-	desc->y = endian16(buf[5], big_endian);
-
-	img->w = MAKI_W;
-	img->h = MAKI_H;
-	img->channels = 1;
-	img->bitdepth = 4;
-	img->layout = pix_grba;
-	img->ratio = (endian16(buf[3], big_endian) & 1) ? 1/2.0 : 1;
-	struct palette *pal = wuimg_palette_init(img);
-	if (pal) {
-		const enum wu_error st = fmt_load_pal(desc->ifp, pal,
-			fmt_pal_rgb, 16);
-		if (st == wu_ok) {
-			return wuimg_verify(img);
-		}
-		return st;
-	}
-	return wu_alloc_error;
-}
-
-enum wu_error maki_open(struct maki_desc *desc, FILE *ifp) {
 	*desc = (struct maki_desc) {.ifp = ifp};
-
+	const uint8_t maki[6] = {'M', 'A', 'K', 'I', '0', '1'};
 	uint8_t sig[8];
-	if (!fread(sig, sizeof(sig), 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
-	const uint8_t maki[6] = "MAKI01";
-	if (!memcmp(sig, maki, sizeof(maki)) && sig[7] == ' ') {
+	uint16_t buf[8];
+	if (!fread(sig, sizeof(sig), 1, ifp)
+	|| !fread(desc->model, sizeof(desc->model), 1, ifp)
+	|| !fread(desc->comment, sizeof(desc->comment), 1, ifp)
+	|| !fread(buf, sizeof(buf), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (!memcmp(sig, maki, sizeof(maki)) && sig[7] == ' ') {
 		switch (sig[6]) {
 		case maki_1a:
 		case maki_1b:
 			desc->version = sig[6];
-			return wu_ok;
+			desc->x = endian16b(buf[4]);
+			desc->y = endian16b(buf[5]);
+			img->w = MAKI_W;
+			img->h = MAKI_H;
+			img->channels = 1;
+			img->bitdepth = 4;
+			img->layout = pix_grba;
+			img->ratio = (endian16b(buf[3]) & 1) ? 1/2.0 : 1;
+			return wuimg_palette_from_file(img, 3, 16, ifp);
 		}
-		return wu_invalid_header;
 	}
-	return wu_invalid_header;
+	return WUERR_HERE(wu_invalid_signature);
 }

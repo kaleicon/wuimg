@@ -25,7 +25,7 @@ static void plane_mix(uint32_t *dst, const uint8_t *restrict plane,
 const size_t plane_len) {
 	/* The recipe is
 	 *  1) Read a byte from each of the four planes
-	 *  2) Split each byte into 4 2-bit group.
+	 *  2) Split each byte into four 2-bit groups
 	 *  3) Place each group into the bytes of a 32-bit word. Highest
 	 *     group in the highest byte, first planes into highest bits.
 	 *     Example:
@@ -53,7 +53,7 @@ const size_t plane_len) {
 		}
 		/* Channel order becomes ARGB/BRGB in the code above on
 		 * little-endian machines, so reverse again. */
-		dst[pos] = endian32(biject(val), big_endian);
+		dst[pos] = endian32b(biject(val));
 	}
 }
 
@@ -98,11 +98,7 @@ uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
 	bitstrm_from_bytes(&bs, ctrl, ctrl_len);
 
 	bool copy = bitstrm_lsb_next(&bs);
-	const size_t stream_len = bitstrm_lsb_gamma_one(&bs);
-	if (stream_len != data_len) {
-		return NULL;
-	}
-
+	bitstrm_lsb_gamma_one(&bs); // result should equal `data_len`
 	size_t size = bitstrm_lsb_gamma_one(&bs);
 	if (copy && size >= data_len) {
 		return ext;
@@ -131,7 +127,7 @@ uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
 	return data;
 }
 
-bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
+struct wu_st hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	/* img0000 tag structure:
 		Offset  Size    Name
 		0       struct  TagHeader
@@ -145,35 +141,36 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 		--      u8      CtrlDeflateStream[CompSize]
 	*/
 
-	// The tag ID has already been read, so substract 8 from the offsets
 	struct mparser mp = desc->image;
-	const uint8_t *tag = mp_slice(&mp, 32);
+	const uint8_t id[8] = {'i', 'm', 'g', '0', '0', '0', '0', 0};
+	const uint8_t *tag = mp_slice(&mp, 40);
 	if (!tag) {
-		return false;
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(tag, id, sizeof(id))) {
+		return wuerr(wu_unsupported_feature, "only img0000 tag supported");
 	}
 
-	uLong extent_comp = buf_endian32(tag + 16, little_endian);
-	uLong extent_orig = buf_endian32(tag + 20, little_endian);
-	uLong ctrl_comp = buf_endian32(tag + 24, little_endian);
-	uLong ctrl_orig = buf_endian32(tag + 28, little_endian);
+	uLong extent_comp = buf_endian32l(tag + 24);
+	uLong extent_orig = buf_endian32l(tag + 28);
+	uLong ctrl_comp = buf_endian32l(tag + 32);
+	uLong ctrl_orig = buf_endian32l(tag + 36);
 
 	const struct wuptr zext = mp_avail(&mp, extent_comp);
 	const struct wuptr zctrl = mp_avail(&mp, ctrl_comp);
 	if (!zctrl.len) {
-		return false;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	size_t uncomp_size = extent_orig + ctrl_orig;
 	uint8_t *buf = malloc((size_t)uncomp_size);
 	if (!buf) {
-		return false;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	uint8_t *extent = buf;
 	uncompress(extent, &extent_orig, zext.ptr, zext.len);
 	uint8_t *ctrl = buf + extent_orig;
 	uncompress(ctrl, &ctrl_orig, zctrl.ptr, zctrl.len);
-	uncomp_size = extent_orig + ctrl_orig;
 
 	const size_t img_size = wuimg_size(img);
 	uint8_t *planes = decode_zrle(extent, extent_orig, ctrl, ctrl_orig,
@@ -181,78 +178,20 @@ bool hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	if (planes != buf) {
 		free(buf);
 	}
-
-	bool ok = false;
-	if (planes) {
-		if (wuimg_alloc_noverify(img)) {
-			/* Not sure what's supposed to happen if the image
-			 * size is not a multiple of 4. */
-			plane_mix((uint32_t *)img->data, planes, img_size/4);
-			decode_delta(img, img_size);
-			ok = true;
-		}
-		free(planes);
+	if (!planes) {
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return ok;
+
+	/* Not sure what's supposed to happen if the image
+	 * size is not a multiple of 4. */
+	plane_mix((uint32_t *)img->data, planes, img_size/4);
+	decode_delta(img, img_size);
+	free(planes);
+	return WU_OK;
 }
 
-enum wu_error hg3_parse_image(struct hg3_desc *desc, struct wuimg *img) {
-	const uint8_t *stdinfo = mp_slice(&desc->image, STDINFO_LEN);
-	if (!stdinfo) {
-		return wu_unexpected_eof;
-	}
-	const uint8_t name[8] = "stdinfo\0";
-	const uint32_t size = buf_endian32(stdinfo + 8, little_endian);
-	if (memcmp(stdinfo, name, sizeof(name)) || size != STDINFO_LEN) {
-		return wu_invalid_header;
-	}
-
-	img->w = buf_endian32(stdinfo + 16, little_endian);
-	img->h = buf_endian32(stdinfo + 20, little_endian);
-	const uint32_t depth = buf_endian32(stdinfo + 24, little_endian);
-	switch (depth) {
-	case 24: case 32:
-		img->channels = (uint8_t)(depth / 8);
-		break;
-	default: return wu_invalid_header;
-	}
-	img->bitdepth = 8;
-	img->layout = pix_bgra;
-	img->mirror = true;
-	img->alpha = buf_endian32(stdinfo + 44, little_endian)
-		? alpha_unassociated : alpha_ignore;
-
-	desc->x = (int32_t)buf_endian32(stdinfo + 28, little_endian);
-	desc->y = (int32_t)buf_endian32(stdinfo + 32, little_endian);
-	desc->canvas_w = buf_endian32(stdinfo + 36, little_endian);
-	desc->canvas_h = buf_endian32(stdinfo + 40, little_endian);
-
-	const uint8_t *tag = mp_slice(&desc->image, 8);
-	if (!tag) {
-		return wu_unexpected_eof;
-	}
-
-	const uint8_t id[8] = "img0000\0";
-	if (!memcmp(tag, id, sizeof(id))) {
-		return wuimg_verify(img);
-	}
-	return wu_unsupported_feature;
-}
-
-enum wu_error hg3_next_image(struct hg3_desc *desc) {
-	/* ImageEntry structure
-		Offset  Size    Name
-		0       u32     OffsetToNext // If 0, this is the last ImageEntry
-		4       u32     ID
-		8       struct  Tags[]
-
-	 * TagHeader
-		0       char    Name[8]
-		8       u32     OffsetToNext // If 0, this is the last tag
-		12      u32     Size         // Actual size of this tag
-		16
-
-	 * stdinfo tag structure
+struct wu_st hg3_parse_image(struct hg3_desc *desc, struct wuimg *img) {
+	/* stdinfo tag structure
 		0       struct  TagHeader
 		16      u32     Width
 		20      u32     Height
@@ -266,27 +205,65 @@ enum wu_error hg3_next_image(struct hg3_desc *desc) {
 		52      u32     YCenter
 		56
 	*/
-	const uint8_t *entry_header = mp_slice(&desc->mp, 8);
-	if (!entry_header) {
-		return wu_unexpected_eof;
-	}
-	const size_t next = buf_endian32(entry_header, little_endian);
-	size_t len;
-	if (next < 8) {
-		len = desc->mp.len - desc->mp.pos;
-	} else {
-		len = next - 8;
+	const uint8_t *stdinfo = mp_slice(&desc->image, STDINFO_LEN);
+	const uint8_t name[8] = {'s', 't', 'd', 'i', 'n', 'f', 'o', 0};
+	if (!stdinfo) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(stdinfo, name, sizeof(name))) {
+		return wuerr(wu_invalid_header, "expected stdinfo tag");
+	} else if (buf_endian32l(stdinfo + 8) != STDINFO_LEN) {
+		return wuerr(wu_invalid_header, "unexpected stdinfo size");
 	}
 
-	const struct wuptr m = mp_avail(&desc->mp, len);
-	if (m.len > STDINFO_LEN + 8) {
-		desc->image = mp_mem(m.len, m.ptr);
-		return wu_ok;
+	img->w = buf_endian32l(stdinfo + 16);
+	img->h = buf_endian32l(stdinfo + 20);
+	const uint32_t depth = buf_endian32l(stdinfo + 24);
+	switch (depth) {
+	case 24: case 32:
+		img->channels = (uint8_t)(depth / 8);
+		break;
+	default: return wuerr(wu_invalid_header, "depth is neither 24 or 32");
 	}
-	return wu_unexpected_eof;
+	img->bitdepth = 8;
+	img->layout = pix_bgra;
+	img->mirror = true;
+	img->alpha = buf_endian32l(stdinfo + 44)
+		? alpha_unassociated : alpha_ignore;
+
+	desc->x = (int32_t)buf_endian32l(stdinfo + 28);
+	desc->y = (int32_t)buf_endian32l(stdinfo + 32);
+	desc->canvas_w = buf_endian32l(stdinfo + 36);
+	desc->canvas_h = buf_endian32l(stdinfo + 40);
+	return WU_OK;
 }
 
-enum wu_error hg3_open(struct hg3_desc *desc, const struct wuptr mem) {
+struct wu_st hg3_next_image(struct hg3_desc *desc) {
+	/* ImageEntry structure
+		Offset  Size    Name
+		0       u32     OffsetToNext // If 0, this is the last ImageEntry
+		4       u32     ID
+		8       struct  Tags[]
+
+	 * TagHeader
+		0       char    Name[8]
+		8       u32     OffsetToNext // If 0, this is the last tag
+		12      u32     Size         // Actual size of this tag
+		16
+	*/
+	const uint8_t *entry_header = mp_slice(&desc->mp, 8);
+	if (!entry_header) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+
+	const size_t next = buf_endian32l(entry_header);
+	const size_t len = (next >= 8)
+		? next - 8
+		: desc->mp.len - desc->mp.pos;
+	desc->image = mp_wuptr(mp_avail(&desc->mp, len));
+	return WU_OK;
+}
+
+struct wu_st hg3_open(struct hg3_desc *desc, const struct wuptr mem) {
 	/* Overall structure:
 		Header
 		ImageEntry
@@ -304,17 +281,16 @@ enum wu_error hg3_open(struct hg3_desc *desc, const struct wuptr mem) {
 	*desc = (struct hg3_desc) {
 		.mp = mp_wuptr(mem)
 	};
-	const uint8_t id[4] = "HG-3";
-	const enum wu_error st = fmt_sigcmp_mem(id, sizeof(id), &desc->mp);
-	if (st == wu_ok) {
-		const uint8_t *header = mp_slice(&desc->mp, 8);
-		if (header) {
-			const uint32_t size = buf_endian32(header, little_endian);
-			const uint32_t version = buf_endian32(header + 4, little_endian);
-			return (size == 0x0c && version == 0x300)
-				? wu_ok : wu_invalid_header;
-		}
-		return wu_unexpected_eof;
+	const uint8_t id[4] = {'H', 'G', '-', '3'};
+	const uint8_t *header = mp_slice(&desc->mp, 12);
+	if (!header) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(header, id, sizeof(id))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return st;
+	const uint32_t size = buf_endian32l(header + 4);
+	const uint32_t version = buf_endian32l(header + 8);
+	return (size == 0x0c && version == 0x300)
+		? WU_OK
+		: wuerr(wu_invalid_header, "bad header size or version");
 }

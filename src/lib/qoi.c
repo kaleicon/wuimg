@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
+#include "misc/endian.h"
 #include "misc/mem.h"
-#include "raster/fmt.h"
 #include "qoi.h"
 
 enum qoi_ops {
@@ -23,14 +23,8 @@ const struct pix_rgba8 cur) {
 	memcpy(seen + hash_pxl(cur), &cur, sizeof(cur));
 }
 
-size_t qoi_decode(struct mparser mp, struct wuimg *img) {
-	const size_t dst_len = wuimg_size(img);
-	// Add 1 byte of padding so we can use a faster 4-byte memcpy
-	img->data = malloc(dst_len + (bool)(img->channels == 3));
-	if (!img->data) {
-		return 0;
-	}
-
+static size_t qoi_inner(struct mparser mp, struct wuimg *img,
+const size_t dst_len) {
 	const struct wuptr src = mp_remaining(&mp);
 	struct pix_rgba8 seen[64] = {0};
 	size_t s = 0;
@@ -114,35 +108,44 @@ size_t qoi_decode(struct mparser mp, struct wuimg *img) {
 	return d;
 }
 
-enum wu_error qoi_parse(struct mparser *mp, struct wuimg *img) {
-	/* QOI header (after magic bytes):
-		Offset  Size    Name
-		0       u32     Width
-		4       u32     Height
-		8       u8      Channels
-		9       u8      IsLinearRGB
-		10
-	*/
-	const uint8_t *header = mp_slice(mp, 10);
-	if (!header) {
-		return wu_unexpected_eof;
-	}
-
-	img->w = buf_endian32(header, big_endian);
-	img->h = buf_endian32(header + 4, big_endian);
-	img->channels = header[8];
-	img->bitdepth = 8;
-	if (header[9]) {
-		img->cs.transfer = cicp_transfer_linear;
-	}
-	switch (img->channels) {
-	case 3: case 4: return wuimg_verify(img);
-	}
-	return wu_invalid_header;
+struct wu_st qoi_decode(const struct mparser *mp, struct wuimg *img) {
+	const size_t dst_len = wuimg_size(img);
+	// Add 1 byte of padding so we can use a faster 4-byte memcpy
+	img->data = malloc(dst_len + (bool)(img->channels == 3));
+	return img->data
+		? wuerr_partial(qoi_inner(*mp, img, dst_len), dst_len)
+		: WUERR_HERE(wu_alloc_error);
 }
 
-enum wu_error qoi_init(struct mparser *mp, const struct wuptr mem) {
+struct wu_st qoi_parse(struct mparser *mp, struct wuimg *img,
+const struct wuptr mem) {
+	/* QOI header:
+		Offset  Type    Name
+		0       u8      Magic[4]
+		4       u32     Width
+		8       u32     Height
+		12      u8      Channels
+		13      u8      IsLinearRGB
+		14
+	*/
 	*mp = mp_wuptr(mem);
-	const uint8_t magic[4] = "qoif";
-	return fmt_sigcmp_mem(magic, sizeof(magic), mp);
+	const uint8_t magic[4] = {'q', 'o', 'i', 'f'};
+	const uint8_t *header = mp_slice(mp, 14);
+	if (!header) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(header, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	switch (header[12]) {
+	case 3: case 4:
+		img->w = buf_endian32b(header + 4);
+		img->h = buf_endian32b(header + 8);
+		img->channels = header[12];
+		img->bitdepth = 8;
+		if (header[9]) {
+			img->cs.transfer = cicp_transfer_linear;
+		}
+		return wuimg_verify_st(img);
+	}
+	return wuerr(wu_invalid_header, "image channels is neither 3 or 4");
 }

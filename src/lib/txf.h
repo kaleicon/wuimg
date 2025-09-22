@@ -10,10 +10,8 @@ struct txf_desc {
 	uint32_t max_ascent, max_descent;
 };
 
-size_t txf_load(const struct txf_desc *desc, struct wuimg *img);
+struct wu_st txf_load(const struct txf_desc *desc, struct wuimg *img);
 
-enum wu_error txf_parse(struct txf_desc *desc, struct wuimg *img);
-
-enum wu_error txf_init(struct txf_desc *desc, FILE *ifp);
+struct wu_st txf_parse(struct txf_desc *desc, struct wuimg *img, FILE *ifp);
 
 #endif /* LIB_TXF */

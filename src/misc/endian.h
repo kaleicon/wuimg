@@ -29,8 +29,12 @@ enum endianness which_end(void);
  * If `val` is in native order, it will be returned with endianness `e`.
 */
 uint16_t endian16(uint16_t val, enum endianness e);
+uint16_t endian16b(uint16_t val);
+uint16_t endian16l(uint16_t val);
 
 uint32_t endian32(uint32_t val, enum endianness e);
+uint32_t endian32b(uint32_t val);
+uint32_t endian32l(uint32_t val);
 
 float endianf32(uint32_t val, enum endianness e);
 

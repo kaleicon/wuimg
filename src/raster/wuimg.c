@@ -369,7 +369,7 @@ size_t nmemb, FILE *ifp) {
 	struct palette *pal = wuimg_palette_init(img);
 	if (pal) {
 		if (!img->bitrange) {
-			img->bitrange = img->bitdepth;
+			img->bitrange = 8;
 		}
 		return palette_from_file(pal, size, nmemb, ifp, img->bitrange)
 			? WU_OK : WUERR_HERE(wu_unexpected_eof);

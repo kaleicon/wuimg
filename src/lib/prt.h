@@ -21,10 +21,8 @@ struct prt_desc {
 
 void prt_cleanup(struct prt_desc *desc);
 
-size_t prt_decode(const struct prt_desc *desc, struct wuimg *img);
+struct wu_st prt_decode(const struct prt_desc *desc, struct wuimg *img);
 
-enum wu_error prt_parse(struct prt_desc *desc, struct wuimg *img);
-
-enum wu_error prt_open(struct prt_desc *desc, FILE *ifp);
+struct wu_st prt_parse(struct prt_desc *desc, struct wuimg *img, FILE *ifp);
 
 #endif /* LIB_PTR */
