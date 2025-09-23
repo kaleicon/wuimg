@@ -284,6 +284,13 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"ant": {
+		"ant": FmtInfo("Studio e.Go ANT Image",
+			ext="ant",
+			magic=b"ANTI\x10\0\0\0",
+		),
+	},
+
 	"atari": {
 		"crg": FmtInfo("Calamus Raster Graphic",
 			ext=("crg", "img"),
