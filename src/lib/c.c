@@ -11,10 +11,6 @@
 #include "lib/c.h"
 
 struct wu_st c_decode(const struct c_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-
 	const uint8_t size = desc->fmt == c_xbm && desc->xbm.version == xbm_x11
 		? 1 : 2;
 	const size_t dims = wuimg_size(img);
@@ -29,22 +25,13 @@ struct wu_st c_decode(const struct c_desc *desc, struct wuimg *img) {
 
 		uintmax_t val;
 		mp_scan_xint(&tp, 4, &val);
-		if (desc->fmt == c_xbm) {
-			if (desc->xbm.version == xbm_x11) {
-				img->data[cnt] = bit_rev8((uint8_t)val);
-				++cnt;
-			} else {
-				uint16_t v = bit_rev16((uint16_t)val);
-				img->data[cnt] = (uint8_t)v;
-				img->data[cnt+1] = (uint8_t)(v >> 8);
-				cnt += 2;
-			}
+		if (size == 1) {
+			img->data[cnt] = (uint8_t)val;
 		} else {
-			uint16_t v = (uint16_t)val;
-			img->data[cnt] = (uint8_t)(v >> 8);
-			img->data[cnt+1] = (uint8_t)v;
-			cnt += 2;
+			img->data[cnt] = (uint8_t)(val >> 8);
+			img->data[cnt+1] = (uint8_t)val;
 		}
+		cnt += size;
 
 		if (mp_next_char(&tp) != ',') {
 			break;
@@ -343,6 +330,7 @@ const struct wuptr mem) {
 			break;
 		case c_identifier:
 			if (desc->fmt == c_xbm) {
+				img->bit = little_endian;
 				return xbm_array_def(desc, img, tok);
 			}
 			return degas_array_def(desc, img, tok);

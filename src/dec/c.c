@@ -25,10 +25,11 @@ const struct wu_conf *conf) {
 	struct wuimg *img = infile->sub_img;
 	struct wu_st st = c_parse(&desc, img, infile->map);
 	if (wu_isok(st)) {
-		get_metadata(&infile->metadata, &desc);
-		st = wuimg_exceeds_limit(img, conf)
-			? WUERR_HERE(wu_exceeds_size_limit)
-			: c_decode(&desc, img);
+		st = WUERR_CHECK(wuimg_alloc_limit(img, conf));
+		if (wu_isok(st)) {
+			get_metadata(&infile->metadata, &desc);
+			st = c_decode(&desc, img);
+		}
 	}
 	return st;
 }

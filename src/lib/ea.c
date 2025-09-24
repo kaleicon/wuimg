@@ -15,21 +15,7 @@ https://web.archive.org/web/20230518105443/https://wiki.xentax.com/index.php/EA_
  * FNTI is somewhat different but describes the texture in the same way.
 */
 
-static void swap_nibbles(void *restrict data, const size_t len,
-void *restrict ptr) {
-	(void)ptr;
-	uint8_t *dst = data;
-	for (size_t i = 0; i < len; ++i) {
-		dst[i] = (uint8_t)(dst[i] >> 4 | dst[i] << 4);
-	}
-}
-
 struct wu_st eafnt_load(struct eafnt_desc *desc, struct wuimg *img) {
-	if (desc->reverse) {
-		return wuerr_partial(
-			fmt_load_raster_callback(img, desc->ifp, swap_nibbles, NULL),
-			wuimg_size(img));
-	}
 	return fmt_load_raster_st(img, desc->ifp);
 }
 
@@ -70,8 +56,8 @@ static struct wu_st parse_eafnt(struct eafnt_desc *desc, struct wuimg *img) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	img->w = buf_endian16(hdr+4, little_endian);
-	img->h = buf_endian16(hdr+6, little_endian);
+	img->w = buf_endian16l(hdr+4);
+	img->h = buf_endian16l(hdr+6);
 	img->channels = 1;
 	desc->image_code = hdr[0];
 	switch (desc->image_code) {
@@ -91,11 +77,11 @@ static struct wu_st parse_eafnt(struct eafnt_desc *desc, struct wuimg *img) {
 	case 0x01:
 		/* TODO: Not sure what's going on, but makes all samples
 		 * display ok...ish */
-		;const uint16_t what = buf_endian16(hdr + 2, little_endian);
+		;const uint16_t what = buf_endian16l(hdr + 2);
 		if (what) {
 			// Most files are like this
 			img->bitdepth = 4;
-			desc->reverse = true;
+			img->bit = little_endian;
 		} else {
 			// Only way to get SSERIF8.FFN to display
 			img->bitdepth = 1;
@@ -155,7 +141,7 @@ FILE *ifp) {
 	hdr[2] = (uint8_t)toupper(hdr[2]);
 	const uint8_t fnt[3] = {'F', 'N', 'T'};
 	if (!memcmp(hdr, fnt, sizeof(fnt))) {
-		const uint32_t img_off = buf_endian32(hdr + 28, little_endian);
+		const uint32_t img_off = buf_endian32l(hdr + 28);
 		*desc = (struct eafnt_desc) {
 			.ifp = ifp,
 			.img_off = img_off,
@@ -163,12 +149,12 @@ FILE *ifp) {
 		switch (hdr[3]) {
 		case 'F':
 		case 'S':
-			desc->chars = buf_endian16(hdr + 10, little_endian);
-			desc->char_off = buf_endian32(hdr + 20, little_endian);
-			desc->unk_off = buf_endian32(hdr + 24, little_endian);
+			desc->chars = buf_endian16l(hdr + 10);
+			desc->char_off = buf_endian32l(hdr + 20);
+			desc->unk_off = buf_endian32l(hdr + 24);
 			return parse_eafnt(desc, img);
 		case 'I':
-			;uint16_t chars = buf_endian16(hdr + 18, little_endian);
+			;uint16_t chars = buf_endian16l(hdr + 18);
 			desc->chars = chars > 0x20 ? (uint16_t)(chars - 0x20)/4 : 0;
 			desc->char_off = 0x20;
 			return parse_eafnt(desc, img);

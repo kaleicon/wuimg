@@ -52,7 +52,7 @@ const char * xwd_visual_str(enum xwd_visual_class visual);
 
 void xwd_cleanup(struct xwd_desc *desc);
 
-size_t xwd_decode(const struct xwd_desc *desc, struct wuimg *img);
+struct wu_st xwd_decode(const struct xwd_desc *desc, struct wuimg *img);
 
 struct wu_st xwd_parse(struct xwd_desc *desc, struct wuimg *img);
 

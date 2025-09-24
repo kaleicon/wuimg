@@ -667,7 +667,7 @@ const struct wuimg *src, const size_t y) {
 	const size_t elems = src->w * src->channels;
 	uint8_t *u_row = state->row + state->row_len - state->unpack_len;
 	unpack_strip(u_row, s_row, elems,
-		src->bitdepth, src->attr, state->op, arg);
+		src->bitdepth, src->attr, src->bit, state->op, arg);
 	return u_row;
 }
 
@@ -732,7 +732,7 @@ const size_t h, const struct wuimg *src, const enum unpack_op op) {
 		? (void *)src->u.bitfield : &src->bitrange;
 	for (size_t y = 0; y < h; ++y) {
 		unpack_strip(t + y*t_stride, s + y*s_stride,
-			elems, src->bitdepth, src->attr, op, arg);
+			elems, src->bitdepth, src->attr, src->bit, op, arg);
 	}
 }
 

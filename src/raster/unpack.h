@@ -6,9 +6,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "pix.h"
-
-#include "bitfield.h"
+#include "misc/endian.h"
+#include "raster/bitfield.h"
+#include "raster/pix.h"
 
 enum unpack_op {
 	op_noop = 0,
@@ -18,8 +18,8 @@ enum unpack_op {
 };
 
 void unpack_strip(void *restrict dst, const void *restrict src,
-size_t n, uint8_t bitdepth, enum pix_attr attr, enum unpack_op op,
-const void *arg);
+size_t n, uint8_t bitdepth, enum pix_attr attr, enum endianness bit,
+enum unpack_op op, const void *arg);
 
 size_t unpack_stride(size_t n, uint8_t bitdepth, enum pix_attr attr,
 enum unpack_op op, const void *arg);

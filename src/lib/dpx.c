@@ -296,7 +296,7 @@ const uint8_t i) {
 	if (!element_info(elem->type, &nfo) || nfo.subsampled) {
 		return wu_unsupported_feature;
 	}
-	img->attr = elem->attr;
+	img->attr = (enum pix_attr)elem->attr;
 	img->channels = nfo.ch;
 	img->layout = nfo.layout;
 	img->bitdepth = image->bitdepth;

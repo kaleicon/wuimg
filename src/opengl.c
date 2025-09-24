@@ -425,7 +425,8 @@ const size_t h, const unsigned char *data) {
 		const watch_t start = watch_look();
 		for (size_t y = 0; y < h; ++y) {
 			unpack_strip(map + outstride*y, data + instride*y,
-				w, img->bitdepth, img->attr, params->op, arg);
+				w, img->bitdepth, img->attr, img->bit,
+				params->op, arg);
 		}
 		watch_report("Unpacked", start, report_detail);
 		glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);

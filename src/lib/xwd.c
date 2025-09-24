@@ -63,19 +63,10 @@ void xwd_cleanup(struct xwd_desc *desc) {
 	wustr_free(&desc->win.name);
 }
 
-size_t xwd_decode(const struct xwd_desc *desc, struct wuimg *img) {
-	size_t read = 0;
-	if (wuimg_alloc_noverify(img)) {
-		read = fmt_load_raster_swap(img, desc->ifp, desc->byte_endian);
-		if (img->bitdepth == 1 && desc->bit_endian == little_endian) {
-			// Reverse bit order
-			uint8_t *data = img->data;
-			for (size_t i = 0; i < read; ++i) {
-				data[i] = bit_rev8(data[i]);
-			}
-		}
-	}
-	return read;
+struct wu_st xwd_decode(const struct xwd_desc *desc, struct wuimg *img) {
+	return wuerr_partial(
+		fmt_load_raster_swap(img, desc->ifp, desc->byte_endian),
+		wuimg_size(img));
 }
 
 #define XWD_PAL_ENTRY_SIZE 12
@@ -183,7 +174,10 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 		// fallthrough
 	case xwd_static_gray: case xwd_gray_scale:
 		switch (bpp) {
-		case 1: img->attr = pix_inverted; break;
+		case 1:
+			img->attr = pix_inverted;
+			img->bit = (enum endianness)desc->bit_endian;
+			break;
 		case 8: break;
 		default:
 			return wuerr(wu_invalid_header,

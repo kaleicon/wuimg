@@ -13,20 +13,8 @@ enum txf_format {
 	txf_format_bit = 1,
 };
 
-static void load_callback(void *restrict data, size_t len,
-void *restrict user) {
-	(void)user;
-	uint8_t *row = data;
-	for (size_t i = 0; i < len; ++i) {
-		row[i] = bit_rev8(row[i]);
-	}
-}
-
 struct wu_st txf_load(const struct txf_desc *desc, struct wuimg *img) {
-	const size_t read = (img->bitdepth == 1)
-		? fmt_load_raster_callback(img, desc->ifp, load_callback, NULL)
-		: fmt_load_raster(img, desc->ifp);
-	return wuerr_partial(read, wuimg_size(img));
+	return fmt_load_raster_st(img, desc->ifp);
 }
 
 struct wu_st txf_parse(struct txf_desc *desc, struct wuimg *img, FILE *ifp) {
@@ -86,6 +74,7 @@ struct wu_st txf_parse(struct txf_desc *desc, struct wuimg *img, FILE *ifp) {
 	img->w = endian32(hdr[3], e);
 	img->h = endian32(hdr[4], e);
 	img->channels = 1;
+	img->bit = img->bitdepth == 1 ? little_endian : big_endian;
 	img->mirror = true;
 
 	*desc = (struct txf_desc) {
@@ -95,5 +84,5 @@ struct wu_st txf_parse(struct txf_desc *desc, struct wuimg *img, FILE *ifp) {
 	};
 	const uint32_t glyphs = endian32(hdr[7], e);
 	fseek(ifp, 12 * glyphs, SEEK_CUR);
-	return wuok();
+	return WU_OK;
 }

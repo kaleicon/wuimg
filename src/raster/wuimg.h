@@ -7,6 +7,7 @@
 #include <stdbool.h>
 
 #include "conf.h"
+#include "misc/endian.h"
 #include "misc/wutree.h"
 #include "raster/alpha.h"
 #include "raster/bitfield.h"
@@ -99,7 +100,8 @@ struct wuimg {
 		Must be <= bitdepth.
 		For paletted images, this applies to the palette itself. */
 	enum pix_layout layout:8;
-	enum pix_attr attr:8;
+	enum pix_attr attr:7;
+	enum endianness bit:1; // Bit reading order for depths < 8
 
 	unsigned char rotate; // Clockwise quarter turns
 	bool mirror:1; // Vertical mirror. Horizontal is mirror + 2rotate

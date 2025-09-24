@@ -137,7 +137,7 @@ const unsigned char *restrict src, const size_t src_len, const size_t scan_len) 
 					return o;
 				}
 				unpack_strip(dst + o, src + i, marker, 4,
-					pix_normal, op_unpack, NULL);
+					pix_normal, big_endian, op_unpack, NULL);
 				o += marker;
 				i += run_bytes;
 			}

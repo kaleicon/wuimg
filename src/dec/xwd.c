@@ -30,29 +30,30 @@ static void get_metadata(const struct xwd_desc *desc, struct wutree *meta) {
 	}
 }
 
-static void cleanup_xwd(struct image_file *infile) {
-	xwd_cleanup(infile->dec_state);
-}
-
-static enum wu_error callback_xwd(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *_s, const enum image_event ev) {
-	(void)_c; (void)_s;
+static struct wu_st event_xwd(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *_s, const enum image_event ev) {
+	(void)_s;
+	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
-		return xwd_decode(infile->dec_state, infile->sub_img)
-			? wu_ok : wu_decoding_error;
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		if (e == wu_ok) {
+			st = xwd_decode(infile->dec_state, infile->sub_img);
+		} else {
+			st = WUERR_HERE(e);
+		}
 	}
-	return wu_no_change;
+	return st;
 }
 
 static struct wu_st init_xwd(struct image_file *infile,
-const struct wu_conf *conf) {
+const struct wu_conf *_c) {
+	(void)_c;
 	struct wu_st st = xwd_open(infile->dec_state, infile->ifp);
 	if (wu_isok(st)) {
 		st = xwd_parse(infile->dec_state, infile->sub_img);
 		if (wu_isok(st)) {
 			get_metadata(infile->dec_state, &infile->metadata);
-			st.st = wuimg_exceeds_limit(infile->sub_img, conf)
-				? wu_exceeds_size_limit : wu_ok;
+			xwd_cleanup(infile->dec_state);
 		}
 	}
 	return st;
@@ -62,6 +63,5 @@ const struct image_fn xwd_fn = {
 	.alloc_single = true,
 	.state_size = sizeof(struct xwd_desc),
 	.init = init_xwd,
-	.callback = callback_xwd,
-	.end = cleanup_xwd,
+	.event = event_xwd,
 };

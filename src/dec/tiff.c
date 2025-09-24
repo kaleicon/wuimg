@@ -117,7 +117,8 @@ const size_t dst_stride, const enum pix_attr attr, const enum unpack_op op,
 const uint16_t bps) {
 	for (size_t y = 0; y < height; ++y) {
 		const unsigned char *src = tiles->buf + tiles->stride * y;
-		unpack_strip(dst, src, width, (uint8_t)bps, attr, op, NULL);
+		unpack_strip(dst, src, width, (uint8_t)bps, attr, big_endian,
+			op, NULL);
 		dst += dst_stride;
 	}
 }

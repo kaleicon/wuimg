@@ -4,58 +4,69 @@
 #include <limits.h>
 
 #include "misc/bit.h"
-#include "misc/endian.h"
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
 // Unpack 2^n-bit to 8-bit
-static void unpack4(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-	switch (nr) {
-	case 2:
-		dst[1] = (uint8_t)(byte & 0x0f);
-		// fallthrough
-	case 1:
-		dst[0] = (uint8_t)(byte >> 4);
+static void unpack4(const uint8_t byte, uint8_t *dst, const size_t nr,
+const enum endianness e) {
+	if (e == big_endian) {
+		switch (nr) {
+		case 2: dst[1] = (uint8_t)(byte & 0x0f); // fallthrough
+		case 1: dst[0] = (uint8_t)(byte >> 4);
+		}
+	} else {
+		switch (nr) {
+		case 2: dst[0] = (uint8_t)(byte & 0x0f); // fallthrough
+		case 1: dst[1] = (uint8_t)(byte >> 4);
+		}
 	}
 }
 
-static void unpack2(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
-	switch (nr) {
-	case 4:
-		dst[3] = (uint8_t)(byte & 0x03);
-		// fallthrough
-	case 3:
-		dst[2] = (uint8_t)((byte >> 2) & 0x03);
-		// fallthrough
-	case 2:
-		dst[1] = (uint8_t)((byte >> 4) & 0x03);
-		// fallthrough
-	case 1:
-		dst[0] = (uint8_t)(byte >> 6);
-		// fallthrough
+static void unpack2(const uint8_t byte, uint8_t *dst, const size_t nr,
+const enum endianness e) {
+	if (e == big_endian) {
+		switch (nr) {
+		case 4: dst[3] = (uint8_t)(byte & 0x03); // fallthrough
+		case 3: dst[2] = (uint8_t)((byte >> 2) & 0x03); // fallthrough
+		case 2: dst[1] = (uint8_t)((byte >> 4) & 0x03); // fallthrough
+		case 1: dst[0] = (uint8_t)(byte >> 6);
+		}
+	} else {
+		switch (nr) {
+		case 4: dst[0] = (uint8_t)(byte & 0x03); // fallthrough
+		case 3: dst[1] = (uint8_t)((byte >> 2) & 0x03); // fallthrough
+		case 2: dst[2] = (uint8_t)((byte >> 4) & 0x03); // fallthrough
+		case 1: dst[3] = (uint8_t)(byte >> 6);
+		}
 	}
 }
 
-static void unpack1(const uint_fast8_t byte, uint8_t *dst, const size_t nr) {
+static void unpack1(const uint8_t byte, uint8_t *dst, const size_t nr,
+const enum endianness e) {
 	for (size_t i = 0; i < nr; ++i) {
-		dst[i] = (byte & (0x80 >> i)) ? 0x01 : 0x00;
+		if (e == big_endian) {
+			dst[i] = (byte & (0x80 >> i)) ? 0x01 : 0x00;
+		} else {
+			dst[i] = (byte & (0x01 << i)) ? 0x01 : 0x00;
+		}
 	}
 }
 
 // Have the compiler inline one of the above
-static inline void select_unpack(const uint_fast8_t byte, uint8_t *dst,
-const size_t nr, const size_t bitdepth) {
+static inline void select_unpack(const uint8_t byte, uint8_t *dst,
+const size_t nr, const enum endianness e, const size_t bitdepth) {
 	switch (bitdepth) {
-	case 1: unpack1(byte, dst, nr); break;
-	case 2: unpack2(byte, dst, nr); break;
-	case 4: unpack4(byte, dst, nr); break;
+	case 1: unpack1(byte, dst, nr, e); break;
+	case 2: unpack2(byte, dst, nr, e); break;
+	case 4: unpack4(byte, dst, nr, e); break;
 	}
 }
 
 // The above but looping
 static inline void strip_common(uint8_t *restrict dst,
 const uint8_t *restrict src, const size_t width, const uint8_t bitdepth,
-const uint8_t xor) {
+const uint8_t xor, const enum endianness e) {
 	const size_t ppb = 8 / bitdepth;
 
 	const size_t bytes = width / ppb;
@@ -63,33 +74,43 @@ const uint8_t xor) {
 	for (size_t x = 0; x < bytes; ++x) {
 		const size_t o = x * ppb;
 		const uint8_t byte = src[x] ^ xor;
-		select_unpack(byte, dst + o, ppb, bitdepth);
+		select_unpack(byte, dst + o, ppb, e, bitdepth);
 	}
 	if (remainer) {
 		const uint8_t byte = src[bytes] ^ xor;
-		select_unpack(byte, dst + width - remainer, remainer,
+		select_unpack(byte, dst + width - remainer, remainer, e,
 			bitdepth);
 	}
 }
 
-static void strip_unpack4(uint8_t *restrict dst, const uint8_t *restrict src,
+static void strip_unpack4b(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 4, 0);
+	strip_common(dst, src, n, 4, 0, big_endian);
+}
+static void strip_unpack2b(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t n) {
+	strip_common(dst, src, n, 2, 0, big_endian);
+}
+static void strip_unpack1b(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t n) {
+	strip_common(dst, src, n, 1, 0, big_endian);
+}
+static void strip_unpack_xor1b(uint8_t *restrict dst, const uint8_t *restrict src,
+const size_t n) {
+	strip_common(dst, src, n, 1, 0xff, big_endian);
 }
 
-static void strip_unpack2(uint8_t *restrict dst, const uint8_t *restrict src,
+static void strip_unpack4l(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 2, 0);
+	strip_common(dst, src, n, 4, 0, little_endian);
 }
-
-static void strip_unpack1(uint8_t *restrict dst, const uint8_t *restrict src,
+static void strip_unpack1l(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 1, 0);
+	strip_common(dst, src, n, 1, 0, little_endian);
 }
-
-static void strip_unpack_xor1(uint8_t *restrict dst, const uint8_t *restrict src,
+static void strip_unpack_xor1l(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t n) {
-	strip_common(dst, src, n, 1, 0xff);
+	strip_common(dst, src, n, 1, 0xff, little_endian);
 }
 
 // Signed to unsigned
@@ -135,12 +156,12 @@ const size_t n, const uint32_t xor) {
 // Unpack any bitdepth < 16 and non-power-of-two
 static void strip_unpack_any(void *restrict dst,
 const void *restrict src, const size_t width, const uint8_t bitdepth,
-const enum pix_attr attr, const uint8_t bitrange) {
+const enum pix_attr attr, uint8_t bitrange) {
 	uint32_t xor = 0;
 	switch (attr) {
 	case pix_signed: xor = (1 << (bitrange - 1)); break;
-	case pix_inverted: xor = bit_set32(bitdepth); break;
-	default: break;
+	case pix_inverted: xor = bit_set32(bitrange); break;
+	default: bitrange = bitrange > bitdepth ? bitdepth : bitrange; break;
 	}
 
 	const bool highdepth = (bitdepth > 8);
@@ -215,7 +236,7 @@ static uint8_t get_range(const uint8_t bitdepth, const void *arg) {
 
 void unpack_strip(void *restrict dst, const void *restrict src,
 const size_t n, const uint8_t bitdepth, const enum pix_attr attr,
-const enum unpack_op op, const void *arg) {
+const enum endianness bit, const enum unpack_op op, const void *arg) {
 	switch (op) {
 	case op_noop:
 		memcpy(dst, src, strip_base(n, bitdepth));
@@ -224,16 +245,29 @@ const enum unpack_op op, const void *arg) {
 		;const uint8_t range = get_range(bitdepth, arg);
 		switch (attr) {
 		case pix_normal:
-			switch (bitdepth) {
-			case 1: strip_unpack1(dst, src, n); return;
-			case 2: strip_unpack2(dst, src, n); return;
-			case 4: strip_unpack4(dst, src, n); return;
+			if (bit == big_endian) {
+				switch (bitdepth) {
+				case 1: strip_unpack1b(dst, src, n); return;
+				case 2: strip_unpack2b(dst, src, n); return;
+				case 4: strip_unpack4b(dst, src, n); return;
+				}
+			} else {
+				switch (bitdepth) {
+				case 1: strip_unpack1l(dst, src, n); return;
+				case 4: strip_unpack4l(dst, src, n); return;
+				}
 			}
 			break;
 		case pix_inverted:
 			;const uint32_t xor = bit_set32(range);
 			switch (bitdepth) {
-			case 1: strip_unpack_xor1(dst, src, n); return;
+			case 1:
+				if (bit == big_endian) {
+					strip_unpack_xor1b(dst, src, n);
+				} else {
+					strip_unpack_xor1l(dst, src, n);
+				}
+				return;
 			case 8: strip_invert8(dst, src, n, xor); return;
 			case 16: strip_invert16(dst, src, n, xor); return;
 			}
@@ -244,11 +278,10 @@ const enum unpack_op op, const void *arg) {
 			case 8: strip_design8(dst, src, n, add); return;
 			case 16: strip_design16(dst, src, n, add); return;
 			}
-			strip_unpack_any(dst, src, n, bitdepth, attr, range);
-			return;
+			break;
 		default: return;
 		}
-		strip_unpack_any(dst, src, n, bitdepth, attr, bitdepth);
+		strip_unpack_any(dst, src, n, bitdepth, attr, range);
 		break;
 	case op_pack:
 		switch (attr) {

@@ -3,7 +3,6 @@
 #include "misc/common.h"
 #include "misc/mat.h"
 #include "misc/math.h"
-#include "raster/unpack.h"
 
 void matf_mul(float *restrict out, const float *restrict m1,
 const float *restrict m2, const int len, const int h1, const int w2) {
@@ -127,5 +126,7 @@ const int i) {
 }
 
 void float_from_double(float *dst, const double *src, const size_t len) {
-	unpack_strip(dst, src, len, 64, pix_float, op_pack, NULL);
+	for (size_t i = 0; i < len; ++i) {
+		dst[i] = (float)src[i];
+	}
 }
