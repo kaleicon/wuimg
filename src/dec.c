@@ -12,7 +12,8 @@
 #include "dec.h"
 
 void dec_free(struct image_context *image) {
-	image_file_free(&image->file);
+	/* dec_state must be freed first, as some formats may use this
+	 * interface to decode an embedded file. */
 	if (image->file.dec_state && !image->desc.is_auto) {
 		const struct image_fn *fn = image->desc.dec.fn;
 		if (fn->end) {
@@ -22,6 +23,7 @@ void dec_free(struct image_context *image) {
 			free(image->file.dec_state);
 		}
 	}
+	image_file_free(&image->file);
 }
 
 static enum wu_error call_event(struct image_context *image,
