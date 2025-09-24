@@ -221,7 +221,7 @@ struct wuimg **cur_img) {
 	}
 
 	enum image_event ev = 0;
-	const struct wuimg *img = image->file.sub_img + state->idx;
+	struct wuimg *img = image->file.sub_img + state->idx;
 	const int frames = (int)wuimg_frames_nr(img);
 	if (state->frame + 1 < frames) {
 		ev = ev_frame;
@@ -230,6 +230,9 @@ struct wuimg **cur_img) {
 		ev = ev_subcycle;
 		++state->idx;
 		state->frame = 0;
+		if (!img->borrowed) {
+			wuimg_clear(img);
+		}
 	}
 
 	if (ev) {
