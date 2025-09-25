@@ -16,18 +16,6 @@
 #include "misc/math.h"
 #include "window/wayland.h"
 
-struct wayland_listeners {
-	struct wl_registry_listener reg;
-	struct wl_seat_listener seat;
-	struct wl_pointer_listener pointer;
-	struct wl_keyboard_listener keyboard;
-	struct xdg_wm_base_listener wm_base;
-	struct xdg_surface_listener surface;
-	struct xdg_toplevel_listener toplevel;
-};
-
-static const struct wayland_listeners listen;
-
 static void reset_xkb(struct wayland_keyboard *k) {
 	if (k->state) {
 		xkb_state_unref(k->state);
@@ -493,34 +481,54 @@ const wl_fixed_t y) {
 	}
 }
 
+static const struct wl_pointer_listener listen_pointer = {
+	.enter = pointer_enter,
+	.leave = null_function,
+	.motion = pointer_motion,
+	.button = pointer_button,
+	.axis = pointer_axis,
+	.frame = null_function,
+	.axis_source = null_function,
+	.axis_stop = null_function,
+	.axis_discrete = null_function,
+};
+static const struct wl_keyboard_listener listen_keyboard = {
+	.keymap = keyboard_keymap,
+	.enter = null_function,
+	.leave = keyboard_leave,
+	.key = keyboard_key,
+	.modifiers = keyboard_modifiers,
+	.repeat_info = null_function,
+};
+
 static void seat_capabilities(void *data, struct wl_seat *seat,
 const uint32_t caps) {
 	struct wayland *wl = data;
-	struct wayland_cursor *c = &wl->cursor;
 	struct window_common *win = &wl->pub->win;
-	if (caps & WL_SEAT_CAPABILITY_POINTER) {
-		if (!c->pointer) {
-			win->pressed = false;
-			c->pointer = wl_seat_get_pointer(seat);
-			wl_pointer_add_listener(c->pointer, &listen.pointer, wl);
-		}
-	} else {
-		if (c->pointer) {
-			wl_pointer_release(c->pointer);
-			c->pointer = NULL;
-		}
-	}
 	struct wayland_keyboard *k = &wl->kb;
 	if (caps & WL_SEAT_CAPABILITY_KEYBOARD) {
 		if (!k->keyboard) {
 			k->keyboard = wl_seat_get_keyboard(seat);
-			wl_keyboard_add_listener(k->keyboard, &listen.keyboard, wl);
+			wl_keyboard_add_listener(k->keyboard, &listen_keyboard, wl);
 		}
 	} else {
 		if (k->keyboard) {
 			wl_keyboard_release(k->keyboard);
 			k->keyboard = NULL;
 			reset_xkb(k);
+		}
+	}
+	struct wayland_cursor *c = &wl->cursor;
+	if (caps & WL_SEAT_CAPABILITY_POINTER) {
+		if (!c->pointer) {
+			win->pressed = false;
+			c->pointer = wl_seat_get_pointer(seat);
+			wl_pointer_add_listener(c->pointer, &listen_pointer, wl);
+		}
+	} else {
+		if (c->pointer) {
+			wl_pointer_release(c->pointer);
+			c->pointer = NULL;
 		}
 	}
 }
@@ -531,6 +539,14 @@ const uint32_t serial) {
 	xdg_wm_base_pong(xwb, serial);
 }
 
+static const struct wl_seat_listener listen_seat = {
+	.capabilities = seat_capabilities,
+	.name = null_function,
+};
+static const struct xdg_wm_base_listener listen_wm_base = {
+	.ping = wm_base_ping,
+};
+
 static void reg_global(void *data, struct wl_registry *reg, const uint32_t name,
 const char *interface, const uint32_t version) {
 	(void)version;
@@ -538,51 +554,27 @@ const char *interface, const uint32_t version) {
 	struct wayland_binds *b = &wl->binds;
 	if (!strcmp(interface, wl_compositor_interface.name)) {
 		b->comp = wl_registry_bind(reg, name, &wl_compositor_interface, 1);
-	} else if (!strcmp(interface, wl_seat_interface.name)) {
-		b->seat = wl_registry_bind(reg, name, &wl_seat_interface, 1);
-		wl_seat_add_listener(b->seat, &listen.seat, wl);
 	} else if (!strcmp(interface, wl_shm_interface.name)) {
 		b->shm = wl_registry_bind(reg, name, &wl_shm_interface, 1);
+	} else if (!strcmp(interface, wl_seat_interface.name)) {
+		b->seat = wl_registry_bind(reg, name, &wl_seat_interface, 1);
+		wl_seat_add_listener(b->seat, &listen_seat, wl);
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
 		b->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
-		xdg_wm_base_add_listener(b->xwb, &listen.wm_base, NULL);
+		xdg_wm_base_add_listener(b->xwb, &listen_wm_base, NULL);
 	}
 }
 
-static const struct wayland_listeners listen = {
-	.reg = {
-		.global = reg_global,
-		.global_remove = null_function,
-	},
-	.seat = {
-		.capabilities = seat_capabilities,
-		.name = null_function,
-	},
-	.pointer = {
-		.enter = pointer_enter,
-		.leave = null_function,
-		.motion = pointer_motion,
-		.button = pointer_button,
-		.axis = pointer_axis,
-		.frame = null_function,
-		.axis_source = null_function,
-		.axis_stop = null_function,
-		.axis_discrete = null_function,
-	},
-	.keyboard = {
-		.keymap = keyboard_keymap,
-		.enter = null_function,
-		.leave = keyboard_leave,
-		.key = keyboard_key,
-		.modifiers = keyboard_modifiers,
-		.repeat_info = null_function,
-	},
-	.wm_base = {.ping = wm_base_ping},
-	.surface = {.configure = surface_configure},
-	.toplevel = {
-		.configure = toplevel_configure,
-		.close = toplevel_close,
-	},
+static const struct wl_registry_listener listen_reg = {
+	.global = reg_global,
+	.global_remove = null_function,
+};
+static const struct xdg_surface_listener listen_surface = {
+	.configure = surface_configure,
+};
+static const struct xdg_toplevel_listener listen_toplevel = {
+	.configure = toplevel_configure,
+	.close = toplevel_close,
 };
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub) {
@@ -601,7 +593,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return "Couldn't obtain registry";
 	}
 
-	wl_registry_add_listener(wl->reg, &listen.reg, wl);
+	wl_registry_add_listener(wl->reg, &listen_reg, wl);
 	wl_display_roundtrip(wl->display);
 	if (!wl->binds.comp) {
 		return "Failed to bind to compositor";
@@ -629,14 +621,14 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	if (!wl->xdg_surf) {
 		return "Failed to get xdg_surface";
 	}
-	xdg_surface_add_listener(wl->xdg_surf, &listen.surface, NULL);
+	xdg_surface_add_listener(wl->xdg_surf, &listen_surface, NULL);
 
 	wl->toplevel = xdg_surface_get_toplevel(wl->xdg_surf);
 	if (!wl->toplevel) {
 		return "Failed to get toplevel";
 	}
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
-	xdg_toplevel_add_listener(wl->toplevel, &listen.toplevel, wl);
+	xdg_toplevel_add_listener(wl->toplevel, &listen_toplevel, wl);
 
 	wl_surface_commit(wl->surf);
 	wl_display_roundtrip(wl->display);
