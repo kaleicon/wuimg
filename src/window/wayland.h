@@ -5,8 +5,10 @@
 
 #include <wayland-client.h>
 #include <wayland-egl.h>
-#include "xdg-shell-client-header.h"
 #include <xkbcommon/xkbcommon.h>
+
+#include "xdg-shell-client-header.h"
+#include "color-management-client-header.h"
 
 #include "conf.h"
 #include "window/base.h"
@@ -17,6 +19,7 @@ struct wayland_binds {
 	struct wl_seat *seat;
 	struct wl_shm *shm;
 	struct xdg_wm_base *xwb;
+	struct wp_color_manager_v1 *color;
 };
 
 struct wayland_cursor {
@@ -30,6 +33,13 @@ struct wayland_keyboard {
 	struct xkb_keymap *keymap;
 	struct xkb_state *state;
 	struct wl_keyboard *keyboard;
+};
+
+struct wayland_color {
+	struct wp_color_management_surface_v1 *surf;
+	struct wp_color_management_surface_feedback_v1 *feedback;
+	struct wp_image_description_v1 *desc;
+	struct wp_image_description_info_v1 *info;
 };
 
 struct wayland {
@@ -47,6 +57,8 @@ struct wayland {
 	struct wl_egl_window *egl_window;
 	struct xdg_surface *xdg_surf;
 	struct xdg_toplevel *toplevel;
+
+	struct wayland_color color;
 
 	struct egl egl;
 };

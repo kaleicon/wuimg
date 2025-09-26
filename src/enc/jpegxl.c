@@ -285,7 +285,7 @@ static bool passthrough(const struct wuimg *src) {
 	if (src->layout == l_expect && cs->matrix == cicp_matrix_rgb) {
 		switch (cs->type) {
 		case color_profile_enum:
-		case color_profile_custom:
+		case color_profile_param:
 			return cs->limited == false
 				&& get_transfer(src, NULL) != NO_TRANSFER;
 		case color_profile_icc:

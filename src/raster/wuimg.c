@@ -514,16 +514,16 @@ static void print_colorspace_data(const struct color_space *cs, FILE *out) {
 		cicp_matrix_str(cs->matrix));
 	switch (cs->type) {
 	case color_profile_enum:
-	case color_profile_custom:
+	case color_profile_param:
 		;const struct color_profile *prof = &cs->desc->u.prof;
-		if (cs->transfer == 0 && cs->type == color_profile_custom) {
+		if (cs->transfer == 0 && cs->type == color_profile_param) {
 			fprintf(out, "   Gamma: %f %f %f\n",
 				prof->gamma.r, prof->gamma.g, prof->gamma.b);
 		} else {
 			fprintf(out, "   Transfer: %s\n",
 				cicp_transfer_str(cs->transfer, cs->matrix));
 		}
-		if (cs->primaries == 0 && cs->type == color_profile_custom) {
+		if (cs->primaries == 0 && cs->type == color_profile_param) {
 			fputs("   Primaries:\n", out);
 			const struct color_xy *p = (const struct color_xy *)&prof->pri;
 			const char *n[4] = {"White", "Red", "Green", "Blue"};

@@ -122,8 +122,8 @@ static void gl_clock_start(const struct gl_context *context) {
 }
 
 void gl_terminate(struct gl_context *context) {
-	if (context->icc) {
-		cmsCloseProfile(context->icc);
+	if (context->icc_tgt) {
+		cmsCloseProfile(context->icc_tgt);
 	}
 }
 
@@ -806,8 +806,8 @@ const struct gl_upload_params *params) {
 	}
 
 	struct color_convert conv;
-	const bool spacewalk = color_space_to_linear_sRGB(cs, &conv,
-		img->layout == pix_gray, is_planar, scale);
+	color_space_walk(cs, &context->tgt, &conv, img->layout == pix_gray,
+		is_planar, scale);
 	glUniform4fv(uni->remap, 2, conv.map.mul);
 	glUniformMatrix3fv(uni->mat.nonlinear, 1, GL_FALSE, conv.nonlinear.m);
 
@@ -817,21 +817,20 @@ const struct gl_upload_params *params) {
 		gl_cms_lut,
 	} mode = gl_cms_none;
 	if (cs->type == color_profile_icc) {
-		if (!context->icc) {
-			context->icc = color_icc_linear_sRGB();
+		if (!context->icc_tgt) {
+			context->icc_tgt = color_icc_linear_sRGB();
 		}
-		if (context->icc
-		&& set_icc_lut(context->pixel_unpack_buf, cs, context->icc)) {
+		if (context->icc_tgt
+		&& set_icc_lut(context->pixel_unpack_buf, cs, context->icc_tgt)) {
 			mode = gl_cms_lut;
 		}
 	}
-
 	if (mode != gl_cms_lut) {
 		tex_cms(0);
 		glUniform1i(uni->eotf.fn, conv.eotf.fn);
 		glUniform1fv(uni->eotf.args, ARRAY_LEN(conv.eotf.args),
 			conv.eotf.args);
-		if (spacewalk) {
+		if ((conv.steps & color_step_linear)) {
 			mode = gl_cms_spacewalk;
 			glUniformMatrix3fv(uni->mat.cms, 1, GL_FALSE,
 				conv.linear.m);

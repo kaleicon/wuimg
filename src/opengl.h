@@ -59,7 +59,8 @@ struct gl_context {
 	bool update;
 	bool unmultiply;
 
-	cmsHPROFILE icc;
+	struct color_space tgt;
+	cmsHPROFILE icc_tgt;
 };
 
 const char * gl_strerror(GLenum error);

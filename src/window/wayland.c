@@ -50,6 +50,9 @@ static void destroy_cursor(struct wayland_cursor *c) {
 }
 
 static void destroy_binds(struct wayland_binds *b) {
+	if (b->color) {
+		wp_color_manager_v1_destroy(b->color);
+	}
 	if (b->xwb) {
 		xdg_wm_base_destroy(b->xwb);
 	}
@@ -71,6 +74,12 @@ static void wayland_terminate(void *ctx) {
 		wl_egl_window_destroy(wl->egl_window);
 	}
 
+	if (wl->color.feedback) {
+		wp_color_management_surface_feedback_v1_destroy(wl->color.feedback);
+	}
+	if (wl->color.surf) {
+		wp_color_management_surface_v1_destroy(wl->color.surf);
+	}
 	if (wl->toplevel) {
 		xdg_toplevel_destroy(wl->toplevel);
 	}
@@ -149,6 +158,166 @@ static void wayland_resize(void *ctx, const int w, const int h) {
 	if (window_size_update(wl->pub, w, h) == trit_true) {
 		wl_egl_window_resize(wl->egl_window, w, h, 0, 0);
 	}
+}
+
+static void image_info_done(void *data, struct wp_image_description_info_v1 *info) {
+	(void)info;
+	struct wayland *wl = data;
+	wp_color_management_surface_v1_set_image_description(wl->color.surf,
+		wl->color.desc, WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL);
+	wl_surface_commit(wl->surf);
+	wp_image_description_v1_destroy(wl->color.desc);
+	wl->color.desc = NULL;
+}
+
+static enum cicp_primaries wp_pri_to_cicp(
+const enum wp_color_manager_v1_primaries pri, struct color_space *tgt) {
+	switch (pri) {
+	case WP_COLOR_MANAGER_V1_PRIMARIES_SRGB:
+		return cicp_primaries_bt709_6;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_PAL_M:
+		return cicp_primaries_bt470_6_system_m;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_PAL:
+		return cicp_primaries_bt470_6_system_b_g;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_NTSC:
+		return cicp_primaries_bt601_7;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_GENERIC_FILM:
+		return cicp_primaries_generic_film;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_BT2020:
+		return cicp_primaries_bt2020_2;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_CIE1931_XYZ:
+		return cicp_primaries_smpte_st_428_1;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_DCI_P3:
+		return cicp_primaries_smpte_rp_431_2;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_DISPLAY_P3:
+		return cicp_primaries_smpte_eg_432_1;
+	case WP_COLOR_MANAGER_V1_PRIMARIES_ADOBE_RGB:
+		// Like sRGB, but green is (x=0.21, y=0.71)
+		color_space_set_primaries(tgt,
+			.3127, .3290,
+			.64, .33,
+			.21, .71,
+			.15, .06);
+		break;
+	}
+	return 0;
+}
+
+static enum cicp_transfer wp_tf_to_cicp(
+const enum wp_color_manager_v1_transfer_function tf) {
+	switch (tf) {
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_BT1886:
+		return cicp_transfer_bt709_6;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22:
+		return cicp_transfer_bt470_6_system_m;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA28:
+		return cicp_transfer_bt470_6_system_b_g;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST240:
+		return cicp_transfer_smpte_st_240;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR:
+		return cicp_transfer_linear;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_LOG_100:
+		return cicp_transfer_log;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_LOG_316:
+		return cicp_transfer_log_sqrt;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_XVYCC:
+		return cicp_transfer_iec_61966_2_4;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_SRGB:
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_SRGB:
+		return cicp_transfer_iec_61966_2_1;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ:
+		return cicp_transfer_smpte_st_2084;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST428:
+		return cicp_transfer_smpte_st_428_1;
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_HLG:
+		return cicp_transfer_arib_std_b67;
+	}
+	return 0;
+}
+
+static void image_info_primaries(void *data,
+struct wp_image_description_info_v1 *info, int32_t rx, int32_t ry,
+int32_t gx, int32_t gy, int32_t bx, int32_t by, int32_t wx, int32_t wy) {
+	(void)info;
+	const double s = 1000000;
+	struct wayland *wl = data;
+	struct color_space *tgt = &wl->pub->gl.tgt;
+	color_space_set_primaries(tgt,
+		(double)wx/s, (double)wy/s,
+		(double)rx/s, (double)ry/s,
+		(double)gx/s, (double)gy/s,
+		(double)bx/s, (double)by/s);
+}
+
+static void image_info_primaries_named(void *data,
+struct wp_image_description_info_v1 *info, uint32_t pri) {
+	(void)info;
+	struct wayland *wl = data;
+	struct color_space *tgt = &wl->pub->gl.tgt;
+	tgt->primaries = wp_pri_to_cicp(pri, tgt);
+}
+
+static void image_info_tf_power(void *data,
+struct wp_image_description_info_v1 *info, uint32_t eexp) {
+	(void)info;
+	struct wayland *wl = data;
+	struct color_space *tgt = &wl->pub->gl.tgt;
+	color_space_set_gamma(tgt, (double)eexp / 10000);
+}
+
+static void image_info_tf_named(void *data,
+struct wp_image_description_info_v1 *info, uint32_t tf) {
+	(void)info;
+	struct wayland *wl = data;
+	struct color_space *tgt = &wl->pub->gl.tgt;
+	tgt->transfer = wp_tf_to_cicp(tf);
+}
+
+static const struct wp_image_description_info_v1_listener listen_image_info = {
+	.done = image_info_done,
+	.icc_file = null_function,
+	.primaries = image_info_primaries,
+	.primaries_named = image_info_primaries_named,
+	.tf_power = image_info_tf_power,
+	.tf_named = image_info_tf_named,
+	.luminances = null_function,
+	.target_primaries = null_function,
+	.target_luminance = null_function,
+	.target_max_cll = null_function,
+	.target_max_fall = null_function,
+};
+
+static void image_desc_failed(void *data, struct wp_image_description_v1 *desc,
+uint32_t cause, const char *msg) {
+	(void)cause; (void)msg;
+	wp_image_description_v1_destroy(desc);
+	struct wayland *wl = data;
+	wl->color.desc = NULL;
+	wp_color_management_surface_v1_unset_image_description(wl->color.surf);
+}
+
+static void image_desc_ready(void *data, struct wp_image_description_v1 *desc,
+uint32_t id) {
+	(void)id;
+	struct wayland *wl = data;
+	wl->color.info = wp_image_description_v1_get_information(desc);
+	wp_image_description_info_v1_add_listener(wl->color.info,
+		&listen_image_info, wl);
+}
+
+static const struct wp_image_description_v1_listener listen_image_desc = {
+	.failed = image_desc_failed,
+	.ready = image_desc_ready,
+};
+
+static void color_preferred(void *data,
+struct wp_color_management_surface_feedback_v1 *feedback, uint32_t id) {
+	(void)id;
+	struct wayland *wl = data;
+	wl->color.desc = wp_color_management_surface_feedback_v1_get_preferred_parametric(
+		feedback);
+	wp_image_description_v1_add_listener(wl->color.desc,
+		&listen_image_desc, wl);
 }
 
 static bool test_mod(struct xkb_state *state, const char *name) {
@@ -562,6 +731,8 @@ const char *interface, const uint32_t version) {
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
 		b->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
 		xdg_wm_base_add_listener(b->xwb, &listen_wm_base, NULL);
+	} else if (!strcmp(interface, wp_color_manager_v1_interface.name)) {
+		b->color = wl_registry_bind(reg, name, &wp_color_manager_v1_interface, 1);
 	}
 }
 
@@ -575,6 +746,9 @@ static const struct xdg_surface_listener listen_surface = {
 static const struct xdg_toplevel_listener listen_toplevel = {
 	.configure = toplevel_configure,
 	.close = toplevel_close,
+};
+static const struct wp_color_management_surface_feedback_v1_listener listen_color_feedback = {
+	.preferred_changed = color_preferred,
 };
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub) {
@@ -630,6 +804,21 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
 	xdg_toplevel_add_listener(wl->toplevel, &listen_toplevel, wl);
 
+	if (wl->binds.color) {
+		wl->color.surf = wp_color_manager_v1_get_surface(wl->binds.color,
+			wl->surf);
+		if (!wl->color.surf) {
+			return "Failed to get color manager surface object";
+		}
+		wl->color.feedback = wp_color_manager_v1_get_surface_feedback(
+			wl->binds.color, wl->surf);
+		if (!wl->color.feedback) {
+			return "Failed to get color manager surface feedback object";
+		}
+		wp_color_management_surface_feedback_v1_add_listener(
+			wl->color.feedback, &listen_color_feedback, wl);
+	}
+
 	wl_surface_commit(wl->surf);
 	wl_display_roundtrip(wl->display);
 
@@ -641,6 +830,9 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return err;
 	}
 
+	if (wl->color.bind) {
+		wl_display_roundtrip(wl->display);
+	}
 	pub->win.fn = (struct window_fn) {
 		.title = wayland_set_title,
 		.resize = wayland_resize,

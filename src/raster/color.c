@@ -32,10 +32,19 @@ struct color_map_double {
 const char * color_space_type_str(const struct color_space *cs) {
 	switch (cs->type) {
 	case color_profile_enum: return "Enum";
-	case color_profile_custom: return "Custom";
+	case color_profile_param: return "Parametric";
 	case color_profile_icc: return "ICC";
 	}
 	return "???";
+}
+
+static struct color_space color_space_sRGB(void) {
+	return (struct color_space) {
+		.primaries = cicp_primaries_bt709_6,
+		.transfer = cicp_transfer_iec_61966_2_1,
+		.matrix = cicp_matrix_rgb,
+		.limited = false,
+	};
 }
 
 static void eotf_linear_gamma(struct color_transfer *eotf, const double alpha,
@@ -334,7 +343,7 @@ double color_space_get_gamma(const struct color_space *cs) {
 		case cicp_transfer_bt470_6_system_b_g: return 2.8;
 		default: break;
 		}
-		if (cs->transfer == 0 && cs->type == color_profile_custom) {
+		if (cs->transfer == 0 && cs->type == color_profile_param) {
 			return cs->desc->u.prof.gamma.r;
 		}
 	}
@@ -464,7 +473,12 @@ const struct color_space *cs, const struct color_primaries *fallback) {
 	switch (cs->type) {
 	case color_profile_enum:
 		return get_cicp_primaries(cs->primaries, cs->matrix, fallback);
-	case color_profile_custom:
+	case color_profile_param:
+		;const struct color_primaries *pri = get_cicp_primaries(
+			cs->primaries, cs->matrix, NULL);
+		if (pri) {
+			return pri;
+		}
 		return &cs->desc->u.prof.pri;
 	case color_profile_icc:
 		break;
@@ -755,11 +769,11 @@ const struct color_space *cs, const bool assume_yuv) {
 }
 
 static void color_mat_gen(const struct color_space *cs,
-struct color_convert *conv, const bool grayscale, const bool assume_yuv,
+struct color_convert *conv, const bool gray, const bool assume_yuv,
 const double scale) {
 	struct mat3 cm;
 	struct color_map_double map;
-	if (grayscale) {
+	if (gray) {
 		gen_mat_simple(&cm, &map, cs->limited, simple_mat_gray);
 	} else if (!gen_mat(&cm, &map, cs, assume_yuv)) {
 		gen_mat_simple(&cm, &map, cs->limited, simple_mat_rgb);
@@ -787,7 +801,7 @@ static bool set_eotf(const struct color_space *cs, struct color_transfer *eotf) 
 	switch (cs->type) {
 	case color_profile_enum:
 		return set_cicp_eotf(cs->transfer, eotf);
-	case color_profile_custom:
+	case color_profile_param:
 		if (!set_cicp_eotf(cs->transfer, eotf)) {
 			struct color_gamma *gamma = &cs->desc->u.prof.gamma;
 			eotf_gamma(eotf, 1, gamma->r);
@@ -845,24 +859,25 @@ static bool is_linear_rgb(const enum cicp_matrix matrix) {
 	return true;
 }
 
-static bool primaries_close_to_bt709(const struct color_primaries *pri) {
-	const double *p = (double *)pri;
-	const double *s = (double *)&SRGB_PRIMARIES;
+static bool primaries_close_enough(const struct color_primaries *pri1,
+const struct color_primaries *pri2) {
+	const double *p = (double *)pri1;
+	const double *s = (double *)pri2;
 	// This is the max possible error introduced by PNG fixed point format
 	const double max_diff = 1.0/100000;
-	for (size_t i = 0; i < sizeof(*pri) / sizeof(*p); ++i) {
-		if (fabs(*p - *s) > max_diff) {
+	for (size_t i = 0; i < sizeof(*pri1) / sizeof(*p); ++i) {
+		if (fabs(p[i] - s[i]) > max_diff) {
 			return false;
 		}
 	}
 	return true;
 }
 
-bool color_space_to_linear_sRGB(const struct color_space *cs,
-struct color_convert *conv, const bool grayscale, const bool maybe_yuv,
-const double scale) {
+void color_space_walk(const struct color_space *restrict cs,
+const struct color_space *restrict tgt, struct color_convert *conv,
+const bool gray, const bool maybe_yuv, const double scale) {
 	conv->steps |= (cs->type == color_profile_icc) ? color_step_icc : 0;
-	color_mat_gen(cs, conv, grayscale, maybe_yuv, scale);
+	color_mat_gen(cs, conv, gray, maybe_yuv, scale);
 	if (!set_eotf(cs, &conv->eotf)) {
 		eotf_sRGB(&conv->eotf);
 	}
@@ -873,12 +888,12 @@ const double scale) {
 		&& conv->eotf.args[4] == 1) ? 0 : color_step_eotf;
 
 	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
-	if (is_linear_rgb(cs->matrix) && primaries_close_to_bt709(pri)) {
+	const struct color_primaries *tgtpri = get_primaries(tgt, &SRGB_PRIMARIES);
+	if (is_linear_rgb(cs->matrix) && primaries_close_enough(pri, tgtpri)) {
 		matf_identity(conv->linear.m, 3, 3);
 	} else {
-		conv->eotf.srgb_input = false;
 		struct mat3 out;
-		XYZ_to_rgb(&out, &SRGB_PRIMARIES);
+		XYZ_to_rgb(&out, tgtpri);
 		if (cs->matrix == cicp_matrix_smpte_st_2085) {
 			float_from_double(conv->linear.m, out.m,
 				ARRAY_LEN(conv->linear.m));
@@ -897,8 +912,15 @@ const double scale) {
 			}
 		}
 		conv->steps |= color_step_linear;
+		conv->eotf.srgb_input = false;
 	}
-	return (bool)pri;
+}
+
+void color_space_to_linear_sRGB(const struct color_space *cs,
+struct color_convert *conv, const bool gray, const bool maybe_yuv,
+const double scale) {
+	const struct color_space tgt = color_space_sRGB();
+	color_space_walk(cs, &tgt, conv, gray, maybe_yuv, scale);
 }
 
 cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,
@@ -938,13 +960,14 @@ const enum color_profile_type type) {
 	if (cs->type == color_profile_enum) {
 		struct color_space_desc *desc = calloc(1, sizeof(*cs->desc));
 		if (desc) {
-			if (type == color_profile_custom) {
-				cs->transfer = 0;
+			if (type == color_profile_param) {
 				set_transfer_triple(&desc->u.prof.gamma,
 					SRGB_GAMMA);
 				desc->u.prof.pri = *get_cicp_primaries(
 					cs->primaries, cs->matrix,
 					&SRGB_PRIMARIES);
+				cs->transfer = 0;
+				cs->primaries = 0;
 			}
 			cs->desc = desc;
 			cs->type = type;
@@ -975,7 +998,7 @@ const size_t len) {
 }
 
 static struct color_profile * get_or_init_profile(struct color_space *cs) {
-	struct color_space_desc *desc = get_or_init_desc(cs, color_profile_custom);
+	struct color_space_desc *desc = get_or_init_desc(cs, color_profile_param);
 	if (desc) {
 		return &cs->desc->u.prof;
 	}
@@ -1002,6 +1025,7 @@ bool color_space_set_primaries_rgb(struct color_space *cs, double rx, double ry,
 double gx, double gy, double bx, double by) {
 	struct color_profile *prof = get_or_init_profile(cs);
 	if (prof) {
+		cs->primaries = 0;
 		struct color_primaries *pri = &prof->pri;
 		pri->r.x = rx;
 		pri->r.y = ry;
@@ -1017,6 +1041,7 @@ bool color_space_set_primaries_whitepoint(struct color_space *cs,
 const double wx, const double wy) {
 	struct color_profile *prof = get_or_init_profile(cs);
 	if (prof) {
+		cs->primaries = 0;
 		struct color_primaries *pri = &prof->pri;
 		pri->w.x = wx;
 		pri->w.y = wy;
@@ -1028,6 +1053,7 @@ bool color_space_set_primaries(struct color_space *cs, double wx, double wy,
 double rx, double ry, double gx, double gy, double bx, double by) {
 	struct color_profile *prof = get_or_init_profile(cs);
 	if (prof) {
+		cs->primaries = 0;
 		prof->pri = (struct color_primaries) {
 			.w = {wx, wy},
 			.r = {rx, ry},

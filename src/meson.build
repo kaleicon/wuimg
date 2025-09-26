@@ -191,15 +191,26 @@ if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 	wayland_scanner = find_program('wayland-scanner')
 	wayland_proto = dependency('wayland-protocols')
 	base_path = wayland_proto.get_variable('pkgdatadir')
-	protocol_names = ['xdg-shell']
-	type = [['private-code', '.c'], ['client-header', '.h']]
-	foreach p : protocol_names
+	protocols = [
+		['stable', 'xdg-shell', 'xdg-shell'],
+		['staging', 'color-management', 'color-management-v1'],
+	]
+	type = [
+		['private-code', '.c'],
+		['client-header', '.h'],
+	]
+	foreach proto : protocols
+		status = proto[0]
+		basename = proto[1]
+		path = base_path / status / basename / proto[2] + '.xml'
 		foreach t : type
-			name = '-'.join([p, t[0]])
-			path = base_path / 'stable/%/%.xml'.replace('%', p)
+			name = '-'.join([basename, t[0]])
 			window_src_list += custom_target(name,
-				output : [name + t[1]],
-				command : [wayland_scanner, t[0], path, '@OUTPUT@'])
+				feed : true,
+				capture : true,
+				input : path,
+				output : name + t[1],
+				command : [wayland_scanner, t[0]])
 		endforeach
 	endforeach
 endif

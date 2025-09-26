@@ -16,7 +16,7 @@ enum color_transfer_fn {
 
 struct color_transfer {
 	enum color_transfer_fn fn:8;
-	bool srgb_input;
+	bool srgb_input; // True if this is the sRGB function
 	float args[5];
 };
 
@@ -25,12 +25,20 @@ struct color_map {
 	float add[4];
 };
 
+// Bitfield indicating which steps modify the input
 enum color_steps {
+	// Add or multiply input
 	color_step_map = 1 << 0,
+	// Matrix multiplication in nonlinear (electrical) space
 	color_step_nonlinear = 1 << 1,
+	// Conversion to linear (optical) space
 	color_step_eotf = 1 << 2,
+	// Matrix multiplication in linear space
 	color_step_linear = 1 << 3,
-	color_step_icc = 1 << 4,
+	// Conversion to nonlinear space
+	color_step_oetf = 1 << 4,
+	// Input uses an ICC profile
+	color_step_icc = 1 << 5,
 };
 
 struct color_convert {
@@ -39,6 +47,7 @@ struct color_convert {
 	struct mat3f nonlinear;
 	struct color_transfer eotf;
 	struct mat3f linear;
+	struct color_transfer oetf;
 };
 
 enum color_white_point {
@@ -76,7 +85,7 @@ struct color_space_desc {
 
 enum color_profile_type {
 	color_profile_enum = 0,
-	color_profile_custom,
+	color_profile_param,
 	color_profile_icc,
 };
 
@@ -99,7 +108,11 @@ enum color_white_point color_space_white_point_type(const struct color_space *cs
 const struct color_primaries * color_space_get_primaries(
 const struct color_space *cs);
 
-bool color_space_to_linear_sRGB(const struct color_space *cs,
+void color_space_walk(const struct color_space *restrict cs,
+const struct color_space *restrict tgt, struct color_convert *conv,
+bool grayscale, bool maybe_yuv, double scale);
+
+void color_space_to_linear_sRGB(const struct color_space *cs,
 struct color_convert *conv, bool grayscale, bool maybe_yuv, double scale);
 
 cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,

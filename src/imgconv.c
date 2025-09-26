@@ -799,10 +799,8 @@ static bool needs_transfer(const struct wuimg *src) {
 static enum wu_error init_color(struct imgconv *state, const struct wuimg *dst,
 const struct wuimg *src, const double range) {
 	const bool is_planar = src->mode == image_mode_planar;
-	if (!color_space_to_linear_sRGB(&src->cs, &state->color,
-	src->layout == pix_gray, is_planar, range)) {
-		return wu_invalid_params;
-	}
+	color_space_to_linear_sRGB(&src->cs, &state->color,
+		src->layout == pix_gray, is_planar, range);
 	if (src->cs.type == color_profile_icc) {
 		cmsHPROFILE prof = cmsCreate_sRGBProfile();
 		if (!prof) {
