@@ -9,14 +9,45 @@
 #include "raster/icc.h"
 
 enum color_transfer_fn {
+	/* EOTF:
+		if comp > arg0:
+			return pow(comp * arg1 + arg2, arg3)
+		return comp * arg4
+	 * OETF:
+		if comp > arg0:
+			return pow(comp, arg3) * arg1 + arg2
+		return comp * arg4
+	*/
 	color_transfer_linear_gamma,
+
+	/* EOTF:
+		ncomp = pow(comp, arg4)
+		num = max(ncomp - arg1, 0)
+		den = arg2 - arg3 * ncomp
+		return pow(num / den, arg0)
+	 * OETF:
+		ncomp = pow(comp, arg0)
+		num = arg1 + arg2 * ncomp
+		den = 1 + arg3 * ncomp
+		return pow(num / den, arg4)
+	*/
 	color_transfer_pq,
+
+	/* EOTF:
+		if comp > arg0:
+			return exp2(comp * arg1 + arg2) + arg3
+		return comp * comp * arg4
+	 * OETF:
+		if comp > arg0:
+			return log2(comp + arg3) * arg1 + arg2
+		return sqrt(comp * arg4)
+	*/
 	color_transfer_hlg,
 };
 
 struct color_transfer {
 	enum color_transfer_fn fn:8;
-	bool srgb_input; // True if this is the sRGB function
+	bool srgb_input; // True if this is the sRGB EOTF
 	float args[5];
 };
 

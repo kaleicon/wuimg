@@ -47,8 +47,32 @@ static struct color_space color_space_sRGB(void) {
 	};
 }
 
-static void eotf_linear_gamma(struct color_transfer *eotf, const double alpha,
+static void tf_gamma(struct color_transfer *tf, const double mul,
 const double gamma) {
+	*tf = (struct color_transfer) {
+		.fn = color_transfer_linear_gamma,
+		.args = {0, (float)mul, 0, (float)gamma, 1},
+	};
+}
+
+static void tf_linear(struct color_transfer *tf) {
+	*tf = (struct color_transfer) {
+		.fn = color_transfer_linear_gamma,
+		.args = {1, 1, 0, 1, 1},
+	};
+}
+
+static void linear_gamma_phi(const double alpha, const double gamma,
+double *restrict ap, double *restrict gm, double *restrict over,
+double *restrict under) {
+	*ap = alpha + 1;
+	*gm = gamma - 1;
+	*over = pow(*ap, gamma) * pow(*gm, *gm);
+	*under = pow(alpha, *gm) * pow(gamma, gamma);
+}
+
+static void tf_linear_gamma(struct color_transfer *tf, const double alpha,
+const double gamma, const bool oetf) {
 	/* We set the arguments to an EOTF with a linear part and a power
 	 * part. This function is of the form
 		if comp > cutoff:
@@ -61,7 +85,7 @@ const double gamma) {
 
 		cutoff = alpha / (gamma - 1)
 
-	 * while phi is:
+	 * while phi is
 
 		gm = gamma - 1
 		over = pow(1 + alpha, gamma) * pow(gm, gm)
@@ -73,81 +97,116 @@ const double gamma) {
 
 		a = 1 / (1 + alpha)
 		b = alpha * a
-		d = 1 / phi
+		inv_phi = under / over
 
 	 * and redefine the EOTF thus:
 
 		if comp > cutoff:
 			return pow(comp * a + b, gamma)
-		return comp * d
+		return comp * inv_phi
+
+	** Linear-gamma OETF are of the form
+
+		if comp > cutoff:
+			return pow(comp, gamma) * (alpha + 1) - alpha
+		return comp * phi
+
+	 * To find the cutoff, the same math applies as for the EOTF, due to
+	 * OETF-gamma being the reciprocal of EOTF-gamma, though it requires a
+	 * negation somewhere to make the result positive.
+
+		cutoff = -alpha / (gamma - 1)
+
+	 * For phi, this doesn't work due to gamma and gamma - 1 being both
+	 * required. Calculating the reciprocal of EOTF-phi does the trick.
+
+		phi = under / over
+
+	 * That would be it if we were dividing by phi as in the EOTF, but
+	 * since we're multiplying...
+
+		phi = over / under
+
+	 * Life is a river full of turns.
 	*/
-	const double gm = gamma - 1;
-	const double ap = alpha + 1;
-
-	const double over = pow(ap, gamma) * pow(gm, gm);
-	const double under = pow(alpha, gm) * pow(gamma, gamma);
-
-	*eotf = (struct color_transfer) {
-		.fn = color_transfer_linear_gamma,
-		.args = {
-			(float)(alpha / gm),
-			(float)ap,
-			(float)(alpha / ap),
-			(float)gamma,
-			(float)(under / over),
-		},
-	};
+	double ap, gm;
+	double over, under;
+	linear_gamma_phi(alpha, 1/gamma, &ap, &gm, &over, &under);
+	if (oetf) {
+		*tf = (struct color_transfer) {
+			.fn = color_transfer_linear_gamma,
+			.args = {
+				(float)(-alpha / (gamma - 1)),
+				(float)ap,
+				(float)-alpha,
+				(float)gamma,
+				(float)(over / under),
+			},
+		};
+	} else {
+		*tf = (struct color_transfer) {
+			.fn = color_transfer_linear_gamma,
+			.args = {
+				(float)(alpha / gm),
+				(float)ap,
+				(float)(alpha / ap),
+				(float)(1/gamma),
+				(float)(under / over),
+			},
+		};
+	}
 }
 
-static void eotf_sRGB(struct color_transfer *eotf) {
+static void tf_sRGB(struct color_transfer *tf, bool oetf) {
 	/* Famously, sRGB is not continous, and precisely requires rounded
 	 * values. */
 	const double a = 1 + SRGB_ALPHA;
-	*eotf = (struct color_transfer) {
+	const double m = 12.92;
+	*tf = (struct color_transfer) {
 		.fn = color_transfer_linear_gamma,
-		.srgb_input = true,
+		.srgb_input = !oetf,
 		.args = {
-			0.04045f,
-			(float)(1/a),
-			(float)(SRGB_ALPHA / a),
-			(float)SRGB_GAMMA,
-			(float)(1/12.92),
+			oetf ? 0.0031308f : 0.04045f,
+			(float)(oetf ? a : 1/a),
+			(float)(oetf ? -SRGB_ALPHA : SRGB_ALPHA/a),
+			(float)(oetf ? 1/SRGB_GAMMA : SRGB_GAMMA),
+			(float)(oetf ? m : 1/m),
 		},
 	};
 }
 
-static void eotf_gamma(struct color_transfer *eotf, const double mul,
-const double gamma) {
-	*eotf = (struct color_transfer) {
-		.fn = color_transfer_linear_gamma,
-		.args = {0, (float)mul, 0, (float)gamma, 1},
-	};
-}
-
-static void eotf_linear(struct color_transfer *eotf) {
-	*eotf = (struct color_transfer) {
-		.fn = color_transfer_linear_gamma,
-		.args = {1, 1, 0, 1, 1},
-	};
-}
-
-static void eotf_log(struct color_transfer *eotf, const double cutoff,
-const double div) {
+static void tf_log(struct color_transfer *tf, const double div,
+const bool oetf) {
 	/* In H.273, the logarithmic OETFs are of the form
-
 		if comp > cutoff:
 			return log10(comp) / div + 1
 		return 0
 
-	 * where cutoff is where the output becomes 0, as tipped off by the
-	 * else branch. This means that any valid input to the corresponding
-	 * EOTF will be positive, its cutoff 0, and so a branch is not needed.
-	 * Thus the EOTF ought to be:
+	 * where cutoff is when the output becomes 0, as tipped off by the else
+	 * branch. From this it obviously follows that cutoff == pow(10, -div).
+	 * log10(comp) can be turned into log2(comp) / log2(10), allowing some
+	 * simplification:
+
+		ltt = log2(10)
+		return log2(comp) / ltt / div + 1
+
+	 * With fma:
+
+		iltt = (1 / ltt) * (1 / div)
+		if comp > cutoff:
+			return log2(comp) * iltt + 1
+		return 0
+
+	 * A further reduction with max() cannot be done since we want to match
+	 * the HLG function.
+
+	** Due to the OETF cutoff, all valid inputs to the corresponding EOTF
+	 * are going to be positive, and so neither a branch nor max() is
+	 * needed. Thus the function ought to be
 
 		return pow(10, (comp - 1) * div)
 
-	 * Let us remember that pow(x, y) is really exp2(log2(x) * y). Thus,
-	 * this is actually:
+	 * Knowing that pow(x, y) == exp2(log2(x) * y), this becomes
 
 		return exp2(log2(10) * (comp - 1) * div)
 
@@ -156,51 +215,71 @@ const double div) {
 		logdiv = log2(10) * div
 		return exp2((comp - 1) * logdiv)
 
-	 * With FMA:
+	 * With fma:
 
 		return exp2(comp * logdiv - logdiv)
 	*/
-
-	(void)cutoff;
-	const float logdiv = (float)(div * log2(10.0));
-	*eotf = (struct color_transfer) {
-		// The HLG function can be repurposed for this, so why not
-		.fn = color_transfer_hlg,
-		.args = {0, logdiv, -logdiv, 0, 0},
-	};
+	if (oetf) {
+		const double ltt = log2(10);
+		*tf = (struct color_transfer) {
+			.fn = color_transfer_hlg,
+			.args = {
+				(float)pow(10, -div),
+				(float)((1/ltt) * (1/div)),
+				1,
+				0,
+				0,
+			},
+		};
+	} else {
+		const float logdiv = (float)(div * log2(10.0));
+		*tf = (struct color_transfer) {
+			.fn = color_transfer_hlg,
+			.args = {0, logdiv, -logdiv, 0, 0},
+		};
+	}
 }
 
-static void eotf_perceptual_quantization(struct color_transfer *eotf) {
-	/*
+static void tf_perceptual_quantization(struct color_transfer *tf, bool oetf) {
+	/* PQ constants:
 		m = 2610 / 16384
 		n = 2523 / 4096 * 128
 		c = 2392 / 4096 * 32
 		b = 2413 / 4096 * 32
-		a = c - b + 1 // alternatively (3424 / 4096)
-
+		a = c - b + 1         # alternatively (3424 / 4096)
+	 * EOTF:
 		ncomp = pow(comp, 1/n)
 		num = max(ncomp - a, 0)
 		den = b - c*ncomp
 		return pow(num / den, 1/m)
+	 * OETF:
+		ncomp = pow(comp, m)
+		num = a + b*ncomp
+		den = 1 + c*ncomp
+		return pow(num / den, n)
+
+	 * Note that H.273 refers to `m` as `n` and gives the value
+	 * as 653 / 4096. However in BT.2100-2 `m` is `m1` and has the value
+	 * given here, equivalent to 652.5 / 4096. But who cares.
 	*/
-	const double inv_m = 16384.0 / 2610.0;
-	const double inv_n = 32.0 / 2523.0;
+	const double mm = oetf ? 2610.0/16384.0 : 16384.0/2610.0;
+	const double nn = oetf ? 2523.0/32.0 : 32.0/2523.0;
 	const double c = 2392.0 / 128.0;
 	const double b = 2413.0 / 128.0;
 	const double a = 3424.0 / 4096.0;
-	*eotf = (struct color_transfer) {
+	*tf = (struct color_transfer) {
 		.fn = color_transfer_pq,
 		.args = {
-			(float)inv_n,
+			(float)mm,
 			(float)a,
 			(float)b,
 			(float)c,
-			(float)inv_m,
+			(float)nn,
 		},
 	};
 }
 
-static void eotf_hybrid_log_gamma(struct color_transfer *eotf) {
+static void tf_hybrid_log_gamma(struct color_transfer *tf, bool oetf) {
 	/* As per BT.2100, the EOTF is given as the inverse of the OETF,
 	 * and it's basically:
 		if comp > 1/2:
@@ -225,8 +304,9 @@ static void eotf_hybrid_log_gamma(struct color_transfer *eotf) {
 		return exp2(comp * ia - iac) * (1/12) + bt
 
 	 * As another reminder, exp2(m) * exp2(o) == exp2(m + o).
-	 * Hence, we can fold the (1/12) into iac by adding its logarithm,
-	 * thus saving on a constant:
+	 * Hence, we can fold (1/12) into iac by adding its logarithm,
+	 * eliminating a constant and making the function reusable for the
+	 * tf_log() variant:
 
 		iacl = -iac + log2(1/12)
 		return exp2(comp * ia + iacl) + bt
@@ -236,28 +316,63 @@ static void eotf_hybrid_log_gamma(struct color_transfer *eotf) {
 		if comp > 1/2:
 			return exp2(comp * ia + iacl) + bt
 		return comp * comp * (1/3)
+
+	** On the other side, OETF is defined as
+
+		if comp > 1/12:
+			return log(comp * 12 - b) * a + c
+		return sqrt(comp * 3)
+
+	 * log(x) turns into log2(x)/log2(e), and the denominator folds into a:
+
+		lea = (1 / log2(e)) * a
+		return log2(comp * 12 - b) * lea + c
+
+	 * We can free up an argument either by folding the addition into the
+	 * logarithm, or by pulling out the multiplication.
+	 * In the interests of tf_log(), we'll do the latter.
+	 * log2(x * y) == log2(x) + log2(y)
+
+		bt = -b/12
+		log2((comp + bt) * 12) * lea + c
+		...
+		ct = c + log2(12)
+		if comp > 12:
+			return log2(comp + bt) * lea + ct
+		return sqrt(comp * 3)
 	*/
 
 	const double a = 0.17883277;
 	const double b = fma(4, -a, 1);
 	const double c = fma(log(4*a), -a, 0.5);
-
-	const double ia = M_LOG2E / a;
-	const double bt = b / 12;
-	*eotf = (struct color_transfer) {
-		.fn = color_transfer_hlg,
-		.args = {
-			(float)(1.0/2.0),
-			(float)ia,
-			(float)( fma(ia, -c, log2(1.0/12.0)) ),
-			(float)bt,
-			(float)(1.0/3.0),
-		},
-	};
+	if (oetf) {
+		*tf = (struct color_transfer) {
+			.fn = color_transfer_hlg,
+			.args = {
+				(float)(1.0/12.0),
+				(float)(a / M_LOG2E),
+				(float)(c + log2(12)),
+				(float)(-b / 12),
+				3.0f,
+			},
+		};
+	} else {
+		const double ia = M_LOG2E / a;
+		*tf = (struct color_transfer) {
+			.fn = color_transfer_hlg,
+			.args = {
+				(float)(1.0/2.0),
+				(float)ia,
+				(float)( fma(ia, -c, log2(1.0/12.0)) ),
+				(float)(b / 12.0),
+				(float)(1.0/3.0),
+			},
+		};
+	}
 }
 
-static bool set_cicp_eotf(const enum cicp_transfer transfer,
-struct color_transfer *eotf) {
+static bool set_cicp_tf(const enum cicp_transfer transfer,
+struct color_transfer *tf, const bool oetf) {
 	switch (transfer) {
 	case cicp_transfer_bt709_6:
 	case cicp_transfer_bt601_7: // Same as BT.709
@@ -271,22 +386,22 @@ struct color_transfer *eotf) {
 		 * branch. I believe we should simply forget about it.
 
 		 * But for completeness, comp < oetf(-0.0045) is
-			alpha = 0.0993
+			alpha = 0.09929...
 			gamma = 1/0.45
 			c = (comp*-4 + alpha) / (alpha+1)
 			return pow(c, gamma) / -4
 		 */
 	case cicp_transfer_bt2020_2_10bit:
 	case cicp_transfer_bt2020_2_12bit: // https://www.itu.int/rec/R-REC-BT.2020/en
-		eotf_linear_gamma(eotf, 0.09929682680944, 1/0.45);
+		tf_linear_gamma(tf, 0.09929682680944, 0.45, oetf);
 		return true;
 	case cicp_transfer_unspecified:
 		break;
 	case cicp_transfer_bt470_6_system_m:
-		eotf_gamma(eotf, 1, 2.2);
+		tf_gamma(tf, 1, oetf ? 1/2.2 : 2.2);
 		return true;
 	case cicp_transfer_bt470_6_system_b_g:
-		eotf_gamma(eotf, 1, 2.8);
+		tf_gamma(tf, 1, oetf ? 1/2.8 : 2.8);
 		return true;
 	case cicp_transfer_smpte_st_240:
 		/* H.273 gives us only this OETF, with comp being the input
@@ -299,26 +414,26 @@ struct color_transfer *eotf) {
 		 * SMPTE stuff is all paywalled, so we've assumed it's a
 		 * normal linear-gamma function, and obtained alpha from phi.
 		 * Hopefully we're close. */
-		eotf_linear_gamma(eotf, 0.11157219592173123, 1/0.45);
+		tf_linear_gamma(tf, 0.11157219592173123, 0.45, oetf);
 		return true;
 	case cicp_transfer_linear:
-		eotf_linear(eotf);
+		tf_linear(tf);
 		return true;
 	case cicp_transfer_log:
-		eotf_log(eotf, 0.01, 2);
+		tf_log(tf, 2, oetf);
 		return true;
 	case cicp_transfer_log_sqrt:
-		eotf_log(eotf, sqrt(10) / 1000, 2.5);
+		tf_log(tf, 2.5, oetf);
 		return true;
 	case cicp_transfer_iec_61966_2_1:
 		/* With matrix coef == 0, uses the sRGB EOTF.
 		 * With matrix coef == 5, uses the sYCC EOTF, which is the same
 		 * but extended to negative inputs. */
-		eotf_sRGB(eotf);
+		tf_sRGB(tf, oetf);
 		return true;
 	case cicp_transfer_smpte_st_2084:
 		// https://www.itu.int/rec/R-REC-BT.2100/en
-		eotf_perceptual_quantization(eotf);
+		tf_perceptual_quantization(tf, oetf);
 		return true;
 	case cicp_transfer_smpte_st_428_1:
 		/* The function is
@@ -326,14 +441,42 @@ struct color_transfer *eotf) {
 		 * This can be turned into
 			return pow(comp * pow(52.37 / 48, 1/2.6), 2.6)
 		 * which lets us reuse the normal gamma code.
+		 * OETF:
+			return pow(comp * 48 / 52.37, 1/2.6)
 		*/
-		eotf_gamma(eotf, pow(52.37 / 48, 1/2.6), 2.6);
+		tf_gamma(tf,
+			oetf ? 48/52.37 : pow(52.37/48, 1/2.6),
+			oetf ? 1/2.6 : 2.6);
 		return true;
 	case cicp_transfer_arib_std_b67:
-		eotf_hybrid_log_gamma(eotf);
+		tf_hybrid_log_gamma(tf, oetf);
 		return true;
 	}
 	return false;
+}
+
+static bool set_tf(const struct color_space *cs, struct color_transfer *tf,
+const bool oetf) {
+	switch (cs->type) {
+	case color_profile_enum:
+		return set_cicp_tf(cs->transfer, tf, oetf);
+	case color_profile_param:
+		if (!set_cicp_tf(cs->transfer, tf, oetf)) {
+			struct color_gamma *gamma = &cs->desc->u.prof.gamma;
+			tf_gamma(tf, 1, oetf ? 1/gamma->r : gamma->r);
+		}
+		return true;
+	case color_profile_icc:
+		break;
+	}
+	return false;
+}
+
+static void set_tf_or_sRGB(const struct color_space *cs,
+struct color_transfer *tf, const bool oetf) {
+	if (!set_tf(cs, tf, oetf)) {
+		tf_sRGB(tf, oetf);
+	}
 }
 
 double color_space_get_gamma(const struct color_space *cs) {
@@ -797,22 +940,6 @@ const double scale) {
 	}
 }
 
-static bool set_eotf(const struct color_space *cs, struct color_transfer *eotf) {
-	switch (cs->type) {
-	case color_profile_enum:
-		return set_cicp_eotf(cs->transfer, eotf);
-	case color_profile_param:
-		if (!set_cicp_eotf(cs->transfer, eotf)) {
-			struct color_gamma *gamma = &cs->desc->u.prof.gamma;
-			eotf_gamma(eotf, 1, gamma->r);
-		}
-		return true;
-	case color_profile_icc:
-		break;
-	}
-	return false;
-}
-
 static void rgb_to_XYZ(struct mat3 *out, const struct color_primaries *pri) {
 	mat3_set_primaries(out, pri);
 
@@ -863,7 +990,10 @@ static bool primaries_close_enough(const struct color_primaries *pri1,
 const struct color_primaries *pri2) {
 	const double *p = (double *)pri1;
 	const double *s = (double *)pri2;
-	// This is the max possible error introduced by PNG fixed point format
+	/* Compare with 5 decimals of precision, which is what the PNG
+	 * fixed point format allows.
+	 * For reference, the standards themselves do at most 2 for colors
+	 * and 4 for white point. Wayland color manager protocol does 6. */
 	const double max_diff = 1.0/100000;
 	for (size_t i = 0; i < sizeof(*pri1) / sizeof(*p); ++i) {
 		if (fabs(p[i] - s[i]) > max_diff) {
@@ -873,19 +1003,24 @@ const struct color_primaries *pri2) {
 	return true;
 }
 
+static bool is_transfer_identity(const struct color_transfer *tf) {
+	return (tf->fn == color_transfer_linear_gamma)
+		& (tf->args[1] == 1)
+		& (tf->args[2] == 0)
+		& (tf->args[3] == 1)
+		& (tf->args[4] == 1);
+}
+
 void color_space_walk(const struct color_space *restrict cs,
 const struct color_space *restrict tgt, struct color_convert *conv,
 const bool gray, const bool maybe_yuv, const double scale) {
 	conv->steps |= (cs->type == color_profile_icc) ? color_step_icc : 0;
 	color_mat_gen(cs, conv, gray, maybe_yuv, scale);
-	if (!set_eotf(cs, &conv->eotf)) {
-		eotf_sRGB(&conv->eotf);
-	}
-	conv->steps |= (conv->eotf.fn == color_transfer_linear_gamma
-		&& conv->eotf.args[1] == 1
-		&& conv->eotf.args[2] == 0
-		&& conv->eotf.args[3] == 1
-		&& conv->eotf.args[4] == 1) ? 0 : color_step_eotf;
+
+	set_tf_or_sRGB(cs, &conv->eotf, false);
+	set_tf_or_sRGB(tgt, &conv->oetf, true);
+	conv->steps |= is_transfer_identity(&conv->eotf) ? 0 : color_step_eotf;
+	conv->steps |= is_transfer_identity(&conv->oetf) ? 0 : color_step_oetf;
 
 	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
 	const struct color_primaries *tgtpri = get_primaries(tgt, &SRGB_PRIMARIES);

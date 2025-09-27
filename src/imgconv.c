@@ -229,10 +229,10 @@ static float eotf(float v, const struct color_transfer *t) {
 	switch (t->fn) {
 	case color_transfer_linear_gamma: break;
 	case color_transfer_pq:
-		v = mypowf(max(v, 0), arg[0]);
+		v = mypowf(max(v, 0), arg[4]);
 		float num = v - min(arg[1], v); // a.k.a. fdim()
 		float den = fmaff(v, -arg[3], arg[2]);
-		return mypowf(num/den, arg[4]);
+		return mypowf(num/den, arg[0]);
 	case color_transfer_hlg:
 		return v > arg[0]
 			? myexp2f(fmaff(v, arg[1], arg[2])) + arg[3]
