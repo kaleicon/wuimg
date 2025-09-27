@@ -18,6 +18,10 @@ enum gl_upload_status {
 	gl_upload_same_size,
 };
 
+struct gl_uni_tf {
+	GLint fn, args;
+};
+
 struct gl_context {
 	struct gl_uni {
 		struct gl_uni_mat {
@@ -30,10 +34,7 @@ struct gl_context {
 			GLint alpha;
 			GLint cms;
 		} mode;
-		struct gl_uni_eotf {
-			GLint fn;
-			GLint args;
-		} eotf;
+		struct gl_uni_tf eotf, oetf;
 		GLint positioning;
 		GLint remap;
 	} uni;

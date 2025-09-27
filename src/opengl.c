@@ -27,6 +27,8 @@
 #define UNI_MODE_CMS "mode_cms"
 #define UNI_EOTF_FN "eotf_fn"
 #define UNI_EOTF_ARGS "eotf_args"
+#define UNI_OETF_FN "oetf_fn"
+#define UNI_OETF_ARGS "oetf_args"
 #define UNI_POSITIONING "posit"
 #define UNI_REMAP "remap"
 
@@ -46,9 +48,9 @@
 #define CMS_SPACEWALK "1"
 #define CMS_LUT "2"
 
-#define EOTF_LINEAR_GAMMA "0"
-#define EOTF_PQ "1"
-#define EOTF_HLG "2"
+#define TF_LINEAR_GAMMA "0"
+#define TF_PQ "1"
+#define TF_HLG "2"
 
 static const float VISUAL_EPSILON = 0x1p-16;
 static const align_t DEFAULT_ALIGN = 2;
@@ -782,6 +784,12 @@ cmsHPROFILE out) {
 	return true;
 }
 
+static void uni_tf(const GLint fn, const GLint args,
+const struct color_transfer *tf) {
+	glUniform1i(fn, tf->fn);
+	glUniform1fv(args, ARRAY_LEN(tf->args), tf->args);
+}
+
 static void set_cms(struct gl_context *context, const struct wuimg *img,
 const struct gl_upload_params *params) {
 	const struct color_space *cs = &img->cs;
@@ -827,15 +835,14 @@ const struct gl_upload_params *params) {
 	}
 	if (mode != gl_cms_lut) {
 		tex_cms(0);
-		glUniform1i(uni->eotf.fn, conv.eotf.fn);
-		glUniform1fv(uni->eotf.args, ARRAY_LEN(conv.eotf.args),
-			conv.eotf.args);
+		uni_tf(uni->eotf.fn, uni->eotf.args, &conv.eotf);
 		if ((conv.steps & color_step_linear)) {
 			mode = gl_cms_spacewalk;
 			glUniformMatrix3fv(uni->mat.cms, 1, GL_FALSE,
 				conv.linear.m);
 		}
 	}
+	uni_tf(uni->oetf.fn, uni->oetf.args, &conv.oetf);
 	glUniform1i(uni->mode.cms, mode);
 }
 
@@ -1089,6 +1096,8 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"uniform int[2] " UNI_MODE_ALPHA ";"
 		"uniform int " UNI_EOTF_FN ";"
 		"uniform float[5] " UNI_EOTF_ARGS ";"
+		"uniform int " UNI_OETF_FN ";"
+		"uniform float[5] " UNI_OETF_ARGS ";"
 		"uniform vec2[8] " UNI_POSITIONING ";"
 		"uniform vec4[2] " UNI_REMAP ";"
 
@@ -1097,52 +1106,84 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"float bg = bool((d.x ^ d.y) & 16) ? .75 : .5;"
 			"color.rgb += vec3(bg - bg * color.a);"
 		"}"
-
-		"float srgb_oetf(float c) {"
-			"if (c > 0.0031308) {"
-				"return pow(c, 1.0/2.4) * 1.055 - 0.055;"
-			"}"
-			"return c * 12.92;"
-		"}"
-
 		"float setsign(float x, float y) {"
 			"return y >= 0.0 ? x : -x;"
 		"}"
-		"float linear_gamma(float c, float[5] arg) {"
+		"float oetf_linear_gamma(float c, float[5] arg) {"
+			"if (c > arg[0]) {"
+				"return pow(c, arg[3]) * arg[1] + arg[2];"
+			"}"
+			"return c * arg[4];"
+		"}"
+		"float eotf_linear_gamma(float c, float[5] arg) {"
 			"if (c > arg[0]) {"
 				"return pow(c * arg[1] + arg[2], arg[3]);"
 			"}"
 			"return c * arg[4];"
 		"}"
-		"vec3 perceptual_quantization(vec3 c, float[5] arg) {"
+		"vec3 oetf_perceptual_quantization(vec3 c, float[5] arg) {"
+			"c = pow(c, vec3(arg[0]));"
+			"vec3 num = vec3(arg[1]) + vec3(arg[2]) * c;"
+			"vec3 den = vec3(1.0) + vec3(arg[3]) * c;"
+			"return pow(num / den, vec3(arg[4]));"
+		"}"
+		"vec3 eotf_perceptual_quantization(vec3 c, float[5] arg) {"
 			"c = pow(c, vec3(arg[4]));"
 			"vec3 num = max(c - vec3(arg[1]), vec3(0.0));"
 			"vec3 den = vec3(arg[2]) - vec3(arg[3]) * c;"
 			"return pow(num / den, vec3(arg[0]));"
 		"}"
-		"float hybrid_log_gamma(float c, float[5] arg) {"
+		"float oetf_hybrid_log_gamma(float c, float[5] arg) {"
+			"if (c > arg[0]) {"
+				"return log2(c + arg[3]) * arg[1] + arg[2];"
+			"}"
+			"return sqrt(c * arg[4]);"
+		"}"
+		"float eotf_hybrid_log_gamma(float c, float[5] arg) {"
 			"if (c > arg[0]) {"
 				"return exp2(c * arg[1] + arg[2]) + arg[3];"
 			"}"
 			"return c * c * arg[4];"
 		"}"
-		"vec3 eotf(vec3 c) {"
-			"switch (" UNI_EOTF_FN ") {"
-			"case " EOTF_LINEAR_GAMMA ":"
+		"vec3 oetf(vec3 c) {"
+			"switch (" UNI_OETF_FN ") {"
+			"case " TF_LINEAR_GAMMA ":"
 				"for (int i = 0; i < 3; ++i) {"
 					"c[i] = setsign("
-						"linear_gamma(abs(c[i])," UNI_EOTF_ARGS "),"
+						"oetf_linear_gamma(abs(c[i]),"
+							UNI_OETF_ARGS "),"
 						"c[i]);"
 				"}"
-				"break;"
-			"case " EOTF_PQ ":"
-				"c = perceptual_quantization(c," UNI_EOTF_ARGS ");"
-				"break;"
-			"case " EOTF_HLG ":"
+				"return c;"
+			"case " TF_PQ ":"
+				"return oetf_perceptual_quantization(c,"
+					UNI_OETF_ARGS ");"
+			"case " TF_HLG ": break;"
+			"}"
+			"for (int i = 0; i < 3; ++i) {"
+				"c[i] = oetf_hybrid_log_gamma(c[i],"
+					UNI_OETF_ARGS ");"
+			"}"
+			"return c;"
+		"}"
+		"vec3 eotf(vec3 c) {"
+			"switch (" UNI_EOTF_FN ") {"
+			"case " TF_LINEAR_GAMMA ":"
 				"for (int i = 0; i < 3; ++i) {"
-					"c[i] = hybrid_log_gamma(c[i]," UNI_EOTF_ARGS ");"
+					"c[i] = setsign("
+						"eotf_linear_gamma(abs(c[i]),"
+							UNI_EOTF_ARGS "),"
+						"c[i]);"
 				"}"
-				"break;"
+				"return c;"
+			"case " TF_PQ ":"
+				"return eotf_perceptual_quantization(c,"
+					UNI_EOTF_ARGS ");"
+			"case " TF_HLG ": break;"
+			"}"
+			"for (int i = 0; i < 3; ++i) {"
+				"c[i] = eotf_hybrid_log_gamma(c[i],"
+					UNI_EOTF_ARGS ");"
 			"}"
 			"return c;"
 		"}"
@@ -1190,10 +1231,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 			"case " ALPHA_BG_CHECKERS ": gen_check_pattern();" // fallthrough
 			"case " ALPHA_BG_ONE ": color.a = 1.0;"
 			"}"
-
-			"for (int i = 0; i < 3; ++i) {"
-				"color[i] = srgb_oetf(color[i]);"
-			"}"
+			"color.rgb = oetf(color.rgb);"
 		"}";
 	const GLuint vshader = setup_shader(vs, GL_VERTEX_SHADER);
 	if (!vshader) {
@@ -1223,6 +1261,8 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		UNI_MODE_CMS,
 		UNI_EOTF_FN,
 		UNI_EOTF_ARGS,
+		UNI_OETF_FN,
+		UNI_OETF_ARGS,
 		UNI_POSITIONING,
 		UNI_REMAP,
 	};
