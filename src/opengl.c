@@ -166,7 +166,6 @@ static void set_mag_filter(const unsigned is_subsamp, const bool good) {
 		tex_2d_mag((good || ((is_subsamp >> i) & 1))
 			? gl_mag_linear : gl_mag_nearest);
 	}
-	tex_active(gl_tex_img);
 }
 
 static void fix_aspect_ratio(struct mat3f *mat, struct gl_context *context,
@@ -351,7 +350,7 @@ static void palette_parameters(const bool enable) {
 	if (enable) {
 		level = 0;
 		min = gl_min_nearest;
-		// Set size so that bitdepths < 8 work correctly
+		// Size is always 256x1, even if the image bitdepth is lower
 		tex_2d(GL_RGBA, 256, 1, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	} else {
 		level = WU_SCALING_POW;
@@ -368,7 +367,6 @@ static void planar_disable(const enum gl_tex_unit start) {
 		tex_active(i);
 		tex_2d_null();
 	}
-	tex_active(gl_tex_img);
 }
 
 static void switch_color_mode(struct gl_context *context,
@@ -544,7 +542,6 @@ const struct wuimg *img, const struct gl_upload_params *params) {
 		}
 	}
 	glUniform2fv(context->uni[gl_uni_POSITIONING], ARRAY_LEN(pos)*2, *pos);
-	tex_active(gl_tex_img);
 	return true;
 }
 
@@ -556,7 +553,6 @@ const struct gl_upload_params *params, const struct compost *region) {
 		tex_2d_swizzle(img->layout);
 		tex_sub2d(0, 0, 1 << img->bitdepth, 1, GL_RGBA,
 			GL_UNSIGNED_BYTE, img->u.palette->color);
-		tex_active(gl_tex_img);
 		// fallthrough
 	case image_mode_raw:
 		if (region) {
@@ -566,6 +562,7 @@ const struct gl_upload_params *params, const struct compost *region) {
 			if (params->op == op_noop) {
 				switch (img->bitdepth) {
 				case 8: case 16: case 32:
+					tex_active(gl_tex_img);
 					return subtex_upload(context, img,
 						params, region);
 				}
@@ -573,6 +570,7 @@ const struct gl_upload_params *params, const struct compost *region) {
 		}
 		// fallthrough
 	case image_mode_bitfield:
+		tex_active(gl_tex_img);
 		return tex_upload(context, img, params, img->w, img->h,
 			img->data);
 	case image_mode_planar:
@@ -744,7 +742,6 @@ static void tex_cms(const size_t size) {
 	tex_active(gl_tex_cms);
 	glTexImage3D(GL_TEXTURE_3D, 0, GL_RGB, s, s, s, 0, GL_RGB,
 		GL_UNSIGNED_SHORT, 0);
-	tex_active(gl_tex_img);
 }
 
 static bool set_icc_lut(const GLuint pix_buf, const struct color_space *cs,
@@ -953,7 +950,6 @@ const struct wuimg *dst, const struct wuimg *src) {
 	const struct gl_tex_params tex = get_tex_params(dst->bitdepth,
 		dst->channels, pix_normal);
 	tex_2d(tex.in_fmt, (GLsizei)dst->w, 1, tex.fmt, tex.type, NULL);
-	tex_active(gl_tex_img);
 
 	reader->state = (struct wu_state) {
 		.zoom = 1,
