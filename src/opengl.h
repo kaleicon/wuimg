@@ -18,26 +18,16 @@ enum gl_upload_status {
 	gl_upload_same_size,
 };
 
-struct gl_uni_tf {
-	GLint fn, args;
+enum gl_uni {
+#define GL_UNI(x) gl_uni_##x,
+#include "opengl.def"
+#undef GL_UNI
+
+	gl_uni_total,
 };
 
 struct gl_context {
-	struct gl_uni {
-		struct gl_uni_mat {
-			GLint pos;
-			GLint nonlinear;
-			GLint cms;
-		} mat;
-		struct gl_uni_mode {
-			GLint color;
-			GLint alpha;
-			GLint cms;
-		} mode;
-		struct gl_uni_tf eotf, oetf;
-		GLint positioning;
-		GLint remap;
-	} uni;
+	GLint uni[gl_uni_total];
 	GLuint pixel_unpack_buf;
 	GLuint timer;
 	GLuint framebuffer;
@@ -84,7 +74,7 @@ const struct wuimg *img, enum heed_ratio heed);
 bool gl_subtexture_upload(struct gl_context *context, const struct wuimg *img,
 const struct wu_state *state);
 
-bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf);
+const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf);
 
 
 struct gl_reader_context {

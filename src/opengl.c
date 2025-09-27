@@ -19,6 +19,7 @@
 #define UNI_PLANE_ALPHA "plane4"
 #define UNI_CMS_LUT "cms_lut"
 
+// Macro names must match the ones in opengl.def
 #define UNI_MAT_POS "mat_pos"
 #define UNI_MAT_NONLINEAR "mat_nonlinear"
 #define UNI_MAT_CMS "mat_cms"
@@ -138,7 +139,7 @@ static void set_alpha_ops(const struct gl_context *context) {
 		ops[0] = alpha & alpha_no_multiply;
 	}
 	ops[1] = alpha >> 1;
-	glUniform1iv(context->uni.mode.alpha, ARRAY_LEN(ops), ops);
+	glUniform1iv(context->uni[gl_uni_MODE_ALPHA], ARRAY_LEN(ops), ops);
 }
 
 void gl_alpha_toggle(struct gl_context *context, const int cycle) {
@@ -249,7 +250,7 @@ const struct wu_state *state) {
 	mat.m[6] = fmaf( x * context->pix_size[0], scale, fix);
 	mat.m[7] = fmaf(-y * context->pix_size[1], scale, fix);
 	mat.m[8] = 1 / zoom;
-	glUniformMatrix3fv(context->uni.mat.pos, 1, GL_FALSE, mat.m);
+	glUniformMatrix3fv(context->uni[gl_uni_MAT_POS], 1, GL_FALSE, mat.m);
 
 	if (context->tex.mode != image_mode_palette) {
 		set_mag_filter(context->tex.subsamp,
@@ -399,7 +400,7 @@ enum image_mode new_mode) {
 		}
 
 		context->tex.mode = new_mode;
-		glUniform1i(context->uni.mode.color, new_mode);
+		glUniform1i(context->uni[gl_uni_MODE_COLOR], new_mode);
 	}
 }
 
@@ -542,7 +543,7 @@ const struct wuimg *img, const struct gl_upload_params *params) {
 			return false;
 		}
 	}
-	glUniform2fv(context->uni.positioning, ARRAY_LEN(pos)*2, *pos);
+	glUniform2fv(context->uni[gl_uni_POSITIONING], ARRAY_LEN(pos)*2, *pos);
 	tex_active(gl_tex_img);
 	return true;
 }
@@ -793,7 +794,7 @@ const struct color_transfer *tf) {
 static void set_cms(struct gl_context *context, const struct wuimg *img,
 const struct gl_upload_params *params) {
 	const struct color_space *cs = &img->cs;
-	const struct gl_uni *uni = &context->uni;
+	const GLint *uni = context->uni;
 
 	bool is_planar = false;
 	double scale = 1;
@@ -816,8 +817,9 @@ const struct gl_upload_params *params) {
 	struct color_convert conv;
 	color_space_walk(cs, &context->tgt, &conv, img->layout == pix_gray,
 		is_planar, scale);
-	glUniform4fv(uni->remap, 2, conv.map.mul);
-	glUniformMatrix3fv(uni->mat.nonlinear, 1, GL_FALSE, conv.nonlinear.m);
+	glUniform4fv(uni[gl_uni_REMAP], 2, conv.map.mul);
+	glUniformMatrix3fv(uni[gl_uni_MAT_NONLINEAR], 1, GL_FALSE,
+		conv.nonlinear.m);
 
 	enum gl_cms_mode {
 		gl_cms_none,
@@ -835,15 +837,15 @@ const struct gl_upload_params *params) {
 	}
 	if (mode != gl_cms_lut) {
 		tex_cms(0);
-		uni_tf(uni->eotf.fn, uni->eotf.args, &conv.eotf);
+		uni_tf(uni[gl_uni_EOTF_FN], uni[gl_uni_EOTF_ARGS], &conv.eotf);
 		if ((conv.steps & color_step_linear)) {
 			mode = gl_cms_spacewalk;
-			glUniformMatrix3fv(uni->mat.cms, 1, GL_FALSE,
+			glUniformMatrix3fv(uni[gl_uni_MAT_CMS], 1, GL_FALSE,
 				conv.linear.m);
 		}
 	}
-	uni_tf(uni->oetf.fn, uni->oetf.args, &conv.oetf);
-	glUniform1i(uni->mode.cms, mode);
+	uni_tf(uni[gl_uni_OETF_FN], uni[gl_uni_OETF_ARGS], &conv.oetf);
+	glUniform1i(uni[gl_uni_MODE_CMS], mode);
 }
 
 static bool close_to_int(const float n) {
@@ -1055,7 +1057,7 @@ GLsizei len, const GLchar *message, const void *user_data) {
 	print_gl_message(message, len);
 }
 
-bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
+const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) {
 	const bool is_debug = getenv("WU_DEBUG");
 	if (is_debug) {
 		fprintf(stderr, "vendor: %s\n"
@@ -1252,15 +1254,15 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 		"}";
 	const GLuint vshader = setup_shader(vs, GL_VERTEX_SHADER);
 	if (!vshader) {
-		return false;
+		return "vertex shader setup failed";
 	}
 	const GLuint fshader = setup_shader(fs, GL_FRAGMENT_SHADER);
 	if (!fshader) {
-		return false;
+		return "fragment shader setup failed";
 	}
 	const GLuint program = setup_program(vshader, fshader);
 	if (!program) {
-		return false;
+		return "GLSL program creation failed";
 	}
 	glUseProgram(program);
 	glDeleteProgram(program);
@@ -1269,25 +1271,15 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 	const char *samps_name[] = {
 		UNI_IMG, UNI_PAL, UNI_PLANE3, UNI_PLANE_ALPHA, UNI_CMS_LUT
 	};
-	const char *uni_name[] = {
-		UNI_MAT_POS,
-		UNI_MAT_NONLINEAR,
-		UNI_MAT_CMS,
-		UNI_MODE_COLOR,
-		UNI_MODE_ALPHA,
-		UNI_MODE_CMS,
-		UNI_EOTF_FN,
-		UNI_EOTF_ARGS,
-		UNI_OETF_FN,
-		UNI_OETF_ARGS,
-		UNI_POSITIONING,
-		UNI_REMAP,
+	const char *uni_name[gl_uni_total] = {
+#define GL_UNI(x) UNI_##x,
+#include "opengl.def"
+#undef GL_UNI
 	};
 	GLint samps[ARRAY_LEN(samps_name)];
-	GLint *uni = (GLint *)&context->uni;
 	if (!get_uniforms(program, samps, samps_name, ARRAY_LEN(samps_name))
-	|| !get_uniforms(program, uni, uni_name, ARRAY_LEN(uni_name))) {
-		return false;
+	|| !get_uniforms(program, context->uni, uni_name, ARRAY_LEN(uni_name))) {
+		return "couldn't get uniforms";
 	}
 
 
@@ -1312,7 +1304,7 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 	context->pixel_unpack_buf = array_buf[0];
 	const GLint attr_loc = glGetAttribLocation(program, ATTR_POS);
 	if (attr_loc < 0) {
-		return false;
+		return "couldn't get attrib location";
 	}
 	const GLbyte vertices[] = {
 		-1,-1,  1,-1,
@@ -1328,8 +1320,8 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 	glDisable(GL_POLYGON_SMOOTH);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	if (wuconf->bg_src == bg_default) {
-		gl_clear_color(wuconf->bg);
+	if (conf->bg_src == bg_default) {
+		gl_clear_color(conf->bg);
 	}
 
 	GLuint mts;
@@ -1337,18 +1329,18 @@ bool gl_context_setup(struct gl_context *context, struct wu_conf *wuconf) {
 	if (is_debug) {
 		fprintf(stderr, "Texture size limit: %u\n", mts);
 	}
-	if (wuconf->max_img_size) {
-		wuconf->max_img_size = umin(wuconf->max_img_size, mts);
+	if (conf->max_img_size) {
+		conf->max_img_size = umin(conf->max_img_size, mts);
 	} else {
-		wuconf->max_img_size = mts;
+		conf->max_img_size = mts;
 	}
 
 	glGenQueries(1, &context->timer);
-	return true;
+	return NULL;
 }
 
-bool gl_reader_init(struct gl_reader_context *reader, struct wu_conf *wuconf) {
-	if (gl_context_setup(&reader->context, wuconf)) {
+bool gl_reader_init(struct gl_reader_context *reader, struct wu_conf *conf) {
+	if (gl_context_setup(&reader->context, conf) == NULL) {
 		GLuint framebuffer;
 		glGenFramebuffers(1, &framebuffer);
 		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);

@@ -236,9 +236,12 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 
 	term_line_key_val("Window backend", window->backend, stderr);
 
-	if (!gl_context_setup(&window->pub.gl, &window->pub.image.conf)) {
+	const char *msg = gl_context_setup(&window->pub.gl,
+		&window->pub.image.conf);
+	if (msg) {
 		window_terminate(window);
-		term_line_put("Failed to configure OpenGL context", stderr);
+		term_line_key_val("Failed to configure OpenGL context", msg,
+			stderr);
 		return false;
 	}
 
