@@ -14,10 +14,10 @@
 #include "misc/mparser.h"
 #include "misc/term.h"
 
-static const unsigned DEFAULT_MAX = USHRT_MAX / 4;
+static const unsigned DEFAULT_MAX = -(unsigned)1;
 
 struct enum_str {
-	const char *str;
+	const char str[11];
 	unsigned char val;
 };
 
@@ -27,19 +27,13 @@ struct wu_conf conf_default(void) {
 
 		// Window
 		.initial_size = {640, 480},
-		.bg = {0x33, 0x33, 0x33, 0x66},
-		.bg_src = bg_metadata,
+		.bg = {0x33, 0x33, 0x33, 0xff},
 		.naive_window_colorspace = true,
-
-		// JPEG
-		.jpeg_fast_dct = true,
 
 		// TIFF
 		.tiff_use_homegrown_unpacker = true,
 
 		// WEBP
-		.webp_bypass_filtering = true,
-		.webp_fast_upsamp = true,
 		.webp_use_homegrown_renderer = true,
 	};
 }
@@ -121,12 +115,6 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 				{"metadata", bg_metadata},
 			};
 			conf->bg_src = read_enum(tp, &ok, e, ARRAY_LEN(e));
-		} else if (wuptr_eq_str(key, "no_window_decorations")) {
-			conf->no_window_decorations = read_bool(tp, &ok);
-		} else if (wuptr_eq_str(key, "naive_window_colorspace")) {
-			conf->naive_window_colorspace = read_bool(tp, &ok);
-		} else if (wuptr_eq_str(key, "custom_cursor")) {
-			conf->custom_cursor = read_bool(tp, &ok);
 		} else if (wuptr_eq_str(key, "heed_pixel_ratio")) {
 			const struct enum_str e[] = {
 				{"always", heed_always},
@@ -134,6 +122,12 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 				{"never", heed_never},
 			};
 			conf->heed_pixel_ratio = read_enum(tp, &ok, e, ARRAY_LEN(e));
+		} else if (wuptr_eq_str(key, "no_window_decorations")) {
+			conf->no_window_decorations = read_bool(tp, &ok);
+		} else if (wuptr_eq_str(key, "naive_window_colorspace")) {
+			conf->naive_window_colorspace = read_bool(tp, &ok);
+		} else if (wuptr_eq_str(key, "custom_cursor")) {
+			conf->custom_cursor = read_bool(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "jpeg_fast_dct")) {
 			conf->jpeg_fast_dct = read_bool(tp, &ok);
@@ -158,7 +152,9 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 		} else if (wuptr_eq_str(key, "webp_use_homegrown_renderer")) {
 			conf->webp_use_homegrown_renderer = read_bool(tp, &ok);
 		} else {
-			ok = false;
+			fputs("Unknown option \"", stderr);
+			wuptr_print(key, stderr);
+			fputs("\", will ignore\n", stderr);
 		}
 
 		if (!ok) {

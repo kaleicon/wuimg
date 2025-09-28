@@ -10,12 +10,13 @@ struct display_dims {
 };
 
 struct wu_conf {
-	unsigned max_img_size; /* Max image size in either dimension. The
-		starting value will be capped to the texture size limit. */
-	unsigned magnify_under; /* Auto-magnify images under this size to an
-		integer multiple over it. */
+	unsigned max_img_size; /* Max image size in either dimension, or 0
+		for no limit. The starting value will be capped to the texture
+		size limit. */
 
 	// Window
+	unsigned magnify_under; /* Auto-magnify images under this size to an
+		integer multiple over it. */
 	struct display_dims initial_size; // Window size hint on startup.
 	unsigned char bg[4]; /* Default window background in RGBA order. If
 		Alpha is less than 0xff, a window with a transparent background
@@ -26,6 +27,11 @@ struct wu_conf {
 			background metadata field, use its RGB components with
 			the user-defined Alpha, otherwise the default. */
 	} bg_src:8;
+	enum heed_ratio {    // When to heed the image pixel ratio.
+		heed_always, // Always stretch the image.
+		heed_pretty, // Ignore when it would cause unsightly artifacts.
+		heed_never,  // Never stretch the image.
+	} heed_pixel_ratio:8;
 	bool no_window_decorations; /* Request no decorations or widgets around
 		the window. */
 	bool naive_window_colorspace; /* Render window contents as sRGB even
@@ -38,11 +44,6 @@ struct wu_conf {
 		code. This cursor is honestly kind of ugly, but it has to
 		be tested somehow, so this setting forces its use. Size is
 		controlled by the XCURSOR_SIZE env variable. */
-	enum heed_ratio {    // When to heed the image pixel ratio.
-		heed_always, // Always stretch the image.
-		heed_pretty, // Ignore when it would cause unsightly artifacts.
-		heed_never,  // Never stretch the image.
-	} heed_pixel_ratio:8;
 
 	// JPEG
 	bool jpeg_fast_dct; /* Use a faster but less exact DCT algorithm for
@@ -66,7 +67,7 @@ struct wu_conf {
 		routines instead of libtiff's high-level interface if the image
 		fits certain criteria. Where applicable, this usually results
 		in lower memory usage, faster decoding and display, and
-		support for some exotic bitdepths. */
+		support for some exotic bitdepths. Enabled by default. */
 
 	// RAW
 	bool raw_16bit; // Render with 16 bits per component instead of 8.
@@ -83,8 +84,8 @@ struct wu_conf {
 	// SVG
 	bool svg_window_adapt; /* If true, treat the window like a canvas and
 		render based on user interation. This makes the image truly
-		scalable, but interaction can become laggy for big or complex
-		images.
+		scalable, but interaction can become laggy for big windows or
+		complex images.
 		  If false, the image is rasterized once, and behaves like any
 		other image. */
 

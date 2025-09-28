@@ -319,7 +319,7 @@ struct write_writer *writer) {
 int write_filelist(const struct write_args *args, struct write_writer *writer,
 const int len, char **names, const struct wu_conf *conf) {
 	struct image_context image = {
-		.conf = conf ? *conf : conf_no_window(),
+		.conf = conf ? *conf : conf_default(),
 	};
 
 	int ok = 0;
