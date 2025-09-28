@@ -748,12 +748,13 @@ const char *interface, const uint32_t version) {
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
 		wl->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
 		xdg_wm_base_add_listener(wl->xwb, &listen_wm_base, NULL);
-	} else if (!strcmp(interface, wp_color_manager_v1_interface.name)) {
-		wl->color.bind = wl_registry_bind(reg, name,
-			&wp_color_manager_v1_interface, 1);
 	} else if (!strcmp(interface, wp_content_type_manager_v1_interface.name)) {
 		wl->content.bind = wl_registry_bind(reg, name,
 			&wp_content_type_manager_v1_interface, 1);
+	} else if (!wl->pub->image.conf.naive_window_colorspace
+	&& !strcmp(interface, wp_color_manager_v1_interface.name)) {
+		wl->color.bind = wl_registry_bind(reg, name,
+			&wp_color_manager_v1_interface, 1);
 	} else if (!wl->pub->image.conf.custom_cursor
 	&& !strcmp(interface, wp_cursor_shape_manager_v1_interface.name)) {
 		wl->shape = wl_registry_bind(reg, name,

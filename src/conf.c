@@ -29,6 +29,7 @@ struct wu_conf conf_default(void) {
 		.initial_size = {640, 480},
 		.bg = {0x33, 0x33, 0x33, 0x66},
 		.bg_src = bg_metadata,
+		.naive_window_colorspace = true,
 
 		// JPEG
 		.jpeg_fast_dct = true,
@@ -122,6 +123,8 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 			conf->bg_src = read_enum(tp, &ok, e, ARRAY_LEN(e));
 		} else if (wuptr_eq_str(key, "no_window_decorations")) {
 			conf->no_window_decorations = read_bool(tp, &ok);
+		} else if (wuptr_eq_str(key, "naive_window_colorspace")) {
+			conf->naive_window_colorspace = read_bool(tp, &ok);
 		} else if (wuptr_eq_str(key, "custom_cursor")) {
 			conf->custom_cursor = read_bool(tp, &ok);
 		} else if (wuptr_eq_str(key, "heed_pixel_ratio")) {
