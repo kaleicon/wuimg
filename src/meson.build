@@ -192,10 +192,11 @@ if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 	wayland_proto = dependency('wayland-protocols')
 	base_path = wayland_proto.get_variable('pkgdatadir')
 	protocols = [
-		['stable', 'xdg-shell', 'xdg-shell'],
-		['staging', 'color-management', 'color-management-v1'],
-		['staging', 'cursor-shape', 'cursor-shape-v1'],
-		['stable', 'tablet', 'tablet-v2'], # needed by cursor-shape
+		['stable', 'xdg-shell', ''],
+		['staging', 'color-management', '-v1'],
+		['staging', 'content-type', '-v1'],
+		['staging', 'cursor-shape', '-v1'],
+		['stable', 'tablet', '-v2'], # needed by cursor-shape
 	]
 	type = [
 		['private-code', '.c'],
@@ -204,7 +205,7 @@ if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 	foreach proto : protocols
 		status = proto[0]
 		basename = proto[1]
-		path = base_path / status / basename / proto[2] + '.xml'
+		path = base_path / status / basename / basename + proto[2] + '.xml'
 		foreach t : type
 			name = '-'.join([basename, t[0]])
 			window_src_list += custom_target(name,

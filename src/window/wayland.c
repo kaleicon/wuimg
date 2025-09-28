@@ -77,6 +77,9 @@ static void wayland_terminate(void *ctx) {
 		wl_egl_window_destroy(wl->egl_window);
 	}
 
+	if (wl->content.type) {
+		wp_content_type_v1_destroy(wl->content.type);
+	}
 	if (wl->color.feedback) {
 		wp_color_management_surface_feedback_v1_destroy(wl->color.feedback);
 	}
@@ -753,6 +756,9 @@ const char *interface, const uint32_t version) {
 	} else if (!strcmp(interface, wp_color_manager_v1_interface.name)) {
 		b->color = wl_registry_bind(reg, name,
 			&wp_color_manager_v1_interface, 1);
+	} else if (!strcmp(interface, wp_content_type_manager_v1_interface.name)) {
+		wl->content.bind = wl_registry_bind(reg, name,
+			&wp_content_type_manager_v1_interface, 1);
 	} else if (!wl->pub->image.conf.custom_cursor
 	&& !strcmp(interface, wp_cursor_shape_manager_v1_interface.name)) {
 		b->shape = wl_registry_bind(reg, name,
@@ -801,10 +807,6 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return "Failed to bind to wm_base";
 	}
 
-	if (!wl->binds.shape && wl->binds.shm) {
-		set_cursor(wl);
-	}
-
 	wl->surf = wl_compositor_create_surface(wl->binds.comp);
 	if (!wl->surf) {
 		return "Failed to create surface";
@@ -829,6 +831,9 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
 	xdg_toplevel_add_listener(wl->toplevel, &listen_toplevel, wl);
 
+	if (!wl->binds.shape && wl->binds.shm) {
+		set_cursor(wl);
+	}
 	if (wl->binds.color) {
 		wl->color.surf = wp_color_manager_v1_get_surface(wl->binds.color,
 			wl->surf);
@@ -842,6 +847,15 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		}
 		wp_color_management_surface_feedback_v1_add_listener(
 			wl->color.feedback, &listen_color_feedback, wl);
+	}
+	if (wl->content.bind) {
+		struct wp_content_type_v1 *type
+			= wp_content_type_manager_v1_get_surface_content_type(
+				wl->content.bind, wl->surf);
+		wp_content_type_manager_v1_destroy(wl->content.bind);
+		wp_content_type_v1_set_content_type(type,
+			WP_CONTENT_TYPE_V1_TYPE_PHOTO);
+		wl->content.type = type;
 	}
 
 	wl_surface_commit(wl->surf);

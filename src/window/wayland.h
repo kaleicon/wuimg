@@ -9,6 +9,7 @@
 
 #include "xdg-shell-client-header.h"
 #include "color-management-client-header.h"
+#include "content-type-client-header.h"
 #include "cursor-shape-client-header.h"
 
 #include "conf.h"
@@ -61,7 +62,10 @@ struct wayland {
 	struct xdg_toplevel *toplevel;
 
 	struct wayland_color color;
-
+	union {
+		struct wp_content_type_manager_v1 *bind;
+		struct wp_content_type_v1 *type;
+	} content;
 	struct egl egl;
 };
 
