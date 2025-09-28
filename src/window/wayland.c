@@ -50,6 +50,9 @@ static void destroy_cursor(struct wayland_cursor *c) {
 }
 
 static void destroy_binds(struct wayland_binds *b) {
+	if (b->shape) {
+		wp_cursor_shape_manager_v1_destroy(b->shape);
+	}
 	if (b->color) {
 		wp_color_manager_v1_destroy(b->color);
 	}
@@ -480,14 +483,13 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
-	const watch_t start = watch_look();
 	draw_cursor(data, width, height);
-	watch_report("Cursor generated", start, report_whocares);
 	munmap(data, (size_t)dims);
 	return buf;
 }
 
 static void set_cursor(struct wayland *wl) {
+	const watch_t start = watch_look();
 	int32_t size = 32; // The don't-care value used by everyone
 	const char *cur_size = getenv("XCURSOR_SIZE");
 	if (cur_size) {
@@ -505,8 +507,20 @@ static void set_cursor(struct wayland *wl) {
 		if (c->surf) {
 			wl_surface_attach(c->surf, c->buf, 0, 0);
 			wl_surface_commit(c->surf);
+			watch_report("Cursor generated", start, report_whocares);
 		}
 	}
+}
+
+static void set_cursor_shape(struct wayland *wl, struct wl_pointer *pointer,
+const uint32_t serial) {
+	struct wp_cursor_shape_device_v1 *dev =
+		wp_cursor_shape_manager_v1_get_pointer(wl->binds.shape,
+		pointer);
+	wp_cursor_shape_device_v1_set_shape(dev, serial, wl->pub->win.pressed
+		? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING
+		: WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
+	wp_cursor_shape_device_v1_destroy(dev);
 }
 
 static void toplevel_configure(void *data, struct xdg_toplevel *toplevel,
@@ -632,6 +646,9 @@ const uint32_t state) {
 	if (button == BTN_LEFT) {
 		wl->pub->win.pressed =
 			(state == WL_POINTER_BUTTON_STATE_PRESSED);
+		if (wl->shape) {
+			set_cursor_shape(wl, pointer, serial);
+		}
 	}
 }
 
@@ -645,7 +662,9 @@ const wl_fixed_t y) {
 	c->y.pos = (float)wl_fixed_to_double(y);
 
 	struct wayland_cursor *wc = &wl->cursor;
-	if (wc->buf) {
+	if (wl->binds.shape) {
+		set_cursor_shape(wl, pointer, serial);
+	} else if (wc->buf) {
 		wl_pointer_set_cursor(pointer, serial, wc->surf, 0, 0);
 	}
 }
@@ -732,7 +751,12 @@ const char *interface, const uint32_t version) {
 		b->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
 		xdg_wm_base_add_listener(b->xwb, &listen_wm_base, NULL);
 	} else if (!strcmp(interface, wp_color_manager_v1_interface.name)) {
-		b->color = wl_registry_bind(reg, name, &wp_color_manager_v1_interface, 1);
+		b->color = wl_registry_bind(reg, name,
+			&wp_color_manager_v1_interface, 1);
+	} else if (!wl->pub->image.conf.custom_cursor
+	&& !strcmp(interface, wp_cursor_shape_manager_v1_interface.name)) {
+		b->shape = wl_registry_bind(reg, name,
+			&wp_cursor_shape_manager_v1_interface, 1);
 	}
 }
 
@@ -776,7 +800,8 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	} else if (!wl->binds.xwb) {
 		return "Failed to bind to wm_base";
 	}
-	if (wl->binds.shm) {
+
+	if (!wl->binds.shape && wl->binds.shm) {
 		set_cursor(wl);
 	}
 

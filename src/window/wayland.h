@@ -9,6 +9,7 @@
 
 #include "xdg-shell-client-header.h"
 #include "color-management-client-header.h"
+#include "cursor-shape-client-header.h"
 
 #include "conf.h"
 #include "window/base.h"
@@ -20,6 +21,7 @@ struct wayland_binds {
 	struct wl_shm *shm;
 	struct xdg_wm_base *xwb;
 	struct wp_color_manager_v1 *color;
+	struct wp_cursor_shape_manager_v1 *shape;
 };
 
 struct wayland_cursor {

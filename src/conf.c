@@ -122,6 +122,8 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 			conf->bg_src = read_enum(tp, &ok, e, ARRAY_LEN(e));
 		} else if (wuptr_eq_str(key, "no_window_decorations")) {
 			conf->no_window_decorations = read_bool(tp, &ok);
+		} else if (wuptr_eq_str(key, "custom_cursor")) {
+			conf->custom_cursor = read_bool(tp, &ok);
 		} else if (wuptr_eq_str(key, "heed_pixel_ratio")) {
 			const struct enum_str e[] = {
 				{"always", heed_always},

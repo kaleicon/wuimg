@@ -194,6 +194,8 @@ if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 	protocols = [
 		['stable', 'xdg-shell', 'xdg-shell'],
 		['staging', 'color-management', 'color-management-v1'],
+		['staging', 'cursor-shape', 'cursor-shape-v1'],
+		['stable', 'tablet', 'tablet-v2'], # needed by cursor-shape
 	]
 	type = [
 		['private-code', '.c'],

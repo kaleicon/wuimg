@@ -28,6 +28,11 @@ struct wu_conf {
 	} bg_src:8;
 	bool no_window_decorations; /* Request no decorations or widgets around
 		the window. */
+	bool custom_cursor; /* On Wayland, when standard cursor shapes are not
+		supported by the compositor, a simple cursor is drawn using
+		code. This cursor is honestly kind of ugly, but it has to
+		be tested somehow, so this setting forces its use. Size is
+		controlled by the XCURSOR_SIZE env variable. */
 	enum heed_ratio {    // When to heed the image pixel ratio.
 		heed_always, // Always stretch the image.
 		heed_pretty, // Ignore when it would cause unsightly artifacts.
@@ -55,7 +60,7 @@ struct wu_conf {
 	bool tiff_use_homegrown_unpacker; /* Use our own pixel unpacking
 		routines instead of libtiff's high-level interface if the image
 		fits certain criteria. Where applicable, this usually results
-		in lower memory usage, faster decoding and display, and better
+		in lower memory usage, faster decoding and display, and
 		support for some exotic bitdepths. */
 
 	// RAW
@@ -67,14 +72,14 @@ struct wu_conf {
 		If the thumbnail is a JPEG image, the jpeg decoder function
 		will be used and so its settings will also apply to it.
 		  Note that the thumbnail might have camera effects applied,
-		and so might differ drastically from a straight render of the
+		and so might be very different from a straight render of the
 		raw data. */
 
 	// SVG
-	bool svg_window_adapt; /* If true, render based on window size and
-		user interaction. This makes the image truly scalable, but
-		rotation and scaling will then depend on libcairo, which hasn't
-		been very reliable in that regard.
+	bool svg_window_adapt; /* If true, treat the window like a canvas and
+		render based on user interation. This makes the image truly
+		scalable, but interaction can become laggy for big or complex
+		images.
 		  If false, the image is rasterized once, and behaves like any
 		other image. */
 
