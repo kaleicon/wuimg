@@ -49,33 +49,9 @@ static void destroy_cursor(struct wayland_cursor *c) {
 	}
 }
 
-static void destroy_binds(struct wayland_binds *b) {
-	if (b->shape) {
-		wp_cursor_shape_manager_v1_destroy(b->shape);
-	}
-	if (b->color) {
-		wp_color_manager_v1_destroy(b->color);
-	}
-	if (b->xwb) {
-		xdg_wm_base_destroy(b->xwb);
-	}
-	if (b->shm) {
-		wl_shm_destroy(b->shm);
-	}
-	if (b->seat) {
-		wl_seat_destroy(b->seat);
-	}
-	if (b->comp) {
-		wl_compositor_destroy(b->comp);
-	}
-}
-
 static void wayland_terminate(void *ctx) {
 	struct wayland *wl = ctx;
 	egl_terminate(&wl->egl);
-	if (wl->egl_window) {
-		wl_egl_window_destroy(wl->egl_window);
-	}
 
 	if (wl->content.type) {
 		wp_content_type_v1_destroy(wl->content.type);
@@ -92,14 +68,34 @@ static void wayland_terminate(void *ctx) {
 	if (wl->xdg_surf) {
 		xdg_surface_destroy(wl->xdg_surf);
 	}
+	if (wl->egl_window) {
+		wl_egl_window_destroy(wl->egl_window);
+	}
 	if (wl->surf) {
 		wl_surface_destroy(wl->surf);
 	}
 
 	destroy_keyboard(&wl->kb);
 	destroy_cursor(&wl->cursor);
-	destroy_binds(&wl->binds);
 
+	if (wl->shape) {
+		wp_cursor_shape_manager_v1_destroy(wl->shape);
+	}
+	if (wl->color.bind) {
+		wp_color_manager_v1_destroy(wl->color.bind);
+	}
+	if (wl->xwb) {
+		xdg_wm_base_destroy(wl->xwb);
+	}
+	if (wl->shm) {
+		wl_shm_destroy(wl->shm);
+	}
+	if (wl->seat) {
+		wl_seat_destroy(wl->seat);
+	}
+	if (wl->comp) {
+		wl_compositor_destroy(wl->comp);
+	}
 	if (wl->reg) {
 		wl_registry_destroy(wl->reg);
 	}
@@ -296,8 +292,8 @@ static const struct wp_image_description_info_v1_listener listen_image_info = {
 static void image_desc_failed(void *data, struct wp_image_description_v1 *desc,
 uint32_t cause, const char *msg) {
 	(void)cause; (void)msg;
-	wp_image_description_v1_destroy(desc);
 	struct wayland *wl = data;
+	wp_image_description_v1_destroy(desc);
 	wl->color.desc = NULL;
 	wp_color_management_surface_v1_unset_image_description(wl->color.surf);
 }
@@ -306,9 +302,9 @@ static void image_desc_ready(void *data, struct wp_image_description_v1 *desc,
 uint32_t id) {
 	(void)id;
 	struct wayland *wl = data;
-	wl->color.info = wp_image_description_v1_get_information(desc);
-	wp_image_description_info_v1_add_listener(wl->color.info,
-		&listen_image_info, wl);
+	struct wp_image_description_info_v1 *info =
+		wp_image_description_v1_get_information(desc);
+	wp_image_description_info_v1_add_listener(info, &listen_image_info, wl);
 }
 
 static const struct wp_image_description_v1_listener listen_image_desc = {
@@ -480,7 +476,7 @@ static struct wl_buffer * gen_cursor(struct wayland *wl, const int32_t height) {
 		return NULL;
 	}
 
-	struct wl_shm_pool *pool = wl_shm_create_pool(wl->binds.shm, fd, dims);
+	struct wl_shm_pool *pool = wl_shm_create_pool(wl->shm, fd, dims);
 	struct wl_buffer *buf = wl_shm_pool_create_buffer(pool, 0, width,
 		height, stride, WL_SHM_FORMAT_ARGB8888);
 	wl_shm_pool_destroy(pool);
@@ -506,7 +502,7 @@ static void set_cursor(struct wayland *wl) {
 	struct wayland_cursor *c = &wl->cursor;
 	c->buf = gen_cursor(wl, size);
 	if (c->buf) {
-		c->surf = wl_compositor_create_surface(wl->binds.comp);
+		c->surf = wl_compositor_create_surface(wl->comp);
 		if (c->surf) {
 			wl_surface_attach(c->surf, c->buf, 0, 0);
 			wl_surface_commit(c->surf);
@@ -518,7 +514,7 @@ static void set_cursor(struct wayland *wl) {
 static void set_cursor_shape(struct wayland *wl, struct wl_pointer *pointer,
 const uint32_t serial) {
 	struct wp_cursor_shape_device_v1 *dev =
-		wp_cursor_shape_manager_v1_get_pointer(wl->binds.shape,
+		wp_cursor_shape_manager_v1_get_pointer(wl->shape,
 		pointer);
 	wp_cursor_shape_device_v1_set_shape(dev, serial, wl->pub->win.pressed
 		? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING
@@ -665,7 +661,7 @@ const wl_fixed_t y) {
 	c->y.pos = (float)wl_fixed_to_double(y);
 
 	struct wayland_cursor *wc = &wl->cursor;
-	if (wl->binds.shape) {
+	if (wl->shape) {
 		set_cursor_shape(wl, pointer, serial);
 	} else if (wc->buf) {
 		wl_pointer_set_cursor(pointer, serial, wc->surf, 0, 0);
@@ -742,26 +738,25 @@ static void reg_global(void *data, struct wl_registry *reg, const uint32_t name,
 const char *interface, const uint32_t version) {
 	(void)version;
 	struct wayland *wl = data;
-	struct wayland_binds *b = &wl->binds;
 	if (!strcmp(interface, wl_compositor_interface.name)) {
-		b->comp = wl_registry_bind(reg, name, &wl_compositor_interface, 1);
+		wl->comp = wl_registry_bind(reg, name, &wl_compositor_interface, 1);
 	} else if (!strcmp(interface, wl_shm_interface.name)) {
-		b->shm = wl_registry_bind(reg, name, &wl_shm_interface, 1);
+		wl->shm = wl_registry_bind(reg, name, &wl_shm_interface, 1);
 	} else if (!strcmp(interface, wl_seat_interface.name)) {
-		b->seat = wl_registry_bind(reg, name, &wl_seat_interface, 1);
-		wl_seat_add_listener(b->seat, &listen_seat, wl);
+		wl->seat = wl_registry_bind(reg, name, &wl_seat_interface, 1);
+		wl_seat_add_listener(wl->seat, &listen_seat, wl);
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
-		b->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
-		xdg_wm_base_add_listener(b->xwb, &listen_wm_base, NULL);
+		wl->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
+		xdg_wm_base_add_listener(wl->xwb, &listen_wm_base, NULL);
 	} else if (!strcmp(interface, wp_color_manager_v1_interface.name)) {
-		b->color = wl_registry_bind(reg, name,
+		wl->color.bind = wl_registry_bind(reg, name,
 			&wp_color_manager_v1_interface, 1);
 	} else if (!strcmp(interface, wp_content_type_manager_v1_interface.name)) {
 		wl->content.bind = wl_registry_bind(reg, name,
 			&wp_content_type_manager_v1_interface, 1);
 	} else if (!wl->pub->image.conf.custom_cursor
 	&& !strcmp(interface, wp_cursor_shape_manager_v1_interface.name)) {
-		b->shape = wl_registry_bind(reg, name,
+		wl->shape = wl_registry_bind(reg, name,
 			&wp_cursor_shape_manager_v1_interface, 1);
 	}
 }
@@ -799,15 +794,15 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 
 	wl_registry_add_listener(wl->reg, &listen_reg, wl);
 	wl_display_roundtrip(wl->display);
-	if (!wl->binds.comp) {
+	if (!wl->comp) {
 		return "Failed to bind to compositor";
-	} else if (!wl->binds.seat) {
+	} else if (!wl->seat) {
 		return "Failed to bind to seat";
-	} else if (!wl->binds.xwb) {
+	} else if (!wl->xwb) {
 		return "Failed to bind to wm_base";
 	}
 
-	wl->surf = wl_compositor_create_surface(wl->binds.comp);
+	wl->surf = wl_compositor_create_surface(wl->comp);
 	if (!wl->surf) {
 		return "Failed to create surface";
 	}
@@ -818,7 +813,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return "Failed to get EGL window";
 	}
 
-	wl->xdg_surf = xdg_wm_base_get_xdg_surface(wl->binds.xwb, wl->surf);
+	wl->xdg_surf = xdg_wm_base_get_xdg_surface(wl->xwb, wl->surf);
 	if (!wl->xdg_surf) {
 		return "Failed to get xdg_surface";
 	}
@@ -831,17 +826,17 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
 	xdg_toplevel_add_listener(wl->toplevel, &listen_toplevel, wl);
 
-	if (!wl->binds.shape && wl->binds.shm) {
+	if (!wl->shape && wl->shm) {
 		set_cursor(wl);
 	}
-	if (wl->binds.color) {
-		wl->color.surf = wp_color_manager_v1_get_surface(wl->binds.color,
+	if (wl->color.bind) {
+		wl->color.surf = wp_color_manager_v1_get_surface(wl->color.bind,
 			wl->surf);
 		if (!wl->color.surf) {
 			return "Failed to get color manager surface object";
 		}
 		wl->color.feedback = wp_color_manager_v1_get_surface_feedback(
-			wl->binds.color, wl->surf);
+			wl->color.bind, wl->surf);
 		if (!wl->color.feedback) {
 			return "Failed to get color manager surface feedback object";
 		}

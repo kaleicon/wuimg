@@ -16,15 +16,6 @@
 #include "window/base.h"
 #include "window/egl.h"
 
-struct wayland_binds {
-	struct wl_compositor *comp;
-	struct wl_seat *seat;
-	struct wl_shm *shm;
-	struct xdg_wm_base *xwb;
-	struct wp_color_manager_v1 *color;
-	struct wp_cursor_shape_manager_v1 *shape;
-};
-
 struct wayland_cursor {
 	struct wl_pointer *pointer;
 	struct wl_surface *surf;
@@ -39,10 +30,15 @@ struct wayland_keyboard {
 };
 
 struct wayland_color {
+	struct wp_color_manager_v1 *bind;
 	struct wp_color_management_surface_v1 *surf;
 	struct wp_color_management_surface_feedback_v1 *feedback;
 	struct wp_image_description_v1 *desc;
-	struct wp_image_description_info_v1 *info;
+};
+
+union wayland_content {
+	struct wp_content_type_manager_v1 *bind;
+	struct wp_content_type_v1 *type;
 };
 
 struct wayland {
@@ -51,7 +47,11 @@ struct wayland {
 	struct wl_display *display;
 	struct wl_registry *reg;
 
-	struct wayland_binds binds;
+	struct wl_compositor *comp;
+	struct wl_seat *seat;
+	struct wl_shm *shm;
+	struct xdg_wm_base *xwb;
+	struct wp_cursor_shape_manager_v1 *shape;
 
 	struct wayland_cursor cursor;
 	struct wayland_keyboard kb;
@@ -62,10 +62,8 @@ struct wayland {
 	struct xdg_toplevel *toplevel;
 
 	struct wayland_color color;
-	union {
-		struct wp_content_type_manager_v1 *bind;
-		struct wp_content_type_v1 *type;
-	} content;
+	union wayland_content content;
+
 	struct egl egl;
 };
 
