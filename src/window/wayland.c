@@ -165,11 +165,8 @@ static void wayland_resize(void *ctx, const int w, const int h) {
 static void image_info_done(void *data, struct wp_image_description_info_v1 *info) {
 	(void)info;
 	struct wayland *wl = data;
-	wp_color_management_surface_v1_set_image_description(wl->color.surf,
-		wl->color.desc, WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL);
+	wl->pub->gl.update = true;
 	wl_surface_commit(wl->surf);
-	wp_image_description_v1_destroy(wl->color.desc);
-	wl->color.desc = NULL;
 }
 
 static enum cicp_primaries wp_pri_to_cicp(
@@ -291,20 +288,27 @@ static const struct wp_image_description_info_v1_listener listen_image_info = {
 
 static void image_desc_failed(void *data, struct wp_image_description_v1 *desc,
 uint32_t cause, const char *msg) {
-	(void)cause; (void)msg;
-	struct wayland *wl = data;
+	(void)data; (void)cause; (void)msg;
 	wp_image_description_v1_destroy(desc);
-	wl->color.desc = NULL;
-	wp_color_management_surface_v1_unset_image_description(wl->color.surf);
+	// Leave window description untouched
 }
 
 static void image_desc_ready(void *data, struct wp_image_description_v1 *desc,
 uint32_t id) {
 	(void)id;
 	struct wayland *wl = data;
+
+	// Assume that, whatever may come, we'll be ok
+	wp_color_management_surface_v1_set_image_description(wl->color.surf,
+		desc, WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL);
+
+	// Request information about what we've just committed to
 	struct wp_image_description_info_v1 *info =
 		wp_image_description_v1_get_information(desc);
 	wp_image_description_info_v1_add_listener(info, &listen_image_info, wl);
+
+	// No need to keep it any longer
+	wp_image_description_v1_destroy(desc);
 }
 
 static const struct wp_image_description_v1_listener listen_image_desc = {
@@ -316,10 +320,20 @@ static void color_preferred(void *data,
 struct wp_color_management_surface_feedback_v1 *feedback, uint32_t id) {
 	(void)id;
 	struct wayland *wl = data;
-	wl->color.desc = wp_color_management_surface_feedback_v1_get_preferred_parametric(
-		feedback);
-	wp_image_description_v1_add_listener(wl->color.desc,
-		&listen_image_desc, wl);
+	/* On KWin, if fiddling with display settings, one may cause this event
+	 * to fire more than once in quick succession, meaning we must be
+	 * careful about creating and storing multiple image_description
+	 * objects.
+	 * However, we can get around that by pretending only color primaries
+	 * and transfer functions matter, and applying descriptions before
+	 * knowing what they are. This lets us destroy them inside their
+	 * callbacks before their parameters arrive, and so we get away with
+	 * not storing anything. This also has the advantage of letting us
+	 * abide to the last description in a burst without any guarding logic. */
+	struct wp_image_description_v1 *desc =
+		wp_color_management_surface_feedback_v1_get_preferred_parametric(
+			feedback);
+	wp_image_description_v1_add_listener(desc, &listen_image_desc, wl);
 }
 
 static bool test_mod(struct xkb_state *state, const char *name) {

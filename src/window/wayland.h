@@ -33,7 +33,6 @@ struct wayland_color {
 	struct wp_color_manager_v1 *bind;
 	struct wp_color_management_surface_v1 *surf;
 	struct wp_color_management_surface_feedback_v1 *feedback;
-	struct wp_image_description_v1 *desc;
 };
 
 union wayland_content {
