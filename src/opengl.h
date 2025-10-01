@@ -34,11 +34,12 @@ struct gl_context {
 
 	struct gl_image_info {
 		enum image_mode mode:8;
-		enum alpha_interpretation alpha:8;
+		enum alpha_interpretation alpha:2;
 		unsigned subsamp:4;
 		bool no_transform:1;
 		bool mirror:1;
 		uint8_t rotate;
+		uint8_t bitdepth;
 		int shown_frame;
 		float fit_zoom;
 		float ratio;
@@ -50,6 +51,7 @@ struct gl_context {
 	bool update;
 	bool unmultiply;
 
+	const struct wuimg *img;
 	struct color_space tgt;
 	cmsHPROFILE icc_tgt;
 };

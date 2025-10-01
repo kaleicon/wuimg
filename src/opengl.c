@@ -258,10 +258,54 @@ const struct wu_state *state) {
 	}
 }
 
+static void uni_tf(const GLint fn, const GLint args,
+const struct color_transfer *tf) {
+	glUniform1i(fn, tf->fn);
+	glUniform1fv(args, ARRAY_LEN(tf->args), tf->args);
+}
+
+static enum color_steps colorspace_update(struct gl_context *context) {
+	const struct wuimg *img = context->img;
+	const struct color_space *cs = &img->cs;
+	const GLint *uni = context->uni;
+
+	const uint8_t bd = context->tex.bitdepth;
+	bool is_planar = false;
+	double scale = 1;
+	switch (img->mode) {
+	case image_mode_planar:
+		is_planar = true;
+		// fallthrough
+	case image_mode_raw:
+		if (img->attr != pix_float && img->bitrange < bd) {
+			scale = (exp2(bd) - 1) / (exp2(img->bitrange) - 1);
+		}
+		break;
+	case image_mode_palette:
+		scale = (exp2(8) - 1) / (exp2(img->bitrange) - 1);
+		break;
+	case image_mode_bitfield:
+		break;
+	}
+
+	struct color_convert conv;
+	color_space_walk(cs, &context->tgt, &conv, img->layout == pix_gray,
+		is_planar, scale);
+	glUniform4fv(uni[gl_uni_REMAP], 2, conv.map.mul);
+	glUniformMatrix3fv(uni[gl_uni_MAT_NONLINEAR], 1, GL_FALSE,
+		conv.nonlinear.m);
+	uni_tf(uni[gl_uni_EOTF_FN], uni[gl_uni_EOTF_ARGS], &conv.eotf);
+	glUniformMatrix3fv(uni[gl_uni_MAT_CMS], 1, GL_FALSE,
+		conv.linear.m);
+	uni_tf(uni[gl_uni_OETF_FN], uni[gl_uni_OETF_ARGS], &conv.oetf);
+	return conv.steps;
+}
+
 bool gl_draw(struct gl_context *context, const struct wu_state *state) {
 	if (context->update) {
 		gl_clock_start(context);
 		matrix_update(context, state);
+		colorspace_update(context);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		gl_clock_end();
@@ -718,13 +762,8 @@ const struct wuimg *img) {
 				? op_noop : op_unpack;
 			break;
 		default:
-			if (bd > 16) {
-				params->op = op_pack;
-				bd = 16;
-			} else {
-				params->op = op_unpack;
-				bd = bd > 8 ? 16 : 8;
-			}
+			params->op = bd > 16 ? op_pack : op_unpack;
+			bd = bd > 8 ? 16 : 8;
 		}
 		break;
 	case pix_float:
@@ -791,42 +830,9 @@ cmsHPROFILE out) {
 	return true;
 }
 
-static void uni_tf(const GLint fn, const GLint args,
-const struct color_transfer *tf) {
-	glUniform1i(fn, tf->fn);
-	glUniform1fv(args, ARRAY_LEN(tf->args), tf->args);
-}
-
-static void set_cms(struct gl_context *context, const struct wuimg *img,
-const struct gl_upload_params *params) {
-	const struct color_space *cs = &img->cs;
-	const GLint *uni = context->uni;
-
-	bool is_planar = false;
-	double scale = 1;
-	switch (img->mode) {
-	case image_mode_planar:
-		is_planar = true;
-		// fallthrough
-	case image_mode_raw:
-		if (img->attr != pix_float && img->bitrange < params->bd) {
-			scale = (exp2(params->bd) - 1) / (exp2(img->bitrange) - 1);
-		}
-		break;
-	case image_mode_palette:
-		scale = (exp2(8) - 1) / (exp2(img->bitrange) - 1);
-		break;
-	case image_mode_bitfield:
-		break;
-	}
-
-	struct color_convert conv;
-	color_space_walk(cs, &context->tgt, &conv, img->layout == pix_gray,
-		is_planar, scale);
-	glUniform4fv(uni[gl_uni_REMAP], 2, conv.map.mul);
-	glUniformMatrix3fv(uni[gl_uni_MAT_NONLINEAR], 1, GL_FALSE,
-		conv.nonlinear.m);
-
+static void set_cms(struct gl_context *context) {
+	const enum color_steps steps = colorspace_update(context);
+	const struct color_space *cs = &context->img->cs;
 	enum gl_cms_mode {
 		gl_cms_none,
 		gl_cms_spacewalk,
@@ -843,15 +849,11 @@ const struct gl_upload_params *params) {
 	}
 	if (mode != gl_cms_lut) {
 		tex_cms(0);
-		uni_tf(uni[gl_uni_EOTF_FN], uni[gl_uni_EOTF_ARGS], &conv.eotf);
-		if ((conv.steps & color_step_linear)) {
+		if ((steps & color_step_linear)) {
 			mode = gl_cms_spacewalk;
-			glUniformMatrix3fv(uni[gl_uni_MAT_CMS], 1, GL_FALSE,
-				conv.linear.m);
 		}
 	}
-	uni_tf(uni[gl_uni_OETF_FN], uni[gl_uni_OETF_ARGS], &conv.oetf);
-	glUniform1i(uni[gl_uni_MODE_CMS], mode);
+	glUniform1i(context->uni[gl_uni_MODE_CMS], mode);
 }
 
 static bool close_to_int(const float n) {
@@ -891,22 +893,24 @@ const struct wuimg *img, const enum heed_ratio heed) {
 		return gl_upload_fail;
 	}
 
-	set_cms(context, img, &params);
-
+	context->img = img;
+	context->tex.alpha = img->alpha;
 	context->tex.subsamp = 0;
+	context->tex.no_transform = img->scalable;
+	context->tex.mirror = img->mirror;
+	context->tex.rotate = img->rotate;
+	context->tex.bitdepth = params.bd;
+	context->tex.shown_frame = img->frames ? img->frames->current : 0;
+	context->tex.ratio = get_pixel_ratio(img, heed);
+	set_cms(context);
+	set_alpha_ops(context);
+
 	if (!mode_upload(context, img, &params, NULL)) {
 		return gl_upload_fail;
 	}
 	gl_clock_end();
 
-	context->tex.no_transform = img->scalable;
-	context->tex.rotate = img->rotate;
-	context->tex.mirror = img->mirror;
-	context->tex.alpha = img->alpha;
-	context->tex.shown_frame = img->frames ? img->frames->current : 0;
-	context->tex.ratio = get_pixel_ratio(img, heed);
 	context->update = true;
-	set_alpha_ops(context);
 	if (context->tex.w != (float)img->w || context->tex.h != (float)img->h) {
 		context->tex.w = (float)img->w;
 		context->tex.h = (float)img->h;
