@@ -40,3 +40,4 @@ if cc.get_id() == 'gcc'
 endif
 
 subdir('src')
+subdir('test')

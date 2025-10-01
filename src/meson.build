@@ -244,3 +244,4 @@ custom_target('formats',
 	output : 'FORMATS.txt',
 	command : [python, comptime, '-all', 'show'],
 	build_by_default : false)
+incdir = include_directories('.')

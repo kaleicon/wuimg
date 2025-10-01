@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "raster/pix.h"
 #include "raster/pal.h"
 
 struct sewing_clothe {

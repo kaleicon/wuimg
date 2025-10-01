@@ -298,7 +298,8 @@ const enum gl_min_filter min, const enum gl_mag_filter mag) {
 
 static void tex_2d_swizzle(const enum pix_layout layout) {
 	GLint swz[] = {GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA};
-	pix_layout_swizzle(swz, sizeof(*swz), ARRAY_LEN(swz), layout);
+	pix_layout_swizzle_buf(swz, sizeof(*swz), ARRAY_LEN(swz), pix_rgba,
+		layout);
 	glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swz);
 }
 
@@ -520,24 +521,32 @@ const struct plane_info *p) {
 
 static bool planar_upload(struct gl_context *context,
 const struct wuimg *img, const struct gl_upload_params *params) {
-	uint8_t map[4];
-	pix_layout_invert(map, img->layout);
-	float pos[4][4] = {0};
-	for (uint8_t i = 0; i < 4; ++i) {
-		tex_active(map[i]);
-		if (i < img->channels) {
-			const struct plane_info *p = img->u.planes->p + i;
-			tex_upload(context, img, params, p->w, p->h, p->ptr);
-			subsamp_positioning(pos[i], img, p);
-			context->tex.subsamp |=
-				((p->x.subsamp > 1) | (p->y.subsamp > 1)) << i;
-		} else {
+	/* FIXME: This function works perfectly, but it may be even better if
+	 * we could read planes in memory order. Maybe not worth it though. */
+	bool skip[4];
+	for (uint8_t z = 0; z < ARRAY_LEN(skip); ++z) {
+		skip[z] = z >= img->channels;
+	}
+	float pos[4][4];
+	for (uint8_t dst_z = 0; dst_z < ARRAY_LEN(skip); ++dst_z) {
+		const uint8_t src_z = pix_layout_offset(img->layout, dst_z);
+		tex_active(dst_z);
+		if (skip[src_z]) {
 			tex_2d_solid();
+			memset(pos + dst_z, 0, sizeof(*pos));
+		} else {
+			const struct plane_info *p = img->u.planes->p + src_z;
+			tex_upload(context, img, params, p->w, p->h, p->ptr);
+			subsamp_positioning(pos[dst_z], img, p);
+			context->tex.subsamp |=
+				((p->x.subsamp > 1) | (p->y.subsamp > 1)) << dst_z;
+			skip[src_z] = true;
 		}
 		const GLenum err = glGetError();
 		if (err) {
 			fprintf(stderr, "Encountered error %x when uploading "
-				"plane %d: %s\n", err, i, gl_strerror(err));
+				"image plane %d to GL texture %d: %s\n",
+				err, src_z, dst_z, gl_strerror(err));
 			return false;
 		}
 	}

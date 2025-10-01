@@ -206,8 +206,8 @@ static bool read_extension_area(struct tga_desc *desc, struct wuimg *img) {
 	meta->software.version_number = buf_endian16(buf, little_endian);
 	meta->software.version_letter = (char)buf[2];
 	memcpy(&meta->key_color, buf + 3, sizeof(meta->key_color));
-	pix_layout_swizzle(&meta->key_color, 1, sizeof(meta->key_color),
-		pix_bgra);
+	pix_layout_swizzle_buf(&meta->key_color, 1, sizeof(meta->key_color),
+		pix_rgba, pix_bgra);
 
 	wuimg_aspect_ratio(img, buf_endian16(buf + 7, little_endian),
 		buf_endian16(buf + 9, little_endian));

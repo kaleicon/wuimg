@@ -838,7 +838,7 @@ const struct wuimg *src) {
 		.unpack_depth = dst->bitdepth,
 		.unpack_ch = dst->channels,
 	};
-	pix_layout_map(state->swz, src->layout);
+	pix_layout_min_map(state->swz, src->layout);
 
 	/* Colorspace operations require that we convert image components to
 	 * floats. We can do that directly when the original uses 8-bit ints,

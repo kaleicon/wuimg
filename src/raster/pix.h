@@ -38,8 +38,6 @@ enum pix_attr {
 	pix_float,
 };
 
-typedef uint16_t upack1555_t;
-
 struct pix_rgb8 {
 	uint8_t r, g, b;
 };
@@ -54,15 +52,18 @@ enum pix_layout pix_layout_pack(uint8_t l1, uint8_t l2, uint8_t l3, uint8_t l4);
 
 uint8_t pix_layout_offset(enum pix_layout layout, enum pix_color color);
 
-void pix_layout_swizzle(void *buf, size_t size, size_t nmemb,
-enum pix_layout layout);
+void pix_layout_swizzle(void *restrict dst, const void *restrict src,
+size_t size, uint8_t nmemb, enum pix_layout dst_l, enum pix_layout src_l);
+
+void pix_layout_swizzle_buf(void *buf, uint8_t size, uint8_t nmemb,
+enum pix_layout dst_l, enum pix_layout src_l);
 
 enum pix_layout pix_layout_mul(enum pix_layout l1, enum pix_layout l2);
 
+uint8_t pix_layout_min_map(uint8_t map[static 4], enum pix_layout layout);
+
+uint8_t pix_layout_repr(uint8_t str[static 4], enum pix_layout layout);
+
 void pix_layout_print(enum pix_layout layout, FILE *out);
-
-uint8_t pix_layout_invert(uint8_t map[static 4], enum pix_layout layout);
-
-uint8_t pix_layout_map(uint8_t map[static 4], enum pix_layout layout);
 
 #endif /* RASTER_PIX */
