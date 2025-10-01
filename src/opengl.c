@@ -32,6 +32,7 @@
 #define UNI_OETF_ARGS "oetf_args"
 #define UNI_POSITIONING "posit"
 #define UNI_REMAP "remap"
+#define UNI_LUM_SCALE "lum_scale"
 
 #define COLOR_RAW "0"
 #define COLOR_PALETTE "1"
@@ -298,6 +299,11 @@ static enum color_steps colorspace_update(struct gl_context *context) {
 	glUniformMatrix3fv(uni[gl_uni_MAT_CMS], 1, GL_FALSE,
 		conv.linear.m);
 	uni_tf(uni[gl_uni_OETF_FN], uni[gl_uni_OETF_ARGS], &conv.oetf);
+
+	const struct color_space_luminance lum = context->tgt.lum;
+	const float max = fmaxf(lum.max, 1.0);
+	const float ref = lum.ref ? lum.ref : max;
+	glUniform1f(uni[gl_uni_LUM_SCALE], ref/max);
 	return conv.steps;
 }
 
@@ -1131,6 +1137,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 		"uniform int " UNI_OETF_FN ";"
 		"uniform float[5] " UNI_OETF_ARGS ";"
 		"uniform vec4[2] " UNI_REMAP ";"
+		"uniform float " UNI_LUM_SCALE ";"
 
 		"void gen_check_pattern() {"
 			"ivec2 d = ivec2(gl_FragCoord.xy);"
@@ -1245,7 +1252,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 					"color.rgb *=" UNI_MAT_CMS ";"
 				"}"
 			"}"
-
+			"color.rgb *= vec3(" UNI_LUM_SCALE ");"
 			"switch (" UNI_MODE_ALPHA "[0]) {"
 			"case " ALPHA_COLOR_MULTIPLY ": color.rgb *= color.aaa; break;"
 			"case " ALPHA_COLOR_NO_MULTIPLY ": break;"

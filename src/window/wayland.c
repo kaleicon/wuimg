@@ -272,6 +272,16 @@ struct wp_image_description_info_v1 *info, uint32_t tf) {
 	tgt->transfer = wp_tf_to_cicp(tf);
 }
 
+static void image_info_luminances(void *data,
+struct wp_image_description_info_v1 *info, uint32_t min, uint32_t max,
+uint32_t ref) {
+	(void)info; (void)min;
+	struct wayland *wl = data;
+	struct color_space *tgt = &wl->pub->gl.tgt;
+	tgt->lum.max = (uint16_t)u32min(max, UINT16_MAX);
+	tgt->lum.ref = (uint16_t)u32min(ref, UINT16_MAX);
+}
+
 static const struct wp_image_description_info_v1_listener listen_image_info = {
 	.done = image_info_done,
 	.icc_file = null_function,
@@ -279,7 +289,7 @@ static const struct wp_image_description_info_v1_listener listen_image_info = {
 	.primaries_named = image_info_primaries_named,
 	.tf_power = image_info_tf_power,
 	.tf_named = image_info_tf_named,
-	.luminances = null_function,
+	.luminances = image_info_luminances,
 	.target_primaries = null_function,
 	.target_luminance = null_function,
 	.target_max_cll = null_function,

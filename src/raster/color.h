@@ -124,9 +124,11 @@ struct color_space {
 	enum cicp_primaries primaries:8;
 	enum cicp_transfer transfer:8;
 	enum cicp_matrix matrix:8;
-	bool limited;
-
-	enum color_profile_type type:8;
+	bool limited:1;
+	enum color_profile_type type:2;
+	struct color_space_luminance {
+		uint16_t max, ref;
+	} lum;
 	struct color_space_desc *desc;
 };
 
