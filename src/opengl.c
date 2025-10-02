@@ -259,13 +259,19 @@ const struct wu_state *state) {
 	}
 }
 
+static float get_lum_scale(const struct color_space_luminance lum) {
+	const float max = fmaxf(lum.max, 1.0);
+	const float ref = lum.ref ? lum.ref : max;
+	return ref/max;
+}
+
 static void uni_tf(const GLint fn, const GLint args,
 const struct color_transfer *tf) {
 	glUniform1i(fn, tf->fn);
 	glUniform1fv(args, ARRAY_LEN(tf->args), tf->args);
 }
 
-static enum color_steps colorspace_update(struct gl_context *context) {
+static enum color_steps colorspace_update(const struct gl_context *context) {
 	const struct wuimg *img = context->img;
 	const struct color_space *cs = &img->cs;
 	const GLint *uni = context->uni;
@@ -300,11 +306,21 @@ static enum color_steps colorspace_update(struct gl_context *context) {
 		conv.linear.m);
 	uni_tf(uni[gl_uni_OETF_FN], uni[gl_uni_OETF_ARGS], &conv.oetf);
 
-	const struct color_space_luminance lum = context->tgt.lum;
-	const float max = fmaxf(lum.max, 1.0);
-	const float ref = lum.ref ? lum.ref : max;
-	glUniform1f(uni[gl_uni_LUM_SCALE], ref/max);
+	glUniform1f(uni[gl_uni_LUM_SCALE], get_lum_scale(context->tgt.lum));
 	return conv.steps;
+}
+
+static void set_clear_color(const struct gl_context *context) {
+	const uint8_t *bg = context->bg;
+	const float scale = get_lum_scale(context->tgt.lum);
+	const float to_float = 1.0f / UCHAR_MAX;
+	const float alpha = (float)bg[3] * to_float;
+	const float a_s = alpha * scale;
+	float rgb[3];
+	for (size_t i = 0; i < ARRAY_LEN(rgb); ++i) {
+		rgb[i] = powf(powf(bg[i] * to_float, 2.2f) * a_s, 1/2.2f);
+	}
+	glClearColor(rgb[0], rgb[1], rgb[2], alpha);
 }
 
 bool gl_draw(struct gl_context *context, const struct wu_state *state) {
@@ -312,6 +328,7 @@ bool gl_draw(struct gl_context *context, const struct wu_state *state) {
 		gl_clock_start(context);
 		matrix_update(context, state);
 		colorspace_update(context);
+		set_clear_color(context);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		gl_clock_end();
@@ -321,14 +338,8 @@ bool gl_draw(struct gl_context *context, const struct wu_state *state) {
 	return false;
 }
 
-void gl_clear_color(const uint8_t bg[static 4]) {
-	const float scale = 1.0f / UCHAR_MAX;
-	const float alpha = (float)bg[3] * scale;
-	float rgb[3];
-	for (size_t i = 0; i < ARRAY_LEN(rgb); ++i) {
-		rgb[i] = bg[i] * scale * alpha;
-	}
-	glClearColor(rgb[0], rgb[1], rgb[2], alpha);
+void gl_clear_color(struct gl_context *context, const uint8_t bg[static 4]) {
+	memcpy(context->bg, bg, sizeof(context->bg));
 }
 
 void gl_viewport(struct gl_context *context, const struct display_dims *dims) {
@@ -1336,9 +1347,8 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 	glDisable(GL_POLYGON_SMOOTH);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	if (conf->bg_src == bg_default) {
-		gl_clear_color(conf->bg);
-	}
+
+	gl_clear_color(context, conf->bg);
 
 	GLuint mts;
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint *)&mts);

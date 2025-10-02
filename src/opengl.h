@@ -47,6 +47,7 @@ struct gl_context {
 	} tex;
 	float pix_size[2];
 
+	uint8_t bg[4];
 	uint8_t user_alpha;
 	bool update;
 	bool unmultiply;
@@ -68,7 +69,7 @@ void gl_viewport(struct gl_context *context, const struct display_dims *dims);
 
 bool gl_draw(struct gl_context *context, const struct wu_state *state);
 
-void gl_clear_color(const uint8_t bg[static 4]);
+void gl_clear_color(struct gl_context *context, const uint8_t bg[static 4]);
 
 enum gl_upload_status gl_texture_upload(struct gl_context *context,
 const struct wuimg *img, enum heed_ratio heed);

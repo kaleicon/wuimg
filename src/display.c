@@ -32,7 +32,8 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 	return result;
 }
 
-static void set_background_color(const struct image_context *image) {
+static void set_background_color(struct window_context *window,
+const struct image_context *image) {
 	const struct wu_conf *conf = &image->conf;
 	if (conf->bg_src != bg_default) {
 		const struct image_file *infile = &image->file;
@@ -44,7 +45,7 @@ static void set_background_color(const struct image_context *image) {
 		} else {
 			memcpy(bg, conf->bg, sizeof(bg));
 		}
-		gl_clear_color(bg);
+		gl_clear_color(&window->pub.gl, bg);
 	}
 }
 
@@ -164,7 +165,7 @@ const bool allow_cycle, const bool allow_delete) {
 		.image = ev_subcycle, // for init only, not passed to image
 	};
 
-	set_background_color(image);
+	set_background_color(window, image);
 	window_set_title(window, image->name);
 
 	double next_frame = INFINITY;
