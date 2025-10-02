@@ -273,7 +273,8 @@ static int open_dirfd(const char *str) {
 	return open(str, O_RDONLY | O_DIRECTORY);
 }
 
-int fs_get_parent_dir(struct fs_path *path, const char *str, bool must_exist) {
+int fs_get_dir_or_parent(struct fs_path *path, const char *str,
+const bool allow_parent) {
 	int dfd = -1;
 	const struct wuptr name = wuptr_str(str);
 	if (name.len) {
@@ -284,7 +285,7 @@ int fs_get_parent_dir(struct fs_path *path, const char *str, bool must_exist) {
 				close(dfd);
 				return -1;
 			}
-		} else if (errno == ENOTDIR || !must_exist) {
+		} else if (errno == ENOTDIR && allow_parent) {
 			errno = 0;
 			if (fs_path_set_path(path, name)) {
 				dfd = open_dirfd(path->parent.str[0]
@@ -307,7 +308,7 @@ int fs_get_parent_dir(struct fs_path *path, const char *str, bool must_exist) {
 
 static bool get_files(struct fs_dir *dir, const char *name,
 struct fs_entry *init_key) {
-	const int dfd = fs_get_parent_dir(&dir->path, name, true);
+	const int dfd = fs_get_dir_or_parent(&dir->path, name, true);
 	bool status = false;
 	if (dfd >= 0) {
 		DIR *dp = fdopendir(dfd);

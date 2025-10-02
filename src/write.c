@@ -244,8 +244,9 @@ FILE *ofp) {
 static bool init_write_file(struct write_file *out,
 const struct write_args *args, const struct image_context *image) {
 	struct fs_path path;
-	out->dirfd = fs_get_parent_dir(&path,
-		args->outdir ? args->outdir : image->name, false);
+	out->dirfd = fs_get_dir_or_parent(&path,
+		args->outdir ? args->outdir : image->name,
+		!args->outdir);
 	if (out->dirfd >= 0) {
 		fs_path_set_file(&path, wuptr_str(image->name));
 		out->name_base = path.file.len;
