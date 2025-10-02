@@ -760,14 +760,14 @@ static const struct xdg_wm_base_listener listen_wm_base = {
 
 static void reg_global(void *data, struct wl_registry *reg, const uint32_t name,
 const char *interface, const uint32_t version) {
-	(void)version;
 	struct wayland *wl = data;
 	if (!strcmp(interface, wl_compositor_interface.name)) {
 		wl->comp = wl_registry_bind(reg, name, &wl_compositor_interface, 1);
 	} else if (!strcmp(interface, wl_shm_interface.name)) {
 		wl->shm = wl_registry_bind(reg, name, &wl_shm_interface, 1);
-	} else if (!strcmp(interface, wl_seat_interface.name)) {
-		wl->seat = wl_registry_bind(reg, name, &wl_seat_interface, 1);
+	} else if (!strcmp(interface, wl_seat_interface.name) && version >= 3) {
+		// Version 3 required for wl_pointer_release()
+		wl->seat = wl_registry_bind(reg, name, &wl_seat_interface, 3);
 		wl_seat_add_listener(wl->seat, &listen_seat, wl);
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
 		wl->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
