@@ -14,10 +14,10 @@ struct wgtspr_desc {
 
 void wgtspr_cleanup(struct wgtspr_desc *desc);
 
-size_t wgtspr_get_sprite(const struct wgtspr_desc *desc, struct wuimg *img);
+struct wu_st wgtspr_get_sprite(const struct wgtspr_desc *desc, struct wuimg *img);
 
-enum wu_error wgtspr_next_sprite(struct wgtspr_desc *desc, struct wuimg *img);
+struct wu_st wgtspr_next_sprite(struct wgtspr_desc *desc, struct wuimg *img);
 
-enum wu_error wgtspr_init(struct wgtspr_desc *desc, FILE *ifp);
+struct wu_st wgtspr_init(struct wgtspr_desc *desc, FILE *ifp);
 
 #endif /* LIB_WGTSPR */

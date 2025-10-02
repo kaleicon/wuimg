@@ -8,69 +8,58 @@ void wgtspr_cleanup(struct wgtspr_desc *desc) {
 	palette_unref(desc->pal);
 }
 
-size_t wgtspr_get_sprite(const struct wgtspr_desc *desc, struct wuimg *img) {
-	return wuimg_alloc_noverify(img) ? fmt_load_raster(img, desc->ifp) : 0;
+struct wu_st wgtspr_get_sprite(const struct wgtspr_desc *desc, struct wuimg *img) {
+	return fmt_load_raster_st(img, desc->ifp);
 }
 
-enum wu_error wgtspr_next_sprite(struct wgtspr_desc *desc, struct wuimg *img) {
+struct wu_st wgtspr_next_sprite(struct wgtspr_desc *desc, struct wuimg *img) {
 	uint16_t buf[3];
 	const size_t read = fread(buf, sizeof(*buf), ARRAY_LEN(buf), desc->ifp);
 	if (!read) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	const uint16_t used = endian16(buf[0], little_endian);
+	const uint16_t used = endian16l(buf[0]);
 	if (used) {
 		if (read == ARRAY_LEN(buf)) {
-			img->w = endian16(buf[1], little_endian);
-			img->h = endian16(buf[2], little_endian);
+			img->w = endian16l(buf[1]);
+			img->h = endian16l(buf[2]);
 			img->channels = 1;
 			img->bitdepth = 8;
+			img->bitrange = 6;
 			wuimg_palette_set(img, palette_ref(desc->pal));
-			return wuimg_verify(img);
+			return WU_OK;
 		}
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	fseek(desc->ifp, -4, SEEK_CUR);
-	return wu_no_change;
+	return WU_NO_CHANGE;
 }
 
-enum wu_error wgtspr_init(struct wgtspr_desc *desc, FILE *ifp) {
+struct wu_st wgtspr_init(struct wgtspr_desc *desc, FILE *ifp) {
 	*desc = (struct wgtspr_desc){
 		.ifp = ifp,
 	};
 	const uint8_t magic[13] = " Sprite File ";
 	uint8_t buf[2 + sizeof(magic)];
 	if (!fread(buf, sizeof(buf), 1, ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	desc->version = buf_endian16(buf, little_endian);
+	desc->version = buf_endian16l(buf);
 	if (desc->version <= 5 && !memcmp(magic, buf + 2, sizeof(magic))) {
 		struct palette *pal = palette_new();
-		if (!pal) {
-			return wu_alloc_error;
-		}
-		desc->pal = pal;
-		const enum wu_error st = fmt_load_pal(ifp, pal, fmt_pal_rgb, 256);
-		if (st == wu_ok) {
-			if (fread(buf, 2, 1, ifp)) {
-				desc->sprites = buf_endian16(buf, little_endian)
+		if (pal) {
+			desc->pal = pal;
+			if (palette_from_file(pal, 3, 256, ifp, 6)
+			&& fread(buf, 2, 1, ifp)) {
+				desc->sprites = buf_endian16l(buf)
 					+ (uint32_t)(desc->version >= 4);
-				desc->ifp = ifp;
-				const uint8_t sh = 8;
-				const unsigned scale = (0xff << sh) / 0x3f + 1;
-				for (size_t i = 0; i < ARRAY_LEN(pal->color); ++i) {
-					struct pix_rgba8 *c = pal->color + i;
-					c->r = (uint8_t)((c->r * scale) >> 8);
-					c->g = (uint8_t)((c->g * scale) >> 8);
-					c->b = (uint8_t)((c->b * scale) >> 8);
-				}
-				return wu_ok;
+				return WU_OK;
 			}
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
-		return st;
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return wu_unknown_file_type;
+	return WUERR_HERE(wu_invalid_signature);
 }

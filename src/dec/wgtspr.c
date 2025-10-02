@@ -3,15 +3,15 @@
 #include "wudefs.h"
 #include "lib/wgtspr.h"
 
-static enum wu_error wrapper(struct image_file *infile,
+static struct wu_st wrap_wgtspr_loop(struct image_file *infile,
 const struct wu_conf *conf, struct wgtspr_desc *desc) {
-	enum wu_error st = wgtspr_init(desc, infile->ifp);
-	if (st != wu_ok) {
+	struct wu_st st = wgtspr_init(desc, infile->ifp);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
 	if (!alloc_sub_images(infile, desc->sprites)) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	tree_bud_leaf_u(&infile->metadata, "Version", desc->version);
@@ -22,13 +22,12 @@ const struct wu_conf *conf, struct wgtspr_desc *desc) {
 	for (size_t i = 0; i < desc->sprites; ++i) {
 		struct wuimg *img = infile->sub_img + decoded;
 		st = wgtspr_next_sprite(desc, img);
-		switch (st) {
+		switch (st.st) {
 		case wu_ok:
-			if (!wuimg_exceeds_limit(img, conf)) {
-				if (wgtspr_get_sprite(desc, img)) {
-					++decoded;
-					continue;
-				}
+			if (wuimg_alloc_limit(img, conf) == wu_ok
+			&& wu_isok(wgtspr_get_sprite(desc, img))) {
+				++decoded;
+				continue;
 			}
 			break;
 		case wu_no_change:
@@ -39,19 +38,19 @@ const struct wu_conf *conf, struct wgtspr_desc *desc) {
 		}
 		wuimg_clear(img);
 	}
-	return (unused == desc->sprites)
-		? wu_no_image_data : image_file_total_decoded(infile, decoded);
+	return WUERR_CHECK((unused == desc->sprites)
+		? wu_no_image_data : image_file_total_decoded(infile, decoded));
 
 }
 
-static enum wu_error wgtspr_dec(struct image_file *infile,
+static struct wu_st init_wgtspr(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct wgtspr_desc desc;
-	const enum wu_error st = wrapper(infile, conf, &desc);
+	const struct wu_st st = wrap_wgtspr_loop(infile, conf, &desc);
 	wgtspr_cleanup(&desc);
 	return st;
 }
 
 const struct image_fn wgtspr_fn = {
-	.dec = wgtspr_dec,
+	.init = init_wgtspr,
 };
