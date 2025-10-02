@@ -38,7 +38,7 @@ struct wu_st prt_decode(const struct prt_desc *desc, struct wuimg *img) {
 		turn_mask(&sew);
 		strip_sew_free_alpha(&sew);
 	}
-	return wuerr_partial(w, sew.color.len + sew.alpha.len);
+	return wuerr_partial(w, sew.color.len + (desc->mask ? sew.alpha.len : 0));
 }
 
 struct wu_st prt_parse(struct prt_desc *desc, struct wuimg *img, FILE *ifp) {
@@ -106,11 +106,8 @@ struct wu_st prt_parse(struct prt_desc *desc, struct wuimg *img, FILE *ifp) {
 		struct palette *pal = palette_new();
 		if (!pal) {
 			return WUERR_HERE(wu_alloc_error);
-		}
-
-		enum wu_error e = fmt_load_pal(ifp, pal, fmt_pal_rgbx, 256);
-		if (e != wu_ok) {
-			return WUERR_HERE(e);
+		} else if (!palette_from_file(pal, 4, 256, ifp, 8)) {
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 		if (desc->mask) {
 			desc->pal = pal;
