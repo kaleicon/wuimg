@@ -1,8 +1,9 @@
                                      wuimg
                               Frugal image viewer
 
-wu is a minimalistic but not barebones image viewer. It aims for comfort,
-speed, accurate color rendering, and format documentation/preservation.
+wu is a minimalistic image viewer, one with maximalist aims for comfort, speed,
+accurate color rendering, and format documentation and preservation. It may or
+may not be currently hitting any of those goals.
 
 wu is meant as a terminal companion, so launching from one is recommended.
 
@@ -11,11 +12,14 @@ Features
 --------
 * Few keybindings
 * No graphical elements besides the image; all status text goes to stdout
-* Displays EXIF, XMP, and format-specific metadata
+* Displays EXIF, XMP, and format-specific comments and metadata
 * Support for embedded ICC profiles and format-specific colorspaces
   * At the moment, images are converted to sRGB for display
+  * There is experimental HDR display support on Wayland, see below
 * Browse archives, via libarchive
 * Doesn't modify the original file when rotating!
+* Doesn't recurse infinitely into directories!
+  * Use `find -exec` for that
 * Runs on Wayland, DRM/KMS, and X11
 * Transcode into PAM or JXL
 
@@ -135,7 +139,7 @@ don't trust me or the C language in general), run some of the following:
 
 	# Optimize for the current CPU, at the expense of probably not
 	# running on a different machine.
-	meson configure -D c_args=-march=native FUZZBUILD
+	meson configure -D c_args=-march=native BUILDDIR
 
 	# Disable all decoders and window backends by default
 	meson configure --auto-features disabled BUILDDIR
@@ -144,7 +148,7 @@ Once you're ready, run
 
 	meson install -C BUILDDIR
 
-A lone executable `wu` and a .desktop file will be installed to whatever
+A lone executable `wu` and .desktop files will be installed to whatever
 location meson uses as default. This is typically /usr/local, which typically
 requires root privileges. To set a different location, do
 
@@ -226,6 +230,16 @@ bg_source = metadata          # enum. Specified as the value name sans prefix
 no_window_decorations = true  # bool. Specified as 'true' or 'false'. Don't you
                               # try to cheat using 0 or 1.
 -------------------------------------------------------------------------------
+
+
+HDR display
+-----------
+There is experimental, woefully undertested HDR support on Wayland. It requires
+a Wayland compositor supporting the color-management protocol
+(https://wayland.app/protocols/color-management-v1), and setting
+`naive_window_colorspace = false` in the config file.
+
+As a reminder, it's woefully undertested.
 
 
 Party tricks
