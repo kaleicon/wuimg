@@ -4,16 +4,46 @@
 #include "rast_utils.h"
 #include "wudefs.h"
 
-static enum wu_error wrapper(struct image_file *infile,
-const struct wu_conf *conf, struct idsp_desc *desc) {
-	enum wu_error st = idsp_init(desc, infile->ifp);
-	if (st != wu_ok) {
+static void end_idsp(struct image_file *infile) {
+	idsp_cleanup(infile->dec_state);
+}
+
+static struct wu_st event_idsp(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	if (ev != ev_subcycle) {
+		return WU_NO_CHANGE;
+	}
+
+	struct idsp_desc *desc = infile->dec_state;
+	while ((int)desc->cur_group <= state->idx) {
+		struct wuimg *img = infile->sub_img + desc->cur_group;
+		struct wu_st st = idsp_next_image(desc, img);
+		if (!wu_isok(st)) {
+			return st;
+		}
+		const enum wu_error e = wuimg_alloc_limit(img, conf);
+		if (e != wu_ok) {
+			return WUERR_HERE(e);
+		}
+		st = idsp_read_image(desc, img);
+		if (!wu_isok(st)) {
+			break;
+		}
+	}
+	return WU_OK;
+}
+
+static struct wu_st init_idsp(struct image_file *infile,
+const struct wu_conf *conf) {
+	(void)conf;
+	struct idsp_desc *desc = infile->dec_state;
+	struct wu_st st = idsp_init(desc, infile->ifp);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
-	struct wuimg *img = alloc_sub_images(infile, desc->frames);
-	if (!img) {
-		return wu_alloc_error;
+	if (!alloc_sub_images(infile, desc->groups)) {
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	struct wutree *tree = &infile->metadata;
@@ -27,33 +57,6 @@ const struct wu_conf *conf, struct idsp_desc *desc) {
 	tree_bud_leaf_f(tree, "Bounding radius", desc->radius);
 	tree_bud_leaf_f(tree, "Beam length", desc->beam_length);
 	tree_add_leaf_utf8(tree, "Synch", idsp_synch_str(desc->synch));
-
-	uint64_t i = 0;
-	while (i < desc->frames) {
-		st = idsp_next_image(desc, img);
-		if (st == wu_ok) {
-			if (!wuimg_exceeds_limit(img, conf)) {
-				if (idsp_read_image(desc, img)) {
-					++img;
-					++i;
-					continue;
-				}
-				st = wu_decoding_error;
-			} else {
-				st = wu_exceeds_size_limit;
-			}
-		}
-		image_file_error_append(infile, st);
-		break;
-	}
-	return image_file_total_decoded(infile, i);
-}
-
-static enum wu_error idsp_dec(struct image_file *infile,
-const struct wu_conf *conf) {
-	struct idsp_desc desc;
-	const enum wu_error st = wrapper(infile, conf, &desc);
-	idsp_cleanup(&desc);
 	return st;
 }
 
@@ -64,7 +67,10 @@ const struct wu_conf *conf) {
 }
 
 const struct image_fn idsp_fn = {
-	.dec = idsp_dec,
+	.state_size = sizeof(struct idsp_desc),
+	.init = init_idsp,
+	.event = event_idsp,
+	.end = end_idsp,
 };
 const struct image_fn lmp_fn = {
 	.alloc_single = true,

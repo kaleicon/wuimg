@@ -40,9 +40,13 @@ struct idsp_desc {
 	enum idsp_synch synch:8;
 	float radius;
 	uint32_t w, h;
-	uint32_t frames;
+	uint32_t groups;
 	float beam_length;
 	uint16_t entries;
+
+	uint32_t cur_group;
+	uint32_t cur_group_pic;
+	uint32_t group_pics;
 	struct palette *pal;
 };
 
@@ -54,11 +58,11 @@ const char * idsp_synch_str(enum idsp_synch s);
 
 void idsp_cleanup(struct idsp_desc *desc);
 
-size_t idsp_read_image(const struct idsp_desc *desc, struct wuimg *img);
+struct wu_st idsp_read_image(const struct idsp_desc *desc, struct wuimg *img);
 
-enum wu_error idsp_next_image(struct idsp_desc *desc, struct wuimg *img);
+struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img);
 
-enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp);
+struct wu_st idsp_init(struct idsp_desc *desc, FILE *ifp);
 
 
 enum wu_error lmp_init(struct wuimg *img, FILE *ifp);

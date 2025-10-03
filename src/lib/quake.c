@@ -320,32 +320,75 @@ void idsp_cleanup(struct idsp_desc *desc) {
 	palette_unref(desc->pal);
 }
 
-size_t idsp_read_image(const struct idsp_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		return fmt_load_raster(img, desc->ifp);
-	}
-	return 0;
+struct wu_st idsp_read_image(const struct idsp_desc *desc, struct wuimg *img) {
+	return fmt_load_raster_st(img, desc->ifp);
 }
 
-enum wu_error idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
-	uint32_t is_group;
-	if (!fread(&is_group, sizeof(is_group), 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
+struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
+	/* Group headers:
+		Offset  Type    Name
+		0       u32     GroupType
 
-	if (is_group) {
-		if (desc->version == idsp_half_life) {
-			return wu_invalid_header; // I think it's invalid
+	 * If GroupType == 0:
+		4       struct  Pic
+
+	 * Else:
+		4       u32     NrPics
+		8       f32     RelTime[NrPics]    // [*]
+		???     struct  Pic[NrPics]
+
+	 * Pic struct:
+		0       u32     X
+		4       u32     Y
+		8       u32     Width
+		12      u32     Height
+		16      u8      Data[Width*Height]
+
+	 * [*] Apparently, timings for each pic are in range [0.0, 1.0]
+	*/
+
+	// Skip group pics after the first one
+	uint32_t buf[4];
+	while (desc->cur_group_pic < desc->group_pics) {
+		if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+			return WUERR_HERE(wu_unexpected_eof);
 		}
-		return wu_unsupported_feature;
+		const size_t w = endian32l(buf[2]);
+		const size_t h = endian32l(buf[3]);
+		if (w && h) {
+			if (LONG_MAX / w / h == 0) {
+				return WUERR_HERE(wu_int_overflow);
+			}
+			fseek(desc->ifp, (long)(w*h), SEEK_CUR);
+		}
+		++desc->cur_group_pic;
 	}
 
-	uint32_t dims[4];
-	if (!fread(dims, sizeof(dims), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+	if (!fread(buf, sizeof(*buf)*2, 1, desc->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	img->w = endian32(dims[2], little_endian);
-	img->h = endian32(dims[3], little_endian);
+	if (buf[0]) { // TODO: samples needed
+		if (desc->version == idsp_half_life) {
+			// Not really sure this is forbidden
+			return wuerr(wu_invalid_header,
+				"group != 0 with Half-Life variant");
+		}
+		desc->group_pics = endian32l(buf[1]);
+		if (LONG_MAX / desc->group_pics / sizeof(float) == 0) {
+			return WUERR_HERE(wu_int_overflow);
+		}
+		fseek(desc->ifp, (long)(desc->group_pics * sizeof(float)),
+			SEEK_CUR);
+		desc->group_pics = 0;
+	} else {
+		fseek(desc->ifp, sizeof(uint32_t), SEEK_CUR);
+	}
+
+	if (!fread(buf, sizeof(*buf)*2, 1, desc->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	img->w = endian32l(buf[0]);
+	img->h = endian32l(buf[1]);
 	img->bitdepth = 8;
 	img->channels = 1;
 	switch (desc->version) {
@@ -357,57 +400,59 @@ enum wu_error idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 		img->channels = 4;
 		break;
 	}
-	return wuimg_verify(img);
+	++desc->cur_group;
+	desc->cur_group_pic = 1;
+	return WU_OK;
 }
 
-static enum wu_error common_header(struct idsp_desc *desc,
+static struct wu_st common_header(struct idsp_desc *desc,
 const uint8_t header[static 24]) {
-	const uint32_t synch = buf_endian32(header + 20, little_endian);
+	const uint32_t synch = buf_endian32l(header + 20);
 	switch (synch) {
 	case idsp_synchronized:
 	case idsp_random:
-		desc->radius = buf_endianf32(header, little_endian);
-		desc->w = buf_endian32(header + 4, little_endian);
-		desc->h = buf_endian32(header + 8, little_endian);
-		desc->frames = buf_endian32(header + 12, little_endian);
-		desc->beam_length = buf_endianf32(header + 16, little_endian);
+		desc->radius = buf_endianf32l(header);
+		desc->w = buf_endian32l(header + 4);
+		desc->h = buf_endian32l(header + 8);
+		desc->groups = buf_endian32l(header + 12);
+		desc->beam_length = buf_endianf32l(header + 16);
 		desc->synch = (enum idsp_synch)synch;
-		return desc->frames ? wu_ok : wu_no_image_data;
+		return desc->groups
+			? WU_OK : wuerr(wu_no_image_data, "no pic groups");
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "unrecognized synch value");
 }
 
-static enum wu_error ver2_header(struct idsp_desc *desc,
+static struct wu_st ver2_header(struct idsp_desc *desc,
 const uint8_t header[static 30]) {
-	const uint32_t alpha = buf_endian32(header, little_endian);
+	const uint32_t alpha = buf_endian32l(header);
 	switch (alpha) {
 	case idsp_alpha_normal:
 	case idsp_alpha_additive:
 	case idsp_alpha_indexed:
 	case idsp_alpha_test:
 		desc->alpha = (enum idsp_alpha)alpha;
-		const uint16_t entries = buf_endian16(header + 28, little_endian);
+		const uint16_t entries = buf_endian16l(header + 28);
 		if (entries && entries <= 256) {
 			desc->entries = entries;
 			desc->pal = palette_new();
 			if (desc->pal) {
 				struct palette *p = desc->pal;
-				const enum wu_error st = fmt_load_pal(desc->ifp,
-					p, fmt_pal_rgb, entries);
-				if (st == wu_ok) {
+				if (palette_from_file(p, 3, entries, desc->ifp, 8)) {
 					p->color[255].a = alpha == idsp_alpha_test
 						? 0x00 : 0xff;
 					return common_header(desc, header + 4);
 				}
-				return st;
+				return WUERR_HERE(wu_unexpected_eof);
 			}
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
+		return wuerr(wu_invalid_header, "palette entries == 0 or >256");
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "unrecognized alpha method");
 }
 
-enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
+struct wu_st idsp_init(struct idsp_desc *desc, FILE *ifp) {
 	/* IDSP common header:
 		Offset  Type    Name
 		0       u8      Magic[4]
@@ -419,7 +464,7 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 		0       f32     Radius
 		4       u32     MaxWidth
 		8       u32     MaxHeight
-		12      u32     Frames
+		12      u32     Groups
 		16      f32     BeamLength
 		20      u32     SynchType
 		24
@@ -429,7 +474,7 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 		4       f32     Radius
 		8       u32     MaxWidth
 		12      u32     MaxHeight
-		16      u32     Frames
+		16      u32     Groups
 		20      f32     BeamLength
 		24      u32     SynchType
 		28      u16     PalEntries
@@ -440,15 +485,15 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 	};
 	uint8_t header[42];
 	if (!fread(header, sizeof(header), 1, ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	const uint8_t sig[] = {'I', 'D', 'S', 'P'};
 	if (memcmp(header, sig, sizeof(sig))) {
-		return wu_invalid_signature;
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	const uint32_t version = buf_endian32(header + 4, little_endian);
-	const uint32_t type = buf_endian32(header + 8, little_endian);
+	const uint32_t version = buf_endian32l(header + 4);
+	const uint32_t type = buf_endian32l(header + 8);
 	switch (type) {
 	case idsp_vp_parallel_upright:
 	case idsp_facing_upright:
@@ -460,7 +505,7 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 		case idsp_quake:
 			desc->pal = get_quake_pal();
 			if (!desc->pal) {
-				return wu_alloc_error;
+				return WUERR_HERE(wu_alloc_error);
 			}
 			// fallthrough
 		case idsp_rgba:
@@ -471,8 +516,9 @@ enum wu_error idsp_init(struct idsp_desc *desc, FILE *ifp) {
 			desc->version = (enum idsp_version)version;
 			return ver2_header(desc, header + 12);
 		}
+		return wuerr(wu_invalid_header, "unrecognized version");
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "unrecognized sprite type");
 }
 
 /* LMP
@@ -488,8 +534,8 @@ enum wu_error lmp_init(struct wuimg *img, FILE *ifp) {
 	*/
 	uint32_t buf[2];
 	if (fread(buf, sizeof(buf), 1, ifp)) {
-		img->w = endian32(buf[0], little_endian);
-		img->h = endian32(buf[1], little_endian);
+		img->w = endian32l(buf[0]);
+		img->h = endian32l(buf[1]);
 		img->channels = 1;
 		img->bitdepth = 8;
 		if (wuimg_palette_set(img, get_quake_pal())) {

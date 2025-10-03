@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
+#include <string.h>
+
 #include "misc/endian.h"
 
 static uint16_t swap16(const uint16_t val) {
@@ -30,13 +32,10 @@ const char * endian_str(const enum endianness e) {
 }
 
 enum endianness which_end(void) {
-	/* This is not UB after C99, except for traps representations, so it
-	 * may be troublesome still, but there don't seem to be alternatives. */
-	union {
-		unsigned int ui;
-		unsigned char uc[sizeof(unsigned int)];
-	} test = {.ui = 1};
-	return test.uc[0] ? little_endian : big_endian;
+	unsigned int u = 1;
+	unsigned char c[sizeof(u)];
+	memcpy(c, &u, sizeof(u));
+	return c[0] ? little_endian : big_endian;
 }
 
 uint16_t endian16(const uint16_t val, const enum endianness e) {
@@ -59,9 +58,17 @@ uint32_t endian32l(const uint32_t val) {
 	return endian32(val, little_endian);
 }
 
-float endianf32(const uint32_t val, const enum endianness e) {
-	const union int_real f = {.bytes = endian32(val, e)};
-	return f.real;
+float endianf32(uint32_t val, const enum endianness e) {
+	val = endian32(val, e);
+	float f;
+	memcpy(&f, &val, sizeof(f));
+	return f;
+}
+float endianf32b(const uint32_t val) {
+	return endianf32(val, big_endian);
+}
+float endianf32l(const uint32_t val) {
+	return endianf32(val, little_endian);
 }
 
 uint16_t buf_endian16b(const void *data) {
@@ -111,8 +118,16 @@ uint64_t buf_endian64(const void *data, const enum endianness e) {
 }
 
 float buf_endianf32(const void *data, const enum endianness e) {
-	const union int_real f = {.bytes = buf_endian32(data, e)};
-	return f.real;
+	uint32_t val = buf_endian32(data, e);
+	float f;
+	memcpy(&f, &val, sizeof(f));
+	return f;
+}
+float buf_endianf32b(const void *data) {
+	return buf_endianf32(data, big_endian);
+}
+float buf_endianf32l(const void *data) {
+	return buf_endianf32(data, little_endian);
 }
 
 void endian_loop16(uint16_t *data, const enum endianness e, const size_t n) {
@@ -122,7 +137,6 @@ void endian_loop16(uint16_t *data, const enum endianness e, const size_t n) {
 		}
 	}
 }
-
 void endian_loop24(uint8_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
 		for (size_t i = 0; i < n; ++i) {
@@ -132,7 +146,6 @@ void endian_loop24(uint8_t *data, const enum endianness e, const size_t n) {
 		}
 	}
 }
-
 void endian_loop32(uint32_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
 		for (size_t i = 0; i < n; ++i) {
@@ -140,7 +153,6 @@ void endian_loop32(uint32_t *data, const enum endianness e, const size_t n) {
 		}
 	}
 }
-
 void endian_loop64(uint64_t *data, const enum endianness e, const size_t n) {
 	if (e != which_end()) {
 		for (size_t i = 0; i < n; ++i) {

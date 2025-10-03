@@ -14,11 +14,6 @@ enum endianness {
 	little_endian = 1,
 };
 
-union int_real {
-        uint32_t bytes;
-        float real;
-};
-
 const char * endian_str(enum endianness e);
 
 enum endianness which_end(void);
@@ -37,6 +32,8 @@ uint32_t endian32b(uint32_t val);
 uint32_t endian32l(uint32_t val);
 
 float endianf32(uint32_t val, enum endianness e);
+float endianf32b(uint32_t val);
+float endianf32l(uint32_t val);
 
 /* Read data from unaligned buffers. */
 uint16_t buf_endian16b(const void *data);
@@ -52,6 +49,8 @@ uint32_t buf_endian32(const void *data, enum endianness e);
 uint64_t buf_endian64(const void *data, enum endianness e);
 
 float buf_endianf32(const void *data, enum endianness e);
+float buf_endianf32b(const void *data);
+float buf_endianf32l(const void *data);
 
 /* Swaps `n` data words in place if `e` doesn't match the processor's
  * endianness. */
