@@ -1,1 +1,1 @@
-test('pix', executable('pix', 'pix.c', include_directories : incdir, link_with : libuwu))
+test('main', executable('main', 'main.c', include_directories : incdir, link_with : libuwu))
