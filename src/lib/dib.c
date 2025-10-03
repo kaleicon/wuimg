@@ -97,103 +97,103 @@ static bool dib_get_colorspace(const struct dib_desc *desc, struct color_space *
 
 static size_t rle_loop4(unsigned char *restrict dst, const size_t dst_len,
 const unsigned char *restrict src, const size_t src_len, const size_t scan_len) {
-	size_t i = 0;
-	size_t o = 0;
-	while (o < dst_len && i < src_len) {
-		const unsigned char repeat = src[i];
-		const unsigned char marker = src[i+1];
-		i += 2;
+	size_t s = 0;
+	size_t d = 0;
+	while (d < dst_len && src_len - s >= 2) {
+		const unsigned char repeat = src[s];
+		const unsigned char marker = src[s+1];
+		s += 2;
 		if (repeat) {
-			if (o + repeat > dst_len) {
-				return o;
+			if (dst_len - d < repeat) {
+				return d;
 			}
 			const unsigned char val[] = {
 				marker >> 4,
 				marker & 0x0f,
 			};
-			memtessel(dst + o, val, sizeof(val), repeat);
-			o += repeat;
+			memtessel(dst + d, val, sizeof(val), repeat);
+			d += repeat;
 		} else {
 			switch (marker) {
 			case dib_end_of_scan_line:
-				o += (dst_len - o) % scan_len;
+				d += (dst_len - d) % scan_len;
 				break;
 			case dib_end_of_rle:
-				return o;
+				return dst_len;
 			case dib_delta:
-				if (i >= src_len) {
-					return o;
+				if (src_len - s < 2) {
+					return d;
 				}
-				const unsigned char x_diff = src[i];
-				const unsigned char y_diff = src[i+1];
-				o += scan_len * y_diff + x_diff;
-				i += 2;
+				const unsigned char x_diff = src[s];
+				const unsigned char y_diff = src[s+1];
+				d += scan_len * y_diff + x_diff;
+				s += 2;
 				break;
 			default:
 				;const size_t run_bytes = strip_length(
 					marker, 4, 1);
-				if (o + marker > dst_len
-				|| i + run_bytes > src_len) {
-					return o;
+				if (dst_len - d < marker
+				|| src_len - s < run_bytes) {
+					return d;
 				}
-				unpack_strip(dst + o, src + i, marker, 4,
+				unpack_strip(dst + d, src + s, marker, 4,
 					pix_normal, big_endian, op_unpack, NULL);
-				o += marker;
-				i += run_bytes;
+				d += marker;
+				s += run_bytes;
 			}
 		}
 	}
-	return o;
+	return d;
 }
 
 static size_t rle_loop(unsigned char *restrict dst,
 const size_t dst_len, unsigned char *restrict src, const size_t src_len,
 const size_t scan_len, const unsigned char pix_size) {
-	size_t i = 0;
-	size_t o = 0;
-	while (o < dst_len && i + pix_size < src_len) {
-		const unsigned char repeat = src[i];
-		++i;
+	size_t s = 0;
+	size_t d = 0;
+	while (d < dst_len && src_len - s >= pix_size + 1u) {
+		const unsigned char repeat = src[s];
+		++s;
 		if (repeat) {
 			const size_t len = repeat * pix_size;
-			if (o + len > dst_len) {
-				return o;
+			if (dst_len - d < len) {
+				return d;
 			}
-			memwordset(dst + o, src + i, pix_size, repeat);
-			o += len;
-			i += pix_size;
+			memwordset(dst + d, src + s, pix_size, repeat);
+			d += len;
+			s += pix_size;
 		} else {
-			const unsigned char marker = src[i];
-			++i;
+			const unsigned char marker = src[s];
+			++s;
 			switch (marker) {
 			case dib_end_of_scan_line:
-				o += (dst_len - o) % scan_len;
+				d += (dst_len - d) % scan_len;
 				break;
 			case dib_end_of_rle:
-				return o;
+				return dst_len;
 			case dib_delta:
-				if (i >= src_len) {
-					return o;
+				if (src_len - s < 2) {
+					return d;
 				}
-				const unsigned char x_diff = src[i];
-				const unsigned char y_diff = src[i+1];
-				o += scan_len * y_diff + x_diff*pix_size;
-				i += 2;
+				const unsigned char x_diff = src[s];
+				const unsigned char y_diff = src[s+1];
+				d += scan_len * y_diff + x_diff*pix_size;
+				s += 2;
 				break;
 			default:
 				;const size_t run = marker*pix_size;
 				const size_t run_bytes = strip_length(run, 8, 1);
-				if (o + run > dst_len
-				|| i + run_bytes > src_len) {
-					return o;
+				if (dst_len - d < run
+				|| src_len - s < run_bytes) {
+					return d;
 				}
-				memcpy(dst + o, src + i, run);
-				o += run;
-				i += run_bytes;
+				memcpy(dst + d, src + s, run);
+				d += run;
+				s += run_bytes;
 			}
 		}
 	}
-	return o;
+	return d;
 }
 
 static size_t rle_decode(const struct dib_desc *desc, struct wuimg *img) {
@@ -215,32 +215,31 @@ static size_t rle_decode(const struct dib_desc *desc, struct wuimg *img) {
 	return w;
 }
 
-bool dib_decode(const struct dib_desc *desc, struct wuimg *img) {
+struct wu_st dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		switch ((int)desc->compression) {
-		case dib_no_compression:
-		case dib_bitfield:
-			w = fmt_load_raster_swap(img, desc->ifp, little_endian);
-			break;
-		case dib_8bit_rle:
-		case dib_4bit_rle:
-		case os2_24bit_rle:
-			w = rle_decode(desc, img);
-			break;
-		}
-		if (w) {
-			return dib_get_colorspace(desc, &img->cs);
-		}
+	switch ((int)desc->compression) {
+	case dib_no_compression:
+	case dib_bitfield:
+		w = fmt_load_raster_swap(img, desc->ifp, little_endian);
+		break;
+	case dib_8bit_rle:
+	case dib_4bit_rle:
+	case os2_24bit_rle:
+		w = rle_decode(desc, img);
+		break;
 	}
-	return w;
+	struct wu_st st = wuerr_partial(w, wuimg_size(img));
+	if (!dib_get_colorspace(desc, &img->cs)) {
+		st.msg = "failed to load icc data";
+	}
+	return st;
 }
 
 static struct dib_ciexyz load_xyz(uint8_t *buf) {
 	return (struct dib_ciexyz) {
-		.x = buf_endian32(buf, little_endian),
-		.y = buf_endian32(buf+4, little_endian),
-		.z = buf_endian32(buf+8, little_endian),
+		.x = buf_endian32l(buf),
+		.y = buf_endian32l(buf+4),
+		.z = buf_endian32l(buf+8),
 	};
 }
 
@@ -273,16 +272,16 @@ uint8_t *buf) {
 	*/
 
 	struct dib_lcs *lcs = &desc->lcs;
-	lcs->type = buf_endian32(buf, little_endian);
+	lcs->type = buf_endian32l(buf);
 	switch (lcs->type) {
 	case dib_lcs_calibrated_rgb:
 		lcs->r = load_xyz(buf + 4),
 		lcs->g = load_xyz(buf + 16),
 		lcs->b = load_xyz(buf + 28),
 		lcs->gamma = (struct dib_gamma) {
-			.r = buf_endian32(buf + 40, little_endian),
-			.g = buf_endian32(buf + 44, little_endian),
-			.b = buf_endian32(buf + 48, little_endian),
+			.r = buf_endian32l(buf + 40),
+			.g = buf_endian32l(buf + 44),
+			.b = buf_endian32l(buf + 48),
 		};
 		if (!memchk(buf + 4, 0, 12*3)
 		&& lcs->gamma.r && lcs->gamma.g && lcs->gamma.b) {
@@ -308,14 +307,14 @@ uint8_t *buf) {
 			return wuerr(wu_invalid_header,
 				"Color profiles used with DIB type < 5");
 		}
-		desc->lcs.profile_off = buf_endian32(buf + 60, little_endian);
+		desc->lcs.profile_off = buf_endian32l(buf + 60);
 		break;
 	case dib_lcs_srgb:
 	case dib_lcs_windows_color_space:
 		break;
 	}
 	if (desc->type >= dib_v5_header) {
-		const uint32_t intent = buf_endian32(buf + 52, little_endian);
+		const uint32_t intent = buf_endian32l(buf + 52);
 		switch (intent) {
 		case dib_gm_abs_colorimetric:
 		case dib_gm_business:
@@ -331,10 +330,10 @@ static enum wu_error load_mask(struct dib_desc *desc, struct wuimg *img,
 uint8_t *buf) {
 	uint8_t ch = desc->type < dib_v3_info_header ? 3 : 4;
 	const uint32_t mask[4] = {
-		buf_endian32(buf, little_endian),
-		buf_endian32(buf + 1*4, little_endian),
-		buf_endian32(buf + 2*4, little_endian),
-		buf_endian32(buf + 3*4, little_endian)
+		buf_endian32l(buf),
+		buf_endian32l(buf + 1*4),
+		buf_endian32l(buf + 2*4),
+		buf_endian32l(buf + 3*4)
 	};
 	return wuimg_bitfield_from_mask(img, mask, ch, desc->depth);
 }
@@ -519,19 +518,19 @@ struct wuimg *img) {
 	}
 
 	struct wu_st status = validate_os2_header(desc, img,
-		buf_endian32(buf, little_endian),
-		buf_endian32(buf + 4, little_endian),
-		buf_endian16(buf + 10, little_endian),
-		buf_endian32(buf + 12, little_endian),
-		buf_endian32(buf + 16, little_endian),
-		buf_endian16(buf + 40, little_endian),
-		buf_endian32(buf + 52, little_endian));
+		buf_endian32l(buf),
+		buf_endian32l(buf + 4),
+		buf_endian16l(buf + 10),
+		buf_endian32l(buf + 12),
+		buf_endian32l(buf + 16),
+		buf_endian16l(buf + 40),
+		buf_endian32l(buf + 52));
 	if (wu_isok(status)) {
 		status = validate_common(desc, img,
-			buf_endian16(buf + 8, little_endian),
-			buf_endian32(buf + 20, little_endian),
-			buf_endian32(buf + 24, little_endian),
-			buf_endian32(buf + 28, little_endian));
+			buf_endian16l(buf + 8),
+			buf_endian32l(buf + 20),
+			buf_endian32l(buf + 24),
+			buf_endian32l(buf + 28));
 	}
 	return status;
 }
@@ -578,20 +577,20 @@ struct wuimg *img) {
 	}
 
 	struct wu_st status = validate_dib_header(desc, img,
-		(int32_t)buf_endian32(buf, little_endian),
-		(int32_t)buf_endian32(buf + 4, little_endian),
-		buf_endian16(buf + 10, little_endian),
-		buf_endian32(buf + 12, little_endian),
-		buf_endian32(buf + 16, little_endian));
+		(int32_t)buf_endian32l(buf),
+		(int32_t)buf_endian32l(buf + 4),
+		buf_endian16l(buf + 10),
+		buf_endian32l(buf + 12),
+		buf_endian32l(buf + 16));
 	if (!wu_isok(status)) {
 		return status;
 	}
 
 	status = validate_common(desc, img,
-		buf_endian16(buf + 8, little_endian),
-		buf_endian32(buf + 20, little_endian),
-		buf_endian32(buf + 24, little_endian),
-		buf_endian32(buf + 28, little_endian));
+		buf_endian16l(buf + 8),
+		buf_endian32l(buf + 20),
+		buf_endian32l(buf + 24),
+		buf_endian32l(buf + 28));
 	if (!wu_isok(status)) {
 		return status;
 	}
@@ -635,15 +634,14 @@ struct wuimg *img) {
 	}
 
 	struct wu_st status = validate_dib_header(desc, img,
-		(int16_t)endian16(buf[0], little_endian),
-		(int16_t)endian16(buf[1], little_endian),
-		endian16(buf[3], little_endian),
+		(int16_t)endian16l(buf[0]),
+		(int16_t)endian16l(buf[1]),
+		endian16l(buf[3]),
 		dib_no_compression, 0);
 	if (!wu_isok(status)) {
 		return status;
 	}
-	return validate_common(desc, img, endian16(buf[2], little_endian),
-		0, 0, 0);
+	return validate_common(desc, img, endian16l(buf[2]), 0, 0, 0);
 }
 
 static struct wu_st parse_header(struct dib_desc *desc,
@@ -657,7 +655,7 @@ struct wuimg *img) {
 	if (!fread(&hsize, sizeof(hsize), 1, desc->ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	hsize = endian32(hsize, little_endian);
+	hsize = endian32l(hsize);
 
 	bool core_header = false;
 	switch (hsize) {
@@ -698,22 +696,16 @@ struct wuimg *img) {
 		return status;
 	}
 
-	enum wu_error err;
 	if (desc->depth <= 8) {
 		img->alpha = alpha_ignore;
-		struct palette *pal = wuimg_palette_init(img);
-		if (!pal) {
-			return WUERR_HERE(wu_alloc_error);
-		}
-		err = fmt_load_pal(desc->ifp, pal,
-			core_header ? fmt_pal_rgb : fmt_pal_rgbx,
-			desc->pal_entries);
-		if (err != wu_ok) {
-			return wuerr(err, "Couldn't load palette");
+		status = wuimg_palette_from_file(img, (core_header ? 3 : 4),
+			desc->pal_entries, desc->ifp);
+		if (!wu_isok(status)) {
+			return status;
 		}
 	}
 
-	err = wuimg_verify(img);
+	enum wu_error err = wuimg_verify(img);
 	if (err != wu_ok) {
 		return WUERR_HERE(err);
 	}
@@ -775,7 +767,7 @@ struct wu_st dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
 
 	const struct wu_st status = parse_header(desc, img);
 	if (wu_isok(status)) {
-		const long bitmap_offset = endian32(buf[2], little_endian);
+		const long bitmap_offset = endian32l(buf[2]);
 		fseek(desc->ifp, bitmap_offset, SEEK_SET);
 	}
 	return status;
@@ -870,7 +862,7 @@ static bool ico_word_dec(const struct dib_desc *dib, struct wuimg *img) {
 			const uint8_t *a = and.buf + and.stride * y;
 			for (size_t x = 0; x < img->w; ++x) {
 				const bool bit = bit_get(a, x);
-				int i = (endian16(d[x], little_endian) & 0x7fff)
+				int i = (endian16l(d[x]) & 0x7fff)
 					| (!bit << 15);
 				d[x] = (uint16_t)i;
 			}
@@ -1016,8 +1008,8 @@ struct wu_st ico_parse_header(struct ico_desc *desc) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
 
-		const uint16_t x = buf_endian16(buf + 4, little_endian);
-		const uint16_t y = buf_endian16(buf + 6, little_endian);
+		const uint16_t x = buf_endian16l(buf + 4);
+		const uint16_t y = buf_endian16l(buf + 6);
 		if (desc->type == ico_cursor) {
 			desc->images[i].x = x;
 			desc->images[i].y = y;
@@ -1033,8 +1025,8 @@ struct wu_st ico_parse_header(struct ico_desc *desc) {
 				return wuerr(wu_invalid_header, "bad ico depth");
 			}
 		}
-		desc->images[i].size = buf_endian32(buf + 8, little_endian);
-		desc->images[i].offset = buf_endian32(buf + 12, little_endian);
+		desc->images[i].size = buf_endian32l(buf + 8);
+		desc->images[i].offset = buf_endian32l(buf + 12);
 	}
 	return wuok();
 }
@@ -1052,8 +1044,8 @@ struct wu_st ico_open_file(struct ico_desc *desc, FILE *ifp) {
 
 	uint16_t header[3];
 	if (fread(header, sizeof(header), 1, ifp)) {
-		const uint16_t type = endian16(header[1], little_endian);
-		const uint16_t count = endian16(header[2], little_endian);
+		const uint16_t type = endian16l(header[1]);
+		const uint16_t count = endian16l(header[2]);
 		if (header[0] == 0 && count != 0) {
 			switch (type) {
 			case ico_icon:
@@ -1085,7 +1077,7 @@ struct wu_st bmz_open(struct bmz_desc *desc, struct mparser mp) {
 	if (wu_isok(st)) {
 		const struct wuptr z = mp_remaining(&mp);
 		if (z.len > 4) {
-			uLong orig = buf_endian32(z.ptr, little_endian);
+			uLong orig = buf_endian32l(z.ptr);
 			uint8_t *buf = malloc(orig);
 			if (buf) {
 				uncompress(buf, &orig, z.ptr + 4, z.len - 4);

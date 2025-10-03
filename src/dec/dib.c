@@ -3,19 +3,21 @@
 #include "lib/dib.h"
 #include "wudefs.h"
 
-static struct wu_st dib_common(struct image_file *infile,
-const struct wu_conf *wuconf, struct dib_desc *desc) {
+static struct wu_st common_dib(struct image_file *infile,
+const struct wu_conf *conf, struct dib_desc *desc) {
 	struct wuimg *img = infile->sub_img;
-	const struct wu_st st = dib_parse_header(desc, img);
+	struct wu_st st = dib_parse_header(desc, img);
 	if (!wu_isok(st)) {
 		return st;
 	}
 
-	if (wuimg_exceeds_limit(img, wuconf)) {
-		return wuerr(wu_exceeds_size_limit, NULL);
+	enum wu_error e = wuimg_alloc_limit(img, conf);
+	if (e != wu_ok) {
+		return WUERR_HERE(e);
 	}
 
-	if (dib_decode(desc, img)) {
+	st = dib_decode(desc, img);
+	if (wu_isok(st)) {
 		struct wutree *tree = &infile->metadata;
 		tree_add_leaf_utf8(tree, "Header", dib_type_str(desc));
 		tree_add_leaf_utf8(tree, "Compression",
@@ -28,9 +30,8 @@ const struct wu_conf *wuconf, struct dib_desc *desc) {
 				wuptr_wustr(name), NULL);
 			wustr_free(&name);
 		}
-		return wuok();
 	}
-	return wuerr(wu_decoding_error, NULL);
+	return st;
 }
 
 static struct wu_st decode_dib(struct image_file *infile,
@@ -39,7 +40,7 @@ const struct wu_conf *wuconf, const bool is_bmp) {
 	const struct wu_st st = dib_open_file(&desc, infile->ifp, is_bmp,
 		trit_what);
 	if (wu_isok(st)) {
-		return dib_common(infile, wuconf, &desc);
+		return common_dib(infile, wuconf, &desc);
 	}
 	return st;
 }
@@ -116,7 +117,7 @@ const struct wu_conf *wuconf) {
 	struct bmz_desc desc;
 	struct wu_st st = bmz_open(&desc, mp_wuptr(infile->map));
 	if (wu_isok(st)) {
-		st = dib_common(infile, wuconf, &desc.bmp);
+		st = common_dib(infile, wuconf, &desc.bmp);
 		bmz_cleanup(&desc);
 	}
 	return st;

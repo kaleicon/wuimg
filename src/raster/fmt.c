@@ -62,12 +62,6 @@ size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, const enum endianness 
 }
 
 
-enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
-const enum fmt_pal_type type, const size_t nmemb) {
-	return palette_from_file(pal, type, nmemb, ifp, 8)
-		? wu_ok : wu_unexpected_eof;
-}
-
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig,
 const size_t size, struct mparser *mp) {
 	const uint8_t *buf = mp_slice(mp, size);

@@ -10,11 +10,6 @@
 #include "raster/pal.h"
 #include "raster/wuimg.h"
 
-enum fmt_pal_type {
-	fmt_pal_rgb = 3,
-	fmt_pal_rgbx = 4,
-};
-
 struct fmt_swap_info {
 	enum endianness e:8;
 	uint8_t depth;
@@ -37,9 +32,6 @@ fmt_load_callback_t fn, void *restrict ptr);
 
 size_t fmt_load_raster_swap(struct wuimg *img, FILE *ifp, enum endianness e);
 
-
-enum wu_error fmt_load_pal(FILE *ifp, struct palette *pal,
-enum fmt_pal_type type, size_t nmemb);
 
 enum wu_error fmt_sigcmp_mem(const unsigned char *restrict sig, size_t size,
 struct mparser *mp);

@@ -98,7 +98,7 @@ const char * dib_type_str(const struct dib_desc *desc);
 bool dib_get_linked_profile_name(const struct dib_desc *desc,
 struct wustr *name);
 
-bool dib_decode(const struct dib_desc *desc, struct wuimg *img);
+struct wu_st dib_decode(const struct dib_desc *desc, struct wuimg *img);
 
 struct wu_st dib_parse_header(struct dib_desc *desc, struct wuimg *img);
 

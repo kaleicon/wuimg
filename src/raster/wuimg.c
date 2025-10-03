@@ -382,7 +382,7 @@ size_t nmemb, const uint8_t *src) {
 	struct palette *pal = wuimg_palette_init(img);
 	if (pal) {
 		if (!img->bitrange) {
-			img->bitrange = img->bitdepth;
+			img->bitrange = 8;
 		}
 		if (size == 3) {
 			palette_from_rgb8_bitrange(pal, src, nmemb,
