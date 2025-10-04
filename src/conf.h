@@ -34,11 +34,11 @@ struct wu_conf {
 	} heed_pixel_ratio:8;
 	bool no_window_decorations; /* Request no decorations or widgets around
 		the window. */
-	bool naive_window_colorspace; /* Render window contents as sRGB even
-		when we could adapt to the preferred display colorspace. This
-		might increase power consumption.
-		  Only relevant for Wayland compositors that expose colorspace
-		information. Everywhere else, windows are always sRGB. */
+	bool naive_window_colorspace; /* Render window contents as sRGB. This
+		is the default behaviour, but if set to false on Wayland, and
+		the compositor supports the color-management protocol, we'll
+		try to adapt to the preferred display colorspace. This is
+		experimental and chances are it'll look bad. */
 	bool custom_cursor; /* On Wayland, when standard cursor shapes are not
 		supported by the compositor, a simple cursor is drawn using
 		code. This cursor is honestly kind of ugly, but it has to

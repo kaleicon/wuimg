@@ -15,7 +15,7 @@ Features
 * Displays EXIF, XMP, and format-specific comments and metadata
 * Support for embedded ICC profiles and format-specific colorspaces
   * At the moment, images are converted to sRGB for display
-  * There is experimental HDR display support on Wayland, see below
+    * Unless you're on Wayland and want to try your luck. See below.
 * Browse archives, via libarchive
 * Doesn't modify the original file when rotating!
 * Doesn't recurse infinitely into directories!
@@ -232,14 +232,13 @@ no_window_decorations = true  # bool. Specified as 'true' or 'false'. Don't you
 -------------------------------------------------------------------------------
 
 
-HDR display
------------
-There is experimental, woefully undertested HDR support on Wayland. It requires
-a Wayland compositor supporting the color-management protocol
+Wayland color management
+------------------------
+There is experimental, woefully undertested color management support on
+Wayland. It requires a compositor supporting the color-management protocol
 (https://wayland.app/protocols/color-management-v1), and setting
-`naive_window_colorspace = false` in the config file.
-
-As a reminder, it's woefully undertested.
+`naive_window_colorspace = false` in the config file. The author has yet to
+find an actual HDR monitor in the trash, so chances are things will look bad.
 
 
 Party tricks
