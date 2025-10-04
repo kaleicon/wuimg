@@ -542,7 +542,7 @@ const uint32_t serial) {
 		pointer);
 	wp_cursor_shape_device_v1_set_shape(dev, serial, wl->pub->win.pressed
 		? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING
-		: WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
+		: WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
 	wp_cursor_shape_device_v1_destroy(dev);
 }
 
