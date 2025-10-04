@@ -972,7 +972,9 @@ DEC_MAP: DecMap = {
 	},
 
 	"quake": {
-		"idsp": FmtInfo("id Software Sprite (Quake, Half-Life, and 32-bit variants)",
+		"idsp": FmtInfo("id Software Sprite"
+			" (Quake, Half-Life, and 32-bit variants,"
+			" only first image of each animation group)",
 			ext=("spr", "spr32"),
 			magic=b"IDSP"
 		),

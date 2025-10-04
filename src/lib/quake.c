@@ -357,7 +357,8 @@ struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 		const size_t h = endian32l(buf[3]);
 		if (w && h) {
 			if (LONG_MAX / w / h == 0) {
-				return WUERR_HERE(wu_int_overflow);
+				return wuerr(wu_int_overflow,
+					"group pic too big");
 			}
 			fseek(desc->ifp, (long)(w*h), SEEK_CUR);
 		}
@@ -367,7 +368,9 @@ struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 	if (!fread(buf, sizeof(*buf)*2, 1, desc->ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	if (buf[0]) { // TODO: samples needed
+	desc->cur_group_pic = 1; // for next iteration
+	desc->group_pics = 1;
+	if (buf[0]) {
 		if (desc->version == idsp_half_life) {
 			// Not really sure this is forbidden
 			return wuerr(wu_invalid_header,
@@ -375,11 +378,10 @@ struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 		}
 		desc->group_pics = endian32l(buf[1]);
 		if (LONG_MAX / desc->group_pics / sizeof(float) == 0) {
-			return WUERR_HERE(wu_int_overflow);
+			return wuerr(wu_int_overflow, "too many group pics");
 		}
-		fseek(desc->ifp, (long)(desc->group_pics * sizeof(float)),
+		fseek(desc->ifp, (long)(desc->group_pics * sizeof(float) + 8),
 			SEEK_CUR);
-		desc->group_pics = 0;
 	} else {
 		fseek(desc->ifp, sizeof(uint32_t), SEEK_CUR);
 	}
@@ -401,7 +403,6 @@ struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 		break;
 	}
 	++desc->cur_group;
-	desc->cur_group_pic = 1;
 	return WU_OK;
 }
 
