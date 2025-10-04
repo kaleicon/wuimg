@@ -20,23 +20,18 @@ size_t zulog2(size_t x);
 unsigned int ulog2(unsigned int x);
 
 size_t zumax(size_t x, size_t y);
-
 size_t zumin(size_t x, size_t y);
 
 uint32_t u32max(uint32_t x, uint32_t y);
-
 uint32_t u32min(uint32_t x, uint32_t y);
 
 unsigned int umax(unsigned int x, unsigned int y);
-
 unsigned int umin(unsigned int x, unsigned int y);
 
 long lmax(long x, long y);
-
 long lmin(long x, long y);
 
 int imax(int x, int y);
-
 int imin(int x, int y);
 
 float fclampf(float x, float min, float max);

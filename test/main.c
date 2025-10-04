@@ -7,10 +7,16 @@
 
 #include "misc/common.h"
 #include "misc/endian.h"
+#include "misc/math.h"
 #include "raster/pix.h"
 
+static void test_name(const char *str) {
+	fputs("---=== ", stdout);
+	fputs(str, stdout);
+	fputs(" ===---\n", stdout);
+}
 static const char * ok_str(const bool ok) {
-	return ok ? "-" : "!!!!!!";
+	return ok ? "" : "!!!!!!";
 }
 
 struct pix_layout_names {
@@ -54,23 +60,99 @@ static bool pix_layout_tests(void) {
 		// GrayAlpha but on a palette. This one is really pushing it
 		{PIX_LAYOUT_PACK(0, 0, 0, 3), "r  g"},
 	};
-	puts(__func__);
-	bool ok = true;
+	test_name(__func__);
+	bool kay = true;
 
 	puts("Does swizzling to RGBA and back work?");
 	puts("\torig\tlinear\tback");
 	for (size_t i = 0; i < ARRAY_LEN(names); ++i) {
-		ok &= swz_test(names[i]);
+		kay &= swz_test(names[i]);
 	}
 	puts("");
 
 	puts("Do enum values match their names (is the repr function working)?");
 	puts("\tenum\trepr");
 	for (size_t i = 0; i < ARRAY_LEN(names); ++i) {
-		ok &= layout_name_test(names[i]);
+		kay &= layout_name_test(names[i]);
 	}
 	puts("");
+	return kay;
+}
+
+static bool minmax_u_test(const char *fn, uint8_t r, uintmax_t a, uintmax_t b) {
+	const bool ok = (r == a) & (a == b);
+	printf("%s\t%s\t%i\t%ju\t%ju\n", ok_str(ok), fn, r, a, b);
 	return ok;
+}
+static bool minmax_i_test(const char *fn, int8_t r, intmax_t a, intmax_t b) {
+	const bool ok = (r == a) & (a == b);
+	printf("%s\t%s\t%i\t%ji\t%ji\n", ok_str(ok), fn, r, a, b);
+	return ok;
+}
+static bool ulog2_test(const char *name, uint8_t val, uint8_t expect,
+uintmax_t x) {
+	const bool ok = expect == x;
+	printf("%s\t%s\t%i\t%i\t%ju\n", ok_str(ok), name, val, expect, x);
+	return ok;
+}
+static bool math_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("Do the min/max functions work?");
+	puts("\tfn\texpect\tfn(x,y)\tfn(y,x)");
+	const uint8_t ulo = 9;
+	const uint8_t uhi = 12;
+	const struct {
+		const char name[7];
+		uint8_t result;
+		uintmax_t a, b;
+	} up[] = {
+		{  "umin", ulo,   umin(ulo, uhi),   umin(uhi, ulo)},
+		{  "umax", uhi,   umax(ulo, uhi),   umax(uhi, ulo)},
+		{ "zumin", ulo,  zumin(ulo, uhi),  zumin(uhi, ulo)},
+		{ "zumax", uhi,  zumax(ulo, uhi),  zumax(uhi, ulo)},
+		{"u32min", ulo, u32min(ulo, uhi), u32min(uhi, ulo)},
+		{"u32max", uhi, u32max(ulo, uhi), u32max(uhi, ulo)},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(up); ++i) {
+		kay &= minmax_u_test(up[i].name, up[i].result, up[i].a, up[i].b);
+	}
+	const int8_t ilo = -1;
+	const int8_t ihi = 108;
+	const struct {
+		const char name[7];
+		int8_t result;
+		intmax_t a, b;
+	} ip[] = {
+		{"imin", ilo, imin(ilo, ihi), imin(ihi, ilo)},
+		{"imax", ihi, imax(ilo, ihi), imax(ihi, ilo)},
+		{"lmin", ilo, lmin(ilo, ihi), lmin(ihi, ilo)},
+		{"lmax", ihi, lmax(ilo, ihi), lmax(ihi, ilo)},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(ip); ++i) {
+		kay &= minmax_i_test(ip[i].name, ip[i].result, ip[i].a, ip[i].b);
+	}
+	puts("");
+
+	puts("Do the ulog2 functions work?");
+	puts("\tfn\tvalue\texpect\tresult");
+	const struct {
+		uint8_t val, expect;
+	} logp[] = {
+		{1, 0},
+		{127, 6},
+		{128, 7},
+		{129, 7},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(logp); ++i) {
+		const uint8_t val = logp[i].val;
+		const uint8_t expect = logp[i].expect;
+		kay &= ulog2_test("ulog2", val, expect, ulog2(val));
+		kay &= ulog2_test("zulog2", val, expect, zulog2(val));
+	}
+	puts("");
+	return kay;
 }
 
 typedef uint32_t (*end_fn_t)(const void *buf);
@@ -204,8 +286,8 @@ static bool which_end_test(const uint8_t *blob) {
 	return ok;
 }
 static bool endian_tests(void) {
-	puts(__func__);
-	bool ok = true;
+	test_name(__func__);
+	bool kay = true;
 
 	puts("Do endian functions work? Are they revertible?");
 	puts("\tfn\tinput memory\texpected val"
@@ -222,7 +304,7 @@ static bool endian_tests(void) {
 			{buf_end32b, buf_end32l, buf_end32}},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(params); ++i) {
-		ok &= end_test_battery(params + i, NUM_SEQ);
+		kay &= end_test_battery(params + i, NUM_SEQ);
 	}
 	puts("");
 
@@ -231,18 +313,18 @@ static bool endian_tests(void) {
 	const float tau = (float)(M_PI * 2.0);
 	const uint32_t tau_l = buf_endian32l(&tau);
 	const uint32_t tau_b = buf_endian32b(&tau);
-	ok &= endf32_test(&tau_l, little_endian, tau)
-		& endf32_test(&tau_b, big_endian, tau);
+	kay &= endf32_test(&tau_l, little_endian, tau);
+	kay &= endf32_test(&tau_b, big_endian, tau);
 	puts("");
 
 	puts("Does which_end() work? Output must match the input order");
 	puts("\tinput memory\toutput memory\tcpu endianess");
-	ok &= which_end_test(NUM_SEQ);
+	kay &= which_end_test(NUM_SEQ);
 	puts("");
-	return ok;
+	return kay;
 }
 
 int main(void) {
-	const bool ok = endian_tests() & pix_layout_tests();
-	return ok ? 0 : 1;
+	const bool kay = endian_tests() & math_tests() & pix_layout_tests();
+	return kay ? 0 : 1;
 }
