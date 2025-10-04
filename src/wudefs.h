@@ -10,7 +10,6 @@
 struct wu_state {
 	int idx;
 	int frame;
-	bool anim_playing;
 
 	unsigned char rotate;
 	bool mirror;

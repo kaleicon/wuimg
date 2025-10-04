@@ -121,7 +121,7 @@ const enum image_event evs, const bool allow_cycle) {
 	do {
 		event->image = ev_time;
 		const double elapsed = draw_rest_poll(window, print_time);
-		if (state->anim_playing && window->pub.win.focused) {
+		if (window->pub.win.playing) {
 			state->time += (float)elapsed;
 			if (state->time >= next_frame && image_frame_cycle(image, 1)) {
 				event->image = ev_frame;
@@ -133,7 +133,7 @@ const enum image_event evs, const bool allow_cycle) {
 			return true;
 		}
 		window->pub.gl.update |= (bool)(event->image & ~ev_time);
-		print_time = !state->anim_playing;
+		print_time = !window->pub.win.playing;
 	} while (!(event->image & evs));
 	return false;
 }
@@ -174,9 +174,10 @@ const bool allow_cycle, const bool allow_delete) {
 		if (upload) {
 			bool subupload = false;
 			if (event->image & ev_subcycle) {
-				state->anim_playing = image_cur_is_anim(image);
 				state->time = 0;
 				evs = image_cur_events(image);
+				window->pub.win.playing =
+					image_cur_is_anim(image);
 			} else if (!(event->image & ev_transform)) {
 				subupload = true;
 			}

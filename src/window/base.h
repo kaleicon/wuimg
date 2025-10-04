@@ -62,7 +62,7 @@ struct window_common {
 	struct window_fn fn;
 	struct window_cursor cur;
 	uint32_t refresh_nsec;
-	bool wait_redraw;
+	bool playing;
 	bool pressed;
 	bool focused;
 	bool fullscreen;

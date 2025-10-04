@@ -74,23 +74,22 @@ const int code, const float dt, const bool shift) {
 	// Frame cycling
 	case ',': // Prev
 		event->image = image_frame_cycle(image, -1);
-		state->anim_playing = false;
+		pub->win.playing = false;
 		break;
 	case '.': // Next
 		event->image = image_frame_cycle(image, 1);
-		state->anim_playing = false;
+		pub->win.playing = false;
 		break;
 	case ';':
 		event->image = image_sub_cycle(image, -5);
-		state->anim_playing = false;
+		pub->win.playing = false;
 		break;
 	case ':':
 		event->image = image_sub_cycle(image, 5);
-		state->anim_playing = false;
+		pub->win.playing = false;
 		break;
 	case ' ':
-		state->anim_playing = image_cur_is_anim(image)
-			? !state->anim_playing : false;
+		pub->win.playing ^= image_cur_is_anim(image);
 		return repeat_none;
 
 	// Image movement
