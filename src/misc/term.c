@@ -43,45 +43,45 @@ const bool is_utf8, FILE *stream) {
 	}
 }
 
-static size_t char_run(struct term_queue *t, size_t i, uint8_t start,
+static uint8_t char_run(struct term_queue *t, uint8_t i, uint8_t start,
 uint8_t end) {
-	size_t len = 0;
+	uint8_t init = i;
 	while (i < t->used) {
 		if (t->buf[i] < start || t->buf[i] > end) {
 			break;
 		}
 		++i;
-		++len;
 	}
-	return len;
+	return i - init;
 }
 
 unsigned char term_queue_next(struct term_queue *t) {
 	if (t->used < sizeof(t->buf) / 2) {
-		t->used += (size_t)read(STDIN_FILENO, t->buf + t->used,
+		const ssize_t r = read(STDIN_FILENO, t->buf + t->used,
 			sizeof(t->buf) - t->used);
+		t->used = (uint8_t)(t->used + (r < 0 ? 0 : r));
 		if (!t->used) {
 			return 0;
 		}
 	}
 
-	unsigned char c = 0;
-	size_t i = 0;
 	const unsigned char esc_seq[] = {0x1b, '['};
 	const unsigned char shift_mod[] = {'1', ';', '2'};
+	uint8_t c = 0;
+	uint8_t i = 0;
 	if (t->buf[i] == esc_seq[0]) {
 		++i;
-		if (t->used > 2 && t->buf[i] == esc_seq[1]) {
+		if (t->used > 1 && t->buf[i] == esc_seq[1]) {
 			++i;
 
-			const size_t params = char_run(t, i, 0x30, 0x3f);
-			const bool shift = params == sizeof(shift_mod)
+			const uint8_t params_len = char_run(t, i, 0x30, 0x3f);
+			const bool shift = params_len == sizeof(shift_mod)
 				&& !memcmp(t->buf + i, shift_mod, sizeof(shift_mod));
-			i += params;
+			i += params_len;
 
-			const size_t middle = char_run(t, i, 0x20, 0x2f);
-			i += middle;
-			if (!middle && i < t->used) {
+			const uint8_t middle_len = char_run(t, i, 0x20, 0x2f);
+			i += middle_len;
+			if (!middle_len && i < t->used) {
 				switch (t->buf[i]) {
 				case 'A': c = shift ? 'K' : 'k'; break;
 				case 'B': c = shift ? 'J' : 'j'; break;
@@ -90,12 +90,13 @@ unsigned char term_queue_next(struct term_queue *t) {
 				case 'F': c = '='; break;
 				case 'H': c = shift ? '1' : '0'; break;
 				}
+				++i;
 			}
 		}
 	} else {
 		c = t->buf[i];
+		++i;
 	}
-	i = zumin(i + 1, t->used);
 
 	memmove(t->buf, t->buf + i, t->used - i);
 	t->used -= i;

@@ -15,8 +15,8 @@ struct term_restore {
 };
 
 struct term_queue {
-	unsigned char buf[16];
-	size_t used;
+	unsigned char buf[23];
+	unsigned char used;
 };
 
 void term_print_escaped(const unsigned char *restrict data, size_t len,
