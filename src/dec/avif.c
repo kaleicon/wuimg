@@ -7,7 +7,6 @@
 #include "misc/common.h"
 #include "misc/math.h"
 #include "misc/metadata.h"
-#include "raster/unpack.h"
 
 static void end_avif(struct image_file *infile) {
 	avifDecoderDestroy(infile->dec_state);
@@ -69,6 +68,15 @@ static void get_transforms(struct wuimg *img, const avifImage *avif) {
 	}
 }
 
+static void copy_avif_plane(struct plane_info *p,
+const uint8_t *restrict plane_data, const size_t row_bytes) {
+	for (size_t y = 0; y < p->h; ++y) {
+		const uint8_t *src = plane_data + row_bytes * y;
+		uint8_t *dst = p->ptr + p->stride*y;
+		memcpy(dst, src, p->stride);
+	}
+}
+
 static struct wu_st dec_subimg(struct image_file *infile,
 const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
 	avifDecoder *dec = infile->dec_state;
@@ -87,7 +95,7 @@ const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
 	img->h = avif->height;
 	img->channels = (uint8_t)(colors + dec->alphaPresent);
 	img->bitdepth = (avif->depth > 8) ? 16 : 8;
-	img->align_sh = 2;
+	img->bitrange = (uint8_t)avif->depth;
 	img->alpha = avif->alphaPremultiplied
 		? alpha_associated : alpha_unassociated;
 
@@ -119,30 +127,20 @@ const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
 	/* libavif's memory layout is weird in all sorts of ways, so we need to
 	 * do a full memcpy */
 	const enum wu_error err = wuimg_alloc_limit(img, conf);
-	if (err == wu_ok) {
-		struct wuptr src[4];
-		uint8_t i = 0;
-		while (i < colors) {
-			src[i] = wuptr_mem(avif->yuvPlanes[i], avif->yuvRowBytes[i]);
-			++i;
-		}
-		if (avif->alphaPlane) {
-			src[i] = wuptr_mem(avif->alphaPlane, avif->alphaRowBytes);
-		}
-
-		const struct remap_info nfo = remap_scale_info(
-			bit_set32((uint32_t)avif->depth),
-			img->bitdepth, pix_normal);
-		for (uint8_t z = 0; z < img->channels; ++z) {
-			struct plane_info *p = planes->p + z;
-			for (size_t y = 0; y < p->h; ++y) {
-				remap_scale(p->ptr + p->stride*y,
-					src[z].ptr + src[z].len*y, p->w, nfo);
-			}
-		}
-		return WU_OK;
+	if (err != wu_ok) {
+		return WUERR_HERE(err);
 	}
-	return WUERR_HERE(err);
+	uint8_t z = 0;
+	while (z < colors) {
+		copy_avif_plane(planes->p + z, avif->yuvPlanes[z],
+			avif->yuvRowBytes[z]);
+		++z;
+	}
+	if (avif->alphaPlane) {
+		copy_avif_plane(planes->p + z, avif->alphaPlane,
+			avif->alphaRowBytes);
+	}
+	return WU_OK;
 }
 
 static struct wu_st event_avif(struct image_file *infile,
