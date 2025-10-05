@@ -68,8 +68,8 @@ uint8_t bit_min_wordsize_log2(const unsigned bits) {
 	return (uint8_t)(ulog2(umax(bits, 8) - 1) - 2);
 }
 
-size_t bit_min_wordsize_bits(const unsigned bits) {
-	return 8u << bit_min_wordsize_log2(bits);
+uint8_t bit_min_wordsize_bits(const unsigned bits) {
+	return (uint8_t)(8 << bit_min_wordsize_log2(bits));
 }
 
 

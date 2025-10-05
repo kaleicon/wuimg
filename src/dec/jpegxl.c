@@ -284,9 +284,9 @@ struct jpegxl_state *ds) {
 			img->h = ds->info.ysize;
 			img->channels = (uint8_t)(ds->info.num_color_channels
 				+ (bool)ds->info.alpha_bits);
-			img->bitdepth = (uint8_t)(bit_min_wordsize_bits(
+			img->bitdepth = bit_min_wordsize_bits(
 				umin(ds->info.bits_per_sample, 32)
-			));
+			);
 			if (ds->info.exponent_bits_per_sample) {
 				img->attr = pix_float;
 			}

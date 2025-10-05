@@ -3,22 +3,40 @@
 #include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/endian.h"
 #include "misc/math.h"
+#include "misc/time.h"
+
+#include "raster/pal.h"
 #include "raster/pix.h"
 
+#define FULL_X32 "0x%08" PRIx32
+static const uint8_t NUM_SEQ[] = {
+	0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+};
 static void test_name(const char *str) {
 	fputs("---=== ", stdout);
 	fputs(str, stdout);
 	fputs(" ===---\n", stdout);
 }
+static void print_blob(const void *buf, const size_t len, const char trail) {
+	const uint8_t *b = buf;
+	putchar('{');
+	for (size_t i = 0; i < len; ++i) {
+		printf("%02x%c", b[i], (i + 1 == len) ? '}' : ',');
+	}
+	putchar(trail);
+}
 static const char * ok_str(const bool ok) {
 	return ok ? "" : "!!!!!!";
 }
 
+/* raster/ tests */
 struct pix_layout_names {
 	enum pix_layout l:8;
 	const char name[5];
@@ -79,14 +97,120 @@ static bool pix_layout_tests(void) {
 	return kay;
 }
 
-static bool minmax_u_test(const char *fn, uint8_t r, uintmax_t a, uintmax_t b) {
-	const bool ok = (r == a) & (a == b);
-	printf("%s\t%s\t%i\t%ju\t%ju\n", ok_str(ok), fn, r, a, b);
+struct palette_test_rgb8 {
+	uint8_t bits;
+	struct pix_rgba8 expect[2];
+};
+static bool run_rgb8_test(const uint8_t *blob,
+const struct palette_test_rgb8 *p) {
+	const size_t nmemb = ARRAY_LEN(p->expect);
+	struct palette pal;
+	if (p->bits) {
+		palette_from_rgb8_bitrange(&pal, blob, nmemb, p->bits);
+	} else {
+		palette_from_rgb8(&pal, blob, nmemb);
+	}
+	const size_t bytes = sizeof(p->expect);
+	const bool ok = !memcmp(pal.color, p->expect, bytes);
+	printf("%s\t%d\t", ok_str(ok), p->bits);
+	print_blob(blob, nmemb*3, '\t');
+	print_blob(p->expect, bytes, '\t');
+	print_blob(pal.color, bytes, '\n');
 	return ok;
 }
-static bool minmax_i_test(const char *fn, int8_t r, intmax_t a, intmax_t b) {
-	const bool ok = (r == a) & (a == b);
-	printf("%s\t%s\t%i\t%ji\t%ji\n", ok_str(ok), fn, r, a, b);
+static bool palette_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("Create a palette from rgb8 data");
+	puts("\tbits\tmemory input\texpected\tresult");
+	const struct palette_test_rgb8 pp[] = {
+		{5, {{0x11, 0x22, 0x33, 0x1f}, {0x44, 0x55, 0x66, 0x1f}}},
+		{8, {{0x22, 0x33, 0x44, 0xff}, {0x55, 0x66, 0x77, 0xff}}},
+		{0, {{0x33, 0x44, 0x55, 0xff}, {0x66, 0x77, 0x88, 0xff}}},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(pp); ++i) {
+		kay &= run_rgb8_test(NUM_SEQ + i, pp + i);
+	}
+	puts("");
+	return kay;
+}
+
+/* misc/ tests */
+struct time_test_params {
+	time_t unix;
+	int year, month, day, hour, min, sec;
+};
+static bool to_epoch_test(const struct time_test_params *p) {
+	const time_t r = utc_to_epoch(p->year, p->month, p->day,
+		p->hour, p->min, p->sec);
+	const bool ok = p->unix == r;
+	printf("%s\t"
+		"%i\t%i\t%i\t"
+		"%i\t%i\t%i\t"
+		"%ju\t%ju\n",
+		ok_str(ok),
+		p->year, p->month, p->day,
+		p->hour, p->min, p->sec,
+		(uintmax_t)p->unix, (uintmax_t)r);
+	return ok;
+}
+static bool time_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("Is utc_to_epoch() not broken-down?");
+	puts("\tyear\tmonth\tday\thour\tminute\tsecond\tunix\tresult");
+	const struct time_test_params dates[] = {
+		{0, 1970, 1, 1, 0, 0, 0},
+		{999999999, 2001, 9, 9, 1, 46, 39},
+		{2147483648, 2038, 1, 19, 3, 14, 8},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(dates); ++i) {
+		kay &= to_epoch_test(dates + i);
+	}
+	puts("");
+	return kay;
+}
+
+struct test_twice_u {
+	const char name[7];
+	uint8_t expect;
+	uintmax_t a, b;
+};
+struct test_twice_i {
+	const char name[7];
+	int8_t expect;
+	intmax_t a, b;
+};
+static bool minmax_u_test(const struct test_twice_u *t, uint8_t x, uint8_t y) {
+	const bool ok = (t->expect == t->a) & (t->expect == t->b);
+	printf("%s\t%s\t"
+		"%u\t%u\t"
+		"%u\t%ju\t%ju\n",
+		ok_str(ok), t->name,
+		x, y,
+		t->expect, t->a, t->b);
+	return ok;
+}
+static bool minmax_i_test(const struct test_twice_i *t, int8_t x, int8_t y) {
+	const bool ok = (t->expect == t->a) & (t->expect == t->b);
+	printf("%s\t%s\t"
+		"%i\t%i\t"
+		"%i\t%ji\t%ji\n",
+		ok_str(ok), t->name,
+		x, y,
+		t->expect, t->a, t->b);
+	return ok;
+}
+static bool ceildiv_test(const char *name, uint8_t x, uint8_t y,
+uint8_t expect) {
+	const uintmax_t r = zuceildiv(x, y);
+	const bool ok = (r == expect);
+	printf("%s\t%s\t"
+		"%i\t%i\t%i\t%ju\n",
+		ok_str(ok), name,
+		x, y, expect, r);
 	return ok;
 }
 static bool ulog2_test(const char *name, uint8_t val, uint8_t expect,
@@ -99,47 +223,69 @@ static bool math_tests(void) {
 	test_name(__func__);
 	bool kay = true;
 
-	puts("Do the min/max functions work?");
-	puts("\tfn\texpect\tfn(x,y)\tfn(y,x)");
+	puts("Do the min/max functions work? Also with swapped arguments?");
+	puts("\tfn\tx\ty\texpect\tfn(x,y)\tfn(y,x)");
 	const uint8_t ulo = 9;
 	const uint8_t uhi = 12;
-	const struct {
-		const char name[7];
-		uint8_t result;
-		uintmax_t a, b;
-	} up[] = {
+	const struct test_twice_u up[] = {
 		{  "umin", ulo,   umin(ulo, uhi),   umin(uhi, ulo)},
-		{  "umax", uhi,   umax(ulo, uhi),   umax(uhi, ulo)},
 		{ "zumin", ulo,  zumin(ulo, uhi),  zumin(uhi, ulo)},
-		{ "zumax", uhi,  zumax(ulo, uhi),  zumax(uhi, ulo)},
 		{"u32min", ulo, u32min(ulo, uhi), u32min(uhi, ulo)},
+		{  "umax", uhi,   umax(ulo, uhi),   umax(uhi, ulo)},
+		{ "zumax", uhi,  zumax(ulo, uhi),  zumax(uhi, ulo)},
 		{"u32max", uhi, u32max(ulo, uhi), u32max(uhi, ulo)},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(up); ++i) {
-		kay &= minmax_u_test(up[i].name, up[i].result, up[i].a, up[i].b);
+		kay &= minmax_u_test(up + i, ulo, uhi);
 	}
 	const int8_t ilo = -1;
 	const int8_t ihi = 108;
-	const struct {
-		const char name[7];
-		int8_t result;
-		intmax_t a, b;
-	} ip[] = {
+	const struct test_twice_i ip[] = {
 		{"imin", ilo, imin(ilo, ihi), imin(ihi, ilo)},
-		{"imax", ihi, imax(ilo, ihi), imax(ihi, ilo)},
 		{"lmin", ilo, lmin(ilo, ihi), lmin(ihi, ilo)},
+		{"imax", ihi, imax(ilo, ihi), imax(ihi, ilo)},
 		{"lmax", ihi, lmax(ilo, ihi), lmax(ihi, ilo)},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(ip); ++i) {
-		kay &= minmax_i_test(ip[i].name, ip[i].result, ip[i].a, ip[i].b);
+		kay &= minmax_i_test(ip + i, ilo, ihi);
 	}
 	puts("");
 
-	puts("Do the ulog2 functions work?");
-	puts("\tfn\tvalue\texpect\tresult");
+	puts("Integer positive mod");
+	puts("\tfn\tx\ty\texpect\tfn(x,y)\tfn(x+y,y)");
+	const int8_t xm = -13;
+	const int8_t ym = 7;
+	const struct test_twice_i modp[] = {
+		{"imod", 1, imod(xm, ym), imod(xm + ym, ym)},
+		{"lmod", 1, imod(xm, ym), imod(xm + ym, ym)},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(modp); ++i) {
+		kay &= minmax_i_test(modp + i, xm, ym);
+	}
+	puts("");
+
+	puts("Ceiling division");
+	puts("\tfn\tx\ty\texpect\tfn(x, y)");
+	const struct {
+		uint8_t expect;
+		uint8_t x, y;
+	} cdp[] = {
+		{0, 0, 1}, // Check for underflow
+		{6, 59, 10},
+		{6, 60, 10},
+		{7, 61, 10},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(cdp); ++i) {
+		kay &= ceildiv_test("zuceil", cdp[i].x, cdp[i].y, cdp[i].expect);
+	}
+	puts("");
+
+	puts("Integer log2 functions");
+	puts("\tfn\tx\texpect\tfn(x)");
 	const struct {
 		uint8_t val, expect;
 	} logp[] = {
+		// 0 is UB
 		{1, 0},
 		{127, 6},
 		{128, 7},
@@ -206,16 +352,9 @@ static uint32_t buf_end16b(const void *buf) {
 static uint32_t buf_end16l(const void *buf) {
 	return buf_endian16l(buf);
 }
-static uint32_t buf_end32(const void *buf, enum endianness e) {
-	return buf_endian32(buf, e);
+static char end_chr(enum endianness e) {
+	return e == big_endian ? 'b' : 'l';
 }
-static uint32_t buf_end32b(const void *buf) {
-	return buf_endian32b(buf);
-}
-static uint32_t buf_end32l(const void *buf) {
-	return buf_endian32l(buf);
-}
-#define FULL_X32 "0x%08" PRIx32
 static bool end_test(const struct endian_params *p, const uint8_t *blob,
 const char *prefix, const enum endianness end, const struct endian_group *fn) {
 	const uint32_t e = (end == big_endian ? p->expect_b : p->expect_l);
@@ -231,15 +370,12 @@ const char *prefix, const enum endianness end, const struct endian_group *fn) {
 	memcpy(minv, &inv, sizeof(inv));
 
 	const bool ok = (e == v1) & (e == v2) & !memcmp(blob, minv, p->bits/8);
-	printf("%s\t%s%u%c"
-		"\t{%02x,%02x,%02x,%02x}"
-		"\t" FULL_X32 "\t" FULL_X32 "\t" FULL_X32
-		"\t{%02x,%02x,%02x,%02x}\n",
-		ok_str(ok),
-		prefix, p->bits, (end == big_endian ? 'b' : 'l'),
-		blob[0], blob[1], blob[2], blob[3],
-		e, v1, v2,
-		minv[0], minv[1], minv[2], minv[3]);
+	printf("%s\t%s%u%c\t",
+		ok_str(ok), prefix, p->bits, end_chr(end));
+	print_blob(blob, 4, '\t');
+	printf(FULL_X32 "\t" FULL_X32 "\t" FULL_X32 "\t",
+		e, v1, v2);
+	print_blob(minv, 4, '\n');
 	return ok;
 }
 static bool end_test_battery(const struct endian_params *p, const uint8_t *blob) {
@@ -248,24 +384,31 @@ static bool end_test_battery(const struct endian_params *p, const uint8_t *blob)
 		& end_test(p, blob, "buf", big_endian, &p->buf)
 		& end_test(p, blob, "buf", little_endian, &p->buf);
 }
-static bool endf32_val_test(const uint8_t *blob, const enum endianness e,
-const float expect, float v1, float v2) {
+static bool buf_end24_test(const uint8_t *blob, enum endianness end,
+uint32_t expect) {
+	uint32_t v = buf_endian24(blob, end);
+	const bool ok = v == expect;
+	printf("%s\tbuf24%c\t", ok_str(ok), end_chr(end));
+	print_blob(blob, 4, '\t');
+	printf(FULL_X32 "\t" FULL_X32 "\n", expect, v);
+	return ok;
+}
+static bool endf32_val_test(const uint8_t *blob, const char *prefix,
+const enum endianness end, const float expect, float v1, float v2) {
 	const bool ok = (expect == v1) & (v1 == v2);
-	printf("%s\tf32%c"
-		"\t{%02x,%02x,%02x,%02x}"
-		"\t%.12f\t%.12f\t%.12f\n",
-		ok_str(ok), (e == big_endian) ? 'b' : 'l',
-		blob[0], blob[1], blob[2], blob[3],
-		expect, v1, v2);
+	printf("%s\t%sf32%c\t",
+		ok_str(ok), prefix, end_chr(end));
+	print_blob(blob, 4, '\t');
+	printf("%.12f\t%.12f\t%.12f\n", expect, v1, v2);
 	return ok;
 }
 static bool endf32_test(const void *blob, const enum endianness e,
 const float expect) {
 	const uint32_t f32 = mem_to_u32(blob);
-	return endf32_val_test(blob, e, expect,
+	return endf32_val_test(blob, "", e, expect,
 			(e == big_endian ? endianf32b : endianf32l)(f32),
 			endianf32(f32, e))
-		& endf32_val_test(blob, e, expect,
+		& endf32_val_test(blob, "buf", e, expect,
 			(e == big_endian ? buf_endianf32b : buf_endianf32l)(blob),
 			buf_endianf32(blob, e));
 }
@@ -276,13 +419,10 @@ static bool which_end_test(const uint8_t *blob) {
 
 	uint8_t mval[sizeof(val)];
 	memcpy(mval, &val, sizeof(val));
-	printf("%s"
-		"\t{%02x,%02x,%02x,%02x}"
-		"\t{%02x,%02x,%02x,%02x}\t%s\n",
-		ok_str(ok),
-		blob[0], blob[1], blob[2], blob[3],
-		mval[0], mval[1], mval[2], mval[3],
-		endian_str(cpu));
+	printf("%s\t", ok_str(ok));
+	print_blob(blob, 4, '\t');
+	print_blob(mval, 4, '\t');
+	puts(endian_str(cpu));
 	return ok;
 }
 static bool endian_tests(void) {
@@ -292,39 +432,185 @@ static bool endian_tests(void) {
 	puts("Do endian functions work? Are they revertible?");
 	puts("\tfn\tinput memory\texpected val"
 		"\tfn(input)\tfn(input, enum)\tfn(fn(input))");
-	static const uint8_t NUM_SEQ[] = {
-		0x11, 0x22, 0x33, 0x44,
-	};
 	static const struct endian_params params[] = {
 		{16, 0x1122, 0x2211,
 			{end16b, end16l, end16},
 			{buf_end16b, buf_end16l, buf_end16}},
 		{32, 0x11223344, 0x44332211,
 			{end32b, end32l, end32},
-			{buf_end32b, buf_end32l, buf_end32}},
+			{buf_endian32b, buf_endian32l, buf_endian32}},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(params); ++i) {
 		kay &= end_test_battery(params + i, NUM_SEQ);
 	}
 	puts("");
 
+	puts("The unexpected buf_endian24()");
+	puts("\tfn\tinput memory\texpected val\tfn(input)");
+	kay &= buf_end24_test(NUM_SEQ, big_endian, 0x112233);
+	kay &= buf_end24_test(NUM_SEQ, little_endian, 0x332211);
+	puts("");
+
 	puts("Does endianf32() work?");
 	puts("\tfn\tinput memory\texpected val\tfn(input)\tfn(input, enum)");
 	const float tau = (float)(M_PI * 2.0);
-	const uint32_t tau_l = buf_endian32l(&tau);
 	const uint32_t tau_b = buf_endian32b(&tau);
-	kay &= endf32_test(&tau_l, little_endian, tau);
+	const uint32_t tau_l = buf_endian32l(&tau);
 	kay &= endf32_test(&tau_b, big_endian, tau);
+	kay &= endf32_test(&tau_l, little_endian, tau);
 	puts("");
 
-	puts("Does which_end() work? Output must match the input order");
+	puts("Does which_end() tell the CPU endianness?"
+		" An int must have the same memory layout as the source");
 	puts("\tinput memory\toutput memory\tcpu endianess");
 	kay &= which_end_test(NUM_SEQ);
 	puts("");
 	return kay;
 }
 
+typedef void * (*small_alloc_fn_t)(size_t nmemb, size_t size);
+struct common_alloc_params {
+	const char name[8];
+	small_alloc_fn_t fn;
+};
+static void * small_realloc_from_nothing(size_t nmemb, size_t size) {
+	return small_realloc(NULL, nmemb, size);
+}
+static bool ok_if_null(const struct common_alloc_params *p, size_t x, size_t y) {
+	void *p1 = p->fn(x, y);
+	void *p2 = p->fn(y, x);
+	const bool ok = !p1 & !p2;
+	printf("%s\t%s\t0x%zx\t0x%zx\t%p\t%p\n", ok_str(ok), p->name, x, y, p1, p2);
+	free(p1);
+	free(p2);
+	return ok;
+}
+static bool common_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("Do small_*alloc() functions limit memory? Are they overflow-proof?"
+		" Tests must return NULL");
+	puts("\tfn\telems\telem size\tfn(x,y)\tfn(y,x)");
+	const struct common_alloc_params p[] = {
+		{"malloc", small_malloc},
+		{"calloc", small_calloc},
+		{"realloc", small_realloc_from_nothing},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(p); ++i) {
+		const size_t n = 1 << 24;
+		kay &= ok_if_null(p + i, n, 1);
+	}
+	for (size_t i = 0; i < ARRAY_LEN(p); ++i) {
+		const size_t m = ((size_t)1 << (sizeof(m)*8 - 1)) | 1;
+		kay &= ok_if_null(p + i, m, 2);
+	}
+	puts("");
+	return kay;
+}
+
+typedef uint32_t (*bit32_fn_t)(uint32_t x);
+struct bit_test_table {
+	const char name[8];
+	bit32_fn_t fn;
+	uint32_t arg, expect;
+};
+static uint32_t minws_bits(uint32_t depth) {
+	return bit_min_wordsize_bits((uint32_t)depth);
+}
+static uint32_t minws_log2(uint32_t depth) {
+	return bit_min_wordsize_log2((uint32_t)depth);
+}
+static void aer_uxx(uint32_t arg, uint32_t expect, uint32_t result) {
+	printf("\t%" PRIu32 "\t" FULL_X32 "\t" FULL_X32 "\n",
+		arg, expect, result);
+}
+static void aer_xuu(uint32_t arg, uint32_t expect, uint32_t result) {
+	printf("\t" FULL_X32 "\t%" PRIu32 "\t%" PRIu32 "\n",
+		arg, expect, result);
+}
+static void aer_uuu(uint32_t arg, uint32_t expect, uint32_t result) {
+	printf("\t%" PRIu32 "\t%" PRIu32 "\t%" PRIu32 "\n",
+		arg, expect, result);
+}
+static bool bit_test_run(const struct bit_test_table *t,
+void (print_fn)(uint32_t a, uint32_t e, uint32_t r)) {
+	const uint32_t result = t->fn(t->arg);
+	const bool ok = t->expect == result;
+	printf("%s\t%s", ok_str(ok), t->name);
+	print_fn(t->arg, t->expect, result);
+	return ok;
+}
+static bool bit_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("Count of leading and trailing bits");
+	puts("\tfn\tinput\texpected\tfn(input)");
+	const struct bit_test_table bcp[] = {
+		{"clo32", bit_clo32, 0, 0},
+		{"clo32", bit_clo32, 0xffffffff, 32},
+		{"clo32", bit_clo32, 0xf0f00fff, 4},
+
+		{"cto32", bit_cto32, 0, 0},
+		{"cto32", bit_cto32, 0xffffffff, 32},
+		{"cto32", bit_cto32, 0xf0f00fff, 12},
+
+		{"clz32", bit_clz32, 0, 32},
+		{"clz32", bit_clz32, 0xffffffff, 0},
+		{"clz32", bit_clz32, 0x0f0ff000, 4},
+
+		{"ctz32", bit_ctz32, 0, 32},
+		{"ctz32", bit_ctz32, 0xffffffff, 0},
+		{"ctz32", bit_ctz32, 0x0f0ff000, 12},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(bcp); ++i) {
+		kay &= bit_test_run(bcp + i, aer_xuu);
+	}
+	puts("");
+
+	puts("Set n bits");
+	puts("\tfn\tinput\texpected\tfn(input)");
+	const struct bit_test_table bsp[] = {
+		// 0 is UB, but that's fine cause 0 is useless, unlike 32
+		{"set32", bit_set32, 1, 1},
+		{"set32", bit_set32, 9, 0x1ff},
+		{"set32", bit_set32, 32, 0xffffffff},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(bsp); ++i) {
+		kay &= bit_test_run(bsp + i, aer_uxx);
+	}
+	puts("");
+
+	puts("Minimal integer size for a given depth, in bits or as log2(bytes)");
+	puts("\tfn\tinput\texpected\tfn(input)");
+	const struct bit_test_table bmp[] = {
+		{"bits", minws_bits, 1, 8},
+		{"bits", minws_bits, 8, 8},
+		{"bits", minws_bits, 9, 16},
+		{"bits", minws_bits, 24, 32},
+		{"bits", minws_bits, 33, 64},
+
+		{"log2", minws_log2, 1, 0},
+		{"log2", minws_log2, 8, 0},
+		{"log2", minws_log2, 9, 1},
+		{"log2", minws_log2, 24, 2},
+		{"log2", minws_log2, 33, 3},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(bmp); ++i) {
+		kay &= bit_test_run(bmp + i, aer_uuu);
+	}
+	puts("");
+	return kay;
+}
+
 int main(void) {
-	const bool kay = endian_tests() & math_tests() & pix_layout_tests();
+	const bool kay = bit_tests()
+		& common_tests()
+		& endian_tests()
+		& math_tests()
+		& time_tests()
+		& palette_tests()
+		& pix_layout_tests();
 	return kay ? 0 : 1;
 }

@@ -11,7 +11,7 @@
 
 uint8_t bit_min_wordsize_log2(unsigned bits);
 
-size_t bit_min_wordsize_bits(unsigned bits);
+uint8_t bit_min_wordsize_bits(unsigned bits);
 
 
 uint8_t bit_rev8(uint8_t bits);

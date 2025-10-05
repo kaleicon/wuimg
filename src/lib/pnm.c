@@ -358,7 +358,7 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 	}
 
 	desc->scale.pnm = bit_set32(depth);
-	desc->rast.bitdepth = (unsigned char)bit_min_wordsize_bits(depth);
+	desc->rast.bitdepth = bit_min_wordsize_bits(depth);
 	desc->rast.attr = (sign[1] == '-') ? pix_signed : pix_normal;
 	desc->rast.bitrange = (unsigned char)depth;
 	return setup_desc(desc);
