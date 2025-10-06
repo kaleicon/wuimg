@@ -7,6 +7,16 @@
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
+const char * unpack_op_str(const enum unpack_op op) {
+	switch (op) {
+	case op_noop: return "noop";
+	case op_unpack: return "unpack";
+	case op_pack: return "pack";
+	case op_bitfield: return "bitfield";
+	}
+	return "???";
+}
+
 // Unpack 2^n-bit to 8-bit
 static void unpack4(const uint8_t byte, uint8_t *dst, const size_t nr,
 const enum endianness e) {
@@ -165,7 +175,7 @@ const enum pix_attr attr, uint8_t bitrange) {
 	}
 
 	const bool highdepth = (bitdepth > 8);
-	const uint8_t off = bitdepth - bitrange;
+	const uint8_t off = 0;//bitdepth - bitrange;
 	for (size_t x = 0; x < width; ++x) {
 		uint32_t pix = bit_getn(src, x*bitdepth+off, bitrange) ^ xor;
 		if (highdepth) {

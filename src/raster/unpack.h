@@ -17,6 +17,8 @@ enum unpack_op {
 	op_bitfield,
 };
 
+const char * unpack_op_str(enum unpack_op op);
+
 void unpack_strip(void *restrict dst, const void *restrict src,
 size_t n, uint8_t bitdepth, enum pix_attr attr, enum endianness bit,
 enum unpack_op op, const void *arg);

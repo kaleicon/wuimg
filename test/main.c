@@ -14,6 +14,7 @@
 
 #include "raster/pal.h"
 #include "raster/pix.h"
+#include "raster/unpack.h"
 
 #define FULL_X32 "0x%08" PRIx32
 static const uint8_t NUM_SEQ[] = {
@@ -37,6 +38,144 @@ static const char * ok_str(const bool ok) {
 }
 
 /* raster/ tests */
+union test_unpack_mem {
+	uint8_t m8[8];
+	uint16_t m16[4];
+	float mf[2];
+};
+struct test_unpack_params {
+	uint8_t bitdepth;
+	enum pix_attr attr:8;
+	enum endianness bit:8;
+	enum unpack_op op:8;
+	union test_unpack_mem e;
+};
+static bool cmp_unpack(const struct test_unpack_params *p,
+const union test_unpack_mem *e, const uint8_t *blob, enum pix_attr attr) {
+	const size_t elems = p->bitdepth > 32
+		? 2
+		: (p->bitdepth > 8 ? 4 : 8);
+	uint8_t out[sizeof(*e)] = {0};
+	unpack_strip(out, blob, elems, p->bitdepth, attr, p->bit, p->op, NULL);
+
+	const bool ok = !memcmp(out, e->m8, sizeof(out));
+	printf("%s\t%02i/%s/%s/%s\t",
+		ok_str(ok), p->bitdepth,
+		p->bit == big_endian ? "ms" : "ls", unpack_op_str(p->op),
+		pix_attr_str(attr));
+	print_blob(e->m8, sizeof(*e), '\t');
+	print_blob(out, sizeof(*e), '\n');
+	return ok;
+}
+static void synth_case(union test_unpack_mem *e, const union test_unpack_mem *p,
+uint8_t depth, uint32_t xor) {
+	if (depth > 8) {
+		for (size_t i = 0; i < ARRAY_LEN(e->m16); ++i) {
+			e->m16[i] = (uint16_t)(p->m16[i] ^ xor);
+		}
+	} else {
+		for (size_t i = 0; i < ARRAY_LEN(e->m8); ++i) {
+			e->m8[i] = (uint8_t)(p->m8[i] ^ xor);
+		}
+	}
+}
+static bool test_unpack_synth(const struct test_unpack_params *p,
+const void *blob) {
+	const uint32_t md = u32min(p->bitdepth, 16);
+	union test_unpack_mem e_inv;
+	synth_case(&e_inv, &p->e, p->bitdepth, bit_set32(md));
+	union test_unpack_mem e_sig;
+	synth_case(&e_sig, &p->e, p->bitdepth, 1 << (md - 1));
+	return cmp_unpack(p, &p->e, blob, pix_normal)
+		& cmp_unpack(p, &e_inv, blob, pix_inverted)
+		& cmp_unpack(p, &e_sig, blob, pix_signed);
+}
+static bool test_unpack_single(const struct test_unpack_params *p,
+const void *blob) {
+	return cmp_unpack(p, &p->e, blob, p->attr);
+}
+static bool unpack_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("strip unpacking");
+	puts("\tdepth/order/op/attr\texpected\toutput");
+	const union {
+		uint8_t mem[16];
+		uint64_t aligner;
+	} data = {
+		{
+			0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc,
+			0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc,
+		},
+	};
+	// See unpack_array_gen.py
+	const struct test_unpack_params up[] = {
+		{1, pix_normal, big_endian, op_unpack,
+			.e.m8 = {1,0,1,1, 1,0,1,0}},
+		{2, pix_normal, big_endian, op_unpack,
+			.e.m8 = {2,3, 2,2, 2,1, 2,0}},
+		{3, pix_normal, big_endian, op_unpack,
+			.e.m8 = {5,6,5,1, 4,1,6,6}},
+		{4, pix_normal, big_endian, op_unpack,
+			.e.m8 = {0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4}},
+		{5, pix_normal, big_endian, op_unpack,
+			.e.m8 = {0x17, 0x0a, 0x0c, 0x07, 0x0c, 0x15, 0x01, 0x12}},
+		{6, pix_normal, big_endian, op_unpack,
+			.e.m8 = {0x2e, 0x29, 0x21, 0x36, 0x15, 0x03, 0x08, 0x10}},
+		{7, pix_normal, big_endian, op_unpack,
+			.e.m8 = {0x5d, 0x26, 0x0e, 0x65, 0x21, 0x48, 0x21, 0x7e}},
+		{8, pix_normal, big_endian, op_unpack,
+			.e.m8 = {0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc}},
+
+		{9, pix_normal, big_endian, op_unpack,
+			.e.m16 = {0x0175, 0x0061, 0x01b2, 0x0143}},
+		{10, pix_normal, big_endian, op_unpack,
+			.e.m16 = {0x02ea, 0x0187, 0x0195, 0x0032}},
+		{11, pix_normal, big_endian, op_unpack,
+			.e.m16 = {0x05d4, 0x061d, 0x04a8, 0x0321}},
+		{12, pix_normal, big_endian, op_unpack,
+			.e.m16 = {0x0ba9, 0x0876, 0x0543, 0x0210}},
+		{13, pix_normal, big_endian, op_unpack,
+			.e.m16 = {0x1753, 0x01d9, 0x0a19, 0x010f}},
+		{14, pix_normal, big_endian, op_unpack,
+			.e.m16 = {0x2ea6, 0x0765, 0x10c8, 0x10fe}},
+		{15, pix_normal, big_endian, op_unpack,
+			.e.m16 = {0x5d4c, 0x1d95, 0x0642, 0x0fed}},
+		// 16-, 32-, and 64-bits assumes native endianness
+
+		{20, pix_normal, big_endian, op_pack,
+			.e.m16 = {0xba98, 0x6543, 0x10fe, 0xcba9}},
+		{24, pix_normal, big_endian, op_pack,
+			.e.m16 = {0xba98, 0x5432, 0xfedc, 0x9876}},
+		{28, pix_normal, big_endian, op_pack,
+			.e.m16 = {0xba98, 0x4321, 0xdcba, 0x6543}},
+		};
+	for (size_t i = 0; i < ARRAY_LEN(up); ++i) {
+		kay &= test_unpack_synth(up + i, data.mem);
+	}
+	const struct test_unpack_params single[] = {
+		{1, pix_normal, little_endian, op_unpack,
+			.e.m8 = {0,1,0,1, 1,1,0,1}},
+		{1, pix_inverted, little_endian, op_unpack,
+			.e.m8 = {1,0,1,0, 0,0,1,0}},
+		{4, pix_normal, little_endian, op_unpack,
+			.e.m8 = {0xa, 0xb, 0x8, 0x9, 0x6, 0x7, 0x4, 0x5}},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(single); ++i) {
+		kay &= test_unpack_single(single + i, data.mem);
+	}
+	const double mem[4] = {1, 2, 3, 4};
+	const struct test_unpack_params floats[] = {
+		{64, pix_float, big_endian, op_pack,
+			.e.mf = {1,2}},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(floats); ++i) {
+		kay &= test_unpack_single(floats + i, mem);
+	}
+	return kay;
+}
+
 struct pix_layout_names {
 	enum pix_layout l:8;
 	const char name[5];
@@ -611,6 +750,7 @@ int main(void) {
 		& math_tests()
 		& time_tests()
 		& palette_tests()
-		& pix_layout_tests();
+		& pix_layout_tests()
+		& unpack_tests();
 	return kay ? 0 : 1;
 }
