@@ -198,11 +198,21 @@ static void glfw_terminate(void *ctx) {
 }
 
 const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
+	*glfw = (struct glfw_context){
+		.pub = pub,
+	};
+	pub->win.fn = (struct window_fn) {
+		.title = glfw_set_title,
+		.fullscreen = glfw_fullscreen,
+		.resize = glfw_resize,
+		.poll = glfw_poll,
+		.swap_buffers = glfw_swap_buffers,
+		.terminate = glfw_terminate,
+	};
+
 	if (!glfwInit()) {
 		return "glfwInit() failed";
 	}
-
-	*glfw = (struct glfw_context){0};
 
 	GLFWmonitor *monitor = glfwGetPrimaryMonitor();
 	const GLFWvidmode *video = glfwGetVideoMode(monitor);
@@ -234,7 +244,6 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 		return "Couldn't create GLFW window";
 	}
 
-	glfw->pub = pub;
 	glfw->window = window;
 
 	glfwMakeContextCurrent(window);
@@ -253,14 +262,5 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	int w, h;
 	glfwGetFramebufferSize(window, &w, &h);
 	window_size_update(pub, w, h);
-
-	pub->win.fn = (struct window_fn) {
-		.title = glfw_set_title,
-		.fullscreen = glfw_fullscreen,
-		.resize = glfw_resize,
-		.poll = glfw_poll,
-		.swap_buffers = glfw_swap_buffers,
-		.terminate = glfw_terminate,
-	};
 	return NULL;
 }

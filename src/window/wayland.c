@@ -802,10 +802,19 @@ static const struct wp_color_management_surface_feedback_v1_listener listen_colo
 };
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub) {
-	*wl = (struct wayland){0};
+	*wl = (struct wayland){
+		.pub = pub,
+	};
+	pub->win.fn = (struct window_fn) {
+		.title = wayland_set_title,
+		.resize = wayland_resize,
+		.fullscreen = wayland_fullscreen,
+		.poll = wayland_poll,
+		.swap_buffers = wayland_swap_buffers,
+		.terminate = wayland_terminate,
+	};
 
 	struct wu_conf *conf = &pub->image.conf;
-	wl->pub = pub;
 
 	wl->display = wl_display_connect(NULL);
 	if (!wl->display) {
@@ -892,14 +901,6 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	if (wl->color.bind) {
 		wl_display_roundtrip(wl->display);
 	}
-	pub->win.fn = (struct window_fn) {
-		.title = wayland_set_title,
-		.resize = wayland_resize,
-		.fullscreen = wayland_fullscreen,
-		.poll = wayland_poll,
-		.swap_buffers = wayland_swap_buffers,
-		.terminate = wayland_terminate,
-	};
 	return NULL;
 }
 

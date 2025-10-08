@@ -318,10 +318,18 @@ drmModeModeInfo **mode_info) {
 }
 
 const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
-	*ctx = (struct drm_context){0};
-
-	ctx->pub = pub;
-	ctx->drm.fd = -1;
+	*ctx = (struct drm_context){
+		.pub = pub,
+		.drm.fd = -1,
+	};
+	pub->win.fn = (struct window_fn) {
+		.title = null_function,
+		.fullscreen = null_function,
+		.resize = null_function,
+		.poll = null_function,
+		.swap_buffers = drm_swap_buffers,
+		.terminate = drm_terminate,
+	};
 
 	drmModeConnector *connector = NULL;
 	drmModeModeInfo *mode_info = NULL; // ptr to a *connector member
@@ -350,19 +358,6 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 		err = "DRM setup failed";
 	}
 	drmModeFreeConnector(connector);
-
-	if (err) {
-		drm_terminate(ctx);
-	} else {
-		pub->win.fn = (struct window_fn) {
-			.title = null_function,
-			.fullscreen = null_function,
-			.resize = null_function,
-			.poll = null_function,
-			.swap_buffers = drm_swap_buffers,
-			.terminate = drm_terminate,
-		};
-	}
 	return err;
 }
 
