@@ -59,6 +59,8 @@ size_t mp_scan_int(struct mparser *mp, size_t digits, intmax_t *val);
 
 size_t mp_scan_xint(struct mparser *mp, size_t digits, uintmax_t *val);
 
+size_t mp_scan_anyuint(struct mparser *mp, size_t digits, uintmax_t *val);
+
 
 void mp_seek_cur(struct mparser *mp, ptrdiff_t pos);
 

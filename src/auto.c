@@ -659,7 +659,7 @@ static struct wu_st get_load(struct mparser *mp, struct token *tok) {
 		if (c == '+' || c == '-') {
 			++mp->pos;
 			uintmax_t bias_tmp;
-			mp_scan_xint(mp, 5, &bias_tmp);
+			mp_scan_anyuint(mp, 5, &bias_tmp);
 			if (bias_tmp > 0x7fff) {
 				return pbug("bias > 0x7fff");
 			}
@@ -679,7 +679,7 @@ static struct wu_st get_load(struct mparser *mp, struct token *tok) {
 				if (tok->type == token_load_array) {
 					++mp->pos;
 					// Array is either empty ("[]") or > 0
-					if (!mp_scan_xint(mp, 4, &n) || n) {
+					if (!mp_scan_anyuint(mp, 4, &n) || n) {
 						if (mp_next_char(mp) == ']') {
 							tok->u.load.array =
 								(uint16_t)n;
@@ -721,7 +721,7 @@ static struct wu_st read_token(struct mparser *mp, struct token *tok) {
 	case '0': case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
 		--mp->pos;
-		mp_scan_xint(mp, 11, &tok->u.num);
+		mp_scan_anyuint(mp, 11, &tok->u.num);
 		if (tok->u.num > 0xffffffff) {
 			return pbug("Number literals greater than 32 bits"
 				" not supported");

@@ -48,9 +48,9 @@ static struct wu_conf sanitize_conf(struct wu_conf conf) {
 	return conf;
 }
 
-static uintmax_t read_xint(struct mparser *tp, bool *ok) {
+static uintmax_t read_anyuint(struct mparser *tp, bool *ok) {
 	uintmax_t val;
-	*ok = mp_scan_xint(tp, 5, &val);
+	*ok = mp_scan_anyuint(tp, 5, &val);
 	return val;
 }
 
@@ -68,7 +68,6 @@ static bool read_bool(struct mparser *tp, bool *ok) {
 static unsigned char read_enum(struct mparser *tp, bool *ok,
 const struct enum_str *e, const size_t len) {
 	struct wuptr val = mp_next_word(tp);
-	mp_skip_blank(tp);
 	for (size_t i = 0; i < len; ++i) {
 		if (wuptr_eq_str(val, e[i].str)) {
 			return e[i].val;
@@ -93,21 +92,21 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 		mp_skip_blank(tp);
 		bool ok = true;
 		if (wuptr_eq_str(key, "max_img_size")) {
-			conf->max_img_size = (unsigned)read_xint(tp, &ok);
+			conf->max_img_size = (unsigned)read_anyuint(tp, &ok);
 		} else if (wuptr_eq_str(key, "magnify_under")) {
-			conf->magnify_under = (unsigned)read_xint(tp, &ok);
+			conf->magnify_under = (unsigned)read_anyuint(tp, &ok);
 		} else if (wuptr_eq_str(key, "initial_size")) {
 			struct display_dims *i = &conf->initial_size;
-			i->w = (int)read_xint(tp, &ok);
+			i->w = (int)read_anyuint(tp, &ok);
 			if (ok) {
 				mp_skip_blank(tp);
-				i->h = (int)read_xint(tp, &ok);
+				i->h = (int)read_anyuint(tp, &ok);
 			}
 		} else if (wuptr_eq_str(key, "bg")) {
 			unsigned char *bg = conf->bg;
 			for (size_t i = 0; ok && i < ARRAY_LEN(conf->bg); ++i) {
 				mp_skip_blank(tp);
-				bg[i] = (unsigned char)read_xint(tp, &ok);
+				bg[i] = (unsigned char)read_anyuint(tp, &ok);
 			}
 		} else if (wuptr_eq_str(key, "bg_src")) {
 			const struct enum_str e[] = {

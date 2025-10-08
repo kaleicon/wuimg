@@ -195,32 +195,46 @@ size_t mp_scan_int(struct mparser *mp, size_t digits, intmax_t *val) {
 	return k;
 }
 
-size_t mp_scan_xint(struct mparser *mp, size_t digits, uintmax_t *val) {
+static bool has_hex_prefix(struct mparser *mp) {
 	const uint8_t *pre = mp_slice(mp, 2);
-	bool hex = false;
 	if (pre) {
 		if (pre[0] == '0' && (pre[1] == 'x' || pre[1] == 'X')) {
-			hex = true;
+			return true;
 		} else {
 			mp->pos -= 2;
 		}
 	}
-	if (hex) {
-		digits = zumin(digits, mp->len - mp->pos);
-		*val = 0;
-		size_t k = 0;
-		while (k < digits) {
-			const uint8_t c = curc(mp);
-			if (!isxdigit(c)) {
-				break;
-			}
-			*val = *val * 16 + toxnum(c);
-			++k;
-			++mp->pos;
+	return false;
+}
+
+static size_t mp_scan_xint_noprefix(struct mparser *mp, size_t digits,
+uintmax_t *val) {
+	digits = zumin(digits, mp->len - mp->pos);
+	*val = 0;
+	size_t k = 0;
+	while (k < digits) {
+		const uint8_t c = curc(mp);
+		if (!isxdigit(c)) {
+			break;
 		}
-		return k;
+		*val = *val * 16 + toxnum(c);
+		++k;
+		++mp->pos;
 	}
-	return mp_scan_uint(mp, digits, val);
+	return k;
+}
+
+size_t mp_scan_xint(struct mparser *mp, size_t digits, uintmax_t *val) {
+	if (has_hex_prefix(mp)) {
+		return mp_scan_xint_noprefix(mp, digits, val);
+	}
+	return 0;
+}
+
+size_t mp_scan_anyuint(struct mparser *mp, size_t digits, uintmax_t *val) {
+	return has_hex_prefix(mp)
+		? mp_scan_xint_noprefix(mp, digits, val)
+		: mp_scan_uint(mp, digits, val);
 }
 
 
