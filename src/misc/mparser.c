@@ -39,12 +39,11 @@ static void mp_skip_nonspace(struct mparser *mp) {
 
 
 size_t mp_skip_space_unsafe(struct mparser *mp) {
-	size_t k = 0;
+	const size_t start = mp->pos;
 	while (isspace(curc(mp))) {
 		++mp->pos;
-		++k;
 	}
-	return k;
+	return mp->pos - start;
 }
 
 unsigned char mp_next_char_unsafe(struct mparser *mp) {
@@ -237,7 +236,7 @@ size_t mp_scan_anyuint(struct mparser *mp, size_t digits, uintmax_t *val) {
 }
 
 
-void mp_seek_cur(struct mparser *mp, const ptrdiff_t pos) {
+size_t mp_seek_cur(struct mparser *mp, const ptrdiff_t pos) {
 	if (pos < 0) {
 		const size_t upos = (size_t)-pos;
 		mp->pos = upos > mp->pos ? 0 : mp->pos - upos;
@@ -246,10 +245,12 @@ void mp_seek_cur(struct mparser *mp, const ptrdiff_t pos) {
 	} else {
 		mp->pos = mp->len;
 	}
+	return mp->pos;
 }
 
-void mp_seek_set(struct mparser *mp, const size_t pos) {
+size_t mp_seek_set(struct mparser *mp, const size_t pos) {
 	mp->pos = zumin(pos, mp->len);
+	return mp->pos;
 }
 
 

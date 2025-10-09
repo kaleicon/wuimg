@@ -332,6 +332,14 @@ static bool cmpstr_mp(const char *fn, const struct wuptr w, const char *str) {
 	printf("\"\t\"%s\"\n", str);
 	return ok;
 }
+static bool cmpuunsafe_mp(const char *fn, struct mparser *mp, uintmax_t expect) {
+	uintmax_t val = 789;
+	size_t r = mp_scan_uint_unsafe(mp, &val);
+	(void)r;
+	const bool ok = val == expect;
+	printf("%s\t%s\t%ju\t%ju\n", ok_str(ok), fn, expect, val);
+	return ok;
+}
 static bool cmpu_mp(const char *fn,
 size_t (*scan)(struct mparser *mp, size_t digits, uintmax_t *val),
 struct mparser *mp, size_t digits, uintmax_t expect) {
@@ -354,7 +362,8 @@ struct mparser *mp, size_t digits, intmax_t expect) {
 }
 static bool test_mp_next(void) {
 	const char str[] = "a b c \t\r\n d  straße"
-		" 00 123  -65537-65538 0xf1 0xf2_:*\\ 0xfffff-0x10x000002"
+		" 00  0123456789 0123456789-65537-65538 0xf1 0xf2_:*\\ "
+		"0xabcdef0xABCDEF-0x10x000002"
 		"   \r\n\f e3 f g";
 	struct mparser mp = mp_wuptr(wuptr_str(str));
 	struct mparser mp2 = mp_mem(strlen(str), str);
@@ -371,12 +380,16 @@ static bool test_mp_next(void) {
 
 		& cmpz_mp("skip_space", mp_skip_space(&mp), 1)
 		& cmpu_mp("scan_uint", mp_scan_uint, &mp, 2, 0)
-		& cmpz_mp("skip_space", mp_skip_space(&mp), 1)
+		& cmpz_mp("skip_space", mp_skip_space(&mp), 2)
+		& cmpz_mp("skip_space", mp_skip_space(&mp), 0)
 		& cmpu_mp("scan_uint", mp_scan_uint, &mp, 0, 0)
-		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 123)
+		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 123456789)
 		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 0)
+		& cmpz_mp("skip_blank", mp_skip_blank(&mp), 1)
+		& cmpuunsafe_mp("scan_uint_unsafe", &mp, 123456789)
+		& cmpuunsafe_mp("scan_uint_unsafe", &mp, 0)
 
-		& cmpz_mp("skip_blank", mp_skip_blank(&mp), 2)
+		& cmpz_mp("skip_blank", mp_skip_blank(&mp), 0)
 		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 0)
 		& cmpi_mp("scan_int", mp_scan_int, &mp, 0, 0)
 		& cmpi_mp("scan_int", mp_scan_int, &mp, 1, 6)
@@ -397,7 +410,8 @@ static bool test_mp_next(void) {
 		& cmpstr_mp("next_word", mp_next_word(&mp), "f2_:*\\")
 
 		& cmpc_mp("next_char", mp_next_char(&mp), ' ')
-		& cmpu_mp("scan_xint", mp_scan_xint, &mp, SIZE_MAX, 0xfffff)
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, 6, 0xabcdef)
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, SIZE_MAX, 0xabcdef)
 
 		& cmpi_mp("scan_int", mp_scan_int, &mp, SIZE_MAX, -0)
 		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 0)
@@ -412,7 +426,7 @@ static bool test_mp_next(void) {
 		& cmpc_mp("cur_char", mp_cur_char(&mp), ' ')
 
 		& cmpz_mp("skip_blank", mp_skip_blank(&mp), 3)
-		& cmpz_mp("skip_space", mp_skip_space(&mp), 4)
+		& cmpz_mp("skip_space_unsafe", mp_skip_space_unsafe(&mp), 4)
 		& cmpc_mp("cur_char", mp_cur_char(&mp), 'e')
 		& cmpc_mp("skip_until", mp_skip_until(&mp, 'f'), true)
 		& cmpc_mp("cur_char", mp_cur_char(&mp), ' ')
@@ -443,18 +457,38 @@ static bool cmpnull_mp(const char *fn, const void *ptr) {
 	printf("%s\t%s\t%p\t%p\n", ok_str(ok), fn, NULL, ptr);
 	return ok;
 }
+static bool cmpupto_mp(const char *fn, struct mparser *mp, const char c,
+const void *ptr, const size_t len, const bool succeed) {
+	struct wuptr out = {.ptr = (void *)-1, .len = 765};
+	const bool no_eof = mp_upto(mp, &out, c);
+	const struct wuptr expect = wuptr_mem(ptr, len);
+	const bool ok = !memcmp(&out, &expect, sizeof(out)) & (no_eof == succeed);
+	printf("%s\t%s\t%zu\t%zu\n", ok_str(ok), fn, len, out.len);
+	return ok;
+}
+static bool cmpseek_mp(struct mparser *mp, size_t where) {
+	const bool ok = mp_seek_set(mp, where) == where;
+	printf("%s\tseek_set\t%zu\t%zu\n", ok_str(ok), where, mp->pos);
+	return ok;
+}
 static bool test_mp_slice(void) {
 	const char str[] = "0123456789";
 	const size_t len = strlen(str);
 	struct mparser mp = mp_mem(len, str);
 
-	bool ok = cmpptr_mp("slice", mp_slice(&mp, 1), str, 0)
+	return cmpptr_mp("slice", mp_slice(&mp, 1), str, 0)
 		& cmpnull_mp("!slice", mp_slice(&mp, len))
 		& cmpnull_mp("!slice", mp_slice(&mp, SIZE_MAX))
+		& cmpupto_mp("upto", &mp, '4', str+1, 3, true)
+		& cmpupto_mp("upto", &mp, '9', str+5, 4, true)
+		& cmpupto_mp("upto", &mp, 'y', str+len, 0, false)
+		& cmpseek_mp(&mp, 1)
+
 		& cmpwuptr_mp("avail", mp_avail(&mp, 1), str+1, 1)
 		& cmpwuptr_mp("avail", mp_avail(&mp, SIZE_MAX), str+2, 8)
 		& cmpptr_mp("slice", mp_slice(&mp, 0), str, len)
 		& cmpnull_mp("!slice", mp_slice(&mp, 1))
+
 		& cmpptr_mp("slice_at", mp_slice_at(&mp, 1, 1), str, 1)
 		& cmpnull_mp("!slice_at", mp_slice_at(&mp, 1, len))
 		& cmpnull_mp("!slice_at", mp_slice_at(&mp, 1, SIZE_MAX))
@@ -462,41 +496,42 @@ static bool test_mp_slice(void) {
 		& cmpnull_mp("!slice_at", mp_slice_at(&mp, SIZE_MAX, len))
 		& cmpwuptr_mp("avail_at", mp_avail_at(&mp, 2, len), str+2, 8)
 		& cmpwuptr_mp("avail_at", mp_avail_at(&mp, 2, SIZE_MAX), str+2, 8)
-		& cmpzwuptr_mp("avail_at", mp_avail_at(&mp, len, SIZE_MAX));
-	mp_seek_set(&mp, 0);
-	return ok
+		& cmpzwuptr_mp("avail_at", mp_avail_at(&mp, len, SIZE_MAX))
+		& cmpseek_mp(&mp, 0)
+
 		& cmpwuptr_mp("remaining", mp_remaining(&mp), str, len)
 		& cmpwuptr_mp("remaining", mp_remaining(&mp), str + len, 0);
 }
 static bool test_seek_set(struct mparser *mp, size_t seek, size_t expect) {
-	mp_seek_set(mp, seek);
-	const bool ok = mp->pos == expect;
-	printf("%s\tseek_set\t%zu\t%zu\t%zu\n", ok_str(ok), seek, expect, mp->pos);
+	const size_t n = mp_seek_set(mp, seek);
+	const bool ok = n == expect;
+	printf("%s\tseek_set\t%zu\t%zu\t%zu\n", ok_str(ok), seek, expect, n);
 	return ok;
 }
 static bool test_seek_cur(struct mparser *mp, ptrdiff_t seek, size_t expect) {
-	mp_seek_cur(mp, seek);
-	const bool ok = mp->pos == expect;
-	printf("%s\tseek_cur\t%ti\t%zu\t%zu\n", ok_str(ok), seek, expect, mp->pos);
+	const size_t n = mp_seek_cur(mp, seek);
+	const bool ok = n == expect;
+	printf("%s\tseek_cur\t%ti\t%zu\t%zu\n", ok_str(ok), seek, expect, n);
 	return ok;
 }
 static bool test_mp_seek(void) {
 	const char str[] = "qwerty";
 	const size_t len = strlen(str);
 	struct mparser mp = mp_mem(len, str);
-	return test_seek_set(&mp, 0, 0)
+	bool ok = test_seek_set(&mp, 0, 0)
 		& test_seek_set(&mp, 1, 1)
 		& test_seek_set(&mp, 0, 0)
 		& test_seek_set(&mp, len, len)
 		& test_seek_set(&mp, len*2, len)
 		& test_seek_set(&mp, SIZE_MAX, len)
 		& test_seek_cur(&mp, -1, len-1)
-		& test_seek_cur(&mp, -2, len-3)
-		& test_seek_cur(&mp, 0, len-3)
-		& test_seek_cur(&mp, 1, len-2)
+		& test_seek_cur(&mp, 0, len-1)
+		& test_seek_cur(&mp, 1, len)
 		& test_seek_cur(&mp, -(ptrdiff_t)len, 0)
 		& test_seek_cur(&mp, PTRDIFF_MAX, len)
 		& test_seek_cur(&mp, PTRDIFF_MIN, 0);
+	mp.pos = SIZE_MAX;
+	return ok & test_seek_cur(&mp, PTRDIFF_MAX, len);
 }
 
 static bool mparser_tests(void) {
