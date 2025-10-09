@@ -8,28 +8,23 @@ https://moddingwiki.shikadi.net/wiki/JAM_Format
 */
 
 struct wu_st jam_decode(struct mparser mp, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-
 	const struct wuptr src = mp_remaining(&mp);
 	const size_t dst_len = wuimg_size(img);
 	uint8_t *dst = img->data;
 	size_t s = 0;
 	size_t d = 0;
-	uint8_t flags;
-	while (src.len - s > 1 && (flags = src.ptr[s]) != 0) {
+	while (src.len - s >= 2 && dst_len - d) {
+		unsigned len = src.ptr[s];
 		++s;
-		unsigned len = flags;
-		if ((flags & 0x80)) {
-			len -= 0x7f;
-			if (dst_len - d < len) {
+		if ((len & 0x80)) {
+			len -= 0x80 - 1;
+			if (dst_len - d < len || src.len - s < len) {
 				break;
 			}
 			memcpy(dst + d, src.ptr + s, len);
 			s += len;
 		} else {
-			if ((flags & 0x40)) {
+			if ((len & 0x40)) {
 				if (src.len - s < 2) {
 					break;
 				}
@@ -40,9 +35,8 @@ struct wu_st jam_decode(struct mparser mp, struct wuimg *img) {
 			if (dst_len - d < len) {
 				break;
 			}
-			uint8_t color = src.ptr[s];
+			memset(dst + d, src.ptr[s], len);
 			++s;
-			memset(dst + d, color, len);
 		}
 		d += len;
 	}
@@ -73,17 +67,17 @@ struct wu_st jam_parse(struct mparser *mp, struct wuimg *img) {
 	}
 
 	const uint8_t sig[] = {'X', 'C', 'O', 'M'};
-	uint16_t w = buf_endian16(hdr + 6, little_endian);
-	uint16_t h = buf_endian16(hdr + 8, little_endian);
-	const uint16_t direction = buf_endian16(hdr + 10, little_endian);
-	const uint16_t depth = buf_endian16(hdr + 12, little_endian);
-	const uint16_t elems = buf_endian16(hdr + 14, little_endian);
+	const uint16_t direction = buf_endian16l(hdr + 10);
+	const uint16_t depth = buf_endian16l(hdr + 12);
+	const uint16_t elems = buf_endian16l(hdr + 14);
 	if (memcmp(sig, hdr, sizeof(sig))
 	|| (direction != jam_horizontal && direction != jam_vertical)
 	|| depth != 8 || !elems || elems > 256*3) {
 		return WUERR_HERE(wu_invalid_header);
 	}
 	const bool vert = direction == jam_vertical;
+	const uint16_t w = buf_endian16l(hdr + 6);
+	const uint16_t h = buf_endian16l(hdr + 8);
 	img->w = vert ? h : w;
 	img->h = vert ? w : h;
 	img->channels = 1;
@@ -93,13 +87,7 @@ struct wu_st jam_parse(struct mparser *mp, struct wuimg *img) {
 	img->mirror = vert;
 
 	const uint8_t *pal = mp_slice(mp, elems);
-	if (!pal) {
-		return WUERR_HERE(wu_unexpected_eof);
-	}
-
-	struct wu_st st = wuimg_palette_from_buf(img, 3, elems/3, pal);
-	if (wu_isok(st)) {
-		return wuimg_verify_st(img);
-	}
-	return st;
+	return pal
+		? wuimg_palette_from_buf(img, 3, elems/3, pal)
+		: WUERR_HERE(wu_unexpected_eof);
 }
