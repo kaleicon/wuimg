@@ -63,19 +63,20 @@ size_t mp_scan_uint_unsafe(struct mparser *mp, uintmax_t *val) {
 }
 
 
-void mp_skip_blank(struct mparser *mp) {
+size_t mp_skip_blank(struct mparser *mp) {
+	const size_t start = mp->pos;
 	while (bndchk(mp) && isblank(curc(mp))) {
 		++mp->pos;
 	}
+	return mp->pos - start;
 }
 
 size_t mp_skip_space(struct mparser *mp) {
-	size_t k = 0;
+	const size_t start = mp->pos;
 	while (bndchk(mp) && isspace(curc(mp))) {
 		++mp->pos;
-		++k;
 	}
-	return k;
+	return mp->pos - start;
 }
 
 bool mp_skip_until(struct mparser *mp, int c) {
@@ -183,11 +184,8 @@ size_t mp_scan_uint(struct mparser *mp, size_t digits, uintmax_t *val) {
 }
 
 size_t mp_scan_int(struct mparser *mp, size_t digits, intmax_t *val) {
-	bool sign = false;
-	if (curc(mp) == '-') {
-		++mp->pos;
-		sign = true;
-	}
+	const bool sign = curc(mp) == '-';
+	mp->pos += sign;
 	const size_t k = mp_scan_uint(mp, digits, (uintmax_t *)val);
 	if (sign) {
 		*val = -*val;
@@ -225,6 +223,7 @@ uintmax_t *val) {
 }
 
 size_t mp_scan_xint(struct mparser *mp, size_t digits, uintmax_t *val) {
+	*val = 0;
 	if (has_hex_prefix(mp)) {
 		return mp_scan_xint_noprefix(mp, digits, val);
 	}

@@ -10,6 +10,7 @@
 #include "misc/common.h"
 #include "misc/endian.h"
 #include "misc/math.h"
+#include "misc/mparser.h"
 #include "misc/time.h"
 
 #include "raster/pal.h"
@@ -125,8 +126,6 @@ static bool unpack_tests(void) {
 			.e.m8 = {0x2e, 0x29, 0x21, 0x36, 0x15, 0x03, 0x08, 0x10}},
 		{7, pix_normal, big_endian, op_unpack,
 			.e.m8 = {0x5d, 0x26, 0x0e, 0x65, 0x21, 0x48, 0x21, 0x7e}},
-		{8, pix_normal, big_endian, op_unpack,
-			.e.m8 = {0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc}},
 
 		{9, pix_normal, big_endian, op_unpack,
 			.e.m16 = {0x0175, 0x0061, 0x01b2, 0x0143}},
@@ -161,6 +160,10 @@ static bool unpack_tests(void) {
 			.e.m8 = {1,0,1,0, 0,0,1,0}},
 		{4, pix_normal, little_endian, op_unpack,
 			.e.m8 = {0xa, 0xb, 0x8, 0x9, 0x6, 0x7, 0x4, 0x5}},
+		{8, pix_inverted, big_endian, op_unpack,
+			.e.m8 = {0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23}},
+		{8, pix_signed, big_endian, op_unpack,
+			.e.m8 = {0x3a, 0x18, 0xf6, 0xd4, 0xb2, 0x90, 0x7e, 0x5c}},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(single); ++i) {
 		kay &= test_unpack_single(single + i, data.mem);
@@ -308,6 +311,210 @@ static bool time_tests(void) {
 	for (size_t i = 0; i < ARRAY_LEN(dates); ++i) {
 		kay &= to_epoch_test(dates + i);
 	}
+	puts("");
+	return kay;
+}
+
+static bool cmpc_mp(const char *fn, int val, int expect) {
+	const bool ok = val == expect;
+	printf("%s\t%s\t0x%x\t0x%x\n", ok_str(ok), fn,
+		(unsigned)expect, (unsigned)val);
+	return ok;
+}
+static bool cmpz_mp(const char *fn, size_t val, size_t expect) {
+	return cmpc_mp(fn, (int)val, (int)expect);
+}
+static bool cmpstr_mp(const char *fn, const struct wuptr w, const char *str) {
+	const bool ok = wuptr_eq_str(w, str);
+	printf("%s\t%s\t\"", ok_str(ok), fn);
+	wuptr_print(w, stdout);
+	printf("\"\t\"%s\"\n", str);
+	return ok;
+}
+static bool cmpu_mp(const char *fn,
+size_t (*scan)(struct mparser *mp, size_t digits, uintmax_t *val),
+struct mparser *mp, size_t digits, uintmax_t expect) {
+	uintmax_t val = 789;
+	size_t r = (*scan)(mp, digits, &val);
+	(void)r;
+	const bool ok = val == expect;
+	printf("%s\t%s\t%ju\t%ju\n", ok_str(ok), fn, expect, val);
+	return ok;
+}
+static bool cmpi_mp(const char *fn,
+size_t (*scan)(struct mparser *mp, size_t digits, intmax_t *val),
+struct mparser *mp, size_t digits, intmax_t expect) {
+	intmax_t val = -789;
+	size_t r = (*scan)(mp, digits, &val);
+	(void)r;
+	const bool ok = val == expect;
+	printf("%s\t%s\t%ji\t%ji\n", ok_str(ok), fn, expect, val);
+	return ok;
+}
+static bool test_mp_next(void) {
+	const char str[] = "a b c \t\r\n d  straße"
+		" 00 123  -65537-65538 0xf1 0xf2_:*\\ 0xfffff-0x10x000002"
+		"   \r\n\f e3 f g";
+	struct mparser mp = mp_wuptr(wuptr_str(str));
+	struct mparser mp2 = mp_mem(strlen(str), str);
+
+	return !memcmp(&mp, &mp2, sizeof(mp))
+		& cmpc_mp("cur_char", mp_cur_char(&mp), 'a')
+		& cmpc_mp("next_char", mp_next_char(&mp), 'a')
+		& cmpc_mp("next_nonblank", mp_next_nonblank(&mp), 'b')
+		& cmpc_mp("next_nonspace", mp_next_nonspace(&mp), 'c')
+		& cmpc_mp("next_nonblank", mp_next_nonblank(&mp), '\r')
+		& cmpc_mp("next_nonspace", mp_next_nonspace(&mp), 'd')
+		& cmpz_mp("skip_blank", mp_skip_blank(&mp), 2)
+		& cmpstr_mp("next_word", mp_next_word(&mp), "straße")
+
+		& cmpz_mp("skip_space", mp_skip_space(&mp), 1)
+		& cmpu_mp("scan_uint", mp_scan_uint, &mp, 2, 0)
+		& cmpz_mp("skip_space", mp_skip_space(&mp), 1)
+		& cmpu_mp("scan_uint", mp_scan_uint, &mp, 0, 0)
+		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 123)
+		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 0)
+
+		& cmpz_mp("skip_blank", mp_skip_blank(&mp), 2)
+		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 0)
+		& cmpi_mp("scan_int", mp_scan_int, &mp, 0, 0)
+		& cmpi_mp("scan_int", mp_scan_int, &mp, 1, 6)
+		& cmpi_mp("scan_int", mp_scan_int, &mp, SIZE_MAX, 5537)
+
+		& cmpi_mp("scan_int", mp_scan_int, &mp, SIZE_MAX, -65538)
+		& cmpi_mp("scan_int", mp_scan_int, &mp, SIZE_MAX, 0)
+
+		& cmpc_mp("next_char", mp_next_char(&mp), ' ')
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, 1, 0xf)
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, 1, 0)
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, SIZE_MAX, 0)
+		& cmpc_mp("next_char", mp_next_char(&mp), '1')
+
+		& cmpc_mp("next_char", mp_next_char(&mp), ' ')
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, 0, 0)
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, 2, 0)
+		& cmpstr_mp("next_word", mp_next_word(&mp), "f2_:*\\")
+
+		& cmpc_mp("next_char", mp_next_char(&mp), ' ')
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, SIZE_MAX, 0xfffff)
+
+		& cmpi_mp("scan_int", mp_scan_int, &mp, SIZE_MAX, -0)
+		& cmpu_mp("scan_uint", mp_scan_uint, &mp, SIZE_MAX, 0)
+		& cmpu_mp("scan_xint", mp_scan_xint, &mp, SIZE_MAX, 0)
+		& cmpc_mp("next_char", mp_next_char(&mp), 'x')
+
+		& cmpu_mp("scan_anyuint", mp_scan_anyuint, &mp, 0, 0)
+		& cmpu_mp("scan_anyuint", mp_scan_anyuint, &mp, 1, 1)
+		& cmpu_mp("scan_anyuint", mp_scan_anyuint, &mp, 6, 2)
+		& cmpu_mp("scan_anyuint", mp_scan_anyuint, &mp, SIZE_MAX, 0)
+
+		& cmpc_mp("cur_char", mp_cur_char(&mp), ' ')
+
+		& cmpz_mp("skip_blank", mp_skip_blank(&mp), 3)
+		& cmpz_mp("skip_space", mp_skip_space(&mp), 4)
+		& cmpc_mp("cur_char", mp_cur_char(&mp), 'e')
+		& cmpc_mp("skip_until", mp_skip_until(&mp, 'f'), true)
+		& cmpc_mp("cur_char", mp_cur_char(&mp), ' ')
+		& cmpc_mp("skip_until", mp_skip_until(&mp, 'h'), false)
+		& cmpc_mp("skip_until", mp_skip_until(&mp, 'h'), false)
+		& cmpz_mp("-end pos-", mp.pos, mp.len);
+}
+static bool cmpptr_mp(const char *fn, const void *ptr, const char *base,
+const size_t pos) {
+	const bool ok = ptr == base + pos;
+	printf("%s\t%s\t%zu\t%ti\n", ok_str(ok), fn, pos, ((char *)ptr - base));
+	return ok;
+}
+static bool cmpwuptr_mp(const char *fn, struct wuptr ptr, const void *expect,
+const size_t len) {
+	const struct wuptr e = wuptr_mem(expect, len);
+	const bool ok = !memcmp(&ptr, &e, sizeof(ptr));
+	printf("%s\t%s\t%zu\t%zu\n", ok_str(ok), fn, len, ptr.len);
+	return ok;
+}
+static bool cmpzwuptr_mp(const char *fn, struct wuptr ptr) {
+	const bool ok = ptr.len == 0;
+	printf("%s\t%s\t0\t%zu\n", ok_str(ok), fn, ptr.len);
+	return ok;
+}
+static bool cmpnull_mp(const char *fn, const void *ptr) {
+	const bool ok = !ptr;
+	printf("%s\t%s\t%p\t%p\n", ok_str(ok), fn, NULL, ptr);
+	return ok;
+}
+static bool test_mp_slice(void) {
+	const char str[] = "0123456789";
+	const size_t len = strlen(str);
+	struct mparser mp = mp_mem(len, str);
+
+	bool ok = cmpptr_mp("slice", mp_slice(&mp, 1), str, 0)
+		& cmpnull_mp("!slice", mp_slice(&mp, len))
+		& cmpnull_mp("!slice", mp_slice(&mp, SIZE_MAX))
+		& cmpwuptr_mp("avail", mp_avail(&mp, 1), str+1, 1)
+		& cmpwuptr_mp("avail", mp_avail(&mp, SIZE_MAX), str+2, 8)
+		& cmpptr_mp("slice", mp_slice(&mp, 0), str, len)
+		& cmpnull_mp("!slice", mp_slice(&mp, 1))
+		& cmpptr_mp("slice_at", mp_slice_at(&mp, 1, 1), str, 1)
+		& cmpnull_mp("!slice_at", mp_slice_at(&mp, 1, len))
+		& cmpnull_mp("!slice_at", mp_slice_at(&mp, 1, SIZE_MAX))
+		& cmpnull_mp("!slice_at", mp_slice_at(&mp, len, len))
+		& cmpnull_mp("!slice_at", mp_slice_at(&mp, SIZE_MAX, len))
+		& cmpwuptr_mp("avail_at", mp_avail_at(&mp, 2, len), str+2, 8)
+		& cmpwuptr_mp("avail_at", mp_avail_at(&mp, 2, SIZE_MAX), str+2, 8)
+		& cmpzwuptr_mp("avail_at", mp_avail_at(&mp, len, SIZE_MAX));
+	mp_seek_set(&mp, 0);
+	return ok
+		& cmpwuptr_mp("remaining", mp_remaining(&mp), str, len)
+		& cmpwuptr_mp("remaining", mp_remaining(&mp), str + len, 0);
+}
+static bool test_seek_set(struct mparser *mp, size_t seek, size_t expect) {
+	mp_seek_set(mp, seek);
+	const bool ok = mp->pos == expect;
+	printf("%s\tseek_set\t%zu\t%zu\t%zu\n", ok_str(ok), seek, expect, mp->pos);
+	return ok;
+}
+static bool test_seek_cur(struct mparser *mp, ptrdiff_t seek, size_t expect) {
+	mp_seek_cur(mp, seek);
+	const bool ok = mp->pos == expect;
+	printf("%s\tseek_cur\t%ti\t%zu\t%zu\n", ok_str(ok), seek, expect, mp->pos);
+	return ok;
+}
+static bool test_mp_seek(void) {
+	const char str[] = "qwerty";
+	const size_t len = strlen(str);
+	struct mparser mp = mp_mem(len, str);
+	return test_seek_set(&mp, 0, 0)
+		& test_seek_set(&mp, 1, 1)
+		& test_seek_set(&mp, 0, 0)
+		& test_seek_set(&mp, len, len)
+		& test_seek_set(&mp, len*2, len)
+		& test_seek_set(&mp, SIZE_MAX, len)
+		& test_seek_cur(&mp, -1, len-1)
+		& test_seek_cur(&mp, -2, len-3)
+		& test_seek_cur(&mp, 0, len-3)
+		& test_seek_cur(&mp, 1, len-2)
+		& test_seek_cur(&mp, -(ptrdiff_t)len, 0)
+		& test_seek_cur(&mp, PTRDIFF_MAX, len)
+		& test_seek_cur(&mp, PTRDIFF_MIN, 0);
+}
+
+static bool mparser_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("mp_next_*, mp_skip_*, mp_scan_*");
+	puts("\tfn\texpect\tresult");
+	kay &= test_mp_next();
+	puts("");
+
+	puts("mp_slice, mp_avail, mp_remaining");
+	puts("\tfn\texpect\tresult");
+	kay &= test_mp_slice();
+	puts("");
+
+	puts("mp_seek_*");
+	puts("\tfn\tseek\texpect\tresult");
+	kay &= test_mp_seek();
 	puts("");
 	return kay;
 }
@@ -748,6 +955,7 @@ int main(void) {
 		& common_tests()
 		& endian_tests()
 		& math_tests()
+		& mparser_tests()
 		& time_tests()
 		& palette_tests()
 		& pix_layout_tests()

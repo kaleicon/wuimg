@@ -21,7 +21,7 @@ size_t mp_skip_space_unsafe(struct mparser *mp);
 size_t mp_scan_uint_unsafe(struct mparser *mp, uintmax_t *val);
 
 
-void mp_skip_blank(struct mparser *mp);
+size_t mp_skip_blank(struct mparser *mp);
 
 size_t mp_skip_space(struct mparser *mp);
 
