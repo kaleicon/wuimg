@@ -56,14 +56,15 @@ const union test_unpack_mem *e, const uint8_t *blob, enum pix_attr attr) {
 	const size_t elems = p->bitdepth > 32
 		? 2
 		: (p->bitdepth > 8 ? 4 : 8);
+	const size_t stride = unpack_stride(elems, p->bitdepth, attr, p->op, NULL);
 	uint8_t out[sizeof(*e)] = {0};
 	unpack_strip(out, blob, elems, p->bitdepth, attr, p->bit, p->op, NULL);
 
-	const bool ok = !memcmp(out, e->m8, sizeof(out));
-	printf("%s\t%02i/%s/%s/%s\t",
+	const bool ok = !memcmp(out, e->m8, sizeof(out)) && stride;
+	printf("%s\t%02i/%s/%s/%s\t%zu\t",
 		ok_str(ok), p->bitdepth,
 		p->bit == big_endian ? "ms" : "ls", unpack_op_str(p->op),
-		pix_attr_str(attr));
+		pix_attr_str(attr), stride);
 	print_blob(e->m8, sizeof(*e), '\t');
 	print_blob(out, sizeof(*e), '\n');
 	return ok;
@@ -100,7 +101,7 @@ static bool unpack_tests(void) {
 	bool kay = true;
 
 	puts("strip unpacking");
-	puts("\tdepth/order/op/attr\texpected\toutput");
+	puts("\tdepth/order/op/attr\tstride\texpected\toutput");
 	const union {
 		uint8_t mem[16];
 		uint64_t aligner;
@@ -565,6 +566,22 @@ uintmax_t x) {
 	printf("%s\t%s\t%i\t%i\t%ju\n", ok_str(ok), name, val, expect, x);
 	return ok;
 }
+static bool test_iclamp(const int8_t cla[static 4]) {
+	int8_t n = cla[0], x = cla[1], y = cla[2], exp = cla[3];
+	const int result = iclamp(n, x, y);
+	const bool ok = exp == result;
+	printf("%s\t%i\t%i\t%i\t%i\t%i\n", ok_str(ok),
+		n, x, y, exp, result);
+	return ok;
+}
+static bool test_fclamp(const float fcla[static 4]) {
+	float n = fcla[0], x = fcla[1], y = fcla[2], exp = fcla[3];
+	const float result = fclampf(n, x, y);
+	const bool ok = exp == result;
+	printf("%s\t%f\t%f\t%f\t%f\t%f\n", ok_str(ok),
+		n, x, y, exp, result);
+	return ok;
+}
 static bool math_tests(void) {
 	test_name(__func__);
 	bool kay = true;
@@ -597,13 +614,40 @@ static bool math_tests(void) {
 	}
 	puts("");
 
+	puts("iclamp()");
+	puts("\tn\tmin\tmax\texpect\tresult");
+	const int8_t cla[][4] = {
+		{3, -8, 8, 3},
+		{9, -8, 8, 8},
+		{-9, -8, 8, -8},
+		{3, 0, 0, 0},
+		{-1, -1, -1, -1},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(cla); ++i) {
+		kay &= test_iclamp(cla[i]);
+	}
+	puts("");
+
+	puts("fclampf()");
+	puts("\tn\tmin\tmax\texpect\tresult");
+	const float fcla[][4] = {
+		{.333f, -.5f, .5f, .333f},
+		{.333f, -.2f, .2f, .2f},
+		{-.333f, -.2f, .2f, -.2f},
+		{-1, -0, 0, -0},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(fcla); ++i) {
+		kay &= test_fclamp(fcla[i]);
+	}
+	puts("");
+
 	puts("Integer positive mod");
 	puts("\tfn\tx\ty\texpect\tfn(x,y)\tfn(x+y,y)");
 	const int8_t xm = -13;
 	const int8_t ym = 7;
 	const struct test_twice_i modp[] = {
 		{"imod", 1, imod(xm, ym), imod(xm + ym, ym)},
-		{"lmod", 1, imod(xm, ym), imod(xm + ym, ym)},
+		{"lmod", 1, lmod(xm, ym), lmod(xm + ym, ym)},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(modp); ++i) {
 		kay &= minmax_i_test(modp + i, xm, ym);
@@ -831,6 +875,20 @@ static bool ok_if_null(const struct common_alloc_params *p, size_t x, size_t y) 
 	free(p2);
 	return ok;
 }
+static bool test_num_cpus(void) {
+	const long cpus = num_cpus();
+	const bool ok = cpus > 0;
+	printf("%s\t%li\n", ok_str(ok), cpus);
+	return ok;
+}
+static bool test_short_opt(const char *str, const char expect) {
+	const uint8_t opt = short_opt(str);
+	const bool ok = opt == expect;
+	const char opt_s[] = {(char)opt, 0};
+	const char exp_s[] = {expect, 0};
+	printf("%s\t%s\t%s\t%s\n", ok_str(ok), str, exp_s, opt_s);
+	return ok;
+}
 static bool common_tests(void) {
 	test_name(__func__);
 	bool kay = true;
@@ -851,6 +909,36 @@ static bool common_tests(void) {
 		const size_t m = ((size_t)1 << (sizeof(m)*8 - 1)) | 1;
 		kay &= ok_if_null(p + i, m, 2);
 	}
+	puts("");
+
+	puts("short_opt()");
+	puts("\tswitch\texpect\tresult");
+	const struct {
+		const char opt[7];
+		const char expect;
+	} opts[] = {
+		{"-h", 'h'},
+		{"--help", 0},
+		{"help", 0},
+		{"", 0},
+		{"-", 0},
+		{"--", '-'},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(opts); ++i) {
+		kay &= test_short_opt(opts[i].opt, opts[i].expect);
+	}
+	puts("");
+
+	puts("num_cpus()");
+	puts("\t> 0?");
+	kay &= test_num_cpus();
+	puts("");
+
+	puts("The amazing null_function()");
+	puts("\tnothing");
+	null_function(0, "WOAAAAH", SIZE_MAX, "it does nothing");
+	kay &= true;
+	printf("%s\t%s\n", ok_str(kay), "");
 	puts("");
 	return kay;
 }

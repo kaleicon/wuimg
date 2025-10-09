@@ -39,7 +39,6 @@ unsigned int ulog2(unsigned int x) {
 size_t zumax(const size_t x, const size_t y) {
 	return x > y ? x : y;
 }
-
 size_t zumin(const size_t x, const size_t y) {
 	return x < y ? x : y;
 }
@@ -47,7 +46,6 @@ size_t zumin(const size_t x, const size_t y) {
 uint32_t u32max(const uint32_t x, const uint32_t y) {
 	return x > y ? x : y;
 }
-
 uint32_t u32min(const uint32_t x, const uint32_t y) {
 	return x < y ? x : y;
 }
@@ -55,7 +53,6 @@ uint32_t u32min(const uint32_t x, const uint32_t y) {
 unsigned int umax(const unsigned int x, const unsigned int y) {
 	return x > y ? x : y;
 }
-
 unsigned int umin(const unsigned int x, const unsigned int y) {
 	return x < y ? x : y;
 }
@@ -63,7 +60,6 @@ unsigned int umin(const unsigned int x, const unsigned int y) {
 long lmax(const long x, const long y) {
 	return x > y ? x : y;
 }
-
 long lmin(const long x, const long y) {
 	return x < y ? x : y;
 }
@@ -71,7 +67,6 @@ long lmin(const long x, const long y) {
 int imax(const int x, const int y) {
 	return x > y ? x : y;
 }
-
 int imin(const int x, const int y) {
 	return x < y ? x : y;
 }
@@ -81,10 +76,5 @@ float fclampf(const float x, const float min, const float max) {
 }
 
 int iclamp(const int n, const int min, const int max) {
-	if (n < min) {
-		return min;
-	} else if (n > max) {
-		return max;
-	}
-	return n;
+	return imin(imax(n, min), max);
 }

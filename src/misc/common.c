@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <unistd.h>
+
 #include "misc/common.h"
 
 uint8_t short_opt(const char *opt) {
