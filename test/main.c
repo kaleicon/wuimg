@@ -17,6 +17,8 @@
 #include "raster/pix.h"
 #include "raster/unpack.h"
 
+#include "wudefs.h"
+
 #define FULL_X32 "0x%08" PRIx32
 static const uint8_t NUM_SEQ[] = {
 	0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
@@ -36,6 +38,44 @@ static void print_blob(const void *buf, const size_t len, const char trail) {
 }
 static const char * ok_str(const bool ok) {
 	return ok ? "" : "!!!!!!";
+}
+
+/* wudefs tests*/
+static bool test_alloc_sub(const char *name,
+struct wuimg * (*fn)(struct image_file *file, size_t nr),
+struct image_file *file, size_t nr) {
+	const size_t before = file->nr;
+	const bool expect_null = (nr == 0) | (nr == SIZE_MAX);
+	const size_t expect_nr = expect_null ? zumin(before, nr) : nr;
+
+	const void *ptr = (*fn)(file, nr);
+	const bool ok = (file->nr == expect_nr) & (expect_null == !ptr);
+	printf("%s\t%s\t%i\t%zu\t%zu\t%zu\n", ok_str(ok), name,
+		!ptr, nr, expect_nr, file->nr);
+	return ok;
+}
+static bool wudefs_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("(re)alloc_sub_images()");
+	puts("\tfn\tnull?\tattempt\texpect\talloc");
+	struct image_file file = {0};
+	const size_t sizes[] = {
+		0, 1, 3, 1, 2, 0, 2, 2, SIZE_MAX, 4, 3,
+	};
+	for (size_t i = 0; i < ARRAY_LEN(sizes); ++i) {
+		kay &= test_alloc_sub(i > 1 ? "realloc" : "alloc",
+			i > 1 ? realloc_sub_images : alloc_sub_images,
+			&file, sizes[i]);
+	}
+	puts("");
+
+	puts("will image_file_free() return without crashing after that?");
+	image_file_free(&file);
+	puts("\tyes");
+	puts("");
+	return kay;
 }
 
 /* raster/ tests */
@@ -1082,6 +1122,7 @@ int main(void) {
 		& time_tests()
 		& palette_tests()
 		& pix_layout_tests()
-		& unpack_tests();
+		& unpack_tests()
+		& wudefs_tests();
 	return kay ? 0 : 1;
 }

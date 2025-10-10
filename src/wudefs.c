@@ -16,34 +16,22 @@ const size_t end) {
 }
 
 struct wuimg * realloc_sub_images(struct image_file *file, const size_t nr) {
-	if (nr < 1) {
-		return NULL;
-	}
-	if (nr < file->nr) {
-		wuimg_free_range(file->sub_img, nr, file->nr);
-	}
-
-	const size_t struct_size = sizeof(*file->sub_img);
-	struct wuimg *hold = small_realloc(file->sub_img, nr, struct_size);
+	const size_t min = zumin(nr, file->nr);
+	wuimg_free_range(file->sub_img, min, file->nr);
+	struct wuimg *hold = small_realloc(file->sub_img, nr, sizeof(*hold));
 	if (hold) {
-		if (nr > file->nr) {
-			const size_t len = struct_size * (nr - file->nr);
-			memset(hold + file->nr, 0, len);
-		}
+		memset(hold + file->nr, 0, (nr - min) * sizeof(*hold));
 		file->nr = nr;
 		file->sub_img = hold;
+	} else {
+		file->nr = min;
 	}
 	return hold;
 }
 
 struct wuimg * alloc_sub_images(struct image_file *file, const size_t nr) {
-	if (nr < 1) {
-		return NULL;
-	}
 	file->sub_img = small_calloc(nr, sizeof(*file->sub_img));
-	if (file->sub_img) {
-		file->nr = nr;
-	}
+	file->nr = (file->sub_img) ? nr : 0;
 	return file->sub_img;
 }
 
@@ -177,8 +165,8 @@ enum image_event image_cur_events(const struct image_context *image) {
 }
 
 enum image_event image_zoom(struct image_context *image, float new_zoom) {
-	const float max = 1 << WU_SCALING_POW;
-	const float min = 1.0f/max;
+	const float max = exp2f(WU_SCALING_POW);
+	const float min = exp2f(-WU_SCALING_POW);
 
 	new_zoom = fclampf(new_zoom, min, max);
 	if (new_zoom != image->state.zoom) {
