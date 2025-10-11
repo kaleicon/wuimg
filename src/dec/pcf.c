@@ -3,28 +3,27 @@
 #include "lib/pcf.h"
 #include "wudefs.h"
 
-static void pcf_end(struct image_file *infile) {
+static void end_pcf(struct image_file *infile) {
 	pcf_cleanup(infile->dec_state);
 }
 
-static enum wu_error pcf_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev) {
+static struct wu_st event_pcf(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_subcycle) {
 		struct pcf_desc *desc = infile->dec_state;
 		const uint32_t i = (uint32_t)state->idx;
 		struct wuimg *img = infile->sub_img + i;
-		const enum wu_error st = pcf_set_glyph(desc, img, i);
-		if (st == wu_ok) {
-			if (wuimg_exceeds_limit(img, wuconf)) {
-				return wu_exceeds_size_limit;
+		const struct wu_st st = pcf_set_glyph(desc, img, i);
+		if (wu_isok(st)) {
+			const enum wu_error e = wuimg_alloc_limit(img, conf);
+			if (e == wu_ok) {
+				return pcf_load_glyph(desc, img);
 			}
-			return pcf_load_glyph(desc, img)
-				? wu_ok : wu_decoding_error;
+			return WUERR_HERE(e);
 		}
 		return st;
 	}
-	return wu_no_change;
+	return WU_NO_CHANGE;
 }
 
 static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
@@ -32,7 +31,7 @@ static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
 	bool all_ok = true;
 	for (uint32_t i = 0; i < desc->prop.len; ++i) {
 		struct pcf_property p;
-		if (pcf_get_property(desc, i, &p) == wu_ok) {
+		if (wu_isok(pcf_get_property(desc, i, &p))) {
 			const char *name = (const char *)p.name.ptr;
 			if (p.is_string) {
 				tree_add_leaf_len(meta, name, p.val.s, NULL);
@@ -49,27 +48,24 @@ static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
 	}
 }
 
-static enum wu_error pcf_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_pcf(struct image_file *infile,
+const struct wu_conf *conf) {
+	(void)conf;
 	struct pcf_desc *desc = infile->dec_state;
-	enum wu_error st = pcf_open(desc, infile->ifp);
-	if (st == wu_ok) {
-		st = pcf_parse(desc);
-		if (st == wu_ok) {
-			if (alloc_sub_images(infile, desc->glyphs)) {
-				read_metadata(infile, desc);
-				return wu_ok;
-			}
-			return wu_alloc_error;
+	struct wu_st st = pcf_parse(desc, infile->ifp);
+	if (wu_isok(st)) {
+		if (alloc_sub_images(infile, desc->glyphs)) {
+			read_metadata(infile, desc);
+			return WU_OK;
 		}
+		return WUERR_HERE(wu_alloc_error);
 	}
 	return st;
 }
 
 const struct image_fn pcf_fn = {
 	.state_size = sizeof(struct pcf_desc),
-	.dec = pcf_dec,
-	.callback = pcf_callback,
-	.end = pcf_end,
+	.init = init_pcf,
+	.event = event_pcf,
+	.end = end_pcf,
 };

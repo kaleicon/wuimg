@@ -6,12 +6,6 @@
 #include "endian.h"
 #include "math.h"
 
-uint8_t bit_rev8(uint8_t b) {
-	b = (uint8_t)( (b & 0xaa) >> 1 | (b & 0x55) << 1 );
-	b = (uint8_t)( (b & 0xcc) >> 2 | (b & 0x33) << 2 );
-	return (uint8_t)(b >> 4 | b << 4);
-}
-
 uint16_t bit_rev16(uint16_t b) {
 	b = (uint16_t)( (b & 0xaaaa) >> 1 | (b & 0x5555) << 1 );
 	b = (uint16_t)( (b & 0xcccc) >> 2 | (b & 0x3333) << 2 );

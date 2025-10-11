@@ -83,16 +83,14 @@ struct pcf_desc {
 
 void pcf_cleanup(struct pcf_desc *desc);
 
-size_t pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img);
+struct wu_st pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img);
 
-enum wu_error pcf_set_glyph(struct pcf_desc *desc, struct wuimg *img,
+struct wu_st pcf_set_glyph(struct pcf_desc *desc, struct wuimg *img,
 uint32_t i);
 
-enum wu_error pcf_get_property(const struct pcf_desc *desc, uint32_t i,
+struct wu_st pcf_get_property(const struct pcf_desc *desc, uint32_t i,
 struct pcf_property *out);
 
-enum wu_error pcf_parse(struct pcf_desc *desc);
-
-enum wu_error pcf_open(struct pcf_desc *desc, FILE *ifp);
+struct wu_st pcf_parse(struct pcf_desc *desc, FILE *ifp);
 
 #endif /* LIB_PCF */

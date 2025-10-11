@@ -18,7 +18,7 @@ https://web.archive.org/web/20060718044231/http://www.tsg.ne.jp/GANA/S/pcf2bdf/p
 static const uint32_t COMPACT_PROP = 9;
 
 static bool format_default(uint32_t format) {
-	return (format >> 8) == 0;
+	return (format & ~0xffu) == 0;
 }
 static bool format_is_compressed(uint32_t format) {
 	return format & 0x100;
@@ -52,6 +52,7 @@ struct pcf_cb_data {
 	enum endianness bit:8;
 };
 
+// TODO: find samples using u16 and u32 and get rid of all bit reversal
 static void load_callback(void *restrict data, size_t len,
 void *restrict user) {
 	const struct pcf_cb_data *info = user;
@@ -60,10 +61,6 @@ void *restrict user) {
 		len /= info->swap.depth/8;
 		for (size_t i = 0; i < len; ++i) {
 			switch (info->swap.depth) {
-			case 8:
-				;uint8_t *da = data;
-				da[i] = bit_rev8(da[i]);
-				break;
 			case 16:
 				;uint16_t *db = data;
 				db[i] = bit_rev16(db[i]);
@@ -77,27 +74,26 @@ void *restrict user) {
 	}
 }
 
-size_t pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img) {
+struct wu_st pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img) {
+	const struct pcf_bitmap *bitmap = &desc->bitmap;
+	const long pos = bitmap->file_pos + desc->cur_offset;
+	fseek(desc->ifp, pos, SEEK_SET);
+	const enum endianness byte = format_byte_endian(bitmap->format);
+	const enum endianness bit = format_bit_endian(bitmap->format);
+	const uint8_t unit = format_scan_unit(bitmap->format);
+	struct pcf_cb_data data = {
+		.swap = {.e = byte, .depth = (uint8_t)(8 << unit)},
+		.bit = bit,
+	};
 	size_t r = 0;
-	if (wuimg_alloc_noverify(img)) {
-		const struct pcf_bitmap *bitmap = &desc->bitmap;
-		const long pos = bitmap->file_pos + desc->cur_offset;
-		fseek(desc->ifp, pos, SEEK_SET);
-		const enum endianness byte = format_byte_endian(bitmap->format);
-		const enum endianness bit = format_bit_endian(bitmap->format);
-		const uint8_t unit = format_scan_unit(bitmap->format);
-		struct pcf_cb_data data = {
-			.swap = {.e = byte, .depth = 8 << unit},
-			.bit = bit,
-		};
-		if (data.bit == little_endian || fmt_will_swap(data.swap)) {
-			r = fmt_load_raster_callback(img, desc->ifp,
-				load_callback, &data);
-		} else {
-			r = fmt_load_raster(img, desc->ifp);
-		}
+	if (img->bit == big_endian
+	&& (data.bit == little_endian || fmt_will_swap(data.swap))) {
+		r = fmt_load_raster_callback(img, desc->ifp,
+			load_callback, &data);
+	} else {
+		r = fmt_load_raster(img, desc->ifp);
 	}
-	return r;
+	return wuerr_partial(r, wuimg_size(img));
 }
 
 static bool get_pcf_str(const struct pcf_string *str, struct wuptr *out,
@@ -129,26 +125,29 @@ const uint32_t i) {
 	}
 }
 
-enum wu_error pcf_set_glyph(struct pcf_desc *desc, struct wuimg *img,
+struct wu_st pcf_set_glyph(struct pcf_desc *desc, struct wuimg *img,
 const uint32_t i) {
 	const struct pcf_metrics *metrics = desc->metrics + i;
 	const int w = metrics->right_bearing - metrics->left_bearing;
 	const int h = metrics->char_ascent + metrics->char_descent;
-	if (w > 0 && h > 0) {
+	if (w >= 0 && h >= 0) {
 		const struct pcf_bitmap *bitmap = &desc->bitmap;
 		img->w = (size_t)w;
 		img->h = (size_t)h;
 		img->channels = 1;
 		img->bitdepth = 1;
 		img->align_sh = format_align(bitmap->format);
+		const enum endianness bit = format_bit_endian(bitmap->format);
+		img->bit = format_scan_unit(bitmap->format) == 0
+			? (bit & 1) : big_endian;
 		desc->cur_offset = bitmap->offsets[i];
 		set_glyph_metadata(&desc->names, img, i);
-		return wuimg_verify(img);
+		return WU_OK;
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "negative bitmap dimensions");
 }
 
-enum wu_error pcf_get_property(const struct pcf_desc *desc,
+struct wu_st pcf_get_property(const struct pcf_desc *desc,
 const uint32_t i, struct pcf_property *out) {
 	const struct pcf_prop *prop = &desc->prop;
 	const uint8_t *buf = prop->buf + COMPACT_PROP * i;
@@ -157,85 +156,85 @@ const uint32_t i, struct pcf_property *out) {
 
 	out->is_string = buf[4];
 	if (!get_pcf_str(&prop->str, &out->name, name_offset)) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "property name out of bounds");
 	}
 	if (out->is_string) {
 		if (!get_pcf_str(&prop->str, &out->val.s, value)) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"property string value out of bounds");
 		}
 	} else {
 		out->val.i = value;
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error load_tail_string(struct pcf_string *str,
-uint8_t *base, const uint32_t total, const size_t offset, FILE *ifp,
-const enum endianness e) {
+static struct wu_st load_tail_string(struct pcf_string *str,
+uint8_t *base, const size_t offset, const uint32_t total, FILE *ifp) {
+	// Previous contents plus StringLen field
 	const size_t min_size = offset + 4;
 	const size_t read = fread(base, 1, total, ifp);
 	if (read < min_size) {
-		return (total < min_size)
-			? wu_invalid_header : wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	*str = (struct pcf_string) {
-		.len = buf_endian32(base + offset, e),
+		/* StringLen field has the wrong endianness sometimes,
+		 * so deduct from struct size as it's more reliable. */
+		.len = (uint32_t)(read - min_size),
 		.str = base + min_size,
 	};
-	if (min_size + str->len > total) {
-		return wu_invalid_header;
-	}
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error load_head_count(struct pcf_toc *t,
+static struct wu_st load_head_count(struct pcf_toc *t,
 const enum endianness e, FILE *ifp, uint32_t *count, enum endianness *out,
 uint32_t *rem) {
-	const uint32_t init_size = sizeof(t->format) + sizeof(*count);
-	if (!format_default(t->format) || t->size < init_size) {
-		return wu_invalid_header;
+	const uint32_t head_size = sizeof(t->format) + sizeof(*count);
+	if (!format_default(t->format) || t->size < head_size) {
+		return wuerr(wu_invalid_header,
+			"bad struct format or too low size");
 	} else if (!fread(count, sizeof(*count), 1, ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	*count = endian32(*count, e);
 	*out = e;
-	*rem = t->size - init_size;
-	return wu_ok;
+	*rem = t->size - head_size;
+	return WU_OK;
 }
 
-static enum wu_error parse_glyph_names(struct pcf_desc *desc,
-struct pcf_toc *t, const enum endianness e) {
+static struct wu_st parse_glyph_names(struct pcf_desc *desc, struct pcf_toc *t,
+const enum endianness e) {
 	/* Glyph names struct (after format):
 		Offset  Type    Name
 		0       i32     GlyphCount
 		4       i32     Offsets[GlyphCount]
-		+0      i32     StringSize
-		+4      char    String[StringSize]
+		+0      i32     StringLen
+		+4      char    String[StringLen]
 	*/
 	struct pcf_names *names = &desc->names;
-	uint32_t rem;
-	const enum wu_error st = load_head_count(t, e, desc->ifp,
+	uint32_t rem = 0;
+	const struct wu_st st = load_head_count(t, e, desc->ifp,
 		&names->glyphs, &names->endian, &rem);
-	if (st != wu_ok) {
+	if (!wu_isok(st)) {
 		return st;
 	}
 
 	uint8_t *buf = small_malloc(rem, 1);
 	if (!buf) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	names->offsets = (uint32_t *)buf;
 	const size_t offset = names->glyphs * sizeof(*names->offsets);
-	return load_tail_string(&names->str, buf, rem, offset, desc->ifp, e);
+	return load_tail_string(&names->str, buf, offset, rem, desc->ifp);
 }
 
-static enum wu_error parse_bitmap(struct pcf_desc *desc, struct pcf_toc *t,
+static struct wu_st parse_bitmap(struct pcf_desc *desc, struct pcf_toc *t,
 const enum endianness e) {
 	uint32_t glyphs;
 	if (!format_default(t->format) || format_align(t->format) > 2) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "bad format or alignment");
 	} else if (!fread(&glyphs, sizeof(glyphs), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	struct pcf_bitmap *bitmap = &desc->bitmap;
@@ -247,23 +246,23 @@ const enum endianness e) {
 	bitmap->format = t->format;
 	bitmap->offsets = small_malloc(desc->glyphs, sizeof(*bitmap->offsets));
 	if (!bitmap->offsets) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	if (!fread(bitmap->offsets, sizeof(*bitmap->offsets) * desc->glyphs, 1,
 	desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	endian_loop32(bitmap->offsets, e, desc->glyphs);
-	return wu_ok;
+	return WU_OK;
 }
 
 static int16_t to_uncomp(uint8_t n) {
 	return (int16_t)n - 0x80;
 }
 
-static enum wu_error parse_metrics(struct pcf_desc *desc, struct pcf_toc *t,
+static struct wu_st parse_metrics(struct pcf_desc *desc, struct pcf_toc *t,
 const enum endianness e) {
 	struct compressed_metrics {
 		uint8_t left_bearing;
@@ -281,12 +280,12 @@ const enum endianness e) {
 	desc->glyphs = umin(desc->glyphs,
 		compressed ? buf_endian16(head, e) : buf_endian32(head, e));
 	if (!read) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	struct pcf_metrics *metrics = small_malloc(desc->glyphs, sizeof(*metrics));
 	if (!metrics) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	desc->metrics = metrics;
 
@@ -309,10 +308,10 @@ const enum endianness e) {
 	} else {
 		endian_loop16(buf, e, desc->glyphs);
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error parse_properties(struct pcf_desc *desc, struct pcf_toc *t,
+static struct wu_st parse_properties(struct pcf_desc *desc, struct pcf_toc *t,
 const enum endianness e) {
 	/* Properties struct (after format):
 		Offset  Type    Name
@@ -333,26 +332,27 @@ const enum endianness e) {
 		9
 	*/
 	struct pcf_prop *prop = &desc->prop;
-	uint32_t rem;
-	const enum wu_error st = load_head_count(t, e, desc->ifp, &prop->len,
+	uint32_t rem = 0;
+	const struct wu_st st = load_head_count(t, e, desc->ifp, &prop->len,
 		&prop->endian, &rem);
-	if (st != wu_ok) {
+	if (!wu_isok(st)) {
 		return st;
 	}
 	uint8_t *buf = small_malloc(rem, 1);
 	if (!buf) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	prop->buf = buf;
 	const size_t prop_size = COMPACT_PROP * prop->len;
-	return load_tail_string(&prop->str, buf, rem, prop_size, desc->ifp, e);
+	return load_tail_string(&prop->str, buf, prop_size, rem, desc->ifp);
 }
 
-enum wu_error pcf_parse(struct pcf_desc *desc) {
+struct wu_st pcf_parse(struct pcf_desc *desc, FILE *ifp) {
 	/* PCF header (after magic bytes):
 		Offset  Type    Name
-		0       u32_le  TableCount
-		4       struct  TOC[TableCount]
+		0       u8      Magic[4]
+		4       u32_le  TableCount
+		8       struct  TOC[TableCount]
 
 	 * TOC describes the structures present in the file. Structures can
 	 * only appear once.
@@ -383,21 +383,25 @@ enum wu_error pcf_parse(struct pcf_desc *desc) {
 		+-------------------- RowPad. Bitmap rows are padded to
 		                       (1 << x)-byte boundaries.
 	*/
-	if (!fread(&desc->toc_len, sizeof(desc->toc_len), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+	*desc = (struct pcf_desc) {.ifp = ifp};
+	const unsigned char magic[] = {0x01, 'f', 'c', 'p'};
+	uint32_t buf[2];
+	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(buf, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	desc->toc_len = endian32(desc->toc_len, little_endian);
+	desc->toc_len = endian32l(buf[1]);
 
 	struct pcf_toc *toc;
 	const size_t toc_size = desc->toc_len * sizeof(*toc);
 	toc = small_malloc(desc->toc_len, sizeof(*toc));
 	if (!toc) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	desc->toc = toc;
-
 	if (!fread(toc, toc_size, 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	desc->glyphs = ~(uint32_t)0;
@@ -405,24 +409,30 @@ enum wu_error pcf_parse(struct pcf_desc *desc) {
 		struct pcf_toc *t = toc + i;
 		endian_loop32((uint32_t *)t, little_endian,
 			sizeof(*t) / sizeof(t->type));
-		if ((desc->seen & t->type) || (t->format & ~0x1ffu)) {
-			return wu_invalid_header;
+		if ((desc->seen & t->type)) {
+			return wuerr(wu_invalid_header, "repeated struct type");
+		} else if ((t->format & ~0x1ffu)) {
+			return wuerr(wu_invalid_header, "bad struct format");
 		}
 		desc->seen |= (uint16_t)t->type;
 
 		fseek(desc->ifp, t->offset, SEEK_SET);
 		uint32_t format;
 		if (!fread(&format, sizeof(format), 1, desc->ifp)) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		} else if (format != t->format) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "struct format mismatch");
 		}
 
-		enum wu_error st;
+		struct wu_st st;
 		const enum endianness e = format_byte_endian(format);
 		switch (t->type) {
-		case pcf_type_metrics: st = parse_metrics(desc, t, e); break;
-		case pcf_type_bitmaps: st = parse_bitmap(desc, t, e); break;
+		case pcf_type_metrics:
+			st = parse_metrics(desc, t, e);
+			break;
+		case pcf_type_bitmaps:
+			st = parse_bitmap(desc, t, e);
+			break;
 		case pcf_type_properties:
 			st = parse_properties(desc, t, e);
 			break;
@@ -436,24 +446,19 @@ enum wu_error pcf_parse(struct pcf_desc *desc) {
 		case pcf_type_bdf_accelerators:
 			continue;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "unknown struct type");
 		}
-		if (st != wu_ok) {
+		if (!wu_isok(st)) {
 			return st;
 		}
 	}
 
 	// Not sure if glyph_names are mandatory, but all valid files have them
-	const uint16_t required = pcf_type_metrics | pcf_type_bitmaps
+	const uint16_t required = pcf_type_metrics
+		| pcf_type_bitmaps
 		| pcf_type_glyph_names;
 	if ((desc->seen & required) == required) {
-		return desc->glyphs ? wu_ok : wu_no_image_data;
+		return desc->glyphs ? WU_OK : WUERR_HERE(wu_no_image_data);
 	}
-	return wu_invalid_header;
-}
-
-enum wu_error pcf_open(struct pcf_desc *desc, FILE *ifp) {
-	*desc = (struct pcf_desc) {.ifp = ifp};
-	const unsigned char magic[] = {0x01, 'f', 'c', 'p'};
-	return fmt_sigcmp(magic, sizeof(magic), ifp);
+	return wuerr(wu_invalid_header, "file lacks requires structures");
 }

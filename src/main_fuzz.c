@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
 	struct image_context image = {
 		.conf = conf_default(),
 	};
-	image.conf.max_img_size = 2048;
+	image.conf.max_img_size = 1920;
 
 	const struct image_fn *fn = NULL;
 	if (argc > 1) {
@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
 #endif
 
 	unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
-	while (__AFL_LOOP(1 << 14)) {
+	while (__AFL_LOOP(1 << 15)) {
 		const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
 		dec_src_mem(&image, wuptr_mem(buf, (size_t)len), NULL, fn);
 		enum wu_error err;
