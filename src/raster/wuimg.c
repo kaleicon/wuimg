@@ -515,8 +515,9 @@ static void print_colorspace_data(const struct color_space *cs, FILE *out) {
 	switch (cs->type) {
 	case color_profile_enum:
 	case color_profile_param:
-		;const struct color_profile *prof = &cs->desc->u.prof;
+		;const struct color_space_desc *desc = cs->desc;
 		if (cs->transfer == 0 && cs->type == color_profile_param) {
+			const struct color_profile *prof = &desc->u.prof;
 			fprintf(out, "   Gamma: %f %f %f\n",
 				prof->gamma.r, prof->gamma.g, prof->gamma.b);
 		} else {
@@ -525,7 +526,8 @@ static void print_colorspace_data(const struct color_space *cs, FILE *out) {
 		}
 		if (cs->primaries == 0 && cs->type == color_profile_param) {
 			fputs("   Primaries:\n", out);
-			const struct color_xy *p = (const struct color_xy *)&prof->pri;
+			const struct color_xy *p =
+				(const struct color_xy *)&desc->u.prof.pri;
 			const char *n[4] = {"White", "Red", "Green", "Blue"};
 			for (size_t i = 0; i < 4; ++i) {
 				fprintf(out, "    %s: %f, %f\n",
