@@ -46,17 +46,12 @@ enum mag_model_code {
 	mag_model_mps = 0xff,
 };
 
-struct mag_section {
-	uint32_t size, off;
-};
-
 struct mag_msx {
 	enum mag_msx_screen screen:8;
 	bool interlace;
 };
 
 struct mag_desc {
-	struct mparser mp;
 	struct wuptr comm;
 	struct wuptr dummy;
 	size_t null_pos;
@@ -65,7 +60,7 @@ struct mag_desc {
 	enum mag_screen_mode screen_mode:8;
 	struct mag_msx msx;
 	size_t row_dwords;
-	struct mag_section flag_a, flag_b, color;
+	struct wuptr flag_a, flag_b, color;
 	struct palette *yae;
 };
 
@@ -77,10 +72,9 @@ const char * mag_model_code_str(enum mag_model_code code);
 
 void mag_cleanup(struct mag_desc *desc);
 
-size_t mag_decode(const struct mag_desc *desc, struct wuimg *img);
+void mag_decode(const struct mag_desc *desc, struct wuimg *img);
 
-enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img);
-
-enum wu_error mag_init(struct mag_desc *desc, struct wuptr mem);
+struct wu_st mag_parse(struct mag_desc *desc, struct wuimg *img,
+struct wuptr mem);
 
 #endif /* LIB_MAG */

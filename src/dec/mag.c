@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/mag.h"
 
-static void metadata(const void *restrict ptr, struct wutree *tree) {
-	const struct mag_desc *desc = ptr;
+static void get_mag_metadata(const struct mag_desc *desc, struct wutree *tree) {
 	tree_add_leaf_len(tree, "Model", WUPTR_ARRAY(desc->model), "SHIFT-JIS");
 	tree_add_leaf_utf8(tree, "Code", mag_model_code_str(desc->code));
 	if (desc->code == mag_model_msx) {
@@ -18,28 +17,25 @@ static void metadata(const void *restrict ptr, struct wutree *tree) {
 	tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
 }
 
-static void cleanup(struct image_file *infile) {
-	mag_cleanup(infile->dec_state);
-}
-static size_t dec(const void *restrict desc, struct wuimg *img) {
-	return mag_decode(desc, img);
-}
-static enum wu_error parse(void *restrict desc, struct wuimg *img) {
-	return mag_parse(desc, img);
-}
-static enum wu_error open(void *restrict desc, struct image_file *infile) {
-	return mag_init(desc, infile->map);
-}
-
-static enum wu_error mag_dec(struct image_file *infile,
+static struct wu_st init_mag(struct image_file *infile,
 const struct wu_conf *conf) {
-	return rast_trivial_dec(infile, conf, infile->dec_state,
-		open, parse, metadata, dec);
+	struct mag_desc desc;
+	struct wu_st st = mag_parse(&desc, infile->sub_img, infile->map);
+	if (wu_isok(st)) {
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		if (e == wu_ok) {
+			get_mag_metadata(&desc, &infile->metadata);
+			mag_decode(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(e);
+		}
+		mag_cleanup(&desc);
+	}
+	return st;
 }
 
 const struct image_fn mag_fn = {
 	.mmap = true,
-	.state_size = sizeof(struct mag_desc),
-	.dec = mag_dec,
-	.end = cleanup,
+	.alloc_single = true,
+	.init = init_mag,
 };

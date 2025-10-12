@@ -65,23 +65,19 @@ void mag_cleanup(struct mag_desc *desc) {
 	free(desc->yae);
 }
 
-static struct wuptr get_section(const struct mag_desc *desc,
-const struct mag_section src) {
-	return mp_avail_at(&desc->mp, desc->null_pos + src.off, src.size);
-}
-
-size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
+void mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 	/* Decoding depends on 5 sections. These are the FlagA, FlagB, and
 	 * Color sections in the file, plus an Action buffer and the image
-	 * itself. The Action buffer must be one fourth the size of an image
-	 * row, and initialized to zero.
+	 * itself. The Action buffer must be initialized to zero, be one fourth
+	 * the size of an image row (there's one byte for every double-word),
+	 * and reused for every row.
 
 	 * FlagA is read bit by bit in MS-to-LS order. If the bit is set, a
 	 * byte is read from FlagB and XOR'ed into the current Action byte.
-	 * The Action pointer is not advanced. Do nothing if the bit is zero.
+	 * Do nothing if the bit is zero.
 
-	 * Read a byte from Action and advance the pointer. Read the nibbles is
-	 * MS-to-LS order. If the nibble is zero, read a 16-bit word from Color
+	 * Read the current Action byte, and read the nibbles is MS-to-LS
+	 * order. If the nibble is zero, read a 16-bit word from Color
 	 * and write it to the output image. Otherwise, copy a previous word
 	 * from the image, according to the table below.
 
@@ -98,33 +94,40 @@ size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 
 	const size_t stride = desc->row_dwords;
 	const size_t dwords = stride * img->h;
-	uint16_t *dst = malloc(dwords * 4);
-	if (!dst) {
-		return 0;
+	uint16_t *dst = (uint16_t *)img->data;
+	switch (desc->msx.screen) {
+	case mag_msx2p_screen10:
+	case mag_msx2p_screen11:
+	case mag_msx2p_screen12:
+		/* YKJ mode expands to twice the input data, so write
+		 * into the middle of the image buffer. It'll be overwritten
+		 * at the end. */
+		dst = (uint16_t *)(img->data + dwords*4);
+		break;
+	default: break;
 	}
 
-	/* Put the Action row at the end of the output buffer. It will be
+	/* Put the Action row at the very end of the output buffer. It will be
 	 * overwritten in the last iteration. */
 	uint8_t *act = (uint8_t *)dst + dwords*4 - stride;
-	memset(act, 0, stride);
-	const struct wuptr flag_a = get_section(desc, desc->flag_a);
-	const struct wuptr flag_b = get_section(desc, desc->flag_b);
-	const struct wuptr color_tmp = get_section(desc, desc->color);
-	size_t read = flag_a.len + flag_b.len + color_tmp.len;
+	// img mem is already zeroed
+	//memset(act, 0, stride);
+	const struct wuptr flag_a = desc->flag_a;
+	const struct wuptr flag_b = desc->flag_b;
 
-	const size_t color_len = color_tmp.len/2;
-	const uint8_t *color = color_tmp.ptr;
+	const size_t color_len = desc->color.len/2;
+	const uint8_t *color = desc->color.ptr;
 
 	size_t b_pos = 0;
 	size_t c_pos = 0;
 	for (size_t y = 0; y < img->h; ++y) {
 		for (size_t x = 0; x < stride; ++x) {
 			const size_t n = y*stride + x;
-			if (n/8 < flag_a.len && b_pos < desc->flag_b.size) {
-				if (bit_get(flag_a.ptr, n)) {
-					act[x] ^= flag_b.ptr[b_pos];
-					++b_pos;
-				}
+			if (n/8 < flag_a.len && b_pos < flag_b.len) {
+				const bool b = bit_get(flag_a.ptr, n);
+				const uint8_t c = flag_b.ptr[b_pos];
+				act[x] ^= c*b;
+				b_pos += b;
 			}
 			const uint8_t c = act[x];
 			for (size_t i = 0; i < 2; ++i) {
@@ -134,10 +137,13 @@ size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 				switch ((c >> (4 - i*4)) & 0x0f) {
 				case 0:
 					if (c_pos < color_len) {
-						memcpy(dst + pos, color + c_pos*2, sizeof(*dst));
+						memcpy(dst + pos,
+							color + c_pos*2,
+							sizeof(*dst));
 						++c_pos;
 					} else {
-						memset(dst + pos, 0, sizeof(*dst));
+						// already zeroed
+						//dst[pos] = 0;
 					}
 					continue;
 				case 0x1: xx = 1; yy = 0; break;
@@ -164,39 +170,27 @@ size_t mag_decode(const struct mag_desc *desc, struct wuimg *img) {
 		}
 	}
 
-	switch (desc->msx.screen) {
-	case mag_msx2p_screen10:
-	case mag_msx2p_screen11:
-	case mag_msx2p_screen12:
-		if (wuimg_alloc_noverify(img)) {
-			v9958_ykj_to_grb((upack1555_t *)img->data,
-				(uint8_t *)dst, dwords, desc->yae);
-		} else {
-			read = 0;
-		}
-		free(dst);
-		break;
-	default:
-		img->data = (uint8_t *)dst;
+	if (img->data != (uint8_t *)dst) {
+		v9958_ykj_to_grb((upack1555_t *)img->data,
+			(uint8_t *)dst, dwords, desc->yae);
 	}
-	return read;
 }
 
 static bool deca_loader(const struct mag_desc *desc) {
 	const struct wuptr *comm = &desc->comm;
 	const size_t offset = 24;
 	const uint8_t id[12] = "Deca loader ";
-	if (comm->len > offset + sizeof(id)) {
+	if (comm->len >= offset + sizeof(id)) {
 		return !memcmp(comm->ptr + offset, id, sizeof(id));
 	}
 	return false;
 }
 
-static enum wu_error read_pal(struct mag_desc *desc, struct wuimg *img,
-const bool is_yjk) {
+static struct wu_st read_pal(struct mag_desc *desc, struct wuimg *img,
+struct mparser *mp, const bool is_yjk) {
 	struct palette *pal = palette_new();
 	if (!pal) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	if (is_yjk) {
 		desc->yae = pal;
@@ -205,66 +199,71 @@ const bool is_yjk) {
 	}
 
 	const size_t entries = 1 << img->bitdepth;
-	struct pix_rgb8 *buf = (struct pix_rgb8 *)mp_slice(&desc->mp,
+	struct pix_rgb8 *buf = (struct pix_rgb8 *)mp_slice(mp,
 		entries * sizeof(*buf));
 	if (!buf) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	uint8_t outbits = 8;
-	uint8_t inbits = 4;
+	uint8_t outbits, inbits;
 	if (is_yjk) {
+		// Scale from 3 to 5 bits, as required by ykj_to_grb()
 		outbits = 5;
 		inbits = 3;
 	} else {
+		img->bitrange = 4;
 		switch (desc->code) {
 		case mag_model_msx:
 			if (img->bitdepth == 8) {
-				inbits = 8;
+				img->bitrange = 8;
 			} else if (!deca_loader(desc)) {
-				inbits = 3;
+				img->bitrange = 3;
 			}
 			break;
-		case mag_model_x68k: inbits = 5; break;
-		case mag_model_mac: inbits = 8; break;
+		case mag_model_x68k: img->bitrange = 5; break;
+		case mag_model_mac: img->bitrange = 8; break;
 		case mag_model_pc88:
 			break;
 		default:
 			if (img->bitdepth == 8) {
-				inbits = 8;
+				img->bitrange = 8;
 			}
 			break;
 		}
+		// Shift down but don't scale, leave that to color management
+		inbits = img->bitrange;
+		outbits = inbits;
 	}
-
-	const unsigned scale = (bit_set32(outbits) << 8) / bit_set32(inbits) + 1;
-	const unsigned shr = 8 - inbits;
+	uint32_t outrange = bit_set32(outbits);
+	uint32_t scale = (outrange << 8) / bit_set32(inbits) + 1;
+	uint32_t shr = 8 - inbits;
 	for (size_t i = 0; i < entries; ++i) {
 		pal->color[i] = (struct pix_rgba8) {
 			(uint8_t)(((buf[i].r >> shr) * scale) >> 8),
 			(uint8_t)(((buf[i].g >> shr) * scale) >> 8),
 			(uint8_t)(((buf[i].b >> shr) * scale) >> 8),
-			0xff,
+			(uint8_t)outrange,
 		};
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error get_dimensions(struct wuimg *img, const uint16_t x_left,
+static struct wu_st get_dimensions(struct wuimg *img, const uint16_t x_left,
 const uint16_t y_top, const uint16_t x_right, const uint16_t y_bottom) {
 	// x_right and y_bottom are inclusive
 	if (x_left <= x_right && y_top <= y_bottom) {
-		const size_t ppb = 8/img->bitdepth;
+		const size_t ppb = 8u/img->bitdepth;
 		const size_t left = (x_left / ppb) & ~3u;
 		const size_t right = (x_right / ppb) & ~3u;
 		img->w = (right - left + 4) * ppb;
 		img->h = (size_t)y_bottom - y_top + 1;
-		return wu_ok;
+		return WU_OK;
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "negative width or height");
 }
 
-enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
+struct wu_st mag_parse(struct mag_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
 	/* MAKI02 header (after prev):
 		Offset  Size    Name
 		0       u8	ComputerModel[4]
@@ -288,21 +287,27 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 	 * [1] Offset relative to the Dummy 0x00 terminator.
 	*/
 
-	const uint8_t *buf = mp_slice(&desc->mp, sizeof(desc->model));
+	struct mparser mp = mp_wuptr(mem);
+	*desc = (struct mag_desc){0};
+	const uint8_t magic[8] = "MAKI02  ";
+	const uint8_t *buf = mp_slice(&mp,
+		sizeof(magic) + sizeof(desc->model));
 	if (!buf) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(buf, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	memcpy(desc->model, buf, sizeof(desc->model));
+	memcpy(desc->model, buf + sizeof(magic), sizeof(desc->model));
 
-	if (!mp_upto(&desc->mp, &desc->comm, 0x1a)
-	|| !mp_upto(&desc->mp, &desc->dummy, 0x00)) {
-		return wu_unexpected_eof;
+	if (!mp_upto(&mp, &desc->comm, 0x1a)
+	|| !mp_upto(&mp, &desc->dummy, 0x00)) {
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	desc->null_pos = desc->mp.pos - 1;
+	const size_t null_pos = mp.pos - 1;
 
-	buf = mp_slice(&desc->mp, 31);
+	buf = mp_slice(&mp, 31);
 	if (!buf) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	desc->code = buf[0];
@@ -337,18 +342,18 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 			is_yjk = true;
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "unknown screen mode");
 		}
 	} else {
 		img->ratio = ((desc->screen_mode & 0x81) == 0x01) ? 1/2.0 : 1;
 	}
 
-	enum wu_error st = get_dimensions(img,
-		buf_endian16(buf + 3, little_endian),
-		buf_endian16(buf + 5, little_endian),
-		buf_endian16(buf + 7, little_endian),
-		buf_endian16(buf + 9, little_endian));
-	if (st != wu_ok) {
+	struct wu_st st = get_dimensions(img,
+		buf_endian16l(buf + 3),
+		buf_endian16l(buf + 5),
+		buf_endian16l(buf + 7),
+		buf_endian16l(buf + 9));
+	if (!wu_isok(st)) {
 		return st;
 	}
 
@@ -364,38 +369,36 @@ enum wu_error mag_parse(struct mag_desc *desc, struct wuimg *img) {
 	desc->row_dwords = stride / 4;
 	const size_t dwords = bytes / 4;
 
-	desc->flag_a.off = buf_endian32(buf + 11, little_endian);
-	desc->flag_a.size = (uint32_t)strip_base(dwords, 1);
-	desc->flag_b.off = buf_endian32(buf + 15, little_endian);
-	desc->flag_b.size = buf_endian32(buf + 19, little_endian);
-	desc->color.off = buf_endian32(buf + 23, little_endian);
-	desc->color.size = buf_endian32(buf + 27, little_endian);
-	if (desc->color.size & 1) {
-		return wu_invalid_header;
-	} else if (desc->flag_b.size > dwords || desc->color.size > bytes) {
-		 // Probably got the wrong bitdepth
-		return wu_invalid_params;
+	const size_t fa_size = strip_base(dwords, 1);
+	const uint32_t fb_size = buf_endian32l(buf + 19);
+	const uint32_t c_size = buf_endian32l(buf + 27);
+	if (c_size & 1) {
+		return wuerr(wu_invalid_header, "color section with odd size");
+	} else if (fb_size > dwords || c_size > bytes) {
+		return wuerr(wu_invalid_params,
+			"we may have miscalculated the image bitdepth");
 	}
 
+	desc->flag_a = mp_avail_at(&mp, null_pos + buf_endian32l(buf + 11),
+		fa_size);
+	desc->flag_b = mp_avail_at(&mp, null_pos + buf_endian32l(buf + 15),
+		fb_size);
+	desc->color = mp_avail_at(&mp, null_pos + buf_endian32l(buf + 23),
+		c_size);
 	if (load_pal) {
-		st = read_pal(desc, img, is_yjk);
-		if (st != wu_ok) {
+		st = read_pal(desc, img, &mp, is_yjk);
+		if (!wu_isok(st)) {
 			return st;
 		}
 	}
-
 	if (is_yjk) {
-		img->w /= 8 / img->bitdepth;
+		img->w /= 8u / img->bitdepth;
 		img->bitdepth = 16;
 		if (!wuimg_bitfield_from_id(img, 0x555)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 	}
-	return wuimg_verify(img);
-}
-
-enum wu_error mag_init(struct mag_desc *desc, const struct wuptr mem) {
-	*desc = (struct mag_desc) {.mp = mp_wuptr(mem)};
-	const uint8_t magic[8] = "MAKI02  ";
-	return fmt_sigcmp_mem(magic, sizeof(magic), &desc->mp);
+	return wuerr_partial(
+		desc->flag_a.len + desc->flag_b.len + desc->color.len,
+		fa_size + fb_size + c_size);
 }
