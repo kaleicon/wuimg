@@ -3,7 +3,6 @@
 #ifndef LIB_PI
 #define LIB_PI
 
-#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 struct pi_saver {
@@ -12,18 +11,17 @@ struct pi_saver {
 };
 
 struct pi_desc {
-	struct mparser mp;
 	unsigned char depth;
 
 	struct wuptr comm;
 	struct wuptr dummy;
 	struct pi_saver saver;
+	struct wuptr data;
 };
 
-size_t pi_decode(const struct pi_desc *desc, struct wuimg *img);
+struct wu_st pi_decode(const struct pi_desc *desc, struct wuimg *img);
 
-enum wu_error pi_read_header(struct pi_desc *desc, struct wuimg *img);
-
-enum wu_error pi_init(struct pi_desc *desc, struct wuptr mem);
+struct wu_st pi_read_header(struct pi_desc *desc, struct wuimg *img,
+struct wuptr mem);
 
 #endif /* LIB_PI */

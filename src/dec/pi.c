@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2019 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/pi.h"
 
-static void metadata(const void *restrict ptr, struct wutree *tree) {
-	const struct pi_desc *desc = ptr;
+static void get_pi_metadata(const struct pi_desc *desc, struct wutree *tree) {
 	tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT-JIS");
 	tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
 	tree_add_leaf_len(tree, "Saver model", WUPTR_ARRAY(desc->saver.model),
@@ -13,24 +12,24 @@ static void metadata(const void *restrict ptr, struct wutree *tree) {
 	tree_bud_leaf_u(tree, "Depth", desc->depth);
 }
 
-static size_t dec(const void *restrict ptr, struct wuimg *img) {
-	return pi_decode(ptr, img);
-}
-static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
-	return pi_read_header(ptr, img);
-}
-static enum wu_error open(void *restrict ptr, struct image_file *infile) {
-	return pi_init(ptr, infile->map);
-}
-
-static enum wu_error pi_dec(struct image_file *infile,
+static struct wu_st init_pi(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct pi_desc desc;
-	return rast_trivial_dec(infile, conf, &desc, open, parse, metadata,
-		dec);
+	struct wu_st st = pi_read_header(&desc, infile->sub_img, infile->map);
+	if (wu_isok(st)) {
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		if (e == wu_ok) {
+			get_pi_metadata(&desc, &infile->metadata);
+			st = pi_decode(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(e);
+		}
+	}
+	return st;
 }
 
 const struct image_fn pi_fn = {
 	.mmap = true,
-	.dec = pi_dec,
+	.alloc_single = true,
+	.init = init_pi,
 };
