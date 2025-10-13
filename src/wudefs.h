@@ -64,7 +64,8 @@ typedef void (*fmt_end_t)(struct image_file *infile);
 
 struct image_fn {
 	bool mmap;
-	bool alloc_single;
+	bool alloc_single; // pre-alloc a single image
+	bool alloc_on_subcycle; // alloc on subcycle callback
 	uint16_t state_size;
 	fmt_init_t init;
 	fmt_event_t event;

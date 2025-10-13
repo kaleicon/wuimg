@@ -56,6 +56,13 @@ enum image_event event) {
 	case ev_subcycle:
 		if (infile->sub_img[state->idx].data) {
 			return wu_no_change;
+		} else if (!image->desc.is_auto
+		&& image->desc.dec.fn->alloc_on_subcycle) {
+			const enum wu_error e = wuimg_alloc_limit(
+				infile->sub_img + state->idx, &image->conf);
+			if (e != wu_ok) {
+				return e;
+			}
 		}
 		break;
 	default:
