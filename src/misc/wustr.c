@@ -46,6 +46,12 @@ struct wuptr wuptr_wustr(const struct wustr w) {
 	return (struct wuptr){.len = w.len, .ptr = w.str};
 }
 
+struct wuptr wuptr_trim_end_space(struct wuptr w) {
+	while (w.len && isspace(w.ptr[w.len-1])) {
+		--w.len;
+	}
+	return w;
+}
 struct wuptr wuptr_trim_end(struct wuptr w, const unsigned char c) {
 	while (w.len && w.ptr[w.len-1] == c) {
 		--w.len;

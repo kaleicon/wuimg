@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
 #include "misc/mem.h"
-#include "raster/fmt.h"
 #include "lib/kyg.h"
 
 /* Kyss' KYG format, used in an obscure FM-Towns slideshow presumably-joke program.
@@ -13,8 +12,12 @@ https://discmaster.textfiles.com/view/660/FREESOFT.BIN/t_os/fugaku/source/kygloa
  * not 128. Presumably part of the joke.
 */
 
-static size_t rle_unpack(uint16_t *dst, const size_t dst_stride,
-const size_t dst_len, const struct wuptr src) {
+struct wu_st kyg_decode(const struct kyg_desc *desc, struct wuimg *img) {
+	uint16_t *dst = (uint16_t *)img->data;
+	const size_t w = img->w;
+	const size_t dst_len = w * img->h;
+	const struct wuptr src = desc->data;
+
 	size_t d = 0;
 	size_t s = 0;
 	uint8_t from_stream = 0; // Must be u8 for wrap-around.
@@ -42,7 +45,7 @@ read_pixel:
 			if (src.len - s < 2) {
 				break;
 			}
-			val = buf_endian16(src.ptr + s, little_endian);
+			val = buf_endian16l(src.ptr + s);
 			s += 2;
 			run = (bool)(val & 0x8000);
 			/* We don't clear the top bit as the bitfield
@@ -51,7 +54,7 @@ read_pixel:
 			//val &= 0x7fff;
 		} else {
 			// Read a pixel from previous line plus an offset.
-			size_t lookback = dst_stride + 4 - (from_prev & 0x07);
+			size_t lookback = w + 4 - (from_prev & 0x07);
 			val = (lookback > d) ? 0 : dst[d - lookback];
 			run = (bool)(from_prev & 0x08);
 		}
@@ -68,68 +71,64 @@ read_pixel:
 		memset16(dst + d, &val, run);
 		d += run;
 	}
-	return d;
+	return wuerr_partial(d, dst_len);
 }
 
-size_t kyg_decode(const struct kyg_desc *desc, struct wuimg *img) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		w = rle_unpack((uint16_t *)img->data, img->w, img->w * img->h,
-			mp_avail_at(&desc->mp, desc->mp.pos, desc->len));
-	}
-	return w;
-}
-
-enum wu_error kyg_parse(struct kyg_desc *desc, struct wuimg *img) {
+struct wu_st kyg_parse(struct kyg_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
 	/* KYG structure (after magic line, all fields little-endian):
 		Offset  Type    Name
-		0       u8      Comment[80]
-		80      u8      EndOfMessage
-		81      u8      Padding
-		82      u16     Width
-		84      u16     Height
-		86      u16     X
-		88      u16     Y
-		90      u8      Padding[2]
-		92      u32     DataLen
-		96      u16     Type
-		98      u16     Colors       // Number of possible colors
-		100     u8      Reserved[10]
+		0       u8      Magic[20]
+		20      u8      Comment[80]
+		100     u8      EndOfMessage
+		101     u8      Padding
+		102     u16     Width
+		104     u16     Height
+		106     u16     X
+		108     u16     Y
 		110     u8      Padding[2]
-		112
+		112     u32     DataLen
+		116     u16     Type
+		118     u16     Colors       // Number of possible colors
+		120     u8      Reserved[10]
+		130     u8      Padding[2]
+		132
 	*/
-	desc->comment = wuptr_trim_end(mp_avail(&desc->mp, 80), ' ');
-	mp_seek_cur(&desc->mp, 2);
-	const uint8_t *hdr = mp_slice(&desc->mp, 30);
+	*desc = (struct kyg_desc) {0};
+	struct mparser mp = mp_wuptr(mem);
+
+	const uint8_t sig[20] = "KYGformat ver.0.10\x0d\x0a";
+	const uint8_t *hdr = mp_slice(&mp, sizeof(sig));
 	if (!hdr) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(hdr, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	desc->comment = wuptr_trim_end_space(mp_avail(&mp, 80));
+	hdr = mp_slice(&mp, 32);
+	if (!hdr) {
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	img->w = buf_endian16(hdr, little_endian);
-	img->h = buf_endian16(hdr + 2, little_endian);
+	img->w = buf_endian16l(hdr + 2);
+	img->h = buf_endian16l(hdr + 4);
 	img->channels = 1;
 	img->bitdepth = 16;
 	/* Pixel bit layout is XGRB (x ggggg rrrrr bbbbb), which translated
 	 * into our convention for bitfields means BRGA.*/
 	img->layout = pix_layout_pack(1, 2, 0, 3);
 	img->alpha = alpha_ignore;
-	desc->x = buf_endian16(hdr + 4, little_endian);
-	desc->y = buf_endian16(hdr + 6, little_endian);
-	desc->len = buf_endian32(hdr + 10, little_endian);
+	desc->x = buf_endian16l(hdr + 6);
+	desc->y = buf_endian16l(hdr + 8);
 
-	const uint16_t type = buf_endian16(hdr + 14, little_endian);
-	const uint16_t colors = buf_endian16(hdr + 16, little_endian);
+	const uint16_t type = buf_endian16l(hdr + 16);
+	const uint16_t colors = buf_endian16l(hdr + 18);
 	if (type == 1 && colors == (1 << 15)) {
 		if (wuimg_bitfield_from_id(img, 0x555)) {
-			return wuimg_verify(img);
+			desc->data = mp_avail(&mp, buf_endian32l(hdr + 12));
+			return WU_OK;
 		}
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return wu_invalid_header;
-}
-
-enum wu_error kyg_identify(struct kyg_desc *desc, const struct wuptr map) {
-	const uint8_t sig[20] = "KYGformat ver.0.10\x0d\x0a";
-	*desc = (struct kyg_desc) {.mp = mp_wuptr(map)};
-	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	return wuerr(wu_invalid_header, "image type != 1 or colors != 1 << 15");
 }

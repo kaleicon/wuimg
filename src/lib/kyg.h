@@ -6,16 +6,14 @@
 #include "raster/wuimg.h"
 
 struct kyg_desc {
-	struct mparser mp;
 	struct wuptr comment;
+	struct wuptr data;
 	uint16_t x, y;
-	uint32_t len;
 };
 
-size_t kyg_decode(const struct kyg_desc *desc, struct wuimg *img);
+struct wu_st kyg_decode(const struct kyg_desc *desc, struct wuimg *img);
 
-enum wu_error kyg_parse(struct kyg_desc *desc, struct wuimg *img);
-
-enum wu_error kyg_identify(struct kyg_desc *desc, struct wuptr map);
+struct wu_st kyg_parse(struct kyg_desc *desc, struct wuimg *img,
+struct wuptr map);
 
 #endif /* LIB_KYG */

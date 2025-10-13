@@ -34,19 +34,16 @@ struct wugrow wugrow_init(size_t elem_size);
 #define WUPTR_ARRAY(arr) ( (struct wuptr){.len = sizeof(arr), .ptr = (const unsigned char *)arr} )
 
 struct wuptr wuptr_mem(const void *mem, size_t len);
-
 struct wuptr wuptr_str(const char *str);
-
 struct wuptr wuptr_wustr(struct wustr w);
 
+struct wuptr wuptr_trim_end_space(struct wuptr w);
 struct wuptr wuptr_trim_end(struct wuptr w, unsigned char c);
 
 bool wuptr_suffix(struct wuptr w1, struct wuptr w2);
-
 bool wuptr_suffix_str(struct wuptr w1, const char *s2);
 
 bool wuptr_eq(struct wuptr w1, struct wuptr w2);
-
 bool wuptr_eq_str(struct wuptr w1, const char *s2);
 
 size_t wuptr_print(const struct wuptr w, FILE *out);
