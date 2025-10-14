@@ -52,23 +52,32 @@ enum image_event event) {
 	event &= image_cur_events(image);
 	switch (event) {
 	case ev_none:
-		return wu_no_change;
+		break;
 	case ev_subcycle:
 		if (infile->sub_img[state->idx].data) {
-			return wu_no_change;
-		} else if (!image->desc.is_auto
-		&& image->desc.dec.fn->alloc_on_subcycle) {
-			const enum wu_error e = wuimg_alloc_limit(
-				infile->sub_img + state->idx, &image->conf);
-			if (e != wu_ok) {
+			break;
+		} else if (!image->desc.is_auto) {
+			enum wu_error e = call_event(image, ev_metadata);
+			if (e != wu_ok && e != wu_no_change) {
 				return e;
 			}
+			if (image->desc.dec.fn->alloc_on_subcycle) {
+				e = wuimg_alloc_limit(
+					infile->sub_img + state->idx,
+					&image->conf);
+				if (e != wu_ok) {
+					return e;
+				}
+			}
 		}
-		break;
-	default:
-		break;
+		// fallthrough
+	case ev_metadata:
+	case ev_frame:
+	case ev_time:
+	case ev_transform:
+		return call_event(image, event);
 	}
-	return call_event(image, event);
+	return wu_no_change;
 }
 
 static enum wu_error init_metadata(struct image_file *infile,

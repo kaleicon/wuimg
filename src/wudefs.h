@@ -25,10 +25,11 @@ struct wu_state {
 
 enum image_event {
 	ev_none = 0,
-	ev_subcycle = 1,
-	ev_frame = 1 << 1,
-	ev_time = 1 << 2,
-	ev_transform = 1 << 3,
+	ev_metadata = 1 << 0,
+	ev_subcycle = 1 << 1,
+	ev_frame = 1 << 2,
+	ev_time = 1 << 3,
+	ev_transform = 1 << 4,
 };
 
 struct image_file {
