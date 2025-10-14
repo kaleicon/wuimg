@@ -31,6 +31,7 @@ struct pcf_names {
 };
 
 struct pcf_bitmap {
+	enum endianness endian;
 	uint32_t format;
 	uint32_t *offsets;
 	long file_pos;
@@ -77,19 +78,19 @@ struct pcf_desc {
 	struct pcf_prop prop;
 	struct pcf_bitmap bitmap;
 	struct pcf_names names;
-	uint32_t cur_offset;
 	uint16_t seen;
 };
 
 void pcf_cleanup(struct pcf_desc *desc);
 
-struct wu_st pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img);
+struct wu_st pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img,
+uint32_t i);
 
 struct wu_st pcf_set_glyph(struct pcf_desc *desc, struct wuimg *img,
 uint32_t i);
 
-struct wu_st pcf_get_property(const struct pcf_desc *desc, uint32_t i,
-struct pcf_property *out);
+struct wu_st pcf_get_property(const struct pcf_desc *desc,
+struct pcf_property *out, uint32_t i);
 
 struct wu_st pcf_parse(struct pcf_desc *desc, FILE *ifp);
 

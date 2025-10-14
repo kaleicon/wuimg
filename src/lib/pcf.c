@@ -74,9 +74,11 @@ void *restrict user) {
 	}
 }
 
-struct wu_st pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img) {
+struct wu_st pcf_load_glyph(const struct pcf_desc *desc, struct wuimg *img,
+const uint32_t i) {
 	const struct pcf_bitmap *bitmap = &desc->bitmap;
-	const long pos = bitmap->file_pos + desc->cur_offset;
+	const long pos = bitmap->file_pos
+		+ endian32(bitmap->offsets[i], bitmap->endian);
 	fseek(desc->ifp, pos, SEEK_SET);
 	const enum endianness byte = format_byte_endian(bitmap->format);
 	const enum endianness bit = format_bit_endian(bitmap->format);
@@ -140,7 +142,6 @@ const uint32_t i) {
 		const enum endianness bit = format_bit_endian(bitmap->format);
 		img->bit = format_scan_unit(bitmap->format) == 0
 			? (bit & 1) : big_endian;
-		desc->cur_offset = bitmap->offsets[i];
 		set_glyph_metadata(&desc->names, img, i);
 		return WU_OK;
 	}
@@ -148,7 +149,7 @@ const uint32_t i) {
 }
 
 struct wu_st pcf_get_property(const struct pcf_desc *desc,
-const uint32_t i, struct pcf_property *out) {
+struct pcf_property *out, const uint32_t i) {
 	const struct pcf_prop *prop = &desc->prop;
 	const uint8_t *buf = prop->buf + COMPACT_PROP * i;
 	const uint32_t name_offset = buf_endian32(buf, desc->prop.endian);
@@ -239,6 +240,7 @@ const enum endianness e) {
 
 	struct pcf_bitmap *bitmap = &desc->bitmap;
 	glyphs = endian32(glyphs, e);
+	bitmap->endian = e;
 	bitmap->file_pos = (long)(t->offset
 		+ (2 + glyphs + 4) * sizeof(*bitmap->offsets));
 	desc->glyphs = umin(desc->glyphs, glyphs);
@@ -249,12 +251,10 @@ const enum endianness e) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
-	if (!fread(bitmap->offsets, sizeof(*bitmap->offsets) * desc->glyphs, 1,
-	desc->ifp)) {
+	if (fread(bitmap->offsets, sizeof(*bitmap->offsets), desc->glyphs,
+	desc->ifp) != desc->glyphs) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-
-	endian_loop32(bitmap->offsets, e, desc->glyphs);
 	return WU_OK;
 }
 

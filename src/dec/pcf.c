@@ -9,19 +9,16 @@ static void end_pcf(struct image_file *infile) {
 
 static struct wu_st event_pcf(struct image_file *infile,
 const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	if (ev == ev_subcycle) {
-		struct pcf_desc *desc = infile->dec_state;
-		const uint32_t i = (uint32_t)state->idx;
-		struct wuimg *img = infile->sub_img + i;
-		const struct wu_st st = pcf_set_glyph(desc, img, i);
-		if (wu_isok(st)) {
-			const enum wu_error e = wuimg_alloc_limit(img, conf);
-			if (e == wu_ok) {
-				return pcf_load_glyph(desc, img);
-			}
-			return WUERR_HERE(e);
-		}
-		return st;
+	(void)conf;
+	struct pcf_desc *desc = infile->dec_state;
+	const uint32_t i = (uint32_t)state->idx;
+	struct wuimg *img = infile->sub_img + i;
+	switch (ev) {
+	case ev_metadata:
+		return pcf_set_glyph(desc, img, i);
+	case ev_subcycle:
+		return pcf_load_glyph(desc, img, i);
+	default: break;
 	}
 	return WU_NO_CHANGE;
 }
@@ -31,7 +28,7 @@ static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
 	bool all_ok = true;
 	for (uint32_t i = 0; i < desc->prop.len; ++i) {
 		struct pcf_property p;
-		if (wu_isok(pcf_get_property(desc, i, &p))) {
+		if (wu_isok(pcf_get_property(desc, &p, i))) {
 			const char *name = (const char *)p.name.ptr;
 			if (p.is_string) {
 				tree_add_leaf_len(meta, name, p.val.s, NULL);
@@ -64,6 +61,7 @@ const struct wu_conf *conf) {
 }
 
 const struct image_fn pcf_fn = {
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct pcf_desc),
 	.init = init_pcf,
 	.event = event_pcf,
