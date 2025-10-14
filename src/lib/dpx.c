@@ -163,14 +163,13 @@ struct elem_info *n) {
 }
 
 static void unpack10(uint16_t *dst, const uint32_t w, const size_t len,
-const uint8_t shr, const uint16_t mask, const uint32_t scale) {
+const uint8_t shr, const uint16_t mask) {
 	for (uint8_t z = 0; z < len; ++z) {
-		const uint32_t val = mask & (w >> (20 - 10*z + shr));
-		dst[z] = (uint16_t)((val * scale) >> 16);
+		dst[z] = (uint16_t)(mask & (w >> (20 - 10*z + shr)));
 	}
 }
 
-static size_t process10(const struct dpx_desc *desc, struct wuimg *img,
+static struct wu_st process10(const struct dpx_desc *desc, struct wuimg *img,
 const struct dpx_element *elem) {
 	const size_t items = (img->w * img->channels);
 	const size_t whole = items / 3;
@@ -179,7 +178,7 @@ const struct dpx_element *elem) {
 	const size_t len = (whole + (bool)remain) * 4;
 	uint32_t *buf = malloc(len);
 	if (!buf) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	/* Three 10-bit components are grouped in 30-bits of a 32-bit word.
@@ -188,56 +187,48 @@ const struct dpx_element *elem) {
 	 * Method B: Group stored in the 30 least-significant bits
 	*/
 	const uint16_t mask = (1 << 10) - 1;
-	const uint32_t scale = (0xffffu << 16) / mask + 1;
 	const uint8_t shr = (elem->pack == dpx_pack_a) ? 2 : 0;
 	uint16_t *dst = (uint16_t *)img->data;
-	size_t read = 0;
+	size_t w = 0;
 	for (size_t y = 0; y < img->h; ++y) {
-		read += fread(buf, 1, len, desc->ifp);
-		fseek(desc->ifp, elem->line_pad, SEEK_CUR);
-
+		const size_t read = fread(buf, 1, len, desc->ifp);
+		w += read;
 		for (size_t x = 0; x < whole; ++x) {
 			unpack10(dst, endian32(buf[x], desc->endian), 3, shr,
-				mask, scale);
+				mask);
 			dst += 3;
 		}
 		if (remain) {
 			unpack10(dst, endian32(buf[whole], desc->endian),
-				remain, shr, mask, scale);
+				remain, shr, mask);
 			dst += remain;
 		}
+		if (read < len) {
+			break;
+		}
+		fseek(desc->ifp, elem->line_pad, SEEK_CUR);
 	}
 	free(buf);
-	return read;
+	return wuerr_partial(w, len*img->h);
 }
 
-static size_t process16(const struct dpx_desc *desc, uint16_t *data,
+static void process16(const struct dpx_desc *desc, uint16_t *data,
 const struct dpx_element *elem, const size_t read) {
-	switch (elem->pack) {
-	case dpx_pack_normal:
-		endian_loop16(data, desc->endian, read);
-		break;
-	case dpx_pack_a:
+	if (elem->pack == dpx_pack_a) {
 		// Data is in the 12 most-significant bits
 		for (size_t i = 0; i < read; ++i) {
-			const uint16_t w = endian16(data[i], desc->endian);
-			data[i] = w | w >> 12;
+			data[i] = endian16(data[i], desc->endian) >> 4;
 		}
-		break;
-	case dpx_pack_b:
-		// Data is in the 12 least-significant bits
-		for (size_t i = 0; i < read; ++i) {
-			const uint16_t w = endian16(data[i], desc->endian);
-			data[i] = (uint16_t)(w << 4 | w >> 8);
-		}
+	} else {
+		// Data is 16-bit, or is in the 12 least-significant bits
+		endian_loop16(data, desc->endian, read);
 	}
-	return read;
 }
 
-static size_t process_rows(const struct dpx_desc *desc, struct wuimg *img,
+static struct wu_st process_rows(const struct dpx_desc *desc, struct wuimg *img,
 const struct dpx_element *elem) {
 	const size_t stride = wuimg_stride(img);
-	size_t total = 0;
+	size_t w = 0;
 	for (size_t y = 0; y < img->h; ++y) {
 		uint8_t *dst = img->data + y*stride;
 		const size_t read = fread(dst, 1, stride, desc->ifp);
@@ -252,30 +243,26 @@ const struct dpx_element *elem) {
 			endian_loop64((uint64_t *)dst, desc->endian, read/8);
 			break;
 		}
-		total += read;
+		w += read;
 		if (read < stride) {
 			break;
 		}
 		fseek(desc->ifp, elem->line_pad, SEEK_CUR);
 	}
-	return total;
+	return wuerr_partial(w, stride*img->h);
 }
 
-size_t dpx_decode(const struct dpx_desc *desc, struct wuimg *img,
+struct wu_st dpx_decode(const struct dpx_desc *desc, struct wuimg *img,
 const uint8_t i) {
-	if (!wuimg_alloc_noverify(img)) {
-		return 0;
-	}
 	const struct dpx_element *elem = desc->generic.image.elem + i;
 	fseek(desc->ifp, elem->offset, SEEK_SET);
-
 	if (desc->generic.image.bitdepth == 10 && elem->pack != dpx_pack_normal) {
 		return process10(desc, img, elem);
 	}
 	return process_rows(desc, img, elem);
 }
 
-enum wu_error dpx_set_image(const struct dpx_desc *desc, struct wuimg *img,
+struct wu_st dpx_set_image(const struct dpx_desc *desc, struct wuimg *img,
 const uint8_t i) {
 	const struct dpx_generic_image *image = &desc->generic.image;
 	img->w = image->w;
@@ -290,21 +277,24 @@ const uint8_t i) {
 
 	const struct dpx_element *elem = image->elem + i;
 	if (elem->rle) {
-		return wu_unsupported_feature;
+		return wuerr(wu_unsupported_feature, "RLE packing");
 	}
 	struct elem_info nfo;
-	if (!element_info(elem->type, &nfo) || nfo.subsampled) {
-		return wu_unsupported_feature;
+	if (!element_info(elem->type, &nfo)) {
+		return wuerr(wu_unsupported_feature, "unknown element packing");
+	} else if (nfo.subsampled) {
+		return wuerr(wu_unsupported_feature, "subsampling");
 	}
 	img->attr = (enum pix_attr)elem->attr;
 	img->channels = nfo.ch;
 	img->layout = nfo.layout;
 	img->bitdepth = image->bitdepth;
+	img->bitrange = image->bitdepth;
+	// Image rows are always padded to 32-bit boundaries
+	// (plus `elem->line_pad` on top)
 	wuimg_align(img, 4);
 	switch (img->bitdepth) {
 	case 10:
-		wuimg_align(img, 2);
-		// fallthrough
 	case 12:
 		if (elem->pack != dpx_pack_normal) {
 			img->bitdepth = 16;
@@ -318,7 +308,7 @@ const uint8_t i) {
 
 	const struct dpx_generic_source *src = &desc->generic.src;
 	wuimg_aspect_ratio(img, src->horz_aspect, src->vert_aspect);
-	return wuimg_verify(img);
+	return WU_OK;
 }
 
 static time_t read_date(FILE *in) {
@@ -353,7 +343,7 @@ static time_t read_date(FILE *in) {
 	return utc_to_epoch(year, month, day, hour, min, sec);
 }
 
-static enum wu_error television_parse(struct dpx_desc *desc) {
+static struct wu_st television_parse(struct dpx_desc *desc) {
 	/* Television header (after prev):
 		Offset  Size    Name
 		0       u32     TimeCode
@@ -377,7 +367,7 @@ static enum wu_error television_parse(struct dpx_desc *desc) {
 	*/
 	uint8_t buf[52];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	desc->industry.tv = (struct dpx_industry_television) {
@@ -397,10 +387,10 @@ static enum wu_error television_parse(struct dpx_desc *desc) {
 		.white_level = buf_endianf32(buf + 44, desc->endian),
 		.integration = buf_endianf32(buf + 48, desc->endian),
 	};
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error film_parse(struct dpx_desc *desc) {
+static struct wu_st film_parse(struct dpx_desc *desc) {
 	/* Film header (after prev):
 		Offset  Size    Name
 		0       char    Manufacturer[2]
@@ -421,7 +411,7 @@ static enum wu_error film_parse(struct dpx_desc *desc) {
 	*/
 	char codes[16];
 	if (!fread(codes, sizeof(codes), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	struct dpx_industry_film *film = &desc->industry.film;
@@ -439,7 +429,7 @@ static enum wu_error film_parse(struct dpx_desc *desc) {
 	uint32_t buf[5];
 	if (!fread(film->format, sizeof(film->format), 1, desc->ifp)
 	|| !fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	film->frame_num = endian32(buf[0], desc->endian);
 	film->total_frames = endian32(buf[1], desc->endian);
@@ -448,13 +438,13 @@ static enum wu_error film_parse(struct dpx_desc *desc) {
 	film->shutter_angle = endianf32(buf[4], desc->endian);
 	if (!fread(film->frame_id, sizeof(film->frame_id), 1, desc->ifp)
 	|| !fread(film->slate_info, sizeof(film->slate_info), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	fseek(desc->ifp, 56, SEEK_CUR);
 	return television_parse(desc);
 }
 
-static enum wu_error source_parse(struct dpx_desc *desc) {
+static struct wu_st source_parse(struct dpx_desc *desc) {
 	/* Source header (after prev):
 		Offset  Size    Name
 		0       u32     XOffset
@@ -480,7 +470,7 @@ static enum wu_error source_parse(struct dpx_desc *desc) {
 	*/
 	uint32_t buf[6];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	struct dpx_generic_source *src = &desc->generic.src;
@@ -491,17 +481,17 @@ static enum wu_error source_parse(struct dpx_desc *desc) {
 	src->w = endian32(buf[4], desc->endian);
 	src->h = endian32(buf[5], desc->endian);
 	if (!fread(src->filename, sizeof(src->filename), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	src->date = read_date(desc->ifp);
 	if (!fread(src->input_device, sizeof(src->input_device), 1, desc->ifp)
 	|| !fread(src->input_sn, sizeof(src->input_sn), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	uint16_t frame[12];
 	if (!fread(frame, sizeof(frame), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	src->erosion.left = endian16(frame[0], desc->endian);
 	src->erosion.right = endian16(frame[1], desc->endian);
@@ -514,16 +504,17 @@ static enum wu_error source_parse(struct dpx_desc *desc) {
 		src->h_mm = buf_endianf32(frame + 10, desc->endian);
 	}
 
+	struct wu_st st = WU_OK;
 	if (desc->has_industry) {
 		fseek(desc->ifp, 20, SEEK_CUR);
-		if (film_parse(desc) != wu_ok) {
-			desc->has_industry = false;
-		}
+		st = film_parse(desc);
+		desc->has_industry = st.st == wu_ok;
+		st.st = wu_ok;
 	}
-	return wu_ok;
+	return st;
 }
 
-static enum wu_error read_element(struct dpx_desc *desc,
+static struct wu_st read_element(struct dpx_desc *desc,
 struct dpx_generic_image *image, const uint8_t i) {
 	/* Element struct:
 		Offset  Size    Name
@@ -539,17 +530,18 @@ struct dpx_generic_image *image, const uint8_t i) {
 		24      u16     Packing
 		26      u16     IsRLE
 		28      u32     ComponentOffset // From beginning of file
-		32      u32     LinePadding
+		32      u32     LinePadding     // [2]
 		36      u32     ImagePadding
 		40      char    Description[32]
 		72
 
 	* [1] Must be the same for all elements.
 	*    (Why you put it in each struct then?)
+	* [2] This is on top of the required 32-bit row alignment
 	*/
 	uint8_t buf[40];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	struct dpx_element *el = image->elem + i;
 	*el = (struct dpx_element) {
@@ -560,7 +552,7 @@ struct dpx_generic_image *image, const uint8_t i) {
 		.line_pad = buf_endian32(buf + 32, desc->endian),
 	};
 	if (!fread(el->description, sizeof(el->description), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	const enum dpx_oetf oetf = buf[21];
@@ -574,12 +566,13 @@ struct dpx_generic_image *image, const uint8_t i) {
 		el->pack = pack;
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "unknown image packing");
 	}
 	if (i) {
 		if (oetf != image->oetf || pri != image->primaries
 		|| bitdepth != image->bitdepth) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"images with different colorspace");
 		}
 	} else {
 		image->oetf = oetf;
@@ -596,14 +589,15 @@ struct dpx_generic_image *image, const uint8_t i) {
 			el->attr = pix_float;
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "bad dpx depth");
 		}
 	}
 	struct elem_info nfo;
-	return element_info(el->type, &nfo) ? wu_ok : wu_invalid_header;
+	return element_info(el->type, &nfo)
+		? WU_OK : wuerr(wu_invalid_header, "unknown element type");
 }
 
-static enum wu_error image_info_parse(struct dpx_desc *desc) {
+static struct wu_st image_info_parse(struct dpx_desc *desc) {
 	/* Image header (after prev):
 		Offset  Size    Name
 		0       u16     Orientation
@@ -616,14 +610,15 @@ static enum wu_error image_info_parse(struct dpx_desc *desc) {
 	*/
 	uint16_t buf[6];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	struct dpx_generic_image *image = &desc->generic.image;
 	const uint16_t o = endian16(buf[0], desc->endian);
 	const uint16_t elems = endian16(buf[1], desc->endian);
 	if (o > 7 || elems < 1 || elems > 8) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"bad orientation or number of elements");
 	}
 	image->orientation = (uint8_t)o;
 	image->w = buf_endian32(buf + 2, desc->endian);
@@ -631,8 +626,8 @@ static enum wu_error image_info_parse(struct dpx_desc *desc) {
 
 	uint8_t nb = 0;
 	for (int e = 0; e < elems; ++e) {
-		const enum wu_error st = read_element(desc, image, nb);
-		switch (st) {
+		const struct wu_st st = read_element(desc, image, nb);
+		switch (st.st) {
 		case wu_ok:
 			++nb;
 			break;
@@ -643,70 +638,79 @@ static enum wu_error image_info_parse(struct dpx_desc *desc) {
 		}
 	}
 	if (!nb) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "no useable elements");
 	}
 	image->nb_elem = nb;
 	fseek(desc->ifp, (8 - elems)*72 + 52, SEEK_CUR);
 	return source_parse(desc);
 }
 
-static enum wu_error file_info_parse(struct dpx_desc *desc) {
-	/* File header (after magic bytes):
+static struct wu_st file_info_parse(struct dpx_desc *desc) {
+	/* File header:
 		Offset  Size    Name
-		0       u32     ImageOffset
-		4       char    Version[8]
-		12      u32     FileSize
-		16      u32     IsNewFrame
-		20      u32     GenericSize
-		24      u32     IndustrySize
-		28      u32     UserSize
-		32      char    Filename[100]
-		132     char    Date[24]
-		156     char    Creator[100]
-		256     char    Project[200]
-		456     char    Copyright[200]
-		656     u32     EncryptKey
-		660     u8      Reserved[104]
-		764
+		0       char    Endianness[4]
+		4       u32     ImageOffset
+		8       char    Version[8]
+		16      u32     FileSize
+		20      u32     IsNewFrame
+		24      u32     GenericSize
+		28      u32     IndustrySize
+		32      u32     UserSize
+		36      char    Filename[100]
+		136     char    Date[24]
+		160     char    Creator[100]
+		260     char    Project[200]
+		460     char    Copyright[200]
+		660     u32     EncryptKey
+		664     u8      Reserved[104]
+		768
 	*/
-	uint32_t buf[8];
+	uint32_t buf[9];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	struct dpx_generic_file *file = &desc->generic.file;
+	if (!memcmp(buf, "XPDS", sizeof(*buf))) {
+		desc->endian = little_endian;
+	} else if (!memcmp(buf, "SDPX", sizeof(*buf))) {
+		desc->endian = big_endian;
+	} else {
+		return WUERR_HERE(wu_invalid_signature);
+	}
 	const char v1[] = "V1.0";
 	const char v2[] = "V2.0";
-	const char *str = (char *)(buf + 1);
+	const char *str = (char *)(buf + 2);
 	if (!strcmp(str, v1) || !strcmp(str, v2)) {
 		desc->version = (uint8_t)str[1];
 	} else {
-		return wu_unsupported_feature;
+		return wuerr(wu_unsupported_feature, "unknown version");
 	}
 
-	file->is_new_frame = buf[4];
-	if (endian32(buf[5], desc->endian) != 768 + 640 + 256) {
-		return wu_invalid_header;
+	struct dpx_generic_file *file = &desc->generic.file;
+	file->is_new_frame = buf[5];
+	if (endian32(buf[6], desc->endian) != 768 + 640 + 256) {
+		return wuerr(wu_invalid_header,
+			"unexpected generic header size");
 	}
-	desc->has_industry = (endian32(buf[6], desc->endian) == 256 + 128);
-	file->user_size = endian32(buf[7], desc->endian);
+	desc->has_industry = (endian32(buf[7], desc->endian) == 256 + 128);
+	file->user_size = endian32(buf[8], desc->endian);
 
 	if (!fread(file->name, sizeof(file->name), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	file->date = read_date(desc->ifp);
 	if (!fread(file->creator, sizeof(file->creator), 1, desc->ifp)
 	|| !fread(file->project, sizeof(file->project), 1, desc->ifp)
 	|| !fread(file->copyright, sizeof(file->copyright), 1, desc->ifp)
-	|| !fread(buf, sizeof(*buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+	|| !fread(&file->encrypt, sizeof(file->encrypt), 1, desc->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	file->encrypt = endian32(buf[0], desc->endian);
+	file->encrypt = endian32(file->encrypt, desc->endian);
 	fseek(desc->ifp, 104, SEEK_CUR);
 	return image_info_parse(desc);
 }
 
-enum wu_error dpx_parse(struct dpx_desc *desc) {
+struct wu_st dpx_parse(struct dpx_desc *desc, FILE *ifp) {
 	/* DPX header overview, all structures contiguous:
 		GenericHeader
 			FileInfo
@@ -719,21 +723,6 @@ enum wu_error dpx_parse(struct dpx_desc *desc) {
 
 	 * Of note is that unused fields are set to all ones.
 	*/
+	*desc = (struct dpx_desc) {.ifp = ifp};
 	return file_info_parse(desc);
-}
-
-enum wu_error dpx_open(struct dpx_desc *desc, FILE *ifp) {
-	uint8_t buf[4];
-	if (fread(buf, sizeof(buf), 1, ifp)) {
-		if (!memcmp(buf, "XPDS", sizeof(buf))) {
-			desc->endian = little_endian;
-		} else if (!memcmp(buf, "SDPX", sizeof(buf))) {
-			desc->endian = big_endian;
-		} else {
-			return wu_invalid_header;
-		}
-		desc->ifp = ifp;
-		return wu_ok;
-	}
-	return wu_unexpected_eof;
 }

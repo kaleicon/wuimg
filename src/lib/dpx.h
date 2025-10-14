@@ -189,13 +189,12 @@ struct dpx_desc {
 	struct dpx_industry industry;
 };
 
-size_t dpx_decode(const struct dpx_desc *desc, struct wuimg *img, uint8_t i);
-
-enum wu_error dpx_set_image(const struct dpx_desc *desc, struct wuimg *img,
+struct wu_st dpx_decode(const struct dpx_desc *desc, struct wuimg *img,
 uint8_t i);
 
-enum wu_error dpx_parse(struct dpx_desc *desc);
+struct wu_st dpx_set_image(const struct dpx_desc *desc, struct wuimg *img,
+uint8_t i);
 
-enum wu_error dpx_open(struct dpx_desc *desc, FILE *ifp);
+struct wu_st dpx_parse(struct dpx_desc *desc, FILE *ifp);
 
 #endif /* LIB_DPX */
