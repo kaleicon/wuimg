@@ -7,15 +7,14 @@
 #include "misc/mparser.h"
 
 struct tre_desc {
-	struct mparser mp;
 	uint32_t chunks;
+	struct wuptr data;
 };
 
-size_t tre_decode(const struct tre_desc *desc, struct wuimg *img);
+struct wu_st tre_decode(const struct tre_desc *desc, struct wuimg *img);
 
-enum wu_error tre_parse(struct tre_desc *desc, struct wuimg *img);
-
-enum wu_error tre_init(struct tre_desc *desc, struct wuptr mem);
+struct wu_st tre_parse(struct tre_desc *desc, struct wuimg *img,
+struct wuptr mem);
 
 
 struct trs_desc {
@@ -25,10 +24,12 @@ struct trs_desc {
 	const uint8_t *sprites;
 };
 
-size_t trs_get_image(const struct trs_desc *desc, struct wuimg *img, uint16_t i);
+struct wu_st trs_get_image(const struct trs_desc *desc, struct wuimg *img,
+uint16_t i);
 
-enum wu_error trs_set_image(struct trs_desc *desc, struct wuimg *img, uint16_t i);
+struct wu_st trs_set_image(const struct trs_desc *desc, struct wuimg *img,
+uint16_t i);
 
-enum wu_error trs_init(struct trs_desc *desc, struct wuptr mem);
+struct wu_st trs_parse(struct trs_desc *desc, struct wuptr mem);
 
 #endif // LIB_SPOOKY

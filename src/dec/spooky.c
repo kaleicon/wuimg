@@ -1,63 +1,59 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/spooky.h"
 
-static size_t dec(const void *ptr, struct wuimg *img) {
-	return tre_decode(ptr, img);
-}
-static enum wu_error parse(void *ptr, struct wuimg *img) {
-	return tre_parse(ptr, img);
-}
-static enum wu_error init(void *ptr, struct image_file *infile) {
-	return tre_init(ptr, infile->map);
-}
-
-static enum wu_error tre_dec(struct image_file *infile,
+static struct wu_st init_tre(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct tre_desc desc;
-	return rast_trivial_dec(infile, conf, &desc, init, parse, NULL, dec);
-}
-
-static enum wu_error trs_callback(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	if (ev != ev_subcycle) {
-		return wu_no_change;
-	}
-	const uint16_t i = (uint16_t)state->idx;
-	struct wuimg *img = infile->sub_img + i;
-	struct trs_desc *desc = infile->dec_state;
-
-	const enum wu_error st = trs_set_image(desc, img, i);
-	if (st == wu_ok) {
-		if (!wuimg_exceeds_limit(img, conf)) {
-			return trs_get_image(desc, img, i)
-				? wu_ok : wu_decoding_error;
+	struct wu_st st = tre_parse(&desc, infile->sub_img, infile->map);
+	if (wu_isok(st)) {
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		if (e == wu_ok) {
+			st = tre_decode(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(e);
 		}
-		return wu_exceeds_size_limit;
 	}
 	return st;
 }
 
-static enum wu_error trs_dec(struct image_file *infile,
+
+static struct wu_st event_trs(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf;
+	const uint16_t i = (uint16_t)state->idx;
+	struct wuimg *img = infile->sub_img + i;
+	switch (ev) {
+	case ev_metadata:
+		return trs_set_image(infile->dec_state, img, i);
+	case ev_subcycle:
+		return trs_get_image(infile->dec_state, img, i);
+	default: break;
+	}
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_trs(struct image_file *infile,
 const struct wu_conf *conf) {
 	(void)conf;
 	struct trs_desc *desc = infile->dec_state;
-	const enum wu_error st = trs_init(desc, infile->map);
-	if (st == wu_ok) {
-		return alloc_sub_images(infile, desc->nr)
-			? wu_ok : wu_alloc_error;
+	struct wu_st st = trs_parse(desc, infile->map);
+	if (wu_isok(st) && !alloc_sub_images(infile, desc->nr)) {
+		st = WUERR_HERE(wu_alloc_error);
 	}
 	return st;
 }
 
 const struct image_fn tre_fn = {
 	.mmap = true,
-	.dec = tre_dec,
+	.alloc_single = true,
+	.init = init_tre,
 };
 const struct image_fn trs_fn = {
 	.mmap = true,
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct trs_desc),
-	.dec = trs_dec,
-	.callback = trs_callback,
+	.init = init_trs,
+	.event = event_trs,
 };

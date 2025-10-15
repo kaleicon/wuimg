@@ -15,177 +15,167 @@
 http://cd.textfiles.com/atarilibrary/atari_cd07/GRAPHICS/PAINT/SPOOKY4/SPOOKY.TXT
 */
 
-static void endian_bufcpy(uint16_t *dst, const uint8_t *restrict src,
+static void copy_be(uint16_t *dst, const uint8_t *restrict src,
 const size_t nmemb) {
 	for (size_t i = 0; i < nmemb; ++i) {
-		dst[i] = buf_endian16(src + i*2, big_endian);
+		dst[i] = buf_endian16b(src + i*2);
 	}
 }
 
-static size_t tre_rle(uint16_t *dst, const size_t dst_len,
-const uint8_t *restrict src, size_t src_len) {
+struct wu_st tre_decode(const struct tre_desc *desc, struct wuimg *img) {
+	uint16_t *dst = (uint16_t *)img->data;
+	const size_t dst_len = img->w * img->h;
+	const struct wuptr src = desc->data;
 	size_t d = 0;
 	size_t s = 0;
 	// Prevent out of bounds read on the second iteration
-	if (!src[s]) {
-		return s;
-	}
-	for (bool rle = false; s + 1 < src_len; rle = !rle) {
-		size_t val = src[s];
-		++s;
-		if (val == 0xff) {
-			if (s + 2 > src_len) {
+	if (src.len && src.ptr[s]) {
+		for (bool set = false; s < src.len; set = !set) {
+			size_t len = src.ptr[s];
+			++s;
+			if (len == 0xff) {
+				if (src.len - s < 2) {
+					break;
+				}
+				len += buf_endian16b(src.ptr + s);
+				s += 2;
+			}
+
+			if (dst_len - d < len) {
 				break;
 			}
-			val += buf_endian16(src + s, big_endian);
-			s += 2;
-		}
-
-		if (d + val > dst_len) {
-			break;
-		}
-		if (rle) {
-			memwordset(dst + d, dst + d - 1, 2, val);
-		} else {
-			if (s + val > src_len) {
-				break;
+			if (set) {
+				memset16(dst + d, dst + d - 1, len);
+			} else {
+				if (src.len - s < len*2) {
+					break;
+				}
+				copy_be(dst + d, src.ptr + s, len);
+				s += len*2;
 			}
-			endian_bufcpy(dst + d, src + s, val);
-			s += val*2;
+			d += len;
 		}
-		d += val;
 	}
-	return s;
+	return wuerr_partial(d, dst_len);
 }
 
-size_t tre_decode(const struct tre_desc *desc, struct wuimg *img) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		struct mparser mp = desc->mp;
-		struct wuptr src = mp_remaining(&mp);
-		w = tre_rle((uint16_t *)img->data, img->w * img->h,
-			src.ptr, src.len);
-	}
-	return w;
-}
-
-static enum wu_error common_setup(struct wuimg *img, const bool alpha) {
+static struct wu_st common_setup(struct wuimg *img, const bool alpha) {
 	img->channels = 1;
 	img->bitdepth = alpha ? 24 : 16;
 	img->layout = pix_bgra;
 	// Never thought something as bizarre as 0x1565 would ever happen
-	if (wuimg_bitfield_from_id(img, alpha << 12 | 0x565)) {
-		return wuimg_verify(img);
-	}
-	return wu_alloc_error;
+	return wuimg_bitfield_from_id(img, (uint16_t)(alpha << 12 | 0x565))
+		? WU_OK : WUERR_HERE(wu_alloc_error);
 }
 
-enum wu_error tre_parse(struct tre_desc *desc, struct wuimg *img) {
-	/* True Color Encoded header (after magic bytes):
+struct wu_st tre_parse(struct tre_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
+	/* True Color Encoded header:
 		Offset  Type    Name
-		0       u16     Width
-		2       u16     Height
-		4       u32     NrChunks
-		8       Chunks[]
+		0       u8      Magic[4]
+		4       u16     Width
+		6       u16     Height
+		8       u32     NrChunks
+		12      Chunks[]
 	*/
-	const uint8_t *header = mp_slice(&desc->mp, 8);
-	if (header) {
-		img->w = buf_endian16(header, big_endian);
-		img->h = buf_endian16(header + 2, big_endian);
-		desc->chunks = buf_endian32(header + 4, big_endian);
-		return common_setup(img, false);
-	}
-	return wu_unexpected_eof;
-}
-
-enum wu_error tre_init(struct tre_desc *desc, const struct wuptr mem) {
-	*desc = (struct tre_desc) {
-		.mp = mp_wuptr(mem),
-	};
+	struct mparser mp = mp_wuptr(mem);
 	const uint8_t magic[] = {'t', 'r', 'e', '1'};
-	return fmt_sigcmp_mem(magic, sizeof(magic), &desc->mp);
+	const uint8_t *header = mp_slice(&mp, 12);
+	if (!header) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(header, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	img->w = buf_endian16b(header + 4);
+	img->h = buf_endian16b(header + 6);
+	*desc = (struct tre_desc) {
+		.chunks = buf_endian32b(header + 8),
+		.data = mp_remaining(&mp),
+	};
+	return common_setup(img, false);
 }
 
-static size_t sprite_unpack(uint8_t *restrict dst, const size_t dst_len,
-const uint8_t *restrict src, size_t src_len, const size_t w,
+static struct wu_st sprite_unpack(uint8_t *restrict dst, const size_t dst_len,
+const uint8_t *restrict src, const size_t src_len, const size_t w,
 const uint16_t xres) {
 	/* TRS Sprite:
 		Offset  Type    Name
 		0       u16     NrChunks
-		2       struct  Chunks[NrChunks]
+		2       struct  Chunks[NrChunks+1]
 
 	 * TRS Chunk:
 		Offset  Type    Name
 		0       u16     Skip         // Advance this many screen *bytes*
-		2       u16     Len          // Nr of Pixels minus 1
-		4       u16     Pixels[Len]
+		2       u16     Len
+		4       u16     Pixels[Len+1]
 
 	 * The sprite is meant to be drawn on a screen that's `xres` pixels
 	 * wide, with appropiate skips to get from one line to the next.
 	 * All the defined data should fall between [0, Width] and [0, Height].
 	*/
-	size_t s = 0;
-	if (src_len > 2) {
-		const uint16_t nr = buf_endian16(src, big_endian);
-		s += 2;
+	if (src_len) {
+		const size_t nr_chunk = buf_endian16b(src) + 1;
+		size_t s = 1;
 
 		size_t screen_ptr = 0;
 		const uint8_t shl = which_end() == big_endian ? 8 : 0;
-		for (uint16_t chunk = 0; chunk < nr && s + 4 < src_len; ++chunk) {
+		size_t chunk = 0;
+		while (chunk < nr_chunk && src_len - s > 2) {
 			/* Not sure if skips can be odd, but it'd be too much
 			 * trouble to handle that so lets pretend they won't. */
-			const uint16_t skip = buf_endian16(src + s, big_endian) / 2;
-			const size_t len = buf_endian16(src + s + 2, big_endian) + 1;
-			s += 4;
+			const uint16_t skip = buf_endian16b(src + s*2) / 2;
+			++s;
+			const size_t len = buf_endian16b(src + s*2) + 1;
+			++s;
 			screen_ptr += skip;
 
 			const size_t x = screen_ptr % xres;
 			const size_t y = screen_ptr / xres;
 			size_t d = y*w + x;
-			if (d + len > dst_len || s + len*2 > src_len) {
+			if (d + len > dst_len || src_len - s < len) {
 				break;
 			}
 			for (size_t i = 0; i < len; ++i) {
 				uint32_t p = 1 << 16 // alpha bit
-					| buf_endian16(src + s, big_endian);
+					| buf_endian16b(src + s*2);
 				p <<= shl;
 				memcpy(dst + d*3, &p, 3);
 				++d;
-				s += 2;
+				++s;
 			}
 			screen_ptr += len;
+			++chunk;
 		}
+		return wuerr_partial(chunk, nr_chunk);
 	}
-	return s;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-size_t trs_get_image(const struct trs_desc *desc, struct wuimg *img,
+struct wu_st trs_get_image(const struct trs_desc *desc, struct wuimg *img,
 const uint16_t i) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		const uint8_t *sprite = desc->sprites + 10*i;
-		const uint32_t unpacked = buf_endian32(sprite + 2, big_endian);
-		const uint32_t packed = buf_endian32(sprite + 6, big_endian);
-		const uint32_t pos = packed ? packed : unpacked;
-		struct mparser mp = desc->mp;
-		if (pos && pos < mp.len) {
-			mp.pos = pos;
-			struct wuptr src = mp_remaining(&mp);
-			const size_t len = img->w * img->h;
-			if (packed) {
-				w = sprite_unpack(img->data, len, src.ptr,
-					src.len, img->w, desc->xres);
-			} else {
-				w = zumin(len, src.len);
-				uint16_t *dst = (uint16_t *)img->data;
-				endian_bufcpy(dst, src.ptr, w);
-			}
+	const uint8_t *sprite = desc->sprites + 10*i;
+	const uint32_t unpacked = buf_endian32b(sprite + 2);
+	const uint32_t packed = buf_endian32b(sprite + 6);
+	const uint32_t pos = packed ? packed : unpacked;
+	struct mparser mp = desc->mp;
+
+	if (pos < mp.len) {
+		mp.pos = pos;
+		struct wuptr src = mp_remaining(&mp);
+		const size_t dims = img->w * img->h;
+		src.len /= 2;
+		if (packed) {
+			return sprite_unpack(img->data, dims, src.ptr,
+				src.len, img->w, desc->xres);
 		}
+		const size_t w = zumin(src.len, dims);
+		copy_be((uint16_t *)img->data, src.ptr, w);
+		return wuerr_partial(w, dims);
 	}
-	return w;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-enum wu_error trs_set_image(struct trs_desc *desc, struct wuimg *img,
+struct wu_st trs_set_image(const struct trs_desc *desc, struct wuimg *img,
 const uint16_t i) {
 	/* TRS SpriteLoc struct:
 		Offset  Type    Name
@@ -199,11 +189,11 @@ const uint16_t i) {
 	const uint8_t *sprite = desc->sprites + 10*i;
 	img->w = sprite[0];
 	img->h = sprite[1];
-	const bool packed = buf_endian32(sprite + 6, big_endian);
+	const bool packed = buf_endian32b(sprite + 6);
 	return common_setup(img, packed);
 }
 
-enum wu_error trs_init(struct trs_desc *desc, const struct wuptr mem) {
+struct wu_st trs_parse(struct trs_desc *desc, const struct wuptr mem) {
 	/* TRS header (after magic bytes):
 		Offset  Type    Name
 		0       u8      Magic[4]
@@ -218,16 +208,17 @@ enum wu_error trs_init(struct trs_desc *desc, const struct wuptr mem) {
 	const uint8_t *header = mp_slice(&desc->mp, 10);
 	if (header) {
 		const uint8_t magic[] = {'T', 'C', 'S', 'F'};
-		const uint16_t version = buf_endian16(header + 6, big_endian);
+		const uint16_t version = buf_endian16b(header + 6);
 		if (!memcmp(header, magic, sizeof(magic)) && version == 1) {
-			desc->nr = buf_endian16(header + 4, big_endian);
-			desc->xres = buf_endian16(header + 8, big_endian);
+			desc->nr = buf_endian16b(header + 4);
+			desc->xres = buf_endian16b(header + 8);
 			desc->sprites = mp_slice(&desc->mp, 10*desc->nr);
-			if (desc->xres) {
-				return desc->sprites ? wu_ok : wu_unexpected_eof;
+			if (desc->xres && desc->sprites) {
+				return WU_OK;
 			}
+			return wuerr(wu_invalid_header, "no xres or sprites");
 		}
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
