@@ -377,7 +377,11 @@ struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img) {
 				"group != 0 with Half-Life variant");
 		}
 		desc->group_pics = endian32l(buf[1]);
-		if (LONG_MAX / desc->group_pics / sizeof(float) == 0) {
+		if (!desc->group_pics) {
+			return wuerr(wu_no_image_data, "no group pics");
+		}
+		if (UINT32_MAX >= LONG_MAX
+		&& (uint32_t)LONG_MAX / sizeof(float) - sizeof(uint32_t)*2 < desc->group_pics) {
 			return wuerr(wu_int_overflow, "too many group pics");
 		}
 		fseek(desc->ifp, (long)(desc->group_pics * sizeof(float) + 8),
