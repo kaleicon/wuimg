@@ -155,6 +155,8 @@ cmsUInt32Number in_fmt, cmsUInt32Number out_fmt);
 
 cmsHPROFILE color_icc_linear_sRGB(void);
 
+bool color_space_is_sRGB(const struct color_space *cs);
+
 bool color_space_set_icc_copy(struct color_space *cs, const void *restrict data,
 size_t len);
 

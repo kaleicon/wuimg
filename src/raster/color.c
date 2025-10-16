@@ -526,20 +526,30 @@ struct color_transfer *tf, const bool oetf) {
 	}
 }
 
-double color_space_get_gamma(const struct color_space *cs) {
+static double get_gamma_or_fallback(const struct color_space *cs,
+const double fallback) {
 	if (cs->type != color_profile_icc) {
 		switch (cs->transfer) {
 		case cicp_transfer_bt470_6_system_m:
 			return COLOR_SRGB_DISPLAY_GAMMA;
 		case cicp_transfer_bt470_6_system_b_g:
 			return 2.8;
+		case cicp_transfer_linear:
+			return 1.0;
+		case cicp_transfer_unspecified:
+			return fallback;
 		default: break;
 		}
-		if (cs->transfer == 0 && cs->type == color_profile_param) {
-			return cs->desc->u.prof.gamma.r;
+		if (cs->transfer == 0) {
+			return (cs->type == color_profile_param)
+				? cs->desc->u.prof.gamma.r : fallback;
 		}
 	}
 	return 0;
+}
+
+double color_space_get_gamma(const struct color_space *cs) {
+	return get_gamma_or_fallback(cs, 0);
 }
 
 enum color_white_point color_space_white_point_type(const struct color_space *cs) {
@@ -1021,7 +1031,7 @@ static void LMS_to_bt2020_rgb(struct mat3 *out) {
 	mat3_invert(out, &lms);
 }
 
-static bool is_linear_rgb(const enum cicp_matrix matrix) {
+static bool visits_linear_rgb(const enum cicp_matrix matrix) {
 	switch (matrix) {
 	case cicp_matrix_smpte_st_2085:
 	case cicp_matrix_bt2100_2_ictcp:
@@ -1031,21 +1041,24 @@ static bool is_linear_rgb(const enum cicp_matrix matrix) {
 	return true;
 }
 
+static bool close_enough_for_color(const double x, const double y) {
+	/* Compare with 5 decimals of precision, which is what the PNG
+	 * fixed point format allows.
+	 * For reference, the standards themselves do 4 for color primaries
+	 * and white point. Wayland color management protocol does 4 for
+	 * transfer exponents and 6 for primaries. */
+	return fabs(x - y) < 1.0/100000;
+}
+
 static bool primaries_close_enough(const struct color_primaries *pri1,
 const struct color_primaries *pri2) {
 	const double *p = (double *)pri1;
 	const double *s = (double *)pri2;
-	/* Compare with 5 decimals of precision, which is what the PNG
-	 * fixed point format allows.
-	 * For reference, the standards themselves do at most 2 for colors
-	 * and 4 for white point. Wayland color manager protocol does 6. */
-	const double max_diff = 1.0/100000;
-	for (size_t i = 0; i < sizeof(*pri1) / sizeof(*p); ++i) {
-		if (fabs(p[i] - s[i]) > max_diff) {
-			return false;
-		}
+	bool close = true;
+	for (size_t i = 0; close && i < sizeof(*pri1) / sizeof(*p); ++i) {
+		close = close_enough_for_color(p[i], s[i]);
 	}
-	return true;
+	return close;
 }
 
 static bool is_transfer_identity(const struct color_transfer *tf) {
@@ -1069,7 +1082,7 @@ const bool gray, const bool maybe_yuv, const double scale) {
 
 	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
 	const struct color_primaries *tgtpri = get_primaries(tgt, &SRGB_PRIMARIES);
-	if (is_linear_rgb(cs->matrix) && primaries_close_enough(pri, tgtpri)) {
+	if (visits_linear_rgb(cs->matrix) && primaries_close_enough(pri, tgtpri)) {
 		matf_identity(conv->linear.m, 3, 3);
 	} else {
 		struct mat3 out;
@@ -1129,6 +1142,26 @@ cmsHPROFILE color_icc_linear_sRGB(void) {
 		cmsFreeToneCurve(crv);
 	}
 	return out;
+}
+
+bool color_space_is_sRGB(const struct color_space *cs) {
+	bool transfer_ok;
+	if (SRGB_PIECEWISE) {
+		if (cs->transfer == cicp_transfer_iec_61966_2_1) {
+			transfer_ok = true;
+		} else if (cs->type == color_profile_enum && !cs->transfer) {
+			transfer_ok = true;
+		}
+	} else {
+		transfer_ok = close_enough_for_color(
+			get_gamma_or_fallback(cs, COLOR_SRGB_DISPLAY_GAMMA),
+			COLOR_SRGB_DISPLAY_GAMMA);
+	}
+	return transfer_ok
+		&& !cs->limited
+		&& cs->matrix == cicp_matrix_rgb
+		&& primaries_close_enough(
+			get_primaries(cs, &SRGB_PRIMARIES), &SRGB_PRIMARIES);
 }
 
 static void set_transfer_triple(struct color_gamma *xfer, const double gamma) {
