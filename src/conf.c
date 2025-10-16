@@ -120,7 +120,8 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 				{"pretty", heed_pretty},
 				{"never", heed_never},
 			};
-			conf->heed_pixel_ratio = read_enum(tp, &ok, e, ARRAY_LEN(e));
+			conf->heed_pixel_ratio = read_enum(tp, &ok, e,
+				ARRAY_LEN(e));
 		} else if (wuptr_eq_str(key, "no_window_decorations")) {
 			conf->no_window_decorations = read_bool(tp, &ok);
 		} else if (wuptr_eq_str(key, "naive_window_colorspace")) {
@@ -130,6 +131,10 @@ static bool parse_config_file(struct wu_conf *conf, struct mparser *tp) {
 
 		} else if (wuptr_eq_str(key, "jpeg_fast_dct")) {
 			conf->jpeg_fast_dct = read_bool(tp, &ok);
+
+		} else if (wuptr_eq_str(key, "jpeg2000_quality_layers")) {
+			conf->jpeg2000_quality_layers =
+				(unsigned)read_anyuint(tp, &ok);
 
 		} else if (wuptr_eq_str(key, "tiff_use_homegrown_unpacker")) {
 			conf->tiff_use_homegrown_unpacker = read_bool(tp, &ok);

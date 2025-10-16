@@ -62,6 +62,11 @@ struct wu_conf {
 		  This setting aplies to all images, as there's no simple
 		method to determine the quality level. */
 
+	// JPEG2000
+	unsigned jpeg2000_quality_layers; /* If not zero, limit the number of
+		decoded quality layers to this amount. Depending on the file,
+		this may reduce quality in exchange for faster decoding. */
+
 	// TIFF
 	bool tiff_use_homegrown_unpacker; /* Use our own pixel unpacking
 		routines instead of libtiff's high-level interface if the image

@@ -175,6 +175,7 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 
 	opj_dparameters_t params;
 	opj_set_default_decoder_parameters(&params);
+	params.cp_layer = wuconf->jpeg2000_quality_layers;
 
 	opj_image_t *jp2 = NULL;
 	struct wu_st st = WUERR_HERE(wu_invalid_params);
