@@ -4,6 +4,7 @@
 
 #include "misc/bit.h"
 #include "misc/common.h"
+#include "misc/math.h"
 #include "raster/unpack.h"
 #include "wudefs.h"
 
@@ -46,28 +47,20 @@ static opj_stream_t setup_jp2_stream(FILE *ifp) {
 	return stream;
 }
 
-static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
-	if (jp2->numcomps > 4) {
-		return wu_unsupported_feature;
-	}
-	img->channels = (unsigned char)jp2->numcomps;
+static struct wu_st dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
+	img->channels = (unsigned char)u32min(jp2->numcomps, 4);
 	img->bitdepth = 32;
 
 	struct image_planes *planes = wuimg_plane_init(img);
 	if (!planes) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	struct plane_info *p = planes->p;
 	const opj_image_comp_t *comps = jp2->comps;
+	struct plane_info *p = planes->p;
 	for (uint8_t j = 0; j < img->channels; ++j) {
-		/* JP2 subsampling factors seem derived from the greatest
-		 * common divisor of all component dimensions. Scary. */
-		if (comps[j].dx > 0xff || comps[j].dy > 0xff) {
-			return wu_unsupported_feature;
-		}
-		p[j].x.subsamp = (unsigned char)comps[j].dx;
-		p[j].y.subsamp = (unsigned char)comps[j].dy;
+		p[j].x.subsamp = (unsigned char)(comps[j].dx << comps[j].factor);
+		p[j].y.subsamp = (unsigned char)(comps[j].dy << comps[j].factor);
 	}
 
 	if (jp2->icc_profile_buf) {
@@ -75,6 +68,7 @@ static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 			jp2->icc_profile_len);
 	}
 
+	struct wu_st st = WU_OK;
 	switch (jp2->color_space) {
 	case OPJ_CLRSPC_UNKNOWN:
 	case OPJ_CLRSPC_UNSPECIFIED:
@@ -96,11 +90,11 @@ static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 		img->cs.matrix = cicp_matrix_rgb;
 		break;
 	default:
-		return wu_unsupported_feature;
+		st.msg = "unknown colorspace";
 	}
 
-	const enum wu_error st = wuimg_verify(img);
-	if (st == wu_ok) {
+	const enum wu_error e = wuimg_verify(img);
+	if (e == wu_ok) {
 		img->borrowed = true;
 		img->data = (uint8_t *)-1;
 		for (uint8_t z = 0; z < img->channels; ++z) {
@@ -108,44 +102,71 @@ static enum wu_error dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 				? pix_signed : pix_normal;
 			p[z].ptr = (uint8_t *)comps[z].data;
 
-			const struct remap_info scaler = remap_scale_info(
-				bit_set32(comps[z].prec), img->bitdepth, attr);
-			remap_scale(p[z].ptr, p[z].ptr, p[z].w * p[z].h,
-				scaler);
+			struct remap_info scaler = remap_scale_info(
+				bit_set32(comps[z].prec),
+				img->bitdepth, attr);
+			remap_scale(p[z].ptr, p[z].ptr,
+				p[z].w * p[z].h, scaler);
 		}
+	} else {
+		st = WUERR_HERE(e);
 	}
 	return st;
 }
 
-static void set_limits(opj_codec_t *dec, opj_image_t *jp2) {
+static struct wu_st set_decode_size(opj_codec_t *dec, const opj_image_t *jp2,
+struct wuimg *img, const struct wu_conf *wuconf) {
+	OPJ_UINT32 ch = jp2->numcomps;
 	if (jp2->numcomps > 4) {
-		const uint32_t comps[4] = {0,1,2,3};
-		opj_set_decoded_components(dec, 4, comps, false);
+		const OPJ_UINT32 comps[4] = {0,1,2,3};
+		opj_set_decoded_components(dec, ARRAY_LEN(comps), comps,
+			OPJ_FALSE);
+		ch = ARRAY_LEN(comps);
 	}
-}
 
-static enum wu_error get_image_size(struct wuimg *img,
-const struct wu_conf *wuconf, const opj_image_t *jp2) {
-	for (OPJ_UINT32 i = 0; i < jp2->numcomps; ++i) {
+	img->w = jp2->x1 - jp2->x0;
+	img->h = jp2->y1 - jp2->y0;
+	if (!zumin(img->w, img->h)) {
+		return wuerr(wu_no_image_data, "image has zero width and height");
+	}
+	const size_t div = (zumax(img->w, img->h) - 1) / wuconf->max_img_size;
+	OPJ_UINT32 factor = 0;
+	if (div) {
+		/* Image exceeds our size limit, so try decoding at a reduced
+		 * resolution. */
+		factor = (OPJ_UINT32)zulog2(div) + 1;
+		if (!opj_set_decoded_resolution_factor(dec, factor)) {
+			return wuerr(wu_exceeds_size_limit, "image exceeds"
+				" dimension limit and we couldn't decode at a"
+				" lower resolution");
+		}
+	}
+	for (OPJ_UINT32 i = 0; i < ch; ++i) {
 		const opj_image_comp_t *comp = jp2->comps + i;
 		/* Offsets mess with our plane subsample math, so jump ship if
 		 * they're not exactly divisible.
-		 * The proper solution would be compositing components. */
+		 * The proper solution would be adding an offset field, and
+		 * making our life miserable everywhere around the program. */
 		if (comp->x0 % comp->dx || comp->y0 % comp->dy) {
-			return wu_unsupported_feature;
+			return wuerr(wu_unsupported_feature,
+				"subsampled planes with offset");
+		}
+		/* Naively shifting down the image size by the resolution
+		 * factor also screws with subsampling math, but shifting up
+		 * the subsamp factor instead works wonders. */
+		if (comp->dx << factor > 0xff || comp->dy << factor > 0xff) {
+			return wuerr(wu_unsupported_feature,
+				"subsampling factor too high");
 		}
 	}
-	img->w = jp2->x1 - jp2->x0;
-	img->h = jp2->y1 - jp2->y0;
-	return wuimg_exceeds_limit(img, wuconf) ? wu_exceeds_size_limit : wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error jpeg2000_dec(struct image_file *infile,
+static struct wu_st jpeg2000_dec(struct image_file *infile,
 const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
-	struct wuimg *img = infile->sub_img;
 	opj_codec_t *dec = opj_create_decompress(format);
 	if (!dec) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	//opj_set_info_handler(dec, monkey_trouble_handler, infile);
@@ -156,7 +177,7 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 	opj_set_default_decoder_parameters(&params);
 
 	opj_image_t *jp2 = NULL;
-	enum wu_error st = wu_invalid_params;
+	struct wu_st st = WUERR_HERE(wu_invalid_params);
 	if (opj_setup_decoder(dec, &params)) {
 		if (opj_has_thread_support()) {
 			opj_codec_set_threads(dec, (int)num_cpus());
@@ -164,26 +185,26 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 		opj_stream_t *stream = setup_jp2_stream(infile->ifp);
 		if (stream) {
 			if (opj_read_header(stream, dec, &jp2)) {
-				st = get_image_size(img, wuconf, jp2);
-				if (st == wu_ok) {
-					set_limits(dec, jp2);
+				st = set_decode_size(dec, jp2, infile->sub_img,
+					wuconf);
+				if (wu_isok(st)) {
 					if (opj_decode(dec, stream, jp2)) {
 						opj_end_decompress(dec, stream);
 					} else {
-						st = wu_decoding_error;
+						st = WUERR_HERE(wu_decoding_error);
 					}
 				}
 			} else {
-				st = wu_invalid_header;
+				st = WUERR_HERE(wu_invalid_header);
 			}
 			opj_stream_destroy(stream);
 		}
 	}
 	opj_destroy_codec(dec);
 
-	if (st == wu_ok) {
-		st = dec_wrap(img, jp2);
+	if (wu_isok(st)) {
 		infile->dec_state = jp2;
+		st = dec_wrap(infile->sub_img, jp2);
 	} else if (jp2) {
 		opj_image_destroy(jp2);
 	}
@@ -194,23 +215,22 @@ static void jpeg2000_end(struct image_file *infile) {
 	opj_image_destroy(infile->dec_state);
 }
 
-static enum wu_error jp2_dec(struct image_file *infile,
+static struct wu_st init_jp2(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_JP2);
 }
-
-static enum wu_error j2k_dec(struct image_file *infile,
+static struct wu_st init_j2k(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_J2K);
 }
 
 const struct image_fn jp2_fn = {
 	.alloc_single = true,
-	.dec = jp2_dec,
+	.init = init_jp2,
 	.end = jpeg2000_end,
 };
 const struct image_fn j2k_fn = {
 	.alloc_single = true,
-	.dec = j2k_dec,
+	.init = init_j2k,
 	.end = jpeg2000_end,
 };
