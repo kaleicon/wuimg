@@ -8,6 +8,8 @@
 #include "raster/cicp.h"
 #include "raster/icc.h"
 
+static const double COLOR_SRGB_DISPLAY_GAMMA = 2.2;
+
 enum color_transfer_fn {
 	/* EOTF:
 		if comp > arg0:

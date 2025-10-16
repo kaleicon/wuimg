@@ -316,9 +316,11 @@ static void set_clear_color(const struct gl_context *context) {
 	const float to_float = 1.0f / UCHAR_MAX;
 	const float alpha = (float)bg[3] * to_float;
 	const float a_s = alpha * scale;
+	const float g = (float)COLOR_SRGB_DISPLAY_GAMMA;
+	const float ig = (float)(1/COLOR_SRGB_DISPLAY_GAMMA);
 	float rgb[3];
 	for (size_t i = 0; i < ARRAY_LEN(rgb); ++i) {
-		rgb[i] = powf(powf(bg[i] * to_float, 2.2f) * a_s, 1/2.2f);
+		rgb[i] = powf(powf(bg[i] * to_float, g) * a_s, ig);
 	}
 	glClearColor(rgb[0], rgb[1], rgb[2], alpha);
 }

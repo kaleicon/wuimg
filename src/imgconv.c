@@ -207,20 +207,16 @@ const uint8_t channels, const bool high_depth) {
 	return t;
 }
 
+/* Use the simple power-law transfer function for encoding into sRGB instead of
+ * the piecewise function. See raster/color.c for an explanation. */
+static const bool USE_DISPLAY_SRGB = true;
 static float oetf_srgb(float v) {
-	if (USE_MATH_APPROX) {
-		/* With a faster powf, branching doesn't pay for itself
-		 * anymore, so we use a series of conditional moves
-		 * and call powf unconditionally, with a copysign for the
-		 * negative linear part. */
-		bool gamma = v > 0.0031308f;
-		float x = gamma ? 1.0f/2.4f : 1;
-		float m = gamma ? 1.055f : 12.92f;
-		float a = gamma ? -0.055f : 0;
-		return copysignf(fmaff(mypowf(v, x), m, a), v);
+	if (USE_DISPLAY_SRGB) {
+		const float gamma = (float)(1/COLOR_SRGB_DISPLAY_GAMMA);
+		return copysignf(mypowf(fabsf(v), gamma), v);
 	}
 	return v > 0.0031308f
-		? fmaff(powf(v, 1.0f/2.4f), 1.055f, -0.055f)
+		? fmaff(mypowf(v, 1.0f/2.4f), 1.055f, -0.055f)
 		: v * 12.92f;
 }
 
@@ -230,7 +226,7 @@ static float eotf(float v, const struct color_transfer *t) {
 	case color_transfer_linear_gamma: break;
 	case color_transfer_pq:
 		v = mypowf(max(v, 0), arg[4]);
-		float num = v - min(arg[1], v); // a.k.a. fdim()
+		float num = v - min(arg[1], v);
 		float den = fmaff(v, -arg[3], arg[2]);
 		return mypowf(num/den, arg[0]);
 	case color_transfer_hlg:

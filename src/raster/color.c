@@ -7,16 +7,50 @@
 #include "misc/common.h"
 #include "raster/color.h"
 
+/* sRGB famously defines a piecewise transfer function, sometimes called a
+ * two-part transfer. Not so famously, that is only the content encoding
+ * function, and sRGB content assumes a reference display using a simple
+ * x^2.2 transfer function.
+ * Many kilowatts have been spent on the web trying to make sense of which
+ * function is the intended one and when to use them. In the interests of going
+ * to bed early, we'll just reason our way out of this:
+ * - Images encoded with the piecewise OETF must be sent as-is to a display
+ *   that applies the x^2.2 EOTF. This is stated in the sRGB spec, which a
+ *   friend lent me.
+ * - These functions are not exact inverses, but their mismatch produces,
+ *   as a by-product, the intended effect.
+ * - Meanwhile, images encoded with a x^(1/2.2) OETF are also decoded using
+ *   the x^2.2 EOTF. In efect, both types of images use the same EOTF.
+ *   The difference then is that images encoded with the piecewise function
+ *   should take the mismatch into account.[1]
+ * - It follows that sRGB conversions must be performed thus:
+ *    1. sRGB to some other colorspace: the x^2.2 display EOTF must be used,
+ *       because that yields the intended appearance.
+ *    2. Some other colorspace to sRGB: either the x^(1/2.2) OETF must be used,
+ *       or color must be compensated for before applying the piecewise OETF.
+ *    3. sRGB to sRGB: Equivalent to both of the above cases.
+ *
+ * Ergo, we never need to use the piecewise EOTF. Unless the display specifies
+ * IEC 61966-2-1 transfer enum, of course, but then we'll be encoding into a
+ * different encoding from sRGB then.
+ *
+ * [1] We're guilty of not doing that up until the commit introducing this
+ *     text. Sorry about that.
+*/
+
+// After that giant wall of text, we still offer a toggle to use the sRGB
+// piecewise? Let's have it in case we need to go back because we're wrong.
+static bool SRGB_PIECEWISE = false;
+
 #define WHITE_D65 {.3127, .3290}
 #define WHITE_C {.3101, .3162}
+
 static const struct color_primaries SRGB_PRIMARIES = {
 	.w = WHITE_D65,
 	.r = {.64, .33},
 	.g = {.30, .60},
 	.b = {.15, .06},
 };
-static const double SRGB_GAMMA = 2.4;
-static const double SRGB_ALPHA = 0.055;
 
 enum simple_mat {
 	simple_mat_rgb,
@@ -41,7 +75,9 @@ const char * color_space_type_str(const struct color_space *cs) {
 static struct color_space color_space_sRGB(void) {
 	return (struct color_space) {
 		.primaries = cicp_primaries_bt709_6,
-		.transfer = cicp_transfer_iec_61966_2_1,
+		.transfer = SRGB_PIECEWISE
+			? cicp_transfer_iec_61966_2_1
+			: cicp_transfer_bt470_6_system_m,
 		.matrix = cicp_matrix_rgb,
 		.limited = false,
 	};
@@ -157,22 +193,33 @@ const double gamma, const bool oetf) {
 	}
 }
 
-static void tf_sRGB(struct color_transfer *tf, bool oetf) {
-	/* Famously, sRGB is not continous, and precisely requires rounded
-	 * values. */
-	const double a = 1 + SRGB_ALPHA;
+static void tf_linear_gamma_sRGB(struct color_transfer *tf, bool oetf) {
+	// sRGB piecewise transfer
+	const double alpha = 0.055;
+	const double gamma = 2.4;
+	const double ap = alpha + 1;
 	const double m = 12.92;
 	*tf = (struct color_transfer) {
 		.fn = color_transfer_linear_gamma,
 		.srgb_input = !oetf,
 		.args = {
 			oetf ? 0.0031308f : 0.04045f,
-			(float)(oetf ? a : 1/a),
-			(float)(oetf ? -SRGB_ALPHA : SRGB_ALPHA/a),
-			(float)(oetf ? 1/SRGB_GAMMA : SRGB_GAMMA),
+			(float)(oetf ? ap : 1/ap),
+			(float)(oetf ? -alpha : alpha/ap),
+			(float)(oetf ? 1/gamma : gamma),
 			(float)(oetf ? m : 1/m),
 		},
 	};
+}
+
+static void tf_gamma_sRGB(struct color_transfer *tf, bool oetf) {
+	// sRGB display transfer
+	tf_gamma(tf, 1,
+		oetf ? 1/COLOR_SRGB_DISPLAY_GAMMA : COLOR_SRGB_DISPLAY_GAMMA);
+}
+
+static void tf_default_sRGB(struct color_transfer *tf, bool oetf) {
+	(SRGB_PIECEWISE ? tf_linear_gamma_sRGB : tf_gamma_sRGB)(tf, oetf);
 }
 
 static void tf_log(struct color_transfer *tf, const double div,
@@ -398,7 +445,7 @@ struct color_transfer *tf, const bool oetf) {
 	case cicp_transfer_unspecified:
 		break;
 	case cicp_transfer_bt470_6_system_m:
-		tf_gamma(tf, 1, oetf ? 1/2.2 : 2.2);
+		tf_gamma_sRGB(tf, oetf);
 		return true;
 	case cicp_transfer_bt470_6_system_b_g:
 		tf_gamma(tf, 1, oetf ? 1/2.8 : 2.8);
@@ -429,7 +476,7 @@ struct color_transfer *tf, const bool oetf) {
 		/* With matrix coef == 0, uses the sRGB EOTF.
 		 * With matrix coef == 5, uses the sYCC EOTF, which is the same
 		 * but extended to negative inputs. */
-		tf_sRGB(tf, oetf);
+		tf_linear_gamma_sRGB(tf, oetf);
 		return true;
 	case cicp_transfer_smpte_st_2084:
 		// https://www.itu.int/rec/R-REC-BT.2100/en
@@ -475,15 +522,17 @@ const bool oetf) {
 static void set_tf_or_sRGB(const struct color_space *cs,
 struct color_transfer *tf, const bool oetf) {
 	if (!set_tf(cs, tf, oetf)) {
-		tf_sRGB(tf, oetf);
+		tf_default_sRGB(tf, oetf);
 	}
 }
 
 double color_space_get_gamma(const struct color_space *cs) {
 	if (cs->type != color_profile_icc) {
 		switch (cs->transfer) {
-		case cicp_transfer_bt470_6_system_m: return 2.2;
-		case cicp_transfer_bt470_6_system_b_g: return 2.8;
+		case cicp_transfer_bt470_6_system_m:
+			return COLOR_SRGB_DISPLAY_GAMMA;
+		case cicp_transfer_bt470_6_system_b_g:
+			return 2.8;
 		default: break;
 		}
 		if (cs->transfer == 0 && cs->type == color_profile_param) {
@@ -617,12 +666,8 @@ const struct color_space *cs, const struct color_primaries *fallback) {
 	case color_profile_enum:
 		return get_cicp_primaries(cs->primaries, cs->matrix, fallback);
 	case color_profile_param:
-		;const struct color_primaries *pri = get_cicp_primaries(
-			cs->primaries, cs->matrix, NULL);
-		if (pri) {
-			return pri;
-		}
-		return &cs->desc->u.prof.pri;
+		return get_cicp_primaries(cs->primaries, cs->matrix,
+			&cs->desc->u.prof.pri);
 	case color_profile_icc:
 		break;
 	}
@@ -1097,7 +1142,7 @@ const enum color_profile_type type) {
 		if (desc) {
 			if (type == color_profile_param) {
 				set_transfer_triple(&desc->u.prof.gamma,
-					SRGB_GAMMA);
+					COLOR_SRGB_DISPLAY_GAMMA);
 				desc->u.prof.pri = *get_cicp_primaries(
 					cs->primaries, cs->matrix,
 					&SRGB_PRIMARIES);
