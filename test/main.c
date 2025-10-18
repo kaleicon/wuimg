@@ -19,6 +19,8 @@
 
 #include "wudefs.h"
 
+#include "fast_math.c"
+
 #define FULL_X32 "0x%08" PRIx32
 static const uint8_t NUM_SEQ[] = {
 	0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
@@ -40,7 +42,159 @@ static const char * ok_str(const bool ok) {
 	return ok ? "" : "!!!!!!";
 }
 
-/* wudefs tests*/
+typedef float (*fclampf_fn)(float n, float x, float y);
+static bool test_fclamp_inner(const float fcla[static 4], const fclampf_fn fn) {
+	float n = fcla[0], x = fcla[1], y = fcla[2], exp = fcla[3];
+	const float result = (*fn)(n, x, y);
+	const bool ok = exp == result;
+	printf("%s\t%+.3f\t%+.3f\t%+.3f\t%+.3f\t%+.3f\n", ok_str(ok),
+		n, x, y, exp, result);
+	return ok;
+}
+static bool test_fclampf_fn(const fclampf_fn fn) {
+	puts("\tn\tmin\tmax\texpect\tresult");
+	const float third = (float)(1.0/3.0);
+	const float fcla[][4] = {
+		{third, -.5f, .5f, third},
+		{third, -.2f, .2f, .2f},
+		{-third, -.2f, .2f, -.2f},
+		{-1, -0, 0, -0},
+	};
+	bool ok = true;
+	for (size_t i = 0; i < ARRAY_LEN(fcla); ++i) {
+		ok &= test_fclamp_inner(fcla[i], fn);
+	}
+	return ok;
+}
+
+/* fast_math tests */
+static void print_float_range(const float start, const float limit,
+const char c) {
+	printf("[%a, %a]%c", start, limit, c);
+}
+static void print_float_misses(unsigned misses, unsigned tested,
+const char c) {
+	printf("%u out of %u (%f%%)%c",
+		misses, tested, (float)misses / ((float)tested / 100), c);
+}
+static bool test_roundf_miss(const float x, const float norm) {
+	return (long)fm_pre_roundf(x, norm) != lroundf(x * norm);
+}
+static bool test_roundf(const float start, const float limit,
+const float norm) {
+	unsigned tested = 0;
+	unsigned misses = 0;
+	for (float x = start; x <= limit; x = nextafterf(x, norm)) {
+		misses += test_roundf_miss(x, norm);
+		++tested;
+	}
+	const bool ok = !misses;
+	printf("%s\t", ok_str(ok));
+	print_float_range(start, limit, '\t');
+	print_float_misses(misses, tested, '\n');
+	fflush(stdout);
+	return ok;
+}
+static float floor_norm(const float x, const float norm) {
+	return floorf(fm_pre_roundf(x, norm));
+}
+static bool test_powf(const float start, const float limit, const float norm,
+const double exp) {
+	const float e = (float)exp;
+	const float ie = (float)(1/exp);
+	unsigned worst = 0;
+	unsigned tested = 0;
+	unsigned misses = 0;
+	for (float x = start; x <= limit; x = nextafterf(x, norm)) {
+		float ref = powf(powf(x, e), ie);
+		float fast = fm_powf(fm_powf(x, e), ie);
+		float diff = floor_norm(ref, norm) - floor_norm(fast, norm);
+		misses += diff != 0;
+		++tested;
+		worst = umax(worst, (unsigned)fabsf(diff));
+	}
+	const bool ok = worst <= 1;
+	printf("%s\t", ok_str(ok));
+	print_float_range(start, limit, '\t');
+	printf("%u\t", worst);
+	print_float_misses(misses, tested, '\n');
+	fflush(stdout);
+	return ok;
+}
+static bool test_fm_mix(float iters, float mix, float lo_add,
+float hi_add) {
+	float hi = 1.0f;
+	float mid = mix;
+	float lo = 0.0f;
+	float mid_add = fm_mix(lo_add, hi_add, mix);
+	unsigned misses = 0;
+	unsigned tested = (unsigned)iters;
+	for (float i = 0; i < iters; ++i) {
+		float m = fm_mix(lo + lo_add*i, hi + hi_add*i, mix);
+		misses += m != mid + mid_add*i;
+	}
+	const bool ok = !misses;
+	printf("%s\t%+.3f\t%+.3f\t%+.3f\t", ok_str(ok), mix, lo_add, hi_add);
+	print_float_misses(misses, tested, '\n');
+	return ok;
+}
+
+static bool fast_math_tests(void) {
+	test_name("fast_math_tests (slowness ahead!)");
+	bool kay = true;
+
+	puts("assumptions");
+	puts("\tlast subnormal\tfirst normal");
+	const float first_normal = 0x1p-126;
+	const float last_subnormal = nextafterf(first_normal, 0);
+	printf("%s\t%a\t%a\n",
+		ok_str(kay), last_subnormal, first_normal);
+	puts("");
+
+	puts("fm_fclampf()");
+	kay &= test_fclampf_fn(fm_fclampf);
+	puts("");
+
+	puts("fm_mix(low + lowA*i, high + highA*i, mix)");
+	puts("\tmix\tlowA\thighA\tnr misses");
+	const float mixa[][3] = {
+		{0.5f, 0.0f, 2.0f},
+		{0.75f, -1.0f, 1.0f},
+		{0.25f, -0x1p-8f, 0x1p-8f},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(mixa); ++i) {
+		kay &= test_fm_mix(1 << 16, mixa[i][0], mixa[i][1], mixa[i][2]);
+	}
+	puts("");
+
+	const float roundf_norm = 0x1p+22 - 1;
+	printf("(long)fm_pre_roundf() vs lroundf(), floats scaled to [0, %.0f]\n",
+		roundf_norm);
+	puts("\tall floats in range\tnr misses");
+	kay &= test_roundf(0, 0, roundf_norm);
+	kay &= test_roundf(0x1p-24, 0x1p-0, roundf_norm);
+	puts("");
+
+	const float powf_norm = 0x1p+16 - 1;
+	const double exp = COLOR_SRGB_DISPLAY_GAMMA;
+	printf("fm_powf() vs powf(), (x^%.1f)^(1/%.1f) then scaled to [0, %.0f], at most off by one\n",
+		exp, exp, powf_norm);
+	puts("\tall floats in range\tworst diff\tnr misses");
+	const float ranges[][2] = {
+		{0, 0},
+		{first_normal, 0x1p-124},
+		{0x1p-18, 0x1p-17},
+		{0x1p-17, 0x1p-16},
+		{0x1p-16, 1},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(ranges); ++i) {
+		kay &= test_powf(ranges[i][0], ranges[i][1], powf_norm, exp);
+	}
+	puts("");
+	return kay;
+}
+
+/* wudefs tests */
 static bool test_alloc_sub(const char *name,
 struct wuimg * (*fn)(struct image_file *file, size_t nr),
 struct image_file *file, size_t nr) {
@@ -217,6 +371,7 @@ static bool unpack_tests(void) {
 	for (size_t i = 0; i < ARRAY_LEN(floats); ++i) {
 		kay &= test_unpack_single(floats + i, mem);
 	}
+	puts("");
 	return kay;
 }
 
@@ -618,8 +773,8 @@ static bool minmax_u_test(const struct test_twice_u *t, uint8_t x, uint8_t y) {
 static bool minmax_i_test(const struct test_twice_i *t, int8_t x, int8_t y) {
 	const bool ok = (t->expect == t->a) & (t->expect == t->b);
 	printf("%s\t%s\t"
-		"%i\t%i\t"
-		"%i\t%ji\t%ji\n",
+		"%+i\t%+i\t"
+		"%+i\t%+ji\t%+ji\n",
 		ok_str(ok), t->name,
 		x, y,
 		t->expect, t->a, t->b);
@@ -645,15 +800,7 @@ static bool test_iclamp(const int8_t cla[static 4]) {
 	int8_t n = cla[0], x = cla[1], y = cla[2], exp = cla[3];
 	const int result = iclamp(n, x, y);
 	const bool ok = exp == result;
-	printf("%s\t%i\t%i\t%i\t%i\t%i\n", ok_str(ok),
-		n, x, y, exp, result);
-	return ok;
-}
-static bool test_fclamp(const float fcla[static 4]) {
-	float n = fcla[0], x = fcla[1], y = fcla[2], exp = fcla[3];
-	const float result = fclampf(n, x, y);
-	const bool ok = exp == result;
-	printf("%s\t%f\t%f\t%f\t%f\t%f\n", ok_str(ok),
+	printf("%s\t%+i\t%+i\t%+i\t%+i\t%+i\n", ok_str(ok),
 		n, x, y, exp, result);
 	return ok;
 }
@@ -704,16 +851,7 @@ static bool math_tests(void) {
 	puts("");
 
 	puts("fclampf()");
-	puts("\tn\tmin\tmax\texpect\tresult");
-	const float fcla[][4] = {
-		{.333f, -.5f, .5f, .333f},
-		{.333f, -.2f, .2f, .2f},
-		{-.333f, -.2f, .2f, -.2f},
-		{-1, -0, 0, -0},
-	};
-	for (size_t i = 0; i < ARRAY_LEN(fcla); ++i) {
-		kay &= test_fclamp(fcla[i]);
-	}
+	kay &= test_fclampf_fn(fclampf);
 	puts("");
 
 	puts("Integer positive mod");
@@ -1123,6 +1261,7 @@ int main(void) {
 		& palette_tests()
 		& pix_layout_tests()
 		& unpack_tests()
+		& fast_math_tests()
 		& wudefs_tests();
 	return kay ? 0 : 1;
 }

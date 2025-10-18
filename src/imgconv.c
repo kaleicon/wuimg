@@ -4,6 +4,8 @@
 #include "misc/math.h"
 #include "imgconv.h"
 
+#include "fast_math.c"
+
 /* Enable for somewhat faster exp2f(), log2f() and powf(), otherwise use
  * libc functions. */
 static const bool USE_MATH_APPROX = true;
@@ -22,151 +24,29 @@ void imgconv_close(struct imgconv *state) {
 	palette_unref(state->pal);
 }
 
-/* Try to use whichever is best: fmaf() or a naive a*b+c. When supported by
- * the processor, fmaf() is faster, yields better precision, and reduces the
- * amount of instructions, but on unsupported machines it's implemented using
- * doubles, incurring a very dramatic performance hit. We prefer the naive
- * version in those cases.
- * As a fallback we pass the -ffp-contract=fast flag to the compiler, which may
- * turn the naive version into a FMA, but also may not be recognized by all
- * compilers. We could pass =on, but then GCC will certainly ignore it. */
-float fmaff(const float a, const float b, const float c) {
-#if FP_FAST_FMAF == 1 || defined(__FMA__) || defined(__FMA4__) || defined(__ARM_FEATURE_FMA)
-	return fmaf(a,b,c);
-#else
-	return a*b+c;
-#endif
-}
-
-static float mix(const float a, const float b, const float k) {
-	/* Linear interpolation. Equivalent to
-	 *	a*(1 - k) + b*k
-	*/
-	return fmaff(b, k, fmaff(a, -k, a));
-}
-
-static float fractf(float val) {
-	/* Returns the positive fractional part. This is different from
-	 * fmod() and modf(), which return negative results for val < 0.
-	 * This gets turned into a vroundss and vsubss instruction pair. */
-	return val - floorf(val);
-}
-
-/* Faster fmax()/fmin() replacements. These get turned into vmaxss/vminss. */
-static float min(float val, const float a) {
-	return val < a ? val : a;
-}
-
-static float max(float val, const float a) {
-	return val > a ? val : a;
-}
-
-static float clamp(float val, const float a, const float b) {
-	val = min(val, b);
-	val = max(val, a);
-	return val;
-}
-
-static float saturate(float val) {
-	return clamp(val, 0, 1);
-}
-
-/* Faster exp2f(), log2f(), and powf()
- * These are less precise than their libc counterparts and don't check for
- * special cases. When converting to uint16, they are off by one ~10% of the
- * time.
- * Polynomials were found using Sollya, which should produce more accurate
- * single-precision coefficients than simply truncating high-precision ones.
-https://www.sollya.org/
-*/
-static float fastexp2f_unchecked(float x) {
-	// Build a float equal to 2^(intpart - 127)
-	// x is assumed not to overflow the exponent field
-	int32_t i = (int32_t)floorf(x);
-	i = (i + 127) << 23;
-	float e;
-	memcpy(&e, &i, sizeof(i));
-
-	// Get the positive fractional part.
-	const float f = fractf(x);
-
-	/* One would normally find a polynomial using
-	 *	`fpminimax(2^x, 4, [|single...|], [1/(2^16-1); 1]);`
-	 * but in this case the last coefficient (a0) will be very close to 1.
-	 * So instead we do
-	 *	`fpminimax(2^x, [|1,2,3,4|], [|single...|], [1/(2^16-1); 1], 1);`
-	 * so that a0 becomes exactly 1. On its own, adding 1 instead of
-	 * 1.000whatever doesn't really saves us anything, but as we've got a
-	 * multiply at the end, this lets us fold it into the final FMA. */
-	const float //a0 = 0x1p0f,
-		a1 = 0x1.62d6c6p-1f,
-		a2 = 0x1.ee2454p-3f,
-		a3 = 0x1.abf854p-5f,
-		a4 = 0x1.b7f75ap-7f;
-	return fmaff(fmaff(fmaff(fmaff(a4, f, a3), f, a2), f, a1), f*e, e);
-}
-
-static float fastpowlog2f(float x, float mul) {
-	/* log2() that accepts the exponent of its powf() parent to save a
-	 * single instruction. */
-
-	// Extract the exponent of x
-	uint32_t u;
-	memcpy(&u, &x, sizeof(u));
-	int32_t i = (int32_t)(u >> 23);
-	float e = (float)((i & 0xff) - 127);
-
-	/* Extract the mantissa, and OR with the binary representation of 1
-	 * so that it's 1.fract. */
-	const uint32_t one = (0x7f << 23);
-	u = (u & 0x7fffff) | one;
-	float m;
-	memcpy(&m, &u, sizeof(u));
-
-	/* `fpminimax(log2(x)/(x-1), 5, [|single...|], [1; 2]);` */
-	const float a0 = 0x1.8ed0dap1f,
-		a1 = -0x1.a97a8ep1,
-		a2 = 0x1.4ca036p1,
-		a3 = -0x1.3b3c36p0,
-		a4 = 0x1.45cce8p-2,
-		a5 = -0x1.1a0ba8p-5;
-	x = fmaff(fmaff(fmaff(fmaff(fmaff(a5, m, a4), m, a3), m, a2), m, a1), m, a0);
-	return fmaff(x, fmaff(mul, m, -mul), e * mul);
-}
-
 static float myexp2f(float x) {
 	if (USE_MATH_APPROX) {
-		// Prevent overflowing the exponent (but not underflowing!)
-		return fastexp2f_unchecked(min(x, 128));
+		return fm_exp2f(x);
 	}
 	return exp2f(x);
 }
 
 static float mypowf(float x, float e) {
 	if (USE_MATH_APPROX) {
-		// This doesn't handle negative x, not even for integer e
-		return fastexp2f_unchecked(fastpowlog2f(x, e));
+		return fm_powf(x, e);
 	}
 	return powf(x, e);
 }
 
-static float poor_round(float val, float scale) {
-	/* A dumber and faster lroundf() replacement.
-	 * On par with lrintf() when FMA is supported, and slightly slower when
-	 * not, but not so much as to make us touch some icky global state nor
-	 * deal with fesetround() failures. */
-	return fmaff(saturate(val), scale, 0.5f);
-}
-
 static void matff_mul(float *restrict out, const float *restrict m1,
 const float *restrict m2, const int len, const int h1, const int w2) {
-	/* Reimplementation of matf_mul(), but using fmaff. Nice to have when
+	/* Reimplementation of matf_mul(), but using fm_fmaf. Nice to have when
 	 * not compiling with LTO, too. */
 	for (int y = 0; y < h1; ++y) {
 		for (int x = 0; x < w2; ++x) {
 			float acc = m1[y*len] * m2[x];
 			for (int i = 1; i < len; ++i) {
-				acc = fmaff(m1[y*len + i], m2[x + i*w2], acc);
+				acc = fm_fmaf(m1[y*len + i], m2[x + i*w2], acc);
 			}
 			out[y*w2 + x] = acc;
 		}
@@ -194,7 +74,7 @@ static void * pack_row(void *t, const float *row, const size_t w,
 const uint8_t channels, const bool high_depth) {
 	const float mul = high_depth ? 0xffff : 0xff;
 	for (size_t i = 0; i < w*channels; ++i) {
-		put_ch(t, i, poor_round(row[i], mul), high_depth);
+		put_ch(t, i, fm_pre_roundf(row[i], mul), high_depth);
 	}
 	return t;
 }
@@ -216,7 +96,7 @@ static float oetf_srgb(float v) {
 		return copysignf(mypowf(fabsf(v), gamma), v);
 	}
 	return v > 0.0031308f
-		? fmaff(mypowf(v, 1.0f/2.4f), 1.055f, -0.055f)
+		? fm_fmaf(mypowf(v, 1.0f/2.4f), 1.055f, -0.055f)
 		: v * 12.92f;
 }
 
@@ -225,13 +105,13 @@ static float eotf(float v, const struct color_transfer *t) {
 	switch (t->fn) {
 	case color_transfer_linear_gamma: break;
 	case color_transfer_pq:
-		v = mypowf(max(v, 0), arg[4]);
-		float num = v - min(arg[1], v);
-		float den = fmaff(v, -arg[3], arg[2]);
+		v = mypowf(fm_fmaxf(v, 0), arg[4]);
+		float num = v - fm_fminf(arg[1], v);
+		float den = fm_fmaf(v, -arg[3], arg[2]);
 		return mypowf(num/den, arg[0]);
 	case color_transfer_hlg:
 		return v > arg[0]
-			? myexp2f(fmaff(v, arg[1], arg[2])) + arg[3]
+			? myexp2f(fm_fmaf(v, arg[1], arg[2])) + arg[3]
 			: v * v * arg[4];
 	}
 	// Input to the linear-gamma EOTF may be negative
@@ -240,7 +120,7 @@ static float eotf(float v, const struct color_transfer *t) {
 	float e = gamma ? arg[1] : arg[4];
 	float l = gamma ? arg[2] : 0.0f;
 	float p = gamma ? arg[3] : 1.0f;
-	return copysignf(mypowf(fmaff(h, e, l), p), v);
+	return copysignf(mypowf(fm_fmaf(h, e, l), p), v);
 }
 
 static void convert_alpha(float *row, const size_t w, const uint8_t ch,
@@ -275,7 +155,7 @@ const enum alpha_interpretation alpha) {
 
 static float scale(const float x, const struct color_convert *cc,
 const uint8_t i) {
-	return fmaff(x, cc->map.mul[i], cc->map.add[i]);
+	return fm_fmaf(x, cc->map.mul[i], cc->map.add[i]);
 }
 
 static bool convert_row_gray(float *row, size_t w, uint8_t channels,
@@ -456,7 +336,7 @@ const int add) {
 	const uint8_t sub = d->subsamp;
 	const bool match_grid = d->cosit | (sub == 1);
 	c->samp = 1.f/sub;
-	c->off = match_grid ? 0 : -.5f + fractf(1.f/(sub*sub));
+	c->off = match_grid ? 0 : -.5f + fm_fractf(1.f/(sub*sub));
 	c->init = add < 0 ? sub - 1 : 0;
 	c->wrap = add < 0 ? 0 : sub - 1;
 	c->chg = match_grid
@@ -465,7 +345,7 @@ const int add) {
 }
 
 static float spos(const float coord, const struct planar_subsamp *p) {
-	return fmaff(coord, p->samp, p->off);
+	return fm_fmaf(coord, p->samp, p->off);
 }
 
 static void upsamp_plane4(float *pix, const float *limit, const uint8_t ch,
@@ -491,7 +371,7 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	set_params(&pc, dpc, cadd);
 	float fv = (float)(v % dpv->subsamp);
 	float fc = (float)(c % dpc->subsamp);
-	const float mc = fractf(spos(fc, &pc));
+	const float mc = fm_fractf(spos(fc, &pc));
 
 	v = (ptrdiff_t)floorf(spos((float)v, &pv)) * vstride;
 	v += (vadd < 0) * vstride;
@@ -506,7 +386,7 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	const uint8_t *ptr = p->ptr;
 	float g[2];
 	const bool up = vadd >= 0;
-	g[up] = mix(
+	g[up] = fm_mix(
 		get_ch(ptr + loc + vv, 0, usize),
 		get_ch(ptr + hic + vv, 0, usize),
 		mc);
@@ -514,13 +394,13 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 		v += (v != limv)*vdiff;
 		vv = v;
 		g[!up] = g[up];
-		g[up] = mix(
+		g[up] = fm_mix(
 			get_ch(ptr + loc + vv, 0, usize),
 			get_ch(ptr + hic + vv, 0, usize),
 			mc);
 		do {
-			float mv = fractf(spos(fv, &pv));
-			*pix = mix(g[0], g[1], mv);
+			float mv = fm_fractf(spos(fv, &pv));
+			*pix = fm_mix(g[0], g[1], mv);
 			fv = (fv == pv.wrap) ? pv.init : fv + (float)vadd;
 			pix += ch;
 		} while (pix < limit && fv != pv.chg);
@@ -543,20 +423,20 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	while (pix < limit) {
 		float xs = spos(fx, &xp);
 		float ys = spos(fy, &yp);
-		float xm = fractf(xs);
-		float ym = fractf(ys);
+		float xm = fm_fractf(xs);
+		float ym = fm_fractf(ys);
 		int xlo = (int)floorf(xs);
 		int ylo = (int)floorf(ys);
 		int xhi = xlo + (xlo < ws);
 		int yhi = ylo + (ylo < hs);
 		xlo += xlo < 0;
 		ylo += ylo < 0;
-		*pix = mix(
-			mix(
+		*pix = fm_mix(
+			fm_mix(
 				get_ch(ptr + ylo*stride, xlo, usize),
 				get_ch(ptr + ylo*stride, xhi, usize),
 				xm),
-			mix(
+			fm_mix(
 				get_ch(ptr + yhi*stride, xlo, usize),
 				get_ch(ptr + yhi*stride, xhi, usize),
 				xm),
