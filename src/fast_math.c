@@ -63,6 +63,7 @@ static float fm_saturatef(const float val) {
  * Polynomials were found using Sollya, which should produce more accurate
  * single-precision coefficients than simply truncating high-precision ones.
 https://www.sollya.org/
+ * The exact script is in scripts/fast_math_polynomials.sollya
 */
 static float fm_exp2f_unchecked(float x) {
 	/* Build a float equal to 2^(intpart - 127)

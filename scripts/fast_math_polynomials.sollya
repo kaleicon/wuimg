@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: 2025 kaleido
+
+findpoly = proc(f, r, eps, polys, cons) {
+	degr=guessdegree(f, r, eps);
+
+	print("Function:", f);
+	display=hexadecimal!;
+	print("Range:", r);
+	print("Max error:", eps);
+	display=decimal!;
+	print("Guessed min degree for function, range, and error:", degr);
+	print("Using degree", polys);
+	if (cons != 0) then print("First term fixed to", cons);
+
+	display=hexadecimal!;
+	P=fpminimax(f, polys, [|single...|], r, cons);
+	print("Got:", P);
+};
+
+eps=2^-16;
+which=__argv[0];
+if (which == "exp2") then {
+	findpoly(2^x, [eps;1], eps, [|1,...,4|], 1);
+} else if (which == "log2") then {
+	findpoly(log2(x)/(x-1), [1;2], eps, 5, 0);
+} else {
+	print("Usage: sollya file.sollya --args exp2|log2");
+};
