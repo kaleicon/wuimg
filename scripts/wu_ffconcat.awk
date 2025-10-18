@@ -1,4 +1,6 @@
 #!/bin/awk -f
+# SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2025 kaleido
 BEGIN {
 	if (ARGV[1] ~ "-h|--help") {
 		print "Using the output of wuconv, create an ffmpeg concat file for each animation:"

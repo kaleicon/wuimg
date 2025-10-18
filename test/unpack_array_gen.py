@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2025 kaleido
 import itertools
 import functools
 
