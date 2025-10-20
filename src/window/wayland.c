@@ -657,10 +657,9 @@ static void pointer_axis(void *data, struct wl_pointer *pointer,
 const uint32_t time, const uint32_t axis, const wl_fixed_t value) {
 	(void)pointer; (void)time;
 	struct wayland *wl = data;
-	struct window_cursor *cur = &wl->pub->win.cur;
-	struct window_cursor_axis *a = (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-		? &cur->y : &cur->x;
-	window_scroll_axis(a, wl_fixed_to_double(value));
+	const double a = wl_fixed_to_double(value);
+	const bool v = axis == WL_POINTER_AXIS_VERTICAL_SCROLL;
+	window_cursor_scroll(wl->pub, (v ? 0 : a), (v ? a : 0));
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer,
@@ -768,7 +767,9 @@ const char *interface, const uint32_t version) {
 	} else if (!strcmp(interface, wl_shm_interface.name)) {
 		wl->shm = wl_registry_bind(reg, name, &wl_shm_interface, 1);
 	} else if (!strcmp(interface, wl_seat_interface.name) && version >= 3) {
-		// Version 3 required for wl_pointer_release()
+		/* Version 3 required for wl_pointer_release(), which we need
+		 * to avoid a crash if the user switches or returns from a
+		 * virtual terminal or another compositor. */
 		wl->seat = wl_registry_bind(reg, name, &wl_seat_interface, 3);
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
 		wl->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);

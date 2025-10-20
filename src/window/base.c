@@ -49,30 +49,27 @@ const int h) {
 	return trit_what;
 }
 
-void window_scroll_axis(struct window_cursor_axis *axis, const double offset) {
-	const float off = (float)offset;
-	if (isnormal(off)) {
-		axis->scroll += off;
+static enum image_event move_state(struct wu_state *state, float x, float y) {
+	const float x_diff = x / state->zoom;
+	const float y_diff = y / state->zoom;
+	if (isnormal(x_diff) || isnormal(y_diff)) {
+		state->x_offset += x_diff;
+		state->y_offset += y_diff;
+		return ev_transform;
 	}
+	return ev_none;
 }
 
-void window_scroll(struct window_cursor *cursor, const double x, const double y) {
-	window_scroll_axis(&cursor->x, x);
-	window_scroll_axis(&cursor->y, y);
+void window_cursor_scroll(struct window_public *pub, double x, double y) {
+	pub->event.image = move_state(&pub->image.state, -(float)x, -(float)y);
 }
 
 void window_cursor_move(struct window_public *pub, const double x,
 const double y) {
 	struct window_common *win = &pub->win;
-	struct wu_state *state = &pub->image.state;
 	if (win->pressed) {
-		const float x_diff = ((float)x - win->cur.x.pos) / state->zoom;
-		const float y_diff = ((float)y - win->cur.y.pos) / state->zoom;
-		if (isnormal(x_diff) || isnormal(y_diff)) {
-			state->x_offset += x_diff;
-			state->y_offset += y_diff;
-			pub->event.image = ev_transform;
-		}
+		pub->event.image = move_state(&pub->image.state,
+			(float)x - win->cur.x.pos, (float)y - win->cur.y.pos);
 	}
 	win->cur.x.pos = (float)x;
 	win->cur.y.pos = (float)y;

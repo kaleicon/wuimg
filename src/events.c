@@ -162,7 +162,7 @@ const int code, const float dt, const bool shift) {
 	return repeat_fixed;
 }
 
-static double key_events(struct window_context *window) {
+double event_exec(struct window_context *window) {
 	struct window_keymap *held_keys = &window->pub.held_keys;
 	const bool shift = held_keys->shift;
 
@@ -203,22 +203,6 @@ static double key_events(struct window_context *window) {
 		}
 	}
 	return elapsed;
-}
-
-double event_exec(struct window_context *window) {
-	struct window_public *pub = &window->pub;
-	struct window_cursor *cursor = &pub->win.cur;
-	const int x_scroll = iclamp((int)cursor->x.scroll, -1, 1);
-	if (x_scroll) {
-		pub->event.image = image_sub_cycle(&pub->image, x_scroll);
-		cursor->x.scroll = 0;
-	}
-	const int y_scroll = iclamp((int)cursor->y.scroll, -1, 1);
-	if (y_scroll) {
-		pub->event.cycle = y_scroll;
-		cursor->y.scroll = 0;
-	}
-	return key_events(window);
 }
 
 void print_keys(void) {

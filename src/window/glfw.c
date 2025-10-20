@@ -38,14 +38,12 @@ const int action, const int mods) {
 	if (button == GLFW_MOUSE_BUTTON_LEFT) {
 		struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
 		glfw->pub->win.pressed = (action == GLFW_PRESS);
-//		glfwSetInputMode(window, GLFW_CURSOR,
-//			pressed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 	}
 }
 
 static void callback_scroll(GLFWwindow *wnd, const double x, const double y) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_scroll(&glfw->pub->win.cur, x, y);
+	window_cursor_scroll(glfw->pub, x*-9, y*-9);
 }
 
 static void callback_key(GLFWwindow *wnd, const int key, const int scan,

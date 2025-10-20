@@ -36,7 +36,6 @@ struct wu_event {
 
 struct window_cursor_axis {
 	float pos;
-	float scroll;
 };
 
 struct window_cursor {
@@ -92,6 +91,8 @@ enum trit window_size_update(struct window_public *pub, int w, int h);
 void window_scroll_axis(struct window_cursor_axis *axis, double offset);
 
 void window_scroll(struct window_cursor *cursor, double x, double y);
+
+void window_cursor_scroll(struct window_public *pub, double x, double y);
 
 void window_cursor_move(struct window_public *pub, double x, double y);
 
