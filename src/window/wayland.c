@@ -53,9 +53,6 @@ static void wayland_terminate(void *ctx) {
 	struct wayland *wl = ctx;
 	egl_terminate(&wl->egl);
 
-	if (wl->content.type) {
-		wp_content_type_v1_destroy(wl->content.type);
-	}
 	if (wl->color.feedback) {
 		wp_color_management_surface_feedback_v1_destroy(wl->color.feedback);
 	}
@@ -64,6 +61,19 @@ static void wayland_terminate(void *ctx) {
 	}
 	if (wl->toplevel) {
 		xdg_toplevel_destroy(wl->toplevel);
+		if (wl->deco.toplevel) {
+			zxdg_toplevel_decoration_v1_destroy(wl->deco.toplevel);
+		}
+		if (wl->content.type) {
+			wp_content_type_v1_destroy(wl->content.type);
+		}
+	} else {
+		if (wl->deco.bind) {
+			zxdg_decoration_manager_v1_destroy(wl->deco.bind);
+		}
+		if (wl->content.bind) {
+			wp_content_type_manager_v1_destroy(wl->content.bind);
+		}
 	}
 	if (wl->xdg_surf) {
 		xdg_surface_destroy(wl->xdg_surf);
@@ -750,14 +760,6 @@ const uint32_t serial) {
 	xdg_wm_base_pong(xwb, serial);
 }
 
-static const struct wl_seat_listener listen_seat = {
-	.capabilities = seat_capabilities,
-	.name = null_function,
-};
-static const struct xdg_wm_base_listener listen_wm_base = {
-	.ping = wm_base_ping,
-};
-
 static void reg_global(void *data, struct wl_registry *reg, const uint32_t name,
 const char *interface, const uint32_t version) {
 	struct wayland *wl = data;
@@ -768,13 +770,14 @@ const char *interface, const uint32_t version) {
 	} else if (!strcmp(interface, wl_seat_interface.name) && version >= 3) {
 		// Version 3 required for wl_pointer_release()
 		wl->seat = wl_registry_bind(reg, name, &wl_seat_interface, 3);
-		wl_seat_add_listener(wl->seat, &listen_seat, wl);
 	} else if (!strcmp(interface, xdg_wm_base_interface.name)) {
 		wl->xwb = wl_registry_bind(reg, name, &xdg_wm_base_interface, 1);
-		xdg_wm_base_add_listener(wl->xwb, &listen_wm_base, NULL);
 	} else if (!strcmp(interface, wp_content_type_manager_v1_interface.name)) {
 		wl->content.bind = wl_registry_bind(reg, name,
 			&wp_content_type_manager_v1_interface, 1);
+	} else if (!strcmp(interface, zxdg_decoration_manager_v1_interface.name)) {
+		wl->deco.bind = wl_registry_bind(reg, name,
+			&zxdg_decoration_manager_v1_interface, 1);
 	} else if (!wl->pub->image.conf.naive_window_colorspace
 	&& !strcmp(interface, wp_color_manager_v1_interface.name)) {
 		wl->color.bind = wl_registry_bind(reg, name,
@@ -790,6 +793,13 @@ static const struct wl_registry_listener listen_reg = {
 	.global = reg_global,
 	.global_remove = null_function,
 };
+static const struct wl_seat_listener listen_seat = {
+	.capabilities = seat_capabilities,
+	.name = null_function,
+};
+static const struct xdg_wm_base_listener listen_wm_base = {
+	.ping = wm_base_ping,
+};
 static const struct xdg_surface_listener listen_surface = {
 	.configure = surface_configure,
 };
@@ -799,6 +809,9 @@ static const struct xdg_toplevel_listener listen_toplevel = {
 };
 static const struct wp_color_management_surface_feedback_v1_listener listen_color_feedback = {
 	.preferred_changed = color_preferred,
+};
+static const struct zxdg_toplevel_decoration_v1_listener listen_toplevel_decoration = {
+	.configure = null_function,
 };
 
 const char * wayland_init(struct wayland *wl, struct window_public *pub) {
@@ -835,6 +848,8 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	} else if (!wl->xwb) {
 		return "Failed to bind to wm_base";
 	}
+	wl_seat_add_listener(wl->seat, &listen_seat, wl);
+	xdg_wm_base_add_listener(wl->xwb, &listen_wm_base, NULL);
 
 	wl->surf = wl_compositor_create_surface(wl->comp);
 	if (!wl->surf) {
@@ -860,9 +875,29 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
 	xdg_toplevel_add_listener(wl->toplevel, &listen_toplevel, wl);
 
-	if (!wl->shape && wl->shm) {
-		set_cursor(wl);
+	if (wl->content.bind) {
+		struct wp_content_type_v1 *type
+			= wp_content_type_manager_v1_get_surface_content_type(
+				wl->content.bind, wl->surf);
+		wp_content_type_manager_v1_destroy(wl->content.bind);
+		wp_content_type_v1_set_content_type(type,
+			WP_CONTENT_TYPE_V1_TYPE_PHOTO);
+		wl->content.type = type;
 	}
+	if (wl->deco.bind) {
+		struct zxdg_toplevel_decoration_v1 *toplevel
+			= zxdg_decoration_manager_v1_get_toplevel_decoration(
+				wl->deco.bind, wl->toplevel);
+		zxdg_decoration_manager_v1_destroy(wl->deco.bind);
+		zxdg_toplevel_decoration_v1_add_listener(
+			toplevel, &listen_toplevel_decoration, wl);
+		zxdg_toplevel_decoration_v1_set_mode(toplevel,
+			conf->no_window_decorations
+				? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
+				: ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+		wl->deco.toplevel = toplevel;
+	}
+
 	if (wl->color.bind) {
 		wl->color.surf = wp_color_manager_v1_get_surface(wl->color.bind,
 			wl->surf);
@@ -877,14 +912,8 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		wp_color_management_surface_feedback_v1_add_listener(
 			wl->color.feedback, &listen_color_feedback, wl);
 	}
-	if (wl->content.bind) {
-		struct wp_content_type_v1 *type
-			= wp_content_type_manager_v1_get_surface_content_type(
-				wl->content.bind, wl->surf);
-		wp_content_type_manager_v1_destroy(wl->content.bind);
-		wp_content_type_v1_set_content_type(type,
-			WP_CONTENT_TYPE_V1_TYPE_PHOTO);
-		wl->content.type = type;
+	if (!wl->shape && wl->shm) {
+		set_cursor(wl);
 	}
 
 	wl_surface_commit(wl->surf);

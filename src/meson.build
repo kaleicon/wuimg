@@ -196,6 +196,7 @@ if window_enable.has('WU_ENABLE_WINDOW_WAYLAND')
 		['staging', 'color-management', '-v1'],
 		['staging', 'content-type', '-v1'],
 		['staging', 'cursor-shape', '-v1'],
+		['unstable', 'xdg-decoration', '-unstable-v1'],
 		['stable', 'tablet', '-v2'], # needed by cursor-shape
 	]
 	type = [

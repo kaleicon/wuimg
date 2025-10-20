@@ -11,6 +11,7 @@
 #include "color-management-client-header.h"
 #include "content-type-client-header.h"
 #include "cursor-shape-client-header.h"
+#include "xdg-decoration-client-header.h"
 
 #include "conf.h"
 #include "window/base.h"
@@ -40,6 +41,11 @@ union wayland_content {
 	struct wp_content_type_v1 *type;
 };
 
+union wayland_decoration {
+	struct zxdg_decoration_manager_v1 *bind;
+	struct zxdg_toplevel_decoration_v1 *toplevel;
+};
+
 struct wayland {
 	struct window_public *pub;
 
@@ -62,6 +68,7 @@ struct wayland {
 
 	struct wayland_color color;
 	union wayland_content content;
+	union wayland_decoration deco;
 
 	struct egl egl;
 };
