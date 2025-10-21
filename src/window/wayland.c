@@ -483,7 +483,8 @@ static void draw_cursor(uint32_t *data, const int32_t w, const int32_t h) {
 			const bool border = (x > 0) & (x < y);
 			const int tint = (x + 1 < hy) + (yp < w);
 			uint32_t pix = 0xff000000;
-			pix |= five_shades_of_gray * (uint32_t)(border && tint ? tint+2 : 1);
+			pix |= five_shades_of_gray
+				* (uint32_t)(border && tint ? tint+2 : 1);
 			data[y*w + x] = pix;
 		}
 	}
@@ -673,13 +674,21 @@ const uint32_t time, const wl_fixed_t x, const wl_fixed_t y) {
 static void pointer_button(void *data, struct wl_pointer *pointer,
 const uint32_t serial, const uint32_t time, const uint32_t button,
 const uint32_t state) {
-	(void)pointer; (void)serial; (void)time;
+	(void)time;
 	struct wayland *wl = data;
-	if (button == BTN_LEFT) {
+	switch (button) {
+	case BTN_LEFT:
 		wl->pub->win.pressed =
 			(state == WL_POINTER_BUTTON_STATE_PRESSED);
 		if (wl->shape) {
 			set_cursor_shape(wl, pointer, serial);
+		}
+		break;
+	case BTN_RIGHT:
+		if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
+			struct window_cursor *c = &wl->pub->win.cur;
+			xdg_toplevel_show_window_menu(wl->toplevel, wl->seat,
+				serial, (int32_t)c->x.pos, (int32_t)c->y.pos);
 		}
 	}
 }
@@ -707,10 +716,10 @@ static const struct wl_pointer_listener listen_pointer = {
 	.motion = pointer_motion,
 	.button = pointer_button,
 	.axis = pointer_axis,
-	.frame = null_function,
+/*	.frame = null_function,
 	.axis_source = null_function,
 	.axis_stop = null_function,
-	.axis_discrete = null_function,
+	.axis_discrete = null_function,*/
 };
 static const struct wl_keyboard_listener listen_keyboard = {
 	.keymap = keyboard_keymap,
@@ -718,7 +727,7 @@ static const struct wl_keyboard_listener listen_keyboard = {
 	.leave = keyboard_leave,
 	.key = keyboard_key,
 	.modifiers = keyboard_modifiers,
-	.repeat_info = null_function,
+//	.repeat_info = null_function,
 };
 
 static void seat_capabilities(void *data, struct wl_seat *seat,
