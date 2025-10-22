@@ -58,31 +58,38 @@ void display_end(struct window_context *window, const struct term_restore *tr) {
 }
 
 static enum wu_error update_texture(struct image_context *image,
-struct gl_context *gl, const bool reset, const bool subupload) {
+struct gl_context *gl, const bool reset, const bool new_img,
+const bool subupload) {
 	struct wu_state *state = &image->state;
 	struct wuimg *img = image->file.sub_img + state->idx;
 	if (subupload) {
 		return gl_subtexture_upload(gl, img, state)
 			? wu_ok : wu_display_error;
 	}
+	const bool prev_was_scalable = gl->tex.no_transform & new_img;
 	switch (gl_texture_upload(gl, img, image->conf.heed_pixel_ratio)) {
 	case gl_upload_fail:
 		term_line_put("Failed to upload to texture.", stderr);
 		return wu_display_error;
 	case gl_upload_success:
-		if (reset) {
-			const float min = (float)(image->conf.magnify_under /
-				(zumin(img->w, img->h) + 1) + 1);
-			state->zoom = fminf(min, gl->tex.fit_zoom);
-			state->rotate = 0;
-			state->mirror = 0;
-			state->x_offset = 0;
-			state->y_offset = 0;
+		if (reset | prev_was_scalable) {
+			break;
 		}
-		break;
+		return wu_ok;
 	case gl_upload_same_size:
-		break;
+		if (prev_was_scalable) {
+			break;
+		}
+		return wu_ok;
 	}
+	const float min = (float)(
+		image->conf.magnify_under / (zumin(img->w, img->h) + 1) + 1
+	);
+	state->zoom = fminf(min, gl->tex.fit_zoom);
+	state->rotate = 0;
+	state->mirror = 0;
+	state->x_offset = 0;
+	state->y_offset = 0;
 	return wu_ok;
 }
 
@@ -173,17 +180,20 @@ const bool allow_cycle, const bool allow_delete) {
 	for (bool upload = true, first_iter = true; err == wu_ok;) {
 		if (upload) {
 			bool subupload = false;
+			bool subcycle = false;
 			if (event->image & ev_subcycle) {
+				subcycle = true;
 				state->time = 0;
 				evs = image_cur_events(image);
 				window->pub.win.playing =
 					image_cur_is_anim(image);
-			} else if (!(event->image & ev_transform)) {
-				subupload = true;
+			} else {
+				subupload = !(event->image & ev_transform);
 			}
 
 			struct gl_context *gl = &window->pub.gl;
-			err = update_texture(image, gl, first_iter, subupload);
+			err = update_texture(image, gl, first_iter, subcycle,
+				subupload);
 			if (err != wu_ok) {
 				break;
 			}
