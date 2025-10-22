@@ -24,9 +24,17 @@ BEGIN {
 	den = $(NF-1)
 	gsub("'", "\\\&", $0)
 	if (frame == 0) {
+		if (prev_file) {
+			print prev_file
+		}
+		prev_file = concat
 		print "ffconcat version 1.0" > concat
-		print concat
 	}
 	print "file '" $0 "'" >> concat
 	print "duration", num/den >> concat
+}
+END {
+	if (prev_file) {
+		print prev_file
+	}
 }
