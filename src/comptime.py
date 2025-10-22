@@ -1007,7 +1007,7 @@ DEC_MAP: DecMap = {
 
 	"siff": {
 		"pim": FmtInfo("SIFF PIM sprite and animation (first frame only)",
-			ext="pim",
+			ext=("pan", "pim"),
 			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 				b"SIFF\0\0\0\0PXAN",
