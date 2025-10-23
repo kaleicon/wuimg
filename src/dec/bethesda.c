@@ -4,44 +4,100 @@
 #include "misc/math.h"
 #include "wudefs.h"
 
-static struct wu_st init_gxa(struct image_file *infile,
-const struct wu_conf *conf) {
-	struct gxa_desc desc;
-	struct wu_st st = gxa_init(&desc, infile->ifp);
-	if (wu_isok(st)) {
-		if (alloc_sub_images(infile, desc.nb_images)) {
-			tree_add_leaf_utf8_len(&infile->metadata, "Comment",
-				wuptr_mem(desc.comment, desc.comment_len));
-			size_t i = 0;
-			while (i < desc.nb_images) {
-				struct wuimg *img = infile->sub_img + i;
-				st = gxa_next_image(&desc, img);
-				if (!wu_isok(st)) {
-					if (st.st == wu_no_change) {
-						st.st = wu_ok;
-					}
-					break;
-				}
+static void end_fnhd(struct image_file *infile) {
+	fnhd_cleanup(infile->dec_state);
+}
 
-				if (wuimg_exceeds_limit(img, conf)) {
-					st = WUERR_HERE(wu_exceeds_size_limit);
-					break;
-				}
-
-				st = gxa_load_image(&desc, img);
-				if (!wu_isok(st)) {
-					break;
-				}
-				++i;
+static struct wu_st event_fnhd(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	struct wu_st st = WU_NO_CHANGE;
+	if (ev == ev_subcycle) {
+		struct fnhd_desc *desc = infile->dec_state;
+		while (desc->cur <= (uint16_t)state->idx) {
+			struct wuimg *img = infile->sub_img + desc->cur;
+			st = fnhd_next_glyph(desc, img);
+			if (!wu_isok(st)) {
+				break;
 			}
-			st = wuerr(image_file_total_decoded(infile, i), st.msg);
+			enum wu_error e = wuimg_alloc_limit(img, conf);
+			if (e != wu_ok) {
+				st = WUERR_HERE(e);
+				break;
+			}
+			st = fnhd_load_glyph(desc, img);
+			if (!wu_isok(st)) {
+				break;
+			}
+		}
+	}
+	return st;
+}
+
+static struct wu_st init_fnhd(struct image_file *infile,
+const struct wu_conf *_c) {
+	(void)_c;
+	struct fnhd_desc *desc = infile->dec_state;
+	struct wu_st st = fnhd_init(desc, infile->ifp);
+	if (wu_isok(st)) {
+		if (alloc_sub_images(infile, desc->glyphs)) {
+			const struct wuptr comm = wuptr_mem(desc->desc,
+				strnlen((char *)desc->desc, sizeof(desc->desc)));
+			tree_add_leaf_len(&infile->metadata, "Comment", comm,
+				NULL);
 		} else {
 			st = WUERR_HERE(wu_alloc_error);
 		}
 	}
-	gxa_cleanup(&desc);
 	return st;
 }
+
+
+static void end_gxa(struct image_file *infile) {
+	gxa_cleanup(infile->dec_state);
+}
+
+static struct wu_st event_gxa(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	struct wu_st st = WU_NO_CHANGE;
+	if (ev == ev_subcycle) {
+		struct gxa_desc *desc = infile->dec_state;
+		while (desc->cur <= (uint16_t)state->idx) {
+			struct wuimg *img = infile->sub_img + desc->cur;
+			st = gxa_next_image(desc, img);
+			if (!wu_isok(st)) {
+				break;
+			}
+			enum wu_error e = wuimg_alloc_limit(img, conf);
+			if (e != wu_ok) {
+				st = WUERR_HERE(e);
+				break;
+			}
+			st = gxa_load_image(desc, img);
+			if (!wu_isok(st)) {
+				break;
+			}
+		}
+	}
+	return st;
+}
+
+static struct wu_st init_gxa(struct image_file *infile,
+const struct wu_conf *_c) {
+	(void)_c;
+	struct gxa_desc *desc = infile->dec_state;
+	struct wu_st st = gxa_init(desc, infile->ifp);
+	if (wu_isok(st)) {
+		if (alloc_sub_images(infile, desc->nb_images)) {
+			tree_add_leaf_len(&infile->metadata, "Comment",
+				wuptr_mem(desc->comment, desc->comment_len),
+				NULL);
+		} else {
+			st = WUERR_HERE(wu_alloc_error);
+		}
+	}
+	return st;
+}
+
 
 static void end_bsi(struct image_file *infile) {
 	bsi_cleanup(infile->dec_state);
@@ -50,16 +106,21 @@ static void end_bsi(struct image_file *infile) {
 static struct wu_st event_bsi(struct image_file *infile,
 const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	(void)_c;
+	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		struct wuimg *img = infile->sub_img + state->idx;
-		struct wu_st st = bsi_set_image(infile->dec_state, img);
+		st = bsi_set_image(infile->dec_state, img);
 		if (wu_isok(st)) {
-			st = bsi_load_image(infile->dec_state, img,
-				(uint16_t)state->idx);
+			enum wu_error e = wuimg_verify(img);
+			if (e == wu_ok) {
+				st = bsi_load_image(infile->dec_state, img,
+					(uint16_t)state->idx);
+			} else {
+				st = WUERR_HERE(e);
+			}
 		}
-		return st;
 	}
-	return wuerr(wu_no_change, NULL);
+	return st;
 }
 
 static struct wu_st init_bsi(struct image_file *infile,
@@ -81,8 +142,17 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+const struct image_fn fnhd_fn = {
+	.state_size = sizeof(struct fnhd_desc),
+	.init = init_fnhd,
+	.event = event_fnhd,
+	.end = end_fnhd,
+};
 const struct image_fn gxa_fn = {
+	.state_size = sizeof(struct gxa_desc),
 	.init = init_gxa,
+	.event = event_gxa,
+	.end = end_gxa,
 };
 const struct image_fn bsi_fn = {
 	.state_size = sizeof(struct bsi_desc),

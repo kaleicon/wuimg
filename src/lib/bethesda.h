@@ -5,6 +5,23 @@
 
 #include "raster/wuimg.h"
 
+struct fnhd_desc {
+	FILE *ifp;
+	struct palette *pal;
+	uint16_t glyphs;
+	uint16_t cur;
+	uint8_t desc[40];
+};
+
+void fnhd_cleanup(struct fnhd_desc *desc);
+
+struct wu_st fnhd_load_glyph(struct fnhd_desc *desc, struct wuimg *img);
+
+struct wu_st fnhd_next_glyph(struct fnhd_desc *desc, struct wuimg *img);
+
+struct wu_st fnhd_init(struct fnhd_desc *desc, FILE *ifp);
+
+
 enum gxa_compression {
 	gxa_none = 0,
 	gxa_rle = 1,
@@ -16,7 +33,8 @@ struct gxa_desc {
 	struct palette *pal;
 	enum gxa_compression compression:16;
 	uint16_t nb_images;
-	uint32_t len;
+	uint16_t cur;
+	uint32_t data_len;
 	uint8_t comment[32];
 	uint8_t comment_len;
 };

@@ -381,6 +381,10 @@ DEC_MAP: DecMap = {
 			ext="bsi",
 			magic=(b"IFHD\0\0\0\x2c", b"BSIF\0\0\0\0BHDR")
 		),
+		"fnhd": FmtInfo("Bethesda font (FNHD)",
+			ext="fnt",
+			magic=b"FNHD\0\0\0\x38",
+		),
 		"gxa": FmtInfo("Bethesda GXA image (BMHD)",
 			ext=("bmp", "gxa"),
 			magic=b"BMHD\0\0\0\x22"

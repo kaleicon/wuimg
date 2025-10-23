@@ -12,6 +12,131 @@
  * big-endian, contents are little-endian. Great obfuscation everyone, got me
  * stumpted longer than the RLE algo. */
 
+/* Common functions */
+static struct wu_st load_pal(struct palette **pal, FILE *ifp,
+const uint32_t chunk_len) {
+	if (chunk_len == 0x300) {
+		*pal = palette_new();
+		if (*pal) {
+			return palette_from_file(*pal, 3, 256, ifp, 6)
+				? WU_OK : WUERR_HERE(wu_unexpected_eof);
+		}
+		return WUERR_HERE(wu_alloc_error);
+	}
+	return wuerr(wu_invalid_header, "palette length != 256*3");
+}
+
+/* FNT (FNHD) */
+void fnhd_cleanup(struct fnhd_desc *desc) {
+	palette_unref(desc->pal);
+}
+
+struct wu_st fnhd_load_glyph(struct fnhd_desc *desc, struct wuimg *img) {
+	++desc->cur;
+	return fmt_load_raster_st(img, desc->ifp);
+}
+
+struct wu_st fnhd_next_glyph(struct fnhd_desc *desc, struct wuimg *img) {
+	/* "FBMP" is an array of variable-sized characters, whose structure is:
+		Offset  Type    Name
+		0       u16     ???     // Metrics?
+		2       u16     ???
+		4       u16     ???
+		6       u16     Width
+		8       u16     Height
+		10      u8      Raster[Width*Height]
+	*/
+	const uint8_t end[4] = "END ";
+	uint16_t buf[5];
+	const size_t r = fread(buf, 1, sizeof(buf), desc->ifp);
+	if (r >= sizeof(end) && !memcmp(buf, end, sizeof(end))) {
+		return WU_NO_CHANGE;
+	} else if (r < sizeof(buf)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	img->w = endian16l(buf[3]);
+	img->h = endian16l(buf[4]);
+	img->channels = 1;
+	img->bitdepth = 8;
+	img->bitrange = 6;
+	wuimg_palette_set(img, palette_ref(desc->pal));
+	return WU_OK;
+}
+
+static struct wu_st fbmp(struct iff_state *iff, void *ptr,
+struct iff_chunk chunk) {
+	(void)iff; (void)ptr; (void)chunk;
+	return WU_OK;
+}
+
+static struct wu_st fpal(struct iff_state *iff, void *ptr,
+struct iff_chunk chunk) {
+	/* "FPAL" and "BPAL" contents:
+		Offset  Type    Name
+		0       u8      Palette[256][3]
+		256*3
+	*/
+
+	struct fnhd_desc *desc = ptr;
+	const struct wu_st st = load_pal(&desc->pal, desc->ifp, chunk.len);
+	iff->table += 2;
+	iff->table_len = 1;
+	return wu_isok(st) ? iff_next_FILE(iff, desc->ifp, chunk) : st;
+}
+
+static struct wu_st fnhd(struct iff_state *iff, void *ptr,
+struct iff_chunk chunk) {
+	/* "FNHD" contents:
+		Offset  Type    Name
+		0       u8      Description[40]
+		40      u16     ???[4]
+		48      u16     NrGlyphs
+		50      u8      ???[6]
+		56
+	 * Description is null terminated, and seems to be followed by garbage.
+	*/
+	struct fnhd_desc *desc = ptr;
+	uint16_t buf[8];
+	if (chunk.len != 0x38) {
+		return wuerr(wu_invalid_header, "FNHD length != 0x38");
+	} else if (!fread(desc->desc, sizeof(desc->desc), 1, desc->ifp)
+	|| !fread(buf, sizeof(buf), 1, desc->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	desc->glyphs = endian16l(buf[4]);
+	++iff->table;
+	iff->table_len = 2;
+	return iff_next_FILE(iff, desc->ifp, chunk);
+}
+
+static const struct iff_table fnhd_table[] = {
+	{.id = FOURCC('F', 'N', 'H', 'D'), .fn = fnhd},
+	{.id = FOURCC('B', 'P', 'A', 'L'), .fn = fpal}, // BPAL and FPAL are
+	{.id = FOURCC('F', 'P', 'A', 'L'), .fn = fpal}, // exactly the same
+	{.id = FOURCC('F', 'B', 'M', 'P'), .fn = fbmp},
+};
+
+struct wu_st fnhd_init(struct fnhd_desc *desc, FILE *ifp) {
+	/* FNT layout:
+		Header (FNHD)
+		Pal    (BPAL or FPAL)
+		Bitmap (FBMP)
+		EOF    (END )
+	*/
+	desc->ifp = ifp;
+	desc->pal = NULL;
+	desc->cur = 0;
+
+	struct iff_state iff = {
+		.table = fnhd_table,
+		.table_len = 1,
+		.user = desc,
+		.endian = big_endian,
+	};
+	return iff_next_FILE(&iff, ifp, (struct iff_chunk){0});
+}
+
+
 /* GXA (BMHD) */
 const char * gxa_compression_str(const enum gxa_compression c) {
 	switch (c) {
@@ -27,27 +152,24 @@ void gxa_cleanup(struct gxa_desc *desc) {
 }
 
 struct wu_st gxa_load_image(struct gxa_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		const size_t size = wuimg_size(img);
-		switch (desc->compression) {
-		case gxa_none:
-			return wuerr_partial(fmt_load_raster(img, desc->ifp),
-				size);
-		case gxa_rle:
-			;uint8_t *rle = malloc(desc->len);
-			if (rle) {
-				const size_t r = decomp_topbitrle(img->data,
-					size, rle,
-					fread(rle, 1, desc->len, desc->ifp), 1);
-				free(rle);
-				return wuerr_partial(r, size);
-			}
-			return WUERR_HERE(wu_alloc_error);
-		case gxa_mystery2: break;
+	++desc->cur;
+	const size_t size = wuimg_size(img);
+	switch (desc->compression) {
+	case gxa_none:
+		return fmt_load_raster_st(img, desc->ifp);
+	case gxa_rle:
+		;uint8_t *rle = malloc(desc->data_len);
+		if (rle) {
+			const size_t r = decomp_topbitrle(img->data,
+				size, rle,
+				fread(rle, 1, desc->data_len, desc->ifp), 1);
+			free(rle);
+			return wuerr_partial(r, size);
 		}
-		return wuerr(wu_unsupported_feature, NULL);
+		return WUERR_HERE(wu_alloc_error);
+	case gxa_mystery2: break;
 	}
-	return WUERR_HERE(wu_alloc_error);
+	return wuerr(wu_unsupported_feature, NULL);
 }
 
 struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
@@ -70,12 +192,12 @@ struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	img->w = endian16(info[1], little_endian);
-	img->h = endian16(info[2], little_endian);
+	img->w = endian16l(info[1]);
+	img->h = endian16l(info[2]);
 	img->channels = 1;
 	img->bitdepth = 8;
 	img->bitrange = 6;
-	desc->compression = endian16(info[5], little_endian);
+	desc->compression = endian16l(info[5]);
 	switch (desc->compression) {
 	case gxa_none: break;
 	case gxa_rle:
@@ -83,9 +205,9 @@ struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
 		if (!fread(&len, sizeof(len), 1, desc->ifp)) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
-		desc->len = endian32(len, little_endian);
-		if (desc->len/2 > img->w*img->h) {
-			desc->len = (uint32_t)(img->w*img->h*2);
+		desc->data_len = endian32l(len);
+		if (desc->data_len/2 > img->w*img->h) {
+			desc->data_len = (uint32_t)(img->w*img->h*2);
 		}
 		break;
 	case gxa_mystery2:
@@ -96,27 +218,14 @@ struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
 			"unknown compression method > 2");
 	}
 	wuimg_palette_set(img, palette_ref(desc->pal));
-	return wuimg_verify_st(img);
-}
-
-static struct wu_st load_pal(struct palette **pal, FILE *ifp,
-const uint32_t chunk_len) {
-	if (chunk_len == 0x300) {
-		*pal = palette_new();
-		if (*pal) {
-			return palette_from_file(*pal, 3, 256, ifp, 6)
-				? wuok() : WUERR_HERE(wu_unexpected_eof);
-		}
-		return WUERR_HERE(wu_alloc_error);
-	}
-	return wuerr(wu_invalid_header, "palette length != 256*3");
+	return WU_OK;
 }
 
 static struct wu_st bbmp(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	(void)iff; (void)ptr; (void)chunk;
 	// Finish parsing.
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st bpal(struct iff_state *iff, void *ptr,
@@ -142,7 +251,7 @@ struct iff_chunk chunk) {
 		34
 	*/
 	if (chunk.len != 0x22) {
-		return wuerr(wu_invalid_header, "unexpected BMHD length");
+		return wuerr(wu_invalid_header, "BMHD length != 0x22");
 	}
 
 	struct gxa_desc *desc = ptr;
@@ -159,7 +268,7 @@ struct iff_chunk chunk) {
 	if (!fread(&nb, sizeof(nb), 1, desc->ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	desc->nb_images = endian16(nb, little_endian);
+	desc->nb_images = endian16l(nb);
 
 	++iff->table;
 	return iff_next_FILE(iff, desc->ifp, chunk);
@@ -177,11 +286,12 @@ struct wu_st gxa_init(struct gxa_desc *desc, FILE *ifp) {
 	/* GXA layout:
 		Header (BMHD)
 		Pal    (BPAL)
-		Bitmap (BBPM)
+		Bitmap (BBMP)
 		EOF    (END )
 	*/
 	desc->ifp = ifp;
 	desc->pal = NULL;
+	desc->cur = 0;
 
 	struct iff_state iff = {
 		.table = gxa_table,
@@ -226,7 +336,7 @@ const uint16_t i) {
 	tab += i*desc->h;
 	size_t written = 0;
 	for (size_t y = 0; y < desc->h; ++y) {
-		uint32_t off = endian32(tab[y], little_endian);
+		uint32_t off = endian32l(tab[y]);
 		off = u32min(off, desc->comp_len);
 		uint32_t len = u32min(desc->w, desc->comp_len - off);
 		uint8_t *dst = img->data + y*img->w;
@@ -239,18 +349,14 @@ const uint16_t i) {
 }
 
 struct wu_st bsi_load_image(struct bsi_desc *desc, struct wuimg *img, uint16_t i) {
-	if (wuimg_alloc_noverify(img)) {
-		switch (desc->compression) {
-		case bsi_none:
-			fseek(desc->ifp, desc->pos + desc->w*desc->h*i, SEEK_SET);
-			return wuerr_partial(fmt_load_raster(img, desc->ifp),
-				wuimg_size(img));
-		case bsi_scanlines:
-			return load_scanlines(desc, img, i);
-		}
-		return WUERR_HERE(wu_unsupported_feature);
+	switch (desc->compression) {
+	case bsi_none:
+		fseek(desc->ifp, desc->pos + desc->w*desc->h*i, SEEK_SET);
+		return fmt_load_raster_st(img, desc->ifp);
+	case bsi_scanlines:
+		return load_scanlines(desc, img, i);
 	}
-	return WUERR_HERE(wu_alloc_error);
+	return WUERR_HERE(wu_unsupported_feature);
 }
 
 struct wu_st bsi_set_image(struct bsi_desc *desc, struct wuimg *img) {
@@ -262,7 +368,7 @@ struct wu_st bsi_set_image(struct bsi_desc *desc, struct wuimg *img) {
 		img->bitrange = 6;
 		wuimg_palette_set(img, palette_ref(desc->pal));
 	}
-	return wuimg_verify_st(img);
+	return WU_OK;
 }
 
 static struct wu_st data(struct iff_state *iff, void *ptr,
@@ -285,7 +391,7 @@ struct iff_chunk chunk) {
 	} else {
 		desc->pos = ftell(desc->ifp);
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st cmap(struct iff_state *iff, void *ptr,
@@ -334,12 +440,12 @@ struct iff_chunk chunk) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	const enum bsi_compression compression = endian16(buf[12], little_endian);
+	const enum bsi_compression compression = endian16l(buf[12]);
 	switch (compression) {
 	case bsi_none: case bsi_scanlines:
-		desc->w = endian16(buf[2], little_endian);
-		desc->h = endian16(buf[3], little_endian);
-		desc->nb_images = endian16(buf[7], little_endian);
+		desc->w = endian16l(buf[2]);
+		desc->h = endian16l(buf[3]);
+		desc->nb_images = endian16l(buf[7]);
 		desc->compression = compression;
 		if (!desc->w || !desc->h) {
 			return wuerr(wu_invalid_header, "width or height == 0");

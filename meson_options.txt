@@ -3,7 +3,7 @@
 option('aliaspix', type : 'feature', description : 'AliasPIX and Vivid')
 option('ant', type : 'feature', description : 'Studio e.Go ANT Image')
 option('atari', type : 'feature', description : 'Atari image formats')
-option('bethesda', type : 'feature', description : 'Bethesda BSI and GXA')
+option('bethesda', type : 'feature', description : 'Bethesda BSI, GXA, and FNT')
 option('bmz', type : 'feature', description : 'GSD engine compressed BMP, requires DIB')
 option('c', type : 'feature', description : 'C code formats: DEGAS Elite Icon, XBM')
 option('c64', type : 'feature', description : 'C64 image formats')
