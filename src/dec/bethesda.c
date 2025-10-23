@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
 #include "lib/bethesda.h"
-#include "misc/math.h"
 #include "wudefs.h"
 
 static void end_fnhd(struct image_file *infile) {
@@ -106,31 +105,25 @@ static void end_bsi(struct image_file *infile) {
 static struct wu_st event_bsi(struct image_file *infile,
 const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	(void)_c;
-	struct wu_st st = WU_NO_CHANGE;
-	if (ev == ev_subcycle) {
-		struct wuimg *img = infile->sub_img + state->idx;
-		st = bsi_set_image(infile->dec_state, img);
-		if (wu_isok(st)) {
-			enum wu_error e = wuimg_verify(img);
-			if (e == wu_ok) {
-				st = bsi_load_image(infile->dec_state, img,
-					(uint16_t)state->idx);
-			} else {
-				st = WUERR_HERE(e);
-			}
-		}
+	struct wuimg *img = infile->sub_img + state->idx;
+	switch (ev) {
+	case ev_metadata:
+		return bsi_set_image(infile->dec_state, img);
+	case ev_subcycle:
+		return bsi_load_image(infile->dec_state, img,
+			(uint16_t)state->idx);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 static struct wu_st init_bsi(struct image_file *infile,
-const struct wu_conf *conf) {
+const struct wu_conf *_c) {
+	(void)_c;
 	struct bsi_desc *desc = infile->dec_state;
 	struct wu_st st = bsi_init(desc, infile->ifp);
 	if (wu_isok(st)) {
-		if (umax(desc->w, desc->h) > conf->max_img_size) {
-			st = WUERR_HERE(wu_exceeds_size_limit);
-		} else if (!alloc_sub_images(infile, desc->nb_images)) {
+		if (!alloc_sub_images(infile, desc->nb_images)) {
 			st = WUERR_HERE(wu_alloc_error);
 		} else {
 			tree_add_leaf_utf8(&infile->metadata, "Compression",
@@ -155,6 +148,7 @@ const struct image_fn gxa_fn = {
 	.end = end_gxa,
 };
 const struct image_fn bsi_fn = {
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct bsi_desc),
 	.init = init_bsi,
 	.event = event_bsi,
