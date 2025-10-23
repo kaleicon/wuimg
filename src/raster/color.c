@@ -1145,7 +1145,7 @@ cmsHPROFILE color_icc_linear_sRGB(void) {
 }
 
 bool color_space_is_sRGB(const struct color_space *cs) {
-	bool transfer_ok;
+	bool transfer_ok = false;
 	if (SRGB_PIECEWISE) {
 		if (cs->transfer == cicp_transfer_iec_61966_2_1) {
 			transfer_ok = true;
