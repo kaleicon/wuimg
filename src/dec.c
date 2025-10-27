@@ -210,10 +210,16 @@ enum wu_error dec_decode(struct image_context *image) {
 		st = call_decoder(infile, conf, desc);
 		if (st == wu_ok) {
 			if (!infile->nr) {
-				fatal_bug(__func__,
-					"No sub-images despite `OK` code");
-			}
-			if (!infile->sub_img->data) {
+				image_file_strerror_append(infile,
+					"No sub-images");
+				return wu_no_image_data;
+			} else if (!infile->sub_img
+			&& !alloc_sub_images(infile, infile->nr)) {
+				image_file_strerror_append(infile,
+					"Failed to allocate sub-images in"
+					" dec_decode()");
+				return wu_alloc_error;
+			} else if (!infile->sub_img->data) {
 				st = dec_callback(image, ev_subcycle);
 				if (st == wu_no_change) {
 					fatal_bug(__func__,

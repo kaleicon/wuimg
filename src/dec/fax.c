@@ -50,8 +50,8 @@ const struct wu_conf *_c) {
 	(void)_c;
 	struct qfx_desc *desc = infile->dec_state;
 	struct wu_st st = qfx_parse(desc, infile->map);
-	if (wu_isok(st) && !alloc_sub_images(infile, desc->nr_pages)) {
-		st = WUERR_HERE(wu_alloc_error);
+	if (wu_isok(st)) {
+		infile->nr = desc->nr_pages;
 	}
 	return st;
 }
@@ -129,12 +129,9 @@ const struct wu_conf *_c) {
 	struct apf_desc *desc = infile->dec_state;
 	struct wu_st st = apf_parse(desc, infile->map);
 	if (wu_isok(st)) {
-		if (alloc_sub_images(infile, desc->nr_pages)) {
-			tree_add_leaf_limit(&infile->metadata, "Station ID",
-				WUPTR_ARRAY(desc->station_id), NULL);
-		} else {
-			st = WUERR_HERE(wu_alloc_error);
-		}
+		infile->nr = desc->nr_pages;
+		tree_add_leaf_limit(&infile->metadata, "Station ID",
+			WUPTR_ARRAY(desc->station_id), NULL);
 	}
 	return st;
 }
