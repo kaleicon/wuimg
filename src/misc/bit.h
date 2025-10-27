@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "misc/endian.h"
 #include "misc/wustr.h"
 
 uint8_t bit_min_wordsize_log2(unsigned bits);
@@ -68,6 +69,9 @@ bool bitstrm_lsb_next(struct bitstrm *bs);
 uint32_t bitstrm_lsb_gamma_one(struct bitstrm *bs);
 
 uint32_t bitstrm_lsb_exp_golomb(struct bitstrm *bs);
+
+
+uint32_t bitstrm_peek_32(const struct bitstrm *bs, enum endianness order);
 
 
 void bitstrm_from_bytes(struct bitstrm *bs, const void *restrict mem,

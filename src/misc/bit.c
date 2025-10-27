@@ -174,22 +174,26 @@ bool bitstrm_lsb_next(struct bitstrm *bs) {
 	return bit;
 }
 
-static uint32_t bitstrm_lsb_peek_32(struct bitstrm *bs) {
+static uint32_t bitstrm_lsb_peek_32_norev(const struct bitstrm *bs) {
 	size_t i = bs->pos / 8;
 	size_t o = bs->pos % 8;
 	const uint32_t f = buf_endian32l(bs->buf + i);
 	return (uint32_t)bs->buf[i+4] << 1 << (31 - o) | f >> o;
 }
 
+static uint32_t bitstrm_lsb_peek_32(const struct bitstrm *bs) {
+	return bit_rev32(bitstrm_lsb_peek_32_norev(bs));
+}
+
 static uint32_t lsb_code_adv(struct bitstrm *bs) {
-	const uint32_t bits = bitstrm_lsb_peek_32(bs);
+	const uint32_t bits = bitstrm_lsb_peek_32_norev(bs);
 	const uint32_t z = bit_ctz32(bits);
 	bs->pos += z+1;
 	return z;
 }
 
 static uint32_t lsb_code_val(struct bitstrm *bs, const uint32_t z) {
-	const uint32_t val = bitstrm_lsb_peek_32(bs);
+	const uint32_t val = bitstrm_lsb_peek_32_norev(bs);
 	bitstrm_seek(bs, z);
 	return val;
 }
@@ -214,6 +218,13 @@ uint32_t bitstrm_lsb_exp_golomb(struct bitstrm *bs) {
 	const uint32_t val = lsb_code_val(bs, z);
 	const uint32_t mask = (1u << z) - 1;
 	return (val & mask) + mask;
+}
+
+
+uint32_t bitstrm_peek_32(const struct bitstrm *bs, const enum endianness e) {
+	return e == big_endian
+		? bitstrm_msb_peek_32(bs)
+		: bitstrm_lsb_peek_32(bs);
 }
 
 

@@ -89,6 +89,9 @@ endforeach
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
 
+fax_table = custom_target('fax_table',
+	output : ['fax_table.h', 'fax_table.c'],
+	command : [python, files('misc/fax.py'), '@OUTPUT@'])
 src_list += [custom_target('dec_maps',
 		input : dec_enable,
 		output : 'dec_maps.c',
@@ -112,6 +115,7 @@ src_list += [custom_target('dec_maps',
 
 	'enc/pam.c',
 
+	fax_table[1],
 	'misc/bit.c',
 	'misc/common.c',
 	'misc/decomp.c',

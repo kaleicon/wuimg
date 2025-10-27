@@ -633,6 +633,34 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"fax": {
+		"apf": FmtInfo("Async Professional Fax",
+			ext="apf",
+			magic=b"APF10\x1a",
+		),
+		"faxx": FmtInfo("IFF-FAXX, GPFax (FAX3)",
+			ext=("fax", "faxx"),
+			mask=(
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+				b"FORM" b"\0\0\0\0" b"FAXX",
+
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+				b"FORM" b"\0\0\0\0" b"FAX3",
+			),
+		),
+		"g3": FmtInfo("Raw Group3/T.4 One-dimensional MSB stream",
+			match=("fax", "g3"),
+		),
+		"qfx": FmtInfo("Quick Link II fax",
+			ext=("cph", "cpn", "fax", "qfx"),
+			magic=b"QLIIFAX ",
+		),
+		"zyxel": FmtInfo("ZyXEL fax",
+			ext="fax",
+			magic=b"ZyXEL\0\x02\0",
+		),
+	},
+
 	"g00": {
 		"g00": FmtInfo("RealLive engine G00",
 			match="g00"
@@ -1432,7 +1460,7 @@ DEC_MAP: DecMap = {
 
 	"tiff": {
 		"tiff": FmtInfo("Tag Image File Format, BigTIFF",
-			ext=("g3n", "tif", "tiff") + RAW_TIFF_EXTS,
+			ext=("g3", "g3n", "tif", "tiff") + RAW_TIFF_EXTS,
 			magic=TIFF_MAGICS,
 			mime=("tiff", "x-tiff-multipage") + RAW_TIFF_MIMES,
 		),
