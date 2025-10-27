@@ -1,35 +1,36 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
 #include "wudefs.h"
-#include "misc/math.h"
 #include "lib/px.h"
 
-static enum wu_error px_callback(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf;
+static struct wu_st event_px(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
+	(void)_c;
 	const uint32_t idx = (uint32_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
-	return (ev == ev_subcycle)
-		? px_decode(infile->dec_state, img, idx)
-		: wu_no_change;
+	switch (ev) {
+	case ev_metadata: return px_set_info(infile->dec_state, img);
+	case ev_subcycle: return px_get_image(infile->dec_state, img, idx);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
-static enum wu_error px_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_px(struct image_file *infile,
+const struct wu_conf *_c) {
+	(void)_c;
 	struct px_desc *desc = infile->dec_state;
-	const enum wu_error err = px_parse(desc, infile->ifp);
-	if (err == wu_ok) {
-		if (umax(desc->w, desc->h) > wuconf->max_img_size) {
-			return wu_exceeds_size_limit;
-		}
-		return alloc_sub_images(infile, desc->nr)
-			? wu_ok : wu_alloc_error;
+	const struct wu_st st = px_parse(desc, infile->map);
+	if (wu_isok(st)) {
+		infile->nr = desc->nr;
 	}
-	return err;
+	return st;
 }
 
 const struct image_fn px_fn = {
+	.mmap = true,
 	.state_size = sizeof(struct px_desc),
-	.dec = px_dec,
-	.callback = px_callback,
+	.alloc_on_subcycle = true,
+	.init = init_px,
+	.event = event_px,
 };

@@ -1,88 +1,92 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
 #include "misc/endian.h"
+#include "misc/math.h"
 #include "px.h"
 
-static void dec_wrap(const struct px_desc *desc, struct wuimg *img,
-const uint16_t *map) {
+static uint32_t dec_wrap(const struct px_desc *desc, struct wuimg *img,
+const uint8_t *map) {
 	/* Tile struct:
 		Offset  Type    Name
 		0       u8      Width
 		1       u8      Height
-		2       u32     Pixels[(TileSize+2) * (TileSize+2)]
+		2       u32     Pixels[Width * Height]
 
-	 * Width and Height are the amount of meaningful data in the tile.
+	 * Width and Height are the amount of data in the tile.
 	 * However, two pixels on each axis are repeated from a neighbor tile
 	 * (or from the last row or column if it's a border tile), so only
 	 * data under (Width - 2) and (Height - 2) is used when compositing.
 	*/
 	uint32_t *data = (uint32_t *)img->data;
-	const uint32_t *end = data + img->w * img->h;
-
 	const struct px_tile *tile = &desc->tile;
 
-	uint8_t wh[2];
 	const size_t tsize = tile->size + 2;
-	const long tile_bytes = (long)(sizeof(wh) + tsize * tsize * sizeof(*data));
-	const long tile_off = tile->data_start - tile_bytes;
-	for (uint16_t y = 0; y < tile->h; ++y) {
-		for (uint16_t x = 0; x < tile->w; ++x) {
-			const int idx = tile->w * y + x;
-			const long nb = endian16(map[idx], little_endian);
+	const size_t tile_bytes = 2 + tsize * tsize * sizeof(*data);
+	const size_t tile_off = tile->data_start - tile_bytes;
+	uint32_t r = 0;
+	for (uint16_t ty = 0; ty < tile->y; ++ty) {
+		for (uint16_t tx = 0; tx < tile->x; ++tx) {
+			const size_t y = ty*tile->size;
+			const size_t x = tx*tile->size;
+			if (y >= img->h || x >= img->w) {
+				continue;
+			}
+			const size_t idx = (size_t)tile->x * ty + tx;
+			const uint16_t nb = buf_endian16l(map + idx*sizeof(nb));
 			if (!nb) {
+				++r;
 				continue;
 			}
 
-			fseek(desc->ifp, tile_off + nb * tile_bytes, SEEK_SET);
-			if (!fread(wh, sizeof(wh), 1, desc->ifp) || wh[0] < 2) {
+			const size_t off = tile_off + nb*tile_bytes;
+			const uint8_t *wh = mp_slice_at(&desc->mp, off, 2);
+			if (!wh) {
 				continue;
 			}
 
-			uint32_t *base = data
-				+ y * tile->size * img->w
-				+ x * tile->size;
-			for (uint8_t ty = 0; ty < wh[1] - 2; ++ty) {
-				uint32_t *d = base + img->w * ty;
-				if (d + wh[0] - 2 > end) {
-					break;
-				}
-				fread(d, wh[0] - 2, sizeof(*d), desc->ifp);
-				fseek(desc->ifp, 2 * sizeof(*d), SEEK_CUR);
+			const size_t tw = wh[0];
+			const size_t th = wh[1];
+			struct wuptr src = mp_avail_at(&desc->mp, off+2, tw*th);
+
+			if (tw <= 2 || th <= 2) {
+				continue;
 			}
+			const size_t max_w = zumin(tw - 2, img->w - x);
+			const size_t max_h = zumin(zumin(th - 2, img->h - y),
+				src.len / tw);
+			uint32_t *row = data + y*img->w + x;
+			for (uint8_t ry = 0; ry < max_h; ++ry) {
+				memcpy(row + ry*img->w,
+					src.ptr + ry * tw * sizeof(*row),
+					max_w * sizeof(*row));
+			}
+			r += max_h > 0;
 		}
 	}
+	return r;
 }
 
-enum wu_error px_decode(const struct px_desc *desc, struct wuimg *img,
+struct wu_st px_get_image(const struct px_desc *desc, struct wuimg *img,
 const uint32_t i) {
+	const size_t map_len = desc->tile.x * desc->tile.y * sizeof(uint16_t);
+	const uint8_t *map = mp_slice_at(&desc->mp, 32 + i*map_len, map_len);
+	if (map) {
+		return wuerr_partial(dec_wrap(desc, img, map),
+			(size_t)desc->tile.x * desc->tile.y);
+	}
+	return WUERR_HERE(wu_unexpected_eof);
+}
+
+struct wu_st px_set_info(const struct px_desc *desc, struct wuimg *img) {
 	img->w = desc->w;
 	img->h = desc->h;
 	img->channels = 4;
 	img->bitdepth = 8;
 	img->layout = pix_bgra;
-
-	enum wu_error err = wu_decoding_error;
-	uint16_t *map;
-	const size_t map_len = desc->tile.w * desc->tile.h * sizeof(*map);
-	map = malloc(map_len);
-	if (map) {
-		fseek(desc->ifp, 32 + (long)(i*map_len), SEEK_SET);
-		if (fread(map, map_len, 1, desc->ifp)) {
-			err = wuimg_alloc(img);
-			if (err == wu_ok) {
-				dec_wrap(desc, img, map);
-			}
-		} else {
-			err = wu_unexpected_eof;
-		}
-		free(map);
-	} else {
-		err = wu_alloc_error;
-	}
-	return err;
+	return WU_OK;
 }
 
-enum wu_error px_parse(struct px_desc *desc, FILE *ifp) {
+struct wu_st px_parse(struct px_desc *desc, struct wuptr mem) {
 	/* PX header:
 		Offset  Size    Name
 		0       u32     ImageCount
@@ -95,35 +99,35 @@ enum wu_error px_parse(struct px_desc *desc, FILE *ifp) {
 		24      u8      ???[4]
 		28      u16     TilesX      // Tiles in X direction
 		30      u16     TilesY      // Tiles in Y direction
-		32      u16     TileOffsets[TilesX*TilesY]
+		32      u16     TileOffsets[ImageCount][TilesX*TilesY]
 	*/
-	uint16_t buf[16];
-	if (!fread(buf, sizeof(buf), 1, ifp)) {
-		return wu_unexpected_eof;
+	*desc = (struct px_desc) {
+		.mp = mp_wuptr(mem),
+	};
+	const size_t header_size = 32;
+	const uint8_t *buf = mp_slice(&desc->mp, header_size);
+	if (!buf) {
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	*desc = (struct px_desc) {
-		.ifp = ifp,
-		.nr = buf_endian32(buf, little_endian),
-		.type = endian16(buf[8], little_endian),
-		.w = endian16(buf[10], little_endian),
-		.h = endian16(buf[11], little_endian),
-		.tile.size = buf_endian32(buf + 2, little_endian),
-		.tile.w = endian16(buf[14], little_endian),
-		.tile.h = endian16(buf[15], little_endian),
-	};
-	const long tiles = desc->tile.w * desc->tile.h;
-	desc->tile.data_start = (long)sizeof(buf) + desc->nr * (tiles * 2);
-
+	desc->nr = buf_endian32l(buf);
+	desc->type = buf_endian16l(buf + 16);
+	desc->w = buf_endian16l(buf + 20);
+	desc->h = buf_endian16l(buf + 22);
+	desc->tile.size = buf_endian32l(buf + 4);
+	desc->tile.x = buf_endian16l(buf + 28);
+	desc->tile.y = buf_endian16l(buf + 30);
+	const size_t tiles = desc->tile.x * desc->tile.y;
+	desc->tile.data_start = header_size + desc->nr * tiles * sizeof(uint16_t);
 	switch (desc->type) {
 	case px_type_0c:
-		if (endian16(buf[9], little_endian) != 32) {
-			return wu_invalid_header;
+		if (buf_endian16l(buf + 18) != 32) {
+			return wuerr(wu_invalid_header, "bitdepth != 32");
 		}
-		return desc->nr ? wu_ok : wu_no_image_data;
+		return WU_OK;
 	case px_type_01: case px_type_04: case px_type_07:
 	case px_type_40: case px_type_44: case px_type_90:
-		return wu_unsupported_feature;
+		break;
 	}
-	return wu_invalid_header;
+	return wuerr(wu_unsupported_feature, "image type != 0x0c");
 }

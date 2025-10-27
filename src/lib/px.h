@@ -3,6 +3,7 @@
 #ifndef LIB_PX
 #define LIB_PX
 
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 enum px_type {
@@ -17,21 +18,23 @@ enum px_type {
 
 struct px_tile {
 	uint32_t size;
-	uint16_t w, h;
-	long data_start;
+	uint16_t x, y;
+	size_t data_start;
 };
 
 struct px_desc {
-	FILE *ifp;
+	struct mparser mp;
 	uint32_t nr;
 	uint16_t w, h;
 	enum px_type type:16;
 	struct px_tile tile;
 };
 
-enum wu_error px_decode(const struct px_desc *desc, struct wuimg *img,
+struct wu_st px_get_image(const struct px_desc *desc, struct wuimg *img,
 uint32_t idx);
 
-enum wu_error px_parse(struct px_desc *desc, FILE *ifp);
+struct wu_st px_set_info(const struct px_desc *desc, struct wuimg *img);
+
+struct wu_st px_parse(struct px_desc *desc, struct wuptr mem);
 
 #endif /* LIB_PX */
