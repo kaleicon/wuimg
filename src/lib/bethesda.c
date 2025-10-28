@@ -79,6 +79,7 @@ struct iff_chunk chunk) {
 
 	struct fnhd_desc *desc = ptr;
 	const struct wu_st st = load_pal(&desc->pal, desc->ifp, chunk.len);
+	desc->pal->color[0].a = 0;
 	iff->table += 2;
 	iff->table_len = 1;
 	return wu_isok(st) ? iff_next_FILE(iff, desc->ifp, chunk) : st;

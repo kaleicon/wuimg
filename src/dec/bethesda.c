@@ -38,14 +38,10 @@ const struct wu_conf *_c) {
 	struct fnhd_desc *desc = infile->dec_state;
 	struct wu_st st = fnhd_init(desc, infile->ifp);
 	if (wu_isok(st)) {
-		if (alloc_sub_images(infile, desc->glyphs)) {
-			const struct wuptr comm = wuptr_mem(desc->desc,
-				strnlen((char *)desc->desc, sizeof(desc->desc)));
-			tree_add_leaf_len(&infile->metadata, "Comment", comm,
-				NULL);
-		} else {
-			st = WUERR_HERE(wu_alloc_error);
-		}
+		infile->nr = desc->glyphs;
+		const struct wuptr comm = wuptr_mem(desc->desc,
+			strnlen((char *)desc->desc, sizeof(desc->desc)));
+		tree_add_leaf_len(&infile->metadata, "Comment", comm, NULL);
 	}
 	return st;
 }
@@ -86,13 +82,9 @@ const struct wu_conf *_c) {
 	struct gxa_desc *desc = infile->dec_state;
 	struct wu_st st = gxa_init(desc, infile->ifp);
 	if (wu_isok(st)) {
-		if (alloc_sub_images(infile, desc->nb_images)) {
-			tree_add_leaf_len(&infile->metadata, "Comment",
-				wuptr_mem(desc->comment, desc->comment_len),
-				NULL);
-		} else {
-			st = WUERR_HERE(wu_alloc_error);
-		}
+		infile->nr = desc->nb_images;
+		tree_add_leaf_len(&infile->metadata, "Comment",
+			wuptr_mem(desc->comment, desc->comment_len), NULL);
 	}
 	return st;
 }
@@ -123,14 +115,11 @@ const struct wu_conf *_c) {
 	struct bsi_desc *desc = infile->dec_state;
 	struct wu_st st = bsi_init(desc, infile->ifp);
 	if (wu_isok(st)) {
-		if (!alloc_sub_images(infile, desc->nb_images)) {
-			st = WUERR_HERE(wu_alloc_error);
-		} else {
-			tree_add_leaf_utf8(&infile->metadata, "Compression",
-				bsi_compression_str(desc->compression));
-			tree_add_leaf_utf8(&infile->metadata, "Type",
-				desc->bsif ? "BSIF" : "IFHD");
-		}
+		infile->nr = desc->nb_images;
+		tree_add_leaf_utf8(&infile->metadata, "Compression",
+			bsi_compression_str(desc->compression));
+		tree_add_leaf_utf8(&infile->metadata, "Type",
+			desc->bsif ? "BSIF" : "IFHD");
 	}
 	return st;
 }
