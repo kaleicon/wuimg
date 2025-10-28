@@ -1521,11 +1521,10 @@ def graph_or_hex(i: int, readable: bool) -> str:
 def u8_array(b: str | bytes, limit: int = 0, readable: bool = False) -> str:
 	if isinstance(b, str):
 		b = b.encode()
-	if not limit:
-		limit = len(b)
-	elif len(b) > limit:
+	if limit and len(b) > limit:
 		eprint('array exceeds length limit. will truncate:', b)
-	return ','.join(map(lambda i: graph_or_hex(i, readable), b[0:limit]))
+		b = b[:limit]
+	return ','.join(map(lambda i: graph_or_hex(i, readable), b))
 
 class FmtMIME(typing.NamedTuple):
 	mime: str
