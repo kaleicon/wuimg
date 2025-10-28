@@ -50,10 +50,10 @@ struct pnm_desc {
 
 const char * pnm_type_str(enum pnm_type type);
 
-size_t pnm_decode(struct pnm_desc *desc, struct wuimg *img, size_t i);
+struct wu_st pnm_get_raster(struct pnm_desc *desc, struct wuimg *img, size_t i);
 
-enum wu_error pnm_parse_header(struct pnm_desc *desc);
+struct wu_st pnm_get_info(struct pnm_desc *desc, struct wuimg *img);
 
-enum wu_error pnm_open_file(struct pnm_desc *desc, FILE *ifp, bool maybe_mtv);
+struct wu_st pnm_parse(struct pnm_desc *desc, FILE *ifp, bool maybe_mtv);
 
 #endif /* LIB_PNM */

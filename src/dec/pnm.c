@@ -3,39 +3,35 @@
 #include "wudefs.h"
 #include "lib/pnm.h"
 
-static enum wu_error pnm_callback(struct image_file *infile,
+static struct wu_st event_pnm(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
 	(void)wuconf;
-	if (ev == ev_subcycle) {
-		const size_t i = (size_t)state->idx;
-		struct wuimg *img = infile->sub_img + i;
-		return pnm_decode(infile->dec_state, img, i)
-			? wu_ok : wu_decoding_error;
+	const size_t i = (size_t)state->idx;
+	struct wuimg *img = infile->sub_img + i;
+	switch (ev) {
+	case ev_metadata: return pnm_get_info(infile->dec_state, img);
+	case ev_subcycle: return pnm_get_raster(infile->dec_state, img, i);
+	default: break;
 	}
-	return wu_no_change;
+	return WU_NO_CHANGE;
 }
 
-static enum wu_error pnm_dec(struct image_file *infile,
+static struct wu_st init_pnm(struct image_file *infile,
 const struct wu_conf *wuconf) {
+	(void)wuconf;
 	struct pnm_desc *desc = infile->dec_state;
-	enum wu_error st = pnm_open_file(desc, infile->ifp, true);
-	if (st == wu_ok) {
-		st = pnm_parse_header(desc);
-		if (st == wu_ok) {
-			tree_add_leaf_utf8(&infile->metadata, "Type",
-				pnm_type_str(desc->type));
-			if (!wuimg_exceeds_limit(&desc->rast, wuconf)) {
-				return alloc_sub_images(infile, desc->nr)
-					? wu_ok : wu_alloc_error;
-			}
-			return wu_exceeds_size_limit;
-		}
+	struct wu_st st = pnm_parse(desc, infile->ifp, true);
+	if (wu_isok(st)) {
+		tree_add_leaf_utf8(&infile->metadata, "Type",
+			pnm_type_str(desc->type));
+		infile->nr = desc->nr;
 	}
 	return st;
 }
 
 const struct image_fn pnm_fn = {
 	.state_size = sizeof(struct pnm_desc),
-	.dec = pnm_dec,
-	.callback = pnm_callback,
+	.alloc_on_subcycle = true,
+	.init = init_pnm,
+	.event = event_pnm,
 };

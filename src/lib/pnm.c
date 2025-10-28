@@ -37,14 +37,14 @@ const char * pnm_type_str(const enum pnm_type type) {
 	return "???";
 }
 
-static size_t scale_raster(const struct pnm_desc *desc, void *restrict dst,
-const size_t elems) {
+static struct wu_st scale_raster(const struct pnm_desc *desc, void *restrict dst,
+const size_t read, const size_t dims) {
 	switch (desc->type) {
 	case pnm_color_pfm:
 	case pnm_gray_pfm:
 		if (desc->scale.pfm != 1.0f) {
 			float *out = dst;
-			for (size_t i = 0; i < elems; ++i) {
+			for (size_t i = 0; i < read; ++i) {
 				out[i] *= desc->scale.pfm;
 			}
 		}
@@ -56,15 +56,15 @@ const size_t elems) {
 	default:
 		if (!desc->skip_scaling) {
 			const uint8_t depth = desc->bytedepth * 8;
-			remap_scale(dst, dst, elems,
+			remap_scale(dst, dst, read,
 				remap_scale_info(desc->scale.pnm, depth,
 					desc->rast.attr));
 		}
 	}
-	return elems;
+	return wuerr_partial(read, dims);
 }
 
-static size_t plain_ppm_decode(const struct pnm_desc *restrict desc,
+static struct wu_st plain_ppm_decode(const struct pnm_desc *restrict desc,
 void *restrict dst, const size_t dims) {
 	size_t cnt = 0;
 	size_t len = file_remaining(desc->ifp);
@@ -76,13 +76,14 @@ void *restrict dst, const size_t dims) {
 
 		const uint32_t range = (desc->scale.pnm > UCHAR_MAX)
 			? USHRT_MAX : UCHAR_MAX;
-		const uint32_t scale = (range << 16) / desc->scale.pnm + 1;
+		const uint32_t scale = (desc->skip_scaling)
+			? (1 << 16)
+			: (range << 16) / desc->scale.pnm + 1;
 		const size_t digits = 6;
 		mp_skip_space_unsafe(&mp);
 		while (cnt < dims) {
 			uintmax_t val;
-			if (!mp_scan_uint(&mp, digits, &val)
-			|| val > desc->scale.pnm) {
+			if (!mp_scan_uint(&mp, digits, &val)) {
 				break;
 			}
 
@@ -101,10 +102,10 @@ void *restrict dst, const size_t dims) {
 		}
 		free(src);
 	}
-	return cnt;
+	return wuerr_partial(cnt, dims);
 }
 
-static size_t plain_pbm_decode(const struct pnm_desc *restrict desc,
+static struct wu_st plain_pbm_decode(const struct pnm_desc *restrict desc,
 unsigned char *restrict dst, const size_t dims) {
 	size_t cnt = 0;
 	unsigned char *buf = malloc(BUFSIZ);
@@ -121,11 +122,8 @@ unsigned char *restrict dst, const size_t dims) {
 				case '\f': case '\r': case ' ':
 					continue;
 				case '0':
-					dst[cnt] = 0xff;
-					++cnt;
-					continue;
 				case '1':
-					dst[cnt] = 0x00;
+					dst[cnt] = !(buf[i] & 1);
 					++cnt;
 					continue;
 				default: break;
@@ -135,14 +133,11 @@ unsigned char *restrict dst, const size_t dims) {
 		} while (cnt < dims);
 		free(buf);
 	}
-	return cnt;
+	return wuerr_partial(cnt, dims);
 }
 
-size_t pnm_decode(struct pnm_desc *desc, struct wuimg *img,
+struct wu_st pnm_get_raster(struct pnm_desc *desc, struct wuimg *img,
 const size_t i) {
-	if (!wuimg_clone(img, &desc->rast) || !wuimg_alloc_noverify(img)) {
-		return 0;
-	}
 	const size_t size = wuimg_size(img);
 	fseek(desc->ifp, desc->data_start + (long)(size * i), SEEK_SET);
 
@@ -155,13 +150,9 @@ const size_t i) {
 	case pnm_plain_ppm:
 		return plain_ppm_decode(desc, dst, elems);
 	case pnm_xv_thumb:
-		if (!wuimg_bitfield_from_id(img, 0x332)) {
-			return 0;
-		}
-		// fallthrough
 	case pnm_raw_pbm:
 	case pnm_mtv:
-		return fread(dst, 1, size, desc->ifp);
+		return fmt_load_raster_st(img, desc->ifp);
 	case pnm_raw_pgm:
 	case pnm_raw_ppm:
 	case pnm_pam:
@@ -172,22 +163,28 @@ const size_t i) {
 	case pnm_pgx:
 		break;
 	}
-	return scale_raster(desc, dst,
-		fmt_load_raster_swap(img, desc->ifp, desc->endian) / desc->bytedepth);
+	const size_t r = fmt_load_raster_swap(img, desc->ifp, desc->endian);
+	return scale_raster(desc, dst, r / desc->bytedepth, elems);
+}
+
+struct wu_st pnm_get_info(struct pnm_desc *desc, struct wuimg *img) {
+	if (!wuimg_clone(img, &desc->rast)) {
+		// Shouldn't happen, but whatever
+		return WUERR_HERE(wu_alloc_error);
+	} else if (desc->type == pnm_xv_thumb
+	&& !wuimg_bitfield_from_id(img, 0x332)) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+	return WU_OK;
 }
 
 /* Header parsing */
-
 static size_t count_images(struct pnm_desc *desc) {
 	const size_t total = file_remaining(desc->ifp);
 	return zuceildiv(total, wuimg_size(&desc->rast));
 }
 
-static enum wu_error setup_desc(struct pnm_desc *desc) {
-	if (!desc->rast.w || !desc->rast.h) {
-		return wu_invalid_header;
-	}
-
+static struct wu_st setup_desc(struct pnm_desc *desc) {
 	bool is_half = false;
 	switch (desc->type) {
 	case pnm_raw_pbm:
@@ -195,13 +192,17 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		desc->rast.attr = pix_inverted;
 		break;
 	case pnm_plain_pbm:
+		desc->rast.bitdepth = 8;
+		desc->rast.bitrange = 1;
+		break;
 	case pnm_mtv:
 		desc->scale.pnm = 0xff;
 		desc->rast.bitdepth = 8;
 		break;
 	case pnm_xv_thumb:
 		if (desc->scale.pnm != 255) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"xv: scale != 255");
 		}
 		desc->rast.bitdepth = 8;
 		desc->rast.layout = pix_bgra;
@@ -211,7 +212,8 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		// fallthrough
 	case pnm_color_pfm: case pnm_gray_pfm:
 		if (!isnormal(desc->scale.pfm)) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"pfm/phm: scale is not a normal float");
 		}
 		desc->rast.bitdepth = is_half ? 16 : 32;
 		desc->rast.attr = pix_float;
@@ -220,22 +222,23 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 			? little_endian : big_endian;
 		desc->scale.pfm = fabsf(desc->scale.pfm);
 		if (is_half && desc->scale.pfm != 1.0f) {
-			return wu_unsupported_feature;
+			return wuerr(wu_unsupported_feature,
+				"phm: half-floats with scale != 1");
 		}
 		break;
 	case pnm_raw_pgm: case pnm_raw_ppm:
 	case pnm_pam:
-		;const uint32_t ones = bit_cto32(desc->scale.pnm);
+	case pnm_plain_pgm: case pnm_plain_ppm:
+		if (!desc->scale.pnm || desc->scale.pnm > USHRT_MAX) {
+			return wuerr(wu_invalid_header,
+				"pgm/ppm/pam: scale < 1 || scale > 0xffff");
+		}
+		desc->rast.bitdepth = desc->scale.pnm > UCHAR_MAX ? 16 : 8;
+		const uint32_t ones = bit_cto32(desc->scale.pnm);
 		if (desc->scale.pnm >> ones == 0) {
 			desc->rast.bitrange = (uint8_t)ones;
 			desc->skip_scaling = true;
 		}
-		// fallthrough
-	case pnm_plain_pgm: case pnm_plain_ppm:
-		if (!desc->scale.pnm || desc->scale.pnm > USHRT_MAX) {
-			return wu_invalid_header;
-		}
-		desc->rast.bitdepth = desc->scale.pnm > UCHAR_MAX ? 16 : 8;
 		break;
 	case pnm_pgx:
 		desc->skip_scaling = true;
@@ -255,13 +258,13 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 		break;
 	case pnm_pam:
 		if (!desc->rast.channels) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "pam: no channels");
 		}
 	}
 
 	const enum wu_error st = wuimg_verify(&desc->rast);
 	if (st != wu_ok) {
-		return st;
+		return WUERR_HERE(st);
 	}
 	desc->bytedepth = desc->rast.bitdepth / 8;
 	desc->data_start = ftell(desc->ifp);
@@ -270,17 +273,17 @@ static enum wu_error setup_desc(struct pnm_desc *desc) {
 	case pnm_raw_pbm: case pnm_raw_pgm: case pnm_raw_ppm:
 		desc->nr = count_images(desc);
 		if (!desc->nr) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 		break;
 	default:
 		desc->nr = 1;
 		break;
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-static enum wu_error parse_pgx(struct pnm_desc *desc) {
+static struct wu_st parse_pgx(struct pnm_desc *desc) {
 	/* PGX header as regex:
 	 *	PG (ML|LM) [+-]? ?[0-9]+ [0-9]+ [0-9]+\r?\n
 	 *	0   1       2      3      4      5     6
@@ -316,9 +319,11 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 		"%zu" "%2[\r\n]",
 		order, sign, &depth, &desc->rast.w, &desc->rast.h, newline);
 	if (match == EOF) {
-		return wu_unexpected_eof;
-	} else if (match != 6 || !depth || depth > 32) {
-		return wu_invalid_header;
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (match != 6) {
+		return wuerr(wu_invalid_header, "header fields missing");
+	} else if (depth < 1 || depth > 32) {
+		return wuerr(wu_invalid_header, "depth < 1 or depth > 32");
 	}
 
 	if (!strcmp(order, "ML")) {
@@ -326,34 +331,36 @@ static enum wu_error parse_pgx(struct pnm_desc *desc) {
 	} else if (!strcmp(order, "LM")) {
 		desc->endian = little_endian;
 	} else {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "bad endianness spec");
 	}
 
 	if (sign[0] != ' ') {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "expected space before sign");
 	}
 	switch (sign[1]) {
 	case ' ':
 		if (sign[2]) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"too many spaces before depth field");
 		}
 		break;
 	case '+': case '-':
 		if (sign[2] != 0 && sign[2] != ' ') {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "repeated sign");
 		}
 		break;
 	}
 
 	switch (newline[0]) {
 	case '\n':
-		if (newline[1]) { // either "\n\n" or "\n\r"
+		if (newline[1]) { // '\n' or '\r' that's part of raster
 			ungetc(newline[1], desc->ifp);
 		}
 		break;
 	case '\r':
-		if (newline[1] != '\n') { // either "\r\r" or just "\r"
-			return wu_invalid_header;
+		if (newline[1] != '\n') {
+			return wuerr(wu_invalid_header,
+				"bad end of header line");
 		}
 	}
 
@@ -416,12 +423,12 @@ static enum wu_error skip_line(FILE *ifp) {
 	return st;
 }
 
-static enum wu_error match_pam_token(struct pnm_desc *desc, const char *token,
+static struct wu_st match_pam_token(struct pnm_desc *desc, const char *token,
 bool *finished) {
 	unsigned long maxval;
-	enum wu_error st;
 	if (token[0] == '#' || !strcmp("TUPLTYPE", token)) {
-		return skip_line(desc->ifp);
+		// Ignore comments and TUPLTYPE
+		return WUERR_CHECK(skip_line(desc->ifp));
 	} else if (!strcmp("WIDTH", token) || !strcmp("HEIGHT", token)) {
 		maxval = SIZE_MAX;
 	} else if (!strcmp("DEPTH", token)) {
@@ -430,40 +437,41 @@ bool *finished) {
 		maxval = USHRT_MAX;
 	} else if (!strcmp("ENDHDR", token)) {
 		*finished = true;
-		return next_is_newline(desc->ifp);
+		return WUERR_CHECK(next_is_newline(desc->ifp));
 	} else {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "unknown pam token");
 	}
 	unsigned long val;
-	st = scan_ul(desc->ifp, &val, maxval);
-	if (st == wu_ok) {
+	enum wu_error e = scan_ul(desc->ifp, &val, maxval);
+	if (e == wu_ok) {
 		switch (token[0]) {
 		case 'W': desc->rast.w = (size_t)val; break;
 		case 'H': desc->rast.h = (size_t)val; break;
 		case 'D': desc->rast.channels = (uint8_t)val; break;
 		case 'M': desc->scale.pnm = (unsigned)val; break;
 		}
-		return next_is_newline(desc->ifp);
+		return WUERR_CHECK(next_is_newline(desc->ifp));
 	}
-	return st;
+	return wuerr(e, "bad pam number");
 }
 
-static enum wu_error parse_arbitrary_map(struct pnm_desc *desc) {
+static struct wu_st parse_arbitrary_map(struct pnm_desc *desc) {
 	bool finished = false;
 	do {
 		char token[10];
 		switch (fscanf(desc->ifp, "%9s", token)) {
 		case 1:
-			;const enum wu_error st = match_pam_token(desc, token,
+			;const struct wu_st st = match_pam_token(desc, token,
 				&finished);
-			if (st != wu_ok) {
+			if (!wu_isok(st)) {
 				return st;
 			}
 			break;
 		case EOF:
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"unexpected whitespace before pam token");
 		}
 	} while (!finished);
 	return setup_desc(desc);
@@ -488,21 +496,20 @@ static enum wu_error skip_any_junk(struct pnm_desc *desc, bool *space) {
 			}
 		} else if (c == '\n') {
 			comment = false;
+			*space = true;
 		}
 	}
 }
 
-static enum wu_error parse_any_map(struct pnm_desc *desc) {
-	int fields;
+static struct wu_st parse_any_map(struct pnm_desc *desc) {
+	int fields = 3;
 	switch (desc->type) {
 	case pnm_plain_pbm:
 	case pnm_raw_pbm:
 	case pnm_mtv:
 		fields = 2;
 		break;
-	default:
-		fields = 3;
-		break;
+	default: break;
 	}
 
 	bool read_float = false;
@@ -514,29 +521,32 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 	default: break;
 	}
 
+	/* This format would be a lot easier to parse if it didn't allow for
+	 * for comments to appear anywhere. */
 	for (int seen = 0; seen < fields; ++seen) {
 		bool space = false;
-		const enum wu_error status = skip_any_junk(desc, &space);
+		enum wu_error status = skip_any_junk(desc, &space);
 		if (status != wu_ok) {
-			return status;
+			return wuerr(status,
+				"some non-comment junk between number fields");
 		} else if (seen > 0 && !space) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"no separating whitespace between fields");
 		}
 
 		unsigned long val = 0;
-		enum wu_error st;
 		bool parse_float = read_float && seen == 2;
 		if (seen == 2) {
 			if (parse_float) {
-				st = scan_f(desc->ifp, &desc->scale.pfm);
+				status = scan_f(desc->ifp, &desc->scale.pfm);
 			} else {
-				st = scan_ul(desc->ifp, &val, USHRT_MAX);
+				status = scan_ul(desc->ifp, &val, USHRT_MAX);
 			}
 		} else {
-			st = scan_ul(desc->ifp, &val, SIZE_MAX);
+			status = scan_ul(desc->ifp, &val, SIZE_MAX);
 		}
-		if (st != wu_ok) {
-			return st;
+		if (status != wu_ok) {
+			return wuerr(status, "bad integer/float");
 		} else if (!parse_float) {
 			switch (seen) {
 			case 0: desc->rast.w = (size_t)val; break;
@@ -547,16 +557,16 @@ static enum wu_error parse_any_map(struct pnm_desc *desc) {
 
 	}
 
-	const int c = getc(desc->ifp);
-	if (c == EOF) {
-		return wu_unexpected_eof;
-	} else if (isspace(c)) {
-		return setup_desc(desc);
+	// After that, what follows should be image data
+	switch(getc(desc->ifp)) {
+	case '\n': return setup_desc(desc);
+	case EOF: return WUERR_HERE(wu_unexpected_eof);
+	default: break;
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "expected newline before raster data");
 }
 
-enum wu_error pnm_parse_header(struct pnm_desc *desc) {
+static struct wu_st pnm_parse_header(struct pnm_desc *desc) {
 	switch (desc->type) {
 	case pnm_pam:
 		return parse_arbitrary_map(desc);
@@ -568,7 +578,7 @@ enum wu_error pnm_parse_header(struct pnm_desc *desc) {
 	return parse_any_map(desc);
 }
 
-static enum wu_error disambiguate(struct pnm_desc *desc,
+static enum wu_error disambiguate7(struct pnm_desc *desc,
 const unsigned char next_char) {
 	if (next_char == '\n') {
 		desc->type = pnm_pam;
@@ -581,7 +591,7 @@ const unsigned char next_char) {
 	return wu_invalid_signature;
 }
 
-enum wu_error pnm_open_file(struct pnm_desc *desc, FILE *ifp,
+struct wu_st pnm_parse(struct pnm_desc *desc, FILE *ifp,
 const bool maybe_mtv) {
 	*desc = (struct pnm_desc) {
 		.ifp = ifp,
@@ -592,15 +602,15 @@ const bool maybe_mtv) {
 	if (fread(magic, sizeof(magic), 1, ifp)) {
 		if (magic[0] == 'P') {
 			if (magic[1] == '7') {
-				const enum wu_error st = disambiguate(desc,
+				const enum wu_error e = disambiguate7(desc,
 					magic[2]);
-				if (st != wu_ok) {
-					return st;
+				if (e != wu_ok) {
+					return WUERR_HERE(e);
 				}
 			} else {
 				if (!isspace(magic[2])
 				|| (magic[1] == pnm_pgx && magic[2] != ' ')) {
-					return wu_invalid_signature;
+					return WUERR_HERE(wu_invalid_signature);
 				}
 				desc->type = (enum pnm_type)magic[1];
 			}
@@ -619,16 +629,16 @@ const bool maybe_mtv) {
 			case pnm_color_phm:
 			case pnm_gray_phm:
 			case pnm_pgx:
-				return wu_ok;
+				return pnm_parse_header(desc);
 			case pnm_mtv: // Invalid here
 				break;
 			}
 		} else if (maybe_mtv) {
 			fseek(desc->ifp, -(long)sizeof(magic), SEEK_CUR);
 			desc->type = pnm_mtv;
-			return wu_ok;
+			return pnm_parse_header(desc);
 		}
-		return wu_invalid_signature;
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
