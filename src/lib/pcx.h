@@ -23,6 +23,8 @@ struct pcx_desc {
 	bool compressed;
 	bool palette_type;
 
+	uint16_t xstart, ystart;
+	uint16_t xend, yend;
 	uint16_t horz_res, vert_res;
 	uint16_t horz_screen, vert_screen;
 
@@ -34,22 +36,18 @@ const char * pcx_version_string(enum pcx_version ver);
 
 struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img);
 
-struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img);
-
-struct wu_st pcx_open_file(struct pcx_desc *desc, struct wuptr mem,
-bool word_for_dos_variant);
+struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img,
+struct wuptr mem, bool word_for_dos_variant);
 
 
 struct dcx_desc {
 	struct mparser mp;
+	struct wuptr data;
 	size_t nr;
-	uint32_t *off;
 };
 
-void dcx_free(struct dcx_desc *desc);
-
 struct wu_st dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
-uint32_t i);
+struct wuimg *img, uint32_t i);
 
 struct wu_st dcx_open_file(struct dcx_desc *desc, struct wuptr mem);
 

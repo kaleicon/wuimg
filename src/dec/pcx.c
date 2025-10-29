@@ -3,6 +3,7 @@
 #include <ctype.h>
 
 #include "lib/pcx.h"
+#include "misc/common.h"
 #include "wudefs.h"
 
 static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
@@ -27,9 +28,21 @@ static void add_metadata(const struct pcx_desc *desc, struct wuimg *img) {
 	tree_add_leaf_utf8(metadata, "Format version",
 		pcx_version_string(desc->version));
 
-	tree_bud_leaf_u(metadata, "Planes", img->channels);
-	tree_bud_leaf_u(metadata, "Bitdepth", img->bitdepth);
-	tree_bud_leaf_u(metadata, "Palette mode", desc->palette_type);
+	const struct wutree_sap sap[] = {
+		{"Planes", {wu_leaf_unsigned, {.u = img->channels}}},
+		{"Bitdepth", {wu_leaf_unsigned, {.u = img->bitdepth}}},
+		{"XStart", {wu_leaf_unsigned, {.u = desc->xstart}}},
+		{"YStart", {wu_leaf_unsigned, {.u = desc->ystart}}},
+		{"XEnd", {wu_leaf_unsigned, {.u = desc->xend}}},
+		{"YEnd", {wu_leaf_unsigned, {.u = desc->yend}}},
+		{"Palette mode", {wu_leaf_unsigned, {.u = desc->palette_type}}},
+		{"Horizontal resolution", {wu_leaf_unsigned, {.u = desc->horz_res}}},
+		{"Vertical resolution", {wu_leaf_unsigned, {.u = desc->vert_res}}},
+		{"Horizontal screen size", {wu_leaf_unsigned, {.u = desc->horz_screen}}},
+		{"Vertical screen size", {wu_leaf_unsigned, {.u = desc->vert_screen}}},
+	};
+	const bool scrsize = desc->horz_screen || desc->vert_screen;
+	tree_bud_leaves(metadata, sap, ARRAY_LEN(sap) - (scrsize ? 0 : 2));
 
 	if (desc->entries <= 4) {
 		const void *garbage = desc->file_pal + 12;
@@ -44,36 +57,26 @@ static void add_metadata(const struct pcx_desc *desc, struct wuimg *img) {
 
 static struct wu_st common_pcx(struct pcx_desc *desc, struct wuimg *img,
 const struct wu_conf *wuconf) {
-	const struct wu_st st = pcx_read_header(desc, img);
+	if (wuimg_exceeds_limit(img, wuconf)) {
+		return WUERR_HERE(wu_exceeds_size_limit);
+	}
+	add_metadata(desc, img);
+	return pcx_decode(desc, img);
+}
+
+static struct wu_st init_pcx(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	struct pcx_desc desc;
+	struct wu_st st = pcx_read_header(&desc, infile->sub_img, infile->map,
+		true);
 	if (wu_isok(st)) {
-		add_metadata(desc, img);
-		if (wuimg_exceeds_limit(img, wuconf)) {
-			return wuerr(wu_exceeds_size_limit, NULL);
-		}
-		return pcx_decode(desc, img);
+		st = common_pcx(&desc, infile->sub_img, wuconf);
 	}
 	return st;
 }
 
-static enum wu_error pcx_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	struct pcx_desc desc;
-	struct wu_st st = pcx_open_file(&desc, infile->map, true);
-	if (wu_isok(st)) {
-		st = common_pcx(&desc, infile->sub_img, wuconf);
-	}
-	if (st.msg) {
-		image_file_strerror_append(infile, st.msg);
-	}
-	return st.st;
-}
 
-
-static void dcx_end(struct image_file *infile) {
-	dcx_free(infile->dec_state);
-}
-
-static enum wu_error dcx_callback(struct image_file *infile,
+static struct wu_st event_dcx(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_subcycle) {
 		struct dcx_desc *desc = infile->dec_state;
@@ -81,41 +84,34 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 		struct wuimg *img = infile->sub_img + i;
 
 		struct pcx_desc pcx;
-		struct wu_st st = dcx_set_file(desc, &pcx, i);
+		struct wu_st st = dcx_set_file(desc, &pcx, img, i);
 		if (wu_isok(st)) {
 			st = common_pcx(&pcx, img, wuconf);
 		}
-		if (st.msg) {
-			image_file_strerror_append(infile, st.msg);
-		}
-		return st.st;
+		return st;
 	}
-	return wu_no_change;
+	return WU_NO_CHANGE;
 }
 
-static enum wu_error dcx_dec(struct image_file *infile,
+static struct wu_st init_dcx(struct image_file *infile,
 const struct wu_conf *wuconf) {
 	(void)wuconf;
 	struct dcx_desc *desc = infile->dec_state;
 	const struct wu_st st = dcx_open_file(desc, infile->map);
 	if (wu_isok(st)) {
-		return alloc_sub_images(infile, desc->nr) ? wu_ok : wu_alloc_error;
+		infile->nr = desc->nr;
 	}
-	if (st.msg) {
-		image_file_strerror_append(infile, st.msg);
-	}
-	return st.st;
+	return st;
 }
 
 const struct image_fn pcx_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.dec = pcx_dec,
+	.init = init_pcx,
 };
 const struct image_fn dcx_fn = {
 	.mmap = true,
 	.state_size = sizeof(struct dcx_desc),
-	.dec = dcx_dec,
-	.callback = dcx_callback,
-	.end = dcx_end,
+	.init = init_dcx,
+	.event = event_dcx,
 };

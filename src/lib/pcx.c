@@ -177,7 +177,7 @@ const size_t rle_remaining) {
 
 	enum pcx_palette_source pal_src = pcx_no_pal;
 	if (img->bitdepth == 8) {
-		if (rle_remaining > VGA_PAL_LEN && *vga_id == 0x0c) {
+		if (rle_remaining >= VGA_PAL_LEN + 1 && *vga_id == 0x0c) {
 			pal_src = pcx_vga;
 		}
 	} else {
@@ -243,20 +243,21 @@ const unsigned char *restrict rle, const size_t rle_len) {
 struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 	const size_t dims = strip_length(img->w, img->bitdepth, img->align_sh)
 		* img->channels * img->h;
-	img->data = malloc(dims);
+	img->data = calloc(dims, 1);
 	if (!img->data) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
-	desc->mp.pos = 128;
 	struct wuptr src;
 	size_t r;
 	if (desc->compressed) {
 		// e.g. 0xc1 0x01 0xc1 0x02 -> 0x01 0x02
-		src = mp_avail(&desc->mp, dims*2 + VGA_PAL_LEN + 1);
+		src = mp_avail_at(&desc->mp, desc->mp.pos,
+			VGA_PAL_LEN + 1 + dims*2);
 		r = rle_decode(img->data, dims, src.ptr, src.len);
 	} else {
-		src = mp_avail(&desc->mp, dims + VGA_PAL_LEN + 1);
+		src = mp_avail_at(&desc->mp, desc->mp.pos,
+			VGA_PAL_LEN + 1 + dims);
 		r = zumin(dims, src.len);
 		memcpy(img->data, src.ptr, r);
 	}
@@ -278,66 +279,95 @@ struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 	return wuerr(wuimg_verify(img), NULL);
 }
 
-struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
+struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img,
+const struct wuptr mem, const bool word_for_dos_variant) {
 	/* Header continuation
 		Offset  Size    Name
-		0       BYTE    BitsPerPixel;   // 1, 2, 4, or 8
-		1       WORD    XStart;
-		3       WORD    YStart;
-		5       WORD    XEnd;
-		7       WORD    YEnd;
-		9       WORD    HorzRes;
-		11      WORD    VertRes;
-		13      BYTE    EGAPalette[48];
-		61      BYTE    Reserved1;
-		62      BYTE    NumBitPlanes;   // 1, 2, 3, or 4
-		63      WORD    BytesPerLine;   // Line of a single plane
-		65      WORD    PaletteType;    // CGA palette interpretation. [1]
-		67      WORD    HorzScreenSize; // [2]
-		69      WORD    VertScreenSize; // [2]
-		71      BYTE    Reserved2[54];
-		125
+		0	BYTE	IdentifierByte; // Always 0x0A [1]
+		1	BYTE	Version;
+		2	BYTE	Encoding;       // 0 or 1 [2]
+		3       BYTE    BitsPerPixel;   // 1, 2, 4, or 8
+		4       WORD    XStart;         // [3]
+		6       WORD    YStart;
+		8       WORD    XEnd;
+		10      WORD    YEnd;
+		12      WORD    HorzRes;
+		14      WORD    VertRes;
+		16      BYTE    EGAPalette[48];
+		64      BYTE    Reserved1;
+		65      BYTE    NumBitPlanes;   // 1, 2, 3, or 4
+		66      WORD    BytesPerLine;   // Line of a single plane
+		68      WORD    PaletteType;    // CGA palette interpretation. [4]
+		70      WORD    HorzScreenSize; // [5]
+		72      WORD    VertScreenSize; // [5]
+		74      BYTE    Reserved2[54];
+		128
 
-	[1] Many docs claim it can only be 1 or 2, but apparently it was 0
-		before PC Paintbrush 4.0, and any of the three afterwards.[3]
-		What practical difference 1 or 2 make it's not yet clear to me.
-		Non-CGA files meanwhile can have random values.
-	[2] Fields added after version 4.0, previously part of Reserved2.[3]
-	[3] As befitting this format, version 4 is just when the version field
-		stopped being updated.
+	 * [1] Except for Word for DOS screen captures, where it's 0xCD
+	 * [2] The only valid value is 1, meaning RLE encoding, and virtually
+	 *     all files in the wild follow this. Alas, imagemagick allows
+	 *     creating uncompressed files with Encoding = 0, while
+	 *     graphicsmagick does that by default.
+	 * [3] Start and End of display. Both are inclusive, so Width is
+	 *     (End + 1 - Start)... in theory.
+	 * [4] Many docs claim it can only be 1 or 2, but apparently it was 0
+	 *     before PC Paintbrush 4.0, and any of the three afterwards.
+	 *     What practical difference 1 or 2 make it's not yet clear to me.
+	 *     Non-CGA files meanwhile can have random values.
+	 * [5] Fields added after version 4.0, previously part of Reserved2.[6]
+	 * [6] As befitting this format, version 4 is just when the version
+	 *     field stopped being updated.
 	*/
 
-	const uint8_t *hdr = mp_slice(&desc->mp, 71);
+	*desc = (struct pcx_desc) {
+		.mp = mp_wuptr(mem),
+	};
+	const uint8_t *hdr = mp_slice(&desc->mp, 128);
 	if (!hdr) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	desc->horz_res = buf_endian16(hdr + 9, little_endian);
-	desc->vert_res = buf_endian16(hdr + 11, little_endian);
-	desc->file_pal = hdr + 13;
-	desc->palette_type = buf_endian16(hdr + 65, little_endian);
-	desc->horz_screen = buf_endian16(hdr + 67, little_endian);
-	desc->vert_screen = buf_endian16(hdr + 69, little_endian);
-
-	const uint8_t bitdepth = hdr[0];
-	const uint16_t xstart = buf_endian16(hdr + 1, little_endian);
-	const uint16_t ystart = buf_endian16(hdr + 3, little_endian);
-	const uint16_t xend = buf_endian16(hdr + 5, little_endian);
-	const uint16_t yend = buf_endian16(hdr + 7, little_endian);
-	const uint8_t planes = hdr[62];
-	const uint16_t bytes_per_line = buf_endian16(hdr + 63, little_endian);
-
-	desc->entries = 1 << (planes * bitdepth);
-	const int height = yend - ystart + 1;
-	int width = xend - xstart + 1;
-	if (width < 1) {
-		/* Kludge for the broken files in
-		 * https://github.com/jsummers/deark/issues/79 */
-		width = xend;
+	switch (hdr[0]) {
+	case 0x0a:
+		if (hdr[2] > 1) {
+			return wuerr(wu_invalid_header, "unknown compression");
+		}
+		switch (hdr[1]) {
+		case pcx_ver25:
+		case pcx_ver28_egapal:
+		case pcx_ver28_nopal:
+		case pcx_paintbrush:
+		case pcx_ver30:
+			break;
+		default: return wuerr(wu_invalid_header, "unknown version");
+		}
+		break;
+	case 0xcd:
+		if (!word_for_dos_variant || hdr[1] != pcx_ver30 || hdr[2] != 1) {
+			return wuerr(wu_invalid_signature,
+				"bad parameters for Word for DOS capture");
+		}
+		break;
+	default:
+		return wuerr(wu_invalid_signature,
+			"neither a PCX nor Word for DOS screen capture");
 	}
-	if (width < 1 || height < 1) {
-		return wuerr(wu_invalid_header, "Zero or negative dimensions");
-	}
+	desc->version = hdr[1];
+	desc->compressed = hdr[2];
+	desc->xstart = buf_endian16l(hdr + 4);
+	desc->ystart = buf_endian16l(hdr + 6);
+	desc->xend = buf_endian16l(hdr + 8);
+	desc->yend = buf_endian16l(hdr + 10);
+	desc->horz_res = buf_endian16l(hdr + 12);
+	desc->vert_res = buf_endian16l(hdr + 14);
+	desc->file_pal = hdr + 16;
+	desc->palette_type = buf_endian16l(hdr + 68);
+	desc->horz_screen = buf_endian16l(hdr + 70);
+	desc->vert_screen = buf_endian16l(hdr + 72);
+
+	const uint8_t bitdepth = hdr[3];
+	const uint8_t planes = hdr[65];
+	const uint16_t bytes_per_line = buf_endian16l(hdr + 66);
 
 	switch (bitdepth) {
 	case 1: case 8:
@@ -355,78 +385,58 @@ struct wu_st pcx_read_header(struct pcx_desc *desc, struct wuimg *img) {
 	default:
 		return wuerr(wu_invalid_header, "Bad bitdepth");
 	}
-	img->w = (size_t)width;
+	desc->entries = 1 << (planes * bitdepth);
+	const int height = desc->yend - desc->ystart + 1;
+	if (height < 1) {
+		return wuerr(wu_invalid_header, "Zero or negative height");
+	}
+	int width = desc->xend - desc->xstart + 1;
+	if (width < 1) {
+		/* Kludge for the broken files in
+		 * https://github.com/jsummers/deark/issues/79
+		 * Oh, but the height they do get right. */
+		width = desc->xend + 1;
+	}
+
 	img->h = (size_t)height;
 	img->channels = planes;
 	img->bitdepth = bitdepth;
-	img->align_sh = strip_alignment(bytes_per_line, img->w, img->bitdepth);
-	if (img->align_sh < 0 || img->align_sh > 3) {
-		return wuerr(wu_invalid_header, "Bizarre alignment");
-	}
-	return WU_OK;
-}
-
-struct wu_st pcx_open_file(struct pcx_desc *desc, const struct wuptr mem,
-const bool word_for_dos_variant) {
-	/* PCX header:
-		Offset  Size    Name
-		0	BYTE	IdentifierByte; // Always 0x0A [1]
-		1	BYTE	Version;
-		2	BYTE	Encoding;       // 0 or 1 [2]
-		3
-	 * [1] Except for Word for DOS screen captures, where it's 0xCD
-	 * [*] The only valid value is 1, meaning RLE encoding, and virtually
-	 *     all files in the wild follow this. Alas, imagemagick allows
-	 *     creating uncompressed files with Encoding = 0, while
-	 *     graphicsmagick does that by default.
-	*/
-
-	desc->mp = mp_wuptr(mem);
-	if (desc->mp.len > 128) {
-		const uint8_t *sig = mp_slice(&desc->mp, 3);
-		if (sig) {
-			desc->version = sig[1];
-			desc->compressed = sig[2];
-			switch (sig[0]) {
-			case 0x0a:
-				if (sig[2] <= 1) {
-					switch (sig[1]) {
-					case pcx_ver25:
-					case pcx_ver28_egapal:
-					case pcx_ver28_nopal:
-					case pcx_paintbrush:
-					case pcx_ver30:
-						return WU_OK;
-					}
-				}
-				break;
-			case 0xcd:
-				if (word_for_dos_variant && sig[2] == 1
-				&& sig[1] == pcx_ver30) {
-					return WU_OK;
-				}
-				break;
-			}
-			return WUERR_HERE(wu_invalid_signature);
+	if (width >= 1) {
+		img->w = (size_t)width;
+		img->align_sh = strip_alignment(bytes_per_line, img->w,
+			img->bitdepth);
+		if (img->align_sh >= 0 && img->align_sh <= 3) {
+			return WU_OK;
 		}
 	}
-	return WUERR_HERE(wu_unexpected_eof);
+	/* Fix for 1631815840_SAMPLE.DCX, 1652638334_SAMPLE.DCX, and SAMPLE.DCX
+	 * These files calculate width simply as (xend - xstart), resulting in
+	 * -1 alignment error.
+	 * For these, and any other broken file we may find, make up some width
+	 * even if it ends up showing padding.
+	 * The files also get the height right. They're doing this to annoy
+	 * us, I swear. */
+	img->w = (size_t)(bytes_per_line * (8/bitdepth));
+	img->align_sh = 0;
+	return wuerr(wu_ok,
+		"got bad header width, calculating from line stride."
+		" padding might be shown");
 }
 
 
-void dcx_free(struct dcx_desc *desc) {
-	free(desc->off);
+/* DCX */
+static uint32_t dcx_get_offset(const struct dcx_desc *desc, const size_t i) {
+	return buf_endian32l(desc->data.ptr + i*sizeof(uint32_t));
 }
 
 struct wu_st dcx_set_file(const struct dcx_desc *dcx, struct pcx_desc *pcx,
-const uint32_t i) {
-	if (i < dcx->nr) {
-		return pcx_open_file(pcx, wuptr_mem(
-			dcx->mp.mem + dcx->off[i],
-			dcx->off[i + 1] - dcx->off[i]
-		), false);
-	}
-	return WUERR_HERE(wu_invalid_params);
+struct wuimg *img, const uint32_t i) {
+	const uint32_t off = dcx_get_offset(dcx, i);
+	const size_t next = i + 1 < dcx->nr
+		? dcx_get_offset(dcx, i+1)
+		: dcx->mp.len;
+	return pcx_read_header(pcx, img,
+		mp_avail_at(&dcx->mp, off, next - off), false);
 }
 
 struct wu_st dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
@@ -443,35 +453,27 @@ struct wu_st dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
 	*/
 
 	d->mp = mp_wuptr(mem);
-	d->off = NULL;
 	const uint8_t sig[] = {0xb1, 0x68, 0xde, 0x3a};
-	enum wu_error st = fmt_sigcmp_mem(sig, sizeof(sig), &d->mp);
-	if (st == wu_ok) {
-		const struct wuptr p = mp_remaining(&d->mp);
-		const size_t max = zumin(1024, p.len/4);
-		d->off = malloc(sizeof(*d->off) * (max + 1));
-		if (d->off) {
-			uint32_t prev = 0;
-			for (d->nr = 0; d->nr < max; ++d->nr) {
-				const uint32_t pos = buf_endian32(
-					p.ptr + d->nr*4, little_endian);
-				if (!pos || pos >= d->mp.len
-				|| (d->nr && pos <= prev)) {
-					break;
-				}
-				d->off[d->nr] = pos;
-				prev = pos;
-			}
-			if (d->nr) {
-				d->off[d->nr] = (uint32_t)d->mp.len;
-			} else {
-				st = wu_unexpected_eof;
-			}
-		} else {
-			st = wu_alloc_error;
-		}
+	size_t max = 1023;
+	d->data = mp_avail(&d->mp, max * sizeof(uint32_t) + sizeof(sig));
+	if (d->data.len <= sizeof(sig)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(d->data.ptr, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return WUERR_HERE(st);
+	d->data.ptr += sizeof(sig);
+	d->data.len -= sizeof(sig);
+
+	max = zumin(d->data.len / sizeof(uint32_t), max);
+	uint32_t prev_off = 0;
+	for (d->nr = 0; d->nr < max; ++d->nr) {
+		const uint32_t off = dcx_get_offset(d, d->nr);
+		if (off <= prev_off || off >= d->mp.len) {
+			break;
+		}
+		prev_off = off;
+	}
+	return WU_OK;
 }
 
 /* Ok bye */
