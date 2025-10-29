@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2021 kaleido
 #include "misc/bit.h"
 #include "misc/file.h"
+#include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "raster/unpack.h"
@@ -11,11 +12,6 @@ enum dib_rle_marker {
         dib_end_of_scan_line = 0,
         dib_end_of_rle = 1,
         dib_delta = 2,
-};
-
-struct ico_buf {
-	size_t stride, size;
-	unsigned char *buf;
 };
 
 static bool valid_os2_2x(const uint32_t size) {
@@ -300,7 +296,7 @@ uint8_t *buf) {
 				return WUERR_HERE(wu_alloc_error);
 			}
 		}
-		return wuok();
+		return WU_OK;
 	case dib_profile_linked:
 	case dib_profile_embedded:
 		if (desc->type < dib_v5_header) {
@@ -323,7 +319,7 @@ uint8_t *buf) {
 			desc->lcs.intent = intent;
 		}
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static enum wu_error load_mask(struct dib_desc *desc, struct wuimg *img,
@@ -354,7 +350,7 @@ const uint32_t colors) {
 		}
 	}
 	wuimg_aspect_ratio(img, vert_res, horz_res);
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st validate_os2_header(struct dib_desc *desc,
@@ -481,7 +477,7 @@ const uint16_t depth, const uint32_t compression, const uint32_t rle_size) {
 	desc->depth = (unsigned char)depth;
 	desc->compression = (unsigned char)compression;
 	desc->size = rle_size;
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st dib_parse_os2_2x_header(struct dib_desc *desc,
@@ -740,7 +736,7 @@ struct wuimg *img) {
 		return wuerr(wu_unsupported_feature,
 			"Unsupported compression type");
 	}
-	return wuok();
+	return WU_OK;
 }
 
 struct wu_st dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
@@ -788,7 +784,7 @@ const enum trit is_os2) {
 		if (fread(sig, sizeof(sig), 1, ifp)) {
 			if (!memcmp(bmp, sig, sizeof(sig))
 			|| !memcmp(jigsaw, sig, sizeof(sig))) {
-				return wuok();
+				return WU_OK;
 			} else if (!memcmp(ddb, sig, sizeof(sig))) {
 				return wuerr(wu_unsupported_feature,
 					"DDB files not supported");
@@ -797,7 +793,7 @@ const enum trit is_os2) {
 		}
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	return wuok();
+	return WU_OK;
 }
 
 /* ICO functions */
@@ -813,52 +809,52 @@ void ico_cleanup(struct ico_desc *desc) {
 	free(desc->images);
 }
 
-static void ico_buf_sizes(struct ico_buf *buf, const struct wuimg *img,
+struct ico_buf {
+	size_t stride, read, lines;
+	unsigned char *buf;
+};
+
+static size_t ico_buf_sizes(struct ico_buf *buf, const struct wuimg *img,
 const unsigned char depth) {
 	buf->stride = strip_length(img->w, depth, 2);
-	buf->size = buf->stride * img->h;
+	buf->lines = 0;
+	return buf->stride * img->h;
 }
 
-static bool ico_buf_load(struct ico_buf *buf, const struct wuimg *img,
+static void ico_buf_load(struct ico_buf *buf, const struct wuimg *img,
 const unsigned char depth, FILE *ifp) {
-	ico_buf_sizes(buf, img, depth);
-	buf->buf = malloc(buf->size);
+	const size_t size = ico_buf_sizes(buf, img, depth);
+	buf->buf = calloc(size, 1);
 	if (buf->buf) {
-		return fread(buf->buf, 1, buf->size, ifp);
+		buf->read = fread(buf->buf, 1, size, ifp);
+		buf->lines = zuceildiv(buf->read, buf->stride);
 	}
-	return false;
 }
 
-static void ico_32bit_dec(const struct wuimg *img, struct pix_rgba8 *dst,
-const uint8_t *and, const size_t and_stride) {
-	for (size_t y = 0; y < img->h; ++y) {
-		struct pix_rgba8 *d = dst + img->w * y;
-		const uint8_t *a = and + and_stride * y;
-		for (size_t x = 0; x < img->w; ++x) {
-			if (bit_get(a, x)) {
-				d[x].a = 0;
-			}
+static void ico_32bit_join_line(struct pix_rgba8 *dst,
+const uint8_t *restrict and, const size_t w) {
+	for (size_t x = 0; x < w; ++x) {
+		if (bit_get(and, x)) {
+			dst[x].a = 0;
 		}
 	}
 }
 
-static bool ico_word_dec(const struct dib_desc *dib, struct wuimg *img) {
-	struct ico_buf dst, and;
-	if (!ico_buf_load(&dst, img, dib->depth, dib->ifp)) {
-		return false;
-	}
-	img->data = dst.buf;
+static struct wu_st ico_word_dec(const struct dib_desc *dib, struct wuimg *img) {
+	const size_t read = fmt_load_raster(img, dib->ifp);
+	struct ico_buf and = {0};
+	ico_buf_load(&and, img, 1, dib->ifp);
 
-	if (!ico_buf_load(&and, img, 1, dib->ifp)) {
-		return false;
-	}
-
+	const size_t dst_stride = wuimg_stride(img);
 	if (dib->depth == 32) {
-		ico_32bit_dec(img, (struct pix_rgba8 *)dst.buf, and.buf,
-			and.stride);
+		for (size_t y = 0; y < and.lines; ++y) {
+			ico_32bit_join_line(
+				(struct pix_rgba8 *)(img->data + dst_stride*y),
+				and.buf + and.stride*y, img->w);
+		}
 	} else {
-		for (size_t y = 0; y < img->h; ++y) {
-			uint16_t *d = (uint16_t *)(dst.buf + dst.stride * y);
+		for (size_t y = 0; y < and.lines; ++y) {
+			uint16_t *d = (uint16_t *)(img->data + dst_stride*y);
 			const uint8_t *a = and.buf + and.stride * y;
 			for (size_t x = 0; x < img->w; ++x) {
 				const bool bit = bit_get(a, x);
@@ -869,80 +865,86 @@ static bool ico_word_dec(const struct dib_desc *dib, struct wuimg *img) {
 		}
 	}
 	free(and.buf);
-	return true;
+	return wuerr_partial(read + and.read, (dst_stride + and.stride)*img->h);
 }
 
 static bool ico_truecolor_expands(const struct dib_desc *dib,
-struct wuimg *img, struct ico_buf *restrict dst, struct ico_buf *restrict xor,
-struct ico_buf *restrict and) {
-	ico_buf_sizes(dst, img, 32);
-	ico_buf_sizes(xor, img, dib->depth);
-	ico_buf_sizes(and, img, 1);
+struct wuimg *img, struct ico_buf *restrict xor, struct ico_buf *restrict and) {
+	const size_t x_size = ico_buf_sizes(xor, img, dib->depth);
+	const size_t a_size = ico_buf_sizes(and, img, 1);
 
-	dst->buf = malloc(dst->size);
-	if (!dst->buf) {
-		return false;
-	}
-
-	xor->buf = malloc(xor->size + and->size);
+	xor->buf = calloc(x_size + a_size, 1);
 	if (!xor->buf) {
-		free(dst->buf);
 		return false;
 	}
-	and->buf = xor->buf + xor->size;
-	return fread(xor->buf, 1, xor->size + and->size, dib->ifp) != 0;
+	and->buf = xor->buf + x_size;
+	const size_t total = fread(xor->buf, 1, x_size + a_size, dib->ifp);
+	xor->read = zumin(total, x_size);
+	xor->lines = zuceildiv(xor->read, xor->stride);
+	and->read = zumax(total, x_size) - x_size;
+	and->lines = zuceildiv(and->read, and->stride);
+	return true;
 }
 
-static bool ico_24bit_dec(const struct dib_desc *dib, struct wuimg *img) {
-	struct ico_buf dst, xor, and;
-	if (!ico_truecolor_expands(dib, img, &dst, &xor, &and)) {
-		return false;
+static struct wu_st ico_24bit_dec(const struct dib_desc *dib,
+struct wuimg *img) {
+	struct ico_buf xor, and;
+	if (!ico_truecolor_expands(dib, img, &xor, &and)) {
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	for (size_t y = 0; y < img->h; ++y) {
-		uint8_t *d = dst.buf + dst.stride * y;
+	struct pix_rgba8 *dst = (struct pix_rgba8 *)img->data;
+	size_t y = 0;
+	while (y < and.lines) {
+		struct pix_rgba8 *d = dst + img->w * y;
 		uint8_t *s = xor.buf + xor.stride * y;
 		uint8_t *a = and.buf + and.stride * y;
 		for (size_t x = 0; x < img->w; ++x) {
-			memcpy(d + x*4, s + x*3, 4);
-			d[x*4 + 3] = (bit_get(a, x) ? 0x00 : 0xff);
+			memcpy(d + x, s + x*3, 4);
+			d[x].a = (bit_get(a, x) ? 0x00 : 0xff);
+		}
+		++y;
+	}
+	while (y < xor.lines) {
+		struct pix_rgba8 *d = dst + img->w * y;
+		uint8_t *s = xor.buf + xor.stride * y;
+		for (size_t x = 0; x < img->w; ++x) {
+			memcpy(d + x, s + x*3, 4);
 		}
 	}
 	free(xor.buf);
-	img->data = dst.buf;
-	return true;
+	return wuerr_partial(xor.read + and.read,
+		(xor.stride + and.stride)*img->h);
 }
 
-static bool ico_palette_dec(struct dib_desc *dib, struct wuimg *img) {
-	struct ico_buf dst, xor, and;
-	if (!ico_truecolor_expands(dib, img, &dst, &xor, &and)) {
-		return false;
+static struct wu_st ico_palette_dec(struct dib_desc *dib, struct wuimg *img,
+const struct palette *pal) {
+	struct ico_buf xor, and;
+	if (!ico_truecolor_expands(dib, img, &xor, &and)) {
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	const size_t instride = strip_length(img->w, dib->depth, 2);
-	const size_t outstride = strip_length(img->w, 32, 2);
-	for (size_t y = 0; y < img->h; ++y) {
-		palette_expand(dst.buf + outstride*y, xor.buf + instride*y,
-			img->u.palette, img->w, dib->depth);
+	for (size_t y = 0; y < xor.lines; ++y) {
+		struct pix_rgba8 *d = (struct pix_rgba8 *)img->data + img->w*y;
+		palette_expand(d, xor.buf + xor.stride*y, pal, img->w,
+			dib->depth);
+		if (y < and.lines) {
+			ico_32bit_join_line(d, and.buf + and.stride*y, img->w);
+		}
 	}
-	ico_32bit_dec(img, (struct pix_rgba8 *)dst.buf, and.buf, and.stride);
-
 	free(xor.buf);
-	palette_unref(img->u.palette);
-	img->u.palette = NULL;
-	img->mode = image_mode_raw;
-	img->data = dst.buf;
-	return true;
+	return wuerr_partial(xor.read + and.read,
+		(xor.stride + and.stride)*img->h);
 }
 
-bool ico_decode(struct ico_desc *desc, struct wuimg *img) {
+struct wu_st ico_decode(struct ico_desc *desc, struct wuimg *img) {
 	struct dib_desc *dib = &desc->dib;
 	switch (dib->depth) {
 	case 16: case 32:
 		return ico_word_dec(dib, img);
 	case 24: return ico_24bit_dec(dib, img);
 	}
-	return ico_palette_dec(dib, img);
+	return ico_palette_dec(dib, img, desc->pal);
 }
 
 struct wu_st ico_set_image(struct ico_desc *desc, struct wuimg *img,
@@ -956,6 +958,8 @@ const uint16_t i) {
 	 * the Mask names. The AND mask sets whether the background is cleared
 	 * first as in a AND operation (so it is the opposite of Alpha)
 	 * while the XOR mask contains the normal image data. */
+	palette_unref(desc->pal);
+	desc->pal = NULL;
 	struct dib_desc *dib = &desc->dib;
 	fseek(dib->ifp, desc->images[i].offset, SEEK_SET);
 	dib->is_os2 = trit_false;
@@ -973,15 +977,20 @@ const uint16_t i) {
 	if (dib->depth != 16) {
 		img->bitdepth = 8;
 		img->channels = 4;
+		if (img->mode == image_mode_palette) {
+			desc->pal = img->u.palette;
+			img->u.palette = NULL;
+			img->mode = image_mode_raw;
+		}
 	}
 
 	if (dib->type == dib_info_header && dib->compression == dib_no_compression) {
-		return wuok();
+		return WU_OK;
 	}
 	return wuerr(wu_invalid_header, "Bad DIB type in ICO file");
 }
 
-struct wu_st ico_parse_header(struct ico_desc *desc) {
+static struct wu_st ico_read_entries(struct ico_desc *desc) {
 	/* ICO dir entry (one for each image, stored continuously):
 		Offset  Size    Name
 		0       BYTE    Width
@@ -1028,10 +1037,10 @@ struct wu_st ico_parse_header(struct ico_desc *desc) {
 		desc->images[i].size = buf_endian32l(buf + 8);
 		desc->images[i].offset = buf_endian32l(buf + 12);
 	}
-	return wuok();
+	return WU_OK;
 }
 
-struct wu_st ico_open_file(struct ico_desc *desc, FILE *ifp) {
+struct wu_st ico_parse(struct ico_desc *desc, FILE *ifp) {
 	/* ICO header:
 		Offset  Size    Name
 		0       i16     Reserved   // 0
@@ -1053,7 +1062,7 @@ struct wu_st ico_open_file(struct ico_desc *desc, FILE *ifp) {
 				desc->dib.ifp = ifp;
 				desc->type = type;
 				desc->count = count;
-				return wuok();
+				return ico_read_entries(desc);
 			}
 		}
 		return WUERR_HERE(wu_invalid_header);

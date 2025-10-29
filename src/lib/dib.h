@@ -120,6 +120,7 @@ struct ico_image {
 struct ico_desc {
 	struct dib_desc dib;
 	struct ico_image *images;
+	struct palette *pal;
 	uint16_t count;
 	enum ico_type type:16;
 };
@@ -128,13 +129,11 @@ const char * ico_type_str(enum ico_type);
 
 void ico_cleanup(struct ico_desc *desc);
 
-bool ico_decode(struct ico_desc *desc, struct wuimg *img);
+struct wu_st ico_decode(struct ico_desc *desc, struct wuimg *img);
 
 struct wu_st ico_set_image(struct ico_desc *desc, struct wuimg *img, uint16_t i);
 
-struct wu_st ico_parse_header(struct ico_desc *desc);
-
-struct wu_st ico_open_file(struct ico_desc *desc, FILE *ifp);
+struct wu_st ico_parse(struct ico_desc *desc, FILE *ifp);
 
 
 #include "dec_enable.def"

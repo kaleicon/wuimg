@@ -575,6 +575,10 @@ DEC_MAP: DecMap = {
 
 		"ico": FmtInfo("Microsoft Icon",
 			match=("cur", "ico"),
+			magic=(
+				b"\0\0\x01\0", # Icon
+				b"\0\0\x02\0", # Cursor
+			),
 			mime=("vnd.microsoft.icon", "x-icon")
 		),
 	},
