@@ -5,11 +5,19 @@
 
 static struct wu_st init_g3(struct image_file *infile,
 const struct wu_conf *conf) {
+	enum fax_coding std;
 	enum endianness order;
-	g3_1d_default_init(infile->sub_img, infile->map, &order);
+	if (!g3_identify(infile->sub_img, infile->map, &std, &order)) {
+		return wuerr(wu_unknown_file_type,
+			"couldn't identify g3 stream parameters");
+	}
 	enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
 	if (e == wu_ok) {
-		return g3_1d_decode(infile->sub_img, infile->map, order);
+		tree_add_leaf_utf8(&infile->metadata, "Coding",
+			fax_coding_str(std));
+		tree_add_leaf_utf8(&infile->metadata, "Order",
+			order == big_endian ? "MSB" : "LSB");
+		return g3_decode(infile->sub_img, infile->map, std, order);
 	}
 	return WUERR_HERE(e);
 }
@@ -117,6 +125,11 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			st = apf_load_page(desc, img);
 			if (!wu_isok(st)) {
 				break;
+			}
+			struct wutree *meta = wuimg_get_metadata(img);
+			if (meta) {
+				tree_bud_leaf_bool(meta, "High resolution",
+					desc->high_res);
 			}
 		}
 	}

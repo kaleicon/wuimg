@@ -99,7 +99,7 @@ uint32_t bit_advn(const void *stream, size_t *pos, size_t n) {
 void bitstrm_seek(struct bitstrm *bs, size_t n) {
 	const size_t max_peek = 33 + 32 + 8; // max peek in *_gamma_*()
 	bs->pos += n;
-	if (bs->pos + max_peek >= bs->len) {
+	if (bs->len - bs->pos < max_peek) {
 		bs->eof = bs->buf == bs->end;
 		const size_t m = bs->len/8 - bs->pos/8;
 		memmove(bs->end, bs->buf + bs->pos/8, m);
@@ -220,6 +220,12 @@ uint32_t bitstrm_lsb_exp_golomb(struct bitstrm *bs) {
 	return (val & mask) + mask;
 }
 
+
+bool bitstrm_next(struct bitstrm *bs, const enum endianness e) {
+	return e == big_endian
+		? bitstrm_msb_next(bs)
+		: bitstrm_lsb_next(bs);
+}
 
 uint32_t bitstrm_peek_32(const struct bitstrm *bs, const enum endianness e) {
 	return e == big_endian

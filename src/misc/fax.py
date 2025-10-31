@@ -133,7 +133,7 @@ class HuffVal(typing.NamedTuple):
 	def type(store):
 		if store == TableStore.Pack:
 			return 'uint16_t'
-		return 'struct huff_val'
+		return 'struct fax_huff_val'
 
 	@staticmethod
 	def struct(store):
@@ -148,7 +148,7 @@ class HuffVal(typing.NamedTuple):
 
 	@staticmethod
 	def get_tpl(ret_type, field, type, op):
-		return '''{} huff_get_{}({} pack) {{\n\treturn {};\n}}'''.format(
+		return '''{} fax_huffman_get_{}({} pack) {{\n\treturn {};\n}}'''.format(
 			ret_type, field, type, op)
 
 	@staticmethod
@@ -216,7 +216,7 @@ def make_huffman_table(tab, size, total, store, ofp, offset=0):
 				tgt = [HuffVal(0,0)] * (1 << over)
 				idx = len(dhuff)
 				dhuff.append((prefix, tgt))
-			v = HuffVal(val, bits - size)
+			v = HuffVal(0, 0) if val < 0 else HuffVal(val, bits - size)
 			for n in range(1 << align):
 				tgt[base + n] = v
 			huff[prefix] = HuffVal(idx, 0)
@@ -235,7 +235,7 @@ def parse_code_strs(short, long):
 	for t in itertools.batched(short.split(), 4):
 		white.append(HuffDef._make(t[:2]))
 		black.append(HuffDef._make(t[2:]))
-	tup = tuple(map(HuffDef._make, itertools.batched(long.split(), 2)))
+	tup = tuple(map(HuffDef._make, itertools.batched(long.split() + eol_code.split(), 2)))
 	white += tup
 	black += tup
 	return white, black

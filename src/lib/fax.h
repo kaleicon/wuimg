@@ -14,11 +14,14 @@ enum fax_coding {
 
 const char * fax_coding_str(enum fax_coding coding);
 
+struct wu_st g3_decode(struct wuimg *img, struct wuptr mem,
+enum fax_coding std, enum endianness order);
+
 struct wu_st g3_1d_decode(struct wuimg *img, struct wuptr mem,
 enum endianness order);
 
-void g3_1d_default_init(struct wuimg *img, struct wuptr mem,
-enum endianness *order);
+bool g3_identify(struct wuimg *img, struct wuptr mem,
+enum fax_coding *out_std, enum endianness *out_end);
 
 
 /* ZyXEL fax */
@@ -108,6 +111,8 @@ struct apf_desc {
 	struct wuptr page_data;
 	uint32_t cur_page;
 	uint16_t nr_pages;
+	bool line_len;
+	bool high_res;
 	uint8_t station_id[20];
 };
 

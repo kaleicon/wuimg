@@ -71,6 +71,8 @@ uint32_t bitstrm_lsb_gamma_one(struct bitstrm *bs);
 uint32_t bitstrm_lsb_exp_golomb(struct bitstrm *bs);
 
 
+bool bitstrm_next(struct bitstrm *bs, enum endianness order);
+
 uint32_t bitstrm_peek_32(const struct bitstrm *bs, enum endianness order);
 
 
