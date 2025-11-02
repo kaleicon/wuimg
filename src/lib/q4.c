@@ -7,6 +7,7 @@
 #include "misc/endian.h"
 #include "misc/math.h"
 #include "misc/mem.h"
+#include "misc/time.h"
 #include "q4.h"
 
 /* MAJYO's Q4 format.
@@ -34,8 +35,7 @@ time_t q4_approximate_date(const struct q4_desc *desc) {
 	 * half-minutes since the DOS epoch. This stays within 3 months before
 	 * and 5 days after from the modification times in XLD4_Images.zip.
 	 * TODO: Is there a better choice? */
-	const time_t dos_epoch = 315543600; // 1980-01-01
-	return (time_t)desc->creation_date * 30 + dos_epoch;
+	return time_from_dos((time_t)(desc->creation_date * 30));
 }
 
 static bool read_block(struct q4_block *block, struct mparser *mp) {

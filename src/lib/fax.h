@@ -109,6 +109,7 @@ struct wu_st faxx_init(struct faxx_desc *desc, struct wuptr mem);
 struct apf_desc {
 	struct mparser mp;
 	struct wuptr page_data;
+	time_t timestamp;
 	uint32_t cur_page;
 	uint16_t nr_pages;
 	bool line_len;

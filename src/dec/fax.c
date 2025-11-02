@@ -143,6 +143,8 @@ const struct wu_conf *_c) {
 	struct wu_st st = apf_parse(desc, infile->map);
 	if (wu_isok(st)) {
 		infile->nr = desc->nr_pages;
+		tree_bud_leaf_time(&infile->metadata, "Timestamp",
+			desc->timestamp);
 		tree_add_leaf_limit(&infile->metadata, "Station ID",
 			WUPTR_ARRAY(desc->station_id), NULL);
 	}

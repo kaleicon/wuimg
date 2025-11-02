@@ -126,6 +126,10 @@ int second) {
 		+ second;
 }
 
+time_t time_from_dos(time_t dos_ts) {
+	return dos_ts + 315532800; // 1980-01-01Z
+}
+
 void nanosec_report(const char *ocurrence, const watch_t elapsed,
 const enum report_level level) {
 	int verbose = 0;

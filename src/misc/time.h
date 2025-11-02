@@ -22,6 +22,8 @@ void rfc3339_format(time_t t, FILE *out);
 time_t utc_to_epoch(int year, int month, int day, int hour, int minute,
 int second);
 
+time_t time_from_dos(time_t dos_ts);
+
 void nanosec_report(const char *ocurrence, watch_t elapsed,
 enum report_level level);
 
