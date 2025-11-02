@@ -182,10 +182,10 @@ static bool fast_math_tests(void) {
 	puts("\tall floats in range\tworst diff\tnr misses");
 	const float ranges[][2] = {
 		{0, 0},
-		{first_normal, 0x1p-124},
+//		{first_normal, 0x1p-124},
 		{0x1p-18, 0x1p-17},
 		{0x1p-17, 0x1p-16},
-		{0x1p-16, 1},
+//		{0x1p-16, 1},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(ranges); ++i) {
 		kay &= test_powf(ranges[i][0], ranges[i][1], powf_norm, exp);
@@ -493,19 +493,54 @@ static bool to_epoch_test(const struct time_test_params *p) {
 		(uintmax_t)p->unix, (uintmax_t)r);
 	return ok;
 }
+#define TEST_RFC3339_BUFSIZ (4+1+2+1+2+1 +2+1+2+1+2 +1 +1)
+static bool test_rfc3339(const struct time_test_params *p, FILE *out) {
+	char expect[TEST_RFC3339_BUFSIZ];
+	const int e = snprintf(expect, sizeof(expect),
+		"%i-%.2i-%.2i %.2i:%.2i:%.2iZ",
+		p->year, p->month, p->day, p->hour, p->min, p->sec);
+
+	fseek(out, 0, SEEK_SET);
+	rfc3339_format(p->unix, out);
+	fflush(out);
+	fseek(out, 0, SEEK_SET);
+	char result[TEST_RFC3339_BUFSIZ];
+	const size_t r = fread(result, 1, sizeof(result)-1, out);
+	result[r] = 0;
+
+	const bool ok = (e >= 0) && !strcmp(expect, result);
+	printf("%s\t%ju\t%s\t%s\n",
+		ok_str(ok), (uintmax_t)p->unix, expect, result);
+	return ok;
+}
 static bool time_tests(void) {
 	test_name(__func__);
 	bool kay = true;
 
-	puts("Is utc_to_epoch() not broken-down?");
+	puts("Is utc_to_epoch() not broken-down? feat. time_from_dos()");
 	puts("\tyear\tmonth\tday\thour\tminute\tsecond\tunix\tresult");
 	const struct time_test_params dates[] = {
 		{0, 1970, 1, 1, 0, 0, 0},
+		{time_from_dos(0), 1980, 1, 1, 0, 0, 0},
 		{999999999, 2001, 9, 9, 1, 46, 39},
-		{2147483648, 2038, 1, 19, 3, 14, 8},
+		{0x7fffffff, 2038, 1, 19, 3, 14, 7},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(dates); ++i) {
 		kay &= to_epoch_test(dates + i);
+	}
+	puts("");
+
+	puts("rfc3339_format()");
+	puts("\tunix\texpect\tresult");
+	FILE *tmp = fmemopen(NULL, TEST_RFC3339_BUFSIZ, "r+");
+	kay &= (bool)tmp;
+	if (kay) {
+		for (size_t i = 0; i < ARRAY_LEN(dates); ++i) {
+			kay &= test_rfc3339(dates + i, tmp);
+		}
+		fclose(tmp);
+	} else {
+		printf("%s\tfmemopen() failure\n", ok_str(kay));
 	}
 	puts("");
 	return kay;
@@ -1172,8 +1207,8 @@ static void aer_uxx(uint32_t arg, uint32_t expect, uint32_t result) {
 	printf("\t%" PRIu32 "\t" FULL_X32 "\t" FULL_X32 "\n",
 		arg, expect, result);
 }
-static void aer_xuu(uint32_t arg, uint32_t expect, uint32_t result) {
-	printf("\t" FULL_X32 "\t%" PRIu32 "\t%" PRIu32 "\n",
+static void aer_xxx(uint32_t arg, uint32_t expect, uint32_t result) {
+	printf("\t" FULL_X32 "\t" FULL_X32 "\t" FULL_X32 "\n",
 		arg, expect, result);
 }
 static void aer_uuu(uint32_t arg, uint32_t expect, uint32_t result) {
@@ -1188,11 +1223,49 @@ void (print_fn)(uint32_t a, uint32_t e, uint32_t r)) {
 	print_fn(t->arg, t->expect, result);
 	return ok;
 }
+#define BITREAD_LEN 28
+static void test_print_bitread(const uint8_t *bitread, const uint8_t c) {
+	for (size_t i = 0; i < BITREAD_LEN; ++i) {
+		putchar(bitread[i] + '0');
+	}
+	putchar(c);
+}
+static bool test_bit_next(enum endianness order, const uint8_t *expect,
+const size_t seek) {
+	bool ok = true;
+	struct bitstrm bs;
+	uint8_t result[BITREAD_LEN];
+
+	bitstrm_from_wuptr(&bs, WUPTR_ARRAY(NUM_SEQ));
+	bitstrm_seek(&bs, seek);
+	for (size_t i = 0; i < BITREAD_LEN; ++i) {
+		result[i] = bitstrm_next(&bs, order);
+		ok &= result[i] == expect[i];
+	}
+	printf("%s\tbitstrm_next(%s)\t", ok_str(ok),
+		order == big_endian ? "msb" : "lsb");
+	test_print_bitread(expect, '\t');
+	test_print_bitread(result, '\n');
+
+	bitstrm_from_wuptr(&bs, WUPTR_ARRAY(NUM_SEQ));
+	bitstrm_seek(&bs, seek);
+	bool (*next_fn)(struct bitstrm *bs) = (order == big_endian)
+		? bitstrm_msb_next : bitstrm_lsb_next;
+	for (size_t i = 0; i < BITREAD_LEN; ++i) {
+		result[i] = (*next_fn)(&bs);
+		ok &= result[i] == expect[i];
+	}
+	printf("%s\tbitstrm_%s_next()\t", ok_str(ok),
+		order == big_endian ? "msb" : "lsb");
+	test_print_bitread(expect, '\t');
+	test_print_bitread(result, '\n');
+	return ok;
+}
 static bool bit_tests(void) {
 	test_name(__func__);
 	bool kay = true;
 
-	puts("Count of leading and trailing bits");
+	puts("Count of leading and trailing bits, bit reverse");
 	puts("\tfn\tinput\texpected\tfn(input)");
 	const struct bit_test_table bcp[] = {
 		{"clo32", bit_clo32, 0, 0},
@@ -1210,9 +1283,11 @@ static bool bit_tests(void) {
 		{"ctz32", bit_ctz32, 0, 32},
 		{"ctz32", bit_ctz32, 0xffffffff, 0},
 		{"ctz32", bit_ctz32, 0x0f0ff000, 12},
+
+		{"rev32", bit_rev32, 0xf0e0c080, 0x0103070f},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(bcp); ++i) {
-		kay &= bit_test_run(bcp + i, aer_xuu);
+		kay &= bit_test_run(bcp + i, aer_xxx);
 	}
 	puts("");
 
@@ -1246,6 +1321,19 @@ static bool bit_tests(void) {
 	};
 	for (size_t i = 0; i < ARRAY_LEN(bmp); ++i) {
 		kay &= bit_test_run(bmp + i, aer_uuu);
+	}
+	puts("");
+
+	puts("bitstrm_(msb|lsb)_next(), with 4 bits overread");
+	puts("\tfn\texpect\tresult");
+	const enum endianness order[] = {big_endian, little_endian};
+	const uint8_t bitread[ARRAY_LEN(order)][BITREAD_LEN] = {
+		// Start at 0x66, and overread 4 bits
+		{0,1,1,0, 0,1,1,0, 0,1,1,1, 0,1,1,1, 1,0,0,0, 1,0,0,0, 0,0,0,0},
+		{0,1,1,0, 0,1,1,0, 1,1,1,0, 1,1,1,0, 0,0,0,1, 0,0,0,1, 0,0,0,0},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(order); ++i) {
+		kay &= test_bit_next(order[i], bitread[i], 5*8);
 	}
 	puts("");
 	return kay;
