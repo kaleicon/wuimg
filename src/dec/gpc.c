@@ -3,66 +3,59 @@
 #include "wudefs.h"
 #include "lib/gpc.h"
 
-static void end(struct image_file *infile) {
+static void end_gpc(struct image_file *infile) {
 	gpc_cleanup(infile->dec_state);
 }
 
-static void get_metadata(const struct gpc_desc *desc, struct wuimg *img) {
-	struct wutree *tree = wuimg_get_metadata(img);
-	if (tree) {
-		tree_bud_leaf_u(tree, "X", desc->cur.x);
-		tree_bud_leaf_u(tree, "Y", desc->cur.y);
-	}
-}
-
-static enum wu_error callback(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	enum wu_error st = wu_no_change;
-	if (ev == ev_subcycle) {
-		struct gpc_desc *desc = infile->dec_state;
-		const uint32_t i = (uint32_t)state->idx;
-		struct wuimg *img = infile->sub_img + i;
+static struct wu_st event_gpc(struct image_file *infile,
+const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
+	(void)_c;
+	struct gpc_desc *desc = infile->dec_state;
+	const uint32_t i = (uint32_t)state->idx;
+	struct wuimg *img = infile->sub_img + i;
+	struct wu_st st = WU_NO_CHANGE;
+	switch (ev) {
+	case ev_metadata:
 		st = gpc_set_image(desc, img, i);
-		if (st == wu_ok) {
-			if (!wuimg_exceeds_limit(img, conf)) {
-				get_metadata(desc, img);
-				return gpc_decode(desc, img)
-					? wu_ok : wu_decoding_error;
+		if (wu_isok(st)) {
+			struct wutree *tree = wuimg_get_metadata(img);
+			if (tree) {
+				tree_bud_leaf_u(tree, "X", desc->cur.x);
+				tree_bud_leaf_u(tree, "Y", desc->cur.y);
 			}
-			return wu_exceeds_size_limit;
 		}
+		break;
+	case ev_subcycle:
+		return gpc_decode(desc, img);
+	default: break;
 	}
 	return st;
 }
 
-static enum wu_error gpc_dec(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_gpc(struct image_file *infile,
+const struct wu_conf *_c) {
+	(void)_c;
 	struct gpc_desc *desc = infile->dec_state;
-	enum wu_error st = gpc_init(desc, infile->map);
-	if (st != wu_ok) {
-		return st;
+	struct wu_st st = gpc_parse(desc, infile->map);
+	if (wu_isok(st)) {
+		infile->nr = desc->nb;
+		tree_add_leaf_len(&infile->metadata, "Maker", desc->maker,
+			"SHIFT-JIS");
 	}
-
-	st = gpc_parse(desc);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	tree_add_leaf_len(&infile->metadata, "Maker", desc->maker, "SHIFT-JIS");
-	return alloc_sub_images(infile, desc->nb) ? wu_ok : wu_alloc_error;
+	return st;
 }
 
-static enum wu_error clm_dec(struct image_file *infile,
+static struct wu_st init_clm(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct wuimg *img = infile->sub_img;
-	enum wu_error st = clm_parse(infile->ifp, img);
-	if (st == wu_ok) {
-		if (!wuimg_exceeds_limit(img, conf)) {
-			return clm_load(infile->ifp, img)
-				? wu_ok : wu_decoding_error;
+	struct wu_st st = clm_parse(infile->ifp, img);
+	if (wu_isok(st)) {
+		enum wu_error e = wuimg_alloc_limit(img, conf);
+		if (e == wu_ok) {
+			st = clm_load(infile->ifp, img);
+		} else {
+			st = WUERR_HERE(e);
 		}
-		return wu_exceeds_size_limit;
 	}
 	return st;
 }
@@ -70,11 +63,12 @@ const struct wu_conf *conf) {
 const struct image_fn gpc_fn = {
 	.mmap = true,
 	.state_size = sizeof(struct gpc_desc),
-	.dec = gpc_dec,
-	.callback = callback,
-	.end = end,
+	.alloc_on_subcycle = true,
+	.init = init_gpc,
+	.event = event_gpc,
+	.end = end_gpc,
 };
 const struct image_fn clm_fn = {
 	.alloc_single = true,
-	.dec = clm_dec,
+	.init = init_clm,
 };

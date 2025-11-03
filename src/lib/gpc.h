@@ -25,18 +25,16 @@ struct gpc_desc {
 
 void gpc_cleanup(struct gpc_desc *desc);
 
-size_t gpc_decode(const struct gpc_desc *desc, struct wuimg *img);
+struct wu_st gpc_decode(const struct gpc_desc *desc, struct wuimg *img);
 
-enum wu_error gpc_set_image(struct gpc_desc *desc, struct wuimg *img,
+struct wu_st gpc_set_image(struct gpc_desc *desc, struct wuimg *img,
 uint32_t i);
 
-enum wu_error gpc_parse(struct gpc_desc *desc);
-
-enum wu_error gpc_init(struct gpc_desc *desc, struct wuptr mem);
+struct wu_st gpc_parse(struct gpc_desc *desc, struct wuptr mem);
 
 
-size_t clm_load(FILE *ifp, struct wuimg *img);
+struct wu_st clm_load(FILE *ifp, struct wuimg *img);
 
-enum wu_error clm_parse(FILE *ifp, struct wuimg *img);
+struct wu_st clm_parse(FILE *ifp, struct wuimg *img);
 
 #endif /* LIB_GPC */

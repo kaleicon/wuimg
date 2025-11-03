@@ -6,7 +6,10 @@
 
 /* Decoding algorithm from
 https://github.com/HolografixFinn/gpc2bmp
- * plus original research. */
+ * plus original research.
+
+ * TODO: What's wrong with Himitu_c/pic/s53.gpc (from 秘密の花園)?
+*/
 
 void gpc_cleanup(struct gpc_desc *desc) {
 	palette_unref(desc->pal);
@@ -14,14 +17,14 @@ void gpc_cleanup(struct gpc_desc *desc) {
 
 static uint32_t bitspread(uint32_t c) {
 	/* Spreads a byte's bits so that they're 4 bits apart. */
-	c *= 0x40100401;
-	c &= 0xc0c0c0c0;
-	c |= c >> 3;
-	c &= 0x88888888;
-	return c;
+	c *= 0x40100401; // replicate every 10 bits
+	c &= 0xc0c0c0c0; // isolate bit pairs
+	c |= c >> 3;     // replicate bit pairs at an offset
+	c &= 0x88888888; // isolate bits in {1,0, 3,2, 5,4, 7,6} order
+	return c;        // on Little-Endian, we're done. on BE, swap later
 }
 
-static void img_decorrelate(struct wuimg *img, uint8_t *restrict src,
+static void gpc_decorrelate(struct wuimg *img, uint8_t *restrict src,
 const size_t plane_len, const size_t row_size, const size_t row_skip) {
 	uint8_t *dst = img->data;
 	const size_t stride = wuimg_stride(img);
@@ -47,7 +50,7 @@ const size_t plane_len, const size_t row_size, const size_t row_skip) {
 		if (y) {
 			/* XOR with the previous row. */
 			for (size_t x = 1; x < row_size; ++x) {
-				src[row_off + x] ^= src[row_size*(y-1) + x];
+				src[row_off + x] ^= src[row_off + x - row_size];
 			}
 		}
 
@@ -67,7 +70,7 @@ const size_t plane_len, const size_t row_size, const size_t row_skip) {
 				| bitspread(l2[i]) >> 2
 				| bitspread(l3[i]) >> 1
 				| bitspread(l4[i]);
-			((uint32_t *)(dst + d))[i] = endian32(a, little_endian);
+			((uint32_t *)(dst + d))[i] = endian32l(a);
 		}
 
 		dst_y += row_skip;
@@ -79,7 +82,7 @@ const size_t plane_len, const size_t row_size, const size_t row_skip) {
 }
 
 #define MAX_READ (1 + (8 * (1 + 8)))
-static size_t img_decomp(uint8_t *restrict dst, const size_t dst_len,
+static size_t gpc_decomp(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, size_t src_len) {
 	size_t d = 0;
 	size_t s = 0;
@@ -116,83 +119,82 @@ const uint8_t *restrict src, size_t src_len) {
 	return d;
 }
 
-size_t gpc_decode(const struct gpc_desc *desc, struct wuimg *img) {
+struct wu_st gpc_decode(const struct gpc_desc *desc, struct wuimg *img) {
 	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		const size_t plane_len = strip_base(img->w, 1);
-		const size_t row_size = plane_len * 4 + 1;
-		/* Request a buffer padded to 64 bytes, as the decompressor
-		 * writes that much data per iteration. */
-		const size_t tmp_size = strip_length(row_size * img->h, 8,
-			align_from_int(64));
-		uint8_t *tmp = malloc(tmp_size);
-		if (tmp) {
-			const struct wuptr comp = mp_avail_at(&desc->mp,
-				desc->mp.pos, desc->cur.comp_len);
-			w = img_decomp(tmp, tmp_size/64, comp.ptr, comp.len);
-			img_decorrelate(img, tmp, plane_len, row_size,
-				desc->cur.row_skip);
-			free(tmp);
-		}
+	const size_t plane_len = strip_base(img->w, 1);
+	const size_t row_size = plane_len * 4 + 1;
+	/* Request a buffer padded to 64 bytes, as the decompressor
+	 * writes that much data per iteration. */
+	const size_t tmp_size = strip_length(row_size * img->h, 8,
+		align_from_int(64));
+	uint8_t *tmp = calloc(tmp_size, 1);
+	if (tmp) {
+		const struct wuptr comp = mp_avail_at(&desc->mp,
+			desc->mp.pos, desc->cur.comp_len);
+		w = gpc_decomp(tmp, tmp_size/64, comp.ptr, comp.len);
+		gpc_decorrelate(img, tmp, plane_len, row_size,
+			desc->cur.row_skip);
+		free(tmp);
 	}
-	return w;
+	return wuerr_partial(w, tmp_size/64);
 }
 
 static uint32_t get_offset(struct gpc_desc *desc, const size_t i) {
-	return buf_endian32(desc->sub_info + (i+1)*4, little_endian);
+	return buf_endian32l(desc->sub_info + (i+1)*4);
 }
 
-enum wu_error gpc_set_image(struct gpc_desc *desc, struct wuimg *img,
+struct wu_st gpc_set_image(struct gpc_desc *desc, struct wuimg *img,
 const uint32_t i) {
 	if (i) {
 		const uint32_t off = get_offset(desc, i);
 		const uint32_t next = get_offset(desc, i+1);
 		if (next < 10 || next - 10 <= off) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "too small image header");
 		}
 
 		mp_seek_set(&desc->mp, (size_t)desc->sub_off + off);
 		const uint8_t *hdr = mp_slice(&desc->mp, 10);
 		if (!hdr) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 
 		desc->cur = (struct gpc_img_settings) {
-			.row_skip = buf_endian16(hdr, little_endian),
+			.row_skip = buf_endian16l(hdr),
 			.comp_len = next - 10 - off,
-			.x = buf_endian16(hdr + 2, little_endian),
-			.y = buf_endian16(hdr + 4, little_endian),
+			.x = buf_endian16l(hdr + 2),
+			.y = buf_endian16l(hdr + 4),
 		};
-		img->w = buf_endian16(hdr + 6, little_endian);
-		img->h = buf_endian16(hdr + 8, little_endian);
+		img->w = buf_endian16l(hdr + 6);
+		img->h = buf_endian16l(hdr + 8);
 	} else {
 		mp_seek_set(&desc->mp, desc->img_off);
 		const uint8_t *hdr = mp_slice(&desc->mp, 16);
 		if (!hdr) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
-		img->w = buf_endian16(hdr, little_endian);
-		img->h = buf_endian16(hdr + 2, little_endian);
+		img->w = buf_endian16l(hdr);
+		img->h = buf_endian16l(hdr + 2);
 		desc->cur = (struct gpc_img_settings) {
 			.row_skip = desc->main_row_skip,
-			.comp_len = buf_endian32(hdr + 4, little_endian),
-			.x = buf_endian16(hdr + 10, little_endian),
-			.y = buf_endian16(hdr + 12, little_endian),
+			.comp_len = buf_endian32l(hdr + 4),
+			.x = buf_endian16l(hdr + 10),
+			.y = buf_endian16l(hdr + 12),
 		};
 	}
 	img->channels = 1;
 	img->bitdepth = 4;
+	img->bitrange = 4;
 	img->layout = pix_grba;
 	wuimg_align(img, 4);
 	wuimg_palette_set(img, palette_ref(desc->pal));
-	return wuimg_verify(img);
+	return WU_OK;
 }
 
 static void read_sub_data(struct gpc_desc *desc) {
 	mp_seek_set(&desc->mp, desc->sub_off);
 	const uint8_t *sub_header = mp_slice(&desc->mp, 4);
 	if (sub_header) {
-		const uint32_t nb = buf_endian32(sub_header, little_endian);
+		const uint32_t nb = buf_endian32l(sub_header);
 		if (nb < UINT32_MAX - 3) {
 			desc->sub_info = mp_slice(&desc->mp, (nb+3)*4);
 			if (desc->sub_info) {
@@ -202,45 +204,46 @@ static void read_sub_data(struct gpc_desc *desc) {
 	}
 }
 
-static enum wu_error load_pal(struct gpc_desc *desc,
-const uint8_t *restrict header) {
+static struct wu_st load_pal(struct gpc_desc *desc) {
+	const uint8_t *header = mp_slice(&desc->mp, 4);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	const uint16_t nb = buf_endian16(header, little_endian);
-	const uint16_t elem_size = buf_endian16(header+2, little_endian);
+	const uint16_t nb = buf_endian16l(header);
+	const uint16_t elem_size = buf_endian16l(header+2);
 	if (elem_size != 2 || nb > 16) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "bad palette dimensions");
 	}
 
 	const uint16_t total = nb*elem_size;
 	const uint8_t *data = mp_slice(&desc->mp, total);
 	if (!data) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	struct palette *pal = palette_new();
 	if (!pal) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 	desc->pal = pal;
 
 	for (size_t i = 0; i < nb; ++i) {
-		const uint16_t c = buf_endian16(data + i*2, little_endian);
+		const uint16_t c = buf_endian16l(data + i*2);
 		pal->color[i] = (struct pix_rgba8) {
-			.r = ((c >> 8) & 0xf) * 0x11,
-			.g = ((c >> 4) & 0xf) * 0x11,
-			.b = (c & 0xf) * 0x11,
-			.a = 0xff,
+			.r = (c >> 8) & 0xf,
+			.g = (c >> 4) & 0xf,
+			.b = c & 0xf,
+			.a = 0xf,
 		};
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-enum wu_error gpc_parse(struct gpc_desc *desc) {
-	/* GPC header (little-endian, after signature):
-		Offset  Size    Name
+struct wu_st gpc_parse(struct gpc_desc *desc, const struct wuptr mem) {
+	/* GPC header, little-endian:
+		Offset  Type    Name
+		0       u8      Signature[16]
 		0       u32     RowSkip       // May be 0 for Height=1 images
 		4       u32     PaletteOffset
 		8       u32     ImageOffset
@@ -305,23 +308,30 @@ enum wu_error gpc_parse(struct gpc_desc *desc) {
 	 *     and the image.
 	 */
 
-	const unsigned char *header = mp_slice(&desc->mp, 32);
+	*desc = (struct gpc_desc) {
+		.mp = mp_wuptr(mem),
+	};
+	const unsigned char sig[16] = {
+		'P', 'C', '9', '8',
+		')', 'G', 'P', 'C',
+		'F', 'I', 'L', 'E',
+		' ', ' ', ' ', 0
+	};
+	const unsigned char *header = mp_slice(&desc->mp, 48);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(header, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
 
-	desc->main_row_skip = buf_endian32(header, little_endian);
-	const uint32_t pal_off = buf_endian32(header + 4, little_endian);
-	desc->img_off = buf_endian32(header + 8, little_endian);
-	desc->sub_off = buf_endian32(header + 12, little_endian);
-	const uint32_t min_pal = 4;
-	if (desc->img_off < min_pal || desc->img_off - min_pal <= pal_off) {
-		return wu_invalid_header;
-	}
+	desc->main_row_skip = buf_endian32l(header + 16);
+	const uint32_t pal_off = buf_endian32l(header + 20);
+	desc->img_off = buf_endian32l(header + 24);
+	desc->sub_off = buf_endian32l(header + 28);
 
 	mp_seek_set(&desc->mp, pal_off);
-	const enum wu_error st = load_pal(desc, mp_slice(&desc->mp, min_pal));
-	if (st != wu_ok) {
+	const struct wu_st st = load_pal(desc);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
@@ -329,7 +339,7 @@ enum wu_error gpc_parse(struct gpc_desc *desc) {
 		desc->maker.len = desc->img_off - desc->mp.pos;
 		desc->maker.ptr = mp_slice(&desc->mp, desc->maker.len);
 		if (!desc->maker.ptr) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		} else if (!desc->maker.ptr[desc->maker.len-1]) {
 			--desc->maker.len;
 		}
@@ -339,60 +349,49 @@ enum wu_error gpc_parse(struct gpc_desc *desc) {
 	if (desc->sub_off) {
 		read_sub_data(desc);
 	}
-	return wu_ok;
-}
-
-enum wu_error gpc_init(struct gpc_desc *desc, struct wuptr mem) {
-	*desc = (struct gpc_desc) {
-		.mp = mp_wuptr(mem),
-	};
-	const unsigned char sig[16] = "PC98)GPCFILE   "; // end nul is important
-	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	return WU_OK;
 }
 
 
 /* This little-used thumbnail format requires an external palette to display
  * correctly. It's included solely because it's so simple. */
-
-size_t clm_load(FILE *ifp, struct wuimg *img) {
+struct wu_st clm_load(FILE *ifp, struct wuimg *img) {
 	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		/* The whole 4-bit raster is stored continously. Which means
-		 * that if the width is odd, we need to right-shift odd rows so
-		 * that they begin on a byte boundary. */
-		if (img->w % 2) {
-			size_t stride = wuimg_stride(img);
-			uint8_t prev = 0;
-			for (size_t y = 0; y < img->h; ++y) {
-				uint8_t *dst = img->data + y*stride;
-				size_t r;
-				if (y % 2) {
-					r = fread(dst, 1, stride - 1, ifp);
-					for (size_t b = 0; b < r; ++b) {
-						uint8_t tmp = dst[b];
-						dst[b] = (uint8_t)(
-							prev << 4 | tmp >> 4
-						);
-						prev = tmp;
-					}
-					dst[r] = (uint8_t)(prev << 4);
-				} else {
-					r = fread(dst, 1, stride, ifp);
-					prev = dst[stride-1];
+	/* The whole 4-bit raster is stored continously, which means
+	 * that if the width is odd, we need to right-shift odd rows so
+	 * that they begin on a byte boundary. */
+	if (img->w % 2) {
+		size_t stride = wuimg_stride(img);
+		uint8_t prev = 0;
+		for (size_t y = 0; y < img->h; ++y) {
+			uint8_t *dst = img->data + y*stride;
+			size_t r;
+			if (y % 2) {
+				r = fread(dst, 1, stride - 1, ifp);
+				for (size_t b = 0; b < r; ++b) {
+					uint8_t tmp = dst[b];
+					dst[b] = (uint8_t)(
+						prev << 4 | tmp >> 4
+					);
+					prev = tmp;
 				}
-				if (!r) {
-					break;
-				}
-				w += r;
+				dst[r] = (uint8_t)(prev << 4);
+			} else {
+				r = fread(dst, 1, stride, ifp);
+				prev = dst[stride-1];
 			}
-		} else {
-			w = fmt_load_raster(img, ifp);
+			if (!r) {
+				break;
+			}
+			w += r;
 		}
+	} else {
+		w = fmt_load_raster(img, ifp);
 	}
-	return w;
+	return wuerr_partial(w, wuimg_size(img));
 }
 
-enum wu_error clm_parse(FILE *ifp, struct wuimg *img) {
+struct wu_st clm_parse(FILE *ifp, struct wuimg *img) {
 	/* CLM header:
 		Offset  Type    Name
 		0       u8      ???    // Always 0?
@@ -408,7 +407,7 @@ enum wu_error clm_parse(FILE *ifp, struct wuimg *img) {
 		img->h = hdr[4];
 		img->channels = 1;
 		img->bitdepth = 4;
-		return wuimg_verify(img);
+		return WU_OK;
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
