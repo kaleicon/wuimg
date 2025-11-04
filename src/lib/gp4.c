@@ -111,11 +111,7 @@ uint32_t b_seek) {
 		bitstrm_msb_peek_32(bs), 0);
 }
 
-size_t gp4_decode(const struct gp4_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return 0;
-	}
-
+struct wu_st gp4_decode(const struct gp4_desc *desc, struct wuimg *img) {
 	uint8_t lut[LUT_H][LUT_W];
 	for (uint8_t ly = 0; ly < LUT_H; ++ly) {
 		for (uint8_t lx = 0; lx < LUT_W; ++lx) {
@@ -123,9 +119,8 @@ size_t gp4_decode(const struct gp4_desc *desc, struct wuimg *img) {
 		}
 	}
 
-	struct mparser mp = desc->mp;
 	struct bitstrm bs;
-	bitstrm_from_wuptr(&bs, mp_remaining(&mp));
+	bitstrm_from_wuptr(&bs, desc->data);
 
 	const size_t stride = wuimg_stride(img);
 	const size_t bands = stride / BAND_W;
@@ -146,7 +141,7 @@ size_t gp4_decode(const struct gp4_desc *desc, struct wuimg *img) {
 				/* We use unsigned offsets even though these
 				 * may be negative quantities.
 				 * This avoids some messy casting dances and
-				 * simplifies range checks; too high or too low
+				 * simplifies range checks; high and negative
 				 * values will exceed the image dimensions all
 				 * the same.
 				 * The penalty is that this only works on two's
@@ -178,10 +173,10 @@ size_t gp4_decode(const struct gp4_desc *desc, struct wuimg *img) {
 		++band;
 	}
 loop_escape:
-	return band*img->h + y;
+	return wuerr_partial(band*img->h + y, bands);
 }
 
-enum wu_error gp4_parse(struct gp4_desc *desc, const struct wuptr mem,
+struct wu_st gp4_parse(struct gp4_desc *desc, const struct wuptr mem,
 struct wuimg *img) {
 	/* GP4 structure:
 		Offset  Type    Name
@@ -201,33 +196,35 @@ struct wuimg *img) {
 	 * Width and Height have a bias of -1.
 	*/
 
-	desc->mp = mp_wuptr(mem);
-	const uint8_t *header = mp_slice(&desc->mp, 40);
+	struct mparser mp = mp_wuptr(mem);
+	const uint8_t *header = mp_slice(&mp, 40);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	desc->x = buf_endian16(header, big_endian);
-	desc->y = buf_endian16(header + 2, big_endian);
-	img->w = buf_endian16(header + 4, big_endian) + 1;
-	img->h = buf_endian16(header + 6, big_endian) + 1;
+	desc->x = buf_endian16b(header);
+	desc->y = buf_endian16b(header + 2);
+	img->w = buf_endian16b(header + 4) + 1;
+	img->h = buf_endian16b(header + 6) + 1;
 	img->channels = 1;
 	img->bitdepth = 4;
+	img->bitrange = 4;
 	img->layout = pix_grba;
 	wuimg_align(img, BAND_W); // Make the last band the same size as the others
 	struct palette *pal = wuimg_palette_init(img);
 	if (!pal) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	for (uint8_t c = 0; c < GP4_COLORS; ++c) {
-		const uint16_t color = buf_endian16(header + 8 + c*2, big_endian);
+		const uint16_t color = buf_endian16b(header + 8 + c*2);
 		uint8_t *dst = (uint8_t *)(pal->color + c);
 		for (uint8_t z = 0; z < 3; ++z) {
 			const int shr = 12 - z*5;
-			dst[z] = (uint8_t)(((color >> shr) & 0x0f) * 0x11);
+			dst[z] = (uint8_t)((color >> shr) & 0x0f);
 		}
-		dst[3] = 0xff;
+		dst[3] = 0x0f;
 	}
-	return wuimg_verify(img);
+	desc->data = mp_remaining(&mp);
+	return WU_OK;
 }
