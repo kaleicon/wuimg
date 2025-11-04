@@ -181,7 +181,7 @@ static uint32_t bitstrm_lsb_peek_32_norev(const struct bitstrm *bs) {
 	return (uint32_t)bs->buf[i+4] << 1 << (31 - o) | f >> o;
 }
 
-static uint32_t bitstrm_lsb_peek_32(const struct bitstrm *bs) {
+uint32_t bitstrm_lsb_peek_32(const struct bitstrm *bs) {
 	return bit_rev32(bitstrm_lsb_peek_32_norev(bs));
 }
 

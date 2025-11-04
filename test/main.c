@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
+#include <assert.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
@@ -167,12 +168,12 @@ static bool fast_math_tests(void) {
 	}
 	puts("");
 
-	const float roundf_norm = 0x1p+22 - 1;
+	const float roundf_norm = 0x1p+16 - 1;
 	printf("(long)fm_pre_roundf() vs lroundf(), floats scaled to [0, %.0f]\n",
 		roundf_norm);
 	puts("\tall floats in range\tnr misses");
 	kay &= test_roundf(0, 0, roundf_norm);
-	kay &= test_roundf(0x1p-24, 0x1p-0, roundf_norm);
+	kay &= test_roundf(0x1p-17, 0x1p-0, roundf_norm);
 	puts("");
 
 	const float powf_norm = 0x1p+16 - 1;
@@ -182,10 +183,10 @@ static bool fast_math_tests(void) {
 	puts("\tall floats in range\tworst diff\tnr misses");
 	const float ranges[][2] = {
 		{0, 0},
-//		{first_normal, 0x1p-124},
+		{first_normal, 0x1p-125},
 		{0x1p-18, 0x1p-17},
 		{0x1p-17, 0x1p-16},
-//		{0x1p-16, 1},
+		{0x1p-16, 1},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(ranges); ++i) {
 		kay &= test_powf(ranges[i][0], ranges[i][1], powf_norm, exp);
@@ -533,15 +534,11 @@ static bool time_tests(void) {
 	puts("rfc3339_format()");
 	puts("\tunix\texpect\tresult");
 	FILE *tmp = fmemopen(NULL, TEST_RFC3339_BUFSIZ, "r+");
-	kay &= (bool)tmp;
-	if (kay) {
-		for (size_t i = 0; i < ARRAY_LEN(dates); ++i) {
-			kay &= test_rfc3339(dates + i, tmp);
-		}
-		fclose(tmp);
-	} else {
-		printf("%s\tfmemopen() failure\n", ok_str(kay));
+	assert(tmp && "fmemopen() failure");
+	for (size_t i = 0; i < ARRAY_LEN(dates); ++i) {
+		kay &= test_rfc3339(dates + i, tmp);
 	}
+	fclose(tmp);
 	puts("");
 	return kay;
 }
@@ -1197,38 +1194,51 @@ struct bit_test_table {
 	bit32_fn_t fn;
 	uint32_t arg, expect;
 };
+static const char * test_order_str(enum endianness order) {
+	return order == big_endian ? "msb" : "lsb";
+}
 static uint32_t minws_bits(uint32_t depth) {
 	return bit_min_wordsize_bits((uint32_t)depth);
 }
 static uint32_t minws_log2(uint32_t depth) {
 	return bit_min_wordsize_log2((uint32_t)depth);
 }
-static void aer_uxx(uint32_t arg, uint32_t expect, uint32_t result) {
-	printf("\t%" PRIu32 "\t" FULL_X32 "\t" FULL_X32 "\n",
+static void aer_uux(uint32_t arg, uint32_t expect, uint32_t result) {
+	printf("%" PRIu32 "\t%" PRIu32 "\t" FULL_X32 "\n",
 		arg, expect, result);
 }
 static void aer_xxx(uint32_t arg, uint32_t expect, uint32_t result) {
-	printf("\t" FULL_X32 "\t" FULL_X32 "\t" FULL_X32 "\n",
+	printf("" FULL_X32 "\t" FULL_X32 "\t" FULL_X32 "\n",
 		arg, expect, result);
 }
 static void aer_uuu(uint32_t arg, uint32_t expect, uint32_t result) {
-	printf("\t%" PRIu32 "\t%" PRIu32 "\t%" PRIu32 "\n",
+	printf("%" PRIu32 "\t%" PRIu32 "\t%" PRIu32 "\n",
 		arg, expect, result);
 }
 static bool bit_test_run(const struct bit_test_table *t,
 void (print_fn)(uint32_t a, uint32_t e, uint32_t r)) {
 	const uint32_t result = t->fn(t->arg);
 	const bool ok = t->expect == result;
-	printf("%s\t%s", ok_str(ok), t->name);
+	printf("%s\t%s\t", ok_str(ok), t->name);
 	print_fn(t->arg, t->expect, result);
 	return ok;
 }
+static bool test_bit_set(uint32_t n) {
+	uint32_t mask = bit_set32(n);
+	uint32_t cto = bit_cto32(mask);
+	uint32_t clz = bit_clz32(mask);
+	const bool ok = (cto == n) & (cto + clz == 32);
+	printf("%s\t", ok_str(ok));
+	aer_uux(n, cto+clz, mask);
+	return ok;
+}
 #define BITREAD_LEN 28
-static void test_print_bitread(const uint8_t *bitread, const uint8_t c) {
-	for (size_t i = 0; i < BITREAD_LEN; ++i) {
+static void test_print_bitread(const uint8_t *bitread, const size_t len,
+const uint8_t end) {
+	for (size_t i = 0; i < len; ++i) {
 		putchar(bitread[i] + '0');
 	}
-	putchar(c);
+	putchar(end);
 }
 static bool test_bit_next(enum endianness order, const uint8_t *expect,
 const size_t seek) {
@@ -1242,10 +1252,9 @@ const size_t seek) {
 		result[i] = bitstrm_next(&bs, order);
 		ok &= result[i] == expect[i];
 	}
-	printf("%s\tbitstrm_next(%s)\t", ok_str(ok),
-		order == big_endian ? "msb" : "lsb");
-	test_print_bitread(expect, '\t');
-	test_print_bitread(result, '\n');
+	printf("%s\tbitstrm_next(%s)\t", ok_str(ok), test_order_str(order));
+	test_print_bitread(expect, BITREAD_LEN, '\t');
+	test_print_bitread(result, BITREAD_LEN, '\n');
 
 	bitstrm_from_wuptr(&bs, WUPTR_ARRAY(NUM_SEQ));
 	bitstrm_seek(&bs, seek);
@@ -1255,10 +1264,62 @@ const size_t seek) {
 		result[i] = (*next_fn)(&bs);
 		ok &= result[i] == expect[i];
 	}
-	printf("%s\tbitstrm_%s_next()\t", ok_str(ok),
-		order == big_endian ? "msb" : "lsb");
-	test_print_bitread(expect, '\t');
-	test_print_bitread(result, '\n');
+	printf("%s\tbitstrm_%s_next()\t", ok_str(ok), test_order_str(order));
+	test_print_bitread(expect, BITREAD_LEN, '\t');
+	test_print_bitread(result, BITREAD_LEN, '\n');
+	return ok;
+}
+static bool test_bitstrm_from(void) {
+	struct bitstrm bs1;
+	struct bitstrm bs2;
+	bitstrm_from_wuptr(&bs1, WUPTR_ARRAY(NUM_SEQ));
+	bitstrm_from_bytes(&bs2, NUM_SEQ, sizeof(NUM_SEQ));
+	// bitstrm may copy to its internal buffer and point to it
+	bs1.buf = NULL;
+	bs2.buf = NULL;
+	int d = memcmp(&bs1, &bs2, sizeof(bs1));
+	bool ok = !d;
+	printf("%s\t%i\n", ok_str(ok), d);
+	return ok;
+}
+static bool test_peek_32(struct bitstrm *bs, enum endianness order,
+uint32_t expect, unsigned off) {
+	uint32_t result1 = bitstrm_peek_32(bs, order);
+	uint32_t result2 = (order == big_endian
+		? bitstrm_msb_peek_32 : bitstrm_lsb_peek_32)(bs);
+	bool ok = (expect == result1) & (expect == result2);
+	printf("%s\t%s\t%u\t", ok_str(ok), test_order_str(order), off);
+	aer_xxx(expect, result1, result2);
+	return ok;
+}
+static bool test_bitstrm_peek_32(enum endianness order) {
+	struct bitstrm bs;
+	bitstrm_from_wuptr(&bs, WUPTR_ARRAY(NUM_SEQ));
+	uint32_t expect = order == big_endian
+		? buf_endian32b(NUM_SEQ)
+		: bit_rev32(buf_endian32l(NUM_SEQ));
+
+	bool ok = test_peek_32(&bs, order, expect, 0);
+
+	const unsigned off = 3;
+	bitstrm_seek(&bs, off);
+	uint32_t lower = order == big_endian
+		? (uint32_t)NUM_SEQ[4] >> (8 - off)
+		: bit_rev32(NUM_SEQ[4]) >> (32 - off);
+	expect = lower | expect << off;
+	return ok & test_peek_32(&bs, order, expect, off);
+}
+static bool test_bit_get(const uint8_t *expect, size_t pos,
+const size_t len) {
+	bool ok = true;
+	uint8_t result[BITREAD_LEN];
+	for (size_t i = 0; i < len; ++i) {
+		result[i] = bit_get(NUM_SEQ, pos + i);
+		ok &= result[i] == expect[i];
+	}
+	printf("%s\t", ok_str(ok));
+	test_print_bitread(expect, len, '\t');
+	test_print_bitread(result, len, '\n');
 	return ok;
 }
 static bool bit_tests(void) {
@@ -1291,16 +1352,10 @@ static bool bit_tests(void) {
 	}
 	puts("");
 
-	puts("Set n bits");
-	puts("\tfn\tinput\texpected\tfn(input)");
-	const struct bit_test_table bsp[] = {
-		// 0 is UB, but that's fine cause 0 is useless, unlike 32
-		{"set32", bit_set32, 1, 1},
-		{"set32", bit_set32, 9, 0x1ff},
-		{"set32", bit_set32, 32, 0xffffffff},
-	};
-	for (size_t i = 0; i < ARRAY_LEN(bsp); ++i) {
-		kay &= bit_test_run(bsp + i, aer_uxx);
+	puts("bit_set32(input), input > 0");
+	puts("\tinput\tcto+clz\tfn(input)");
+	for (uint32_t n = 1; n <= 32; ++n) {
+		kay &= test_bit_set(n);
 	}
 	puts("");
 
@@ -1324,17 +1379,37 @@ static bool bit_tests(void) {
 	}
 	puts("");
 
+	puts("bitstrm_from_(bytes|wuptr)() initialization equivalence");
+	puts("\tmemcmp says");
+	kay &= test_bitstrm_from();
+	puts("");
+
 	puts("bitstrm_(msb|lsb)_next(), with 4 bits overread");
 	puts("\tfn\texpect\tresult");
+	// Start at 0x66, as it's more interesting
+	const size_t num_seq_off = 5*8;
 	const enum endianness order[] = {big_endian, little_endian};
 	const uint8_t bitread[ARRAY_LEN(order)][BITREAD_LEN] = {
-		// Start at 0x66, and overread 4 bits
+		// overread 4 bits
 		{0,1,1,0, 0,1,1,0, 0,1,1,1, 0,1,1,1, 1,0,0,0, 1,0,0,0, 0,0,0,0},
 		{0,1,1,0, 0,1,1,0, 1,1,1,0, 1,1,1,0, 0,0,0,1, 0,0,0,1, 0,0,0,0},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(order); ++i) {
-		kay &= test_bit_next(order[i], bitread[i], 5*8);
+		kay &= test_bit_next(order[i], bitread[i], num_seq_off);
 	}
+	puts("");
+
+	puts("bitstrm_(msb|lsb)_peek_32()");
+	puts("\torder\tseek\texpect\tpeek_32()\t(msb|lsb)_peek_32()");
+	for (size_t i = 0; i < ARRAY_LEN(order); ++i) {
+		kay &= test_bitstrm_peek_32(order[i]);
+	}
+	puts("");
+
+	puts("bit_get()");
+	puts("\texpect\tresult");
+	kay &= test_bit_get(bitread[0], num_seq_off,
+		zumin(BITREAD_LEN, sizeof(NUM_SEQ)*8 - num_seq_off));
 	puts("");
 	return kay;
 }

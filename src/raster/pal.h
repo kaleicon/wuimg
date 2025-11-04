@@ -10,8 +10,6 @@ struct palette {
 	struct pix_rgba8 color[256];
 };
 
-void palette_print(const struct palette *cm);
-
 void palette_unref(struct palette *pal);
 
 struct palette * palette_ref(struct palette *cm);

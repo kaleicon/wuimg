@@ -9,14 +9,6 @@
 #include "misc/mem.h"
 #include "raster/pal.h"
 
-void palette_print(const struct palette *cm) {
-	for (size_t i = 0; i < ARRAY_LEN(cm->color); ++i) {
-		const struct pix_rgba8 *pix = cm->color + i;
-		fprintf(stderr, "%zu: %hhx, %hhx, %hhx, %hhx\n",
-			i, pix->r, pix->g, pix->b, pix->a);
-	}
-}
-
 void palette_unref(struct palette *cm) {
 	if (cm && cm->refs) {
 		--cm->refs;
