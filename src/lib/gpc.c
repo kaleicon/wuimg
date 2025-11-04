@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "lib/gpc.h"
@@ -10,6 +11,14 @@ https://github.com/HolografixFinn/gpc2bmp
 
  * TODO: What's wrong with Himitu_c/pic/s53.gpc (from 秘密の花園)?
 */
+
+struct gpc_row_state {
+	struct wuptr src;
+	size_t s;
+	size_t row_stride;
+	uint8_t *buf;
+	uint8_t end[(((1 + 8) * 8) + 1) * 2];
+};
 
 void gpc_cleanup(struct gpc_desc *desc) {
 	palette_unref(desc->pal);
@@ -24,81 +33,26 @@ static uint32_t bitspread(uint32_t c) {
 	return c;        // on Little-Endian, we're done. on BE, swap later
 }
 
-static void gpc_decorrelate(struct wuimg *img, uint8_t *restrict src,
-const size_t plane_len, const size_t row_size, const size_t row_skip) {
-	uint8_t *dst = img->data;
-	const size_t stride = wuimg_stride(img);
-	size_t cycle = 0;
-	size_t dst_y = cycle;
-	for (size_t y = 0; y < img->h; ++y) {
-		/* Rows are split into 4 bitplanes, plus an extra byte at the
-		 * start. */
-		const size_t row_off = row_size*y;
-		const uint8_t xskip = src[row_off];
-		if (xskip) {
-			/* XOR horizontally, with `xskip` bytes of stride. On
-			 * reaching the end, wrap around and do the same to the
-			 * bytes in between. `xor` is reused when wrapping. */
-			uint8_t xor = 0;
-			for (size_t i = 0; i < xskip; ++i) {
-				for (size_t x = i+1; x < row_size; x += xskip) {
-					xor ^= src[row_off + x];
-					src[row_off + x] = xor;
-				}
-			}
-		}
-		if (y) {
-			/* XOR with the previous row. */
-			for (size_t x = 1; x < row_size; ++x) {
-				src[row_off + x] ^= src[row_off + x - row_size];
-			}
-		}
-
-		/* Merge bitplanes into 4-bit quantities, lower planes into
-		 * least-significant positions. and write to every `row_skip`
-		 * row of the output buffer. On reaching the end, wrap around
-		 * to fill the next row group. */
-		uint8_t *l1 = src + row_off + 1;
-		uint8_t *l2 = l1 + plane_len;
-		uint8_t *l3 = l2 + plane_len;
-		uint8_t *l4 = l3 + plane_len;
-		size_t d = dst_y * stride;
-		for (size_t i = 0; i < plane_len; ++i) {
-			/* We can handle 4-bit data, so pack 8 pixels into
-			 * u32 words. */
-			const uint32_t a = bitspread(l1[i]) >> 3
-				| bitspread(l2[i]) >> 2
-				| bitspread(l3[i]) >> 1
-				| bitspread(l4[i]);
-			((uint32_t *)(dst + d))[i] = endian32l(a);
-		}
-
-		dst_y += row_skip;
-		if (dst_y >= img->h) {
-			++cycle;
-			dst_y = cycle;
-		}
-	}
-}
-
-#define MAX_READ (1 + (8 * (1 + 8)))
-static size_t gpc_decomp(uint8_t *restrict dst, const size_t dst_len,
-const uint8_t *restrict src, size_t src_len) {
-	size_t d = 0;
-	size_t s = 0;
-	uint8_t end[MAX_READ*2];
+static size_t gpc_row_expand(struct gpc_row_state *rs, uint8_t *restrict dst,
+const uint8_t *restrict prev, const size_t dst_len, const size_t excess) {
+	memcpy(dst, prev + dst_len, excess);
+	size_t d = excess;
+	const uint8_t *src = rs->src.ptr;
+	size_t src_len = rs->src.len;
+	size_t s = rs->s;
 	while (d < dst_len) {
-		if (s + MAX_READ > src_len) {
-			if (src == end) {
+		if (src_len - s < sizeof(rs->end)/2) {
+			if (src == rs->end) {
 				break;
 			}
-			src = mem_bufswitch(src, &s, &src_len, end, sizeof(end));
+			src = mem_bufswitch(src, &s,
+				&src_len, rs->end, sizeof(rs->end));
 		}
 
 		uint8_t iflags = src[s];
 		++s;
 		for (size_t i = 0; i < 8; ++i, iflags <<= 1) {
-			const size_t pos = d*64 + i*8;
+			const size_t pos = d + i*8;
 			if (iflags & 0x80) {
 				uint8_t kflags = src[s];
 				++s;
@@ -114,29 +68,96 @@ const uint8_t *restrict src, size_t src_len) {
 				memset(dst + pos, 0, 8);
 			}
 		}
-		++d;
+		d += 64;
 	}
+	rs->src.ptr = src;
+	rs->src.len = src_len;
+	rs->s = s;
 	return d;
 }
 
+static size_t gpc_unpack(struct wuimg *img, struct gpc_row_state *rs,
+const size_t plane_len, const size_t row_size, const size_t row_skip) {
+	uint32_t *dst = (uint32_t *)img->data;
+	const size_t dwords = wuimg_stride(img)/sizeof(*dst);
+	size_t cycle = 0;
+	size_t dst_y = cycle;
+	size_t r = 0;
+	size_t total = 0;
+	for (size_t y = 0; y < img->h; ++y) {
+		/* Rows are split into 4 bitplanes, plus an extra byte at the
+		 * start. */
+		uint8_t *restrict row = rs->buf + rs->row_stride * (y & 1);
+		uint8_t *restrict prev = rs->buf + rs->row_stride * !(y & 1);
+		r = gpc_row_expand(rs, row, prev, row_size, r);
+		const uint8_t xskip = row[0];
+		if (xskip) {
+			/* XOR horizontally, with `xskip` bytes of stride. On
+			 * reaching the end, wrap around and do the same to the
+			 * bytes in between. `xor` is reused when wrapping. */
+			uint8_t xor = 0;
+			for (size_t i = 0; i < xskip; ++i) {
+				for (size_t x = i+1; x < row_size; x += xskip) {
+					xor ^= row[x];
+					row[x] = xor;
+				}
+			}
+		}
+
+		/* XOR with the previous row. */
+		for (size_t x = 1; x < row_size; ++x) {
+			row[x] ^= prev[x];
+		}
+
+		/* Merge bitplanes into 4-bit quantities, lower planes into
+		 * least-significant positions. and write to every `row_skip`
+		 * row of the output buffer. On reaching the end, wrap around
+		 * to fill the next row group. */
+		uint32_t *dst_row = dst + dst_y * dwords;
+		for (size_t i = 0; i < plane_len; ++i) {
+			/* We can handle 4-bit data, so pack 8 pixels into
+			 * u32 words. */
+			uint32_t a = 0;
+			for (size_t k = 0; k < 4; ++k) {
+				a |= bitspread(row[1 + plane_len*k + i])
+					>> (3 - k);
+			}
+			dst_row[i] = endian32l(a);
+		}
+		dst_y += row_skip;
+		if (dst_y >= img->h) {
+			++cycle;
+			dst_y = cycle;
+		}
+
+		total += r;
+		if (r < row_size) {
+			break;
+		}
+		r -= row_size;
+	}
+	return total;
+}
+
 struct wu_st gpc_decode(const struct gpc_desc *desc, struct wuimg *img) {
-	size_t w = 0;
 	const size_t plane_len = strip_base(img->w, 1);
 	const size_t row_size = plane_len * 4 + 1;
-	/* Request a buffer padded to 64 bytes, as the decompressor
-	 * writes that much data per iteration. */
-	const size_t tmp_size = strip_length(row_size * img->h, 8,
-		align_from_int(64));
-	uint8_t *tmp = calloc(tmp_size, 1);
-	if (tmp) {
-		const struct wuptr comp = mp_avail_at(&desc->mp,
-			desc->mp.pos, desc->cur.comp_len);
-		w = gpc_decomp(tmp, tmp_size/64, comp.ptr, comp.len);
-		gpc_decorrelate(img, tmp, plane_len, row_size,
+	/* Decompressor writes 64 bytes per iteration, so add some padding to
+	 * both rows. */
+	struct gpc_row_state rs = {
+		.row_stride = row_size + 63,
+	};
+	rs.buf = calloc(rs.row_stride, 2);
+	size_t w = 0;
+	if (rs.buf) {
+		rs.src = mp_avail_at(&desc->mp, desc->mp.pos,
+			desc->cur.comp_len);
+		w = gpc_unpack(img, &rs, plane_len, row_size,
 			desc->cur.row_skip);
-		free(tmp);
+		free(rs.buf);
 	}
-	return wuerr_partial(w, tmp_size/64);
+	const size_t max = row_size * img->h;
+	return wuerr_partial(zumin(w, max), max);
 }
 
 static uint32_t get_offset(struct gpc_desc *desc, const size_t i) {
