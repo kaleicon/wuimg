@@ -1,11 +1,196 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include "misc/bit.h"
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
-#include "lib/gpc.h"
+#include "lib/ides.h"
 
-/* Decoding algorithm from
+static uint32_t bitspread(uint32_t c) {
+	/* Spreads a byte's bits so that they're 4 bits apart. */
+	c *= 0x40100401; // replicate every 10 bits
+	c &= 0xc0c0c0c0; // isolate bit pairs
+	c |= c >> 3;     // replicate bit pairs at an offset
+	c &= 0x88888888; // isolate bits in {1,0, 3,2, 5,4, 7,6} order
+	return c;        // on Little-Endian, we're done. on BE, swap later
+}
+
+/* IDES/Kirara PRS
+https://gitlab.com/bunnylin/supersakura/-/blob/dev/doc/gfx/prs-ada-mda.md
+*/
+struct prs_column_state {
+	struct bitstrm bs;
+	struct wuptr bytes;
+	size_t pos;
+	uint8_t *buf;
+	uint8_t r;
+	uint8_t pat;
+	uint8_t ring[256];
+};
+
+static size_t prs_column_expand(struct prs_column_state *cs, size_t buf_wanted,
+size_t excess) {
+	memmove(cs->buf, cs->buf + buf_wanted, excess);
+	size_t d = excess;
+	while (d < buf_wanted) {
+		uint32_t bits = ~bitstrm_lsb_peek_32(&cs->bs);
+		unsigned b = 0;
+		while (d < buf_wanted && b < 32 - 5) {
+			uint32_t n = bit_clz32(bits << b);
+			unsigned count = 1;
+			switch (n) {
+			uint8_t next;
+			case 0:
+				if (cs->pos == cs->bytes.len) {
+					return d;
+				}
+				next = cs->bytes.ptr[cs->pos];
+				cs->buf[d] = next;
+				cs->ring[cs->r] = next;
+				++cs->r;
+				++cs->pos;
+				break;
+			case 1:
+				if (cs->bytes.len - cs->pos < 2) {
+					return d;
+				}
+				count = cs->bytes.ptr[cs->pos];
+				next = cs->bytes.ptr[cs->pos+1];
+				cs->pos += 2;
+				if (count >= 0xf0) {
+					count = ((count - 1) & 0xf) + 1;
+					size_t rem = 256 - next;
+					size_t c1 = zumin(count, rem);
+					memcpy(cs->buf + d, cs->ring + next,
+						c1);
+					memcpy(cs->buf + d + c1, cs->ring,
+						count - c1);
+				} else {
+					memset(cs->buf + d, next, count);
+				}
+				break;
+			case 2:
+				if (cs->bytes.len - cs->pos < 3) {
+					return d;
+				}
+				count = cs->bytes.ptr[cs->pos];
+				++cs->pos;
+				memtessel(cs->buf + d, cs->bytes.ptr + cs->pos,
+					2, count);
+				cs->pos += 2;
+				break;
+			case 3:
+				cs->buf[d] = 0;
+				cs->ring[cs->r] = 0;
+				++cs->r;
+				break;
+			default:
+				n = 3;
+				if (cs->pos == cs->bytes.len) {
+					return d;
+				}
+				count = cs->bytes.ptr[cs->pos];
+				++cs->pos;
+				memset(cs->buf + d, cs->pat, count);
+				break;
+			}
+			d += count;
+			b += n + 1;
+		}
+		bitstrm_seek(&cs->bs, b);
+	}
+	return d;
+}
+
+struct wu_st prs_decode(const struct prs_desc *desc, struct wuimg *img) {
+	const size_t height = img->h * desc->ch;
+	struct prs_column_state cs = {
+		.bytes = desc->bytes,
+		.buf = calloc(height + 0xfe, 1),
+		.pat = desc->pat,
+	};
+	if (!cs.buf) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+	bitstrm_from_wuptr(&cs.bs, desc->bits);
+
+	const size_t bands = img->w/8;
+	size_t band = 0;
+	size_t r = 0;
+	while (band < bands) {
+		r = prs_column_expand(&cs, height, r);
+		size_t y = 0;
+		while (y < img->h) {
+			uint32_t *dst = (uint32_t *)img->data + y*bands + band;
+			size_t k = 0;
+			uint32_t a = 0;
+			for (int i = 0; i < 3; ++i) {
+				if (desc->plane_mask & (1 << i)) {
+					a |= bitspread(cs.buf[k*img->h+y])
+						>> i;
+					++k;
+				}
+			}
+			*dst = endian32l(a);
+			++y;
+		}
+		if (r < height) {
+			break;
+		}
+		r -= height;
+		++band;
+	}
+	free(cs.buf);
+	return wuerr_partial(band, bands);
+}
+
+struct wu_st prs_parse(struct prs_desc *desc, const struct wuptr mem,
+struct wuimg *img) {
+	/* PRS header:
+		Offset  Type    Name
+		0       u8      Width  // multiply by 8
+		1       u8      Height
+		2       u8      X      // multiply by 8
+		3       u8      Y
+		4.0     u4      PlaneMask
+		4.4     u4      TransparentIdx  // game may override this
+		5       u16     DataBytesSize
+		7       u8      DefaultPattern
+		8
+	 * Header is followed by a DataByte section, then a CommandBits
+	 * section. Decoded pixels must be doubled vertically. */
+	struct mparser mp = mp_wuptr(mem);
+	const uint8_t *header = mp_slice(&mp, 8);
+	if (!header) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	img->w = header[0] * 8;
+	img->h = header[1];
+	img->channels = 4;
+	img->bitdepth = 1;
+	img->layout = pix_layout_pack(1, 2, 0, 3);
+	img->alpha = alpha_ignore;
+	wuimg_aspect_ratio(img, 1, 2);
+	*desc = (struct prs_desc) {
+		.x = header[2],
+		.y = header[3],
+		.ch = (uint8_t)(
+			(header[4] & 0x1)
+			+ ((header[4] >> 1) & 0x1)
+			+ ((header[4] >> 2) & 0x1)
+		),
+		.plane_mask = header[4] & 0xf,
+		.trans = header[4] >> 4,
+		.pat = header[7],
+		.bytes = mp_avail(&mp, buf_endian16l(header + 5)),
+	};
+	desc->bits = mp_remaining(&mp);
+	return desc->bits.len ? WU_OK : WUERR_HERE(wu_unexpected_eof);
+}
+
+/* IDES PC-98 GPC
+
+ * Decoding algorithm from
 https://github.com/HolografixFinn/gpc2bmp
  * plus original research.
 
@@ -22,15 +207,6 @@ struct gpc_row_state {
 
 void gpc_cleanup(struct gpc_desc *desc) {
 	palette_unref(desc->pal);
-}
-
-static uint32_t bitspread(uint32_t c) {
-	/* Spreads a byte's bits so that they're 4 bits apart. */
-	c *= 0x40100401; // replicate every 10 bits
-	c &= 0xc0c0c0c0; // isolate bit pairs
-	c |= c >> 3;     // replicate bit pairs at an offset
-	c &= 0x88888888; // isolate bits in {1,0, 3,2, 5,4, 7,6} order
-	return c;        // on Little-Endian, we're done. on BE, swap later
 }
 
 static size_t gpc_row_expand(struct gpc_row_state *rs, uint8_t *restrict dst,

@@ -677,13 +677,15 @@ DEC_MAP: DecMap = {
 		),
 	},
 
-	"gpc": {
-		"gpc": FmtInfo("IDES/Fairytale PC-98 visual novel image",
+	"ides": {
+		"prs": FmtInfo("IDES/Kirara PC-98 visual novels PRS",
+			match="prs",
+		),
+		"gpc": FmtInfo("IDES PC-98 visual novels GPC",
 			ext="gpc",
 			magic=b"PC98)GPCFILE   \0"
 		),
-
-		"clm": FmtInfo("IDES/Fairytale PC-98 thumbnail? (no palette support)",
+		"clm": FmtInfo("IDES PC-98 thumbnail? (no palette support)",
 			match="clm"
 		),
 	},

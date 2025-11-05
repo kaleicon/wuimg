@@ -6,6 +6,21 @@
 #include "misc/mparser.h"
 #include "raster/wuimg.h"
 
+struct prs_desc {
+	uint8_t x, y;
+	uint8_t ch;
+	uint8_t plane_mask, trans;
+	uint8_t pat;
+	struct wuptr bytes;
+	struct wuptr bits;
+};
+
+struct wu_st prs_decode(const struct prs_desc *desc, struct wuimg *img);
+
+struct wu_st prs_parse(struct prs_desc *desc, struct wuptr mem,
+struct wuimg *img);
+
+
 struct gpc_img_settings {
 	uint32_t row_skip;
 	uint32_t comp_len;

@@ -1,7 +1,28 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
 #include "wudefs.h"
-#include "lib/gpc.h"
+#include "lib/ides.h"
+
+static struct wu_st init_prs(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct prs_desc desc;
+	struct wu_st st = prs_parse(&desc, infile->map, infile->sub_img);
+	if (wu_isok(st)) {
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		if (e == wu_ok) {
+			tree_bud_leaf_u(&infile->metadata, "X", desc.x);
+			tree_bud_leaf_u(&infile->metadata, "Y", desc.y);
+			tree_bud_leaf_u(&infile->metadata, "Planes", desc.ch);
+			tree_bud_leaf_u(&infile->metadata, "Transparent",
+				desc.trans);
+			st = prs_decode(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(e);
+		}
+	}
+	return st;
+}
+
 
 static void end_gpc(struct image_file *infile) {
 	gpc_cleanup(infile->dec_state);
@@ -60,6 +81,11 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+const struct image_fn prs_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.init = init_prs,
+};
 const struct image_fn gpc_fn = {
 	.mmap = true,
 	.state_size = sizeof(struct gpc_desc),
