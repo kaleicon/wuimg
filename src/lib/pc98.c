@@ -4,7 +4,7 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
-#include "lib/ides.h"
+#include "lib/pc98.h"
 
 static uint32_t bitspread(uint32_t c) {
 	/* Spreads a byte's bits so that they're 4 bits apart. */
@@ -15,9 +15,65 @@ static uint32_t bitspread(uint32_t c) {
 	return c;        // on Little-Endian, we're done. on BE, swap later
 }
 
-/* IDES/Kirara PRS
+/* Kirara/IDES PRS
 https://gitlab.com/bunnylin/supersakura/-/blob/dev/doc/gfx/prs-ada-mda.md
+ * Also handle Micro Cabin PRS as it's hard to disambiguate between
+ * the two, as if a Summer Mirage.
+ * TODO: Some Micro Cabin images come out truncated. A bad rip?
 */
+
+static struct wu_st micro_cabin_prs_decode(const struct prs_desc *desc,
+struct wuimg *img) {
+	const size_t dst_len = img->w/8 * img->h;
+	uint32_t *dst = (uint32_t *)img->data;
+	size_t d = 0;
+	const struct wuptr src = desc->bytes;
+	size_t s = 0;
+	while (s < src.len) {
+		const uint8_t op = src.ptr[s];
+		++s;
+		unsigned count = op & 0x3;
+		if (!count) {
+			if (s >= src.len) {
+				break;
+			}
+			count = ((src.ptr[s] - 1) & 0xff) + 1;
+			++s;
+		}
+		if (dst_len - d < count) {
+			break;
+		}
+
+		const unsigned pix_size = 3;
+		const unsigned off = op >> 2;
+		if (off == 63) {
+			if (src.len - s < pix_size * count) {
+				break;
+			}
+			for (unsigned k = 0; k < count; ++k) {
+				uint32_t a = 0;
+				for (unsigned i = 0; i < pix_size; ++i) {
+					a |= bitspread(src.ptr[s])
+						>> i;
+					++s;
+				}
+				dst[d] = a;
+				++d;
+			}
+		} else {
+			uint32_t a = 0;
+			for (unsigned i = 0; i < pix_size; ++i) {
+				a |= bitspread(desc->u.dict[off + i*63]) >> i;
+			}
+			for (unsigned k = 0; k < count; ++k) {
+				dst[d] = a;
+				++d;
+			}
+		}
+	}
+	return wuerr_partial(d, dst_len);
+}
+
 struct prs_column_state {
 	struct bitstrm bs;
 	struct wuptr bytes;
@@ -103,16 +159,19 @@ size_t excess) {
 }
 
 struct wu_st prs_decode(const struct prs_desc *desc, struct wuimg *img) {
-	const size_t height = img->h * desc->ch;
+	if (desc->micro_cabin) {
+		return micro_cabin_prs_decode(desc, img);
+	}
+	const size_t height = img->h * desc->u.ides.ch;
 	struct prs_column_state cs = {
 		.bytes = desc->bytes,
 		.buf = calloc(height + 0xfe, 1),
-		.pat = desc->pat,
+		.pat = desc->u.ides.pat,
 	};
 	if (!cs.buf) {
 		return WUERR_HERE(wu_alloc_error);
 	}
-	bitstrm_from_wuptr(&cs.bs, desc->bits);
+	bitstrm_from_wuptr(&cs.bs, desc->u.ides.bits);
 
 	const size_t bands = img->w/8;
 	size_t band = 0;
@@ -125,7 +184,7 @@ struct wu_st prs_decode(const struct prs_desc *desc, struct wuimg *img) {
 			size_t k = 0;
 			uint32_t a = 0;
 			for (int i = 0; i < 3; ++i) {
-				if (desc->plane_mask & (1 << i)) {
+				if (desc->u.ides.plane_mask & (1 << i)) {
 					a |= bitspread(cs.buf[k*img->h+y])
 						>> i;
 					++k;
@@ -144,48 +203,88 @@ struct wu_st prs_decode(const struct prs_desc *desc, struct wuimg *img) {
 	return wuerr_partial(band, bands);
 }
 
+static struct wu_st micro_cabin_prs_parse(struct prs_desc *desc,
+struct mparser *mp, const uint8_t header[static 8], struct wuimg *img) {
+	img->w = buf_endian16l(header + 2) * 8;
+	img->h = buf_endian16l(header + 4);
+	desc->u.dict = mp_slice(mp, 63*3);
+	desc->bytes = mp_remaining(mp);
+	return desc->u.dict && desc->bytes.len
+		? WU_OK : WUERR_HERE(wu_unexpected_eof);
+}
+
 struct wu_st prs_parse(struct prs_desc *desc, const struct wuptr mem,
 struct wuimg *img) {
-	/* PRS header:
+	/* IDES PRS header:
 		Offset  Type    Name
 		0       u8      Width  // multiply by 8
 		1       u8      Height
 		2       u8      X      // multiply by 8
 		3       u8      Y
-		4.0     u4      PlaneMask
-		4.4     u4      TransparentIdx  // game may override this
+		4.0     bool    HasBlue
+		4.1     bool    HasRed
+		4.2     bool    HasGreen
+		4.3     bool    Unused?
+		4.4     u3      TransparentIdx  // game may override this
+		4.7     bool    Unused?
 		5       u16     DataBytesSize
 		7       u8      DefaultPattern
 		8
 	 * Header is followed by a DataByte section, then a CommandBits
-	 * section. Decoded pixels must be doubled vertically. */
+	 * section.
+
+	 * Micro Cabin PRS:
+		0       u16      ???
+		2       u16      Width
+		4       u16      Height
+		6       u16      ???
+		8       u8       BRGDict[3][63]
+		195
+
+	 * Decoded pixels must be doubled vertically for both formats.
+	*/
 	struct mparser mp = mp_wuptr(mem);
 	const uint8_t *header = mp_slice(&mp, 8);
 	if (!header) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	img->w = header[0] * 8;
-	img->h = header[1];
 	img->channels = 4;
 	img->bitdepth = 1;
 	img->layout = pix_layout_pack(1, 2, 0, 3);
 	img->alpha = alpha_ignore;
 	wuimg_aspect_ratio(img, 1, 2);
-	*desc = (struct prs_desc) {
+
+	const uint8_t plane_mask = header[4] & 0xf;
+	const uint8_t trans = header[4] >> 4;
+	const uint16_t byte_section_size = buf_endian16l(header + 5);
+
+	/* This doesn't always work, but without fancy statistical modelling,
+	 * peeking at the surrounding filesystem, or asking the user to do
+	 * either of the former and tell us the result, it's the best we can
+	 * do. */
+	desc->micro_cabin = !header[0] || !header[1]
+		|| (header[4] & 0x88) || !(plane_mask & 0x7)
+		|| byte_section_size >= mem.len - 8;
+	if (desc->micro_cabin) {
+		return micro_cabin_prs_parse(desc, &mp, header, img);
+	}
+	img->w = header[0] * 8;
+	img->h = header[1];
+	desc->u.ides = (struct prs_ides) {
 		.x = header[2],
 		.y = header[3],
 		.ch = (uint8_t)(
-			(header[4] & 0x1)
-			+ ((header[4] >> 1) & 0x1)
-			+ ((header[4] >> 2) & 0x1)
+			(plane_mask & 0x1)
+			+ ((plane_mask >> 1) & 0x1)
+			+ ((plane_mask >> 2) & 0x1)
 		),
-		.plane_mask = header[4] & 0xf,
-		.trans = header[4] >> 4,
+		.plane_mask = plane_mask,
+		.trans = trans >> 4,
 		.pat = header[7],
-		.bytes = mp_avail(&mp, buf_endian16l(header + 5)),
 	};
-	desc->bits = mp_remaining(&mp);
-	return desc->bits.len ? WU_OK : WUERR_HERE(wu_unexpected_eof);
+	desc->bytes = mp_avail(&mp, byte_section_size),
+	desc->u.ides.bits = mp_remaining(&mp);
+	return desc->u.ides.bits.len ? WU_OK : WUERR_HERE(wu_unexpected_eof);
 }
 
 /* IDES PC-98 GPC
@@ -194,7 +293,8 @@ struct wuimg *img) {
 https://github.com/HolografixFinn/gpc2bmp
  * plus original research.
 
- * TODO: What's wrong with Himitu_c/pic/s53.gpc (from 秘密の花園)?
+ * TODO: What's wrong with Himitu_c/pic/s53.gpc (from 秘密の花園)? Did I get a
+ *       bad rip too?
 */
 
 struct gpc_row_state {

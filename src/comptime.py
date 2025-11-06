@@ -677,19 +677,6 @@ DEC_MAP: DecMap = {
 		),
 	},
 
-	"ides": {
-		"prs": FmtInfo("IDES/Kirara PC-98 visual novels PRS",
-			match="prs",
-		),
-		"gpc": FmtInfo("IDES PC-98 visual novels GPC",
-			ext="gpc",
-			magic=b"PC98)GPCFILE   \0"
-		),
-		"clm": FmtInfo("IDES PC-98 thumbnail? (no palette support)",
-			match="clm"
-		),
-	},
-
 	"hel": {
 		"hel": FmtInfo("Herahera Animation (へらへらアニメ, HEL)",
 			ext="hel",
@@ -840,6 +827,20 @@ DEC_MAP: DecMap = {
 				b"\xff\xff\xff\xff" b"\0\0" b"\xff\xff\xff\xff",
 				b"FORM" b"\0\0" b"VERS",
 			)
+		),
+	},
+
+	"pc98": {
+		"prs": FmtInfo("Kirara/IDES PRS"
+			", Micro Cabin PRS (Kimagure Orange Road)",
+			match="prs",
+		),
+		"gpc": FmtInfo("IDES GPC (Fairytale, Cocktail)",
+			ext="gpc",
+			magic=b"PC98)GPCFILE   \0"
+		),
+		"clm": FmtInfo("IDES thumbnail? (no palette support)",
+			match="clm"
 		),
 	},
 

@@ -82,9 +82,6 @@ gp4       gp4       elf AI5 engine GP4
 heif      heif      High Efficiency Image File Format
 hel       hel       Herahera Animation (へらへらアニメ, HEL)
 hg3       hg3       CatSystem engine image
-ides      clm       IDES PC-98 thumbnail? (no palette support)
-ides      gpc       IDES PC-98 visual novels GPC
-ides      prs       IDES/Kirara PC-98 visual novels PRS
 ilbm      ilbm      Interleaved Bitmap & Co.: ILBM, PBM, ACBM, RGB8, RGBN, Mean Streets MLDF, Command Simulations little-endian ILBM
 jam       jam       Aladdin JAM format
 jbig      jbig      JBIG
@@ -106,6 +103,9 @@ nokia     nlm       Nokia Logo Manager
 nokia     nol       Nokia Operator Logo and Nokia Group Graphics (NOL/NGG)
 nokia     npm       Nokia Picture Message
 nokia     nsl       Nokia Startup Logo
+pc98      clm       IDES thumbnail? (no palette support)
+pc98      gpc       IDES GPC (Fairytale, Cocktail)
+pc98      prs       Kirara/IDES PRS, Micro Cabin PRS (Kimagure Orange Road)
 pcf       pcf       PCF bitmap font
 pcx       dcx       Multi-image PCX
 pcx       pcx       PC Paintbrush PCX (all versions, plus CGA mode), Word for DOS screen capture

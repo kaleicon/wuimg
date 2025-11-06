@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
 #include "wudefs.h"
-#include "lib/ides.h"
+#include "lib/pc98.h"
 
 static struct wu_st init_prs(struct image_file *infile,
 const struct wu_conf *conf) {
@@ -10,11 +10,18 @@ const struct wu_conf *conf) {
 	if (wu_isok(st)) {
 		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
 		if (e == wu_ok) {
-			tree_bud_leaf_u(&infile->metadata, "X", desc.x);
-			tree_bud_leaf_u(&infile->metadata, "Y", desc.y);
-			tree_bud_leaf_u(&infile->metadata, "Planes", desc.ch);
-			tree_bud_leaf_u(&infile->metadata, "Transparent",
-				desc.trans);
+			tree_add_leaf_utf8(&infile->metadata, "Company",
+				desc.micro_cabin ? "Micro Cabin" : "IDES");
+			if (!desc.micro_cabin) {
+				tree_bud_leaf_u(&infile->metadata, "X",
+					desc.u.ides.x);
+				tree_bud_leaf_u(&infile->metadata, "Y",
+					desc.u.ides.y);
+				tree_bud_leaf_u(&infile->metadata, "Planes",
+					desc.u.ides.ch);
+				tree_bud_leaf_u(&infile->metadata, "Transparent",
+					desc.u.ides.trans);
+			}
 			st = prs_decode(&desc, infile->sub_img);
 		} else {
 			st = WUERR_HERE(e);

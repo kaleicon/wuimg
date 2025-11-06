@@ -6,13 +6,21 @@
 #include "misc/mparser.h"
 #include "raster/wuimg.h"
 
-struct prs_desc {
+struct prs_ides {
 	uint8_t x, y;
 	uint8_t ch;
 	uint8_t plane_mask, trans;
 	uint8_t pat;
-	struct wuptr bytes;
 	struct wuptr bits;
+};
+
+struct prs_desc {
+	bool micro_cabin;
+	union {
+		struct prs_ides ides;
+		const uint8_t *dict;
+	} u;
+	struct wuptr bytes;
 };
 
 struct wu_st prs_decode(const struct prs_desc *desc, struct wuimg *img);
