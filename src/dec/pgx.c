@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/pgx.h"
 
-static size_t dec(const void *restrict desc, struct wuimg *img) {
-	return pgx_decode(desc, img);
-}
-static enum wu_error parse(void *restrict desc, struct wuimg *img) {
-	return pgx_read_header(desc, img);
-}
-static enum wu_error open(void *restrict desc, struct image_file *infile) {
-	return pgx_init(desc, infile->map);
-}
-
-static enum wu_error pgx_dec(struct image_file *infile,
+static struct wu_st init_pgx(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct pgx_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, open, parse, NULL, dec);
+	struct wuptr comp;
+	struct wu_st st = pgx_read_header(&comp, infile->map, infile->sub_img);
+	if (wu_isok(st)) {
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, wuconf);
+		if (e == wu_ok) {
+			st = pgx_decode(comp, infile->sub_img);
+		} else {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		}
+	}
+	return st;
 }
 
 const struct image_fn pgx_fn = {
 	.mmap = true,
-	.dec = pgx_dec
+	.alloc_single = true,
+	.init = init_pgx,
 };
