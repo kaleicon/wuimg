@@ -907,6 +907,9 @@ DEC_MAP: DecMap = {
 			ext="pi",
 			magic=b"Pi"
 		),
+		"dpc": FmtInfo("Yuuguri DPC image and palette",
+			match="dpc",
+		),
 	},
 
 	"pic": {

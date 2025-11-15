@@ -24,4 +24,15 @@ struct wu_st pi_decode(const struct pi_desc *desc, struct wuimg *img);
 struct wu_st pi_read_header(struct pi_desc *desc, struct wuimg *img,
 struct wuptr mem);
 
+
+struct dpc_desc {
+	uint16_t x, y;
+	struct wuptr data;
+};
+
+struct wu_st dpc_decode(const struct dpc_desc *desc, struct wuimg *img);
+
+struct wu_st dpc_read_header(struct dpc_desc *desc, struct wuimg *img,
+struct wuptr mem);
+
 #endif /* LIB_PI */

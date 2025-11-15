@@ -265,22 +265,28 @@ const unsigned depth) {
 	return i;
 }
 
-struct wu_st pi_decode(const struct pi_desc *desc, struct wuimg *img) {
+static struct wu_st pi_decode_inner(struct wuimg *img, const uint8_t depth,
+const struct wuptr data) {
 	const size_t dims = wuimg_size(img);
 	size_t written = 0;
-	const unsigned colors = (1 << desc->depth);
+	const unsigned colors = (1 << depth);
 	const unsigned table_size = colors*colors;
 	uint8_t *delta_table = malloc(table_size);
 	if (delta_table) {
 		init_delta_table(delta_table, colors);
 
 		struct bitstrm bs;
-		bitstrm_from_wuptr(&bs, desc->data);
+		bitstrm_from_wuptr(&bs, data);
 		written = bt_decode_loop(img->data, dims, &bs, img->w,
 			delta_table, colors);
 		free(delta_table);
 	}
 	return wuerr_partial(written, dims);
+}
+
+
+struct wu_st pi_decode(const struct pi_desc *desc, struct wuimg *img) {
+	return pi_decode_inner(img, desc->depth, desc->data);
 }
 
 struct wu_st pi_read_header(struct pi_desc *desc, struct wuimg *img,
@@ -364,4 +370,68 @@ const struct wuptr mem) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 	return wuerr(wu_samples_wanted, "width <= 2");
+}
+
+
+// https://gitlab.com/bunnylin/supersakura/-/blob/dev/doc/gfx/cgl-dpc-p-g.md
+struct wu_st dpc_decode(const struct dpc_desc *desc, struct wuimg *img) {
+	if (desc->data.len) {
+		return pi_decode_inner(img, 4, desc->data);
+	}
+	for (int i = 0; i < 1 << 4; ++i) {
+		img->data[i] = (uint8_t)i;
+	}
+	return WU_OK;
+}
+
+struct wu_st dpc_read_header(struct dpc_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
+	/* DPC header:
+		Offset  Type    Name
+		0       u16     Palette[16]
+		32      u16     X
+		34      u16     Y
+		36      u16     Width
+		38      u16     Height
+		40
+	*/
+	struct mparser mp = mp_wuptr(mem);
+	const struct wuptr buf = mp_avail(&mp, 40);
+	if (buf.len < 32) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+
+	img->channels = 1;
+	img->bitdepth = 8;
+	img->bitrange = 4;
+	struct palette *pal = wuimg_palette_init(img);
+	if (!pal) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+	for (int i = 0; i < 16; ++i) {
+		const uint16_t e = buf_endian16l(buf.ptr + i*2);
+		if (e & 0x0842) {
+			return wuerr(wu_invalid_header,
+				"unused bits set in palette");
+		}
+		pal->color[i] = (struct pix_rgba8) {
+			.g = (e >> 12) & 0xf,
+			.r = (e >> 7) & 0xf,
+			.b = (e >> 2) & 0xf,
+			.a = (e & 1) ? 0x0 : 0xf,
+		};
+	}
+
+	if (buf.len == 40) {
+		desc->x = buf_endian16l(buf.ptr + 32);
+		desc->y = buf_endian16l(buf.ptr + 34);
+		img->w = buf_endian16l(buf.ptr + 36);
+		img->h = buf_endian16l(buf.ptr + 38);
+	} else {
+		// Palette only file
+		img->w = 4;
+		img->h = 4;
+	}
+	desc->data = mp_remaining(&mp);
+	return WU_OK;
 }

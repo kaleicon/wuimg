@@ -28,8 +28,32 @@ const struct wu_conf *conf) {
 	return st;
 }
 
+static struct wu_st init_dpc(struct image_file *infile,
+const struct wu_conf *conf) {
+	struct dpc_desc desc;
+	struct wu_st st = dpc_read_header(&desc, infile->sub_img, infile->map);
+	if (wu_isok(st)) {
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		if (e == wu_ok) {
+			if (desc.data.len) {
+				tree_bud_leaf_u(&infile->metadata, "X", desc.x);
+				tree_bud_leaf_u(&infile->metadata, "Y", desc.y);
+			}
+			st = dpc_decode(&desc, infile->sub_img);
+		} else {
+			st = WUERR_HERE(e);
+		}
+	}
+	return st;
+}
+
 const struct image_fn pi_fn = {
 	.mmap = true,
 	.alloc_single = true,
 	.init = init_pi,
+};
+const struct image_fn dpc_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.init = init_dpc,
 };
