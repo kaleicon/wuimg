@@ -3,13 +3,10 @@
 #ifndef LIB_XYZ
 #define LIB_XYZ
 
-#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
-size_t xyz_decode(const struct mparser *mp, struct wuimg *img);
+struct wu_st xyz_decode(struct wuimg *img, struct wuptr mem);
 
-enum wu_error xyz_parse(struct mparser *mp, struct wuimg *img);
-
-enum wu_error xyz_init(struct mparser *mp, struct wuptr mem);
+struct wu_st xyz_parse(struct wuimg *img, struct wuptr mem);
 
 #endif /* LIB_XYZ */

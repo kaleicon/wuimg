@@ -7,56 +7,61 @@
 #include "raster/fmt.h"
 #include "xyz.h"
 
-size_t xyz_decode(const struct mparser *mp, struct wuimg *img) {
-	/* XYZ is simply a deflate stream, containing an RGB palette and the
-	 * index data.
+struct wu_st xyz_decode(struct wuimg *img, struct wuptr src) {
+	/* Deflate stream contains an RGB24 palette, followed by index data.
 	 * Although zlib allows us to pause decoding to switch output buffers,
 	 * for simplicity, we decompress to a single buffer, expand the
 	 * palette to RGBA in place, and make img->data point after
 	 * img->u.palette while setting the borrowed bit to true. The image
-	 * will be freed when the palette is. */
-	struct mparser mpcpy = *mp;
-	const struct wuptr src = mp_remaining(&mpcpy);
-	if (src.len) {
-		struct palette *pal;
-		const size_t dst_len = sizeof(*pal) + wuimg_size(img);
-		uint8_t *dst = malloc(dst_len);
-		if (dst) {
-			const size_t entries = 256;
-			const size_t write_offset = sizeof(*pal) - entries*3;
-			uint8_t *uncmp = dst + write_offset;
-			uLong uncmp_len = (uLong)(dst_len - write_offset);
-			uncompress(uncmp, &uncmp_len, src.ptr, (uLong)src.len);
-			if (uncmp_len > entries*3) {
-				pal = (struct palette *)dst;
-				pal->refs = 0;
-				palette_from_rgb8(pal, uncmp, entries);
-				wuimg_palette_set(img, pal);
-				img->data = dst + sizeof(*pal);
-				img->borrowed = true;
-				return uncmp_len;
-			}
-			free(dst);
+	 * will thus be freed when the palette is. */
+	src.ptr += 8;
+	src.len -= 8;
+	struct palette *pal;
+	const size_t dst_len = sizeof(*pal) + wuimg_size(img);
+	const size_t entries = 256;
+	const size_t write_offset = sizeof(*pal) - entries*3;
+	const size_t uncmp_len = dst_len - write_offset;
+
+	uint8_t *dst = malloc(dst_len);
+	if (dst) {
+		uint8_t *uncmp = dst + write_offset;
+		uLong uncmpd = (uLong)uncmp_len;
+		uncompress(uncmp, &uncmpd, src.ptr, (uLong)src.len);
+		if (uncmpd > entries*3) {
+			pal = (struct palette *)dst;
+			pal->refs = 0;
+			palette_from_rgb8(pal, uncmp, entries);
+			wuimg_palette_set(img, pal);
+			img->data = dst + sizeof(*pal);
+			img->borrowed = true;
+			memset(dst + uncmpd, 0, uncmp_len - uncmpd);
+			return wuerr_partial((size_t)uncmpd, uncmp_len);
 		}
+		free(dst);
+		return wuerr(wu_unexpected_eof,
+			"deflate stream ended before image data");
 	}
-	return 0;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-enum wu_error xyz_parse(struct mparser *mp, struct wuimg *img) {
-	const uint8_t *header = mp_slice(mp, 4);
-	if (header) {
-		img->w = buf_endian16(header, little_endian);
-		img->h = buf_endian16(header + 2, little_endian);
-		img->channels = 1;
-		img->bitdepth = 8;
-		img->layout = pix_rgba;
-		return wuimg_verify(img);
+struct wu_st xyz_parse(struct wuimg *img, const struct wuptr mem) {
+	/* XYZ header:
+		Offset  Type    Name
+		0       u8      Magic[4]
+		4       u16     Width
+		6       u16     Height
+		8       u8      DeflateStream[]
+	*/
+	const uint8_t magic[] = {'X', 'Y', 'Z', '1'};
+	if (mem.len <= 8) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(mem.ptr, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_unexpected_eof;
-}
-
-enum wu_error xyz_init(struct mparser *mp, const struct wuptr mem) {
-	*mp = mp_wuptr(mem);
-	const unsigned char magic[] = {'X', 'Y', 'Z', '1'};
-	return fmt_sigcmp_mem(magic, sizeof(magic), mp);
+	img->w = buf_endian16l(mem.ptr + 4);
+	img->h = buf_endian16l(mem.ptr + 6);
+	img->channels = 1;
+	img->bitdepth = 8;
+	img->layout = pix_rgba;
+	return wuimg_verify_st(img);
 }

@@ -1,25 +1,23 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/xyz.h"
 
-static size_t dec(const void *restrict mp, struct wuimg *img) {
-	return xyz_decode(mp, img);
-}
-static enum wu_error parse(void *restrict mp, struct wuimg *img) {
-	return xyz_parse(mp, img);
-}
-static enum wu_error init(void *restrict mp, struct image_file *infile) {
-	return xyz_init(mp, infile->map);
-}
-
-static enum wu_error xyz_dec(struct image_file *infile,
+static struct wu_st init_xyz(struct image_file *infile,
 const struct wu_conf *conf) {
-	struct mparser mp;
-	return rast_trivial_dec(infile, conf, &mp, init, parse, NULL, dec);
+	struct wu_st st = xyz_parse(infile->sub_img, infile->map);
+	if (wu_isok(st)) {
+		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+			st = WUERR_HERE(wu_exceeds_size_limit);
+		} else {
+			st = xyz_decode(infile->sub_img, infile->map);
+		}
+	}
+	return st;
 }
 
 const struct image_fn xyz_fn = {
 	.mmap = true,
-	.dec = xyz_dec,
+	.alloc_single = true,
+	.init = init_xyz,
 };
