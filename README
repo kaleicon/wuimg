@@ -1,9 +1,9 @@
                                      wuimg
                               Frugal image viewer
 
-wu is a minimalistic image viewer, one with maximalist aims for comfort, speed,
-accurate color rendering, and format documentation and preservation. It may or
-may not be currently hitting any of those goals.
+wu is a minimalistic image viewer that aims for comfort, speed, accurate color
+rendering, and format documentation and preservation. It may or may not be
+currently hitting any of those goals.
 
 wu is meant as a terminal companion, so launching from one is recommended.
 
@@ -26,7 +26,7 @@ Features
 
 Supported formats
 -----------------
-More than 108 formats are supported, ranging from the common to the niche.
+More than 144 formats are supported, ranging from the common to the niche.
 Here is a representative but not exhaustive listing:
 * Well-known:
   * BMP and ICO
