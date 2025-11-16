@@ -20,10 +20,9 @@ struct tlg_desc {
 
 const char * tlg_version_str(enum tlg_version ver);
 
-size_t tlg_decode(const struct tlg_desc *desc, struct wuimg *img);
+struct wu_st tlg_decode(const struct tlg_desc *desc, struct wuimg *img);
 
-enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img);
-
-enum wu_error tlg_open_mem(struct tlg_desc *desc, struct wuptr mem);
+struct wu_st tlg_read_header(struct tlg_desc *desc, struct wuptr mem,
+struct wuimg *img);
 
 #endif /* LIB_TLG */

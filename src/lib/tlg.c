@@ -22,29 +22,27 @@ const char * tlg_version_str(const enum tlg_version ver) {
 	return "???";
 }
 
-static size_t correlate4(uint32_t *dst, const size_t w, size_t y,
+static size_t tlg_correlate4(uint32_t *dst, const size_t w, size_t y,
 const size_t y_limit) {
-	while (y < y_limit) {
+	const enum endianness e = which_end();
+	do {
 		uint32_t row_acc = 0;
 		for (size_t x = 0; x < w; ++x) {
 			const size_t pos = w*y + x;
 			uint32_t pix = dst[pos];
-			uint32_t green;
-			if (which_end() == little_endian) {
-				green = ((pix >> 8) & 0xff) * 0x10001;
-			} else {
-				green = ((pix >> 16) & 0xff) * 0x1000100;
-			}
+			uint32_t green = (e == little_endian)
+				? ((pix >> 8) & 0xff) * 0x10001
+				: ((pix >> 16) & 0xff) * 0x1000100;
 			row_acc = uadd8_32(row_acc, uadd8_32(pix, green));
 			pix = uadd8_32(row_acc, y ? dst[pos - w] : 0);
 			dst[pos] = pix;
 		}
 		++y;
-	}
+	} while (y < y_limit);
 	return y;
 }
 
-static size_t correlate3(uint8_t *dst, const size_t w, size_t y,
+static size_t tlg_correlate3(uint8_t *dst, const size_t w, size_t y,
 const size_t y_limit) {
 	const uint8_t ch = 3;
 	const size_t stride = w * ch;
@@ -68,11 +66,11 @@ const size_t y_limit) {
 	return y;
 }
 
-static size_t pixel_correlate(uint8_t *dst, const size_t w, size_t y,
+static size_t tlg_correlate(uint8_t *dst, const size_t w, size_t y,
 const size_t y_limit, const uint8_t ch) {
 	return (ch == 4)
-		? correlate4((uint32_t *)dst, w, y, y_limit)
-		: correlate3(dst, w, y, y_limit);
+		? tlg_correlate4((uint32_t *)dst, w, y, y_limit)
+		: tlg_correlate3(dst, w, y, y_limit);
 }
 
 #define MAX_LZSS_READ (3*8 + 1)
@@ -84,7 +82,7 @@ const uint8_t ch) {
 	size_t s = 0;
 	uint8_t end[MAX_LZSS_READ * 2];
 	while (d < dst_len) {
-		if (s + MAX_LZSS_READ > src_len) {
+		if (src_len - s < MAX_LZSS_READ) {
 			if (src == end) {
 				break;
 			}
@@ -95,7 +93,7 @@ const uint8_t ch) {
 		++s;
 		for (int i = 0; i < 8; ++i, flags >>= 1) {
 			if (flags & 1) {
-				const uint16_t off_len = buf_endian16(src + s, little_endian);
+				const uint16_t off_len = buf_endian16l(src + s);
 				s += 2;
 
 				uint16_t count = (off_len >> 12) + 3;
@@ -103,11 +101,13 @@ const uint8_t ch) {
 					count += src[s];
 					++s;
 				}
-				if (d + count >= dst_len) {
+				if (dst_len - d < count) {
 					return;
 				}
 				for (uint16_t j = 0; j < count; ++j) {
-					const uint8_t byte = dict->data[(off_len + j) & dict_mask];
+					const uint8_t byte = dict->data[
+						(off_len + j) & dict_mask
+					];
 					dict->data[dict->pos] = byte;
 					dst[d*ch] = byte;
 
@@ -155,48 +155,41 @@ struct dict *dict, struct mparser *mp) {
 
 			const bool uncompressed = header[0];
 			struct wuptr block = mp_avail(mp,
-				buf_endian32(header + 1, little_endian));
+				buf_endian32l(header + 1));
 
 			if (uncompressed) {
-				if (block.len > strip_pixs) {
-					block.len = strip_pixs;
-				}
-				strip_spread(strip + z, block.ptr, block.len,
+				strip_spread(strip + z, block.ptr,
+					zumin(block.len, strip_pixs),
 					img->channels);
 			} else {
 				lzss_decomp_spread(strip + z, strip_pixs,
-					block.ptr, block.len, dict, img->channels);
+					block.ptr, block.len, dict,
+					img->channels);
 			}
 		}
-		y = pixel_correlate(img->data, img->w, y, y + strip_height,
+		y = tlg_correlate(img->data, img->w, y, y + strip_height,
 			img->channels);
 	} while (y < img->h);
 	return img->h;
 }
 
-static size_t decode_v5(const struct tlg_desc *desc, struct wuimg *img,
+static struct wu_st decode_v5(const struct tlg_desc *desc, struct wuimg *img,
 struct mparser *mp) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		struct dict *dict = calloc(1, sizeof(*dict));
-		if (dict) {
-			w = decode_blocks(desc, img, dict, mp);
-			free(dict);
-		}
+	struct dict *dict = calloc(1, sizeof(*dict));
+	if (dict) {
+		size_t y = decode_blocks(desc, img, dict, mp);
+		free(dict);
+		return wuerr_partial(y, img->h);
 	}
-	return w;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-size_t tlg_decode(const struct tlg_desc *desc, struct wuimg *img) {
+struct wu_st tlg_decode(const struct tlg_desc *desc, struct wuimg *img) {
 	struct mparser mp = desc->mp;
-	switch (desc->version) {
-	case tlg_v5: return decode_v5(desc, img, &mp);
-	case tlg_v6: break;
-	}
-	return 0;
+	return decode_v5(desc, img, &mp);
 }
 
-static enum wu_error read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
+static struct wu_st read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
 	/* TLG v5 header (after common header):
 		Offset  Type    Name
 		0       u32     BlockHeight
@@ -205,48 +198,22 @@ static enum wu_error read_v5_header(struct tlg_desc *desc, struct wuimg *img) {
 
 	const uint8_t *header = mp_slice(&desc->mp, 4);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	desc->block_height = buf_endian32(header, little_endian);
+	desc->block_height = buf_endian32l(header);
 	if (!desc->block_height) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "block height == 0");
 	}
 
 	/* BlockSizes are repeated in the data stream, so they can safely be
 	 * skipped. */
 	const size_t blocks = zuceildiv(img->h, desc->block_height);
 	return mp_slice(&desc->mp, blocks * 4)
-		? wu_ok : wu_unexpected_eof;
+		? WU_OK : WUERR_HERE(wu_unexpected_eof);
 }
 
-static enum wu_error validate_dims(struct tlg_desc *desc, struct wuimg *img,
-const uint8_t ch, const uint32_t width, const uint32_t height) {
-	switch (ch) {
-	case 1:
-		if (desc->version != tlg_v6) {
-			return wu_invalid_header;
-		}
-		break;
-	case 3: case 4:
-		break;
-	default:
-		return wu_invalid_header;
-	}
-
-	if (width < 1 || height < 1) {
-		return wu_invalid_header;
-	}
-
-	img->w = width;
-	img->h = height;
-	img->channels = ch;
-	img->bitdepth = 8;
-	img->layout = pix_bgra;
-	return wuimg_verify(img);
-}
-
-enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img) {
+static struct wu_st tlg_read_dims(struct tlg_desc *desc, struct wuimg *img) {
 	/* Common TLG header, after tagged data:
 		Offset  Type    Name
 		0       u8      ColorChannels
@@ -257,24 +224,36 @@ enum wu_error tlg_read_header(struct tlg_desc *desc, struct wuimg *img) {
 
 	const uint8_t *header = mp_slice(&desc->mp, 9);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	enum wu_error st = validate_dims(desc, img, header[0],
-		buf_endian32(header + 1, little_endian),
-		buf_endian32(header + 5, little_endian));
-	if (st != wu_ok) {
-		return st;
+	switch (header[0]) {
+	case 1:
+		if (desc->version != tlg_v6) {
+			return wuerr(wu_invalid_header,
+				"1-channel data on non-TLG6 file");
+		}
+		break;
+	case 3: case 4:
+		break;
+	default:
+		return wuerr(wu_invalid_header, "bad number of channels");
 	}
+	img->w = buf_endian32l(header + 1);
+	img->h = buf_endian32l(header + 5);
+	img->channels = header[0];
+	img->bitdepth = 8;
+	img->layout = pix_bgra;
 
 	switch (desc->version) {
 	case tlg_v5: return read_v5_header(desc, img);
 	case tlg_v6: break;
 	}
-	return wu_unsupported_feature;
+	return wuerr(wu_unsupported_feature, "only TLG5 supported");
 }
 
-enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct wuptr mem) {
+struct wu_st tlg_read_header(struct tlg_desc *desc, const struct wuptr mem,
+struct wuimg *img) {
 	const unsigned char tlg[] = {'T', 'L', 'G'};
 	const unsigned char sds[] = {'.', '0', 0, 's', 'd', 's', 0x1a};
 	const unsigned char raw[] = {'.', '0', 0, 'r', 'a', 'w', 0x1a};
@@ -287,18 +266,19 @@ enum wu_error tlg_open_mem(struct tlg_desc *desc, const struct wuptr mem) {
 			switch (magic[3]) {
 			case '0':
 				if (!memcmp(magic + 4, sds, sizeof(sds))) {
-					return wu_unsupported_feature;
+					return wuerr(wu_unsupported_feature,
+						"TLG0 unsupported");
 				}
 				break;
 			case tlg_v5: case tlg_v6:
 				if (!memcmp(magic + 4, raw, sizeof(raw))) {
 					desc->version = magic[3];
-					return wu_ok;
+					return tlg_read_dims(desc, img);
 				}
 				break;
 			}
 		}
-		return wu_invalid_signature;
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
