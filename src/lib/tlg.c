@@ -50,12 +50,14 @@ const size_t y_limit) {
 		uint32_t row_acc = 0;
 		for (size_t x = 0; x < w; ++x) {
 			const size_t d = stride*y + x*ch;
-			uint32_t pix = dst[d] << 16 | dst[d+1] << 8 | dst[d+2];
+			uint32_t pix = (uint32_t)(
+				dst[d] << 16 | dst[d+1] << 8 | dst[d+2]
+			);
 			const uint32_t green = dst[d+1] * 0x10001;
 			row_acc = uadd8_32(row_acc, uadd8_32(pix, green));
 			const size_t dw = d - w;
 			pix = uadd8_32(row_acc, y
-				? dst[dw] << 16 | dst[dw+1] << 8 | dst[dw+2]
+				? (uint32_t)(dst[dw] << 16 | dst[dw+1] << 8 | dst[dw+2])
 				: 0);
 			dst[d] = (uint8_t)(pix >> 16);
 			dst[d+1] = (uint8_t)(pix >> 8);
