@@ -12,6 +12,7 @@ struct pi_saver {
 
 struct pi_desc {
 	unsigned char depth;
+	bool lsp; // truncated 4bit pi
 
 	struct wuptr comm;
 	struct wuptr dummy;
@@ -22,7 +23,7 @@ struct pi_desc {
 struct wu_st pi_decode(const struct pi_desc *desc, struct wuimg *img);
 
 struct wu_st pi_read_header(struct pi_desc *desc, struct wuimg *img,
-struct wuptr mem);
+struct wuptr mem, const uint8_t ext[static 4]);
 
 
 struct dpc_desc {

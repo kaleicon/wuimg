@@ -903,11 +903,12 @@ DEC_MAP: DecMap = {
 	},
 
 	"pi": {
-		"pi": FmtInfo("Yanagisawa's Pi",
+		"pi": FmtInfo("Yanagisawa's Pi, Excellents truncated Pi (.g, .lsp)",
 			ext="pi",
+			match=("g", "lsp"),
 			magic=b"Pi"
 		),
-		"dpc": FmtInfo("Yuuguri DPC image and palette",
+		"dpc": FmtInfo("Excellents Yuuguri DPC image and palette",
 			match="dpc",
 		),
 	},

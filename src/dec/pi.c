@@ -4,18 +4,22 @@
 #include "lib/pi.h"
 
 static void get_pi_metadata(const struct pi_desc *desc, struct wutree *tree) {
-	tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT-JIS");
-	tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
-	tree_add_leaf_len(tree, "Saver model", WUPTR_ARRAY(desc->saver.model),
-		"SHIFT-JIS");
-	tree_add_leaf_len(tree, "Saver data", desc->saver.data, "SHIFT-JIS");
+	if (!desc->lsp) {
+		tree_add_leaf_len(tree, "Comment", desc->comm, "SHIFT-JIS");
+		tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
+		tree_add_leaf_len(tree, "Saver model",
+			WUPTR_ARRAY(desc->saver.model), "SHIFT-JIS");
+		tree_add_leaf_len(tree, "Saver data",
+			desc->saver.data, "SHIFT-JIS");
+	}
 	tree_bud_leaf_u(tree, "Depth", desc->depth);
 }
 
 static struct wu_st init_pi(struct image_file *infile,
 const struct wu_conf *conf) {
 	struct pi_desc desc;
-	struct wu_st st = pi_read_header(&desc, infile->sub_img, infile->map);
+	struct wu_st st = pi_read_header(&desc, infile->sub_img, infile->map,
+		infile->ext);
 	if (wu_isok(st)) {
 		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
 		if (e == wu_ok) {

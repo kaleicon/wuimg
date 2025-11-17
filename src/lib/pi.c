@@ -14,10 +14,16 @@ https://mooncore.eu/bunny/txt/pi-pic.htm
 
  * Spec (in japanese)
 https://mooncore.eu/bunny/txt/pitech.txt
+
+ * DPC and .g/.lsp:
+https://gitlab.com/bunnylin/supersakura/-/blob/dev/doc/gfx/cgl-dpc-p-g.md
 */
 
 // Enable to use slightly slower but clearly correct code.
 static const bool EXACT_BITS = false;
+/* Assume a .g/.lsp file if signature doesn't match, ignoring actual extension.
+ * This ensures the fuzzer tests the lsp path. */
+static const bool PI_ACCEPT_ANY_EXT = true;
 
 enum pi_repeat_src {
 	pi_last4 = 0,
@@ -284,13 +290,17 @@ const struct wuptr data) {
 	return wuerr_partial(written, dims);
 }
 
-
 struct wu_st pi_decode(const struct pi_desc *desc, struct wuimg *img) {
 	return pi_decode_inner(img, desc->depth, desc->data);
 }
 
+static bool pi_is_lsp(const uint8_t ext[static 4]) {
+	const char *e = (const char *)ext;
+	return PI_ACCEPT_ANY_EXT | !strcmp(e, "lsp") | !strcmp(e, "g");
+}
+
 struct wu_st pi_read_header(struct pi_desc *desc, struct wuimg *img,
-const struct wuptr mem) {
+const struct wuptr mem, const uint8_t ext[static 4]) {
 	/* Pi header:
 		Offset  Size    Name
 		0       BYTE[2] Magic;          // "Pi"
@@ -316,38 +326,48 @@ const struct wuptr mem) {
 	const uint8_t *buf = mp_slice(&mp, sizeof(sig));
 	if (!buf) {
 		return WUERR_HERE(wu_unexpected_eof);
-	} else if (memcmp(buf, sig, sizeof(sig))) {
+	}
+
+	if (!memcmp(buf, sig, sizeof(sig))) {
+		if (!mp_upto(&mp, &desc->comm, 0x1a)
+		|| !mp_upto(&mp, &desc->dummy, 0x00)) {
+			return WUERR_HERE(wu_unexpected_eof);
+		}
+
+		buf = mp_slice(&mp, 10);
+		if (!buf) {
+			return WUERR_HERE(wu_unexpected_eof);
+		}
+
+		desc->depth = buf[3];
+		switch (desc->depth) {
+		case 4: case 8: break;
+		default: return wuerr(wu_invalid_header,
+			"depth neither 4 nor 8");
+		}
+
+		const uint8_t ratio_x = buf[1];
+		const uint8_t ratio_y = buf[2];
+		/* According to Google Translate, "dots are multiplied by n/m
+		 * in the vertical direction", so swap parameter order. */
+		wuimg_aspect_ratio(img, ratio_y, ratio_x);
+
+		memcpy(desc->saver.model, buf + 4, sizeof(desc->saver.model));
+		desc->saver.data.len = buf_endian16b(buf + 8);
+		desc->saver.data.ptr = mp_slice(&mp, desc->saver.data.len);
+		if (!desc->saver.data.ptr && desc->saver.data.len) {
+			return WUERR_HERE(wu_unexpected_eof);
+		}
+	} else if (pi_is_lsp(ext)) {
+		mp_seek_set(&mp, 0);
+		desc->depth = 4;
+		desc->lsp = true;
+	} else {
 		return WUERR_HERE(wu_invalid_signature);
-	} else if (!mp_upto(&mp, &desc->comm, 0x1a)
-	|| !mp_upto(&mp, &desc->dummy, 0x00)) {
-		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	buf = mp_slice(&mp, 10);
-	if (!buf) {
-		return WUERR_HERE(wu_unexpected_eof);
-	}
-
-	desc->depth = buf[3];
-	switch (desc->depth) {
-	case 4: case 8: break;
-	default: return wuerr(wu_invalid_header, "depth neither 4 nor 8");
-	}
-
-	const uint8_t ratio_x = buf[1];
-	const uint8_t ratio_y = buf[2];
-	/* According to Google Translate, "dots are multiplied by n/m in the
-	 * vertical direction", so swap parameter order. */
-	wuimg_aspect_ratio(img, ratio_y, ratio_x);
-
-	memcpy(desc->saver.model, buf + 4, sizeof(desc->saver.model));
-	desc->saver.data.len = buf_endian16b(buf + 8);
-	desc->saver.data.ptr = mp_slice(&mp, desc->saver.data.len);
-	if (!desc->saver.data.ptr && desc->saver.data.len) {
-		return WUERR_HERE(wu_unexpected_eof);
-	}
-
-	buf = mp_slice(&mp, 4 + 3 * (1u << desc->depth));
+	const size_t elems = 1u << desc->depth;
+	buf = mp_slice(&mp, 4 + 3*elems);
 	if (!buf) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
@@ -363,17 +383,20 @@ const struct wuptr mem) {
 		struct palette *pal = wuimg_palette_init(img);
 		if (pal) {
 			const uint8_t *pal_src = buf + 4;
-			palette_from_rgb8(pal, pal_src, 1 << desc->depth);
+			palette_from_rgb8(pal, pal_src, elems);
 			desc->data = mp_remaining(&mp);
 			return WU_OK;
 		}
 		return WUERR_HERE(wu_alloc_error);
+	} else if (desc->lsp) {
+		return wuerr(wu_uncertain_validity, "width <= 2 in file with"
+			" no signature. not a graphic file?");
 	}
 	return wuerr(wu_samples_wanted, "width <= 2");
 }
 
 
-// https://gitlab.com/bunnylin/supersakura/-/blob/dev/doc/gfx/cgl-dpc-p-g.md
+// Excellents Yuugiri DPC
 struct wu_st dpc_decode(const struct dpc_desc *desc, struct wuimg *img) {
 	if (desc->data.len) {
 		return pi_decode_inner(img, 4, desc->data);
