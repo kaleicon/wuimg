@@ -110,14 +110,14 @@ static enum trit next_entry(struct extract_iter *iter) {
 	return trit_true;
 }
 
-bool extract_file(struct extract_iter *iter, long idx) {
+bool extract_file(struct extract_iter *iter, long idx, const bool wraparound) {
 	if (iter->seen_it_all) {
 		idx = lmod(idx, iter->total);
 	}
-	if (iter->idx == idx) {
+	if (idx == iter->idx) {
 		rewind(iter->cur);
 		return true;
-	} else if (iter->idx > idx) {
+	} else if (idx >= 0 && idx < iter->idx) {
 		archive_read_free(iter->ra);
 		open_archive(iter);
 	}
@@ -128,13 +128,13 @@ bool extract_file(struct extract_iter *iter, long idx) {
 		case trit_true:
 			continue;
 		case trit_what:
-			iter->seen_it_all = true;
-			if (iter->total < 1) {
-				return false;
-			} else if (idx >= 0) {
-				return extract_file(iter, idx);
-			}
 			break;
+		}
+		iter->seen_it_all = true;
+		if (iter->total < 1 || !wraparound) {
+			return false;
+		} else if (idx >= 0) {
+			return extract_file(iter, idx, wraparound);
 		}
 		break;
 	}

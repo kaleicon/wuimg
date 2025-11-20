@@ -193,7 +193,8 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	long idx = 0;
-	while (!event->exit && extract_file(&iter, idx)) {
+	bool decoded_once = false;
+	while (!event->exit && extract_file(&iter, idx, decoded_once)) {
 		const int direction = lsign(event->cycle);
 		idx = lmod(iter.idx, iter.total);
 
@@ -205,7 +206,9 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		result = display_loop(&window, true, false);
 		dec_free(image);
 		putchar('\n');
-		if (result != wu_ok) {
+		if (result == wu_ok) {
+			decoded_once = true;
+		} else {
 			event->cycle = direction;
 		}
 		idx += event->cycle;

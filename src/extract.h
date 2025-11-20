@@ -20,7 +20,7 @@ struct extract_iter {
 
 void extract_free(struct extract_iter *iter);
 
-bool extract_file(struct extract_iter *iter, long idx);
+bool extract_file(struct extract_iter *iter, long idx, bool wraparound);
 
 bool extract_init(struct extract_iter *iter, const char *filename);
 
