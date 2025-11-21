@@ -1129,7 +1129,12 @@ DEC_MAP: DecMap = {
 			mime="x-sony-tim"
 		),
 	},
-
+	"tim2": {
+		"tim2": FmtInfo("PlayStation 2 TIM2/CLT2 (uncertain alpha interpretation)",
+			ext=("tim2", "tm2", "clt2"),
+			magic=(b"TIM2", b"CLT2"),
+		),
+	},
 	"tlg": {
 		"tlg": FmtInfo("KiriKiri engine image (v5)",
 			ext="tlg",
