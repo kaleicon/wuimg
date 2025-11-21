@@ -34,7 +34,6 @@ struct gl_context {
 
 	struct gl_image_info {
 		enum image_mode mode:8;
-		enum alpha_interpretation alpha:2;
 		unsigned subsamp:4;
 		bool no_transform:1;
 		bool mirror:1;

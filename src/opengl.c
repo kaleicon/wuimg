@@ -131,22 +131,42 @@ void gl_terminate(struct gl_context *context) {
 	}
 }
 
-static void set_alpha_ops(const struct gl_context *context) {
-	const int alpha = (context->user_alpha + context->tex.alpha) % 6;
-	GLint ops[2];
-	if (context->unmultiply) {
-		ops[0] = (alpha == alpha_associated) ? 2 : alpha_no_multiply;
-	} else {
-		ops[0] = alpha & alpha_no_multiply;
+static const char * alpha_op1_str(const GLint op) {
+	switch (op) {
+	case 0: return "blend";
+	case 1: return "opaque";
+	case 2: return "checkers";
 	}
-	ops[1] = alpha >> 1;
+	return "???";
+}
+
+static const char * alpha_op0_str(const GLint op) {
+	switch (op) {
+	case 0: return "unassociated";
+	case 1: return "associated";
+	case 2: return "dissociated";
+	}
+	return "???";
+}
+
+static void set_alpha_ops(const struct gl_context *context, const bool print) {
+	const int alpha = context->user_alpha;
+	const GLint ops[2] = {
+		(alpha & 1) + context->unmultiply,
+		alpha >> 1,
+	};
 	glUniform1iv(context->uni[gl_uni_MODE_ALPHA], ARRAY_LEN(ops), ops);
+	(ops[1] || context->unmultiply ? glDisable : glEnable)(GL_BLEND);
+	if (print) {
+		fprintf(stdout, "Alpha: %s, %s\n",
+			alpha_op0_str(ops[0]), alpha_op1_str(ops[1]));
+	}
 }
 
 void gl_alpha_toggle(struct gl_context *context, const int cycle) {
 	context->user_alpha = (uint8_t)imod(context->user_alpha + cycle, 6);
 	context->update = true;
-	set_alpha_ops(context);
+	set_alpha_ops(context, true);
 }
 
 static void tex_active(const enum gl_tex_unit unit) {
@@ -913,7 +933,6 @@ const struct wuimg *img, const enum heed_ratio heed) {
 	}
 
 	context->img = img;
-	context->tex.alpha = img->alpha;
 	context->tex.subsamp = 0;
 	context->tex.no_transform = img->scalable;
 	context->tex.mirror = img->mirror;
@@ -921,8 +940,9 @@ const struct wuimg *img, const enum heed_ratio heed) {
 	context->tex.bitdepth = params.bd;
 	context->tex.shown_frame = img->frames ? img->frames->current : 0;
 	context->tex.ratio = get_pixel_ratio(img, heed);
+	context->user_alpha = img->alpha;
 	set_cms(context);
-	set_alpha_ops(context);
+	set_alpha_ops(context, false);
 
 	if (!mode_upload(context, img, &params, NULL)) {
 		return gl_upload_fail;
@@ -1152,10 +1172,10 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 		"uniform vec4[2] " UNI_REMAP ";"
 		"uniform float " UNI_LUM_SCALE ";"
 
-		"void gen_check_pattern() {"
+		"vec3 gen_check_pattern(float alpha) {"
 			"ivec2 d = ivec2(gl_FragCoord.xy);"
 			"float bg = bool((d.x ^ d.y) & 16) ? .75 : .5;"
-			"color.rgb += vec3(bg - bg * color.a);"
+			"return vec3(bg - bg * alpha);"
 		"}"
 		"float setsign(float x, float y) {"
 			"return y >= 0.0 ? x : -x;"
@@ -1267,16 +1287,21 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 			"}"
 			"color.rgb *= vec3(" UNI_LUM_SCALE ");"
 			"switch (" UNI_MODE_ALPHA "[0]) {"
-			"case " ALPHA_COLOR_MULTIPLY ": color.rgb *= color.aaa; break;"
+			"case " ALPHA_COLOR_MULTIPLY ":"
+				"color.rgb *= color.aaa;"
+				"break;"
 			"case " ALPHA_COLOR_NO_MULTIPLY ": break;"
 			"case " ALPHA_COLOR_UNMULTIPLY ":"
 				"if (color.a != 0.0) {"
-					"color.rgb /= color.aaa; break;"
+					"color.rgb /= color.aaa;"
 				"}"
 				"break;"
 			"}"
 			"switch (" UNI_MODE_ALPHA "[1]) {"
-			"case " ALPHA_BG_CHECKERS ": gen_check_pattern();" // fallthrough
+			"case " ALPHA_BG_NONE ": break;"
+			"case " ALPHA_BG_CHECKERS ":"
+				"color.rgb += gen_check_pattern(color.a);"
+				// fallthrough
 			"case " ALPHA_BG_ONE ": color.a = 1.0;"
 			"}"
 			"color.rgb = oetf(color.rgb);"
@@ -1347,8 +1372,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 
 	glHint(GL_FRAGMENT_SHADER_DERIVATIVE_HINT, GL_FASTEST);
 	glDisable(GL_POLYGON_SMOOTH);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // associated alpha blend
 
 	gl_clear_color(context, conf->bg);
 
@@ -1383,7 +1407,6 @@ bool gl_reader_init(struct gl_reader_context *reader, struct wu_conf *conf) {
 			GL_TEXTURE_2D, tex, 0);
 		tex_active(gl_tex_img);
 
-		glDisable(GL_BLEND);
 		reader->context.unmultiply = true;
 		return true;
 	}
