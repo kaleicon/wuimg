@@ -16,11 +16,11 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 		struct tim_desc *desc = infile->dec_state;
 		if (idx) {
 			tim_alt_clut(desc, infile->sub_img, img, idx);
-			return wuok();
+			return WU_OK;
 		}
 		return tim_decode_main(desc, img);
 	}
-	return wuerr(wu_no_change, NULL);
+	return WU_NO_CHANGE;
 }
 
 static void get_metadata(const struct tim_desc *desc, struct wutree *tree) {

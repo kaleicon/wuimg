@@ -16,10 +16,7 @@ static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
 	const uint16_t mask = stp_bit - 1;
 	for (size_t i = 0; i < nmemb; ++i) {
 		uint16_t w = endian16l(buf[i]);
-		if (w & mask) {
-			w ^= stp_bit;
-		}
-		buf[i] = w;
+		buf[i] = w ^ ((w & mask) ? stp_bit : 0);
 	}
 }
 
