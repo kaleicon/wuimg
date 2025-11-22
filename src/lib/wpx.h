@@ -100,23 +100,19 @@ struct wpx_ia2_desc {
 
 void wpx_bmp_cleanup(struct wpx_bmp_desc *desc);
 
-size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img);
+struct wu_st wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img);
 
-enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img);
-
-enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, struct wuptr mem);
+struct wu_st wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuptr mem,
+struct wuimg *img);
 
 
 void wpx_ia2_cleanup(struct wpx_ia2_desc *desc);
 
-enum wu_error wpx_ia2_set_frame(const struct wpx_ia2_desc *desc,
-struct wpx_bmp_desc *frame, uint32_t i);
+struct wuptr wpx_ia2_get_frame(struct wpx_ia2_desc *desc, uint32_t i);
 
 bool wpx_ia2_list_get(const struct wpx_ia2_list *list, uint32_t idx,
 struct wuptr *str);
 
-enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc);
-
-enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, struct wuptr mem);
+struct wu_st wpx_ia2_parse(struct wpx_ia2_desc *desc, struct wuptr mem);
 
 #endif /* LIB_WPX */

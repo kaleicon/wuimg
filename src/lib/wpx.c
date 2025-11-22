@@ -353,9 +353,9 @@ const uint8_t quant_size, const size_t stride) {
 		quant_size, stride);
 }
 
-size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img) {
+struct wu_st wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img) {
 	if (!wuimg_alloc_noverify(img)) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	const bool will_sew = desc->mask_idx >= 0;
@@ -364,14 +364,16 @@ size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img) {
 	strip_sew_init(&sew, img->data, desc->pal, img->w, img->h, ch,
 		img->align_sh, will_sew);
 
+	size_t expect = sew.color.len;
 	size_t written = get_section_data(&desc->mp,
 		desc->dir.sections + desc->raster_idx, sew.color.ptr,
 		sew.color.len, ch, sew.color.stride);
 
 	if (will_sew) {
 		if (!strip_sew_alloc_alpha(&sew)) {
-			return 0;
+			return WUERR_HERE(wu_alloc_error);
 		}
+		expect += sew.alpha.len;
 		written += get_section_data(&desc->mp,
 			desc->dir.sections + desc->mask_idx, sew.alpha.ptr,
 			sew.alpha.len, 1, sew.alpha.stride);
@@ -379,36 +381,38 @@ size_t wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img) {
 		strip_sew_alpha(&sew);
 		strip_sew_free_alpha(&sew);
 	}
-	return written;
+	return wuerr_partial(written, expect);
 }
 
-static enum wu_error read_palette(struct wpx_bmp_desc *desc,
+static struct wu_st read_palette(struct wpx_bmp_desc *desc,
 const struct wpx_section *section) {
 	const size_t size = section->decomp_size;
 	if (size % 3 || size > 256*3) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"palette not divisible by 3 or with too many entries");
 	}
 
 	desc->pal = palette_new();
 	if (!desc->pal) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	uint8_t *buf = (uint8_t *)(desc->pal + 1) - size;
+	const size_t elems = size/3;
+	uint8_t *buf = (uint8_t *)desc->pal->color + (4 - 3)*elems;
 	const size_t read = get_section_data(&desc->mp, section, buf, size, 3, 48);
 	if (read != size) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	palette_from_rgb8(desc->pal, buf, read/3);
-	return wu_ok;
+	palette_from_rgb8(desc->pal, buf, elems);
+	return WU_OK;
 }
 
-static enum wu_error read_metadata(struct wpx_bmp_desc *desc,
+static struct wu_st read_metadata(struct wpx_bmp_desc *desc,
 struct wuimg *img, const struct wpx_section *section) {
 	uint8_t metadata[16];
 	if (get_section_data(&desc->mp, section, metadata, sizeof(metadata), 1, 0)
 	!= sizeof(metadata)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	desc->depth = metadata[0x0c];
@@ -416,15 +420,15 @@ struct wuimg *img, const struct wpx_section *section) {
 	case 8: case 24: case 32:
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "depth is not 8, 24, or 32");
 	}
 	img->w = buf_endian16(metadata + 4, little_endian);
 	img->h = buf_endian16(metadata + 6, little_endian);
 	img->channels = (uint8_t)(desc->depth / 8);
 	img->bitdepth = 8;
 	wuimg_align(img, 4);
-	img->layout = (desc->depth <= 8) ? pix_rgba : pix_bgra;
-	return wu_ok;
+	img->layout = (desc->depth == 8) ? pix_rgba : pix_bgra;
+	return WU_OK;
 }
 
 static struct wpx_section * process_section(struct wpx_section *s) {
@@ -434,7 +438,7 @@ static struct wpx_section * process_section(struct wpx_section *s) {
 	return s;
 }
 
-static enum wu_error load_section_dir(struct wpx_dir *dir,
+static struct wu_st load_section_dir(struct wpx_dir *dir,
 struct mparser *mp, const uint8_t min_sections) {
 	/* WPX BMP/IA2 struct (after magic bytes):
 		Offset  Type    Size
@@ -449,25 +453,39 @@ struct mparser *mp, const uint8_t min_sections) {
 	if (buf) {
 		const size_t dirsize = sizeof(*dir->sections);
 		dir->count = buf[6];
-		if (buf_endian16(buf+4, little_endian) == 1
-		&& dir->count >= min_sections && buf[7] == dirsize) {
+		if (buf_endian16l(buf+4) == 1 && dir->count >= min_sections
+		&& buf[7] == dirsize) {
 			const size_t dir_len = dir->count * dirsize;
-			mp_seek_cur(mp, (ptrdiff_t)buf_endian32(buf, little_endian) - 0x10);
+			mp_seek_cur(mp, (ptrdiff_t)buf_endian32l(buf) - 0x10);
 			buf = mp_slice(mp, dir_len);
 			if (buf) {
 				dir->sections = memdup(buf, dir_len);
-				return dir->sections ? wu_ok : wu_alloc_error;
+				return dir->sections
+					? WU_OK
+					: WUERR_HERE(wu_alloc_error);
 			}
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "bad section dir params");
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img) {
-	enum wu_error st = load_section_dir(&desc->dir, &desc->mp, 2);
-	if (st != wu_ok) {
+struct wu_st wpx_bmp_parse(struct wpx_bmp_desc *desc, const struct wuptr mem,
+struct wuimg *img) {
+	*desc = (struct wpx_bmp_desc) {
+		.mp = mp_wuptr(mem),
+		.raster_idx = -1,
+		.mask_idx = -1,
+	};
+	const uint8_t sig[] = {'W', 'P', 'X', 0x1a, 'B', 'M', 'P', 0};
+	enum wu_error e = fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	if (e != wu_ok) {
+		return WUERR_HERE(e);
+	}
+
+	struct wu_st st = load_section_dir(&desc->dir, &desc->mp, 2);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
@@ -490,54 +508,38 @@ enum wu_error wpx_bmp_parse(struct wpx_bmp_desc *desc, struct wuimg *img) {
 			desc->mask_idx = i;
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "unknown section id");
 		}
-		if (st != wu_ok) {
+		if (!wu_isok(st)) {
 			return st;
 		}
 	}
 	if (info_idx < 0 || desc->raster_idx < 0) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "no image found");
 	}
 	if (desc->mask_idx >= 0) {
 		if (desc->depth == 8 && !desc->pal) {
 			// Is this possible?
-			return wu_samples_wanted;
+			return wuerr(wu_uncertain_validity,
+				"8-bit grayscale with alpha mask");
 		}
 		img->channels = 4;
 	} else if (desc->pal) {
 		if (img->channels != 1) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"multi-channel image with palette");
 		}
 		wuimg_palette_set(img, desc->pal);
 		desc->pal = NULL;
 	}
-	return wuimg_verify(img);
-}
-
-enum wu_error wpx_bmp_open(struct wpx_bmp_desc *desc, const struct wuptr mem) {
-	*desc = (struct wpx_bmp_desc) {
-		.mp = mp_wuptr(mem),
-		.raster_idx = -1,
-		.mask_idx = -1,
-	};
-	const uint8_t sig[] = {'W', 'P', 'X', 0x1a, 'B', 'M', 'P', 0};
-	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	return wuimg_verify_st(img);
 }
 
 
-enum wu_error wpx_ia2_set_frame(const struct wpx_ia2_desc *desc,
-struct wpx_bmp_desc *frame, const uint32_t i) {
-	if (i < desc->nr.frames) {
-		const size_t pos = desc->base + desc->frames[i];
-		if (pos < desc->mp.len) {
-			return wpx_bmp_open(frame, wuptr_mem(
-				desc->mp.mem + pos, desc->mp.len - pos
-			));
-		}
-		return wu_unexpected_eof;
-	}
-	return wu_invalid_params;
+struct wuptr wpx_ia2_get_frame(struct wpx_ia2_desc *desc, const uint32_t i) {
+	const size_t pos = desc->base + desc->frames[i];
+	mp_seek_set(&desc->mp, pos);
+	return mp_remaining(&desc->mp);
 }
 
 bool wpx_ia2_list_get(const struct wpx_ia2_list *list, const uint32_t idx,
@@ -552,7 +554,7 @@ struct wuptr *str) {
 	return false;
 }
 
-static enum wu_error alloc_section_data(struct wpx_ia2_desc *desc,
+static struct wu_st alloc_section_data(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, void *restrict where, const size_t size) {
 	void **w = where;
 	/* Reject any section whose compressed size is more than twice the
@@ -564,14 +566,15 @@ const struct wpx_section *section, void *restrict where, const size_t size) {
 				section, dst, size, 1, 0);
 			if (written == size) {
 				*w = dst;
-				return wu_ok;
+				return WU_OK;
 			}
 			free(dst);
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header,
+		"compressed size exceeds decompressed size, or section is repeated");
 }
 
 static void struct_swap(void *ptr, const size_t bytes) {
@@ -579,20 +582,20 @@ static void struct_swap(void *ptr, const size_t bytes) {
 	endian_loop32(arr, little_endian, bytes / sizeof(*arr));
 }
 
-static enum wu_error read_array(struct wpx_ia2_desc *desc,
+static struct wu_st read_array(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, void *arr_ptr,
 const uint32_t nmemb, const size_t size) {
 	const size_t bytes = size * nmemb;
 	if (bytes == section->decomp_size) {
 		// All structs for which this is called are made of u32 fields
 		uint32_t **tgt = arr_ptr;
-		const enum wu_error st = alloc_section_data(desc, section, tgt, bytes);
-		if (st == wu_ok) {
+		struct wu_st st = alloc_section_data(desc, section, tgt, bytes);
+		if (wu_isok(st)) {
 			struct_swap(*tgt, bytes);
 		}
 		return st;
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "array decompressed size mismatch");
 }
 
 static bool list_check(struct wpx_ia2_list *list, const uint32_t nr) {
@@ -600,41 +603,51 @@ static bool list_check(struct wpx_ia2_list *list, const uint32_t nr) {
 	return !mismatch;
 }
 
-static enum wu_error read_list_idx(struct wpx_ia2_desc *desc,
+static struct wu_st read_list_idx(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, struct wpx_ia2_list *list, uint32_t nr) {
 	return read_array(desc, section, &list->off, nr, sizeof(*list->off));
 }
 
-static enum wu_error read_list_str(struct wpx_ia2_desc *desc,
+static struct wu_st read_list_str(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, struct wpx_ia2_list *list) {
 	list->str_len = section->decomp_size;
 	return alloc_section_data(desc, section, &list->str,
 		section->decomp_size);
 }
 
-static enum wu_error read_frame_count(struct wpx_ia2_desc *desc,
+static struct wu_st read_frame_count(struct wpx_ia2_desc *desc,
 const struct wpx_section *section) {
 	struct wpx_ia2_count_t *nr = &desc->nr;
 	// Reject if already seen
 	if (nr->frames) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "repeated frame count section");
 	}
 	const size_t bytes = sizeof(*nr);
 	if (get_section_data(&desc->mp, section, nr, bytes, 1, 0) == bytes) {
 		struct_swap(nr, bytes);
-		return nr->frames ? wu_ok : wu_no_image_data;
+		return WU_OK;
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc) {
-	enum wu_error st = load_section_dir(&desc->dir, &desc->mp, 3);
-	if (st != wu_ok) {
+struct wu_st wpx_ia2_parse(struct wpx_ia2_desc *desc, const struct wuptr mem) {
+	*desc = (struct wpx_ia2_desc) {
+		.mp = mp_wuptr(mem),
+	};
+	const uint8_t sig[] = {'W', 'P', 'X', 0x1a, 'I', 'A', '2', 0};
+	enum wu_error e = fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	if (e != wu_ok) {
+		return WUERR_HERE(e);
+	}
+
+	struct wu_st st = load_section_dir(&desc->dir, &desc->mp, 3);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
 	if (desc->dir.sections[0].id != wpx_ia2_count) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"file doesn't start with frame count");
 	}
 	for (uint8_t i = 0; i < desc->dir.count; ++i) {
 		const struct wpx_section *s = process_section(
@@ -678,22 +691,15 @@ enum wu_error wpx_ia2_parse(struct wpx_ia2_desc *desc) {
 		default:
 			break;
 		}
-		if (st != wu_ok) {
+		if (!wu_isok(st)) {
 			return st;
 		}
 	}
 	if (!desc->frames || !desc->base
 	|| !list_check(&desc->names, desc->nr.frames)
 	|| !list_check(&desc->sfx, desc->nr.sfx)) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"bad frame offsets or bad list configuration");
 	}
-	return wu_ok;
-}
-
-enum wu_error wpx_ia2_open(struct wpx_ia2_desc *desc, const struct wuptr mem) {
-	*desc = (struct wpx_ia2_desc) {
-		.mp = mp_wuptr(mem),
-	};
-	const uint8_t sig[] = {'W', 'P', 'X', 0x1a, 'I', 'A', '2', 0};
-	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	return WU_OK;
 }
