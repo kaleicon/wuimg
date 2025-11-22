@@ -7,8 +7,6 @@
 #include "raster/bitfield.h"
 #include "raster/fmt.h"
 
-static const uint32_t BITFIELD_SHIFT = 16;
-
 static uint32_t expand_bits(const uint32_t word, const struct bitfield_comp *c) {
 	return (((word >> c->shr) & c->and) * c->mul) >> BITFIELD_SHIFT;
 }

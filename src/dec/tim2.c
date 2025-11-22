@@ -19,11 +19,18 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			if (e != wu_ok) {
 				return WUERR_HERE(e);
 			}
-			if (desc->pal_depth) {
-				struct wutree *m = wuimg_get_metadata(img);
-				if (m) {
-					tree_bud_leaf_u(m, "Mipmaps",
-						desc->mipmaps);
+			struct wutree *m = wuimg_get_metadata(img);
+			if (m) {
+				tree_bud_leaf_u(m, "Mipmaps", desc->mipmaps);
+				tree_bud_leaf_u(m, "TEXA TA0",
+					desc->texa_fba_pabe & 0xff);
+				tree_bud_leaf_u(m, "TEXA AEM",
+					(desc->texa_fba_pabe >> 15) & 1);
+				tree_bud_leaf_u(m, "TEXA TA1",
+					(desc->texa_fba_pabe >> 16) & 0xff);
+				if (desc->pal_depth) {
+					tree_bud_leaf_u(m, "CLUT elems",
+						desc->pal_elems);
 					tree_bud_leaf_u(m, "CLUT depth",
 						desc->pal_depth*8u + 8);
 					tree_bud_leaf_bool(m, "CLUT compound",

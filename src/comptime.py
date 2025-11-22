@@ -1130,7 +1130,7 @@ DEC_MAP: DecMap = {
 		),
 	},
 	"tim2": {
-		"tim2": FmtInfo("PlayStation 2 TIM2/CLT2 (uncertain alpha interpretation)",
+		"tim2": FmtInfo("PlayStation 2 TIM2",
 			ext=("tim2", "tm2", "clt2"),
 			magic=(b"TIM2", b"CLT2"),
 		),

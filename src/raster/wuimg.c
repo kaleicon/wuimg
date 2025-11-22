@@ -291,9 +291,18 @@ void *restrict data) {
 	return data;
 }
 
-static struct bitfield * wuimg_bitfield_init(struct wuimg *img) {
+
+struct bitfield * wuimg_bitfield_init(struct wuimg *img) {
 	return set_img_mode(img, image_mode_bitfield,
 		calloc(1, sizeof(*img->u.bitfield)));
+}
+
+struct bitfield * wuimg_bitfield_from_id(struct wuimg *img, const uint16_t id) {
+	struct bitfield *bf = wuimg_bitfield_init(img);
+	if (bf) {
+		bitfield_from_id(bf, id, img->bitdepth);
+	}
+	return bf;
 }
 
 enum wu_error wuimg_bitfield_from_mask(struct wuimg *img,
@@ -311,13 +320,6 @@ const uint32_t *mask, const uint8_t ch, const uint8_t word_depth) {
 	return wu_alloc_error;
 }
 
-struct bitfield * wuimg_bitfield_from_id(struct wuimg *img, const uint16_t id) {
-	struct bitfield *bf = wuimg_bitfield_init(img);
-	if (bf) {
-		bitfield_from_id(bf, id, img->bitdepth);
-	}
-	return bf;
-}
 
 static void set_cosit(struct plane_dim *s, const bool cosit) {
 	s->cosit = s->subsamp == 2 ? cosit : false;

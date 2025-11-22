@@ -151,10 +151,12 @@ enum wu_error wuimg_alloc(struct wuimg *img);
 enum wu_error wuimg_alloc_limit(struct wuimg *img, const struct wu_conf *conf);
 
 
-enum wu_error wuimg_bitfield_from_mask(struct wuimg *img,
-const uint32_t *mask, uint8_t ch, uint8_t word_depth);
+struct bitfield * wuimg_bitfield_init(struct wuimg *img);
 
 struct bitfield * wuimg_bitfield_from_id(struct wuimg *img, uint16_t id);
+
+enum wu_error wuimg_bitfield_from_mask(struct wuimg *img,
+const uint32_t *mask, uint8_t ch, uint8_t word_depth);
 
 
 size_t wuimg_plane_resolve(struct wuimg *img);

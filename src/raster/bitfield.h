@@ -7,6 +7,8 @@
 
 #include "raster/pix.h"
 
+static const uint32_t BITFIELD_SHIFT = 16;
+
 enum bitfield_id {
 	bitfield_id_1555 = 0x1555,
 	bitfield_id_332 = 0x332,

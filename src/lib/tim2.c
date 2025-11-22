@@ -6,31 +6,73 @@
 
 /* From
 https://github.com/GirianSeed/tim2/blob/trunk/webtech/tim2v4b_e/tim2.txt
- * That document is very pleasant to read.
+ * This document is very pleasant to read.
 
- * TODO: All samples with an A channel set it to 0x80. Does it have a special
- *       interpretation like TIM? Or should it be ignored?
+ * Important details about the PS2 GS:
+https://github.com/DarrenRainey/PS2-Programming-Docs/blob/master/GS_Users_Manual.pdf
+ * - For 8-bit alpha, 0x80 represents 1.0, and according to other sources
+ *   higher values are legal (what does that produce, even?) (chapter 3.8.1)
+ * - For RGB24 and RGBA5551, alpha expansion depends on the TEXA register.
+ *   TEXA:AEM=1 interprets alpha as 0 when RGB=(0,0,0)
+ *   TEXA:TA0 is the alpha value to use for RGB24 and when A=0 in RGBA5551.
+ *   TEXA:TA1 is the alpha value to use when A=1 in RGBA5551.
+ *   Since all samples set all fields to 0, perhaps it's fine to ignore it
+ *   (chapter 7.8 and 3.4.6)
+ * - 0x1555 is expanded to 8888 _without_ bit replication (chapter 3.4.6)
+
+ * TODO:
+ * - Expose user data
+ * - Find CLT2 samples
+ * - Find samples with multiple mipmaps
+ * - Can images have multiple CLUTs?
 */
+
+static void tim2_alpha32_expand(uint8_t *data, const size_t len) {
+	const unsigned scale = (0xff << 8) / 0x80 + 1;
+	for (size_t i = 3; i < len; i += 4) {
+		data[i] = (uint8_t)((umin(data[i], 0x80) * scale) >> 8);
+	}
+}
+
+static void tim2_rgba5551_bitfield(struct bitfield *bf) {
+	bitfield_from_id(bf, 0x1555, 16);
+	for (int i = 0; i < 3; ++i) {
+		bf->comp[i].mul = (uint32_t)1 << BITFIELD_SHIFT << 3;
+	}
+}
+
+static void tim2_line_callback(void *restrict data, const size_t len,
+void *restrict ptr) {
+	const uintptr_t depth = (uintptr_t)ptr;
+	if (depth == 16) {
+		endian_loop16(data, little_endian, len/2);
+	} else if (depth == 32) {
+		tim2_alpha32_expand(data, len);
+	}
+}
 
 static bool tim2_get_linear_clut(uint8_t *restrict clut, unsigned z,
 unsigned elems, struct tim2_desc *desc) {
 	if (desc->pal_compound) {
-		elems = umax(elems, 32);
+		/* Groups of 8 entries are in Z order. Swap the lower two bits
+		 * of the dest idx to convert to linear. */
+		const unsigned groups = umax(elems/8, 32/8);
 		size_t k = 0;
-		for (unsigned i = 0; i < elems/8; ++i) {
-			unsigned lo = i & 0x3;
-			lo = (lo << 1 | lo >> 1) & 0x3;
+		for (unsigned i = 0; i < groups; ++i) {
+			unsigned lo = (i & 1) << 1 | (i & 2) >> 1;
 			unsigned tgt = (i & ~0x3u) | lo;
 			k += fread(clut + tgt*z*8, z*8, 1, desc->ifp);
 		}
-		return k == elems/8;
+		return k == groups;
 	}
 	return fread(clut, z * elems, 1, desc->ifp);
 }
 
 struct wu_st tim2_load(struct tim2_desc *desc, struct wuimg *img) {
 	if (desc->mipmaps) {
-		size_t r = fmt_load_raster_swap(img, desc->ifp, little_endian);
+		const uintptr_t depth = img->channels * img->bitdepth;
+		size_t r = fmt_load_raster_callback(img, desc->ifp,
+			tim2_line_callback, (void *)depth);
 		if (!desc->pal_depth) {
 			return wuerr_partial(r, wuimg_size(img));
 		}
@@ -51,10 +93,11 @@ struct wu_st tim2_load(struct tim2_desc *desc, struct wuimg *img) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 	switch (z) {
+	case 4: tim2_alpha32_expand(dst, elems*4); break;
 	case 3: palette_from_rgb8(img->u.palette, clut, elems); break;
 	case 2:
 		;struct bitfield bf;
-		bitfield_from_id(&bf, 0x1555, 16);
+		tim2_rgba5551_bitfield(&bf);
 		bitfield_unpack(&bf, dst, clut, elems);
 		break;
 	}
@@ -117,6 +160,7 @@ struct wu_st tim2_next(struct tim2_desc *desc, struct wuimg *img) {
 	}
 	desc->next_off += (long)total;
 	desc->pal_off = desc->next_off - (long)clut;
+	desc->texa_fba_pabe = buf_endian32l(hdr + 40);
 	desc->mipmaps = hdr[17];
 	fseek(desc->ifp, (long)(header - sizeof(hdr)), SEEK_CUR);
 
@@ -127,9 +171,16 @@ struct wu_st tim2_next(struct tim2_desc *desc, struct wuimg *img) {
 	switch (hdr[19]) {
 	case 1:
 		img->bitdepth = 16;
-		if (!wuimg_bitfield_from_id(img, 0x1555)) {
+		struct bitfield *bf = wuimg_bitfield_init(img);
+		if (!bf) {
 			return WUERR_HERE(wu_alloc_error);
 		}
+		tim2_rgba5551_bitfield(bf);
+		/* FIXME: 0x1555 bitfields are always interpreted as GL_RGB5_A1,
+		 * meaning our mul change is ignored when viewing (but not when
+		 * software-converting).
+		 * Unlikely anyone will notice or care though, unless they're
+		 * developing for the PS2. */
 		break;
 	case 2:
 		img->channels = 3;
@@ -154,6 +205,7 @@ struct wu_st tim2_next(struct tim2_desc *desc, struct wuimg *img) {
 		} else {
 			desc->pal_compound = !csm2 & ((hdr[18] & 0x40) != 0);
 		}
+		desc->pal_elems = clut_nr;
 		desc->pal_depth = hdr[18] & 0x3f;
 		switch (desc->pal_depth) {
 		case 1: case 2: case 3: break;

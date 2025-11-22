@@ -139,7 +139,7 @@ svg       svg       Scalable Vector Graphics
 tga       tga       Truevision TGA (TARGA)
 tiff      tiff      Tag Image File Format, BigTIFF
 tim       tim       PlayStation image, multiple palettes
-tim2      tim2      PlayStation 2 TIM2/CLT2 (uncertain alpha interpretation)
+tim2      tim2      PlayStation 2 TIM2
 tlg       tlg       KiriKiri engine image (v5)
 txf       txf       TexFont Texture Mapped Font
 utahrle   utahrle   Utah RLE
