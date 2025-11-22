@@ -1415,7 +1415,7 @@ static bool bit_tests(void) {
 }
 
 int main(void) {
-	const bool kay = bit_tests()
+	const int kay = bit_tests()
 		& common_tests()
 		& endian_tests()
 		& math_tests()

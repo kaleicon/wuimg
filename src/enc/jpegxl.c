@@ -82,7 +82,7 @@ static uint32_t same_time_res(const struct image_frames *frames) {
 
 static int get_transfer(const struct wuimg *img, double *gamma) {
 	const double g = color_space_get_gamma(&img->cs);
-	if (g) {
+	if (g != 0.0) {
 		if (gamma) {
 			*gamma = 1.0/g;
 		}

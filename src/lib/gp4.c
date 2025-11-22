@@ -87,7 +87,7 @@ struct bitstrm *bs, uint8_t *restrict dst, uint32_t bits, uint32_t b_seek) {
 
 	uint8_t a = memcycle(lut + ly*LUT_W, i);
 	uint8_t b = memcycle(lut + a*LUT_W, k);
-	*dst = a << 4 | b;
+	*dst = (uint8_t)(a << 4 | b);
 	return b;
 }
 

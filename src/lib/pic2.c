@@ -134,9 +134,9 @@ const enum arith_code c) {
 		st->aa = ps;
 	}
 	const uint16_t bits = (uint16_t)bitstrm_msb_peek_max25(&st->bs, 15);
-	const uint32_t i = bit_clz32(st->aa << 16);
+	const uint32_t i = bit_clz32((uint32_t)st->aa << 16);
 	st->aa <<= i;
-	st->dd = st->dd << i | bits >> (15 - i);
+	st->dd = (uint16_t)(st->dd << i | bits >> (15 - i));
 	bitstrm_seek(&st->bs, i);
 	return bit;
 }
@@ -149,7 +149,8 @@ const enum arith_code c) {
 		if (exit) {
 			num >>= 8 - i;
 			for (uint8_t k = 0; k < i; ++k) {
-				num += arithmetic_decode_bit(st, c + 8 + k) << k;
+				num += (uint32_t)
+					arithmetic_decode_bit(st, c + 8 + k) << k;
 			}
 			break;
 		}

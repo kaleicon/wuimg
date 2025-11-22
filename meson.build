@@ -22,6 +22,7 @@ add_project_arguments(
 	# Needed by the ultra-convenient null_function
 	'-Wno-strict-prototypes',
 	'-Wno-missing-field-initializers',
+	'-Wno-bitwise-instead-of-logical',
 
 	'-fno-math-errno',
 	'-fno-trapping-math',

@@ -117,7 +117,7 @@ struct wuptr src) {
 						++s;
 					}
 				} else { // Long LZ
-					off = first << 2 | src.ptr[s];
+					off = (size_t)first << 2 | src.ptr[s];
 					len = src.ptr[s+1] + 3;
 					s += 2;
 				}

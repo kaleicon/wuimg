@@ -107,21 +107,25 @@ const bool fli, const bool crippled) {
 			const size_t tile = tile_y*TW + tile_x;
 			for (size_t y = 0; y < 8; ++y) {
 				// Grab all colors sources unconditionally
-				const uint8_t screen = off->screen[tile + y*fli*FLI_SCREEN_LEN];
-				const uint8_t byte = off->bitmap[tile*8 + y];
-				const uint16_t src =
-					off->color[crippled ? 0 : tile] << 12
+				const unsigned screen = off->screen[tile + y*fli*FLI_SCREEN_LEN];
+				const unsigned byte = off->bitmap[tile*8 + y];
+				const unsigned color = off->color[crippled ? 0 : tile];
+				// Join into a single word
+				const unsigned src = (unsigned)(
+					color << 12
 					| (screen & 0xf) << 8
 					| (screen >> 4) << 4
-					| off->bg;
-				uint16_t out = 0;
+					| off->bg
+				);
+				unsigned out = 0;
 				for (size_t x = 0; x < 4; ++x) {
-					uint8_t couple = (byte >> (x*2)) & 3;
-					uint8_t n = (src >> (couple * 4)) & 0xf;
+					// Extract color using bit couples
+					unsigned couple = (byte >> (x*2)) & 3;
+					unsigned n = (src >> (couple * 4)) & 0xf;
 					out |= n << (x*4);
 				}
 				const size_t d = (tile_y*8 + y)*TW + tile_x;
-				dst[d] = endian16(out, big_endian);
+				dst[d] = endian16((uint16_t)out, big_endian);
 			}
 		}
 	}
@@ -133,12 +137,12 @@ const bool fli) {
 		for (size_t tile_x = 0; tile_x < TW; ++tile_x) {
 			const size_t tile = tile_y*TW + tile_x;
 			for (size_t y = 0; y < 8; ++y) {
-				uint8_t byte = off->bitmap[tile*8 + y];
-				uint8_t src = off->screen[tile + y*fli*FLI_SCREEN_LEN];
+				uint32_t byte = off->bitmap[tile*8 + y];
+				uint32_t src = off->screen[tile + y*fli*FLI_SCREEN_LEN];
 				uint32_t out = 0;
 				for (size_t x = 0; x < 8; ++x) {
-					uint8_t b = (byte >> x) & 1;
-					uint8_t n = (src >> (b*4)) & 0xf;
+					uint32_t b = (byte >> x) & 1;
+					uint32_t n = (src >> (b*4)) & 0xf;
 					out |= n << (x*4);
 				}
 				const size_t d = (tile_y*8 + y)*TW + tile_x;
