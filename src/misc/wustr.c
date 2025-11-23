@@ -116,6 +116,19 @@ bool wustr_memdup(struct wustr *w, const char *str, const size_t len) {
 	return (bool)w->str;
 }
 
+bool wustr_append_wustr(struct wustr *dst, const struct wustr *src) {
+	if (!src->len) {
+		return true;
+	}
+	const size_t oldlen = dst->len;
+	const size_t newlen = src->len + oldlen;
+	if (wustr_realloc(dst, newlen)) {
+		memcpy(dst->str + oldlen, src->str, src->len+1);
+		return true;
+	}
+	return false;
+}
+
 bool wustr_append_line(struct wustr *w, const char *str,
 const bool strip_trailing_spaces) {
 	str = str ? str : "(null)";
