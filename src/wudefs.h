@@ -58,8 +58,6 @@ typedef struct wu_st (*fmt_event_t)(struct image_file *infile,
 
 typedef enum wu_error (*fmt_dec_t)(struct image_file *infile,
 	const struct wu_conf *conf);
-typedef enum wu_error (*fmt_callback_t)(struct image_file *infile,
-	const struct wu_conf *conf, struct wu_state *state, enum image_event ev);
 
 typedef void (*fmt_end_t)(struct image_file *infile);
 
@@ -71,7 +69,6 @@ struct image_fn {
 	fmt_init_t init;
 	fmt_event_t event;
 	fmt_dec_t dec; // Old-style init
-	fmt_callback_t callback; // Old-style event
 	fmt_end_t end;
 };
 
