@@ -15,7 +15,7 @@ bool allow_delete);
 bool display_setup(struct window_context *window, struct term_restore *tr);
 
 const char * display_offscreen_image(struct gl_context *gl,
-struct image_context *image, const struct wuimg *cur);
+struct wudec_image *image, const struct wuimg *cur);
 
 const char * display_offscreen_setup(struct window_offscreen *window,
 struct gl_reader_context *reader, struct wu_conf *conf);

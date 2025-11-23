@@ -92,6 +92,10 @@ dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enabl
 fax_table = custom_target('fax_table',
 	output : ['fax_table.h', 'fax_table.c'],
 	command : [python, files('misc/fax.py'), '@OUTPUT@'])
+fmt_desc = custom_target('dec_fmt_desc',
+	output : 'dec_fmt_desc.h',
+	capture : true,
+	command : [python, comptime, 'fmt_desc'])
 src_list += [custom_target('dec_maps',
 		input : dec_enable,
 		output : 'dec_maps.c',
@@ -104,12 +108,7 @@ src_list += [custom_target('dec_maps',
 		capture : true,
 		feed : true,
 		command : [python, comptime, 'header']),
-	custom_target('dec_fmt_desc',
-		input : dec_enable,
-		output : 'dec_fmt_desc.h',
-		capture : true,
-		feed : true,
-		command : [python, comptime, 'fmt_desc']),
+	fmt_desc,
 
 	'auto.c',
 	'conf.c',
@@ -231,15 +230,15 @@ endif
 
 window_enable = configure_file(output : 'window_enable.def', configuration : window_enable)
 
-executable('wu', window_src_list,
+executable('wu', window_src_list + [fmt_desc],
 	dependencies : dep_list + window_dep_list,
 	link_with : libuwu,
 	install : true)
-executable('wuconv', ['main_wuconv.c', 'imgconv.c'],
+executable('wuconv', ['main_wuconv.c', 'imgconv.c', fmt_desc],
 	dependencies : dep_list,
 	link_with : libuwu,
 	build_by_default : false)
-executable('wufuzz', ['main_fuzz.c'],
+executable('wufuzz', ['main_fuzz.c', fmt_desc],
 	dependencies : dep_list,
 	link_with : libuwu,
 	build_by_default : false)

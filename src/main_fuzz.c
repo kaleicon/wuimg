@@ -8,7 +8,7 @@
 __AFL_FUZZ_INIT()
 
 int main(int argc, char **argv) {
-	struct image_context image = {
+	struct wudec_image image = {
 		.conf = conf_default(),
 	};
 	image.conf.max_img_size = 1920;
@@ -31,14 +31,13 @@ int main(int argc, char **argv) {
 	unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 	while (__AFL_LOOP(1 << 15)) {
 		const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
-		dec_src_mem(&image, wuptr_mem(buf, (size_t)len), NULL, fn);
+		wudec_src_mem(&image, wuptr_mem(buf, (size_t)len), NULL, fn);
 		enum wu_error err;
 		do {
 			struct wuimg *img;
-			err = dec_iter(&image, &img);
+			err = wudec_iter(&image, &img);
 		} while (err == wu_ok);
-		dec_free(&image);
-		image_reset(&image);
+		wudec_reset(&image);
 	}
 	return 0;
 }

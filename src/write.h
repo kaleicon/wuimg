@@ -28,9 +28,6 @@ struct write_writer {
 	writer_set_image_t set_image;
 };
 
-bool write_image(struct image_context *image, const struct write_args *args,
-struct write_writer *writer);
-
 int write_filelist(const struct write_args *args, struct write_writer *writer,
 int len, char **names, const struct wu_conf *conf);
 

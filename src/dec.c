@@ -12,24 +12,24 @@
 
 #include "dec.h"
 
-struct wuimg * image_cur_sub_img(const struct image_context *image) {
+struct wuimg * wudec_cur_sub_img(const struct wudec_image *image) {
 	return image->file.sub_img + image->state.idx;
 }
 
-bool image_cur_is_anim(const struct image_context *image) {
-	const struct wuimg *img = image_cur_sub_img(image);
+bool wudec_cur_is_anim(const struct wudec_image *image) {
+	const struct wuimg *img = wudec_cur_sub_img(image);
 	return img->evolving || img->frames;
 }
 
-enum image_event image_cur_events(const struct image_context *image) {
-	const struct wuimg *img = image_cur_sub_img(image);
+enum image_event wudec_cur_events(const struct wudec_image *image) {
+	const struct wuimg *img = wudec_cur_sub_img(image);
 	return ev_subcycle
 		| (img->evolving ? ev_time : 0)
 		| (img->scalable ? ev_transform : 0)
 		| (img->frames ? ev_frame : 0);
 }
 
-enum image_event image_zoom(struct image_context *image, float new_zoom) {
+enum image_event wudec_zoom(struct wudec_image *image, float new_zoom) {
 	const float max = exp2f(WU_SCALING_POW);
 	const float min = exp2f(-WU_SCALING_POW);
 
@@ -41,7 +41,7 @@ enum image_event image_zoom(struct image_context *image, float new_zoom) {
 	return 0;
 }
 
-enum image_event image_sub_cycle(struct image_context *image, int steps) {
+enum image_event wudec_sub_cycle(struct wudec_image *image, int steps) {
 	const int c = imod(image->state.idx + steps, (int)image->file.nr);
 	if (c != image->state.idx) {
 		image->state.idx = c;
@@ -50,8 +50,8 @@ enum image_event image_sub_cycle(struct image_context *image, int steps) {
 	return 0;
 }
 
-enum image_event image_frame_cycle(struct image_context *image, int steps) {
-	const struct image_frames *frames = image_cur_sub_img(image)->frames;
+enum image_event wudec_frame_cycle(struct wudec_image *image, int steps) {
+	const struct image_frames *frames = wudec_cur_sub_img(image)->frames;
 	if (frames) {
 		const int f = imod(image->state.frame + steps, (int)frames->nr);
 		if (f != image->state.frame) {
@@ -62,17 +62,8 @@ enum image_event image_frame_cycle(struct image_context *image, int steps) {
 	return 0;
 }
 
-void image_reset(struct image_context *image) {
-	image->name = NULL;
-	image->file = (struct image_file){0};
-	image->state.idx = 0;
-	image->state.frame = 0;
-	image->state.time = 0;
-	image->desc = (struct fmt_desc){0};
-}
 
-
-void dec_free(struct image_context *image) {
+void wudec_free(struct wudec_image *image) {
 	/* dec_state must be freed first, as some formats may use this
 	 * interface to decode an embedded file. */
 	if (image->file.dec_state && !image->desc.is_auto) {
@@ -87,7 +78,17 @@ void dec_free(struct image_context *image) {
 	image_file_free(&image->file);
 }
 
-static enum wu_error call_event(struct image_context *image,
+void wudec_recycle(struct wudec_image *image) {
+	wudec_free(image);
+	image->name = NULL;
+	image->file = (struct image_file){0};
+	image->state.idx = 0;
+	image->state.frame = 0;
+	image->state.time = 0;
+	image->desc = (struct fmt_desc){0};
+}
+
+static enum wu_error call_event(struct wudec_image *image,
 const enum image_event event) {
 	const struct fmt_desc *desc = &image->desc;
 	const struct wu_st st = (desc->is_auto)
@@ -100,11 +101,11 @@ const enum image_event event) {
 	return st.st;
 }
 
-enum wu_error dec_callback(struct image_context *image,
+enum wu_error wudec_callback(struct wudec_image *image,
 enum image_event event) {
 	struct image_file *infile = &image->file;
 	struct wu_state *state = &image->state;
-	event &= image_cur_events(image);
+	event &= wudec_cur_events(image);
 	switch (event) {
 	case ev_none:
 		break;
@@ -174,12 +175,12 @@ static void errno_append(struct image_file *infile, const int n) {
 	}
 }
 
-static enum wu_error actually_open(struct image_context *image) {
+static enum wu_error actually_open(struct wudec_image *image) {
 	struct image_file *infile = &image->file;
 	struct wuptr *map = &infile->map;
 	if (!infile->ifp && !map->ptr) {
 		if (!image->name) {
-			fatal_bug("dec_decode()",
+			fatal_bug("wudec_decode()",
 				"No data source for image_context");
 		}
 		errno = 0;
@@ -246,7 +247,7 @@ const struct wu_conf *conf, const struct fmt_desc *desc) {
 	return st.st;
 }
 
-enum wu_error dec_decode(struct image_context *image) {
+enum wu_error wudec_decode(struct wudec_image *image) {
 	enum wu_error st = actually_open(image);
 	if (st == wu_ok) {
 		struct image_file *infile = &image->file;
@@ -273,10 +274,10 @@ enum wu_error dec_decode(struct image_context *image) {
 			&& !alloc_sub_images(infile, infile->nr)) {
 				image_file_strerror_append(infile,
 					"Failed to allocate sub-images in"
-					" dec_decode()");
+					" wudec_decode()");
 				return wu_alloc_error;
 			} else if (!infile->sub_img->data) {
-				st = dec_callback(image, ev_subcycle);
+				st = wudec_callback(image, ev_subcycle);
 				if (st == wu_no_change) {
 					fatal_bug(__func__,
 						"Callback returned `no change`"
@@ -288,12 +289,12 @@ enum wu_error dec_decode(struct image_context *image) {
 	return st;
 }
 
-enum wu_error dec_iter(struct image_context *image,
+enum wu_error wudec_iter(struct wudec_image *image,
 struct wuimg **cur_img) {
 	enum wu_error err;
 	struct wu_state *state = &image->state;
 	if (!image->file.nr) {
-		err = dec_decode(image);
+		err = wudec_decode(image);
 		*cur_img = image->file.sub_img;
 		return err;
 	}
@@ -314,7 +315,7 @@ struct wuimg **cur_img) {
 	}
 
 	if (ev) {
-		err = dec_callback(image, ev);
+		err = wudec_callback(image, ev);
 		if (err == wu_ok || err == wu_no_change) {
 			*cur_img = image->file.sub_img + state->idx;
 			err = wu_ok;
@@ -324,14 +325,14 @@ struct wuimg **cur_img) {
 	return wu_no_change;
 }
 
-void dec_src_auto_desc(struct image_context *image, const struct wuptr *desc) {
+void wudec_src_auto_desc(struct wudec_image *image, const struct wuptr *desc) {
 	image->desc = (struct fmt_desc) {
 		.is_auto = true,
 		.dec.desc = desc,
 	};
 }
 
-void dec_src_mem(struct image_context *image, const struct wuptr data,
+void wudec_src_mem(struct wudec_image *image, const struct wuptr data,
 const char *name, const struct image_fn *fn) {
 	image->name = name;
 	image->file.map = data;
@@ -339,7 +340,7 @@ const char *name, const struct image_fn *fn) {
 	image->desc.dec.fn = fn;
 }
 
-void dec_src_file(struct image_context *image, FILE *ifp, const char *name,
+void wudec_src_file(struct wudec_image *image, FILE *ifp, const char *name,
 const bool keep_file, const bool stat_file) {
 	image->name = name;
 	image->file.ifp = ifp;
@@ -347,7 +348,7 @@ const bool keep_file, const bool stat_file) {
 	image->file.stat = stat_file;
 }
 
-void dec_src_filename(struct image_context *image, const char *filename) {
+void wudec_src_filename(struct wudec_image *image, const char *filename) {
 	image->name = filename;
 	image->file.stat = true;
 }

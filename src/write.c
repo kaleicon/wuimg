@@ -176,7 +176,7 @@ const bool overwrite, const struct image_frames *frames, const char ext[static 4
 }
 
 static const char * get_file(struct write_file *out,
-const struct write_args *args, const struct image_context *image,
+const struct write_args *args, const struct wudec_image *image,
 struct wuimg *src) {
 	const char *msg = NULL;
 	if (!out->ofp) {
@@ -199,7 +199,7 @@ struct wuimg *src) {
 }
 
 static bool close_file(struct write_file *out, const struct write_args *args,
-const struct image_context *image, const struct wuimg *src, const bool failed) {
+const struct wudec_image *image, const struct wuimg *src, const bool failed) {
 	const bool final_frame = failed
 		|| (size_t)(image->state.frame + 1) == wuimg_frames_nr(src);
 	const struct enc_fn *enc = ENC_TABLE[args->codec].enc;
@@ -242,7 +242,7 @@ FILE *ofp) {
 }
 
 static bool init_write_file(struct write_file *out,
-const struct write_args *args, const struct image_context *image) {
+const struct write_args *args, const struct wudec_image *image) {
 	struct fs_path path;
 	out->dirfd = fs_get_dir_or_parent(&path,
 		args->outdir ? args->outdir : image->name,
@@ -262,18 +262,17 @@ const struct write_args *args, const struct image_context *image) {
 }
 
 static void print_dec_error(const enum wu_error e, const char *what,
-const struct image_context *image) {
+const struct wudec_image *image) {
 	fprintf(stderr, "Error while %s %s: ", what, image->name);
 	image_file_error_print(&image->file, e, stderr);
 }
 
-bool write_image(struct image_context *image, const struct write_args *args,
+static bool write_image(struct wudec_image *image, const struct write_args *args,
 struct write_writer *writer) {
 	struct wuimg *cur;
-	enum wu_error err = dec_iter(image, &cur);
+	enum wu_error err = wudec_iter(image, &cur);
 	if (err != wu_ok) {
 		print_dec_error(err, "opening", image);
-		dec_free(image);
 		return false;
 	}
 
@@ -301,7 +300,7 @@ struct write_writer *writer) {
 				print_write_file(&out, stdout);
 				fputc(args->null ? 0 : '\n', stdout);
 			}
-		} while (wu_ok == (err = dec_iter(image, &cur)));
+		} while (wu_ok == (err = wudec_iter(image, &cur)));
 		switch (err) {
 		case wu_no_change: case wu_ok:
 			break;
@@ -313,13 +312,12 @@ struct write_writer *writer) {
 		perror("Writer state setup failed");
 	}
 	free_write_file(&out);
-	dec_free(image);
 	return all_ok;
 }
 
 int write_filelist(const struct write_args *args, struct write_writer *writer,
 const int len, char **names, const struct wu_conf *conf) {
-	struct image_context image = {
+	struct wudec_image image = {
 		.conf = conf ? *conf : conf_default(),
 	};
 
@@ -332,13 +330,13 @@ const int len, char **names, const struct wu_conf *conf) {
 				term_line_put("Failed to save stdin", stderr);
 				continue;
 			}
-			dec_src_file(&image, stdin_cpy, "stdin", false, false);
+			wudec_src_file(&image, stdin_cpy, "stdin", false, false);
 		} else {
-			dec_src_filename(&image, name);
+			wudec_src_filename(&image, name);
 		}
 
 		ok += write_image(&image, args, writer);
-		image_reset(&image);
+		wudec_recycle(&image);
 		if (args->stdout) {
 			break;
 		}

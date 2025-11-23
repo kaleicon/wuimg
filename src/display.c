@@ -15,9 +15,9 @@ const char *what, const enum wu_error e, FILE *out) {
 	image_file_error_print(infile, e, out);
 }
 
-static enum wu_error decode_with_stats(struct image_context *image) {
+static enum wu_error decode_with_stats(struct wudec_image *image) {
 	const watch_t start = watch_look();
-	const enum wu_error result = dec_decode(image);
+	const enum wu_error result = wudec_decode(image);
 	const watch_t diff = watch_elapsed(start);
 
 	const struct image_file *infile = &image->file;
@@ -33,7 +33,7 @@ static enum wu_error decode_with_stats(struct image_context *image) {
 }
 
 static void set_background_color(struct window_context *window,
-const struct image_context *image) {
+const struct wudec_image *image) {
 	const struct wu_conf *conf = &image->conf;
 	if (conf->bg_src != bg_default) {
 		const struct image_file *infile = &image->file;
@@ -57,7 +57,7 @@ void display_end(struct window_context *window, const struct term_restore *tr) {
 	}
 }
 
-static enum wu_error update_texture(struct image_context *image,
+static enum wu_error update_texture(struct wudec_image *image,
 struct gl_context *gl, const bool reset, const bool new_img,
 const bool subupload) {
 	struct wu_state *state = &image->state;
@@ -118,7 +118,7 @@ const bool print_draw_time) {
 	return event_exec(window);
 }
 
-static bool idle_display(struct image_context *image,
+static bool idle_display(struct wudec_image *image,
 struct window_context *window, const double next_frame,
 const enum image_event evs, const bool allow_cycle) {
 	struct wu_event *event = &window->pub.event;
@@ -130,7 +130,7 @@ const enum image_event evs, const bool allow_cycle) {
 		const double elapsed = draw_rest_poll(window, print_time);
 		if (window->pub.win.playing) {
 			state->time += (float)elapsed;
-			if (state->time >= next_frame && image_frame_cycle(image, 1)) {
+			if (state->time >= next_frame && wudec_frame_cycle(image, 1)) {
 				event->image = ev_frame;
 			}
 		}
@@ -157,7 +157,7 @@ static double min_time(const struct wuimg *img, const struct wu_state *state) {
 
 enum wu_error display_loop(struct window_context *window,
 const bool allow_cycle, const bool allow_delete) {
-	struct image_context *image = &window->pub.image;
+	struct wudec_image *image = &window->pub.image;
 	enum wu_error err = decode_with_stats(image);
 	if (err != wu_ok) {
 		return err;
@@ -184,9 +184,9 @@ const bool allow_cycle, const bool allow_delete) {
 			if (event->image & ev_subcycle) {
 				subcycle = true;
 				state->time = 0;
-				evs = image_cur_events(image);
+				evs = wudec_cur_events(image);
 				window->pub.win.playing =
-					image_cur_is_anim(image);
+					wudec_cur_is_anim(image);
 			} else {
 				subupload = !(event->image & ev_transform);
 			}
@@ -219,7 +219,7 @@ const bool allow_cycle, const bool allow_delete) {
 		if (idle_display(image, window, next_frame, evs, allow_cycle)) {
 			break;
 		} else if (event->image & evs) {
-			err = dec_callback(image, event->image);
+			err = wudec_callback(image, event->image);
 			switch (err) {
 			case wu_no_change:
 				upload = event->image & (ev_subcycle | ev_frame);

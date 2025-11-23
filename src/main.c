@@ -118,7 +118,7 @@ struct test_mode_args args) {
 			args.iters, args.warmup);
 	}
 
-	struct image_context image = {
+	struct wudec_image image = {
 		.conf = conf_no_window(),
 	};
 
@@ -131,12 +131,11 @@ struct test_mode_args args) {
 
 		result = wu_ok;
 		for (unsigned j = 0; j < it && result == wu_ok; ++j) {
-			image_reset(&image);
-			dec_src_filename(&image, entries->name[i]);
+			wudec_src_filename(&image, entries->name[i]);
 			const watch_t watch = watch_look();
 			do {
 				struct wuimg *img;
-				result = dec_iter(&image, &img);
+				result = wudec_iter(&image, &img);
 			} while (result == wu_ok);
 			if (result == wu_no_change) {
 				result = wu_ok;
@@ -148,7 +147,7 @@ struct test_mode_args args) {
 					taken += watch_elapsed(watch) * (j >= args.warmup);
 				}
 			}
-			dec_free(&image);
+			wudec_recycle(&image);
 		}
 
 		if (result == wu_ok) {
@@ -189,7 +188,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		return wu_display_error;
 	}
 
-	struct image_context *image = &window.pub.image;
+	struct wudec_image *image = &window.pub.image;
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	long idx = 0;
@@ -201,10 +200,9 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		printf("%ld/%ld%s, %s/%s\n", idx + 1, iter.total,
 			iter.seen_it_all ? "" : "?", archive_name, iter.name);
 
-		image_reset(image);
-		dec_src_file(image, iter.cur, iter.name, true, true);
+		wudec_src_file(image, iter.cur, iter.name, true, true);
 		result = display_loop(&window, true, false);
-		dec_free(image);
+		wudec_recycle(image);
 		putchar('\n');
 		if (result == wu_ok) {
 			decoded_once = true;
@@ -231,7 +229,7 @@ const bool interpret_stdin, const struct wuptr *raw) {
 	}
 
 	FILE *stdin_tmp = NULL;
-	struct image_context *image = &window.pub.image;
+	struct wudec_image *image = &window.pub.image;
 	struct wu_event *event = &window.pub.event;
 	enum wu_error result = wu_ok;
 	size_t remaining = entries->nr;
@@ -241,7 +239,6 @@ const bool interpret_stdin, const struct wuptr *raw) {
 			idx = lmod(idx + direction, (long)entries->nr);
 		}
 		pos_print((size_t)idx, entries);
-		image_reset(image);
 
 		bool free_entry = false;
 		const char *name = entries->name[idx];
@@ -251,20 +248,20 @@ const bool interpret_stdin, const struct wuptr *raw) {
 			}
 			if (stdin_tmp) {
 				rewind(stdin_tmp);
-				dec_src_file(image, stdin_tmp, name, true, false);
+				wudec_src_file(image, stdin_tmp, name, true, false);
 			} else {
 				free_entry = true;
 			}
 		} else {
-			dec_src_filename(image, name);
+			wudec_src_filename(image, name);
 		}
 		if (raw && raw->ptr) {
-			dec_src_auto_desc(image, raw);
+			wudec_src_auto_desc(image, raw);
 		}
 
 		if (!free_entry) {
 			result = display_loop(&window, remaining > 1, true);
-			dec_free(image);
+			wudec_recycle(image);
 			if (result != wu_ok) {
 				free_entry = true;
 			} else if (event->rm == rm_yes) {

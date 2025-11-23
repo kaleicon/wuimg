@@ -13,7 +13,7 @@ enum event_repeat {
 static enum event_repeat apply_event(struct window_context *window,
 const int code, const float dt, const bool shift) {
 	struct window_public *pub = &window->pub;
-	struct image_context *image = &pub->image;
+	struct wudec_image *image = &pub->image;
 	const struct image_file *file = &image->file;
 	struct wu_state *state = &image->state;
 	struct wu_event *event = &pub->event;
@@ -65,30 +65,30 @@ const int code, const float dt, const bool shift) {
 		break;
 	// Sub-cycling
 	case '<': // Prev
-		event->image = image_sub_cycle(image, -1);
+		event->image = wudec_sub_cycle(image, -1);
 		break;
 	case '>': // Next
-		event->image = image_sub_cycle(image, 1);
+		event->image = wudec_sub_cycle(image, 1);
 		break;
 	// Frame cycling
 	case ',': // Prev
-		event->image = image_frame_cycle(image, -1);
+		event->image = wudec_frame_cycle(image, -1);
 		pub->win.playing = false;
 		break;
 	case '.': // Next
-		event->image = image_frame_cycle(image, 1);
+		event->image = wudec_frame_cycle(image, 1);
 		pub->win.playing = false;
 		break;
 	case ';':
-		event->image = image_sub_cycle(image, -5);
+		event->image = wudec_sub_cycle(image, -5);
 		pub->win.playing = false;
 		break;
 	case ':':
-		event->image = image_sub_cycle(image, 5);
+		event->image = wudec_sub_cycle(image, 5);
 		pub->win.playing = false;
 		break;
 	case ' ':
-		pub->win.playing ^= image_cur_is_anim(image);
+		pub->win.playing ^= wudec_cur_is_anim(image);
 		return repeat_none;
 
 	// Image movement
@@ -132,21 +132,21 @@ const int code, const float dt, const bool shift) {
 
 	// Zoom
 	case '+':
-		event->image = image_zoom(image, state->zoom * exp2f(1.0f/3.0f));
+		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/3.0f));
 		break;
 	case '-':
-		event->image = image_zoom(image, state->zoom * exp2f(1.0f/-3.0f));
+		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/-3.0f));
 		break;
 	case '*':
-		event->image = image_zoom(image, state->zoom * exp2f(1.0f/6.0f));
+		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/6.0f));
 		break;
 	case '/':
-		event->image = image_zoom(image, state->zoom * exp2f(1.0f/-6.0f));
+		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/-6.0f));
 		break;
 	case '=':
 	case '0':
 		;const float fit = gl->tex.fit_zoom;
-		event->image = image_zoom(image,
+		event->image = wudec_zoom(image,
 			(code == '0') ? fminf(1.0, fit) : fit);
 		event->image |= ((bool)state->x_offset | (bool)state->y_offset)
 			? ev_transform : ev_none;
@@ -155,7 +155,7 @@ const int code, const float dt, const bool shift) {
 		return repeat_none;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
-		event->image = image_zoom(image, (float)(code - '0'));
+		event->image = wudec_zoom(image, (float)(code - '0'));
 		return repeat_none;
 	}
 	return repeat_fixed;

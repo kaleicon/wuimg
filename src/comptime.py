@@ -1807,9 +1807,9 @@ def print_include(name: str) -> None:
 def gen_maps(fmt_map: Iterable[FmtDesc]) -> None:
 	# Include the output of dec_header()
 	print_include('dec_fn.h')
-	print_include('dec.h')
+	print_include('dec_fmt_desc.h')
 
-	# Genrate `fmt_XXX` enums
+	# Generate `fmt_XXX` enums
 	print_fmt_enum(fmt_map)
 	# Generate four arrays out of the format map:
 	# metadata and decoder pointers, magic sequences, extensions, and file
@@ -1830,8 +1830,9 @@ def gen_maps(fmt_map: Iterable[FmtDesc]) -> None:
 	# Include the rest of the file
 	print_include('fmtmap.c')
 
-def fmt_desc_header(fmt_map: Iterable[FmtDesc]) -> None:
+def fmt_desc_header() -> int:
 	print(FmtDesc.struct(NAME_LIMIT))
+	return 0
 
 def dec_header(fmt_map: Iterable[FmtDesc]) -> None:
 	print_include('wudefs.h');
@@ -1950,6 +1951,8 @@ if __name__ == '__main__':
 	i = 1
 	if sys.argv[i] == 'names':
 		sys.exit(print_names(DEC_MAP.keys()))
+	elif sys.argv[i] == 'fmt_desc':
+		sys.exit(fmt_desc_header())
 	if sys.argv[i] == '-all':
 		i += 1
 	else:
@@ -1962,7 +1965,6 @@ if __name__ == '__main__':
 	fn: dict[str, Callable[..., None]] = {
 		'maps': gen_maps,
 		'header': dec_header,
-		'fmt_desc': fmt_desc_header,
 		'desktop': gen_desktop_file,
 		'show': show_supported,
 	}

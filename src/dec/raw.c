@@ -28,7 +28,7 @@ struct raw_state {
 	libraw_data_t *data;
 	struct raw_image_info raw;
 	enum raw_thumbnail thumb_type;
-	struct image_context jpeg;
+	struct wudec_image jpeg;
 };
 
 static enum wu_error raw_error_to_wu(struct image_file *infile, const int err) {
@@ -54,7 +54,7 @@ static void end_raw(struct image_file *infile) {
 	}
 	free(rs->raw.proc);
 	if (rs->jpeg.file.sub_img) {
-		dec_free(&rs->jpeg);
+		wudec_free(&rs->jpeg);
 		infile->nr -= rs->jpeg.file.nr;
 	}
 	libraw_close(rs->data);
@@ -62,7 +62,7 @@ static void end_raw(struct image_file *infile) {
 
 #ifdef WU_ENABLE_JPEG
 static struct wu_st copy_jpeg(struct image_file *infile,
-const struct raw_state *rs, const struct image_context *jpeg) {
+const struct raw_state *rs, const struct wudec_image *jpeg) {
 	struct wuimg *img = infile->sub_img;
 	const size_t raw_count = rs->raw.count;
 	const struct image_file *injpeg = &jpeg->file;
@@ -80,12 +80,12 @@ const struct raw_state *rs, const struct image_context *jpeg) {
 static struct wu_st decode_jpeg(struct image_file *infile,
 struct raw_state *rs, struct wu_state *state) {
 	const int raws = (int)rs->raw.count;
-	struct image_context *jpeg = &rs->jpeg;
+	struct wudec_image *jpeg = &rs->jpeg;
 
 	jpeg->state.idx = state->idx - raws;
 	enum wu_error status = jpeg->file.nr
-		? dec_callback(jpeg, ev_subcycle)
-		: dec_decode(jpeg);
+		? wudec_callback(jpeg, ev_subcycle)
+		: wudec_decode(jpeg);
 
 	wustr_append_wustr(&infile->errors, &jpeg->file.errors);
 	jpeg->file.errors.len = 0;
@@ -243,7 +243,7 @@ const struct wu_conf *wuconf) {
 	rs->thumb_type = unpack_thumb(wuconf, data);
 #ifdef WU_ENABLE_JPEG
 	if (rs->thumb_type == raw_thumb_jpeg) {
-		dec_src_mem(&rs->jpeg,
+		wudec_src_mem(&rs->jpeg,
 			wuptr_mem(data->thumbnail.thumb, data->thumbnail.tlength),
 			NULL, &jpeg_fn);
 		rs->jpeg.conf = *wuconf;

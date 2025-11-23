@@ -71,7 +71,7 @@ struct window_public {
 	struct gl_context gl;
 	struct window_common win;
 	struct timespec timer;
-	struct image_context image;
+	struct wudec_image image;
 	struct term_queue term;
 	struct wu_event event;
 	struct window_keymap held_keys;

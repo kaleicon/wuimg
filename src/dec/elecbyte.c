@@ -56,7 +56,7 @@ struct wuimg *first, const struct eb_sff_desc *desc, const struct eb_sff_sub *su
 
 static enum wu_error sff_loop(struct image_file *infile,
 const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
-	struct image_context ctx = {.conf = *conf};
+	struct wudec_image ctx = {.conf = *conf};
 	enum wu_error st = wu_ok;
 	size_t o = 0;
 	for (size_t i = 0; i < infile->nr; ++i) {
@@ -106,20 +106,19 @@ const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
 			default: failmsg = "unreachable case reached"; break;
 			}
 			if (fn) {
-				dec_src_mem(&ctx, sub.data, NULL, fn);
-				st = dec_decode(&ctx);
+				wudec_src_mem(&ctx, sub.data, NULL, fn);
+				st = wudec_decode(&ctx);
 				if (st == wu_ok) {
 					img_swap(img, ctx.file.sub_img, base, desc, &sub);
 					add_metadata(img, desc, &sub);
 					++o;
 				}
-				dec_free(&ctx);
+				wudec_recycle(&ctx);
 			} else {
 				image_file_strerror_append(infile, failmsg);
 				st = wu_unsupported_feature;
 			}
 		}
-		image_reset(&ctx);
 	}
 	eb_sff_cleanup(desc);
 	if (st != wu_ok && st != wu_no_change) {
@@ -172,15 +171,15 @@ const struct wu_conf *conf) {
 			tree_add_leaf_len(tree, "Font definition", desc.text,
 				NULL);
 
-			struct image_context ctx = {.conf = *conf};
-			dec_src_mem(&ctx, desc.pcx, NULL, &pcx_fn);
-			st = dec_decode(&ctx);
+			struct wudec_image ctx = {.conf = *conf};
+			wudec_src_mem(&ctx, desc.pcx, NULL, &pcx_fn);
+			st = wudec_decode(&ctx);
 
 			infile->sub_img = ctx.file.sub_img;
 			infile->nr = ctx.file.nr;
 			ctx.file.sub_img = NULL;
 			ctx.file.nr = 0;
-			dec_free(&ctx);
+			wudec_free(&ctx);
 			if (infile->sub_img->mode == image_mode_palette) {
 				infile->sub_img->u.palette->color[0].a = 0;
 			}
