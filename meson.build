@@ -22,13 +22,13 @@ add_project_arguments(
 	# Needed by the ultra-convenient null_function
 	'-Wno-strict-prototypes',
 	'-Wno-missing-field-initializers',
-	'-Wno-bitwise-instead-of-logical',
 
 	'-fno-math-errno',
 	'-fno-trapping-math',
 	'-ffp-contract=fast',
 	language : 'c')
-if cc.get_id() == 'gcc'
+cc_id = cc.get_id()
+if cc_id == 'gcc'
 	add_project_arguments(
 		'-Wformat-signedness',
 		'-Wstringop-overflow=4',
@@ -37,6 +37,10 @@ if cc.get_id() == 'gcc'
 
 		'-fallow-store-data-races',
 		'-fno-signaling-nans',
+		language : 'c')
+elif cc_id == 'clang'
+	add_project_arguments(
+		'-Wno-bitwise-instead-of-logical',
 		language : 'c')
 endif
 
