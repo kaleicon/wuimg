@@ -6,9 +6,9 @@
 #include <stdbool.h>
 
 #include "wudefs.h"
-#include "misc/wustr.h"
 
-const struct fmt_desc * fmtmap_identify(struct image_context *image);
+const struct fmt_desc * fmtmap_identify(struct image_file *file,
+const char *name);
 
 const struct fmt_desc * fmtmap_by_name(const char *name);
 

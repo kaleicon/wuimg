@@ -4,7 +4,30 @@
 #define DEC
 
 #include "wudefs.h"
-#include "misc/wustr.h"
+#include "dec_fmt_desc.h"
+
+struct image_context {
+	const char *name;
+	struct image_file file;
+	struct wu_state state;
+	struct wu_conf conf;
+	struct fmt_desc desc;
+};
+
+enum image_event image_cur_events(const struct image_context *image);
+
+struct wuimg * image_cur_sub_img(const struct image_context *image);
+
+bool image_cur_is_anim(const struct image_context *image);
+
+enum image_event image_zoom(struct image_context *image, float new_zoom);
+
+enum image_event image_sub_cycle(struct image_context *image, int steps);
+
+enum image_event image_frame_cycle(struct image_context *image, int steps);
+
+void image_reset(struct image_context *image);
+
 
 void dec_free(struct image_context *image);
 

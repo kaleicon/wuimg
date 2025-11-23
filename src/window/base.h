@@ -6,7 +6,7 @@
 #include "misc/common.h"
 #include "misc/term.h"
 #include "opengl.h"
-#include "wudefs.h"
+#include "dec.h"
 
 #define WINDOW_KEYSTART ' '
 #define WINDOW_KEYEND ('Z' + 1)

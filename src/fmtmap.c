@@ -160,17 +160,18 @@ static int consort(const void *v1, const void *v2) {
 	return (c2->bits - c1->bits) * 4096 + (c2->fmt - c1->fmt);
 }
 
-const struct fmt_desc * fmtmap_identify(struct image_context *image) {
+const struct fmt_desc * fmtmap_identify(struct image_file *file,
+const char *name) {
 	struct detect det;
 	det.con[0].bits = 0;
 	det.found = 0;
 
-	search_magic(&image->file, &det);
-	search_size(&image->file, &det);
-	if (image->name) {
+	search_magic(file, &det);
+	search_size(file, &det);
+	if (name) {
 		const int ext_bits = 4;
 		const struct fmt_ext *ext = search_extension(
-			wuptr_str(image->name), image->file.ext);
+			wuptr_str(name), file->ext);
 		if (ext && ext->id > fmt_unknown) {
 			add_confidence(&det, ext->id, ext_bits);
 		}

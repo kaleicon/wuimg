@@ -1659,7 +1659,7 @@ def ext_iter(exts: StrSeq, id: int = -1) -> Iterable[FmtExt]:
 	elif exts:
 		yield from map(lambda e: FmtExt(e, id), exts)
 
-# fmt_desc is defined in wudefs.h
+# fmt_desc is defined in dec.h
 class FmtDesc(typing.NamedTuple):
 	dec: str
 	'''Decoder family'''
@@ -1668,6 +1668,19 @@ class FmtDesc(typing.NamedTuple):
 	'''Format name'''
 
 	info: FmtInfo
+
+	@staticmethod
+	def struct(limit: int) -> str:
+		return '''\
+		struct fmt_desc {{
+			char name[{0}];
+			const char *description;
+			bool is_auto;
+			union {{
+				const struct image_fn *fn;
+				const struct wuptr *desc;
+			}} dec;
+		}};'''.format(limit)
 
 	def extern(self) -> str:
 		dec, name, info = self
@@ -1794,6 +1807,7 @@ def print_include(name: str) -> None:
 def gen_maps(fmt_map: Iterable[FmtDesc]) -> None:
 	# Include the output of dec_header()
 	print_include('dec_fn.h')
+	print_include('dec.h')
 
 	# Genrate `fmt_XXX` enums
 	print_fmt_enum(fmt_map)
@@ -1815,6 +1829,9 @@ def gen_maps(fmt_map: Iterable[FmtDesc]) -> None:
 
 	# Include the rest of the file
 	print_include('fmtmap.c')
+
+def fmt_desc_header(fmt_map: Iterable[FmtDesc]) -> None:
+	print(FmtDesc.struct(NAME_LIMIT))
 
 def dec_header(fmt_map: Iterable[FmtDesc]) -> None:
 	print_include('wudefs.h');
@@ -1945,6 +1962,7 @@ if __name__ == '__main__':
 	fn: dict[str, Callable[..., None]] = {
 		'maps': gen_maps,
 		'header': dec_header,
+		'fmt_desc': fmt_desc_header,
 		'desktop': gen_desktop_file,
 		'show': show_supported,
 	}

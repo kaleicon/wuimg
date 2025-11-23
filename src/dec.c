@@ -6,10 +6,71 @@
 
 #include "misc/common.h"
 #include "misc/file.h"
+#include "misc/math.h"
 #include "auto.h"
 #include "fmtmap.h"
 
 #include "dec.h"
+
+struct wuimg * image_cur_sub_img(const struct image_context *image) {
+	return image->file.sub_img + image->state.idx;
+}
+
+bool image_cur_is_anim(const struct image_context *image) {
+	const struct wuimg *img = image_cur_sub_img(image);
+	return img->evolving || img->frames;
+}
+
+enum image_event image_cur_events(const struct image_context *image) {
+	const struct wuimg *img = image_cur_sub_img(image);
+	return ev_subcycle
+		| (img->evolving ? ev_time : 0)
+		| (img->scalable ? ev_transform : 0)
+		| (img->frames ? ev_frame : 0);
+}
+
+enum image_event image_zoom(struct image_context *image, float new_zoom) {
+	const float max = exp2f(WU_SCALING_POW);
+	const float min = exp2f(-WU_SCALING_POW);
+
+	new_zoom = fclampf(new_zoom, min, max);
+	if (new_zoom != image->state.zoom) {
+		image->state.zoom = new_zoom;
+		return ev_transform;
+	}
+	return 0;
+}
+
+enum image_event image_sub_cycle(struct image_context *image, int steps) {
+	const int c = imod(image->state.idx + steps, (int)image->file.nr);
+	if (c != image->state.idx) {
+		image->state.idx = c;
+		return ev_subcycle;
+	}
+	return 0;
+}
+
+enum image_event image_frame_cycle(struct image_context *image, int steps) {
+	const struct image_frames *frames = image_cur_sub_img(image)->frames;
+	if (frames) {
+		const int f = imod(image->state.frame + steps, (int)frames->nr);
+		if (f != image->state.frame) {
+			image->state.frame = f;
+			return ev_frame;
+		}
+	}
+	return 0;
+}
+
+void image_reset(struct image_context *image) {
+	image->name = NULL;
+	image->file = (struct image_file){0};
+	image->state.idx = 0;
+	image->state.frame = 0;
+	image->state.time = 0;
+	image->desc = (struct fmt_desc){0};
+}
+
 
 void dec_free(struct image_context *image) {
 	/* dec_state must be freed first, as some formats may use this
@@ -131,7 +192,8 @@ static enum wu_error actually_open(struct image_context *image) {
 
 	if (!image->desc.dec.fn) {
 		errno = 0;
-		const struct fmt_desc *fmt = fmtmap_identify(image);
+		const struct fmt_desc *fmt = fmtmap_identify(infile,
+			image->name);
 		if (!fmt) {
 			errno_append(infile, errno);
 			return wu_unknown_file_type;
@@ -161,7 +223,7 @@ static enum wu_error actually_open(struct image_context *image) {
 				"rb");
 			if (!infile->ifp) {
 				errno_append(infile, errno);
-				return wu_alloc_error; // ???
+				return wu_alloc_error;
 			}
 		}
 	}

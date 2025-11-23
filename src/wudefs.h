@@ -72,24 +72,6 @@ struct image_fn {
 	fmt_end_t end;
 };
 
-struct fmt_desc {
-	char name[8];
-	const char *description;
-	bool is_auto;
-	union {
-		const struct image_fn *fn;
-		const struct wuptr *desc;
-	} dec;
-};
-
-struct image_context {
-	const char *name;
-	struct image_file file;
-	struct wu_state state;
-	struct wu_conf conf;
-	struct fmt_desc desc;
-};
-
 struct wuimg * realloc_sub_images(struct image_file *file, size_t nr);
 
 struct wuimg * alloc_sub_images(struct image_file *file, size_t nr);
@@ -111,20 +93,5 @@ void image_file_strerror_append(struct image_file *file, const char *str);
 void image_file_error_append(struct image_file *file, enum wu_error status);
 
 void image_file_free(struct image_file *file);
-
-
-enum image_event image_cur_events(const struct image_context *image);
-
-struct wuimg * image_cur_sub_img(const struct image_context *image);
-
-bool image_cur_is_anim(const struct image_context *image);
-
-enum image_event image_zoom(struct image_context *image, float new_zoom);
-
-enum image_event image_sub_cycle(struct image_context *image, int steps);
-
-enum image_event image_frame_cycle(struct image_context *image, int steps);
-
-void image_reset(struct image_context *image);
 
 #endif /* WUDEFS */
