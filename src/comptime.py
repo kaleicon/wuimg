@@ -200,6 +200,11 @@ DEC_MAP: DecMap = {
 		"qdv": FmtInfo("Giffer QDV",
 			match="qdv",
 		),
+		"seuck": FmtInfo("Seuck Font",
+			ext="g",
+			magic=b"\x42\0",
+			size=514,
+		),
 
 		# Atari Falcon True Color family
 		"coke": FmtInfo("COKE (Atari Falcon)",

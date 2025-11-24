@@ -387,6 +387,16 @@ const struct wuptr qdv_desc = DESC(
 	"pal:<u24>[]"
 );
 
+// Seuck Font
+const struct wuptr seuck_desc = DESC(
+	"match:filesize(514)\n"
+	"match:[\x42\0]\n"
+	"w:8\n"
+	"h:512\n"
+	"channels:1\n"
+	"bitdepth:1"
+);
+
 /* Atari Falcon True Color family */
 // COKE
 const struct wuptr coke_desc = DESC(
