@@ -5,9 +5,9 @@
 
 cmsUInt32Number icc_fmt_colorspace(const uint8_t ch, const uint8_t bytedepth,
 const enum alpha_interpretation alpha, const uint8_t colorspace) {
-	const bool has_alpha = ch % 2 == 0;
+	const bool has_alpha = (alpha & alpha_one) == 0;
 	return (cmsUInt32Number)(PREMUL_SH(alpha == alpha_associated)
-		| FLOAT_SH(bytedepth == 4)
+		| FLOAT_SH(bytedepth == sizeof(float))
 		| EXTRA_SH(has_alpha)
 		| COLORSPACE_SH(colorspace)
 		| CHANNELS_SH(ch - has_alpha)
@@ -16,7 +16,8 @@ const enum alpha_interpretation alpha, const uint8_t colorspace) {
 
 cmsUInt32Number icc_fmt(const uint8_t ch, const uint8_t bytedepth,
 const enum alpha_interpretation alpha) {
-	return icc_fmt_colorspace(ch, bytedepth, alpha, PT_ANY);
+	return icc_fmt_colorspace(ch, bytedepth, alpha,
+		alpha == alpha_key ? PT_CMYK : PT_RGB);
 }
 
 static cmsUInt32Number read_fn(struct _cms_io_handler *io, void *buf,

@@ -254,7 +254,7 @@ const struct write_args *args, const struct wudec_image *image) {
 		if (wustr_malloc(&out->file, out->name_base + SUFFIX_SPACE)) {
 			memcpy(out->file.str, path.file.ptr, out->name_base);
 			out->with_idx = image->file.nr > 1;
-			out->enc_state = malloc(ENC_TABLE[args->codec].enc->state_size);
+			out->enc_state = calloc(ENC_TABLE[args->codec].enc->state_size, 1);
 			return out->enc_state;
 		}
 	}

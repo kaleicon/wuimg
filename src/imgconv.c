@@ -11,6 +11,9 @@
 static const bool USE_MATH_APPROX = true;
 /* Use a upsampling function that is faster but harder to understand. */
 static const bool USE_UPSAMP_FASTER = true;
+/* If ICC setup fails, return an error code and refuse to convert the image,
+ * otherwise pretend there's no profile and hope for the best. */
+static const bool FAIL_ON_BAD_ICC = false;
 
 void imgconv_close(struct imgconv *state) {
 	if (state->xfr) {
@@ -277,7 +280,6 @@ const struct wuimg *src, const struct imgconv *state) {
 static void * raw_convert(void *restrict tgt, void *restrict unpack,
 ptrdiff_t pix_stride, const struct wuimg *restrict dst,
 const struct wuimg *restrict src, const struct imgconv *state) {
-	/* See if we can shuffle data without any color processing. */
 	const size_t w = dst->w;
 	const uint8_t channels = dst->channels;
 	const uint8_t bitdepth = dst->bitdepth;
@@ -467,7 +469,7 @@ void *restrict tgt) {
 	const struct wuimg *dst = state->dst;
 	const struct plane_info *p = src->u.planes->p;
 
-	const uint8_t channels = dst->channels;
+	const uint8_t channels = src->channels;
 	const uint8_t ud = state->unpack_depth/8;
 	const bool quarter = src->rotate & 1;
 
@@ -683,17 +685,21 @@ const struct wuimg *src, const double range) {
 			return wu_alloc_error;
 		}
 		const cmsUInt32Number in_fmt = icc_fmt(dst->channels,
-			4, src->alpha);
+			sizeof(float), src->alpha);
 		const cmsUInt32Number out_fmt = icc_fmt_colorspace(
 			dst->channels,
 			dst->bitdepth/8,
-			alpha_unassociated,
+			dst->alpha,
 			dst->channels >= 3 ? PT_RGB : PT_GRAY);
 		state->xfr = color_icc_transform(&src->cs, prof,
 			in_fmt, out_fmt);
 		cmsCloseProfile(prof);
 		if (!state->xfr) {
-			return wu_alloc_error;
+			if (FAIL_ON_BAD_ICC) {
+				return wu_invalid_params;
+			}
+			fputs("Failed to setup ICC transform, will go on...",
+				stderr);
 		}
 	}
 	return wu_ok;
@@ -707,12 +713,14 @@ const struct wuimg *src) {
 		return "Conversion from channels > 4 not supported";
 	}
 
+	const bool rm_alpha = src->alpha != alpha_ignore
+		&& dst->alpha == alpha_ignore;
 	*state = (struct imgconv) {
 		.src = src,
 		.dst = dst,
 		.op = op_noop,
 		.unpack_depth = dst->bitdepth,
-		.unpack_ch = dst->channels,
+		.unpack_ch = (uint8_t)(dst->channels + rm_alpha),
 	};
 	pix_layout_min_map(state->swz, src->layout);
 
@@ -754,7 +762,9 @@ const struct wuimg *src) {
 	}
 
 	state->transfer = !state->color.eotf.srgb_input || needs_transfer(src);
-	const enum color_steps omit = (!state->transfer ? color_step_eotf : 0)
+	state->color.steps &= ~(!state->xfr ? color_step_icc : 0u);
+	const enum color_steps omit =
+		(!state->transfer ? color_step_eotf : 0)
 		| (inrange == outrange ? color_step_map : 0);
 	const enum color_steps steps = (state->color.steps & ~omit);
 	state->color_passthrough = steps == 0 && src->bitrange == dst->bitrange
