@@ -51,14 +51,14 @@ enum wu_error mac_get_sizes(struct wuimg *main, struct wuimg *pats) {
 	main->h = 720;
 	main->channels = 1;
 	main->bitdepth = 1;
-	main->attr = pix_inverted;
+	main->cs.invert = true;
 	enum wu_error st = wuimg_verify(main);
 	if (st == wu_ok && pats) {
 		pats->w = 8;
 		pats->h = 8*38;
 		pats->channels = 1;
 		pats->bitdepth = 1;
-		pats->attr = pix_inverted;
+		pats->cs.invert = true;
 		st = wuimg_verify(pats);
 	}
 	return st;
@@ -73,7 +73,7 @@ struct mac_desc *desc) {
 		512
 	*/
 
-	const uint32_t version = buf_endian32(header, big_endian);
+	const uint32_t version = buf_endian32b(header);
 	if (version > 3) {
 		return wu_invalid_header;
 	}
@@ -89,12 +89,12 @@ struct mac_binary_header *macbin) {
 	memcpy(macbin->type, data + 65, sizeof(macbin->type));
 	memcpy(macbin->creator, data + 69, sizeof(macbin->creator));
 	macbin->attributes = data[73];
-	macbin->window.y = buf_endian16(data + 75, big_endian);
-	macbin->window.x = buf_endian16(data + 77, big_endian);
-	macbin->window.id = buf_endian16(data + 77, big_endian);
+	macbin->window.y = buf_endian16b(data + 75);
+	macbin->window.x = buf_endian16b(data + 77);
+	macbin->window.id = buf_endian16b(data + 77);
 	macbin->protection = data[81];
-	macbin->time.created = buf_endian32(data + 91, big_endian);
-	macbin->time.modified = buf_endian32(data + 95, big_endian);
+	macbin->time.created = buf_endian32b(data + 91);
+	macbin->time.modified = buf_endian32b(data + 95);
 }
 
 enum wu_error mac_open_file(struct mac_desc *desc, FILE *ifp) {
@@ -167,8 +167,8 @@ enum wu_error mac_open_file(struct mac_desc *desc, FILE *ifp) {
 		return wu_unexpected_eof;
 	}
 
-	const uint32_t data_fork_size = buf_endian32(header + 83, big_endian);
-	const uint32_t res_fork_size = buf_endian32(header + 87, big_endian);
+	const uint32_t data_fork_size = buf_endian32b(header + 83);
+	const uint32_t res_fork_size = buf_endian32b(header + 87);
 	const uint32_t max_fork_size = 0x007fffff;
 	desc->has_macbin_header = header[0] == 0
 		&& header[1] != 0 && header[1] < 64

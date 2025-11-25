@@ -62,7 +62,7 @@ FILE *ifp) {
 	desc->ifp = ifp;
 	uint32_t hdr[31];
 	if (fread(hdr, sizeof(hdr), 1, ifp)) {
-		const uint32_t sig = endian32(hdr[0], big_endian);
+		const uint32_t sig = endian32b(hdr[0]);
 		desc->version = sig & 0xffff;
 		if (sig >> 16 != 0x0728) {
 			return WUERR_HERE(wu_unknown_file_type);
@@ -72,8 +72,8 @@ FILE *ifp) {
 		}
 		memcpy(desc->software, hdr + 4, sizeof(desc->software));
 		memcpy(desc->revision, hdr + 12, sizeof(desc->revision));
-		img->w = endian32(hdr[1], big_endian);
-		img->h = endian32(hdr[2], big_endian);
+		img->w = endian32b(hdr[1]);
+		img->h = endian32b(hdr[2]);
 		desc->w = (img->w + 0xff) & ~0xffu;
 		desc->h = (img->h + 0xff) & ~0xffu;
 		img->channels = 4;
@@ -85,20 +85,19 @@ FILE *ifp) {
 		 * Equivalent to log2(0x100 * sizeof(uint32_t)) */
 		img->align_sh = 10;
 
-		const uint32_t colorspace = endian32(hdr[3], big_endian);
+		const uint32_t colorspace = endian32b(hdr[3]);
 		switch (colorspace) {
 		case eclipse_rgb:
 			img->alpha = alpha_ignore;
-			img->attr = pix_normal;
 			break;
 		case eclipse_cmyk:
 			img->alpha = alpha_key;
-			img->attr = pix_inverted;
+			img->cs.invert = true;
+			img->cs.invert_alpha = true;
 			break;
 		case eclipse_alpha:
 			img->channels = 1;
 			img->layout = pix_gray;
-			img->attr = pix_normal;
 			break;
 		default:
 			return wuerr(wu_samples_wanted,

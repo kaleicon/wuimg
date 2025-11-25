@@ -244,7 +244,7 @@ const struct tiff_info *info) {
 	const bool has_icc = TIFFGetField(tif, TIFFTAG_ICCPROFILE, &len, &icc) == 1;
 	switch (info->photometric) {
 	case PHOTOMETRIC_MINISWHITE:
-		img->attr = pix_inverted;
+		img->cs.invert = true;
 		break;
 	case PHOTOMETRIC_PALETTE:
 		if (!load_palette(tif, img, info->bps)) {
@@ -257,8 +257,9 @@ const struct tiff_info *info) {
 		img->cs.limited = true;
 		break;
 	case PHOTOMETRIC_SEPARATED: // CMYK
-		img->alpha = has_icc ? alpha_ignore : alpha_key;
-		img->attr = has_icc ? pix_normal : pix_inverted;
+		img->alpha = alpha_key;
+		img->cs.invert = true;
+		img->cs.invert_alpha = true;
 		break;
 	}
 

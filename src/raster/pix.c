@@ -10,7 +10,6 @@ const char * pix_attr_str(const enum pix_attr attr) {
 	switch (attr) {
 	case pix_normal: return "normal";
 	case pix_signed: return "signed";
-	case pix_inverted: return "inverted";
 	case pix_float: return "float";
 	}
 	return "???";

@@ -284,7 +284,6 @@ const void *blob) {
 	union test_unpack_mem e_sig;
 	synth_case(&e_sig, &p->e, p->bitdepth, 1 << (md - 1));
 	return cmp_unpack(p, &p->e, blob, pix_normal)
-		& cmp_unpack(p, &e_inv, blob, pix_inverted)
 		& cmp_unpack(p, &e_sig, blob, pix_signed);
 }
 static bool test_unpack_single(const struct test_unpack_params *p,
@@ -352,12 +351,8 @@ static bool unpack_tests(void) {
 	const struct test_unpack_params single[] = {
 		{1, pix_normal, little_endian, op_unpack,
 			.e.m8 = {0,1,0,1, 1,1,0,1}},
-		{1, pix_inverted, little_endian, op_unpack,
-			.e.m8 = {1,0,1,0, 0,0,1,0}},
 		{4, pix_normal, little_endian, op_unpack,
 			.e.m8 = {0xa, 0xb, 0x8, 0x9, 0x6, 0x7, 0x4, 0x5}},
-		{8, pix_inverted, big_endian, op_unpack,
-			.e.m8 = {0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23}},
 		{8, pix_signed, big_endian, op_unpack,
 			.e.m8 = {0x3a, 0x18, 0xf6, 0xd4, 0xb2, 0x90, 0x7e, 0x5c}},
 	};

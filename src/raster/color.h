@@ -49,6 +49,7 @@ enum color_transfer_fn {
 
 struct color_transfer {
 	enum color_transfer_fn fn:8;
+	bool invert_input;
 	bool srgb_input; // True if this is the sRGB EOTF
 	float args[5];
 };
@@ -127,6 +128,8 @@ struct color_space {
 	enum cicp_transfer transfer:8;
 	enum cicp_matrix matrix:8;
 	bool limited:1;
+	bool invert:1;
+	bool invert_alpha:1;
 	enum color_profile_type type:2;
 	struct color_space_luminance {
 		uint16_t max, ref;

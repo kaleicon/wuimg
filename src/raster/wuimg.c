@@ -114,7 +114,6 @@ const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 	switch (attr) {
 	case pix_normal:
 		return NULL;
-	case pix_inverted:
 	case pix_signed:
 	case pix_float:
 		return "Only raw and planar images can use attributes";
@@ -509,10 +508,12 @@ static void print_colorspace_data(const struct color_space *cs, FILE *out) {
 	fprintf(out,
 		"  Colorspace:\n"
 		"   Type: %s\n"
-		"   Range: %s\n"
+		"   Range: %s%s%s\n"
 		"   Matrix: %s\n",
 		color_space_type_str(cs),
 		cs->limited ? "limited" : "full",
+		cs->invert ? ", inverted color" : "",
+		cs->invert_alpha ? ", inverted alpha" : "",
 		cicp_matrix_str(cs->matrix));
 	switch (cs->type) {
 	case color_profile_enum:

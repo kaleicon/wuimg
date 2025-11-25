@@ -1097,9 +1097,9 @@ struct wu_st bmz_open(struct bmz_desc *desc, struct mparser mp) {
 							ifp, true, trit_false);
 						if (wu_isok(st)) {
 							desc->buf = buf;
-						} else {
-							fclose(ifp);
+							return st;
 						}
+						fclose(ifp);
 					} else {
 						st = WUERR_HERE(wu_alloc_error);
 					}

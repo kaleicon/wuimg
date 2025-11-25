@@ -90,7 +90,7 @@ const struct wuptr bru_desc = DESC(
 	"channels:1\n"
 	"bitdepth:8\n"
 	"bitrange:1\n"
-	"attr:inverted"
+	"invert:true"
 );
 
 /* CHKY - IFF Chunky.
@@ -173,7 +173,7 @@ const struct wuptr hpicon_desc = DESC(
 	"endian:little\n"
 	"channels:1\n"
 	"bitdepth:1\n"
-	"attr:inverted\n"
+	"invert:true\n"
 
 	"match:[\x01\x00\x01\x00]\n"
 	"w:<u16>\n"
@@ -194,8 +194,8 @@ const struct wuptr iim_desc = DESC(
 
 	"match:[IS_IMAGE]\n"
 	"(match:<u16>"
-		"0 attr:inverted bitdepth:1\n"
-		"1 attr:inverted\n"
+		"0 invert:true bitdepth:1\n"
+		"1 invert:true\n"
 		"4 channels:3\n"
 		"5 channels:4 layout:argb\n"
 	")\n"
@@ -236,7 +236,7 @@ const struct wuptr megapat_desc = DESC(
 	"h:1024\n" // There are always 32 patterns, each 32x32
 	"channels:1\n"
 	"bitdepth:1\n"
-	"attr:inverted\n"
+	"invert:true\n"
 
 	"match:[\x07PAT ]\n"
 	"skip:1\n"
@@ -269,7 +269,7 @@ https://web.archive.org/web/20120624211208/http://www.csoft.co.uk/documents/sms3
 const struct wuptr ota_desc = DESC(
 	"channels:1\n"
 	"bitdepth:1\n"
-	"attr:inverted\n"
+	"invert:true\n"
 
 	"(match:<u8>\n"
 		"0 w:<u8> h:<u8>\n"
@@ -330,7 +330,7 @@ const struct wuptr pgf_desc = DESC(
 	"h:64\n"
 	"channels:1\n"
 	"bitdepth:1\n"
-	"attr:inverted"
+	"invert:true"
 );
 
 /* PXY - Eclipse Proxy
@@ -521,7 +521,7 @@ const struct wuptr da4_desc = DESC(
 	"h:800\n"
 	"channels:1\n"
 	"bitdepth:1\n"
-	"attr:inverted"
+	"invert:true"
 );
 
 // DOO (Atari Doodle)
@@ -530,14 +530,14 @@ const struct wuptr doo_desc = DESC(
 	"h:400\n"
 	"channels:1\n"
 	"bitdepth:1\n"
-	"attr:inverted"
+	"invert:true"
 );
 
 /* IMG Scan */
 const struct wuptr imgscan_desc = DESC(
 	"channels:1\n"
 	"bitdepth:8\n"
-	"attr:inverted\n"
+	"invert:true\n"
 
 	"match:filesize("
 		"64000 w:320 h:200\n" // RWL
@@ -553,7 +553,7 @@ const struct wuptr trs80clp_desc = DESC(
 	"h:0x38\n"
 	"channels:1\n"
 	"bitdepth:1\n"
-	"attr:inverted\n"
+	"invert:true\n"
 
 	/* It's hard to make sense of the header, so match against it and move
 	 * on. */
@@ -911,8 +911,6 @@ struct image_file *infile, const struct wuptr op, const struct token *tok) {
 		} else if (wuptr_eq_str(op, "attr")) {
 			if (wuptr_eq_str(arg, "normal")) {
 				img->attr = pix_normal;
-			} else if (wuptr_eq_str(arg, "inverted")) {
-				img->attr = pix_inverted;
 			} else if (wuptr_eq_str(arg, "signed")) {
 				img->attr = pix_signed;
 			} else if (wuptr_eq_str(arg, "float")) {
@@ -931,6 +929,14 @@ struct image_file *infile, const struct wuptr op, const struct token *tok) {
 				img->alpha = alpha_ignore;
 			} else {
 				return pbug("Bad alpha value");
+			}
+		} else if (wuptr_eq_str(op, "invert")) {
+			if (wuptr_eq_str(arg, "true")) {
+				img->cs.invert = true;
+			} else if (wuptr_eq_str(arg, "false")) {
+				img->cs.invert = false;
+			} else {
+				return pbug("Bad invert value");
 			}
 		} else if (wuptr_eq_str(op, "match")) {
 			if (wuptr_eq_str(arg, "filesize")) {

@@ -40,7 +40,7 @@ static void fax_set_img_params(struct wuimg *img) {
 	img->channels = 1;
 	img->bitdepth = 8;
 	img->bitrange = 1;
-	img->attr = MIN_IS_BLACK ? pix_normal : pix_inverted;
+	img->cs.invert = !MIN_IS_BLACK;
 }
 
 static uint32_t huff_get_pair(const uint32_t bits, const uint32_t nr,

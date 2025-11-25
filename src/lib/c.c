@@ -196,7 +196,7 @@ static struct wu_st array_contents(struct c_desc *desc, struct wuimg *img) {
 	desc->tp.pos = pos;
 	img->channels = 1;
 	img->bitdepth = 1;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	return wuerr(wuimg_verify(img), NULL);
 }
 

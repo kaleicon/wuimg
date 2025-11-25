@@ -189,7 +189,7 @@ static struct wu_st setup_desc(struct pnm_desc *desc) {
 	switch (desc->type) {
 	case pnm_raw_pbm:
 		desc->rast.bitdepth = 1;
-		desc->rast.attr = pix_inverted;
+		desc->rast.cs.invert = true;
 		break;
 	case pnm_plain_pbm:
 		desc->rast.bitdepth = 8;

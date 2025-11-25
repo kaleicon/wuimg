@@ -11,28 +11,29 @@
 #include "raster/unpack.h"
 
 /* GLSL variables */
-#define ATTR_POS "pos"
+#define ATTR_POS "POS"
 
-#define UNI_IMG "img"
-#define UNI_PAL "pal"
-#define UNI_PLANE3 "plane3"
-#define UNI_PLANE_ALPHA "plane4"
-#define UNI_CMS_LUT "cms_lut"
+#define UNI_IMG "IMG"
+#define UNI_PAL "PAL"
+#define UNI_PLANE3 "PLANE3"
+#define UNI_PLANE_ALPHA "PLANE4"
+#define UNI_CMS_LUT "CMS_LUT"
 
 // Macro names must match the ones in opengl.def
-#define UNI_MAT_POS "mat_pos"
-#define UNI_MAT_NONLINEAR "mat_nonlinear"
-#define UNI_MAT_CMS "mat_cms"
-#define UNI_MODE_COLOR "mode_color"
-#define UNI_MODE_ALPHA "mode_alpha"
-#define UNI_MODE_CMS "mode_cms"
-#define UNI_EOTF_FN "eotf_fn"
-#define UNI_EOTF_ARGS "eotf_args"
-#define UNI_OETF_FN "oetf_fn"
-#define UNI_OETF_ARGS "oetf_args"
-#define UNI_POSITIONING "posit"
-#define UNI_REMAP "remap"
-#define UNI_LUM_SCALE "lum_scale"
+#define UNI_MAT_POS "MAT_POS"
+#define UNI_MAT_NONLINEAR "MAT_NONLINEAR"
+#define UNI_MAT_CMS "MAT_CMS"
+#define UNI_MODE_COLOR "MODE_COLOR"
+#define UNI_MODE_ALPHA "MODE_ALPHA"
+#define UNI_MODE_CMS "MODE_CMS"
+#define UNI_EOTF_FN "EOTF_FN"
+#define UNI_EOTF_ARGS "EOTF_ARGS"
+#define UNI_OETF_FN "OETF_FN"
+#define UNI_OETF_ARGS "OETF_ARGS"
+#define UNI_POSITIONING "POSIT"
+#define UNI_REMAP "REMAP"
+#define UNI_LUM_SCALE "LUM_SCALE"
+#define UNI_INVERT "INVERT"
 
 #define COLOR_RAW "0"
 #define COLOR_PALETTE "1"
@@ -315,6 +316,7 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 		break;
 	}
 
+
 	struct color_convert conv;
 	color_space_walk(cs, &context->tgt, &conv, img->layout == pix_gray,
 		is_planar, scale);
@@ -327,6 +329,7 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 	uni_tf(uni[gl_uni_OETF_FN], uni[gl_uni_OETF_ARGS], &conv.oetf);
 
 	glUniform1f(uni[gl_uni_LUM_SCALE], get_lum_scale(context->tgt.lum));
+	glUniform1f(uni[gl_uni_INVERT], conv.eotf.invert_input);
 	return conv.steps;
 }
 
@@ -794,7 +797,6 @@ const struct wuimg *img) {
 		}
 		// fallthrough
 	case pix_signed:
-	case pix_inverted:
 		switch (bd) {
 		case 8: case 16: case 32:
 			params->op = img->attr == pix_normal
@@ -1171,6 +1173,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 		"uniform float[5] " UNI_OETF_ARGS ";"
 		"uniform vec4[2] " UNI_REMAP ";"
 		"uniform float " UNI_LUM_SCALE ";"
+		"uniform float " UNI_INVERT ";"
 
 		"vec3 gen_check_pattern(float alpha) {"
 			"ivec2 d = ivec2(gl_FragCoord.xy);"
@@ -1275,7 +1278,8 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 			"}"
 
 			"color = color *" UNI_REMAP "[0] +" UNI_REMAP "[1];"
-			"color.rgb =" UNI_MAT_NONLINEAR "* color.rgb;"
+			"color.rgb =" UNI_MAT_NONLINEAR "* color.rgb"
+				"+ vec3(" UNI_INVERT ");"
 			"if (" UNI_MODE_CMS "==" CMS_LUT ") {"
 				"color.rgb = texture("
 					UNI_CMS_LUT ", color.rgb).rgb;"
@@ -1285,18 +1289,19 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 					"color.rgb *=" UNI_MAT_CMS ";"
 				"}"
 			"}"
-			"color.rgb *= vec3(" UNI_LUM_SCALE ");"
+			"float lum =" UNI_LUM_SCALE ";"
 			"switch (" UNI_MODE_ALPHA "[0]) {"
 			"case " ALPHA_COLOR_MULTIPLY ":"
-				"color.rgb *= color.aaa;"
+				"lum *= color.a;"
 				"break;"
 			"case " ALPHA_COLOR_NO_MULTIPLY ": break;"
 			"case " ALPHA_COLOR_UNMULTIPLY ":"
 				"if (color.a != 0.0) {"
-					"color.rgb /= color.aaa;"
+					"lum /= color.a;"
 				"}"
 				"break;"
 			"}"
+			"color.rgb *= vec3(lum);"
 			"switch (" UNI_MODE_ALPHA "[1]) {"
 			"case " ALPHA_BG_NONE ": break;"
 			"case " ALPHA_BG_CHECKERS ":"

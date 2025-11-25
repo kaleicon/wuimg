@@ -310,13 +310,15 @@ struct jpeg_decompress_struct *dinfo) {
 
 static bool set_colorspace(struct wuimg *img,
 const struct jpeg_decompress_struct *dinfo) {
-	img->alpha = alpha_key;
+	img->alpha = img->channels == 4 ? alpha_key : alpha_ignore;
 	switch (dinfo->jpeg_color_space) {
 	case JCS_YCCK:
+		img->cs.invert = true;
+		// fallthrough
 	case JCS_YCbCr:
-	case JCS_GRAYSCALE:
 		img->cs.matrix = cicp_matrix_bt601_7;
 		break;
+	case JCS_GRAYSCALE:
 	case JCS_UNKNOWN:
 	case JCS_RGB:
 	case JCS_CMYK:

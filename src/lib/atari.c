@@ -79,7 +79,7 @@ const enum atari_st_res res) {
 			const size_t d_base = y*width + group*16;
 			const size_t s_base = y*src_stride + (group * planes);
 			for (uint8_t p = 0; p < planes; ++p) {
-				const size_t s = endian16(src[s_base + p], big_endian);
+				const size_t s = endian16b(src[s_base + p]);
 				for (uint8_t bit = 0; bit < 16; ++bit) {
 					img->data[d_base + bit] |= (uint8_t)(
 						((s << bit) & 0x8000) >> (15 - p)
@@ -104,7 +104,7 @@ const uint16_t *pal, const bool is_gfa) {
 			const size_t s_base = y*s_stride + group*4;
 			uint16_t planes[4];
 			for (uint8_t i = 0; i < ARRAY_LEN(planes); ++i) {
-				planes[i] = endian16(src[s_base+i], big_endian);
+				planes[i] = endian16b(src[s_base+i]);
 			};
 			for (unsigned bit = 0; bit < 16; ++bit) {
 				unsigned idx = 0;
@@ -188,8 +188,7 @@ const void *restrict pal) {
 		img->w = ST_HIGH_WIDTH;
 		img->h = ST_HIGH_HEIGHT;
 		img->bitdepth = 1;
-		img->attr = (buf_endian16b(pal) & 1)
-			? pix_inverted : pix_normal;
+		img->cs.invert = buf_endian16b(pal) & 1;
 		return WU_OK;
 	}
 	return WUERR_HERE(wu_invalid_header);
@@ -233,7 +232,7 @@ struct wu_st crg_get_info(const struct wuptr mem, struct wuimg *img) {
 	img->h = buf_endian32b(mem.ptr + 24);
 	img->channels = 1;
 	img->bitdepth = 1;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	return WU_OK;
 }
 
@@ -311,11 +310,11 @@ static void load_elite_crng(struct degas_desc *desc, struct wuimg *img) {
 		if (fread(buf, sizeof(buf), 1, desc->ifp)) {
 			const unsigned max_idx = 16;
 			for (size_t i = 0; i < slots; ++i) {
-				uint16_t lo = endian16(buf[0][i], big_endian);
-				uint16_t hi = endian16(buf[1][i], big_endian);
-				enum elite_direction direction = endian16(
-					buf[2][i], big_endian);
-				uint16_t delay = endian16(buf[3][i], big_endian);
+				uint16_t lo = endian16b(buf[0][i]);
+				uint16_t hi = endian16b(buf[1][i]);
+				enum elite_direction direction = endian16b(
+					buf[2][i]);
+				uint16_t delay = endian16b(buf[3][i]);
 				cycle->crng[i] = (struct palette_crng) {
 					.lo = (uint8_t)lo,
 					.hi = (uint8_t)hi,
@@ -407,7 +406,7 @@ FILE *ifp) {
 	desc->cycle = NULL;
 	uint16_t src[17];
 	if (fread(src, sizeof(src), 1, ifp)) {
-		const uint16_t flags = endian16(src[0], big_endian);
+		const uint16_t flags = endian16b(src[0]);
 		const bool compressed = flags & 0x8000;
 		const enum atari_st_res res = flags & ~0x8000;
 		switch (res) {
@@ -540,7 +539,7 @@ const uint8_t *restrict src, const size_t src_len) {
 			 * but we need big-endian for High-Res 1-bit data
 			 * (read MSB to LSB, byte-per-byte) and for consistency
 			 * with uncompressed Low-Res. */
-			val = endian16((uint16_t)(b >> 14), big_endian);
+			val = endian16b((uint16_t)(b >> 14));
 			adv = 18;
 			break;
 		}
@@ -647,7 +646,7 @@ static struct wu_st gfa_set_dims(struct gfa_desc *desc, struct wuimg *img) {
 		img->h = ST_HIGH_HEIGHT / desc->factor;
 		img->channels = 1;
 		img->bitdepth = 1;
-		img->attr = pix_inverted;
+		img->cs.invert = true;
 	}
 	return WU_OK;
 }
@@ -802,9 +801,9 @@ struct wu_st bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
 	*/
 	uint16_t buf[2];
 	if (fread(buf, sizeof(buf), 1, ifp)) {
-		int16_t height = (int16_t)endian16(buf[1], big_endian);
+		int16_t height = (int16_t)endian16b(buf[1]);
 		if (height > 0) {
-			int16_t width = (int16_t)endian16(buf[0], big_endian);
+			int16_t width = (int16_t)endian16b(buf[0]);
 			*desc = (struct bld_desc) {
 				.ifp = ifp,
 				.compressed = width < 0,
@@ -813,7 +812,7 @@ struct wu_st bld_parse(struct bld_desc *desc, struct wuimg *img, FILE *ifp) {
 			img->h = (size_t)height + 1;
 			img->channels = 1;
 			img->bitdepth = 1;
-			img->attr = pix_inverted;
+			img->cs.invert = true;
 			return WU_OK;
 		}
 		return WUERR_HERE(wu_invalid_header);
@@ -860,7 +859,7 @@ struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img) {
 	uint16_t *pal = buf + raster_len;
 	if (desc->enhanced) {
 		for (size_t i = 0; i < pal_len; ++i) {
-			const uint16_t p = endian16(pal[i], big_endian);
+			const uint16_t p = endian16b(pal[i]);
 			uint16_t col = 0;
 			for (uint8_t ch = 0; ch < 3; ++ch) {
 				col |= enhanced_spu(p, ch) << (ch*5);
@@ -872,7 +871,7 @@ struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img) {
 		for (size_t i = 0; i < pal_len; ++i) {
 			/* Assume STe format first, ask questions later.
 			 * No need to do multiple passes over the palette. */
-			pal[i] = ste_pal_rotate(endian16(pal[i], big_endian));
+			pal[i] = ste_pal_rotate(endian16b(pal[i]));
 			is_ste |= pal[i] & 0x1111;
 		}
 		if (!is_ste) {
@@ -1046,7 +1045,7 @@ const struct wuptr mem) {
 		img->channels = 1;
 		img->bitdepth = 1;
 		img->align_sh = 1;
-		img->attr = pix_inverted;
+		img->cs.invert = true;
 		const uint8_t stad[3] = {'p', 'M', '8'};
 		const uint8_t arabesque[4] = {'E', 'S', 'O', '8'};
 		if (!memcmp(hdr, stad, sizeof(stad))) {

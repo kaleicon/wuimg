@@ -99,13 +99,12 @@ const uint32_t ncolors) {
 		pal->color[i].b = xwd_pal[base + 8];
 		pal->color[i].a = 0xff;
 	}
-	if (img->attr == pix_inverted) { // 1-bit files
+	if (img->bitdepth == 1) {
 		const struct pix_rgba8 tmp = pal->color[0];
 		pal->color[0] = pal->color[1];
 		pal->color[1] = tmp;
-		img->attr = pix_normal;
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st get_window_name(struct xwd_desc *desc) {
@@ -121,7 +120,7 @@ static struct wu_st get_window_name(struct xwd_desc *desc) {
 			--name->len;
 		}
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st validate_header(struct xwd_desc *desc, struct wuimg *img,
@@ -175,7 +174,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 	case xwd_static_gray: case xwd_gray_scale:
 		switch (bpp) {
 		case 1:
-			img->attr = pix_inverted;
+			img->cs.invert = !paletted;
 			img->bit = (enum endianness)desc->bit_endian;
 			break;
 		case 8: break;
@@ -233,7 +232,7 @@ const enum xwd_visual_class visual_class, const uint32_t mask[static 3]) {
 	desc->visual = visual_class;
 	img->bitdepth = desc->bpp;
 	img->alpha = alpha_ignore;
-	return wuok();
+	return WU_OK;
 }
 
 struct wu_st xwd_parse(struct xwd_desc *desc, struct wuimg *img) {
@@ -330,7 +329,7 @@ struct wu_st xwd_open(struct xwd_desc *desc, FILE *ifp) {
 				.version = (uint8_t)header[1],
 				.win.name.len = header[0] - 100,
 			};
-			return wuok();
+			return WU_OK;
 		}
 		return WUERR_HERE(wu_unknown_file_type);
 	}

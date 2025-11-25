@@ -60,7 +60,7 @@ const size_t i) {
 	img->h = page->height;
 	img->channels = 1;
 	img->bitdepth = 1;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	img->borrowed = true;
 	return wuimg_verify(img);
 }

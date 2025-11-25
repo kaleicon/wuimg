@@ -39,7 +39,7 @@ const struct wu_conf *conf, struct jbg_dec_state *state, const int status) {
 	img->channels = 1;
 	img->bitdepth = (state->planes > 8) ? 16 : 8;
 	img->bitrange = (uint8_t)state->planes;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	const enum wu_error err = wuimg_alloc_limit(img, conf);
 	if (err == wu_ok) {
 		struct out_info out = {.output = img->data};

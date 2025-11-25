@@ -34,7 +34,6 @@ enum pix_layout {
 enum pix_attr {
 	pix_normal = 0,
 	pix_signed,
-	pix_inverted,
 	pix_float,
 };
 

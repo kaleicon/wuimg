@@ -54,10 +54,10 @@ struct wu_st pmg_init(const struct wuptr mem, struct wuimg *img) {
 	} else if (memcmp(mem.ptr, magic, sizeof(magic))) {
 		return WUERR_HERE(wu_invalid_signature);
 	}
-	img->w = buf_endian16(mem.ptr + 10, little_endian) + 1;
-	img->h = buf_endian16(mem.ptr + 14, little_endian) + 1;
+	img->w = buf_endian16l(mem.ptr + 10) + 1;
+	img->h = buf_endian16l(mem.ptr + 14) + 1;
 	img->channels = 1;
 	img->bitdepth = 1;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	return WU_OK;
 }

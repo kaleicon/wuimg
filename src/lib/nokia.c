@@ -34,7 +34,7 @@ struct wu_st nlm_image_info(const struct nlm_desc *desc, struct wuimg *img) {
 	img->h = desc->h;
 	img->channels = 1;
 	img->bitdepth = 1;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	return wuimg_verify_st(img);
 }
 
@@ -147,7 +147,7 @@ struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp) {
 	img->channels = 1;
 	img->bitdepth = 8;
 	img->bitrange = 1;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	return wuimg_verify_st(img);
 }
 
@@ -200,7 +200,7 @@ struct wu_st npm_parse(struct npm_desc *desc, struct wuimg *img, FILE *ifp) {
 	img->h = buf[2];
 	img->channels = 1;
 	img->bitdepth = 1;
-	img->attr = pix_inverted;
+	img->cs.invert = true;
 	return wuimg_verify_st(img);
 }
 
@@ -282,7 +282,7 @@ struct wu_st nsl_parse(struct nsl_desc *desc, struct wuimg *img, FILE *ifp) {
 			img->channels = 1;
 			img->bitdepth = 8;
 			img->bitrange = 1;
-			img->attr = pix_inverted;
+			img->cs.invert = true;
 			return wuimg_verify_st(img);
 		} else {
 			return wuerr(wu_uncertain_validity,

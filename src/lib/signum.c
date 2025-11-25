@@ -140,15 +140,15 @@ enum wu_error imc_parse(struct imc_desc *desc, struct wuimg *img) {
 	*/
 	const uint8_t *hdr = mp_slice(&desc->mp, 32);
 	if (hdr) {
-		img->w = buf_endian16(hdr + 4, big_endian);
-		img->h = buf_endian16(hdr + 6, big_endian);
+		img->w = buf_endian16b(hdr + 4);
+		img->h = buf_endian16b(hdr + 6);
 		img->channels = 1;
 		img->bitdepth = 1;
-		img->attr = pix_inverted;
+		img->cs.invert = true;
 		wuimg_align(img, 2);
-		desc->htiles = buf_endian16(hdr + 8, big_endian);
-		desc->vtiles = buf_endian16(hdr + 10, big_endian);
-		desc->bitlen = buf_endian32(hdr + 12, big_endian);
+		desc->htiles = buf_endian16b(hdr + 8);
+		desc->vtiles = buf_endian16b(hdr + 10);
+		desc->bitlen = buf_endian32b(hdr + 12);
 		memcpy(&desc->xor, hdr + 20, sizeof(desc->xor));
 		if (valid_dim(img->w, desc->htiles)
 		&& valid_dim(img->h, desc->vtiles)) {

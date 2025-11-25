@@ -985,11 +985,11 @@ const double scale) {
 		conv->steps |= (conv->map.mul[i] != 1 && conv->map.add[i] != 0)
 			? color_step_map : 0;
 	}
-	conv->map.mul[3] = (float)scale;
-	conv->map.add[3] = 0;
+	conv->map.mul[3] = (float)scale * (cs->invert_alpha ? -1.0f : 1.0f);
+	conv->map.add[3] = cs->invert_alpha;
 	conv->steps |= (conv->map.mul[3] != 1) ? color_step_map : 0;
 	for (size_t i = 0; i < ARRAY_LEN(conv->nonlinear.m); ++i) {
-		conv->nonlinear.m[i] = (float)cm.m[i];
+		conv->nonlinear.m[i] = (float)cm.m[i] * (cs->invert ? -1.0f : 1.0f);
 		conv->steps |= (conv->nonlinear.m[i] != (i % 4 == 0))
 			? color_step_nonlinear : 0;
 	}
@@ -1079,6 +1079,7 @@ const bool gray, const bool maybe_yuv, const double scale) {
 	set_tf_or_sRGB(tgt, &conv->oetf, true);
 	conv->steps |= is_transfer_identity(&conv->eotf) ? 0 : color_step_eotf;
 	conv->steps |= is_transfer_identity(&conv->oetf) ? 0 : color_step_oetf;
+	conv->eotf.invert_input = cs->invert;
 
 	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
 	const struct color_primaries *tgtpri = get_primaries(tgt, &SRGB_PRIMARIES);
