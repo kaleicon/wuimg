@@ -15,10 +15,6 @@ struct imgconv {
 	uint8_t unpack_depth;
 	uint8_t unpack_ch;
 
-	// skip colorspace conversions
-	bool transfer;
-	bool color_passthrough;
-
 	struct color_convert color;
 	cmsHTRANSFORM xfr;
 	size_t row_len;

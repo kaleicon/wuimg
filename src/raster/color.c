@@ -201,7 +201,7 @@ static void tf_linear_gamma_sRGB(struct color_transfer *tf, bool oetf) {
 	const double m = 12.92;
 	*tf = (struct color_transfer) {
 		.fn = color_transfer_linear_gamma,
-		.srgb_input = !oetf,
+		.srgb = SRGB_PIECEWISE,
 		.args = {
 			oetf ? 0.0031308f : 0.04045f,
 			(float)(oetf ? ap : 1/ap),
@@ -216,6 +216,7 @@ static void tf_gamma_sRGB(struct color_transfer *tf, bool oetf) {
 	// sRGB display transfer
 	tf_gamma(tf, 1,
 		oetf ? 1/COLOR_SRGB_DISPLAY_GAMMA : COLOR_SRGB_DISPLAY_GAMMA);
+	tf->srgb = !SRGB_PIECEWISE;
 }
 
 static void tf_default_sRGB(struct color_transfer *tf, bool oetf) {
@@ -979,19 +980,20 @@ const double scale) {
 
 	/* Input is meant to be offset then scaled. Optimize so we can use
 	 * fused-multiply-adds instead. */
+	conv->steps |= color_step_normalize;
+	conv->steps |= (cs->limited | cs->invert | cs->invert_alpha)
+		? color_step_nonlinear : 0;
 	for (size_t i = 0; i < 3; ++i) {
 		conv->map.mul[i] = (float)(map.mul[i] * scale);
 		conv->map.add[i] = (float)(map.add[i] * map.mul[i]);
-		conv->steps |= (conv->map.mul[i] != 1 && conv->map.add[i] != 0)
-			? color_step_map : 0;
 	}
 	conv->map.mul[3] = (float)scale * (cs->invert_alpha ? -1.0f : 1.0f);
 	conv->map.add[3] = cs->invert_alpha;
-	conv->steps |= (conv->map.mul[3] != 1) ? color_step_map : 0;
+
 	for (size_t i = 0; i < ARRAY_LEN(conv->nonlinear.m); ++i) {
 		conv->nonlinear.m[i] = (float)cm.m[i] * (cs->invert ? -1.0f : 1.0f);
-		conv->steps |= (conv->nonlinear.m[i] != (i % 4 == 0))
-			? color_step_nonlinear : 0;
+		conv->steps |= gray || (conv->nonlinear.m[i] == !(i % 4))
+			? 0 : color_step_nonlinear;
 	}
 }
 
@@ -1106,11 +1108,10 @@ const bool gray, const bool maybe_yuv, const double scale) {
 			}
 		}
 		conv->steps |= color_step_linear;
-		conv->eotf.srgb_input = false;
 	}
 }
 
-void color_space_to_linear_sRGB(const struct color_space *cs,
+void color_space_to_sRGB(const struct color_space *cs,
 struct color_convert *conv, const bool gray, const bool maybe_yuv,
 const double scale) {
 	const struct color_space tgt = color_space_sRGB();
@@ -1160,6 +1161,7 @@ bool color_space_is_sRGB(const struct color_space *cs) {
 	}
 	return transfer_ok
 		&& !cs->limited
+		&& !cs->invert && !cs->invert_alpha
 		&& cs->matrix == cicp_matrix_rgb
 		&& primaries_close_enough(
 			get_primaries(cs, &SRGB_PRIMARIES), &SRGB_PRIMARIES);

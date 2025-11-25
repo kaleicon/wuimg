@@ -164,7 +164,7 @@ const uint8_t i) {
 static bool convert_row_gray(float *row, size_t w, uint8_t channels,
 const enum alpha_interpretation alpha, const struct imgconv *state) {
 	const struct color_convert *cc = &state->color;
-	if ((cc->steps & color_step_map)) {
+	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
 		const bool has_alpha = channels > 1;
 		const float inv_a = cc->eotf.invert_input;
 		const float m = cc->nonlinear.m[0];
@@ -181,15 +181,14 @@ const enum alpha_interpretation alpha, const struct imgconv *state) {
 		return true;
 	}
 
-	const bool transfer = state->transfer;
-	if (transfer && (cc->steps & color_step_eotf)) {
+	if ((cc->steps & color_step_eotf)) {
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
 			*pix = eotf(*pix, &cc->eotf);
 		}
 	}
 	convert_alpha(row, w, channels, alpha);
-	if (transfer) {
+	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
 			*pix = oetf_srgb(*pix);
@@ -201,7 +200,7 @@ const enum alpha_interpretation alpha, const struct imgconv *state) {
 static bool convert_row_color(float *row, size_t w, uint8_t channels,
 enum alpha_interpretation alpha, const struct imgconv *state) {
 	const struct color_convert *cc = &state->color;
-	if ((cc->steps & (color_step_map | color_step_nonlinear))) {
+	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
 		const bool has_alpha = channels > 3;
 		const float inv_a = cc->eotf.invert_input;
 		for (size_t x = 0; x < w; ++x) {
@@ -226,8 +225,7 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 		return true;
 	}
 
-	const bool transfer = state->transfer;
-	if (transfer && (cc->steps & (color_step_eotf | color_step_linear))) {
+	if ((cc->steps & (color_step_eotf | color_step_linear))) {
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
 			float tmp[3];
@@ -238,7 +236,7 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 		}
 	}
 	convert_alpha(row, w, channels, alpha);
-	if (transfer) {
+	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
 			for (uint8_t z = 0; z < 3; ++z) {
@@ -283,14 +281,11 @@ const struct wuimg *src, const struct imgconv *state) {
 	return convert_row(tgt, row, w, channels, bitdepth, src, state);
 }
 
-static void * raw_convert(void *restrict tgt, void *restrict unpack,
-ptrdiff_t pix_stride, const struct wuimg *restrict dst,
+static void * raw_convert(void *restrict tgt, void *restrict pix,
+ptrdiff_t pix_stride, size_t w, uint8_t channels, uint8_t bitdepth,
 const struct wuimg *restrict src, const struct imgconv *state) {
-	const size_t w = dst->w;
-	const uint8_t channels = dst->channels;
-	const uint8_t bitdepth = dst->bitdepth;
-	uint8_t *u = unpack;
-	if (state->color_passthrough) {
+	uint8_t *p = pix;
+	if (!state->color.steps) {
 		// Input/unpacked data matches output colorspace
 		const uint8_t comp_size = state->unpack_depth/8;
 		const size_t pix_size = comp_size*channels;
@@ -300,31 +295,31 @@ const struct wuimg *restrict src, const struct imgconv *state) {
 			for (size_t x = 0; x < w; ++x) {
 				for (uint8_t z = 0; z < channels; ++z) {
 					memcpy(t + x*pix_size + z*comp_size,
-						u + state->swz[z]*comp_size,
+						p + state->swz[z]*comp_size,
 						comp_size);
 				}
-				u += pix_stride;
+				p += pix_stride;
 			}
 		} else if ((ptrdiff_t)pix_size != pix_stride) {
 			// Read across the image
 			for (size_t x = 0; x < w; ++x) {
-				memcpy(t + x*pix_size, u, pix_size);
-				u += pix_stride;
+				memcpy(t + x*pix_size, p, pix_size);
+				p += pix_stride;
 			}
 		} else if (src->attr == pix_float) {
 			// Input is floating-point. Send to pack_row()
-			t = u;
+			t = p;
 		} else {
 			/* Input is linear and a pointer to the source image.
 			 * Copy to output. */
-			memcpy(t, u, pix_size*w);
+			memcpy(t, p, pix_size*w);
 		}
 		if (src->attr == pix_float) {
 			return pack_row(tgt, (float *)t, w, channels, bitdepth > 8);
 		}
 		return tgt;
 	}
-	return expand_row(tgt, unpack, pix_stride, w, channels, bitdepth,
+	return expand_row(tgt, pix, pix_stride, w, channels, bitdepth,
 		src, state);
 }
 
@@ -510,10 +505,10 @@ void *restrict tgt) {
 				(pix, limit, channels, p+z, ix, xadd, iy, yadd, ud);
 		}
 	}
-	return (state->color_passthrough)
-		? pack_row_nomul(tgt, row, dst->w, channels, dst->bitdepth > 8)
-		: convert_row(tgt, row, dst->w, channels, dst->bitdepth,
-			src, state);
+	return (state->color.steps)
+		? convert_row(tgt, row, dst->w, channels, dst->bitdepth,
+			src, state)
+		: pack_row_nomul(tgt, row, dst->w, channels, dst->bitdepth > 8);
 }
 
 static void * pal_convert(uint32_t *tgt, const uint8_t *restrict unpack,
@@ -533,7 +528,8 @@ const ptrdiff_t stride, const struct wuimg *src, const struct imgconv *state) {
 	if (state->pal) {
 		return pal_convert(tgt, unpack, stride, state->pal, dst->w);
 	}
-	return raw_convert(tgt, unpack, stride, dst, src, state);
+	return raw_convert(tgt, unpack, stride, dst->w, dst->channels,
+		dst->bitdepth, src, state);
 }
 
 static uint8_t * get_unpacked(const struct imgconv *state,
@@ -670,7 +666,7 @@ const struct wuimg *src) {
 	return wu_alloc_error;
 }
 
-static bool needs_transfer(const struct wuimg *src) {
+static bool needs_linear_light(const struct wuimg *src) {
 	switch (src->alpha) {
 	case alpha_associated: case alpha_key:
 		return true;
@@ -683,8 +679,8 @@ static bool needs_transfer(const struct wuimg *src) {
 static enum wu_error init_color(struct imgconv *state, const struct wuimg *dst,
 const struct wuimg *src, const double range) {
 	const bool is_planar = src->mode == image_mode_planar;
-	color_space_to_linear_sRGB(&src->cs, &state->color,
-		src->layout == pix_gray, is_planar, range);
+	color_space_to_sRGB(&src->cs, &state->color, src->layout == pix_gray,
+		is_planar, range);
 	if (src->cs.type == color_profile_icc) {
 		cmsHPROFILE prof = cmsCreate_sRGBProfile();
 		if (!prof) {
@@ -767,23 +763,28 @@ const struct wuimg *src) {
 		return wu_error_str(st);
 	}
 
-	state->transfer = !state->color.eotf.srgb_input || needs_transfer(src);
-	state->color.steps &= ~(!state->xfr ? color_step_icc : 0u);
-	const enum color_steps omit =
-		(!state->transfer ? color_step_eotf : 0)
-		| (inrange == outrange ? color_step_map : 0);
-	const enum color_steps steps = (state->color.steps & ~omit);
-	state->color_passthrough = steps == 0 && src->bitrange == dst->bitrange
+	bool skip_linear = !(state->color.steps & color_step_linear)
+		&& state->color.eotf.srgb && !needs_linear_light(src);
+	enum color_steps omit = (!state->xfr ? color_step_icc : 0u)
+		| (skip_linear ? (color_step_eotf | color_step_oetf) : 0u);
+	state->color.steps &= ~omit;
+
+	bool skip_normal = state->color.steps == color_step_normalize
+		&& inrange == outrange
+		&& src->bitrange == dst->bitrange
 		&& src->alpha == alpha_unassociated;
+	state->color.steps &= ~(skip_normal ? color_step_normalize : 0u);
 
 	if (getenv("WU_DEBUG")) {
-		fprintf(stderr, "Color steps:"
-			" map:%d nonlinear:%d eotf:%d linear:%d icc:%d\n"
-			"in-range: %f, out-range: %f\n",
-			!!(steps & color_step_map),
+		const enum color_steps steps = state->color.steps;
+		fprintf(stderr, "Color steps:\n"
+			" normalize: %d, nonlinear:%d eotf:%d linear:%d oetf:%d icc:%d\n"
+			" in-range: %f, out-range: %f\n",
+			!!(steps & color_step_normalize),
 			!!(steps & color_step_nonlinear),
 			!!(steps & color_step_eotf),
 			!!(steps & color_step_linear),
+			!!(steps & color_step_oetf),
 			!!(steps & color_step_icc),
 			inrange, outrange);
 	}
@@ -809,7 +810,7 @@ const struct wuimg *src) {
 	 * - row unpacking (u8, u16, or float), placed at the end
 	 * - colorspace conversion (float), placed at the beginning
 	 * - packed output (u8 or u16), placed at the beginning
-	 * In case that unpacked data takes as much memory as color corrected
+	 * In case the unpacked data takes as much memory as color corrected
 	 * data, it must be offset by a pixel for swizzling to work correctly.
 	 * Other than that, stages may overlap with no issues.
 	 * FIXME: Don't allocate when none of these steps are neccesary. */
@@ -820,7 +821,7 @@ const struct wuimg *src) {
 	}
 
 	if (src->mode == image_mode_palette) {
-		if (state->color_passthrough && src->layout == dst->layout) {
+		if (!state->color.steps && src->layout == dst->layout) {
 			state->pal = palette_ref(src->u.palette);
 		} else {
 			// Create a color-corrected palette
@@ -828,7 +829,7 @@ const struct wuimg *src) {
 			if (!state->pal) {
 				return "Couldn't allocate temporary palette";
 			}
-			expand_row(state->pal->color, src->u.palette->color,
+			raw_convert(state->pal->color, src->u.palette->color,
 				4, 1 << src->bitdepth, 4, 8, src, state);
 		}
 	}

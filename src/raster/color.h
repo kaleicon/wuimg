@@ -50,7 +50,7 @@ enum color_transfer_fn {
 struct color_transfer {
 	enum color_transfer_fn fn:8;
 	bool invert_input;
-	bool srgb_input; // True if this is the sRGB EOTF
+	bool srgb; // True if this is the sRGB EOTF
 	float args[5];
 };
 
@@ -61,9 +61,9 @@ struct color_map {
 
 // Bitfield indicating which steps modify the input
 enum color_steps {
-	// Add or multiply input
-	color_step_map = 1 << 0,
-	// Matrix multiplication in nonlinear (electrical) space
+	// Normalize input type and bitrange into [0.0, 1.0]
+	color_step_normalize = 1 << 0,
+	// Matrix multiplication or range remap in nonlinear (electrical) space
 	color_step_nonlinear = 1 << 1,
 	// Conversion to linear (optical) space
 	color_step_eotf = 1 << 2,
@@ -150,7 +150,7 @@ void color_space_walk(const struct color_space *restrict cs,
 const struct color_space *restrict tgt, struct color_convert *conv,
 bool grayscale, bool maybe_yuv, double scale);
 
-void color_space_to_linear_sRGB(const struct color_space *cs,
+void color_space_to_sRGB(const struct color_space *cs,
 struct color_convert *conv, bool grayscale, bool maybe_yuv, double scale);
 
 cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,

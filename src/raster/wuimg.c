@@ -179,7 +179,8 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 		fatal_bug(__func__, "`bitrange` can't be greater than bitdepth,"
 			" or 8 for paletted images");
 	} else if (!img->bitrange) {
-		img->bitrange = depth;
+		img->bitrange = img->mode == image_mode_bitfield
+			? img->u.bitfield->outdepth : depth;
 	}
 
 	if (!img->layout) {

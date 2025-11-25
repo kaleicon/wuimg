@@ -836,8 +836,8 @@ static void tex_cms(const size_t size) {
 static bool set_icc_lut(const GLuint pix_buf, const struct color_space *cs,
 cmsHPROFILE out) {
 	const watch_t start = watch_look();
-	cmsHTRANSFORM xfr = color_icc_transform(cs, out, icc_fmt(3, 1, 0),
-		TYPE_RGB_16);
+	cmsHTRANSFORM xfr = color_icc_transform(cs, out,
+		icc_fmt(3, 1, alpha_ignore), TYPE_RGB_16);
 	if (!xfr) {
 		return false;
 	}
