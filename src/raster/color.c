@@ -693,19 +693,23 @@ const struct color_space *cs) {
 }
 
 static double range_offset(const bool limited) {
-	return (limited) ? -1.0/16 : 0;
+	return limited ? -16/255.0 : 0;
 }
 
 static double range_diff_scaler(const bool limited) {
-	return (limited) ? 255.0/(240-16) : 1;
+	return limited ? 255.0/(240-16) : 1;
 }
 
 static double range_scaler(const bool limited) {
-	return (limited) ? 255.0/(235-16) : 1;
+	return limited ? 255.0/(235-16) : 1;
 }
 
-static void lum_chroma_scale(struct color_map_double *m, double lum_mul,
-double chr_mul, double lum_add, double chr_add) {
+static void lum_chroma_scale(struct color_map_double *m, const bool limited,
+double lum_scale, double chr_scale) {
+	double lum_mul = range_scaler(limited) * lum_scale;
+	double chr_mul = range_diff_scaler(limited) * chr_scale;
+	double lum_add = range_offset(limited);
+	double chr_add = -128/255.0;
 	m->mul[0] = lum_mul;
 	m->mul[1] = chr_mul;
 	m->mul[2] = chr_mul;
@@ -759,8 +763,7 @@ const bool limited, const double b, const double r) {
 	const double two_b = fma(-2, b, 2); // 2 - 2*b
 	const double two_r = fma(-2, r, 2); // 2 - 2*r
 
-	lum_chroma_scale(map, range_scaler(limited), range_diff_scaler(limited),
-		range_offset(limited), -.5);
+	lum_chroma_scale(map, limited, 1, 1);
 	*in = (struct mat3) {
 		.m = {
 			lum,   lum,            lum,
@@ -788,8 +791,7 @@ const bool limited) {
 	 * TODO: Test.
 	*/
 
-	lum_chroma_scale(m, range_scaler(limited), range_diff_scaler(limited) * 2,
-		range_offset(limited), -.5);
+	lum_chroma_scale(m, limited, 1, 2);
 	const double s = 1;
 	const double d = 2;
 	const double vz = 0.986566;
@@ -822,8 +824,7 @@ const bool limited, const enum cicp_transfer transfer) {
 			Ct = (3625*L' - 7465*M' + 3840*S') / 4096
 			Cp = (9500*L' - 9212*M' - 288*S') / 4096
 	*/
-	lum_chroma_scale(m, range_scaler(limited)/2, range_diff_scaler(limited)/4096,
-		range_offset(limited), -.5);
+	lum_chroma_scale(m, limited, 1.0/2, 1.0/4096);
 	const double i = 1;
 	const double d = 1;
 
