@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
+#include <stdlib.h>
+#include <string.h>
+
 #include "lib/bethesda.h"
 #include "misc/math.h"
 #include "misc/common.h"

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <unicode/ucol.h>

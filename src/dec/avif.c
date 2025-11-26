@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
+#include <string.h>
+
 #include <avif/avif.h>
 
 #include "wudefs.h"

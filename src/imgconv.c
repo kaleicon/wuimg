@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include <stdlib.h>
+
+#include <lcms2.h>
+
 #include "misc/common.h"
 #include "misc/math.h"
 #include "imgconv.h"
@@ -686,9 +690,9 @@ const struct wuimg *src, const double range) {
 		if (!prof) {
 			return wu_alloc_error;
 		}
-		const cmsUInt32Number in_fmt = icc_fmt(dst->channels,
-			sizeof(float), src->alpha);
-		const cmsUInt32Number out_fmt = icc_fmt_colorspace(
+		const uint32_t in_fmt = icc_fmt(dst->channels, sizeof(float),
+			src->alpha);
+		const uint32_t out_fmt = icc_fmt_colorspace(
 			dst->channels,
 			dst->bitdepth/8,
 			dst->alpha,

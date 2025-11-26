@@ -1,12 +1,24 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
+#include <lcms2.h>
+#include <lcms2_plugin.h>
+
 #include "icc.h"
+#include "misc/mem.h"
+#include "misc/mparser.h"
 #include "misc/term.h"
 
-cmsUInt32Number icc_fmt_colorspace(const uint8_t ch, const uint8_t bytedepth,
+struct icc_file {
+	int refs;
+	struct mparser mp;
+	struct _cms_io_handler io;
+	cmsHPROFILE in;
+};
+
+uint32_t icc_fmt_colorspace(const uint8_t ch, const uint8_t bytedepth,
 const enum alpha_interpretation alpha, const uint8_t colorspace) {
 	const bool has_alpha = (alpha & alpha_one) == 0;
-	return (cmsUInt32Number)(PREMUL_SH(alpha == alpha_associated)
+	return (uint32_t)(PREMUL_SH(alpha == alpha_associated)
 		| FLOAT_SH(bytedepth == sizeof(float))
 		| EXTRA_SH(has_alpha)
 		| COLORSPACE_SH(colorspace)
@@ -14,10 +26,20 @@ const enum alpha_interpretation alpha, const uint8_t colorspace) {
 		| BYTES_SH(bytedepth));
 }
 
-cmsUInt32Number icc_fmt(const uint8_t ch, const uint8_t bytedepth,
+struct wuptr icc_file_get_data(const struct icc_file *icc) {
+	return (struct wuptr){.ptr = icc->mp.mem, .len = icc->mp.len};
+}
+
+uint32_t icc_fmt(const uint8_t ch, const uint8_t bytedepth,
 const enum alpha_interpretation alpha) {
 	return icc_fmt_colorspace(ch, bytedepth, alpha,
 		alpha == alpha_key ? PT_CMYK : PT_RGB);
+}
+
+struct icc_transform * icc_file_create_transform(const struct icc_file *icc,
+const struct icc_profile *out, const uint32_t in_fmt, const uint32_t out_fmt) {
+	return cmsCreateTransform(icc->in, in_fmt, (cmsHPROFILE)out, out_fmt,
+		INTENT_PERCEPTUAL, cmsFLAGS_COPY_ALPHA);
 }
 
 static cmsUInt32Number read_fn(struct _cms_io_handler *io, void *buf,
@@ -60,40 +82,52 @@ static void init_profile(void) {
 	cmsSetLogErrorHandler(err_fn);
 }
 
-void icc_profile_free(struct icc_profile *icc) {
-	if (icc->in) {
+void icc_file_unref(struct icc_file *icc) {
+	if (icc->refs) {
+		--icc->refs;
+	} else {
 		cmsCloseProfile(icc->in);
+		free(icc);
 	}
 }
 
-bool icc_profile_mem_own(struct icc_profile *icc, void *data,
-const size_t len) {
-	/* Use a custom IO handler, as cmsOpenProfileFromMem() creates
-	 * a memory copy. */
-	init_profile();
-	icc->mp = mp_mem(len, data);
-	icc->io = (struct _cms_io_handler) {
-		.stream = &icc->mp,
-		//.ContextID = icc->ctx,
-		.ReportedSize = (cmsUInt32Number)len,
-
-		.Read = read_fn,
-		.Seek = seek_fn,
-		.Close = close_fn,
-		.Tell = tell_fn,
-	};
-	icc->in = cmsOpenProfileFromIOhandler2THR(NULL, &icc->io, false);
-	return (bool)icc->in;
+struct icc_file * icc_file_ref(struct icc_file *icc) {
+	++icc->refs;
+	return icc;
 }
 
-bool icc_profile_mem_copy(struct icc_profile *icc, const void *data,
-const size_t len) {
+struct icc_file * icc_file_mem_own(void *data, const size_t len) {
+	struct icc_file *icc = calloc(1, sizeof(*icc));
+	if (icc) {
+		/* Use a custom IO handler, as cmsOpenProfileFromMem() creates
+		 * a memory copy. */
+		init_profile();
+		icc->mp = mp_mem(len, data);
+		icc->io = (struct _cms_io_handler) {
+			.stream = &icc->mp,
+			//.ContextID = icc->ctx,
+			.ReportedSize = (cmsUInt32Number)len,
+
+			.Read = read_fn,
+			.Seek = seek_fn,
+			.Close = close_fn,
+			.Tell = tell_fn,
+		};
+		icc->in = cmsOpenProfileFromIOhandler2THR(NULL, &icc->io, false);
+		if (!icc->in) {
+			free(icc);
+			return NULL;
+		}
+	}
+	return icc;
+}
+
+struct icc_file * icc_file_mem_copy(const void *data, const size_t len) {
 	/* Memory is probably owned by the decoder, but we want a copy in case
 	 * we need to encode into a format that supports ICC profiles. */
-	void *cpy = malloc(len);
+	void *cpy = memdup(data, len);
 	if (cpy) {
-		memcpy(cpy, data, len);
-		return icc_profile_mem_own(icc, cpy, len);
+		return icc_file_mem_own(cpy, len);
 	}
 	return false;
 }

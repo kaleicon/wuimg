@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
+#include <string.h>
+
 #include "lib/ant.h"
 #include "misc/math.h"
 #include "raster/fmt.h"

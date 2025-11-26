@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include <lcms2.h>
+
 #include "misc/common.h"
 #include "raster/color.h"
 
@@ -510,7 +512,7 @@ const bool oetf) {
 		return set_cicp_tf(cs->transfer, tf, oetf);
 	case color_profile_param:
 		if (!set_cicp_tf(cs->transfer, tf, oetf)) {
-			struct color_gamma *gamma = &cs->desc->u.prof.gamma;
+			struct color_gamma *gamma = &cs->desc.prof->gamma;
 			tf_gamma(tf, 1, oetf ? 1/gamma->r : gamma->r);
 		}
 		return true;
@@ -543,7 +545,7 @@ const double fallback) {
 		}
 		if (cs->transfer == 0) {
 			return (cs->type == color_profile_param)
-				? cs->desc->u.prof.gamma.r : fallback;
+				? cs->desc.prof->gamma.r : fallback;
 		}
 	}
 	return 0;
@@ -678,7 +680,7 @@ const struct color_space *cs, const struct color_primaries *fallback) {
 		return get_cicp_primaries(cs->primaries, cs->matrix, fallback);
 	case color_profile_param:
 		return get_cicp_primaries(cs->primaries, cs->matrix,
-			&cs->desc->u.prof.pri);
+			&cs->desc.prof->pri);
 	case color_profile_icc:
 		break;
 	}
@@ -1118,17 +1120,16 @@ const double scale) {
 	color_space_walk(cs, &tgt, conv, gray, maybe_yuv, scale);
 }
 
-cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,
-const cmsUInt32Number in_fmt, const cmsUInt32Number out_fmt) {
-	return cmsCreateTransform(cs->desc->u.icc.in, in_fmt,
-			out, out_fmt, INTENT_PERCEPTUAL, cmsFLAGS_COPY_ALPHA);
+struct icc_transform * color_icc_transform(const struct color_space *cs,
+const struct icc_profile *out, const uint32_t in_fmt, const uint32_t out_fmt) {
+	return icc_file_create_transform(cs->desc.icc, out, in_fmt, out_fmt);
 }
 
 static cmsCIExyY primary_to_xyY(const struct color_xy xy) {
 	return (cmsCIExyY) {xy.x, xy.y, 1.0};
 }
 
-cmsHPROFILE color_icc_linear_sRGB(void) {
+struct icc_profile * color_icc_linear_sRGB(void) {
 	cmsHPROFILE out = NULL;
 	cmsToneCurve *crv = cmsBuildGamma(NULL, 1.0);
 	if (crv) {
@@ -1143,7 +1144,7 @@ cmsHPROFILE color_icc_linear_sRGB(void) {
 		out = cmsCreateRGBProfile(&w, &rgb, transfer);
 		cmsFreeToneCurve(crv);
 	}
-	return out;
+	return (struct icc_profile *)out;
 }
 
 bool color_space_is_sRGB(const struct color_space *cs) {
@@ -1171,54 +1172,48 @@ static void set_transfer_triple(struct color_gamma *xfer, const double gamma) {
 	xfer->r = xfer->g = xfer->b = gamma;
 }
 
-static struct color_space_desc * get_or_init_desc(struct color_space *cs,
-const enum color_profile_type type) {
-	if (cs->type == color_profile_enum) {
-		struct color_space_desc *desc = calloc(1, sizeof(*cs->desc));
-		if (desc) {
-			if (type == color_profile_param) {
-				set_transfer_triple(&desc->u.prof.gamma,
-					COLOR_SRGB_DISPLAY_GAMMA);
-				desc->u.prof.pri = *get_cicp_primaries(
-					cs->primaries, cs->matrix,
-					&SRGB_PRIMARIES);
-				cs->transfer = 0;
-				cs->primaries = 0;
-			}
-			cs->desc = desc;
-			cs->type = type;
+static struct color_profile * get_or_init_profile(struct color_space *cs) {
+	struct color_profile *prof = NULL;
+	switch (cs->type) {
+	case color_profile_enum:
+		prof = calloc(1, sizeof(*prof));
+		cs->desc.prof = prof;
+		if (prof) {
+			set_transfer_triple(&prof->gamma,
+				COLOR_SRGB_DISPLAY_GAMMA);
+			prof->pri = *get_cicp_primaries(
+				cs->primaries, cs->matrix, &SRGB_PRIMARIES);
+			cs->transfer = 0;
+			cs->primaries = 0;
+			cs->type = color_profile_param;
 		}
-	} else if (cs->type != type) {
-		return NULL;
+		break;
+	case color_profile_param:
+		return cs->desc.prof;
+	case color_profile_icc:
+		break;
 	}
-	return cs->desc;
+	return prof;
 }
 
 bool color_space_set_icc_copy(struct color_space *cs, const void *restrict data,
 const size_t len) {
-	struct color_space_desc *desc = get_or_init_desc(cs, color_profile_icc);
-	if (desc) {
-		return icc_profile_mem_copy(&desc->u.icc, data, len);
+	if (cs->type == color_profile_enum) {
+		cs->desc.icc = icc_file_mem_copy(data, len);
+		cs->type = cs->desc.icc ? color_profile_icc : color_profile_enum;
+		return cs->desc.icc;
 	}
 	return false;
 }
 
 bool color_space_set_icc_owned(struct color_space *cs, void *restrict data,
 const size_t len) {
-	struct color_space_desc *desc = get_or_init_desc(cs, color_profile_icc);
-	if (desc) {
-		return icc_profile_mem_own(&desc->u.icc, data, len);
+	if (cs->type == color_profile_enum) {
+		cs->desc.icc = icc_file_mem_own(data, len);
+		cs->type = cs->desc.icc ? color_profile_icc : color_profile_enum;
+		return cs->desc.icc;
 	}
-	free(data);
 	return false;
-}
-
-static struct color_profile * get_or_init_profile(struct color_space *cs) {
-	struct color_space_desc *desc = get_or_init_desc(cs, color_profile_param);
-	if (desc) {
-		return &cs->desc->u.prof;
-	}
-	return NULL;
 }
 
 bool color_space_set_gamma_rgb(struct color_space *cs, const double r,
@@ -1281,22 +1276,30 @@ double rx, double ry, double gx, double gy, double bx, double by) {
 }
 
 void color_space_unref(struct color_space *cs) {
-	struct color_space_desc *desc = cs->desc;
-	if (desc) {
-		if (desc->refs) {
-			--desc->refs;
+	switch (cs->type) {
+	case color_profile_enum: break;
+	case color_profile_param:
+		if (cs->desc.prof->refs) {
+			--cs->desc.prof->refs;
 		} else {
-			if (cs->type == color_profile_icc) {
-				icc_profile_free(&desc->u.icc);
-			}
-			free(desc);
+			free(cs->desc.prof);
 		}
+		break;
+	case color_profile_icc:
+		icc_file_unref(cs->desc.icc);
+		break;
 	}
 }
 
 struct color_space color_space_ref(struct color_space *orig) {
-	if (orig->desc) {
-		++orig->desc->refs;
+	switch (orig->type) {
+	case color_profile_enum: break;
+	case color_profile_param:
+		++orig->desc.prof->refs;
+		break;
+	case color_profile_icc:
+		icc_file_ref(orig->desc.icc);
+		break;
 	}
 	return *orig;
 }

@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2019 kaleido
-#include "opengl.h"
+#include <stdlib.h>
+#include <string.h>
+
+#include <lcms2.h>
+
 #include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/endian.h"
 #include "misc/math.h"
-#include "raster/color.h"
-#include "raster/pix.h"
 #include "raster/strip.h"
 #include "raster/unpack.h"
+
+#include "opengl.h"
 
 /* GLSL variables */
 #define ATTR_POS "POS"

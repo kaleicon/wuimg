@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
 #include <inttypes.h>
+#include <stdlib.h>
 
 #include "misc/bit.h"
 #include "misc/endian.h"

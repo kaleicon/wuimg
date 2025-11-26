@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "misc/common.h"
 #include "raster/fmt.h"

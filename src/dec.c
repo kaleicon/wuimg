@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2019 kaleido
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <sys/stat.h>
 

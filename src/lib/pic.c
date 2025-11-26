@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
-#include "pic.h"
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/endian.h"
@@ -8,6 +11,8 @@
 #include "misc/math.h"
 #include "misc/mem.h"
 #include "raster/fmt.h"
+
+#include "lib/pic.h"
 
 /* Based on
 https://mooncore.eu/bunny/txt/picfmt_e.txt

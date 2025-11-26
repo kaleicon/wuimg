@@ -16,7 +16,7 @@ struct imgconv {
 	uint8_t unpack_ch;
 
 	struct color_convert color;
-	cmsHTRANSFORM xfr;
+	struct icc_transform *xfr;
 	size_t row_len;
 	size_t unpack_len;
 	uint8_t *row;

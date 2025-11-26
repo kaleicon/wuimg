@@ -3,6 +3,7 @@
 #ifndef LIB_Q4
 #define LIB_Q4
 
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 struct q4_desc {

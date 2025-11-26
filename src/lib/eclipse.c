@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
-/* Eclipse TILE */
+#include <string.h>
+
 #include "lib/eclipse.h"
 #include "misc/endian.h"
 

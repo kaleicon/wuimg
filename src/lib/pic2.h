@@ -4,6 +4,7 @@
 #define LIB_PIC2
 
 #include "misc/endian.h"
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 enum pic2_id {

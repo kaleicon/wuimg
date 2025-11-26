@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
+#include <string.h>
+
 #include <jbig.h>
 
 #include "wudefs.h"

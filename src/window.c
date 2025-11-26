@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2019 kaleido
 #include <signal.h>
+#include <stdlib.h>
 
 #include "misc/term.h"
 #include "window.h"

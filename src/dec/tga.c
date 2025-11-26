@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
 #include <ctype.h>
+#include <string.h>
 
-#include "../wudefs.h"
+#include "wudefs.h"
 
-#include "../lib/tga.h"
+#include "lib/tga.h"
 
 static void read_extension_area(struct wutree *tree,
 const struct tga_metadata *meta) {

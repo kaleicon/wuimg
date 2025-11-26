@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#include <stdio.h>
 #include <setjmp.h>
-
-#include <jpeglib.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "wudefs.h"
 #include "misc/math.h"
 #include "misc/metadata.h"
 #include "misc/wustr.h"
+
+#include <jpeglib.h>
 
 enum marker_type {
 	unknown_marker = 0,

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
+#include <string.h>
+
 #include "lib/elecbyte.h"
 #include "wudefs.h"
 

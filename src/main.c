@@ -15,6 +15,7 @@
 #include "write.h"
 #include "misc/file.h"
 #include "misc/math.h"
+#include "misc/mparser.h"
 #include "misc/time.h"
 
 enum work_mode {

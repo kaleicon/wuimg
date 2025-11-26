@@ -7,6 +7,7 @@
 #include "misc/common.h"
 #include "misc/math.h"
 #include "misc/mem.h"
+#include "misc/mparser.h"
 #include "pi.h"
 
 /* Documented in

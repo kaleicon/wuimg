@@ -206,8 +206,8 @@ const struct wuimg *src, FILE *ofp) {
 	}
 
 	if (dst->cs.type == color_profile_icc) {
-		const struct icc_profile *icc = &dst->cs.desc->u.icc;
-		if (JxlEncoderSetICCProfile(js->enc, icc->mp.mem, icc->mp.len)
+		const struct wuptr icc = icc_file_get_data(dst->cs.desc.icc);
+		if (JxlEncoderSetICCProfile(js->enc, icc.ptr, icc.len)
 		!= JXL_ENC_SUCCESS) {
 			return "couldn't set ICC profile";
 		}

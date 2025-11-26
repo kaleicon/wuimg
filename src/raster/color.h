@@ -105,16 +105,9 @@ struct color_gamma {
 };
 
 struct color_profile {
+	int refs;
 	struct color_gamma gamma;
 	struct color_primaries pri;
-};
-
-struct color_space_desc {
-	int refs;
-	union {
-		struct color_profile prof;
-		struct icc_profile icc;
-	} u;
 };
 
 enum color_profile_type {
@@ -134,7 +127,10 @@ struct color_space {
 	struct color_space_luminance {
 		uint16_t max, ref;
 	} lum;
-	struct color_space_desc *desc;
+	union color_space_desc {
+		struct color_profile *prof;
+		struct icc_file *icc;
+	} desc;
 };
 
 const char * color_space_type_str(const struct color_space *cs);
@@ -153,10 +149,10 @@ bool grayscale, bool maybe_yuv, double scale);
 void color_space_to_sRGB(const struct color_space *cs,
 struct color_convert *conv, bool grayscale, bool maybe_yuv, double scale);
 
-cmsHTRANSFORM color_icc_transform(const struct color_space *cs, cmsHPROFILE out,
-cmsUInt32Number in_fmt, cmsUInt32Number out_fmt);
+struct icc_transform * color_icc_transform(const struct color_space *cs,
+const struct icc_profile *out, uint32_t in_fmt, uint32_t out_fmt);
 
-cmsHPROFILE color_icc_linear_sRGB(void);
+struct icc_profile * color_icc_linear_sRGB(void);
 
 bool color_space_is_sRGB(const struct color_space *cs);
 

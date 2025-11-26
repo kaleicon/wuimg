@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
 #include <stdlib.h>
+#include <string.h>
 
 #include <zlib.h>
 

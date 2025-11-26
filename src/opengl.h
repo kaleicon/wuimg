@@ -53,7 +53,7 @@ struct gl_context {
 
 	const struct wuimg *img;
 	struct color_space tgt;
-	cmsHPROFILE icc_tgt;
+	struct icc_profile *icc_tgt;
 };
 
 const char * gl_strerror(GLenum error);

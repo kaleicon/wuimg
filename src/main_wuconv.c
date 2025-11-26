@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
 #include <stdio.h>
+#include <string.h>
 
 #include "fmtmap.h"
 #include "imgconv.h"

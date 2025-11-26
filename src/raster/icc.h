@@ -3,29 +3,32 @@
 #ifndef RASTER_ICC
 #define RASTER_ICC
 
-#include <lcms2.h>
-#include <lcms2_plugin.h>
+#include <stdint.h>
 
-#include "misc/mparser.h"
 #include "raster/alpha.h"
 
-struct icc_profile {
-	cmsHPROFILE in;
-	struct mparser mp;
-	struct _cms_io_handler io;
-};
+struct icc_transform;
+struct icc_profile;
+struct icc_file;
 
-cmsUInt32Number icc_fmt_colorspace(uint8_t ch, uint8_t bytedepth,
+uint32_t icc_fmt_colorspace(uint8_t ch, uint8_t bytedepth,
 enum alpha_interpretation alpha, uint8_t colorspace);
 
-cmsUInt32Number icc_fmt(uint8_t ch, uint8_t bytedepth,
+uint32_t icc_fmt(uint8_t ch, uint8_t bytedepth,
 enum alpha_interpretation alpha);
 
-void icc_profile_free(struct icc_profile *icc);
 
-bool icc_profile_mem_own(struct icc_profile *icc, void *data, size_t size);
+struct wuptr icc_file_get_data(const struct icc_file *icc);
 
-bool icc_profile_mem_copy(struct icc_profile *icc, const void *data,
-size_t size);
+struct icc_transform * icc_file_create_transform(const struct icc_file *icc,
+const struct icc_profile *out, uint32_t in_fmt, uint32_t out_fmt);
+
+void icc_file_unref(struct icc_file *icc);
+
+struct icc_file * icc_file_ref(struct icc_file *icc);
+
+struct icc_file * icc_file_mem_own(void *data, size_t size);
+
+struct icc_file * icc_file_mem_copy(const void *data, size_t size);
 
 #endif /* RASTER_ICC */

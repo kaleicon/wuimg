@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2025 kaleido
+#include <string.h>
+
 #include "misc/mem.h"
+#include "misc/mparser.h"
 #include "lib/kyg.h"
 
 /* Kyss' KYG format, used in an obscure FM-Towns slideshow presumably-joke program.

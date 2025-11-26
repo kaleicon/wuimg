@@ -3,6 +3,7 @@
 #ifndef LIB_FAX
 #define LIB_FAX
 
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 enum fax_coding {

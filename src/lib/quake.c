@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include <limits.h>
+#include <string.h>
+
 #include "misc/mem.h"
 #include "raster/fmt.h"
 #include "quake.h"

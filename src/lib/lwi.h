@@ -3,6 +3,7 @@
 #ifndef LIB_LWI
 #define LIB_LWI
 
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 enum lwi_field {

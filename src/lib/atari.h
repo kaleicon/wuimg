@@ -3,6 +3,7 @@
 #ifndef LIB_DEGAS
 #define LIB_DEGAS
 
+#include "misc/mparser.h"
 #include "misc/wustr.h"
 #include "raster/wuimg.h"
 

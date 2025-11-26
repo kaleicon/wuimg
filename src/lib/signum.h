@@ -3,7 +3,7 @@
 #ifndef LIB_IMC
 #define LIB_IMC
 
-#include "misc/wustr.h"
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 /* Signum IMC */

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
-#include <stddef.h>
-#include <stdint.h>
-
-#include <jbig2.h>
+#include <stdlib.h>
 
 #include "misc/math.h"
 #include "wudefs.h"
+
+#include <jbig2.h>
 
 struct jbig2_state {
 	Jbig2Ctx *ctx;

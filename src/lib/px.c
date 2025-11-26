@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
+#include <string.h>
+
 #include "misc/endian.h"
 #include "misc/math.h"
 #include "px.h"

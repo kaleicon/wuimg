@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
+#include <stdlib.h>
+#include <string.h>
+
 #include <libheif/heif.h>
 
 #include "dec_enable.def"

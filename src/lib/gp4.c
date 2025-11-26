@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include <string.h>
+
 #include "lib/gp4.h"
 #include "misc/bit.h"
 #include "misc/endian.h"
 #include "misc/mem.h"
+#include "misc/mparser.h"
 
 static const uint8_t BAND_W = sizeof(uint16_t);
 static const uint8_t GP4_COLORS = 16;

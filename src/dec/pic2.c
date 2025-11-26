@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include <limits.h>
+
 #include "wudefs.h"
 #include "lib/pic2.h"
 

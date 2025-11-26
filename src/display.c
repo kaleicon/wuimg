@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
 #include <ctype.h>
+#include <string.h>
 
 #include "dec.h"
 #include "display.h"

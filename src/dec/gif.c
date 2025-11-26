@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2019 kaleido
+#include <stdlib.h>
+#include <string.h>
+
 #include <gif_lib.h>
 
 #include "wudefs.h"

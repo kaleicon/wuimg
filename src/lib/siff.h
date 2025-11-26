@@ -3,6 +3,7 @@
 #ifndef LIB_PXAN
 #define LIB_PXAN
 
+#include "misc/mparser.h"
 #include "raster/wuimg.h"
 
 enum pim_type {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include <ctype.h>
+#include <math.h>
 #include <string.h>
 
 #include "base.h"

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include <string.h>
+
 #include "misc/common.h"
 #include "raster/fmt.h"
 #include "wgtspr.h"
