@@ -35,9 +35,10 @@
 #define UNI_OETF_FN "OETF_FN"
 #define UNI_OETF_ARGS "OETF_ARGS"
 #define UNI_POSITIONING "POSIT"
-#define UNI_REMAP "REMAP"
 #define UNI_LUM_SCALE "LUM_SCALE"
 #define UNI_INVERT "INVERT"
+#define UNI_COLOR_OFFSET "COLOR_OFFSET"
+#define UNI_ALPHA_MAP "ALPHA_MAP"
 
 #define COLOR_RAW "0"
 #define COLOR_PALETTE "1"
@@ -324,16 +325,20 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 	struct color_convert conv;
 	color_space_walk(cs, &context->tgt, &conv, img->layout == pix_gray,
 		is_planar, scale);
-	glUniform4fv(uni[gl_uni_REMAP], 2, conv.map.mul);
-	glUniformMatrix3fv(uni[gl_uni_MAT_NONLINEAR], 1, GL_FALSE,
-		conv.nonlinear.m);
+	glUniform3f(uni[gl_uni_COLOR_OFFSET],
+		conv.color_offset[0], conv.color_offset[1], conv.color_offset[2]);
+	glUniform1fv(uni[gl_uni_ALPHA_MAP], 2, conv.alpha_map);
+
 	uni_tf(uni[gl_uni_EOTF_FN], uni[gl_uni_EOTF_ARGS], &conv.eotf);
-	glUniformMatrix3fv(uni[gl_uni_MAT_CMS], 1, GL_FALSE,
-		conv.linear.m);
 	uni_tf(uni[gl_uni_OETF_FN], uni[gl_uni_OETF_ARGS], &conv.oetf);
 
-	glUniform1f(uni[gl_uni_LUM_SCALE], get_lum_scale(context->tgt.lum));
+	glUniformMatrix3fv(uni[gl_uni_MAT_NONLINEAR], 1, GL_FALSE,
+		conv.nonlinear.m);
+	glUniformMatrix3fv(uni[gl_uni_MAT_CMS], 1, GL_FALSE,
+		conv.linear.m);
+
 	glUniform1f(uni[gl_uni_INVERT], conv.eotf.invert_input);
+	glUniform1f(uni[gl_uni_LUM_SCALE], get_lum_scale(context->tgt.lum));
 	return conv.steps;
 }
 
@@ -1175,9 +1180,10 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 		"uniform float[5] " UNI_EOTF_ARGS ";"
 		"uniform int " UNI_OETF_FN ";"
 		"uniform float[5] " UNI_OETF_ARGS ";"
-		"uniform vec4[2] " UNI_REMAP ";"
 		"uniform float " UNI_LUM_SCALE ";"
 		"uniform float " UNI_INVERT ";"
+		"uniform vec3 " UNI_COLOR_OFFSET ";"
+		"uniform float[2] " UNI_ALPHA_MAP ";"
 
 		"vec3 gen_check_pattern(float alpha) {"
 			"ivec2 d = ivec2(gl_FragCoord.xy);"
@@ -1281,8 +1287,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 				"}"
 			"}"
 
-			"color = color *" UNI_REMAP "[0] +" UNI_REMAP "[1];"
-			"color.rgb =" UNI_MAT_NONLINEAR "* color.rgb"
+			"color.rgb =" UNI_MAT_NONLINEAR "* (color.rgb +" UNI_COLOR_OFFSET ")"
 				"+ vec3(" UNI_INVERT ");"
 			"if (" UNI_MODE_CMS "==" CMS_LUT ") {"
 				"color.rgb = texture("
@@ -1293,6 +1298,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 					"color.rgb *=" UNI_MAT_CMS ";"
 				"}"
 			"}"
+			"color.a = color.a *" UNI_ALPHA_MAP "[0] +" UNI_ALPHA_MAP "[1];"
 			"float lum =" UNI_LUM_SCALE ";"
 			"switch (" UNI_MODE_ALPHA "[0]) {"
 			"case " ALPHA_COLOR_MULTIPLY ":"

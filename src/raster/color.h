@@ -54,11 +54,6 @@ struct color_transfer {
 	float args[5];
 };
 
-struct color_map {
-	float mul[4];
-	float add[4];
-};
-
 // Bitfield indicating which steps modify the input
 enum color_steps {
 	// Normalize input type and bitrange into [0.0, 1.0]
@@ -77,7 +72,8 @@ enum color_steps {
 
 struct color_convert {
 	enum color_steps steps;
-	struct color_map map;
+	float color_offset[3];
+	float alpha_map[2];
 	struct mat3f nonlinear;
 	struct color_transfer eotf;
 	struct mat3f linear;

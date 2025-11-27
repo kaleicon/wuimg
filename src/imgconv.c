@@ -160,23 +160,22 @@ const enum alpha_interpretation alpha) {
 	}
 }
 
-static float scale(const float x, const struct color_convert *cc,
-const uint8_t i) {
-	return fm_fmaf(x, cc->map.mul[i], cc->map.add[i]);
-}
-
 static bool convert_row_gray(float *row, size_t w, uint8_t channels,
 const enum alpha_interpretation alpha, const struct imgconv *state) {
 	const struct color_convert *cc = &state->color;
 	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
 		const bool has_alpha = channels > 1;
-		const float inv_a = cc->eotf.invert_input;
-		const float m = cc->nonlinear.m[0];
+		const bool inv_a = cc->eotf.invert_input;
+
+		const float mul = cc->nonlinear.m[0];
+		const float add = fmaf(cc->color_offset[0], mul, inv_a);
+		const float alpha_m = cc->alpha_map[0];
+		const float alpha_a = cc->alpha_map[1];
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
-			pix[0] = fm_fmaf(scale(pix[0], cc, 0), m, inv_a);
+			pix[0] = fm_fmaf(pix[0], mul, add);
 			if (has_alpha) {
-				pix[1] = scale(pix[1], cc, 3);
+				pix[1] = fm_fmaf(pix[1], alpha_m, alpha_a);
 			}
 		}
 	}
@@ -210,18 +209,18 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
 			float tmp[4];
-			memcpy(tmp, pix, sizeof(*tmp) * channels);
-			tmp[3] = has_alpha ? pix[3] : 1;
 
-			for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
-				tmp[z] = scale(tmp[z], cc, z);
+			for (uint8_t z = 0; z < 3; ++z) {
+				tmp[z] = pix[z] + cc->color_offset[z];
 			}
-
 			matff_mul(pix, tmp, cc->nonlinear.m, 3, 1, 3);
 			for (uint8_t z = 0; z < 3; ++z) {
 				pix[z] += inv_a;
 			}
-			memcpy(pix + 3, tmp + 3, sizeof(*tmp) * has_alpha);
+			if (has_alpha) {
+				pix[3] = fm_fmaf(pix[3], cc->alpha_map[0],
+					cc->alpha_map[1]);
+			}
 		}
 	}
 

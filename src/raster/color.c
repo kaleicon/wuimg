@@ -981,20 +981,20 @@ const double scale) {
 		gen_mat_simple(&cm, &map, cs->limited, simple_mat_rgb);
 	}
 
-	/* Input is meant to be offset then scaled. Optimize so we can use
-	 * fused-multiply-adds instead. */
 	conv->steps |= color_step_normalize;
 	conv->steps |= (cs->limited | cs->invert | cs->invert_alpha)
 		? color_step_nonlinear : 0;
-	for (size_t i = 0; i < 3; ++i) {
-		conv->map.mul[i] = (float)(map.mul[i] * scale);
-		conv->map.add[i] = (float)(map.add[i] * map.mul[i]);
+	for (size_t i = 0; i < ARRAY_LEN(conv->color_offset); ++i) {
+		conv->color_offset[i] = (float)(map.add[i] / scale);
 	}
-	conv->map.mul[3] = (float)scale * (cs->invert_alpha ? -1.0f : 1.0f);
-	conv->map.add[3] = cs->invert_alpha;
+	conv->alpha_map[0] = (float)scale * (cs->invert_alpha ? -1.0f : 1.0f);
+	conv->alpha_map[1] = (float)cs->invert_alpha;
 
 	for (size_t i = 0; i < ARRAY_LEN(conv->nonlinear.m); ++i) {
-		conv->nonlinear.m[i] = (float)cm.m[i] * (cs->invert ? -1.0f : 1.0f);
+		conv->nonlinear.m[i] = (float)(cm.m[i]
+			* map.mul[i/3]
+			* (scale * (cs->invert ? -1.0f : 1.0f))
+		);
 		conv->steps |= gray || (conv->nonlinear.m[i] == !(i % 4))
 			? 0 : color_step_nonlinear;
 	}
