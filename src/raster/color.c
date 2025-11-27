@@ -320,11 +320,11 @@ static void tf_perceptual_quantization(struct color_transfer *tf, bool oetf) {
 	*tf = (struct color_transfer) {
 		.fn = color_transfer_pq,
 		.args = {
-			(float)mm,
+			(float)nn,
 			(float)a,
 			(float)b,
-			(float)c,
-			(float)nn,
+			(float)(oetf ? c : -c),
+			(float)mm,
 		},
 	};
 }

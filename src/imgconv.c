@@ -46,12 +46,13 @@ static float mypowf(float x, float e) {
 }
 
 static void matff_mul(float *restrict out, const float *restrict m1,
-const float *restrict m2, const int len, const int h1, const int w2) {
-	/* Reimplementation of matf_mul(), but using fm_fmaf. Nice to have when
-	 * not compiling with LTO, too. */
+const float *restrict m2, const int len, const int h1, const int w2,
+const float init) {
+	/* Reimplementation of matf_mul(), but using fm_fmaf and accepting an
+	 * initial value. Nice to have when not compiling with LTO, too. */
 	for (int y = 0; y < h1; ++y) {
 		for (int x = 0; x < w2; ++x) {
-			float acc = m1[y*len] * m2[x];
+			float acc = fm_fmaf(m1[y*len], m2[x], init);
 			for (int i = 1; i < len; ++i) {
 				acc = fm_fmaf(m1[y*len + i], m2[x + i*w2], acc);
 			}
@@ -110,24 +111,25 @@ static float oetf_srgb(float v) {
 static float eotf(float v, const struct color_transfer *t) {
 	const float *arg = t->args;
 	switch (t->fn) {
-	case color_transfer_linear_gamma: break;
+	case color_transfer_linear_gamma:
+		// Input to the linear-gamma EOTF may be negative
+		;float h = fabsf(v);
+		bool gamma = h > arg[0];
+		float e = gamma ? arg[1] : arg[4];
+		float l = gamma ? arg[2] : 0.0f;
+		float p = gamma ? arg[3] : 1.0f;
+		return copysignf(mypowf(fm_fmaf(h, e, l), p), v);
 	case color_transfer_pq:
-		v = mypowf(fm_fmaxf(v, 0), arg[4]);
+		v = mypowf(fm_fmaxf(v, 0), arg[0]);
 		float num = v - fm_fminf(arg[1], v);
-		float den = fm_fmaf(v, -arg[3], arg[2]);
-		return mypowf(num/den, arg[0]);
+		float den = fm_fmaf(v, arg[3], arg[2]);
+		return mypowf(num/den, arg[4]);
 	case color_transfer_hlg:
-		return v > arg[0]
-			? myexp2f(fm_fmaf(v, arg[1], arg[2])) + arg[3]
-			: v * v * arg[4];
+		break;
 	}
-	// Input to the linear-gamma EOTF may be negative
-	float h = fabsf(v);
-	bool gamma = h > arg[0];
-	float e = gamma ? arg[1] : arg[4];
-	float l = gamma ? arg[2] : 0.0f;
-	float p = gamma ? arg[3] : 1.0f;
-	return copysignf(mypowf(fm_fmaf(h, e, l), p), v);
+	return v > arg[0]
+		? myexp2f(fm_fmaf(v, arg[1], arg[2])) + arg[3]
+		: v * v * arg[4];
 }
 
 static void convert_alpha(float *row, const size_t w, const uint8_t ch,
@@ -169,13 +171,13 @@ const enum alpha_interpretation alpha, const struct imgconv *state) {
 
 		const float mul = cc->nonlinear.m[0];
 		const float add = fmaf(cc->color_offset[0], mul, inv_a);
-		const float alpha_m = cc->alpha_map[0];
-		const float alpha_a = cc->alpha_map[1];
+		float a_map[2];
+		memcpy(a_map, cc->alpha_map, sizeof(a_map));
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
 			pix[0] = fm_fmaf(pix[0], mul, add);
 			if (has_alpha) {
-				pix[1] = fm_fmaf(pix[1], alpha_m, alpha_a);
+				pix[1] = fm_fmaf(pix[1], a_map[0], a_map[1]);
 			}
 		}
 	}
@@ -206,20 +208,20 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
 		const bool has_alpha = channels > 3;
 		const float inv_a = cc->eotf.invert_input;
+
+		float off[3], a_map[2];
+		memcpy(off, cc->color_offset, sizeof(off));
+		memcpy(a_map, cc->alpha_map, sizeof(a_map));
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
-			float tmp[4];
+			float tmp[3];
 
 			for (uint8_t z = 0; z < 3; ++z) {
-				tmp[z] = pix[z] + cc->color_offset[z];
+				tmp[z] = pix[z] + off[z];
 			}
-			matff_mul(pix, tmp, cc->nonlinear.m, 3, 1, 3);
-			for (uint8_t z = 0; z < 3; ++z) {
-				pix[z] += inv_a;
-			}
+			matff_mul(pix, tmp, cc->nonlinear.m, 3, 1, 3, inv_a);
 			if (has_alpha) {
-				pix[3] = fm_fmaf(pix[3], cc->alpha_map[0],
-					cc->alpha_map[1]);
+				pix[3] = fm_fmaf(pix[3], a_map[0], a_map[1]);
 			}
 		}
 	}
@@ -235,7 +237,7 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 			for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
 				tmp[z] = eotf(pix[z], &cc->eotf);
 			}
-			matff_mul(pix, cc->linear.m, tmp, 3, 3, 1);
+			matff_mul(pix, cc->linear.m, tmp, 3, 3, 1, 0);
 		}
 	}
 	convert_alpha(row, w, channels, alpha);
