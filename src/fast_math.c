@@ -33,12 +33,12 @@ static float fm_mix(const float a, const float b, const float k) {
 static float fm_fractf(float val) {
 	/* Returns the positive fractional part. This is different from
 	 * fmod() and modf(), which return negative results for val < 0.
-	 * This gets turned into a vroundss and vsubss instruction pair. */
+	 * This gets turned into a roundss and subss instruction pair. */
 	return val - floorf(val);
 }
 
 /* Faster fmax()/fmin() replacements that don't believe in NaNs. These get
- * turned into vmaxss/vminss. */
+ * turned into maxss/minss. */
 static float fm_fminf(const float x, const float y) {
 	return x < y ? x : y;
 }
@@ -58,7 +58,7 @@ static float fm_saturatef(const float val) {
 /* Faster exp2f(), log2f(), and powf() that don't believe in nonsense like
  * NaNs, or negative numbers, or numbers greater than 127.
  * These are less precise than their libc counterparts and don't check for
- * special cases. According to tests, powf(powf(x, e), 1/e) scaled to
+ * special cases. According to tests, powf(powf(x, 2.2), 1/2.2) scaled to
  * uint16 is off by one ~1% of the time, compared to libc powf.
  * Polynomials were found using Sollya, which should produce more accurate
  * single-precision coefficients than simply truncating high-precision ones.
@@ -69,8 +69,7 @@ static float fm_exp2f_unchecked(float x) {
 	/* Build a float equal to 2^(intpart - 127)
 	 * x is assumed not to overflow the exponent field. That is, in
 	 * range [-127, 128]. */
-	int32_t i = (int32_t)floorf(x);
-	i = (i + 127) << 23;
+	const int32_t i = ((int32_t)floorf(x) + 127) << 23;
 	float e;
 	memcpy(&e, &i, sizeof(i));
 
@@ -100,8 +99,8 @@ static float fm_log2f_for_pow(float x, float mul) {
 	// Extract the exponent of x
 	uint32_t u;
 	memcpy(&u, &x, sizeof(u));
-	int32_t i = (int32_t)(u >> 23);
-	float e = (float)((i & 0xff) - 127);
+	const int32_t i = (int32_t)((u >> 23) & 0xff) - 127;
+	const float e = (float)i;
 
 	/* Extract the mantissa, and OR with the binary representation of 1
 	 * so that it's 1.fract. */
@@ -126,13 +125,19 @@ static float fm_exp2f(const float x) {
 	return fm_exp2f_unchecked(fm_fclampf(x, -127, 128));
 }
 
+static float fm_powf_unchecked(const float x, const float e) {
+	/* If `e` is in range [-127.0/128.0, 1.0], there's no need for clamping
+	 * for exp2f */
+	return fm_exp2f_unchecked(fm_log2f_for_pow(x, e));
+}
+
 static float fm_powf(const float x, const float e) {
 	// This doesn't attempt to handle negative x, not even for integer e
 	return fm_exp2f(fm_log2f_for_pow(x, e));
 }
 
 static float fm_pre_roundf(float val, float scale) {
-	/* A dumber and faster roundf() replacement, that's worthless for
+	/* A dumber and faster roundf() replacement that's worthless for
 	 * numbers above 2^22. That's fine since we only care up to 2^16.
 	 * On par with lrintf() when FMA is supported, and slightly slower when
 	 * not, but not so much as to make us touch some icky global state nor

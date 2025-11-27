@@ -38,6 +38,13 @@ static float myexp2f(float x) {
 	return exp2f(x);
 }
 
+static float mypowf_unchecked(float x, float e) {
+	if (USE_MATH_APPROX) {
+		return fm_powf_unchecked(x, e);
+	}
+	return powf(x, e);
+}
+
 static float mypowf(float x, float e) {
 	if (USE_MATH_APPROX) {
 		return fm_powf(x, e);
@@ -101,10 +108,10 @@ static const bool USE_DISPLAY_SRGB = true;
 static float oetf_srgb(float v) {
 	if (USE_DISPLAY_SRGB) {
 		const float gamma = (float)(1/COLOR_SRGB_DISPLAY_GAMMA);
-		return copysignf(mypowf(fabsf(v), gamma), v);
+		return copysignf(mypowf_unchecked(fabsf(v), gamma), v);
 	}
 	return v > 0.0031308f
-		? fm_fmaf(mypowf(v, 1.0f/2.4f), 1.055f, -0.055f)
+		? fm_fmaf(mypowf_unchecked(v, 1.0f/2.4f), 1.055f, -0.055f)
 		: v * 12.92f;
 }
 
@@ -120,7 +127,7 @@ static float eotf(float v, const struct color_transfer *t) {
 		float p = gamma ? arg[3] : 1.0f;
 		return copysignf(mypowf(fm_fmaf(h, e, l), p), v);
 	case color_transfer_pq:
-		v = mypowf(fm_fmaxf(v, 0), arg[0]);
+		v = mypowf_unchecked(fm_fmaxf(v, 0), arg[0]);
 		float num = v - fm_fminf(arg[1], v);
 		float den = fm_fmaf(v, arg[3], arg[2]);
 		return mypowf(num/den, arg[4]);
@@ -134,10 +141,7 @@ static float eotf(float v, const struct color_transfer *t) {
 
 static void convert_alpha(float *row, const size_t w, const uint8_t ch,
 const enum alpha_interpretation alpha) {
-	if (ch != 2 && ch != 4) {
-		return;
-	}
-	uint8_t a = ch - 1;
+	const uint8_t a = ch - 1;
 	for (size_t x = 0; x < w; ++x) {
 		float *pix = row + x*ch;
 		switch (alpha) {
@@ -151,7 +155,7 @@ const enum alpha_interpretation alpha) {
 		case alpha_unassociated:
 			break;
 		case alpha_key:
-			for (uint8_t z = 0; z < 3; ++z) {
+			for (uint8_t z = 0; z < a; ++z) {
 				pix[z] *= pix[a];
 			}
 			// fallthrough
@@ -165,8 +169,8 @@ const enum alpha_interpretation alpha) {
 static bool convert_row_gray(float *row, size_t w, uint8_t channels,
 const enum alpha_interpretation alpha, const struct imgconv *state) {
 	const struct color_convert *cc = &state->color;
+	const bool has_alpha = channels == 2;
 	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
-		const bool has_alpha = channels > 1;
 		const bool inv_a = cc->eotf.invert_input;
 
 		const float mul = cc->nonlinear.m[0];
@@ -192,7 +196,9 @@ const enum alpha_interpretation alpha, const struct imgconv *state) {
 			*pix = eotf(*pix, &cc->eotf);
 		}
 	}
-	convert_alpha(row, w, channels, alpha);
+	if (has_alpha) {
+		convert_alpha(row, w, channels, alpha);
+	}
 	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;
@@ -205,8 +211,8 @@ const enum alpha_interpretation alpha, const struct imgconv *state) {
 static bool convert_row_color(float *row, size_t w, uint8_t channels,
 enum alpha_interpretation alpha, const struct imgconv *state) {
 	const struct color_convert *cc = &state->color;
+	const bool has_alpha = channels == 4;
 	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
-		const bool has_alpha = channels > 3;
 		const float inv_a = cc->eotf.invert_input;
 
 		float off[3], a_map[2];
@@ -240,7 +246,9 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 			matff_mul(pix, cc->linear.m, tmp, 3, 3, 1, 0);
 		}
 	}
-	convert_alpha(row, w, channels, alpha);
+	if (has_alpha) {
+		convert_alpha(row, w, channels, alpha);
+	}
 	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {
 			float *pix = row + x*channels;

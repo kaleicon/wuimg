@@ -122,6 +122,19 @@ const double exp) {
 	fflush(stdout);
 	return ok;
 }
+static bool test_powf_basic(const float x, const float y, const float expect) {
+	// Use _unchecked version to avoid unused function warnings
+	float r = fm_powf_unchecked(x, y);
+	const bool ok = r == expect;
+	printf("%s\t%.3f\t%+.3f\t%.3f\t%.3f\n", ok_str(ok), x, y, expect, r);
+	return ok;
+}
+static bool test_log2f(const float x) {
+	float a = fm_log2f_for_pow(x, 1);
+	const bool ok = a >= -127 && a <= 128;
+	printf("%s\t%a\t%f\n", ok_str(ok), x, a);
+	return ok;
+}
 static bool test_fm_mix(float iters, float mix, float lo_add,
 float hi_add) {
 	float hi = 1.0f;
@@ -174,6 +187,30 @@ static bool fast_math_tests(void) {
 	puts("\tall floats in range\tnr misses");
 	kay &= test_roundf(0, 0, roundf_norm);
 	kay &= test_roundf(0x1p-17, 0x1p-0, roundf_norm);
+	puts("");
+
+	puts("fm_log2f() output in range [-127, 128], inputs <= first_normal don't matter");
+	puts("\tinput\toutput");
+	const float log2_args[] = {
+		(float)-first_normal, 0.0f, first_normal,
+		1, 0x1p+127f, (float)0x1p+128, (float)0x1p+129,
+	};
+	for (size_t i = 0; i < ARRAY_LEN(log2_args); ++i) {
+		kay &= test_log2f(log2_args[i]);
+	}
+	puts("");
+
+	const float pow_args[][3] = {
+		{.25f, 0, 1},
+		{.25f, 1, .25f},
+		{.25f, -1, 4},
+	};
+	puts("fm_powf() with simple exponents");
+	puts("\tbase\texp\texpect\tresult");
+	for (size_t i = 0; i < ARRAY_LEN(pow_args); ++i) {
+		const float *p = pow_args[i];
+		kay &= test_powf_basic(p[0], p[1], p[2]);
+	}
 	puts("");
 
 	const float powf_norm = 0x1p+16 - 1;

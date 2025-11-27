@@ -293,10 +293,10 @@ const bool oetf) {
 static void tf_perceptual_quantization(struct color_transfer *tf, bool oetf) {
 	/* PQ constants:
 		m = 2610 / 16384
-		n = 2523 / 4096 * 128
+		n = 2523 / 4096 * 128 == 2523 / 32
 		c = 2392 / 4096 * 32
 		b = 2413 / 4096 * 32
-		a = c - b + 1         # alternatively (3424 / 4096)
+		a = c - b + 1         == 3424 / 4096
 	 * EOTF:
 		ncomp = pow(comp, 1/n)
 		num = max(ncomp - a, 0)
