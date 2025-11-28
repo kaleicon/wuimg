@@ -29,9 +29,9 @@ static int fmaskmagiccmp(const void *restrict m1, const void *restrict m2) {
 	const unsigned char *restrict magic1 = m1;
 	const struct fmt_magic *restrict magic2 = m2;
 	int diff = 0;
-	for (size_t i = 0; !diff && i < MAX_MAG_LEN; ++i) {
-		const unsigned char m = magic2->and_mask[i];
-		diff = (magic1[i] & m) - magic2->bytes[i];
+	for (size_t i = 0; !diff && i < magic2->len; ++i) {
+		const unsigned char m = BYTE_POOL[magic2->mask_off + i];
+		diff = (magic1[i] & m) - BYTE_POOL[magic2->bytes_off + i];
 	}
 	return diff;
 }
@@ -53,8 +53,8 @@ static int bitcount(unsigned char c) {
 
 static int magic_bits(const struct fmt_magic *m) {
 	int bits = 0;
-	for (size_t i = 0; i < ARRAY_LEN(m->bytes); ++i) {
-		bits += bitcount(m->bytes[i]);
+	for (size_t i = 0; i < m->len; ++i) {
+		bits += bitcount(BYTE_POOL[m->bytes_off + i]);
 	}
 	return bits;
 }
@@ -69,7 +69,7 @@ static bool new_fmt(struct detect *det, const int fmt) {
 }
 
 static void search_magic(struct image_file *infile, struct detect *det) {
-	unsigned char magic[sizeof(magic_map->bytes)] = {0};
+	unsigned char magic[MAX_MAG_LEN] = {0};
 	size_t read = 0;
 	if (infile->map.ptr) {
 		read = zumin(infile->map.len, MAX_MAG_LEN);

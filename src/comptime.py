@@ -4,11 +4,11 @@ import sys
 import collections
 import typing
 from itertools import batched, chain, starmap
-from functools import partial
+from functools import partial, reduce
 from collections.abc import Callable, Iterable, Sequence
 
 EXT_LIMIT = 6
-MAGIC_LIMIT = 12
+MAGIC_LIMIT = 0xff
 NAME_LIMIT = 8
 
 # Various RAW camera formats are actually TIFF with extra data, and can only be
@@ -1000,9 +1000,6 @@ DEC_MAP: DecMap = {
 
 	"q4": {
 		"q4": FmtInfo("MAJYO's Q4 (XLD4)",
-			# This format has a magic sequence, but until we bump
-			# the signature limit to 16, it's not very useful, so
-			# match on extension
 			match="q4",
 			mask=(
 				b"\xff\0\0\0" b"\0\0\0\0" b"\0\0\0" b"\xff\xff\xff\xff\xff",
@@ -1535,17 +1532,18 @@ def maskbits(b: bytes) -> int:
 	return int.from_bytes(b).bit_count()
 
 def graph_or_hex(i: int, readable: bool) -> str:
-	if readable and i >= 0x20 and i < 0x80:
+	if readable and i >= 0x20 and i < 0x7f:
 		return "'{}'".format(chr(i))
 	return '0x{:02x}'.format(i)
 
-def u8_array(b: str | bytes, limit: int = 0, readable: bool = False) -> str:
+def u8_array(b: str | bytes, limit: int = 0xffff, readable: bool = False) -> str:
 	if isinstance(b, str):
 		b = b.encode()
-	if limit and len(b) > limit:
+	if len(b) > limit:
 		eprint('array exceeds length limit. will truncate:', b)
 		b = b[:limit]
-	return ','.join(map(lambda i: graph_or_hex(i, readable), b))
+	g = map(lambda i: graph_or_hex(i, readable), b)
+	return ',\n'.join(map(lambda b: ','.join(b), batched(g, 16)))
 
 class FmtMIME(typing.NamedTuple):
 	mime: str
@@ -1577,7 +1575,7 @@ class FmtMagic(typing.NamedTuple):
 	mask: bytes
 	'''AND mask to be applied to the file before comparison'''
 
-	bytes: bytes
+	magic: bytes
 	'''Magic sequence'''
 
 	id: int
@@ -1585,26 +1583,30 @@ class FmtMagic(typing.NamedTuple):
 
 	@staticmethod
 	def struct(limit: int) -> str:
+		assert limit <= 0xff
 		return '''\
-		struct fmt_magic {{
-			const unsigned char and_mask[{0}];
-			const unsigned char bytes[{0}];
+		struct fmt_magic {
+			const unsigned short mask_off, bytes_off;
+			const unsigned char len;
 			const short id;
-		}};'''.format(limit)
+		};'''
 
-	def declare(self, limit: int) -> str:
-		return '\t{{ .and_mask={{ {} }}, .bytes={{ {} }}, .id={} }},'.format(
-			u8_array(self.mask, limit, False),
-			u8_array(self.bytes, limit, True),
-			self.id)
+	def declare(self, pool: bytes) -> str:
+		return '''\
+		{{
+			.mask_off = {}, .bytes_off = {},
+			.len = {}, .id={}
+		}},'''.format(
+			pool.index(self.mask), pool.index(self.magic),
+			len(self.magic), self.id)
 
 	def __lt__(self, other: typing.Any) -> bool:
-		# Compare number of mask bits, then magic bytes
-		d = maskbits(self.bytes) - maskbits(other.bytes)
+		# Compare number of bits, then magic bytes
+		d = maskbits(self.magic) - maskbits(other.magic)
 		if d == 0:
-			d = len(self.bytes) - len(other.bytes)
+			d = len(self.magic) - len(other.magic)
 			if d == 0:
-				return bool(self.bytes < other.bytes)
+				return bool(self.magic < other.magic)
 		return d < 0
 
 class FmtExt(typing.NamedTuple):
@@ -1735,8 +1737,11 @@ class FmtDesc(typing.NamedTuple):
 	def __lt__(self, other: typing.Any) -> bool:
 		return bool(self.name < other.name)
 
+def static_const(decl: str) -> None:
+	print('static const', decl)
+
 def begin_map_def(name: str) -> None:
-	print('static const struct fmt_{0} {0}_map[] = {{'.format(name))
+	static_const('struct fmt_{0} {0}_map[] = {{'.format(name))
 
 def end_def() -> None:
 	print('};')
@@ -1751,16 +1756,42 @@ def fmt_map_iter[T](getter: Callable[[FmtDesc, int], Iterable[T]], fmt_map: Iter
 def minmax(min_len: int, max_len: int, n: int) -> tuple[int, int]:
 	return min(min_len, n), max(max_len, n)
 
+def byte_superstring(pool: bytearray, b: bytes) -> bytearray:
+	if b not in pool:
+		x = len(b) - 1
+		while not pool.endswith(b[:x]):
+			x -= 1
+		y = 1
+		while not pool.startswith(b[y:]):
+			y += 1
+		if y < len(b) - x:
+			pool[:0] = b[:y]
+		else:
+			pool[len(pool):] = b[x:]
+	return pool
+
+def make_byte_pool(it: Iterable[bytes], init: bytearray = bytearray()) -> bytearray:
+	return reduce(byte_superstring, it, init)
+
 def print_fmt_magic(fmt_map: Iterable[FmtDesc], limit: int) -> tuple[int, int]:
 	# Reverse so that masks with more bits come first
-	magic_map = sorted(fmt_map_iter(FmtDesc.get_magics, fmt_map), reverse=True)
+	magics = list(fmt_map_iter(FmtDesc.get_magics, fmt_map))
+
+	magic_map = sorted(magics, reverse=True)
+	magic_by_len = sorted(magics, key=lambda m: len(m.magic), reverse=True)
+
+	pool = bytes(make_byte_pool(map(lambda m: m.magic, magic_by_len),
+		make_byte_pool(map(lambda m: m.mask, magic_by_len))))
+	static_const('unsigned char BYTE_POOL[{}] = {{'.format(len(pool)))
+	print(u8_array(pool, readable=True))
+	end_def()
 
 	min_len = limit
 	max_len = 0
 	struct_and_define(FmtMagic, limit)
 	for magic in magic_map:
-		print(magic.declare(limit))
-		min_len, max_len = minmax(min_len, max_len, len(magic.mask))
+		print(magic.declare(pool))
+		min_len, max_len = minmax(min_len, max_len, len(magic.magic))
 	end_def()
 	return min_len, min(max_len, limit)
 
@@ -1828,7 +1859,7 @@ def gen_maps(fmt_map: Iterable[FmtDesc]) -> None:
 	# Print length bounds
 	print(f'''
 		static const size_t MIN_MAG_LEN = {min_mag_len};
-		static const size_t MAX_MAG_LEN = {max_mag_len};
+		#define MAX_MAG_LEN {max_mag_len}
 		static const size_t MIN_EXT_LEN = {min_ext_len};
 		static const size_t MAX_EXT_LEN = {max_ext_len};'''.replace('\t', ''))
 
@@ -1868,7 +1899,7 @@ def show_supported(fmt_map: Sequence[FmtDesc]) -> None:
 
 	# Magic sequences
 	tpl = '{:{width}}{}'
-	magics = sorted(map(lambda m: (fmt_map[m.id].name, m.bytes),
+	magics = sorted(map(lambda m: (fmt_map[m.id].name, m.magic),
 		fmt_map_iter(FmtDesc.get_magics, fmt_map)
 	))
 	print('Known magic sequences:', len(magics))
