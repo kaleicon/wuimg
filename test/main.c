@@ -344,53 +344,53 @@ static bool unpack_tests(void) {
 	};
 	// See unpack_array_gen.py
 	const struct test_unpack_params up[] = {
-		{1, pix_normal, big_endian, op_unpack,
+		{1, pix_normal, big_endian, op_repack,
 			.e.m8 = {1,0,1,1, 1,0,1,0}},
-		{2, pix_normal, big_endian, op_unpack,
+		{2, pix_normal, big_endian, op_repack,
 			.e.m8 = {2,3, 2,2, 2,1, 2,0}},
-		{3, pix_normal, big_endian, op_unpack,
+		{3, pix_normal, big_endian, op_repack,
 			.e.m8 = {5,6,5,1, 4,1,6,6}},
-		{4, pix_normal, big_endian, op_unpack,
+		{4, pix_normal, big_endian, op_repack,
 			.e.m8 = {0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4}},
-		{5, pix_normal, big_endian, op_unpack,
+		{5, pix_normal, big_endian, op_repack,
 			.e.m8 = {0x17, 0x0a, 0x0c, 0x07, 0x0c, 0x15, 0x01, 0x12}},
-		{6, pix_normal, big_endian, op_unpack,
+		{6, pix_normal, big_endian, op_repack,
 			.e.m8 = {0x2e, 0x29, 0x21, 0x36, 0x15, 0x03, 0x08, 0x10}},
-		{7, pix_normal, big_endian, op_unpack,
+		{7, pix_normal, big_endian, op_repack,
 			.e.m8 = {0x5d, 0x26, 0x0e, 0x65, 0x21, 0x48, 0x21, 0x7e}},
 
-		{9, pix_normal, big_endian, op_unpack,
+		{9, pix_normal, big_endian, op_repack,
 			.e.m16 = {0x0175, 0x0061, 0x01b2, 0x0143}},
-		{10, pix_normal, big_endian, op_unpack,
+		{10, pix_normal, big_endian, op_repack,
 			.e.m16 = {0x02ea, 0x0187, 0x0195, 0x0032}},
-		{11, pix_normal, big_endian, op_unpack,
+		{11, pix_normal, big_endian, op_repack,
 			.e.m16 = {0x05d4, 0x061d, 0x04a8, 0x0321}},
-		{12, pix_normal, big_endian, op_unpack,
+		{12, pix_normal, big_endian, op_repack,
 			.e.m16 = {0x0ba9, 0x0876, 0x0543, 0x0210}},
-		{13, pix_normal, big_endian, op_unpack,
+		{13, pix_normal, big_endian, op_repack,
 			.e.m16 = {0x1753, 0x01d9, 0x0a19, 0x010f}},
-		{14, pix_normal, big_endian, op_unpack,
+		{14, pix_normal, big_endian, op_repack,
 			.e.m16 = {0x2ea6, 0x0765, 0x10c8, 0x10fe}},
-		{15, pix_normal, big_endian, op_unpack,
+		{15, pix_normal, big_endian, op_repack,
 			.e.m16 = {0x5d4c, 0x1d95, 0x0642, 0x0fed}},
 		// 16-, 32-, and 64-bits assumes native endianness
 
-		{20, pix_normal, big_endian, op_pack,
+		{20, pix_normal, big_endian, op_repack,
 			.e.m16 = {0xba98, 0x6543, 0x10fe, 0xcba9}},
-		{24, pix_normal, big_endian, op_pack,
+		{24, pix_normal, big_endian, op_repack,
 			.e.m16 = {0xba98, 0x5432, 0xfedc, 0x9876}},
-		{28, pix_normal, big_endian, op_pack,
+		{28, pix_normal, big_endian, op_repack,
 			.e.m16 = {0xba98, 0x4321, 0xdcba, 0x6543}},
 		};
 	for (size_t i = 0; i < ARRAY_LEN(up); ++i) {
 		kay &= test_unpack_synth(up + i, data.mem);
 	}
 	const struct test_unpack_params single[] = {
-		{1, pix_normal, little_endian, op_unpack,
+		{1, pix_normal, little_endian, op_repack,
 			.e.m8 = {0,1,0,1, 1,1,0,1}},
-		{4, pix_normal, little_endian, op_unpack,
+		{4, pix_normal, little_endian, op_repack,
 			.e.m8 = {0xa, 0xb, 0x8, 0x9, 0x6, 0x7, 0x4, 0x5}},
-		{8, pix_signed, big_endian, op_unpack,
+		{8, pix_signed, big_endian, op_repack,
 			.e.m8 = {0x3a, 0x18, 0xf6, 0xd4, 0xb2, 0x90, 0x7e, 0x5c}},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(single); ++i) {
@@ -398,7 +398,7 @@ static bool unpack_tests(void) {
 	}
 	const double mem[4] = {1, 2, 3, 4};
 	const struct test_unpack_params floats[] = {
-		{64, pix_float, big_endian, op_pack,
+		{64, pix_float, big_endian, op_repack,
 			.e.mf = {1,2}},
 	};
 	for (size_t i = 0; i < ARRAY_LEN(floats); ++i) {

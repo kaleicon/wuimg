@@ -10,8 +10,7 @@
 const char * unpack_op_str(const enum unpack_op op) {
 	switch (op) {
 	case op_noop: return "noop";
-	case op_unpack: return "unpack";
-	case op_pack: return "pack";
+	case op_repack: return "repack";
 	case op_bitfield: return "bitfield";
 	}
 	return "???";
@@ -227,7 +226,7 @@ const enum endianness bit, const enum unpack_op op, const void *arg) {
 	case op_noop:
 		memcpy(dst, src, strip_base(n, bitdepth));
 		break;
-	case op_unpack:
+	case op_repack:
 		;const uint8_t range = get_range(bitdepth, arg);
 		switch (attr) {
 		case pix_normal:
@@ -236,6 +235,10 @@ const enum endianness bit, const enum unpack_op op, const void *arg) {
 				case 1: strip_unpack1b(dst, src, n); return;
 				case 2: strip_unpack2b(dst, src, n); return;
 				case 4: strip_unpack4b(dst, src, n); return;
+				case 32: strip_pack32_16(dst, src, n, attr);
+					return;
+				case 64: strip_pack64_16(dst, src, n, attr);
+					return;
 				}
 			} else {
 				switch (bitdepth) {
@@ -249,25 +252,8 @@ const enum endianness bit, const enum unpack_op op, const void *arg) {
 			switch (bitdepth) {
 			case 8: strip_design8(dst, src, n, add); return;
 			case 16: strip_design16(dst, src, n, add); return;
-			}
-			break;
-		default: return;
-		}
-		strip_unpack_any(dst, src, n, bitdepth, attr, range);
-		break;
-	case op_pack:
-		switch (attr) {
-		case pix_normal:
-			switch (bitdepth) {
-			case 32: strip_pack32_16(dst, src, n, attr); return;
-			case 64: strip_pack64_16(dst, src, n, attr); return;
-			}
-			break;
-		case pix_signed:
-			switch (bitdepth) {
 			case 32:
-				strip_design32_pack16(dst, src, n,
-					get_range(bitdepth, arg));
+				strip_design32_pack16(dst, src, n, range);
 				return;
 			case 64: strip_pack64_16(dst, src, n, attr); return;
 			}
@@ -278,7 +264,11 @@ const enum endianness bit, const enum unpack_op op, const void *arg) {
 			}
 			return;
 		}
-		strip_pack_16(dst, src, n, bitdepth, attr);
+		if (bitdepth > 16) {
+			strip_pack_16(dst, src, n, bitdepth, attr);
+		} else {
+			strip_unpack_any(dst, src, n, bitdepth, attr, range);
+		}
 		break;
 	case op_bitfield:
 		bitfield_unpack(arg, dst, src, n);
@@ -291,27 +281,16 @@ const enum unpack_op op, const void *arg) {
 	switch (op) {
 	case op_noop:
 		return bitdepth;
-	case op_unpack:
+	case op_repack:
 		switch (attr) {
 		case pix_normal:
-			if (bitdepth % 8) {
+			if (bitdepth > 16 || bitdepth % 8) {
 				return bitdepth > 8 ? 16 : 8;
 			}
 			break;
 		case pix_signed:
-			if (bitdepth && bitdepth <= 16) {
+			if (bitdepth) {
 				return bitdepth > 8 ? 16 : 8;
-			}
-		case pix_float:
-			break;
-		}
-		break;
-	case op_pack:
-		switch (attr) {
-		case pix_normal:
-		case pix_signed:
-			if (bitdepth > 16) {
-				return 16;
 			}
 			break;
 		case pix_float:

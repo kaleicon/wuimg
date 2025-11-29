@@ -751,7 +751,7 @@ const struct wuimg *src) {
 	case image_mode_palette:
 		row_elems = zumax(row_elems, sizeof(state->pal->color));
 		state->unpack_ch = 1;
-		state->op = src->bitdepth < dst->bitdepth ? op_unpack : op_noop;
+		state->op = src->bitdepth < dst->bitdepth ? op_repack : op_noop;
 		break;
 	case image_mode_bitfield:
 		state->op = op_bitfield;
@@ -761,13 +761,13 @@ const struct wuimg *src) {
 	case image_mode_raw:
 		if (src->attr == pix_float) {
 			state->unpack_depth = 32;
-			state->op = src->bitdepth > 32 ? op_pack : op_noop;
+			state->op = src->bitdepth > 32 ? op_repack : op_noop;
 			inrange = 1;
 		} else if (src->bitdepth > dst->bitdepth) {
-			state->op = op_pack;
+			state->op = op_repack;
 			inrange = fmin(inrange, 0xffff);
 		} else if (src->bitdepth < dst->bitdepth || src->attr != pix_normal) {
-			state->op = op_unpack;
+			state->op = op_repack;
 		}
 	}
 

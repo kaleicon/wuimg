@@ -295,14 +295,12 @@ const struct wu_conf *conf, struct tiff_info *info) {
 	img->w = w;
 	img->h = h;
 	img->channels = (unsigned char)info->spp;
-	enum unpack_op op;
+	img->bitdepth = (unsigned char)info->bps;
+	enum unpack_op op = op_noop;
 	if (info->is_tiled && info->bps % 8) {
-		op = (info->bps > 16) ? op_pack : op_unpack;
+		op = op_repack;
 		img->bitdepth = (info->bps > 8) ? 16 : 8;
 		img->bitrange = (info->bps > 16) ? 16 : (uint8_t)info->bps;
-	} else {
-		op = op_noop;
-		img->bitdepth = (unsigned char)info->bps;
 	}
 
 	if (info->planes > 1 && !wuimg_plane_init(img)) {

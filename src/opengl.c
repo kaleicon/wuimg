@@ -809,10 +809,10 @@ const struct wuimg *img) {
 		switch (bd) {
 		case 8: case 16: case 32:
 			params->op = img->attr == pix_normal
-				? op_noop : op_unpack;
+				? op_noop : op_repack;
 			break;
 		default:
-			params->op = bd > 16 ? op_pack : op_unpack;
+			params->op = op_repack;
 			bd = bd > 8 ? 16 : 8;
 		}
 		break;
@@ -821,7 +821,7 @@ const struct wuimg *img) {
 		case 16: case 32:
 			break;
 		case 64:
-			params->op = op_pack;
+			params->op = op_repack;
 			break;
 		default:
 			return "Invalid floating-point depth";

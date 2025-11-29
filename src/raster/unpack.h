@@ -12,8 +12,7 @@
 
 enum unpack_op {
 	op_noop = 0,
-	op_unpack,
-	op_pack,
+	op_repack,
 	op_bitfield,
 };
 
