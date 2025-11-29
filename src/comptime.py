@@ -87,6 +87,9 @@ type DecMap = dict[str, DecFmt]
 DEC_MAP: DecMap = {
 	# Simple raw formats, implemented in auto.c
 	"auto": {
+		"aai": FmtInfo("Dune HD image (uncompliant alpha interpretation)",
+			match="aai",
+		),
 		"aipd": FmtInfo("National Instruments AIPD (uncertain color interpretation)",
 			ext="apd",
 			magic=b"AIPD"

@@ -12,6 +12,19 @@
 
 #define DESC(arg) {.ptr = (const uint8_t *)(arg), .len = sizeof(arg) - 1}
 
+/* AAI (Dune HD)
+https://dune-hd.com/firmware/misc/AAImageGen-README.txt
+ * Of note is that alpha range is [0, 0xfe], with 0xff reserved. We'll surely
+ * take care of that someday. */
+const struct wuptr aai_desc = DESC(
+	"endian:little\n"
+	"channels:4\n"
+	"bitdepth:8\n"
+
+	"w:<u32>\n"
+	"h:<u32>"
+);
+
 /* AIPD National Instruments */
 const struct wuptr aipd_desc = DESC(
 	"endian:big\n"
