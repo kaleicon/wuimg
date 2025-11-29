@@ -100,16 +100,23 @@ struct image_file *infile) {
 
 static void get_color_profile(const png_struct *png, png_info *info,
 struct color_space *cs) {
+#ifdef PNG_cICP_SUPPORTED
+	uint8_t c[4];
+	if (png_get_cICP(png, info, c, c+1, c+2, c+3)) {
+		cs->primaries = c[0];
+		cs->transfer = c[1];
+		cs->matrix = c[2];
+		cs->limited = !c[3];
+		return;
+	}
+#endif
+
 #ifdef PNG_iCCP_SUPPORTED
-	if (cs->type != color_profile_icc) {
-		char *name;
-		unsigned char *icc = NULL;
-		png_uint_32 len;
-		png_get_iCCP(png, info, &name, NULL, &icc, &len);
-		if (icc && color_space_set_icc_copy(cs, icc, len)) {
-			return;
-		}
-	} else {
+	char *name;
+	unsigned char *icc = NULL;
+	png_uint_32 len;
+	png_get_iCCP(png, info, &name, NULL, &icc, &len);
+	if (icc && color_space_set_icc_copy(cs, icc, len)) {
 		return;
 	}
 #endif
@@ -170,6 +177,7 @@ const struct wu_conf *conf, struct png_state *png) {
 		}
 	}
 	img->ratio = png_get_pixel_aspect_ratio(png->png, png->info);
+	get_color_profile(png->png, png->info, &img->cs);
 
 	const enum wu_error err = wuimg_alloc_limit(img, conf);
 	if (err == wu_ok) {
@@ -192,7 +200,6 @@ const struct wu_conf *conf, struct png_state *png) {
 				}
 			}
 		}
-		get_color_profile(png->png, png->info, &img->cs);
 		return WU_OK;
 	}
 	return WUERR_HERE(err);
