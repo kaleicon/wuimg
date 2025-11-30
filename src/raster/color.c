@@ -529,32 +529,6 @@ struct color_transfer *tf, const bool oetf) {
 	}
 }
 
-static double get_gamma_or_fallback(const struct color_space *cs,
-const double fallback) {
-	if (cs->type != color_profile_icc) {
-		switch (cs->transfer) {
-		case cicp_transfer_bt470_6_system_m:
-			return COLOR_SRGB_DISPLAY_GAMMA;
-		case cicp_transfer_bt470_6_system_b_g:
-			return 2.8;
-		case cicp_transfer_linear:
-			return 1.0;
-		case cicp_transfer_unspecified:
-			return fallback;
-		default: break;
-		}
-		if (cs->transfer == 0) {
-			return (cs->type == color_profile_param)
-				? cs->desc.prof->gamma.r : fallback;
-		}
-	}
-	return 0;
-}
-
-double color_space_get_gamma(const struct color_space *cs) {
-	return get_gamma_or_fallback(cs, 0);
-}
-
 enum color_white_point color_space_white_point_type(const struct color_space *cs) {
 	if (cs->type == color_profile_enum) {
 		if (cs->matrix == cicp_matrix_bt2100_2_ictcp) {
@@ -581,6 +555,51 @@ enum color_white_point color_space_white_point_type(const struct color_space *cs
 		}
 	}
 	return color_white_other;
+}
+
+struct color_space_luminance color_space_get_luminance(const struct color_space *cs) {
+	if (cs->lum.ref && cs->lum.max) {
+		return cs->lum;
+	}
+	switch (cs->transfer) {
+	case cicp_transfer_bt709_6:
+	case cicp_transfer_bt601_7:
+	case cicp_transfer_bt2020_2_10bit:
+	case cicp_transfer_bt2020_2_12bit:
+		return (struct color_space_luminance){.ref = 100, .max = 100};
+	case cicp_transfer_smpte_st_2084:
+		return (struct color_space_luminance){.ref = 203, .max = 10000};
+	case cicp_transfer_arib_std_b67:
+		return (struct color_space_luminance){.ref = 203, .max = 1000};
+	default: break;
+	}
+	return (struct color_space_luminance){.ref = 203, .max = 203};
+}
+
+static double get_gamma_or_fallback(const struct color_space *cs,
+const double fallback) {
+	if (cs->type != color_profile_icc) {
+		switch (cs->transfer) {
+		case cicp_transfer_bt470_6_system_m:
+			return COLOR_SRGB_DISPLAY_GAMMA;
+		case cicp_transfer_bt470_6_system_b_g:
+			return 2.8;
+		case cicp_transfer_linear:
+			return 1.0;
+		case cicp_transfer_unspecified:
+			return fallback;
+		default: break;
+		}
+		if (cs->transfer == 0) {
+			return (cs->type == color_profile_param)
+				? cs->desc.prof->gamma.r : fallback;
+		}
+	}
+	return 0;
+}
+
+double color_space_get_gamma(const struct color_space *cs) {
+	return get_gamma_or_fallback(cs, 0);
 }
 
 static const struct color_primaries * get_cicp_primaries(
@@ -1110,6 +1129,17 @@ const bool gray, const bool maybe_yuv, const double scale) {
 					3, 3, 3);
 			}
 		}
+		conv->steps |= color_step_linear;
+	}
+
+	const struct color_space_luminance in_lum = color_space_get_luminance(cs);
+	const struct color_space_luminance out_lum = color_space_get_luminance(tgt);
+	conv->lum_scale = (float)(
+		((double)in_lum.max/in_lum.ref) * ((double)out_lum.ref/out_lum.max)
+	);
+	if (close_enough_for_color(conv->lum_scale, 1.0)) {
+		conv->lum_scale = 1.0;
+	} else {
 		conv->steps |= color_step_linear;
 	}
 }

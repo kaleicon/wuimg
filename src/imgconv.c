@@ -140,28 +140,37 @@ static float eotf(float v, const struct color_transfer *t) {
 }
 
 static void convert_alpha(float *row, const size_t w, const uint8_t ch,
-const enum alpha_interpretation alpha) {
+const enum alpha_interpretation alpha, const float lum) {
 	const uint8_t a = ch - 1;
 	for (size_t x = 0; x < w; ++x) {
 		float *pix = row + x*ch;
+		float l = lum;
 		switch (alpha) {
 		case alpha_associated:
 			if (isnormal(pix[a])) {
-				for (uint8_t z = 0; z < a; ++z) {
-					pix[z] /= pix[a];
-				}
+				l /= pix[a];
 			}
 			break;
 		case alpha_unassociated:
 			break;
 		case alpha_key:
-			for (uint8_t z = 0; z < a; ++z) {
-				pix[z] *= pix[a];
-			}
+			l *= pix[a];
 			// fallthrough
 		case alpha_ignore:
 			pix[a] = 1;
 			break;
+		}
+		for (uint8_t z = 0; z < a; ++z) {
+			pix[z] *= l;
+		}
+	}
+}
+
+static void luminance_scale(float *row, const size_t w,
+const uint8_t channels, const float lum) {
+	if (lum != 1.0) {
+		for (size_t i = 0; i < w*channels; ++i) {
+			row[i] *= lum;
 		}
 	}
 }
@@ -197,7 +206,9 @@ const enum alpha_interpretation alpha, const struct imgconv *state) {
 		}
 	}
 	if (has_alpha) {
-		convert_alpha(row, w, channels, alpha);
+		convert_alpha(row, w, channels, alpha, cc->lum_scale);
+	} else {
+		luminance_scale(row, w, channels, cc->lum_scale);
 	}
 	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {
@@ -247,7 +258,9 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 		}
 	}
 	if (has_alpha) {
-		convert_alpha(row, w, channels, alpha);
+		convert_alpha(row, w, channels, alpha, cc->lum_scale);
+	} else {
+		luminance_scale(row, w, channels, cc->lum_scale);
 	}
 	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {

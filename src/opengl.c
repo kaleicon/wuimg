@@ -285,12 +285,6 @@ const struct wu_state *state) {
 	}
 }
 
-static float get_lum_scale(const struct color_space_luminance lum) {
-	const float max = fmaxf(lum.max, 1.0);
-	const float ref = lum.ref ? lum.ref : max;
-	return ref/max;
-}
-
 static void uni_tf(const GLint fn, const GLint args,
 const struct color_transfer *tf) {
 	glUniform1i(fn, tf->fn);
@@ -338,13 +332,14 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 		conv.linear.m);
 
 	glUniform1f(uni[gl_uni_INVERT], conv.eotf.invert_input);
-	glUniform1f(uni[gl_uni_LUM_SCALE], get_lum_scale(context->tgt.lum));
+	glUniform1f(uni[gl_uni_LUM_SCALE], conv.lum_scale);
 	return conv.steps;
 }
 
 static void set_clear_color(const struct gl_context *context) {
 	const uint8_t *bg = context->bg;
-	const float scale = get_lum_scale(context->tgt.lum);
+	const struct color_space_luminance lum = color_space_get_luminance(&context->tgt);
+	const float scale = (float)lum.ref/lum.max;
 	const float to_float = 1.0f / UCHAR_MAX;
 	const float alpha = (float)bg[3] * to_float;
 	const float a_s = alpha * scale;
