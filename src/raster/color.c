@@ -636,7 +636,7 @@ const struct color_primaries *fallback) {
 		.b = {.131, .046},
 	};
 	static const struct color_primaries st_428 = {
-		.w = {1/3, 1/3},
+		.w = {1.0/3, 1.0/3},
 		.r = {1, 0},
 		.g = {0, 1},
 		.b = {0, 0},
