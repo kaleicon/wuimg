@@ -1134,14 +1134,10 @@ const bool gray, const bool maybe_yuv, const double scale) {
 
 	const struct color_space_luminance in_lum = color_space_get_luminance(cs);
 	const struct color_space_luminance out_lum = color_space_get_luminance(tgt);
-	conv->lum_scale = (float)(
-		((double)in_lum.max/in_lum.ref) * ((double)out_lum.ref/out_lum.max)
-	);
-	if (close_enough_for_color(conv->lum_scale, 1.0)) {
-		conv->lum_scale = 1.0;
-	} else {
-		conv->steps |= color_step_linear;
-	}
+	conv->in_lum = (float)in_lum.max/in_lum.ref;
+	conv->out_lum_inv = (float)out_lum.ref/out_lum.max;
+	conv->steps |= conv->in_lum == 1.0 && conv->out_lum_inv == 1.0
+		? 0 : color_step_linear;
 }
 
 void color_space_to_sRGB(const struct color_space *cs,

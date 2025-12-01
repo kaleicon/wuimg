@@ -205,10 +205,11 @@ const enum alpha_interpretation alpha, const struct imgconv *state) {
 			*pix = eotf(*pix, &cc->eotf);
 		}
 	}
+	const float lum_scale = cc->in_lum * cc->out_lum_inv;
 	if (has_alpha) {
-		convert_alpha(row, w, channels, alpha, cc->lum_scale);
+		convert_alpha(row, w, channels, alpha, lum_scale);
 	} else {
-		luminance_scale(row, w, channels, cc->lum_scale);
+		luminance_scale(row, w, channels, lum_scale);
 	}
 	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {
@@ -257,10 +258,11 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 			matff_mul(pix, cc->linear.m, tmp, 3, 3, 1, 0);
 		}
 	}
+	const float lum_scale = cc->in_lum * cc->out_lum_inv;
 	if (has_alpha) {
-		convert_alpha(row, w, channels, alpha, cc->lum_scale);
+		convert_alpha(row, w, channels, alpha, lum_scale);
 	} else {
-		luminance_scale(row, w, channels, cc->lum_scale);
+		luminance_scale(row, w, channels, lum_scale);
 	}
 	if ((cc->steps & color_step_oetf)) {
 		for (size_t x = 0; x < w; ++x) {

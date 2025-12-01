@@ -77,7 +77,8 @@ struct color_convert {
 	struct mat3f nonlinear;
 	struct color_transfer eotf;
 	struct mat3f linear;
-	float lum_scale;
+	float in_lum;
+	float out_lum_inv;
 	struct color_transfer oetf;
 };
 

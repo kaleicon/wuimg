@@ -36,6 +36,7 @@
 #define UNI_OETF_ARGS "OETF_ARGS"
 #define UNI_POSITIONING "POSIT"
 #define UNI_LUM_SCALE "LUM_SCALE"
+#define UNI_TONEMAP_ARGS "TONEMAP_ARGS"
 #define UNI_INVERT "INVERT"
 #define UNI_COLOR_OFFSET "COLOR_OFFSET"
 #define UNI_ALPHA_MAP "ALPHA_MAP"
@@ -315,7 +316,6 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 		break;
 	}
 
-
 	struct color_convert conv;
 	color_space_walk(cs, &context->tgt, &conv, img->layout == pix_gray,
 		is_planar, scale);
@@ -331,17 +331,22 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 	glUniformMatrix3fv(uni[gl_uni_MAT_CMS], 1, GL_FALSE,
 		conv.linear.m);
 
+	float lum[2] = {conv.in_lum, conv.out_lum_inv};
+	float mw = lum[0] * lum[1];
+	mw = fminf(1.0f/(mw * mw), 1.0f);
+	glUniform1fv(uni[gl_uni_LUM_SCALE], ARRAY_LEN(lum), lum);
+	glUniform1f(uni[gl_uni_TONEMAP_ARGS], mw);
 	glUniform1f(uni[gl_uni_INVERT], conv.eotf.invert_input);
-	glUniform1f(uni[gl_uni_LUM_SCALE], conv.lum_scale);
 	return conv.steps;
 }
 
 static void set_clear_color(const struct gl_context *context) {
 	const uint8_t *bg = context->bg;
-	const struct color_space_luminance lum = color_space_get_luminance(&context->tgt);
+	const struct color_space_luminance lum =
+		color_space_get_luminance(&context->tgt);
 	const float scale = (float)lum.ref/lum.max;
 	const float to_float = 1.0f / UCHAR_MAX;
-	const float alpha = (float)bg[3] * to_float;
+	const float alpha = bg[3] * to_float;
 	const float a_s = alpha * scale;
 	const float g = (float)COLOR_SRGB_DISPLAY_GAMMA;
 	const float ig = (float)(1/COLOR_SRGB_DISPLAY_GAMMA);
@@ -1175,7 +1180,8 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 		"uniform float[5] " UNI_EOTF_ARGS ";"
 		"uniform int " UNI_OETF_FN ";"
 		"uniform float[5] " UNI_OETF_ARGS ";"
-		"uniform float " UNI_LUM_SCALE ";"
+		"uniform float[2] " UNI_LUM_SCALE ";"
+		"uniform float " UNI_TONEMAP_ARGS ";"
 		"uniform float " UNI_INVERT ";"
 		"uniform vec3 " UNI_COLOR_OFFSET ";"
 		"uniform float[2] " UNI_ALPHA_MAP ";"
@@ -1266,6 +1272,14 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 			"}"
 			"return c;"
 		"}"
+		"vec3 tone_map(vec3 color) {"
+			/* Per-channel Reinhard tone mapping with white-point.
+			 * This is equivalent to
+				c * (c/(wp*wp) + 1) / (c + 1)
+			 * Color remains unchanged if UNI_TONEMAP_ARGS is 1.0, */
+			"return color * (color *" UNI_TONEMAP_ARGS "+ vec3(1.0))"
+				"/ (color + vec3(1.0));"
+		"}"
 		"void main() {"
 			"if (" UNI_MODE_COLOR "==" COLOR_PLANAR ") {"
 				"color = vec4("
@@ -1294,7 +1308,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 				"}"
 			"}"
 			"color.a = color.a *" UNI_ALPHA_MAP "[0] +" UNI_ALPHA_MAP "[1];"
-			"float lum =" UNI_LUM_SCALE ";"
+			"float lum =" UNI_LUM_SCALE "[0];"
 			"switch (" UNI_MODE_ALPHA "[0]) {"
 			"case " ALPHA_COLOR_MULTIPLY ":"
 				"lum *= color.a;"
@@ -1306,7 +1320,13 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 				"}"
 				"break;"
 			"}"
-			"color.rgb *= vec3(lum);"
+			"if (" UNI_TONEMAP_ARGS "== 1.0) {"
+				"lum *=" UNI_LUM_SCALE "[1];"
+				"color.rgb *= vec3(lum);"
+			"} else {"
+				"color.rgb = tone_map(color.rgb * vec3(lum))"
+					"* vec3(" UNI_LUM_SCALE "[1]);"
+			"}"
 			"switch (" UNI_MODE_ALPHA "[1]) {"
 			"case " ALPHA_BG_NONE ": break;"
 			"case " ALPHA_BG_CHECKERS ":"
