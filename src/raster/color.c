@@ -1029,6 +1029,68 @@ const double scale) {
 	}
 }
 
+static bool close_enough(const double x, const double y) {
+	/* Compare with 5 decimals of precision, which is what the PNG
+	 * fixed point format allows.
+	 * For reference, the standards themselves do 4 for color primaries
+	 * and white point. Wayland color management protocol does 4 for
+	 * transfer exponents and 6 for primaries. */
+	return fabs(x - y) < 1.0/100000;
+}
+
+static bool xy_close_enough(struct color_xy xy1, struct color_xy xy2) {
+	return close_enough(xy1.x, xy2.x) && close_enough(xy1.y, xy2.y);
+}
+
+static bool primaries_close_enough(const struct color_primaries *pri1,
+const struct color_primaries *pri2) {
+	return xy_close_enough(pri1->w, pri2->w)
+		&& xy_close_enough(pri1->r, pri2->r)
+		&& xy_close_enough(pri1->g, pri2->g)
+		&& xy_close_enough(pri1->b, pri2->b);
+}
+
+static void XYZ_chromatic_adapt(struct mat3 *tgt,
+const struct color_primaries *in_pri, const struct color_primaries *out_pri) {
+	if (xy_close_enough(in_pri->w, out_pri->w)) {
+		return;
+	}
+	double in_w[3];
+	double out_w[3];
+	vec3_set_XYZ(in_w, in_pri->w);
+	vec3_set_XYZ(out_w, out_pri->w);
+
+	const struct mat3 bradford = {
+		.m = {
+			.8951, .2664, -.1614,
+			-.7502, 1.7135, .0367,
+			.0389, -.0685, 1.0296,
+		}
+	};
+	double in_cone[3];
+	double out_cone[3];
+	mat_mul(in_cone, bradford.m, in_w, 3, 3, 1);
+	mat_mul(out_cone, bradford.m, out_w, 3, 3, 1);
+
+	struct mat3 cone;
+	for (int y = 0; y < 3; ++y) {
+		for (int x = 0; x < 3; ++x) {
+			cone.m[y*3+x] = y == x ? out_cone[x]/in_cone[x] : 0;
+		}
+	}
+
+	struct mat3 bradford_inv;
+	mat3_invert(&bradford_inv, &bradford);
+
+	struct mat3 tmp;
+	mat_mul(tmp.m, tgt->m, bradford_inv.m, 3, 3, 3);
+
+	struct mat3 tmp2;
+	mat_mul(tmp2.m, tmp.m, cone.m, 3, 3, 3);
+
+	mat_mul(tgt->m, tmp2.m, bradford.m, 3, 3, 3);
+}
+
 static void rgb_to_XYZ(struct mat3 *out, const struct color_primaries *pri) {
 	mat3_set_XYZ(out, pri);
 
@@ -1065,7 +1127,7 @@ static void LMS_to_bt2020_rgb(struct mat3 *out) {
 	mat3_invert(out, &lms);
 }
 
-static bool visits_linear_rgb(const enum cicp_matrix matrix) {
+static bool stays_in_rgb(const enum cicp_matrix matrix) {
 	switch (matrix) {
 	case cicp_matrix_smpte_st_2085:
 	case cicp_matrix_bt2100_2_ictcp:
@@ -1075,24 +1137,37 @@ static bool visits_linear_rgb(const enum cicp_matrix matrix) {
 	return true;
 }
 
-static bool close_enough_for_color(const double x, const double y) {
-	/* Compare with 5 decimals of precision, which is what the PNG
-	 * fixed point format allows.
-	 * For reference, the standards themselves do 4 for color primaries
-	 * and white point. Wayland color management protocol does 4 for
-	 * transfer exponents and 6 for primaries. */
-	return fabs(x - y) < 1.0/100000;
-}
-
-static bool primaries_close_enough(const struct color_primaries *pri1,
-const struct color_primaries *pri2) {
-	const double *p = (double *)pri1;
-	const double *s = (double *)pri2;
-	bool close = true;
-	for (size_t i = 0; close && i < sizeof(*pri1) / sizeof(*p); ++i) {
-		close = close_enough_for_color(p[i], s[i]);
+static bool space_transform(const struct color_space *restrict cs,
+const struct color_space *restrict tgt, struct color_convert *conv) {
+	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
+	const struct color_primaries *tgtpri = get_primaries(tgt, &SRGB_PRIMARIES);
+	if (stays_in_rgb(cs->matrix) && primaries_close_enough(pri, tgtpri)) {
+		matf_identity(conv->linear.m, 3, 3);
+		return false;
 	}
-	return close;
+
+	struct mat3 out;
+	XYZ_to_rgb(&out, tgtpri);
+	if (cs->matrix == cicp_matrix_smpte_st_2085) {
+		float_from_double(conv->linear.m, out.m,
+			ARRAY_LEN(conv->linear.m));
+	} else {
+		struct mat3 in;
+		rgb_to_XYZ(&in, pri);
+		if (cs->matrix == cicp_matrix_bt2100_2_ictcp) {
+			// FIXME: redo
+			struct mat3 to_rgb, tmp;
+			LMS_to_bt2020_rgb(&to_rgb);
+			mat_mul(tmp.m, to_rgb.m, in.m, 3, 3, 3);
+			mat_mul_tofloat(conv->linear.m, tmp.m, out.m,
+				3, 3, 3);
+		} else {
+			XYZ_chromatic_adapt(&in, pri, tgtpri);
+			mat_mul_tofloat(conv->linear.m, out.m, in.m,
+				3, 3, 3);
+		}
+	}
+	return true;
 }
 
 static bool is_transfer_identity(const struct color_transfer *tf) {
@@ -1115,33 +1190,7 @@ const bool gray, const bool maybe_yuv, const double scale) {
 	conv->steps |= is_transfer_identity(&conv->oetf) ? 0 : color_step_oetf;
 	conv->eotf.invert_input = cs->invert;
 
-	const struct color_primaries *pri = get_primaries(cs, &SRGB_PRIMARIES);
-	const struct color_primaries *tgtpri = get_primaries(tgt, &SRGB_PRIMARIES);
-	if (visits_linear_rgb(cs->matrix) && primaries_close_enough(pri, tgtpri)) {
-		matf_identity(conv->linear.m, 3, 3);
-	} else {
-		struct mat3 out;
-		XYZ_to_rgb(&out, tgtpri);
-		if (cs->matrix == cicp_matrix_smpte_st_2085) {
-			float_from_double(conv->linear.m, out.m,
-				ARRAY_LEN(conv->linear.m));
-		} else {
-			struct mat3 in;
-			rgb_to_XYZ(&in, pri);
-			if (cs->matrix == cicp_matrix_bt2100_2_ictcp) {
-				// TODO: redo
-				struct mat3 to_rgb, tmp;
-				LMS_to_bt2020_rgb(&to_rgb);
-				mat_mul(tmp.m, to_rgb.m, in.m, 3, 3, 3);
-				mat_mul_tofloat(conv->linear.m, tmp.m, out.m,
-					3, 3, 3);
-			} else {
-				mat_mul_tofloat(conv->linear.m, out.m, in.m,
-					3, 3, 3);
-			}
-		}
-		conv->steps |= color_step_linear;
-	}
+	conv->steps |= space_transform(cs, tgt, conv) ? color_step_linear : 0;
 
 	const struct color_space_luminance in_lum = color_space_get_luminance(cs);
 	const struct color_space_luminance out_lum = color_space_get_luminance(tgt);
@@ -1194,7 +1243,7 @@ bool color_space_is_sRGB(const struct color_space *cs) {
 			transfer_ok = true;
 		}
 	} else {
-		transfer_ok = close_enough_for_color(
+		transfer_ok = close_enough(
 			get_gamma_or_fallback(cs, COLOR_SRGB_DISPLAY_GAMMA),
 			COLOR_SRGB_DISPLAY_GAMMA);
 	}
