@@ -1304,7 +1304,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 			"} else {"
 				"color.rgb = eotf(color.rgb);"
 				"if (" UNI_MODE_CMS "==" CMS_SPACEWALK ") {"
-					"color.rgb *=" UNI_MAT_CMS ";"
+					"color.rgb =" UNI_MAT_CMS "* color.rgb;"
 				"}"
 			"}"
 			"color.a = color.a *" UNI_ALPHA_MAP "[0] +" UNI_ALPHA_MAP "[1];"

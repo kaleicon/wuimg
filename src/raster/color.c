@@ -879,15 +879,25 @@ const size_t stride) {
 	vec[stride*2] = primary_z(xy);
 }
 
-static void mat3_set_primaries(struct mat3 *out,
-const struct color_primaries *p) {
-	set_primaries_stride(out->m, p->r, 3);
-	set_primaries_stride(out->m+1, p->g, 3);
-	set_primaries_stride(out->m+2, p->b, 3);
+static void set_XYZ_stride(double *vec, const struct color_xy xy,
+const size_t stride) {
+	vec[0] = xy.x / xy.y;
+	vec[stride] = 1.0;
+	vec[stride*2] = primary_z(xy) / xy.y;
 }
 
 static void vec3_set_primaries(double vec[static 3], const struct color_xy xy) {
 	set_primaries_stride(vec, xy, 1);
+}
+
+static void vec3_set_XYZ(double vec[static 3], const struct color_xy xy) {
+	set_XYZ_stride(vec, xy, 1);
+}
+
+static void mat3_set_XYZ(struct mat3 *out, const struct color_primaries *p) {
+	set_XYZ_stride(out->m, p->r, 1);
+	set_XYZ_stride(out->m+3, p->g, 1);
+	set_XYZ_stride(out->m+6, p->b, 1);
 }
 
 static bool kb_kr_from_chroma(double *restrict kb, double *restrict kr,
@@ -1020,13 +1030,13 @@ const double scale) {
 }
 
 static void rgb_to_XYZ(struct mat3 *out, const struct color_primaries *pri) {
-	mat3_set_primaries(out, pri);
+	mat3_set_XYZ(out, pri);
 
 	struct mat3 inv;
 	mat3_invert(&inv, out);
 
 	double white_point[3];
-	vec3_set_primaries(white_point, pri->w);
+	vec3_set_XYZ(white_point, pri->w);
 
 	double scale[3];
 	vec_mul_mat(scale, white_point, inv.m, 3, 3);
@@ -1119,13 +1129,14 @@ const bool gray, const bool maybe_yuv, const double scale) {
 			struct mat3 in;
 			rgb_to_XYZ(&in, pri);
 			if (cs->matrix == cicp_matrix_bt2100_2_ictcp) {
+				// TODO: redo
 				struct mat3 to_rgb, tmp;
 				LMS_to_bt2020_rgb(&to_rgb);
 				mat_mul(tmp.m, to_rgb.m, in.m, 3, 3, 3);
 				mat_mul_tofloat(conv->linear.m, tmp.m, out.m,
 					3, 3, 3);
 			} else {
-				mat_mul_tofloat(conv->linear.m, in.m, out.m,
+				mat_mul_tofloat(conv->linear.m, out.m, in.m,
 					3, 3, 3);
 			}
 		}

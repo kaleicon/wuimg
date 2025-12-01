@@ -255,7 +255,7 @@ enum alpha_interpretation alpha, const struct imgconv *state) {
 			for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
 				tmp[z] = eotf(pix[z], &cc->eotf);
 			}
-			matff_mul(pix, cc->linear.m, tmp, 3, 3, 1, 0);
+			matff_mul(pix, tmp, cc->linear.m, 3, 1, 3, 0);
 		}
 	}
 	const float lum_scale = cc->in_lum * cc->out_lum_inv;
