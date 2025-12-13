@@ -253,6 +253,7 @@ const bool interpret_stdin, const struct wuptr *raw) {
 			} else {
 				free_entry = true;
 			}
+			name = NULL;
 		} else {
 			wudec_src_filename(image, name);
 		}
@@ -266,7 +267,7 @@ const bool interpret_stdin, const struct wuptr *raw) {
 			if (result != wu_ok) {
 				free_entry = true;
 			} else if (event->rm == rm_yes) {
-				unlink(image->name);
+				unlink(name);
 				puts("File deleted.");
 				free_entry = true;
 			}
