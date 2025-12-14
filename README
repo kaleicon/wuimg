@@ -96,10 +96,11 @@ For window backends you need:
 
 For image decoding:
 * libavif
-* libflif
+* libflif (abandoned by upstream, enable at your own peril)
 * libgif
 * libheif
 * libjbig
+* libjbig2dec
 * libjpeg
 * libopenjp2 (JPEG2000)
 * libcharls (JPEG-LS)
