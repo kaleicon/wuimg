@@ -16,6 +16,7 @@ external_map = {
 	'raw': [],
 	'tiff': [],
 
+	'icc': ['lcms2'],
 	'jbig2': ['jbig2dec'],
 	'jpeg2000': ['libopenjp2'],
 	'jpegls': ['charls'],

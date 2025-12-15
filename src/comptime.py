@@ -11,6 +11,8 @@ EXT_LIMIT = 6
 MAGIC_LIMIT = 0xff
 NAME_LIMIT = 8
 
+ALWAYS_ENABLED = set(("auto",))
+
 # Various RAW camera formats are actually TIFF with extra data, and can only be
 # distinguished by their extension. Still, they may contain a thumbnail that
 # libtiff can handle, so we define these for both formats.
@@ -277,6 +279,11 @@ DEC_MAP: DecMap = {
 				b"\x00\x18\x00\x0e\x00",
 			),
 			size=(0x1c00, 0x1880, 0x180b, 0x180a)
+		),
+	},
+	"icc": {
+		"icc": FmtInfo("ICC color palette",
+			match="icc"
 		),
 	},
 
@@ -1963,7 +1970,7 @@ def gen_desktop_file(fmt_map: Iterable[FmtDesc], desktop_file: str, archive_file
 
 def print_names(map_keys: Iterable[str]) -> int:
 	foreach(print, sorted(set(chain.from_iterable(
-		map(lambda s: s.split('|'), filter(lambda s: s != 'auto', map_keys))
+		map(lambda s: s.split('|'), filter(lambda s: s not in ALWAYS_ENABLED, map_keys))
 	))))
 	return 0
 
@@ -1995,7 +2002,7 @@ if __name__ == '__main__':
 	if sys.argv[i] == '-all':
 		i += 1
 	else:
-		enabled = enabled_formats() | set(("auto",))
+		enabled = enabled_formats() | ALWAYS_ENABLED
 
 	# Filter and flatten the decoder map to get a format list.
 	# After sorting, the position within the list will be the format id.
