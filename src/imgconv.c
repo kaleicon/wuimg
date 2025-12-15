@@ -409,25 +409,24 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	c = (ptrdiff_t)floorf(spos((float)c, &pc)) * cstride;
 	const ptrdiff_t loc = c + (c < 0) * cstride;
 	const ptrdiff_t hic = c + (c < dc) * cstride;
+	const uint8_t *ptr_lo = p->ptr + loc;
+	const uint8_t *ptr_hi = p->ptr + hic;
 
 	const ptrdiff_t limv = vadd >= 0 ? dv : 0;
 	const ptrdiff_t vdiff = vadd * vstride;
-	ptrdiff_t vv = v + vdiff;
 
-	const uint8_t *ptr = p->ptr;
 	float g[2];
 	const bool up = vadd >= 0;
 	g[up] = fm_mix(
-		get_ch(ptr + loc + vv, 0, usize),
-		get_ch(ptr + hic + vv, 0, usize),
+		get_ch(ptr_lo + v + vdiff, 0, usize),
+		get_ch(ptr_hi + v + vdiff, 0, usize),
 		mc);
 	while (pix < limit) {
 		v += (v != limv)*vdiff;
-		vv = v;
 		g[!up] = g[up];
 		g[up] = fm_mix(
-			get_ch(ptr + loc + vv, 0, usize),
-			get_ch(ptr + hic + vv, 0, usize),
+			get_ch(ptr_lo + v, 0, usize),
+			get_ch(ptr_hi + v, 0, usize),
 			mc);
 		do {
 			float mv = fm_fractf(spos(fv, &pv));
