@@ -7,9 +7,11 @@
 
 #include "misc/math.h"
 #include "misc/term.h"
+#include "misc/utf8.h"
+#include "misc/wustr.h"
 
 void term_print_escaped(const unsigned char *restrict data, size_t len,
-const bool is_utf8, FILE *stream) {
+const bool is_utf8, FILE *out) {
 	const unsigned char hex[16] = "0123456789ABCDEF";
 	const unsigned char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
 	const unsigned char RESET[] = {0x1b, '[', 'm'};
@@ -21,26 +23,43 @@ const bool is_utf8, FILE *stream) {
 		if (isprint(c) || c == '\n' || c == '\t' || (!isascii(c) && is_utf8)
 		|| (c == '\r' && i + 1 < len && data[i+1] == '\n')) {
 			if (escaping) {
-				fwrite(RESET, 1, sizeof(RESET), stream);
+				fwrite(RESET, 1, sizeof(RESET), out);
 				region_start = i;
 				escaping = false;
 			}
 		} else {
 			if (!escaping) {
 				fwrite(data + region_start, 1, i - region_start,
-					stream);
-				fwrite(HIGHLIGHT, 1, sizeof(HIGHLIGHT), stream);
+					out);
+				fwrite(HIGHLIGHT, 1, sizeof(HIGHLIGHT), out);
 				escaping = true;
 			}
 			unsigned char byte[] = {'x', hex[c >> 4], hex[c & 0x0f]};
-			fwrite(byte, 1, sizeof(byte), stream);
+			fwrite(byte, 1, sizeof(byte), out);
 		}
 	}
 	if (escaping) {
-		fwrite(RESET, 1, sizeof(RESET), stream);
+		fwrite(RESET, 1, sizeof(RESET), out);
 	} else {
-		fwrite(data + region_start, 1, len - region_start, stream);
+		fwrite(data + region_start, 1, len - region_start, out);
 	}
+}
+
+void term_print_convert(const char *text, FILE *out) {
+	bool is_utf8 = false;
+	size_t len = strlen(text);
+	struct wustr conv;
+	switch (utf8_convert(text, len, &conv, NULL)) {
+	case trit_false: is_utf8 = true; break;
+	case trit_true:
+		is_utf8 = true;
+		text = (const char *)conv.str;
+		len = conv.len;
+		break;
+	case trit_what: break;
+	}
+	term_print_escaped((const unsigned char *)text, len, is_utf8, out);
+	wustr_free(&conv);
 }
 
 static uint8_t char_run(struct term_queue *t, uint8_t i, uint8_t start,

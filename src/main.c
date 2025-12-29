@@ -74,7 +74,10 @@ static int lsign(const long i) {
 }
 
 static void pos_print(const size_t i, const struct file_list *entries) {
-	printf("%zu/%zu, %s\n", i+1, entries->nr, entries->name[i]);
+	FILE *out = stdout;
+	fprintf(out, "%zu/%zu, ", i+1, entries->nr);
+	term_print_convert(entries->name[i], out);
+	fputc('\n', out);
 }
 
 static void conv_get_row(void *state, size_t y, void *restrict tgt) {
@@ -110,11 +113,12 @@ const struct write_args *args) {
 
 static enum wu_error test_with(const struct file_list *entries,
 struct test_mode_args args) {
+	FILE *out = stdout;
 	if (args.metadata) {
 		args.warmup = 1;
 		args.iters = 0;
 	} else {
-		fprintf(stdout,
+		fprintf(out,
 			"Testing %u times with %u extra runs for warmup.\n\n",
 			args.iters, args.warmup);
 	}
@@ -141,9 +145,10 @@ struct test_mode_args args) {
 			if (result == wu_no_change) {
 				result = wu_ok;
 				if (args.metadata) {
-					fprintf(stdout, "File: %s\n", image.name);
-					image_file_print(&image.file, stdout, 3, true);
-					fputc('\n', stdout);
+					fputs("File: ", out);
+					term_print_convert(image.name, out);
+					image_file_print(&image.file, out, 3, true);
+					fputc('\n', out);
 				} else {
 					taken += watch_elapsed(watch) * (j >= args.warmup);
 				}
@@ -154,29 +159,45 @@ struct test_mode_args args) {
 		if (result == wu_ok) {
 			if (args.iters) {
 				grand_total += taken;
-				fprintf(stdout, "Average: %" PRIu64 " %s\n",
-					taken / args.iters, entries->name[i]);
+				fprintf(out, "Average: %" PRIu64 " ",
+					taken / args.iters);
+				term_print_convert(entries->name[i], out);
+				fputc('\n', out);
 			}
 		} else {
-			fprintf(stdout, "Error in %s: %s\n", entries->name[i],
-				wu_error_str(result));
+			fputs("Error in ", out);
+			term_print_convert(entries->name[i], out);
+			fprintf(out, ": %s\n", wu_error_str(result));
 			++failures;
 		}
 	}
-	putchar('\n');
 
+	fputc('\n', out);
 	if (entries->nr * args.iters > 1) {
-		fprintf(stdout, "Total: %" PRIu64 "\n", grand_total);
+		fprintf(out, "Total: %" PRIu64 "\n", grand_total);
 	}
-	fprintf(stdout, "%zu successful, %zu failed\n", entries->nr - failures,
+	fprintf(out, "%zu successful, %zu failed\n", entries->nr - failures,
 		failures);
 	return result;
+}
+
+static void pos_print_archive(long idx, const struct extract_iter *iter,
+const char *archive_name) {
+	FILE *out = stdout;
+	fprintf(out, "%ld/%ld%s, ", idx + 1, iter->total,
+		iter->seen_it_all ? "" : "?");
+	term_print_convert(archive_name, out);
+	fputc('/', out);
+	term_print_convert(iter->name, out);
+	fputc('\n', out);
 }
 
 static enum wu_error run_with_archive(const char *archive_name) {
 	struct extract_iter iter;
 	if (!extract_init(&iter, archive_name)) {
-		fprintf(stderr, "Failed to open %s\n", archive_name);
+		fputs("Failed to open ", stderr);
+		term_print_convert(archive_name, stderr);
+		fputc('\n', stderr);
 		return wu_open_error;
 	}
 
@@ -198,8 +219,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		const int direction = lsign(event->cycle);
 		idx = lmod(iter.idx, iter.total);
 
-		printf("%ld/%ld%s, %s/%s\n", idx + 1, iter.total,
-			iter.seen_it_all ? "" : "?", archive_name, iter.name);
+		pos_print_archive(idx, &iter, archive_name);
 
 		wudec_src_file(image, iter.cur, iter.name, true, true);
 		result = display_loop(&window, true, false);
@@ -327,9 +347,10 @@ static enum wu_error from_path(const char *name) {
 		if (errno) {
 			perror("Error while filtering images");
 		} else {
-			fprintf(stderr, "ERROR: %s is neither a valid file or "
-				"directory with identifiable images.\n",
-				name[0] ? name : ".");
+			fputs("ERROR: ", stderr);
+			term_print_convert(name[0] ? name : ".", stderr);
+			fputs(" is neither a valid file or directory with"
+				"identifiable images.\n", stderr);
 		}
 		result = wu_open_error;
 	}

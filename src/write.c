@@ -229,8 +229,13 @@ static void free_write_file(struct write_file *out) {
 }
 
 static void print_write_file(const struct write_file *out, FILE *ofp) {
-	wustr_print(&out->parent, ofp);
-	wustr_print(&out->file, ofp);
+	if (isatty(fileno(ofp))) {
+		term_print_convert((const char *)out->parent.str, ofp);
+		term_print_convert((const char *)out->file.str, ofp);
+	} else {
+		wustr_print(&out->parent, ofp);
+		wustr_print(&out->file, ofp);
+	}
 }
 
 static void print_write_error(const struct write_file *out, const char *msg,

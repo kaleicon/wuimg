@@ -26,6 +26,7 @@ const size_t len, struct wustr *out, UErrorCode *err) {
 
 enum trit utf8_convert(const char *restrict data, const size_t len,
 struct wustr *out, const char *restrict enc) {
+	*out = (struct wustr) {0};
 	if (!len) {
 		return trit_false;
 	}

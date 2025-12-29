@@ -20,7 +20,9 @@ struct term_queue {
 };
 
 void term_print_escaped(const unsigned char *restrict data, size_t len,
-bool is_utf8, FILE *stream);
+bool is_utf8, FILE *out);
+
+void term_print_convert(const char *text, FILE *out);
 
 unsigned char term_queue_next(struct term_queue *t);
 

@@ -2,8 +2,10 @@
 // SPDX-FileCopyrightText: 2019 kaleido
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "misc/term.h"
+#include "misc/utf8.h"
 #include "window.h"
 
 static volatile sig_atomic_t sig_should_close = 0;
@@ -45,7 +47,15 @@ void window_adapt(struct window_context *window) {
 }
 
 void window_set_title(struct window_context *window, const char *title) {
-	window->pub.win.fn.title(&window->ctx, title);
+	const char *put = "";
+	struct wustr conv;
+	switch (utf8_convert(title, strlen(title), &conv, NULL)) {
+	case trit_false: put = title; break;
+	case trit_true: put = (const char *)conv.str; break;
+	case trit_what: break;
+	}
+	window->pub.win.fn.title(&window->ctx, put);
+	wustr_free(&conv);
 }
 
 void window_postgl_setup(struct window_context *window) {
