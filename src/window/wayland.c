@@ -233,6 +233,9 @@ const enum wp_color_manager_v1_transfer_function tf) {
 		return cicp_transfer_iec_61966_2_4;
 	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_SRGB:
 	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_SRGB:
+#ifdef WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_COMPOUND_POWER_2_4_SINCE_VERSION
+	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_COMPOUND_POWER_2_4:
+#endif
 		return cicp_transfer_iec_61966_2_1;
 	case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ:
 		return cicp_transfer_smpte_st_2084;
@@ -331,9 +334,20 @@ uint32_t id) {
 	wp_image_description_v1_destroy(desc);
 }
 
+#ifdef WP_IMAGE_DESCRIPTION_V1_READY2_SINCE_VERSION
+static void image_desc_ready2(void *data, struct wp_image_description_v1 *desc,
+uint32_t hi_id, uint32_t lo_id) {
+	(void)hi_id;
+	image_desc_ready(data, desc, lo_id);
+}
+#endif
+
 static const struct wp_image_description_v1_listener listen_image_desc = {
 	.failed = image_desc_failed,
 	.ready = image_desc_ready,
+#ifdef WP_IMAGE_DESCRIPTION_V1_READY2_SINCE_VERSION
+	.ready2 = image_desc_ready2,
+#endif
 };
 
 static void color_preferred(void *data,
@@ -355,6 +369,15 @@ struct wp_color_management_surface_feedback_v1 *feedback, uint32_t id) {
 			feedback);
 	wp_image_description_v1_add_listener(desc, &listen_image_desc, wl);
 }
+
+#ifdef WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_PREFERRED_CHANGED2_SINCE_VERSION
+static void color_preferred2(void *data,
+struct wp_color_management_surface_feedback_v1 *feedback,
+uint32_t hi_id, uint32_t lo_id) {
+	(void)hi_id;
+	color_preferred(data, feedback, lo_id);
+}
+#endif
 
 static bool test_mod(struct xkb_state *state, const char *name) {
 	return (1 == xkb_state_mod_name_is_active(state, name,
@@ -819,6 +842,9 @@ static const struct xdg_toplevel_listener listen_toplevel = {
 };
 static const struct wp_color_management_surface_feedback_v1_listener listen_color_feedback = {
 	.preferred_changed = color_preferred,
+#ifdef WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_PREFERRED_CHANGED2_SINCE_VERSION
+	.preferred_changed2 = color_preferred2,
+#endif
 };
 static const struct zxdg_toplevel_decoration_v1_listener listen_toplevel_decoration = {
 	.configure = null_function,
