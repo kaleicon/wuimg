@@ -245,7 +245,8 @@ const struct wu_conf *wuconf) {
 	if (rs->thumb_type == raw_thumb_jpeg) {
 		wudec_src_mem(&rs->jpeg,
 			wuptr_mem(data->thumbnail.thumb, data->thumbnail.tlength),
-			NULL, &jpeg_fn);
+			NULL);
+		wudec_src_format(&rs->jpeg, &jpeg_fn);
 		rs->jpeg.conf = *wuconf;
 	}
 #endif

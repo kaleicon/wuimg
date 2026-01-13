@@ -643,7 +643,7 @@ struct wuimg *img) {
 	return validate_common(desc, img, endian16l(buf[2]), 0, 0, 0);
 }
 
-static struct wu_st parse_header(struct dib_desc *desc,
+static struct wu_st dib_parse_header_inner(struct dib_desc *desc,
 struct wuimg *img) {
 	/* Common DIB header:
 		Offset  Size    Name
@@ -744,7 +744,7 @@ struct wuimg *img) {
 
 struct wu_st dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
 	if (!desc->bmp_header) {
-		return parse_header(desc, img);
+		return dib_parse_header_inner(desc, img);
 	}
 
 	/* Minimum non-type-1 BMP header (after magic bytes)
@@ -764,7 +764,7 @@ struct wu_st dib_parse_header(struct dib_desc *desc, struct wuimg *img) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	const struct wu_st status = parse_header(desc, img);
+	const struct wu_st status = dib_parse_header_inner(desc, img);
 	if (wu_isok(status)) {
 		const long bitmap_offset = endian32l(buf[2]);
 		fseek(desc->ifp, bitmap_offset, SEEK_SET);
@@ -810,6 +810,7 @@ const char * ico_type_str(enum ico_type type) {
 
 void ico_cleanup(struct ico_desc *desc) {
 	free(desc->images);
+	palette_unref(desc->pal);
 }
 
 struct ico_buf {
@@ -950,6 +951,21 @@ struct wu_st ico_decode(struct ico_desc *desc, struct wuimg *img) {
 	return ico_palette_dec(dib, img, desc->pal);
 }
 
+static struct wu_st ico_parse_entry(struct ico_desc *desc, struct dib_desc *dib,
+struct wuimg *img) {
+	uint8_t buf[8];
+	if (!fread(buf, sizeof(buf), 1, dib->ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	fseek(dib->ifp, -(long)sizeof(buf), SEEK_CUR);
+
+	const uint8_t png[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+	desc->is_png = !memcmp(buf, png, sizeof(png));
+	return desc->is_png
+		? WU_OK
+		: dib_parse_header_inner(dib, img);
+}
+
 struct wu_st ico_set_image(struct ico_desc *desc, struct wuimg *img,
 const uint16_t i) {
 	/* ICO image components:
@@ -966,10 +982,13 @@ const uint16_t i) {
 	struct dib_desc *dib = &desc->dib;
 	fseek(dib->ifp, desc->images[i].offset, SEEK_SET);
 	dib->is_os2 = trit_false;
-	// dib_parse_header() will drop us at the start of the XOR bitmap.
-	struct wu_st status = dib_parse_header(dib, img);
+	/* This will drop us at the start of the XOR bitmap if it's a DIB, or
+	 * at the start of the PNG header. */
+	struct wu_st status = ico_parse_entry(desc, dib, img);
 	if (!wu_isok(status)) {
 		return status;
+	} else if (desc->is_png) {
+		return WU_OK;
 	}
 
 	// For bizarre reasons the XOR and AND bitmaps are counted together.

@@ -121,6 +121,7 @@ struct ico_desc {
 	struct palette *pal;
 	uint16_t count;
 	enum ico_type type:16;
+	bool is_png;
 };
 
 const char * ico_type_str(enum ico_type);

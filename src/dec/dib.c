@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
+#include <string.h>
+
 #include "lib/dib.h"
 #include "wudefs.h"
+
+#include "dec_enable.def"
+#include "dec.h"
+#include "dec_fn.h"
 
 static struct wu_st common_dib(struct image_file *infile,
 const struct wu_conf *conf, struct dib_desc *desc) {
@@ -71,15 +77,46 @@ static void end_ico(struct image_file *infile) {
 
 static struct wu_st event_ico(struct image_file *infile,
 const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
-	(void)wuconf;
 	const uint16_t idx = (uint16_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
+	struct wu_st st = WU_NO_CHANGE;
+	struct ico_desc *desc = infile->dec_state;
 	switch (ev) {
-	case ev_subcycle: return ico_decode(infile->dec_state, img);
-	case ev_metadata: return ico_set_image(infile->dec_state, img, idx);
+	case ev_subcycle:
+		if (desc->is_png) {
+#ifdef WU_ENABLE_PNG
+			struct wudec_image ctx = {.conf = *wuconf};
+			wudec_src_file(&ctx, infile->ifp, NULL, true, false);
+			wudec_src_format(&ctx, &png_fn);
+			st = wudec_decode_embedded(infile, img, &ctx);
+			wudec_free(&ctx);
+#endif // WU_ENABLE_PNG
+		} else {
+			enum wu_error e = wuimg_alloc_limit(img, wuconf);
+			st = (e == wu_ok)
+				? ico_decode(desc, img)
+				: WUERR_HERE(e);
+		}
+		break;
+	case ev_metadata:
+		st = ico_set_image(desc, img, idx);
+		struct wutree *meta = wuimg_get_metadata(img);
+		if (meta) {
+			tree_add_leaf_utf8(meta, "Storage",
+				desc->is_png ? "PNG" : "DIB");
+		}
+		if (desc->is_png) {
+#ifdef WU_ENABLE_PNG
+			st = WU_NO_CHANGE;
+#else
+			st = wuerr(wu_unsupported_feature, "sub-image is a PNG"
+				" file but PNG support was not compiled-in");
+#endif // WU_ENABLE_PNG
+		}
+		break;
 	default: break;
 	}
-	return WU_NO_CHANGE;
+	return st;
 }
 
 static struct wu_st init_ico(struct image_file *infile,
@@ -97,7 +134,7 @@ const struct wu_conf *wuconf) {
 
 const struct image_fn ico_fn = {
 	.state_size = sizeof(struct ico_desc),
-	.alloc_on_subcycle = true,
+	.alloc_on_subcycle = false,
 	.init = init_ico,
 	.event = event_ico,
 	.end = end_ico,

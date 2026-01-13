@@ -31,13 +31,14 @@ int main(int argc, char **argv) {
 	unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 	while (__AFL_LOOP(1 << 15)) {
 		const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
-		wudec_src_mem(&image, wuptr_mem(buf, (size_t)len), NULL, fn);
+		wudec_src_mem(&image, wuptr_mem(buf, (size_t)len), NULL);
+		wudec_src_format(&image, fn);
 		enum wu_error err;
 		do {
 			struct wuimg *img;
 			err = wudec_iter(&image, &img);
 		} while (err == wu_ok);
-		wudec_reset(&image);
+		wudec_recycle(&image);
 	}
 	return 0;
 }

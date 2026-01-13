@@ -216,7 +216,8 @@ const struct wu_conf *conf, struct png_state *png) {
 		return WUERR_HERE(wu_decoding_error);
 	}
 
-	// We've already checked the signature for this stream
+	/* Skip signature as it may be an obfuscated file, as with MalieGF.
+	 * Use SEEK_CUR as it may be embedded inside another file. */
 	fseek(infile->ifp, 8, SEEK_CUR);
 	png_init_io(png->png, infile->ifp);
 	png_set_sig_bytes(png->png, 8);

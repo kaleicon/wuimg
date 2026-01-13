@@ -180,7 +180,10 @@ static void errno_append(struct image_file *infile, const int n) {
 static enum wu_error actually_open(struct wudec_image *image) {
 	struct image_file *infile = &image->file;
 	struct wuptr *map = &infile->map;
-	if (!infile->ifp && !map->ptr) {
+	long offset = 0;
+	if (infile->ifp) {
+		offset = ftell(infile->ifp);
+	} else if (!map->ptr) {
 		if (!image->name) {
 			fatal_bug("wudec_decode()",
 				"No data source for image_context");
@@ -216,8 +219,7 @@ static enum wu_error actually_open(struct wudec_image *image) {
 				}
 			}
 		} else {
-			rewind(infile->ifp);
-			fflush(infile->ifp); /* tmpfiles require this */
+			fseek(infile->ifp, offset, SEEK_SET);
 		}
 	} else {
 		if (image->desc.is_auto || !image->desc.dec.fn->mmap) {
@@ -327,6 +329,24 @@ struct wuimg **cur_img) {
 	return wu_no_change;
 }
 
+struct wu_st wudec_decode_embedded(struct image_file *infile,
+struct wuimg *img, struct wudec_image *src) {
+	enum wu_error err = wudec_decode(src);
+	if (err == wu_ok) {
+		struct wutree *metadata = img->metadata;
+		memcpy(img, src->file.sub_img, sizeof(*img));
+		memset(src->file.sub_img, 0, sizeof(*img));
+		img->metadata = metadata;
+	}
+	wustr_append_wustr(&infile->errors, &src->file.errors);
+	return wuerr(err, err == wu_ok ? NULL : "failed to decode embedded file");
+}
+
+
+void wudec_src_format(struct wudec_image *image, const struct image_fn *fn) {
+	image->desc.dec.fn = fn;
+}
+
 void wudec_src_auto_desc(struct wudec_image *image, const struct wuptr *desc) {
 	image->desc = (struct fmt_desc) {
 		.is_auto = true,
@@ -335,11 +355,10 @@ void wudec_src_auto_desc(struct wudec_image *image, const struct wuptr *desc) {
 }
 
 void wudec_src_mem(struct wudec_image *image, const struct wuptr data,
-const char *name, const struct image_fn *fn) {
+const char *name) {
 	image->name = name;
 	image->file.map = data;
 	image->file.keep_map = true;
-	image->desc.dec.fn = fn;
 }
 
 void wudec_src_file(struct wudec_image *image, FILE *ifp, const char *name,

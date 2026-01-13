@@ -49,13 +49,6 @@ const struct eb_sff_sub *sub) {
 	}
 }
 
-static void img_swap(struct wuimg *dst, struct wuimg *restrict src,
-struct wuimg *first, const struct eb_sff_desc *desc, const struct eb_sff_sub *sub) {
-	memcpy(dst, src, sizeof(*src));
-	memset(src, 0, sizeof(*src));
-	eb_sff_touchup(desc, sub, dst, first);
-}
-
 static enum wu_error sff_loop(struct image_file *infile,
 const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
 	struct wudec_image ctx = {.conf = *conf};
@@ -105,13 +98,17 @@ const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
 				failmsg = "png decoder not compiled";
 #endif
 				break;
-			default: failmsg = "unreachable case reached"; break;
+			default:
+				failmsg = "really screwed up SFF storage format"
+					" (unreachable case reached)";
+				break;
 			}
 			if (fn) {
-				wudec_src_mem(&ctx, sub.data, NULL, fn);
-				st = wudec_decode(&ctx);
+				wudec_src_mem(&ctx, sub.data, NULL);
+				wudec_src_format(&ctx, fn);
+				st = wudec_decode_embedded(infile, img, &ctx).st;
 				if (st == wu_ok) {
-					img_swap(img, ctx.file.sub_img, base, desc, &sub);
+					eb_sff_touchup(desc, &sub, img, base);
 					add_metadata(img, desc, &sub);
 					++o;
 				}
@@ -174,7 +171,8 @@ const struct wu_conf *conf) {
 				NULL);
 
 			struct wudec_image ctx = {.conf = *conf};
-			wudec_src_mem(&ctx, desc.pcx, NULL, &pcx_fn);
+			wudec_src_mem(&ctx, desc.pcx, NULL);
+			wudec_src_format(&ctx, &pcx_fn);
 			st = wudec_decode(&ctx);
 
 			infile->sub_img = ctx.file.sub_img;
