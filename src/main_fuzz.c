@@ -12,7 +12,6 @@ int main(int argc, char **argv) {
 		.conf = conf_default(),
 	};
 	image.conf.max_img_size = 1920;
-
 	const struct image_fn *fn = NULL;
 	if (argc > 1) {
 		const struct fmt_desc *fmt = fmtmap_by_name(argv[1]);
@@ -38,7 +37,7 @@ int main(int argc, char **argv) {
 			struct wuimg *img;
 			err = wudec_iter(&image, &img);
 		} while (err == wu_ok);
-		wudec_recycle(&image);
+		wudec_recycle_conf(&image);
 	}
 	return 0;
 }

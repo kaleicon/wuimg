@@ -341,7 +341,7 @@ const int len, char **names, const struct wu_conf *conf) {
 		}
 
 		ok += write_image(&image, args, writer);
-		wudec_recycle(&image);
+		wudec_recycle_conf(&image);
 		if (args->stdout) {
 			break;
 		}

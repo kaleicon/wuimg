@@ -80,14 +80,23 @@ void wudec_free(struct wudec_image *image) {
 	image_file_free(&image->file);
 }
 
-void wudec_recycle(struct wudec_image *image) {
+static void recycle_base(struct wudec_image *image) {
 	wudec_free(image);
 	image->name = NULL;
 	image->file = (struct image_file){0};
+	image->desc = (struct fmt_desc){0};
+}
+
+void wudec_recycle_state(struct wudec_image *image) {
+	recycle_base(image);
 	image->state.idx = 0;
 	image->state.frame = 0;
 	image->state.time = 0;
-	image->desc = (struct fmt_desc){0};
+}
+
+void wudec_recycle_conf(struct wudec_image *image) {
+	recycle_base(image);
+	image->state = (struct wu_state){0};
 }
 
 static enum wu_error call_event(struct wudec_image *image,
@@ -293,6 +302,19 @@ enum wu_error wudec_decode(struct wudec_image *image) {
 	return st;
 }
 
+struct wu_st wudec_decode_embedded(struct image_file *infile,
+struct wuimg *img, struct wudec_image *src) {
+	enum wu_error err = wudec_decode(src);
+	if (err == wu_ok) {
+		struct wutree *metadata = img->metadata;
+		memcpy(img, src->file.sub_img, sizeof(*img));
+		memset(src->file.sub_img, 0, sizeof(*img));
+		img->metadata = metadata;
+	}
+	wustr_append_wustr(&infile->errors, &src->file.errors);
+	return wuerr(err, err == wu_ok ? NULL : "failed to decode embedded file");
+}
+
 enum wu_error wudec_iter(struct wudec_image *image,
 struct wuimg **cur_img) {
 	enum wu_error err;
@@ -327,19 +349,6 @@ struct wuimg **cur_img) {
 		return err;
 	}
 	return wu_no_change;
-}
-
-struct wu_st wudec_decode_embedded(struct image_file *infile,
-struct wuimg *img, struct wudec_image *src) {
-	enum wu_error err = wudec_decode(src);
-	if (err == wu_ok) {
-		struct wutree *metadata = img->metadata;
-		memcpy(img, src->file.sub_img, sizeof(*img));
-		memset(src->file.sub_img, 0, sizeof(*img));
-		img->metadata = metadata;
-	}
-	wustr_append_wustr(&infile->errors, &src->file.errors);
-	return wuerr(err, err == wu_ok ? NULL : "failed to decode embedded file");
 }
 
 

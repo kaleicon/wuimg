@@ -51,7 +51,6 @@ const struct eb_sff_sub *sub) {
 
 static enum wu_error sff_loop(struct image_file *infile,
 const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
-	struct wudec_image ctx = {.conf = *conf};
 	enum wu_error st = wu_ok;
 	size_t o = 0;
 	for (size_t i = 0; i < infile->nr; ++i) {
@@ -104,6 +103,7 @@ const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
 				break;
 			}
 			if (fn) {
+				struct wudec_image ctx = {.conf = *conf};
 				wudec_src_mem(&ctx, sub.data, NULL);
 				wudec_src_format(&ctx, fn);
 				st = wudec_decode_embedded(infile, img, &ctx).st;
@@ -112,7 +112,7 @@ const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
 					add_metadata(img, desc, &sub);
 					++o;
 				}
-				wudec_recycle(&ctx);
+				wudec_free(&ctx);
 			} else {
 				image_file_strerror_append(infile, failmsg);
 				st = wu_unsupported_feature;

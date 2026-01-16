@@ -153,7 +153,7 @@ struct test_mode_args args) {
 					taken += watch_elapsed(watch) * (j >= args.warmup);
 				}
 			}
-			wudec_recycle(&image);
+			wudec_recycle_conf(&image);
 		}
 
 		if (result == wu_ok) {
@@ -223,7 +223,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 
 		wudec_src_file(image, iter.cur, iter.name, true, true);
 		result = display_loop(&window, true, false);
-		wudec_recycle(image);
+		wudec_recycle_state(image);
 		putchar('\n');
 		if (result == wu_ok) {
 			decoded_once = true;
@@ -283,7 +283,7 @@ const bool interpret_stdin, const struct wuptr *raw) {
 
 		if (!free_entry) {
 			result = display_loop(&window, remaining > 1, true);
-			wudec_recycle(image);
+			wudec_recycle_state(image);
 			if (result != wu_ok) {
 				free_entry = true;
 			} else if (event->rm == rm_yes) {
