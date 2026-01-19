@@ -744,6 +744,16 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"kaboom": {
+		"bmb": FmtInfo("Kaboom Studio Bitmap Block",
+			ext="bmb",
+			mask=(
+				b"\0\0\0\0" b"\xff\xff\xff\xff",
+				b"\0\0\0\0" b"IDX2"
+			)
+		),
+	},
+
 	"kyg": {
 		"kyg": FmtInfo("Kyss graphics format (KYG)",
 			ext="kyg",

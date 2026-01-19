@@ -297,6 +297,8 @@ enum wu_error wudec_decode(struct wudec_image *image) {
 						" for sub-image request");
 				}
 			}
+		} else if (infile->nr && !infile->sub_img) {
+			infile->nr = 0;
 		}
 	}
 	return st;
