@@ -401,7 +401,47 @@ const struct wuptr qdv_desc = DESC(
 	"pal:<u24>[]"
 );
 
-// Seuck Font
+/* ROT - Homeworld 2 texture (Relic Entertainment)
+ * Uses big-endian IFF chunks, but contents are little-endian
+ * HEAD chunk:
+	Offset  Type    Name
+	0       u32     TexWidth
+	4       u32     TexHeight
+	8       u32     Encoding        # 0x0400 (raw) or 0x0406 (???)
+	12      u32     MipmapLevels?
+ * MLVL chunk:
+	0       u32     LevelNr
+	4       u32     LevelWidth
+	8       u32     LevelHeight
+	12      u32     LevelSize       # LevelWidth*LevelHeight*4
+	16      u8      Data[Levelsize]
+
+ * We only decode the first level in the file, which is hopefully always the
+ * biggest one.
+ * TODO: Display all mipmap levels as sub-images?
+*/
+const struct wuptr rot_desc = DESC(
+	"endian:little\n"
+	"channels:4\n"
+	"bitdepth:8\n"
+	"mirror:1\n"
+
+	"match:[FORM\0\0\0\x14HEAD]\n"
+	"skip:8\n"
+	"match:[\0\x04\0\0]\n"
+	"skip:4\n"
+	"match:[FORM]\n"
+	"skip:4\n"
+	"match:[MIPSFORM]\n"
+	"skip:4\n"
+	"match:[MLVL]\n"
+	"skip:4\n"
+	"w:<u32>\n"
+	"h:<u32>\n"
+	"skip:4"
+);
+
+/* Seuck Font */
 const struct wuptr seuck_desc = DESC(
 	"match:filesize(514)\n"
 	"match:[\x42\0]\n"

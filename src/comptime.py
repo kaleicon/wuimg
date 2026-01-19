@@ -205,6 +205,26 @@ DEC_MAP: DecMap = {
 		"qdv": FmtInfo("Giffer QDV",
 			match="qdv",
 		),
+		"rot": FmtInfo("Homeworld 2 ROT texture (uncompressed only)",
+			ext="rot",
+			mask=(
+				b"\xff\xff\xff\xff" b"\xff\xff\xff\xff"
+				b"\xff\xff\xff\xff" b"\0\0\0\0"
+				b"\0\0\0\0" b"\xff\xff\xff\xff"
+				b"\0\0\0\0" b"\xff\xff\xff\xff"
+				b"\0\0\0\0" b"\xff\xff\xff\xff"
+				b"\xff\xff\xff\xff" b"\0\0\0\0"
+				b"\xff\xff\xff\xff",
+
+				b"FORM" b"\0\0\0\x14"
+				b"HEAD" b"\0\0\0\0"
+				b"\0\0\0\0" b"\0\x04\0\0"
+				b"\0\0\0\0" b"FORM"
+				b"\0\0\0\0" b"MIPS"
+				b"FORM" b"\0\0\0\0"
+				b"MLVL",
+			)
+		),
 		"seuck": FmtInfo("Seuck Font",
 			ext="g",
 			magic=b"\x42\0",
