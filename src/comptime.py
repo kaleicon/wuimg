@@ -707,14 +707,16 @@ DEC_MAP: DecMap = {
 	},
 
 	"ilbm": {
-		"ilbm": FmtInfo("Interleaved Bitmap & Co.: "
-			"ILBM, PBM, ACBM, RGB8, RGBN, Mean Streets MLDF, "
-			"Command Simulations little-endian ILBM",
+		"ilbm": FmtInfo("Interleaved Bitmap & Co.:"
+			" ILBM, PBM, ACBM, RGB8, RGBN, Mean Streets MLDF,"
+			" Command Simulations little-endian ILBM,"
+			" Whale's Voyage BRS",
 			ext=(
 				"iff", "ilbm", "lbm",
 				"bl1", "bl2", "bl3",
 				"acbm",
-				"mld", "bru" # MLDF
+				"mld", "bru", # MLDF
+				"brs", # Whale's Voyage
 			),
 			mask=(
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
@@ -732,6 +734,9 @@ DEC_MAP: DecMap = {
 				# Command Simulations
 				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
 					b"MROF\0\0\0\0MBLI",
+				# Whale's Voyage
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+					b"NEO!\0\0\0\0NEOP",
 			),
 			mime="x-ilbm"
 		),

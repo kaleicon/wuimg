@@ -286,6 +286,7 @@ const bool is_tiny) {
 	case ilbm_format_acbm:
 		return expand_body(desc, img, body);
 	case ilbm_format_ilbm:
+	case ilbm_format_neop:
 		switch (desc->compression) {
 		case ilbm_compression_none:
 			return expand_body(desc, img, body);
@@ -431,6 +432,12 @@ const struct iff_chunk chunk) {
 		if (desc->format == ilbm_format_acbm) {
 			return wuerr(wu_invalid_header,
 				"BODY chunk on ACBM file");
+		}
+		break;
+	case FOURCC('N', 'E', 'O', 'D'):
+		if (desc->format != ilbm_format_neop) {
+			return wuerr(wu_invalid_header,
+				"NEOD chunk on non-NEOP file");
 		}
 		break;
 	default:
@@ -657,7 +664,21 @@ const struct iff_chunk chunk) {
 	return finish_chunk(desc, iff, chunk, NULL);
 }
 
-static struct wu_st parse_bmhd(struct iff_state *iff, struct ilbm_desc *desc,
+static const struct iff_table CHUNK_MAP[] = {
+	{FOURCC('B', 'O', 'D', 'Y'), body_stop},
+	{FOURCC('A', 'B', 'I', 'T'), body_stop},
+	{FOURCC('C', 'A', 'M', 'G'), parse_camg},
+	{FOURCC('C', 'C', 'R', 'T'), parse_ccrt},
+	{FOURCC('C', 'M', 'A', 'P'), parse_cmap},
+	{FOURCC('C', 'R', 'N', 'G'), parse_crng},
+	{FOURCC('T', 'I', 'N', 'Y'), parse_tiny},
+	// Whale's Voyage chunks
+	// TODO: What are the NEOA and 0xdbdbdbdb chunks?
+	{FOURCC('N', 'E', 'O', 'D'), body_stop},
+	{FOURCC('N', 'E', 'O', 'C'), parse_cmap},
+};
+
+static struct wu_st parse_bmhd(struct iff_state *iff, void *ptr,
 const struct iff_chunk chunk) {
 	/* BMHD structure:
 		Offset  Size    Name
@@ -676,10 +697,12 @@ const struct iff_chunk chunk) {
 		18      u16     PageHeight
 		20
 	*/
-	(void)iff;
+	iff->table = CHUNK_MAP;
+	iff->table_len = ARRAY_LEN(CHUNK_MAP);
 	if (chunk.len != 20) {
 		return wuerr(wu_invalid_header, "BMHD with length != 20");
 	}
+	struct ilbm_desc *desc = ptr;
 	const uint8_t *data = mp_slice(&desc->mp, chunk.len);
 	if (!data) {
 		return WUERR_HERE(wu_unexpected_eof);
@@ -736,6 +759,7 @@ const struct iff_chunk chunk) {
 		desc->compression = ilbm_compression_impulse;
 		break;
 	case ilbm_format_ilbm:
+	case ilbm_format_neop:
 		switch (desc->compression) {
 		case ilbm_compression_none:
 		case ilbm_compression_packbits:
@@ -785,25 +809,9 @@ const struct iff_chunk chunk) {
 	return finish_chunk(desc, iff, chunk, NULL);
 }
 
-static const struct iff_table CHUNK_MAP[] = {
-	{FOURCC('B', 'O', 'D', 'Y'), body_stop},
-	{FOURCC('A', 'B', 'I', 'T'), body_stop},
-	{FOURCC('C', 'A', 'M', 'G'), parse_camg},
-	{FOURCC('C', 'C', 'R', 'T'), parse_ccrt},
-	{FOURCC('C', 'M', 'A', 'P'), parse_cmap},
-	{FOURCC('C', 'R', 'N', 'G'), parse_crng},
-	{FOURCC('T', 'I', 'N', 'Y'), parse_tiny},
-};
-
-static struct wu_st start_ilbm(struct iff_state *iff, void *ptr,
-const struct iff_chunk chunk) {
-	iff->table = CHUNK_MAP;
-	iff->table_len = ARRAY_LEN(CHUNK_MAP);
-	return parse_bmhd(iff, ptr, chunk);
-}
-
 static const struct iff_table START_TABLE[] = {
-	{FOURCC('B', 'M', 'H', 'D'), start_ilbm},
+	{FOURCC('B', 'M', 'H', 'D'), parse_bmhd},
+	{FOURCC('N', 'E', 'O', 'B'), parse_bmhd},
 };
 
 static struct wu_st ilbm_fallback(struct iff_state *iff, void *ptr,
@@ -842,7 +850,8 @@ void ilbm_parse_footer(struct ilbm_desc *desc) {
 
 struct wu_st ilbm_parse_header(struct ilbm_desc *desc, struct wuimg *img) {
 	desc->img = img;
-	struct wu_st st = ilbm_parse(desc, START_TABLE, ARRAY_LEN(START_TABLE));
+	struct wu_st st = ilbm_parse(desc,
+		START_TABLE + (desc->format == ilbm_format_neop), 1);
 	if (st.st == wu_no_change) {
 		return tidy_up(desc, img);
 	}
@@ -858,7 +867,7 @@ void *restrict usr_ptr) {
 struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 	/* IFF structure:
 		Offset  Size    Name
-		0       u8      ChunkID[4]   // "FORM" in this case
+		0       u8      ChunkID[4]   // "FORM", usually
 		4       u32     Len
 		8       u8      FormatID[4]  // "ILBM", "PBM ", etc
 		12      [Len-4] SubChunks
@@ -875,33 +884,36 @@ struct wu_st ilbm_open(struct ilbm_desc *desc, const struct wuptr mem) {
 	};
 	const uint8_t *data = mp_slice(&desc->mp, 12);
 	if (data) {
+		const uint32_t form = buf_endian32(data, big_endian);
 		// Command Simulations games use little-endian ILBM
-		const bool commsim = !memcmp(data, "MROF", 4);
-		if (!memcmp(data, "FORM", 4) || commsim) {
-			desc->endian = commsim ? little_endian : big_endian;
-			const uint32_t len = buf_endian32(data + 4, desc->endian);
-			const uint32_t id = buf_endian32(data + 8, desc->endian);
-			if (len < desc->mp.len - 8) {
-				desc->mp.len = (size_t)len + 8;
-			}
-			switch (id) {
-			case ilbm_format_acbm:
-			case ilbm_format_mldf:
-			case ilbm_format_pbm:
-			case ilbm_format_rgb8:
-			case ilbm_format_rgbn:
-				if (commsim) {
-					break;
-				}
-				// fallthrough
-			case ilbm_format_ilbm:
-				desc->format = id;
+		desc->endian = (form == FOURCC('M', 'R', 'O', 'F'))
+			? little_endian : big_endian;
+		const uint32_t len = buf_endian32(data + 4, desc->endian);
+		desc->format = buf_endian32(data + 8, desc->endian);
+		if (len < desc->mp.len - 8) {
+			desc->mp.len = (size_t)len + 8;
+		}
+
+		switch (form) {
+		case FOURCC('F', 'O', 'R', 'M'):
+			if (desc->format != ilbm_format_neop) {
 				return WU_OK;
 			}
-			return wuerr(wu_unknown_file_type,
-				"unknown IFF image format");
+			break;
+		case FOURCC('M', 'R', 'O', 'F'):
+			if (desc->format == ilbm_format_ilbm) {
+				return WU_OK;
+			}
+			break;
+		case FOURCC('N', 'E', 'O', '!'):
+			// Whale Voyage files are ILBM but with renamed chunks
+			if (desc->format == ilbm_format_neop) {
+				return WU_OK;
+			}
+			break;
 		}
-		return WUERR_HERE(wu_unknown_file_type);
+		return wuerr(wu_unknown_file_type,
+			"unknown IFF image format");
 	}
 	return WUERR_HERE(wu_unexpected_eof);
 }

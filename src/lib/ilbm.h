@@ -35,6 +35,8 @@ enum ilbm_format {
 	ilbm_format_pbm = FOURCC('P', 'B', 'M', ' '),
 	ilbm_format_rgb8 = FOURCC('R', 'G', 'B', '8'),
 	ilbm_format_rgbn = FOURCC('R', 'G', 'B', 'N'),
+	// Whale Voyage BRS
+	ilbm_format_neop = FOURCC('N', 'E', 'O', 'P'),
 };
 
 typedef void (*ilbm_callback_t)(void *ptr, struct iff_chunk chunk,
