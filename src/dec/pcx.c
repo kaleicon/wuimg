@@ -104,6 +104,22 @@ const struct wu_conf *wuconf) {
 	return st;
 }
 
+
+static struct wu_st event_spidygfx(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf; (void)state;
+	const struct wuptr *data = infile->dec_state;
+	return (ev == ev_subcycle)
+		? spidygfx_decode(*data, infile->sub_img)
+		: WU_NO_CHANGE;
+}
+
+static struct wu_st init_spidygfx(struct image_file *infile,
+const struct wu_conf *conf) {
+	(void)conf;
+	return spidygfx_parse(infile->dec_state, infile->sub_img, infile->map);
+}
+
 const struct image_fn pcx_fn = {
 	.mmap = true,
 	.alloc_single = true,
@@ -114,4 +130,12 @@ const struct image_fn dcx_fn = {
 	.state_size = sizeof(struct dcx_desc),
 	.init = init_dcx,
 	.event = event_dcx,
+};
+const struct image_fn spidygfx_fn = {
+	.mmap = true,
+	.state_size = sizeof(struct wuptr),
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.init = init_spidygfx,
+	.event = event_spidygfx,
 };

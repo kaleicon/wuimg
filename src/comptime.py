@@ -887,7 +887,6 @@ DEC_MAP: DecMap = {
 			magic=b"\xb1\x68\xde\x3a",
 			mime="x-dcx"
 		),
-
 		"pcx": FmtInfo("PC Paintbrush PCX (all versions, plus CGA mode)"
 			", Word for DOS screen capture",
 			ext=(
@@ -912,6 +911,10 @@ DEC_MAP: DecMap = {
 				b"\xcd\x05\x01",
 			),
 			mime=("vnd.zbrush.pcx", "x-pcx")
+		),
+		"spidygfx": FmtInfo("Reunion graphics",
+			ext="pic",
+			magic=b"SpidyGfx"
 		),
 	},
 

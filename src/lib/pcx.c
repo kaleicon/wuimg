@@ -168,6 +168,11 @@ struct wuimg *img, const struct pix_rgb8 *pal_data) {
 	return true;
 }
 
+static bool has_vga_palette(const size_t rle_remaining,
+const uint8_t *data) {
+	return rle_remaining >= VGA_PAL_LEN + 1 && *data == 0x0c;
+}
+
 static struct wu_st looking_for_lost_pauline(struct pcx_desc *desc,
 struct wuimg *img, const unsigned char *restrict vga_id,
 const size_t rle_remaining) {
@@ -177,7 +182,7 @@ const size_t rle_remaining) {
 
 	enum pcx_palette_source pal_src = pcx_no_pal;
 	if (img->bitdepth == 8) {
-		if (rle_remaining >= VGA_PAL_LEN + 1 && *vga_id == 0x0c) {
+		if (has_vga_palette(rle_remaining, vga_id)) {
 			pal_src = pcx_vga;
 		}
 	} else {
@@ -222,7 +227,7 @@ const unsigned char *restrict rle, const size_t rle_len) {
 		const uint8_t packet = rle[r];
 		if (packet >= mask) {
 			const size_t run_len = packet - mask;
-			if (r + 1 >= rle_len || d + run_len > dst_len) {
+			if (rle_len - r < 2 || dst_len - d < run_len) {
 				break;
 			}
 			memset(dst + d, rle[r+1], run_len);
@@ -473,6 +478,37 @@ struct wu_st dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
 		}
 		prev_off = off;
 	}
+	return WU_OK;
+}
+
+
+/* Reunion graphics */
+struct wu_st spidygfx_decode(const struct wuptr src, struct wuimg *img) {
+	const size_t r =  rle_decode(img->data, img->w*img->h, src.ptr, src.len);
+	if (!r) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (has_vga_palette(src.len - r, src.ptr + r)) {
+		img->layout = pix_rgba;
+		return wuimg_palette_from_buf(img, 3, 256, src.ptr + r + 1);
+	}
+	return WU_OK;
+}
+
+struct wu_st spidygfx_parse(struct wuptr *data, struct wuimg *img,
+const struct wuptr mem) {
+	struct mparser mp = mp_wuptr(mem);
+	const uint8_t sig[] = {'S', 'p', 'i', 'd', 'y', 'G', 'f', 'x'};
+	const uint8_t *hdr = mp_slice(&mp, 12);
+	if (!hdr) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(hdr, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	img->w = buf_endian16l(hdr + 8);
+	img->h = buf_endian16l(hdr + 10);
+	img->channels = 1;
+	img->bitdepth = 8;
+	*data = mp_remaining(&mp);
 	return WU_OK;
 }
 

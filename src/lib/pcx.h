@@ -51,4 +51,10 @@ struct wuimg *img, uint32_t i);
 
 struct wu_st dcx_open_file(struct dcx_desc *desc, struct wuptr mem);
 
+
+struct wu_st spidygfx_decode(const struct wuptr data, struct wuimg *img);
+
+struct wu_st spidygfx_parse(struct wuptr *data, struct wuimg *img,
+const struct wuptr mem);
+
 #endif /* LIB_PCX */
