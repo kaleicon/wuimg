@@ -17,7 +17,6 @@ struct sewing_clothe {
 struct sewing_machine {
 	uint8_t out_ch;
 	uint8_t ch;
-	bool compact;
 	const struct palette *pal;
 	size_t w, h;
 	struct sewing_clothe dst, color, alpha;

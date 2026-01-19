@@ -65,6 +65,14 @@ const uint8_t *restrict gray, const uint8_t *restrict alpha, const size_t w) {
 	}
 }
 
+static void sew_color16_alpha8(uint8_t *dst, const uint8_t *color,
+const uint8_t *restrict alpha, const size_t w) {
+	for (size_t x = 0; x < w; ++x) {
+		memmove(dst + x*3, color + x*2, 2);
+		dst[x*3+2] = alpha[x];
+	}
+}
+
 static void sew_color24_alpha8(struct pix_rgba8 *dst,
 const struct pix_rgb8 *color, const uint8_t *restrict alpha, const size_t w) {
 	for (size_t x = 0; x < w; ++x) {
@@ -84,6 +92,9 @@ const uint8_t ch) {
 			sew_gray8_alpha8(dst, color, alpha, w);
 		}
 		break;
+	case 2:
+		sew_color16_alpha8(dst, color, alpha, w);
+		break;
 	case 3:
 		sew_color24_alpha8(dst, color, alpha, w);
 		break;
@@ -100,10 +111,6 @@ static uint8_t * row_ptr(struct sewing_clothe *clothe, const size_t y) {
 void strip_sew_alpha(struct sewing_machine *sew) {
 	size_t w = sew->w;
 	size_t h = sew->h;
-	if (sew->compact) {
-		w *= h;
-		h = 1;
-	}
 	for (size_t y = 0; y < h; ++y) {
 		strip_handsew_alpha(row_ptr(&sew->dst, y),
 			row_ptr(&sew->color, y), row_ptr(&sew->alpha, y),
@@ -134,12 +141,11 @@ void strip_sew_init(struct sewing_machine *sew, void *restrict dst,
 const struct palette *pal, const size_t w, const size_t h, const uint8_t ch,
 const align_t align, const bool will_sew) {
 	const uint8_t out_ch = (will_sew)
-		? ((pal || ch > 2) ? 4 : 2)
+		? ((pal || ch == 4) ? 4 : ch+1)
 		: ch;
 	*sew = (struct sewing_machine) {
 		.out_ch = out_ch,
 		.ch = ch,
-		.compact = align == 0,
 		.pal = pal,
 		.w = w,
 		.h = h,

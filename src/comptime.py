@@ -967,6 +967,13 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"piklib": {
+		"piklib": FmtInfo("Aidem Media Piklib image (uncompressed only)",
+			ext="img",
+			magic=b"PIK\0"
+		),
+	},
+
 	"pmg": {
 		"pmg": FmtInfo("Print Magic Graphic (PMGRAF) and Card (PMCARD)",
 			ext=("pmc", "pmg"),
