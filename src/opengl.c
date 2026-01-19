@@ -839,14 +839,14 @@ static void tex_cms(const size_t size) {
 	const GLsizei s = (GLsizei)size;
 	tex_active(gl_tex_cms);
 	glTexImage3D(GL_TEXTURE_3D, 0, GL_RGB, s, s, s, 0, GL_RGB,
-		GL_UNSIGNED_SHORT, 0);
+		GL_HALF_FLOAT, 0);
 }
 
 static bool set_icc_lut(const GLuint pix_buf, const struct color_space *cs,
 cmsHPROFILE out) {
 	const watch_t start = watch_look();
 	cmsHTRANSFORM xfr = color_icc_transform(cs, out,
-		icc_fmt(3, 1, alpha_ignore), TYPE_RGB_16);
+		icc_fmt(3, 1, alpha_ignore), TYPE_RGB_HALF_FLT);
 	if (!xfr) {
 		return false;
 	}
