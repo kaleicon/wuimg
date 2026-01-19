@@ -968,9 +968,9 @@ DEC_MAP: DecMap = {
 	},
 
 	"pmg": {
-		"pmg": FmtInfo("Print Magic Graphic (PMGRAF)",
-			ext="pmg",
-			magic=b"PMGRAF",
+		"pmg": FmtInfo("Print Magic Graphic (PMGRAF) and Card (PMCARD)",
+			ext=("pmc", "pmg"),
+			magic=(b"PMCARD", b"PMGRAF"),
 		),
 	},
 

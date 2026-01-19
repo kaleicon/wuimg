@@ -5,11 +5,16 @@
 #include "misc/endian.h"
 #include "lib/pmg.h"
 
-/* Print Magic Graphic */
+/* Print Magic Graphic and Card*/
+
+static size_t rle_offset(const struct wuptr mem) {
+	return mem.ptr[2] == 'G' ? 24 : 32;
+}
 
 struct wu_st pmg_decode(struct wuptr mem, struct wuimg *img) {
-	mem.ptr += 24;
-	mem.len -= 24;
+	const size_t start = rle_offset(mem);
+	mem.ptr += start;
+	mem.len -= start;
 	size_t s = 0;
 	size_t d = 0;
 	const size_t dst_len = wuimg_size(img);
@@ -45,19 +50,38 @@ struct wu_st pmg_init(const struct wuptr mem, struct wuimg *img) {
 		8       u16     X?           // Always 0
 		10      u16     Width        // Bias of -1
 		12      u16     Y?           // Always 0
-		14      u16     Height
+		14      u16     Height       // Bias of -1
 		16      u8      ???[8]
-		24      u8      RLEStream
+		24
+
+	 * PMC header:
+		0       char    Magic[6]     // "PMCARD"
+		6       u16     Version?     // Always 0
+		8       u16     Width        // No bias
+		10      u16     Height
+		12      u16     ???[6]       // Width and Height repeated?
+		24      u8      Zeros[8]
+		32
+
+	 * Afterwards comes the RLE stream.
 	*/
 
-	const uint8_t magic[] = {'P', 'M', 'G', 'R', 'A', 'F'};
+	const uint8_t graf[] = {'P', 'M', 'G', 'R', 'A', 'F'};
+	const uint8_t card[] = {'P', 'M', 'C', 'A', 'R', 'D'};
 	if (mem.len <= 24) {
 		return WUERR_HERE(wu_unexpected_eof);
-	} else if (memcmp(mem.ptr, magic, sizeof(magic))) {
+	} else if (!memcmp(mem.ptr, graf, sizeof(graf))) {
+		img->w = buf_endian16l(mem.ptr + 10) + 1;
+		img->h = buf_endian16l(mem.ptr + 14) + 1;
+	} else if (!memcmp(mem.ptr, card, sizeof(card))) {
+		img->w = buf_endian16l(mem.ptr + 8);
+		img->h = buf_endian16l(mem.ptr + 10);
+		if (mem.len <= 32) {
+			return WUERR_HERE(wu_unexpected_eof);
+		}
+	} else {
 		return WUERR_HERE(wu_invalid_signature);
 	}
-	img->w = buf_endian16l(mem.ptr + 10) + 1;
-	img->h = buf_endian16l(mem.ptr + 14) + 1;
 	img->channels = 1;
 	img->bitdepth = 1;
 	img->cs.invert = true;
