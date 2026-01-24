@@ -116,54 +116,69 @@ const enum pdt_version version) {
 	return pal_decode(dst, dst_len, src, src_len);
 }
 
-size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return 0;
-	}
-
+struct wu_st pdt_decode(const struct pdt_desc *desc, struct wuimg *img) {
 	uint8_t color_ch = (desc->version == pdt10) ? 3 : 1;
 
 	struct sewing_machine sew;
 	strip_sew_init(&sew, img->data, desc->pal, img->w, img->h, color_ch,
 		img->align_sh, desc->mask_offset);
 
+	size_t total = sew.color.len;
 	size_t written = pick_decode(sew.color.ptr, sew.color.len,
 		desc->mp.mem + desc->mp.pos, desc->mp.len - desc->mp.pos,
 		desc->version);
 	if (written && desc->mask_offset) {
 		if (!strip_sew_alloc_alpha(&sew)) {
-			return 0;
+			return wuerr(wu_alloc_error,
+				"failed to allocate mask buffer");
 		}
 
+		total += sew.alpha.len;
 		written += alpha_decode(sew.alpha.ptr, sew.alpha.len,
 			desc->mp.mem + desc->mask_offset,
 			desc->mp.len - desc->mask_offset);
 		strip_sew_alpha(&sew);
 		strip_sew_free_alpha(&sew);
 	}
-	return written;
+	return wuerr_partial(written, total);
 }
 
-enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
-	/* PDT header (after magic bytes):
+struct wu_st pdt_init(struct pdt_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
+	/* PDT header:
 		Offset  Type    Name
-		0       u32     FileSize
-		4       u32     Width
-		8       u32     Height
-		12      u32     ???[2]
-		20      u32     MaskOffset
-		24
+		0       u8      MagicAndVersion[8]
+		8       u32     FileSize
+		12      u32     Width
+		16      u32     Height
+		20      u32     ???[2]
+		28      u32     MaskOffset
+		32
 	*/
-	const uint8_t *buf = mp_slice(&desc->mp, 24);
+	*desc = (struct pdt_desc) {
+		.mp = mp_wuptr(mem),
+	};
+	const uint8_t *buf = mp_slice(&desc->mp, 32);
 	if (!buf) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	desc->mask_offset = buf_endian32(buf + 20, little_endian);
+	const uint8_t init[] = {'P', 'D', 'T', '1'};
+	if (memcmp(init, buf, sizeof(init)) || memchk(buf + 5, 0, 3)) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	switch (buf[4]) {
+	case pdt10: case pdt11:
+		desc->version = buf[4];
+		break;
+	default: return wuerr(wu_invalid_signature, "unknown PDT version");
+	}
+
+	desc->mask_offset = buf_endian32(buf + 28, little_endian);
 	if (desc->mask_offset >= desc->mp.len) {
 		desc->mask_offset = 0;
 	}
-	img->w = buf_endian32(buf + 4, little_endian);
-	img->h = buf_endian32(buf + 8, little_endian);
+	img->w = buf_endian32(buf + 12, little_endian);
+	img->h = buf_endian32(buf + 16, little_endian);
 	img->bitdepth = 8;
 	img->layout = pix_bgra;
 	img->alpha = alpha_associated;
@@ -171,12 +186,12 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 		const size_t pal_size = 256 * 4;
 		buf = mp_slice(&desc->mp, pal_size);
 		if (!buf) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 
 		struct palette *pal = palette_new();
 		if (!pal) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 		memcpy(pal->color, buf, pal_size);
 		if (desc->mask_offset) {
@@ -190,24 +205,5 @@ enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img) {
 	} else {
 		img->channels = (desc->mask_offset) ? 4 : 3;
 	}
-	return wuimg_verify(img);
-}
-
-enum wu_error pdt_open_mem(struct pdt_desc *desc, const struct wuptr mem) {
-	*desc = (struct pdt_desc) {
-		.mp = mp_wuptr(mem),
-	};
-	const uint8_t *buf = mp_slice(&desc->mp, 8);
-	if (buf) {
-		const uint8_t init[] = {'P', 'D', 'T', '1'};
-		if (!memcmp(init, buf, sizeof(init)) && !memchk(buf + 5, 0, 3)) {
-			switch (buf[4]) {
-			case pdt10: case pdt11:
-				desc->version = buf[4];
-				return wu_ok;
-			}
-		}
-		return wu_invalid_signature;
-	}
-	return wu_unexpected_eof;
+	return WU_OK;
 }

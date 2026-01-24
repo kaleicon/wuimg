@@ -22,10 +22,9 @@ const char * pdt_version_str(enum pdt_version version);
 
 void pdt_cleanup(struct pdt_desc *desc);
 
-size_t pdt_decode(const struct pdt_desc *desc, struct wuimg *img);
+struct wu_st pdt_decode(const struct pdt_desc *desc, struct wuimg *img);
 
-enum wu_error pdt_parse_header(struct pdt_desc *desc, struct wuimg *img);
-
-enum wu_error pdt_open_mem(struct pdt_desc *desc, struct wuptr mem);
+struct wu_st pdt_init(struct pdt_desc *desc, struct wuimg *img,
+struct wuptr mem);
 
 #endif /* LIB_PDT */

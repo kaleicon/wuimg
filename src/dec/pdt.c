@@ -1,35 +1,40 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/pdt.h"
-
-static void metadata(const void *ptr, struct wutree *tree) {
-	const struct pdt_desc *desc = ptr;
-	tree_add_leaf_utf8(tree, "Version", pdt_version_str(desc->version));
-}
 
 static void cleanup(struct image_file *infile) {
 	pdt_cleanup(infile->dec_state);
 }
-static size_t dec(const void *ptr, struct wuimg *img) {
-	return pdt_decode(ptr, img);
-}
-static enum wu_error parse(void *ptr, struct wuimg *img) {
-	return pdt_parse_header(ptr, img);
-}
-static enum wu_error open(void *ptr, struct image_file *infile) {
-	return pdt_open_mem(ptr, infile->map);
+
+static struct wu_st event_pdt(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf; (void)state;
+	struct pdt_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_add_leaf_utf8(&infile->metadata, "Version",
+			pdt_version_str(desc->version));
+		return WU_OK;
+	case ev_subcycle:
+		return pdt_decode(desc, infile->sub_img);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
-static enum wu_error pdt_dec(struct image_file *infile,
+static struct wu_st init_pdt(struct image_file *infile,
 const struct wu_conf *conf) {
-	return rast_trivial_dec(infile, conf, infile->dec_state, open, parse,
-		metadata, dec);
+	(void)conf;
+	return pdt_init(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn pdt_fn = {
 	.mmap = true,
 	.state_size = sizeof(struct pdt_desc),
-	.dec = pdt_dec,
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.init = init_pdt,
+	.event = event_pdt,
 	.end = cleanup,
 };
