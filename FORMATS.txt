@@ -1,4 +1,4 @@
-88 families, 157 formats supported
+89 families, 158 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -103,6 +103,7 @@ lwi       lwi       LightWork Image
 mac       mac       MacPaint
 mag       mag       MAG (MAKI02)
 maki      maki      MAKIchan (MAKI01)
+mayaicon  mayaicon  Maya Icons or Swatches
 mgx       mgxicn    Micrografx ICN
 msx       msx       MSX-BASIC dump, Graph Saurus
 nokia     nlm       Nokia Logo Manager
@@ -160,10 +161,10 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 345
-3fr, 565, a64, aai, aas, abm, acbm, afl, als, ant, apd, apf, art, arw, avif, avifs, avs, bie, bl1, bl2, bl3, bld, bmb, bmp, bmp24, bmz, bob, bp, bpl, brs, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, clt2, cm, col, cph, cpn, cps, cr2, cr3, crg, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpc, dpx, dt, dt2, dta, dvm, erf, eza, fax, faxx, fcp, fcs, fd2, ff, fff, ffn, fli, flif, fnt, fpt, ftc, g, g00, g3, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, icc, icn, ico, icon, iff, iim, iiq, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lsp, lux, lwi, lzs, mac, mag, max, mbfavs, mef, mgf, mki, mld, mos, mpo, mrw, mtv, mwg, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, ori, otb, p2, p41, p64, p7, pac, pam, pan, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, pmc, pmg, png, pnm, pntg, ppm, prs, prt, puf, px, pxy, pzl, q4, qdv, qfx, qoi, qtk, raf, ras, raw, res, rgb, rgba, rle, rot, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, scr, sd0, sd1, sd2, sff, sfn, sgf, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, sti, stj, suh, sul, sun, svg, svgz, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tim2, tlg, tm2, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 347
+3fr, 565, a64, aai, aas, abm, acbm, afl, als, ant, apd, apf, art, arw, avif, avifs, avs, bie, bl1, bl2, bl3, bld, bmb, bmp, bmp24, bmz, bob, bp, bpl, brs, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, clt2, cm, col, cph, cpn, cps, cr2, cr3, crg, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpc, dpx, dt, dt2, dta, dvm, erf, eza, fax, faxx, fcp, fcs, fd2, ff, fff, ffn, fli, flif, fnt, fpt, ftc, g, g00, g3, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, icc, icn, ico, icon, icons, iff, iim, iiq, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lsp, lux, lwi, lzs, mac, mag, max, mbfavs, mef, mgf, mki, mld, mos, mpo, mrw, mtv, mwg, nef, ngg, nlm, no, nol, npm, nrw, nsl, ocp, orf, ori, otb, p2, p41, p64, p7, pac, pam, pan, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, pmc, pmg, png, pnm, pntg, ppm, prs, prt, puf, px, pxy, pzl, q4, qdv, qfx, qoi, qtk, raf, ras, raw, res, rgb, rgba, rle, rot, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, scr, sd0, sd1, sd2, sff, sfn, sgf, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, sti, stj, suh, sul, sun, svg, svgz, swatches, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tim2, tlg, tm2, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vic, vid, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 217
+Known magic sequences: 218
 aipd      b'AIPD'
 aliaspix  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08'
 amibios   b'GRFX'
@@ -274,6 +275,7 @@ lwi       b'\x181Copyright'
 mag       b'MAKI02  '
 maki      b'MAKI01A '
 maki      b'MAKI01B '
+mayaicon  b'MayaIcons\x00\x00\x00\x02Swatches'
 megapat   b'\x07PAT \x00.\x00'
 mgxicn    b'ZZZZ'
 msx       b'\xfd\x00\x00\x00\x00\x00\x00'

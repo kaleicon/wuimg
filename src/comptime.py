@@ -7,7 +7,7 @@ from itertools import batched, chain, starmap
 from functools import partial, reduce
 from collections.abc import Callable, Iterable, Sequence
 
-EXT_LIMIT = 6
+EXT_LIMIT = 8
 MAGIC_LIMIT = 0xff
 NAME_LIMIT = 8
 
@@ -818,6 +818,13 @@ DEC_MAP: DecMap = {
 		"maki": FmtInfo("MAKIchan (MAKI01)",
 			ext="mki",
 			magic=(b"MAKI01A ", b"MAKI01B "),
+		),
+	},
+
+	"mayaicon": {
+		"mayaicon": FmtInfo("Maya Icons or Swatches",
+			ext=("icons", "swatches"),
+			magic=b"MayaIcons\0\0\0\x02Swatches",
 		),
 	},
 
