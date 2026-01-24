@@ -267,14 +267,9 @@ const struct wuimg *img) {
 	return 3;
 }
 
-bool pic_decode(const struct pic_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return false;
-	}
-
-	struct mparser mp = desc->mp;
+struct wu_st pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 	struct bitstrm bs;
-	bitstrm_from_wuptr(&bs, mp_remaining(&mp));
+	bitstrm_from_wuptr(&bs, desc->data);
 
 	const size_t w = img->w;
 	const size_t h = (desc->tiled ? img->h/2 : img->h);
@@ -285,27 +280,31 @@ bool pic_decode(const struct pic_desc *desc, struct wuimg *img) {
 
 	struct pic_cache *cache = NULL;
 	uint8_t *data = calloc(mask_size + use_cache * sizeof(*cache), 1);
-	if (data) {
-		uint8_t *mask = data;
-		if (use_cache) {
-			cache = (struct pic_cache *)(data + mask_size);
-			init_cache(cache);
-		}
-
-		const uint8_t ch = get_pix_size(desc, img);
-		decode_data(desc, img->data, (int)w, (int)limit,
-			ch, &bs, mask, cache);
-		free(data);
+	if (!data) {
+		return wuerr(wu_alloc_error,
+			"failed to allocated decoding buffer");
 	}
-	return data;
+
+	uint8_t *mask = data;
+	if (use_cache) {
+		cache = (struct pic_cache *)(data + mask_size);
+		init_cache(cache);
+	}
+
+	const uint8_t ch = get_pix_size(desc, img);
+	decode_data(desc, img->data, (int)w, (int)limit,
+		ch, &bs, mask, cache);
+	free(data);
+	return WU_OK;
 }
 
-static bool load_pal(struct pic_desc *desc, struct palette *pal) {
+static bool load_pal(struct pic_desc *desc, struct palette *pal,
+struct mparser *mp) {
 	const struct pic_bits *b = &desc->bits;
 	const uint8_t pal_depth = (uint8_t)(b->uni*3 + b->shared);
 	const size_t entries = 1 << desc->depth;
 	const size_t len = strip_base(entries, pal_depth);
-	const uint8_t *buf = mp_slice(&desc->mp, len);
+	const uint8_t *buf = mp_slice(mp, len);
 	if (buf) {
 		struct bitstrm bs;
 		bitstrm_from_bytes(&bs, buf, len);
@@ -326,11 +325,11 @@ const uint8_t shared) {
 	bits->uni = uni;
 }
 
-static bool extra_fields(struct pic_desc *desc,
-struct wuimg *img) {
-	const uint8_t *buf = mp_slice(&desc->mp, 6);
+static struct wu_st extra_fields(struct pic_desc *desc,
+struct wuimg *img, struct mparser *mp) {
+	const uint8_t *buf = mp_slice(mp, 6);
 	if (!buf) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	switch (desc->mode) {
@@ -339,25 +338,29 @@ struct wuimg *img) {
 		wuimg_aspect_ratio(img, 4, 3);
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"bad mode with extra fields");
 	}
-	desc->x = (int16_t)buf_endian16(buf, big_endian);
-	desc->y = (int16_t)buf_endian16(buf + 2, big_endian);
+	desc->x = (int16_t)buf_endian16b(buf);
+	desc->y = (int16_t)buf_endian16b(buf + 2);
 	const uint8_t num = buf[4];
 	const uint8_t den = buf[5];
 	if (num && den) {
 		wuimg_aspect_ratio(img, num, den);
 	} else if (desc->mode == 0x0f) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"mode 0x0f but no aspect ratio specified");
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
+struct wu_st pic_parse(struct pic_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
 	/* PIC header (after magic bytes):
 		Offset  Size    Name
-		0       u8      Comment[]     // 0x1a terminated
-		+0      u8      Dummy[]       // 0x00 terminated
+		0       char    Magic[3]
+		3       u8      Comment[]     // 0x1a terminated
+		?       u8      Dummy[]       // 0x00 terminated
 		...
 		+0      u8      Reserved      // 0x00 (not the Dummy terminator)
 		+1      u8      ModelBitfield
@@ -384,22 +387,32 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	 * byte boundary.
 	*/
 
-	if (!mp_upto(&desc->mp, &desc->comm, 0x1a)
-	|| !mp_upto(&desc->mp, &desc->dummy, 0x00)) {
-		return wu_unexpected_eof;
+	const unsigned char sig[] = {'P', 'I', 'C'};
+	struct mparser mp = mp_wuptr(mem);
+	const uint8_t *buf = mp_slice(&mp, sizeof(sig));
+	if (!buf) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(buf, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
 
-	const uint8_t *buf = mp_slice(&desc->mp, 8);
+	memset(desc, 0, sizeof(*desc));
+	if (!mp_upto(&mp, &desc->comm, 0x1a)
+	|| !mp_upto(&mp, &desc->dummy, 0x00)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+
+	buf = mp_slice(&mp, 8);
 	if (!buf) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	} else if (buf[0]) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "reserved byte != 0");
 	}
 	desc->type = buf[1] & 0xf;
 	desc->mode = buf[1] >> 4;
-	const uint16_t bd = buf_endian16(buf + 2, big_endian);
-	uint32_t w = buf_endian16(buf + 4, big_endian);
-	uint32_t h = buf_endian16(buf + 6, big_endian);
+	const uint16_t bd = buf_endian16b(buf + 2);
+	uint32_t w = buf_endian16b(buf + 4);
+	uint32_t h = buf_endian16b(buf + 6);
 
 	img->layout = pix_grba;
 	img->alpha = alpha_ignore;
@@ -409,10 +422,11 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 	uint16_t bitfield = 0;
 
 	switch (desc->type) {
-	enum wu_error st;
+	struct wu_st st;
 	case pic_type_x68k:
 		if (desc->mode) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"mode byte set with pic type X68K");
 		}
 		uni_bits = 5;
 		switch (bd) {
@@ -431,7 +445,8 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			shared_bits = 1;
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"bad bitdepth for X68K pic");
 		}
 		break;
 	case pic_type_pc_88va:
@@ -439,16 +454,22 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		case 320:
 			switch (h) {
 			case 200: case 400: case 408: break;
-			default: return wu_invalid_header;
+			default:
+				return wuerr(wu_invalid_header,
+					"bad height for 320 wide PC-88VA pic");
 			}
 			break;
 		case 640:
 			switch (h) {
 			case 200: case 204: case 400: break;
-			default: return wu_invalid_header;
+			default:
+				return wuerr(wu_invalid_header,
+					"bad height for 640 wide PC-88VA pic");
 			}
 			break;
-		default: return wu_invalid_header;
+		default:
+			return wuerr(wu_invalid_header,
+				"bad width for PC-88VA pic");
 		}
 		switch (bd) {
 		case 8:
@@ -459,13 +480,15 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			bitfield = 0x655;
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"bad bitdepth for PC-88VA pic");
 		}
 		desc->tiled = desc->mode & 0x02;
 		if (desc->tiled) {
 			// Two 332-encoded pixels are packed into a 16bit word
 			if (bd != 16) {
-				return wu_invalid_header;
+				return wuerr(wu_invalid_header,
+					"bitdepth != 16 with tiled PC-88VA pic");
 			}
 			h *= 2;
 			bitfield = 0x332;
@@ -479,7 +502,8 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		break;
 	case pic_type_fm_towns:
 		if (bd != 15) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"bitdepth != 15 with FM-TOWNS pic");
 		}
 		bitfield = 0x555;
 		/* All the FM-TOWNS files I've found include extra header data
@@ -487,35 +511,39 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		 * anything about this, so hopefully what follows is correct. */
 		switch (desc->mode) {
 		case 0x00:
-			st = extra_fields(desc, img);
-			if (st != wu_ok) {
+			st = extra_fields(desc, img, &mp);
+			if (!wu_isok(st)) {
 				return st;
 			}
 			break;
 		case 0x05: case 0x0c: break;
-		default: return wu_invalid_header;
+		default:
+			return wuerr(wu_invalid_header,
+				"bad mode for FM-TOWNS pic");
 		}
 		break;
 	case pic_type_mac:
 		if (bd != 15) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"bitdepth != 15 with MAC pic");
 		}
 		bitfield = 0x555;
 		img->layout = pix_rgba;
 		break;
 	case pic_type_generic:
-		st = extra_fields(desc, img);
-		if (st != wu_ok) {
+		st = extra_fields(desc, img, &mp);
+		if (!wu_isok(st)) {
 			return st;
 		}
 
 		switch (bd) {
 		case 4: case 8:
-			;int bits = mp_next_char(&desc->mp);
+			;int bits = mp_next_char(&mp);
 			if (bits == EOF) {
-				return wu_unexpected_eof;
+				return WUERR_HERE(wu_unexpected_eof);
 			} else if (bits < 1 || bits > 8) {
-				return wu_invalid_header;
+				return wuerr(wu_invalid_header,
+					"bits < 1 or bits > 8");
 			}
 			uni_bits = (uint8_t)bits;
 			break;
@@ -529,13 +557,16 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			shared_bits = 1;
 			break;
 		case 32:
-			return wu_samples_wanted;
+			return wuerr(wu_samples_wanted,
+				"32-bit generic pic type");
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"bad bitdepth for generic pic");
 		}
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"bad pic type");
 	}
 
 	desc->depth = (uint8_t)bd;
@@ -546,7 +577,7 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 		img->bitdepth = (bitfield == 0x332) ? 8 : 16;
 		img->layout = pix_layout_mul(pix_bgra, img->layout);
 		if (!wuimg_bitfield_from_id(img, bitfield)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 	} else if (desc->depth == 12) {
 		img->channels = 4;
@@ -559,21 +590,14 @@ enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img) {
 			if (desc->depth <= 8) {
 				struct palette *pal = wuimg_palette_init(img);
 				if (!pal) {
-					return wu_alloc_error;
-				} else if (!load_pal(desc, pal)) {
-					return wu_unexpected_eof;
+					return WUERR_HERE(wu_alloc_error);
+				} else if (!load_pal(desc, pal, &mp)) {
+					return WUERR_HERE(wu_unexpected_eof);
 				}
 				desc->bits.shared = 0;
 			}
 		}
 	}
-	return wuimg_verify(img);
-}
-
-enum wu_error pic_init(struct pic_desc *desc, const struct wuptr mem) {
-	*desc = (struct pic_desc) {
-		.mp = mp_wuptr(mem),
-	};
-	const unsigned char sig[] = {'P', 'I', 'C'};
-	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	desc->data = mp_remaining(&mp);
+	return WU_OK;
 }

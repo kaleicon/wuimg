@@ -22,7 +22,7 @@ struct pic_bits {
 };
 
 struct pic_desc {
-	struct mparser mp;
+	struct wuptr data;
 	struct wuptr comm;
 	struct wuptr dummy;
 	int16_t x, y;
@@ -35,10 +35,9 @@ struct pic_desc {
 
 const char * pic_model_str(enum pic_type type);
 
-bool pic_decode(const struct pic_desc *desc, struct wuimg *img);
+struct wu_st pic_decode(const struct pic_desc *desc, struct wuimg *img);
 
-enum wu_error pic_parse(struct pic_desc *desc, struct wuimg *img);
-
-enum wu_error pic_init(struct pic_desc *desc, struct wuptr mem);
+struct wu_st pic_parse(struct pic_desc *desc, struct wuimg *img,
+struct wuptr mem);
 
 #endif /* LIB_PIC */
