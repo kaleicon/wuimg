@@ -125,6 +125,13 @@ DEC_MAP: DecMap = {
 			ext="cel",
 			magic=b"KiSS\x20\x20"
 		),
+		"col": FmtInfo("COL color palette",
+			ext=("col", "res"),
+			mask=(
+				b"\0\0\0\0\xff\xff\xff\xff",
+				b"\0\0\0\0\x23\xb1\0\0",
+			)
+		),
 		"farbfeld": FmtInfo("farbfeld",
 			ext="ff",
 			magic=b"farbfeld"

@@ -145,6 +145,25 @@ const struct wuptr ckiss_desc = DESC(
 	"skip:16\n" // Reserved. All 0
 );
 
+/* COL - Color palette.
+ * Used in Dark Legions, but also other games not sharing the same developer
+https://moddingwiki.shikadi.net/wiki/COL_Format_(Dark_Legions)
+	Offset  Type    Name
+	0       u32     FileSize
+	4       u8      Magic[4]
+	8       u24     RGB[]
+*/
+const struct wuptr col_desc = DESC(
+	"w:16\n"
+	"h:16\n"
+	"c:3\n"
+	"b:8\n"
+
+	// FileSize could in theory indicate less than 256 entries, so skip it
+	"skip:4\n"
+	"match:[\x23\xb1\0\0]"
+);
+
 // FARBFELD
 const struct wuptr farbfeld_desc = DESC(
 	"endian:big\n"
