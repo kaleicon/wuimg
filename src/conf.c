@@ -24,6 +24,7 @@ struct enum_str {
 struct wu_conf conf_default(void) {
 	return (struct wu_conf) {
 		.max_img_size = DEFAULT_MAX,
+		.magnify_under = 64,
 
 		// Window
 		.initial_size = {640, 480},
@@ -241,6 +242,7 @@ struct wu_conf conf_load(void) {
 
 struct wu_conf conf_no_window(void) {
 	struct wu_conf conf = conf_load();
+	conf.magnify_under = 0;
 	conf.svg_window_adapt = false;
 	return conf;
 }
