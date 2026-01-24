@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#ifndef LIB_PICT
-#define LIB_PICT
+#ifndef LIB_PICTOR
+#define LIB_PICTOR
 
 #include "raster/wuimg.h"
 
@@ -29,10 +29,9 @@ const char * pictor_palette_str(enum pictor_palette_type type);
 
 const char * pictor_video_mode(const struct pictor_desc *desc);
 
-size_t pictor_decode(const struct pictor_desc *desc, struct wuimg *img);
+struct wu_st pictor_decode(const struct pictor_desc *desc, struct wuimg *img);
 
-enum wu_error pictor_read_header(struct pictor_desc *desc, struct wuimg *img);
+struct wu_st pictor_parse(struct pictor_desc *desc, struct wuimg *img,
+FILE *ifp);
 
-enum wu_error pictor_open_file(struct pictor_desc *desc, FILE *ifp);
-
-#endif /* LIB_PICT */
+#endif /* LIB_PICTOR */

@@ -1,35 +1,43 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include "lib/pictor.h"
-#include "rast_utils.h"
+#include "wudefs.h"
 
-static void metadata(const void *restrict ptr, struct wutree *tree) {
-	const struct pictor_desc *desc = ptr;
-	tree_bud_leaf_u(tree, "X", desc->x);
-	tree_bud_leaf_u(tree, "Y", desc->y);
-	tree_bud_leaf_u(tree, "Blocks", desc->blocks);
-	tree_bud_leaf_u(tree, "Planes", desc->planes);
-	tree_bud_leaf_u(tree, "Depth", desc->depth);
+static struct wu_st event_pictor(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf; (void)state;
+	struct pictor_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		;struct wutree *tree = &infile->metadata;
+		tree_bud_leaf_u(tree, "X", desc->x);
+		tree_bud_leaf_u(tree, "Y", desc->y);
+		tree_bud_leaf_u(tree, "Blocks", desc->blocks);
+		tree_bud_leaf_u(tree, "Planes", desc->planes);
+		tree_bud_leaf_u(tree, "Depth", desc->depth);
 
-	tree_add_leaf_utf8(tree, "Video mode", pictor_video_mode(desc));
-	tree_add_leaf_utf8(tree, "Palette type", pictor_palette_str(desc->pal_type));
+		tree_add_leaf_utf8(tree, "Video mode",
+			pictor_video_mode(desc));
+		tree_add_leaf_utf8(tree, "Palette type",
+			pictor_palette_str(desc->pal_type));
+		return WU_OK;
+	case ev_subcycle:
+		return pictor_decode(desc, infile->sub_img);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
-static size_t dec(const void *restrict ptr, struct wuimg *img) {
-	return pictor_decode(ptr, img);
-}
-static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
-	return pictor_read_header(ptr, img);
-}
-static enum wu_error open(void *restrict ptr, struct image_file *infile) {
-	return pictor_open_file(ptr, infile->ifp);
-}
-
-static enum wu_error pictor_dec(struct image_file *infile,
+static struct wu_st init_pictor(struct image_file *infile,
 const struct wu_conf *conf) {
-	struct pictor_desc desc;
-	return rast_trivial_dec(infile, conf, &desc, open, parse, metadata,
-		dec);
+	(void)conf;
+	return pictor_parse(infile->dec_state, infile->sub_img, infile->ifp);
 }
 
-const struct image_fn pictor_fn = {.dec = pictor_dec};
+const struct image_fn pictor_fn = {
+	.state_size = sizeof(struct pictor_desc),
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.init = init_pictor,
+	.event = event_pictor,
+};
