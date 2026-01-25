@@ -41,6 +41,7 @@ if cc_id == 'gcc'
 elif cc_id == 'clang'
 	add_project_arguments(
 		'-Wno-bitwise-instead-of-logical',
+		'-Wno-enum-enum-conversion',
 		language : 'c')
 endif
 
