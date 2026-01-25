@@ -82,7 +82,7 @@ struct wuimg *img) {
 }
 
 static void get_heif_color_profile(struct color_space *cs,
-const struct heif_image *himg) {
+const struct heif_image *himg, const enum heif_colorspace heif_cs) {
 	struct heif_color_profile_nclx *nclx;
 	struct heif_error herr = heif_image_get_nclx_color_profile(himg, &nclx);
 	if (herr.code == heif_error_Ok) {
@@ -92,6 +92,9 @@ const struct heif_image *himg) {
 		cs->limited = !nclx->full_range_flag;
 		heif_nclx_color_profile_free(nclx);
 	} else {
+		cs->matrix = (heif_cs == heif_colorspace_YCbCr)
+			? cicp_matrix_bt601_7 // JPEG matrix
+			: cicp_matrix_rgb;
 		const size_t len = heif_image_get_raw_color_profile_size(himg);
 		if (len) {
 			void *data = malloc(len);
@@ -252,9 +255,9 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	}
 	img->borrowed = true;
 
-	get_heif_color_profile(&img->cs, himg);
 	colorspace = heif_image_get_colorspace(himg);
 	chroma = heif_image_get_chroma_format(himg);
+	get_heif_color_profile(&img->cs, himg, colorspace);
 	struct wu_st st = WUERR_HERE(wu_invalid_params);
 	uint8_t comps = 0;
 	int bytes_per_line[4];
