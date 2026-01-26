@@ -65,6 +65,6 @@ struct wu_st idsp_next_image(struct idsp_desc *desc, struct wuimg *img);
 struct wu_st idsp_init(struct idsp_desc *desc, FILE *ifp);
 
 
-enum wu_error lmp_init(struct wuimg *img, FILE *ifp);
+struct wu_st lmp_init(struct wuimg *img, FILE *ifp);
 
 #endif /* LIB_IDSP */

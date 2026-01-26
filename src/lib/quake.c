@@ -533,7 +533,7 @@ struct wu_st idsp_init(struct idsp_desc *desc, FILE *ifp) {
 https://quakewiki.org/wiki/.lmp
 */
 
-enum wu_error lmp_init(struct wuimg *img, FILE *ifp) {
+struct wu_st lmp_init(struct wuimg *img, FILE *ifp) {
 	/* LMP structure:
 		Offset  Type    Name
 		0       u32     Width
@@ -542,14 +542,25 @@ enum wu_error lmp_init(struct wuimg *img, FILE *ifp) {
 	*/
 	uint32_t buf[2];
 	if (fread(buf, sizeof(buf), 1, ifp)) {
-		img->w = endian32l(buf[0]);
-		img->h = endian32l(buf[1]);
-		img->channels = 1;
+		const uint8_t pal[] = {
+			0x00, 0x00, 0x00, 0x0f,
+			0x0f, 0x0f, 0x1f, 0x1f
+		};
 		img->bitdepth = 8;
-		if (wuimg_palette_set(img, get_quake_pal())) {
-			return wu_ok;
+		if (!memcmp(buf, pal, sizeof(pal))) {
+			img->w = 16;
+			img->h = 16;
+			img->channels = 3;
+			fseek(ifp, -8, SEEK_CUR);
+		} else {
+			img->w = endian32l(buf[0]);
+			img->h = endian32l(buf[1]);
+			img->channels = 1;
+			if (!wuimg_palette_set(img, get_quake_pal())) {
+				return WUERR_HERE(wu_alloc_error);
+			}
 		}
-		return wu_alloc_error;
+		return WU_OK;
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2024 kaleido
+#include "raster/fmt.h"
 #include "lib/quake.h"
-#include "rast_utils.h"
 #include "wudefs.h"
 
 static void end_idsp(struct image_file *infile) {
@@ -61,9 +61,18 @@ const struct wu_conf *conf) {
 }
 
 
-static enum wu_error lmp_dec(struct image_file *infile,
+static struct wu_st event_lmp(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf; (void)state;
+	return (ev == ev_subcycle)
+		? fmt_load_raster_st(infile->sub_img, infile->ifp)
+		: WU_NO_CHANGE;
+}
+
+static struct wu_st init_lmp(struct image_file *infile,
 const struct wu_conf *conf) {
-	return rast_trivial_fread(infile, conf, lmp_init);
+	(void)conf;
+	return lmp_init(infile->sub_img, infile->ifp);
 }
 
 const struct image_fn idsp_fn = {
@@ -74,5 +83,7 @@ const struct image_fn idsp_fn = {
 };
 const struct image_fn lmp_fn = {
 	.alloc_single = true,
-	.dec = lmp_dec,
+	.alloc_on_subcycle = true,
+	.init = init_lmp,
+	.event = event_lmp,
 };
