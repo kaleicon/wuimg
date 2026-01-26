@@ -11,6 +11,14 @@
 static const unsigned HEADER_SIZE = 512;
 static const uint8_t RLE_LEN_MASK = 0x7f;
 
+const char * sgi_compression_str(const enum sgi_compression c) {
+	switch (c) {
+	case sgi_uncompressed: return "None";
+	case sgi_rle: return "RLE";
+	}
+	return "???";
+}
+
 struct rle_info {
 	size_t rows;
 	size_t total;
@@ -150,34 +158,64 @@ static size_t rle_decode(const struct sgi_desc *desc, struct wuimg *img) {
 	return w;
 }
 
-size_t sgi_decode(const struct sgi_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		if (desc->compression == sgi_rle) {
-			return rle_decode(desc, img);
-		}
+struct wu_st sgi_decode(const struct sgi_desc *desc, struct wuimg *img) {
+	size_t w;
+	if (desc->compression == sgi_rle) {
+		w = rle_decode(desc, img);
+	} else {
 		fseek(desc->ifp, (long)HEADER_SIZE, SEEK_SET);
-		return fmt_load_raster_swap(img, desc->ifp, big_endian);
+		w = fmt_load_raster_swap(img, desc->ifp, big_endian);
 	}
-	return 0;
+	return wuerr_partial(w, wuimg_size(img));
 }
 
-static enum wu_error validate_header(struct sgi_desc *desc, struct wuimg *img,
-const uint8_t compression, const uint8_t bytedepth,
-const uint16_t dimension, const uint16_t width, const uint16_t height,
-const uint16_t channels, const uint32_t bitmap_type) {
-	if (bytedepth < 1 || bytedepth > 2) {
-		return wu_invalid_header;
+struct wu_st sgi_parse_header(struct sgi_desc *desc, struct wuimg *img,
+FILE *ifp) {
+	/* SGI header
+		Offset  Size    Name
+		0       CHAR    Signature[2];
+		2       CHAR    Compression;
+		3       CHAR    BytesPerPixel;
+		4       WORD    Dimension;
+		6       WORD    XSize;
+		8       WORD    YSize;
+		10      WORD    ZSize;
+		12      LONG    PixMin;        // Min value
+		16      LONG    PixMax;        // Max value
+		20      CHAR    Dummy1[4];
+		24      CHAR    ImageName[80];
+		104     LONG    ColorMap;      // Bitmap interpretation
+		108     CHAR    Dummy2[404];
+		512
+	*/
+	const unsigned char sig[2] = {0x01, 0xda};
+	unsigned char buf[12];
+	if (!fread(buf, sizeof(buf), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(buf, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
 
+	const unsigned char compression = buf[2];
+	const unsigned char bytedepth = buf[3];
+	if (bytedepth < 1 || bytedepth > 2) {
+		return wuerr(wu_invalid_header, "bad bytes per pixels");
+	}
+	const uint16_t dimension = buf_endian16b(buf + 4);
+	const uint16_t width = buf_endian16b(buf + 6);
+	const uint16_t height = buf_endian16b(buf + 8);
+	const uint16_t channels = buf_endian16b(buf + 10);
 	switch (dimension) {
 	case 1:
 		if (height != 1) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"height != 1 in 1D file");
 		}
 		// fallthrough
 	case 2:
 		if (channels != 1) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"channels != 1 in 2D file");
 		}
 		break;
 	case 3:
@@ -185,13 +223,23 @@ const uint16_t channels, const uint32_t bitmap_type) {
 		case 1: case 3: case 4:
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "bad nb of channels");
 		}
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "bad nb of dimensions");
 	}
 
+	fseek(ifp, 12, SEEK_CUR);
+	if (!fread(desc->name, sizeof(desc->name), 1, ifp)) {
+		return wuerr(wu_unexpected_eof, "EOF while reading name field");
+	}
+
+	uint32_t bitmap_type;
+	if (!fread(&bitmap_type, sizeof(bitmap_type), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	bitmap_type = endian32b(bitmap_type);
 	switch (bitmap_type) {
 	case sgi_raw:
 		switch (compression) {
@@ -202,68 +250,20 @@ const uint16_t channels, const uint32_t bitmap_type) {
 			img->bitdepth = bytedepth * 8;
 			img->mirror = true;
 			if (wuimg_plane_init(img)) {
+				desc->ifp = ifp;
 				desc->bytedepth = bytedepth;
 				desc->compression = compression;
 				desc->type = (enum sgi_bitmap_type)bitmap_type;
-				return wuimg_verify(img);
+				return WU_OK;
 			}
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
-		break;
+		return wuerr(wu_invalid_header, "compression is not raw nor rle");
 	case sgi_332:
-		return wu_samples_wanted;
+		return wuerr(wu_samples_wanted, "332 image file");
 	case sgi_colormap:
 	case sgi_colormap_define:
-		return wu_no_image_data;
+		return wuerr(wu_samples_wanted, "colormap-only file");
 	}
-	return wu_invalid_header;
-}
-
-enum wu_error sgi_parse_header(struct sgi_desc *desc, struct wuimg *img) {
-	/* SGI header (after magic bytes)
-		Offset  Size    Name
-		0       CHAR    Compression;
-		1       CHAR    BytesPerPixel;
-		2       WORD    Dimension;
-		4       WORD    XSize;
-		6       WORD    YSize;
-		8       WORD    ZSize;
-		10      LONG    PixMin;        // Min value
-		14      LONG    PixMax;        // Max value
-		18      CHAR    Dummy1[4];
-		22      CHAR    ImageName[80];
-		102     LONG    ColorMap;      // Bitmap interpretation
-		106     CHAR    Dummy2[404];
-		510
-	*/
-	uint8_t buf[14];
-	if (!fread(buf, 10, 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
-
-	fseek(desc->ifp, 12, SEEK_CUR);
-	const size_t name_len = sizeof(desc->name);
-	if (!fread(desc->name, name_len, 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
-
-	if (!fread(buf + 10, 4, 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
-
-	return validate_header(desc, img, buf[0], buf[1],
-		buf_endian16(buf + 2, big_endian),
-		buf_endian16(buf + 4, big_endian),
-		buf_endian16(buf + 6, big_endian),
-		buf_endian16(buf + 8, big_endian),
-		buf_endian32(buf + 10, big_endian));
-}
-
-enum wu_error sgi_open_file(struct sgi_desc *desc, FILE *ifp) {
-	const unsigned char sig[2] = {0x01, 0xda};
-	const enum wu_error st = fmt_sigcmp(sig, sizeof(sig), ifp);
-	if (st == wu_ok) {
-		desc->ifp = ifp;
-	}
-	return st;
+	return wuerr(wu_invalid_header, "bad bitmap type");
 }

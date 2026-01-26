@@ -1,28 +1,34 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/sun.h"
 
-static void metadata(const void *restrict ptr, struct wutree *tree) {
-	const struct sun_desc *desc = ptr;
-	tree_bud_leaf_bool(tree, "Compressed", desc->type == sun_byte_encoded);
+static struct wu_st event_sun(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev) {
+	(void)wuconf; (void)state;
+	struct sun_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_add_leaf_utf8(&infile->metadata, "Compressed",
+			sun_type_str(desc->type));
+		return WU_OK;
+	case ev_subcycle:
+		return sun_decode(desc, infile->sub_img);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
-static size_t dec(const void *restrict ptr, struct wuimg *img) {
-	return sun_decode(ptr, img);
-}
-static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
-	return sun_parse_header(ptr, img);
-}
-static enum wu_error open(void *restrict ptr, struct image_file *infile) {
-	return sun_open_file(ptr, infile->ifp);
-}
-
-static enum wu_error sun_dec(struct image_file *infile,
+static struct wu_st init_sun(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct sun_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec);
+	(void)wuconf;
+	return sun_parse_header(infile->dec_state, infile->sub_img, infile->ifp);
 }
 
-const struct image_fn sun_fn = {.dec = sun_dec};
+const struct image_fn sun_fn = {
+	.state_size = sizeof(struct sun_desc),
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.init = init_sun,
+	.event = event_sun,
+};

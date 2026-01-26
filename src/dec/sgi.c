@@ -1,30 +1,36 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
-#include "rast_utils.h"
+#include "wudefs.h"
 #include "lib/sgi.h"
 
-static void metadata(const void *restrict ptr, struct wutree *tree) {
-	const struct sgi_desc *desc = ptr;
-	tree_add_leaf_limit(tree, "Image name", WUPTR_ARRAY(desc->name), NULL);
-	tree_bud_leaf_bool(tree, "Compressed",
-		desc->compression != sgi_uncompressed);
+static struct wu_st event_sgi(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev) {
+	(void)wuconf; (void)state;
+	const struct sgi_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_add_leaf_limit(&infile->metadata, "Name",
+			WUPTR_ARRAY(desc->name), NULL);
+		tree_add_leaf_utf8(&infile->metadata, "Compression",
+			sgi_compression_str(desc->compression));
+		return WU_OK;
+	case ev_subcycle:
+		return sgi_decode(desc, infile->sub_img);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
-static size_t dec(const void *restrict ptr, struct wuimg *img) {
-	return sgi_decode(ptr, img);
-}
-static enum wu_error parse(void *restrict ptr, struct wuimg *img) {
-	return sgi_parse_header(ptr, img);
-}
-static enum wu_error open(void *restrict ptr, struct image_file *infile) {
-	return sgi_open_file(ptr, infile->ifp);
-}
-
-static enum wu_error sgi_dec(struct image_file *infile,
+static struct wu_st init_sgi(struct image_file *infile,
 const struct wu_conf *wuconf) {
-	struct sgi_desc desc;
-	return rast_trivial_dec(infile, wuconf, &desc, open, parse, metadata,
-		dec);
+	(void)wuconf;
+	return sgi_parse_header(infile->dec_state, infile->sub_img, infile->ifp);
 }
 
-const struct image_fn sgi_fn = {.dec = sgi_dec};
+const struct image_fn sgi_fn = {
+	.state_size = sizeof(struct sgi_desc),
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.init = init_sgi,
+	.event = event_sgi,
+};

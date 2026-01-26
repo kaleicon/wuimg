@@ -29,10 +29,11 @@ struct sgi_desc {
 	char name[80];
 };
 
-size_t sgi_decode(const struct sgi_desc *desc, struct wuimg *img);
+const char * sgi_compression_str(enum sgi_compression c);
 
-enum wu_error sgi_parse_header(struct sgi_desc *desc, struct wuimg *img);
+struct wu_st sgi_decode(const struct sgi_desc *desc, struct wuimg *img);
 
-enum wu_error sgi_open_file(struct sgi_desc *desc, FILE *ifp);
+struct wu_st sgi_parse_header(struct sgi_desc *desc, struct wuimg *img,
+FILE *ifp);
 
 #endif /* LIB_SGI */

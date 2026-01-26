@@ -31,10 +31,11 @@ struct sun_desc {
 	enum sun_colormap_type colormap_type;
 };
 
-size_t sun_decode(const struct sun_desc *desc, struct wuimg *img);
+const char * sun_type_str(enum sun_type t);
 
-enum wu_error sun_parse_header(struct sun_desc *desc, struct wuimg *img);
+struct wu_st sun_decode(const struct sun_desc *desc, struct wuimg *img);
 
-enum wu_error sun_open_file(struct sun_desc *desc, FILE *ifp);
+struct wu_st sun_parse_header(struct sun_desc *desc, struct wuimg *img,
+FILE *ifp);
 
 #endif /* LIB_SUN */

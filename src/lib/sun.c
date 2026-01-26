@@ -8,6 +8,19 @@
 #include "raster/fmt.h"
 #include "sun.h"
 
+const char * sun_type_str(const enum sun_type t) {
+	switch (t) {
+	case sun_old: return "Old";
+	case sun_standard: return "Standard";
+	case sun_byte_encoded: return "Byte encoded";
+	case sun_rgb: return "RGB";
+	case sun_tiff: return "TIFF";
+	case sun_iff: return "IFF";
+	case sun_experimental: return "Experimental";
+	}
+	return "???";
+}
+
 static size_t run_length_loop(unsigned char *restrict dst, const size_t dst_len,
 const unsigned char *restrict rle, const size_t rle_len) {
 	const unsigned char RLE_FLAG = 0x80;
@@ -60,17 +73,15 @@ unsigned char *restrict dst, const size_t dst_len) {
 	return written;
 }
 
-size_t sun_decode(const struct sun_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		if (desc->type == sun_byte_encoded) {
-			return rle_decode(desc, img->data, wuimg_size(img));
-		}
-		return fmt_load_raster(img, desc->ifp);
-	}
-	return 0;
+struct wu_st sun_decode(const struct sun_desc *desc, struct wuimg *img) {
+	const size_t size = wuimg_size(img);
+	size_t w = (desc->type == sun_byte_encoded)
+		? rle_decode(desc, img->data, size)
+		: fmt_load_raster(img, desc->ifp);
+	return wuerr_partial(w, size);
 }
 
-static enum wu_error interleave_colormap(struct sun_desc *desc,
+static struct wu_st interleave_colormap(struct sun_desc *desc,
 struct wuimg *img) {
 	uint8_t buf[256*3];
 	if (fread(buf, sizeof(buf), 1, desc->ifp)) {
@@ -85,16 +96,38 @@ struct wuimg *img) {
 					.a = 0xff,
 				};
 			}
-			return wu_ok;
+			return WU_OK;
 		}
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-static enum wu_error validate_header(struct sun_desc *desc, struct wuimg *img,
-const uint32_t width, const uint32_t height, const uint32_t bitdepth,
-const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
+struct wu_st sun_parse_header(struct sun_desc *desc, struct wuimg *img,
+FILE *ifp) {
+	/* SUN header
+		Offset  Size    Name
+		0       BYTE    Signature[4];
+		4       DWORD   Width;
+		8       DWORD   Height;
+		12      DWORD   Depth;          // Bits per pixel[1]
+		16      DWORD   Length;         // Size of image data.
+		20      DWORD   Type;           // Type of raster file
+		24      DWORD   ColorMapType;
+		28      DWORD   ColorMapLen;    // In bytes
+		32      VAR     ColorMap;       // Planar RGB
+		??
+	*/
+
+	const unsigned char sig[] = {0x59, 0xa6, 0x6a, 0x95};
+	uint32_t header[8];
+	if (!fread(header, sizeof(header), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(header, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+
+	const uint32_t type = endian32b(header[5]);
 	switch (type) {
 	case sun_old:
 	case sun_standard:
@@ -104,26 +137,35 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 	case sun_tiff:
 	case sun_iff:
 	case sun_experimental:
-		return wu_samples_wanted;
+		return wuerr(wu_samples_wanted,
+			"TIFF, IFF, or Experimental encoding");
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "unknown raster encoding");
 	}
 
+	const uint32_t cm_type = endian32b(header[6]);
+	const uint32_t cm_len = endian32b(header[7]);
+	const uint32_t bitdepth = endian32b(header[3]);
 	switch (cm_type) {
 	case sun_no_colormap:
 		if (cm_len) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"colormap size != 0");
 		}
 		break;
 	case sun_rgb_colormap:
-		if (bitdepth > 8 || cm_len != (1U << bitdepth) * 3) {
-			return wu_invalid_header;
+		if (bitdepth > 8) {
+			return wuerr(wu_invalid_header,
+				"bitdepth > 8 in colormapped file");
+		} else if (cm_len != (3u << bitdepth)) {
+			return wuerr(wu_invalid_header,
+				"bitdepth and colormap size mismatch");
 		}
 		break;
 	case sun_raw_colormap:
-		return wu_samples_wanted;
+		return wuerr(wu_samples_wanted, "RAW colormap encoding");
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "unknown colormap encoding");
 	}
 
 	switch (bitdepth) {
@@ -139,57 +181,22 @@ const uint32_t type, const uint32_t cm_type, const uint32_t cm_len) {
 		img->layout = (type == sun_rgb) ? pix_argb : pix_abgr;
 		break;
 	default:
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"bitdepth is not 1, 4, 8, 24, or 32");
 	}
 
-	img->w = width;
-	img->h = height;
-	img->channels = (uint8_t)umax(bitdepth/8, 1);
-	img->bitdepth = (uint8_t)umin(bitdepth, 8);
+	img->w = endian32b(header[1]);
+	img->h = endian32b(header[2]);
+	img->channels = (uint8_t)u32max(bitdepth/8, 1);
+	img->bitdepth = (uint8_t)u32min(bitdepth, 8);
 	img->align_sh = 1;
 
-	desc->type = type;
-	desc->colormap_type = cm_type;
-	if (cm_type != sun_no_colormap) {
-		return interleave_colormap(desc, img);
-	}
-	return wu_ok;
-}
-
-enum wu_error sun_parse_header(struct sun_desc *desc, struct wuimg *img) {
-	/* SUN header (after magic bytes)
-		Offset  Size    Name
-		0       DWORD   Width;
-		4       DWORD   Height;
-		8       DWORD   Depth;          // Bits per pixel[1]
-		12      DWORD   Length;         // Size of image data.
-		16      DWORD   Type;           // Type of raster file
-		20      DWORD   ColorMapType;
-		24      DWORD   ColorMapLen;    // In bytes
-		28      VAR     ColorMap;       // Planar RGB
-		??
-	*/
-
-	uint32_t header[7];
-	if (!fread(header, sizeof(header), 1, desc->ifp)) {
-		return wu_unexpected_eof;
-	}
-
-	enum wu_error st = validate_header(desc, img,
-		endian32(header[0], big_endian),
-		endian32(header[1], big_endian),
-		endian32(header[2], big_endian),
-		endian32(header[4], big_endian),
-		endian32(header[5], big_endian),
-		endian32(header[6], big_endian));
-	if (st == wu_ok) {
-		st = wuimg_verify(img);
-	}
-	return st;
-}
-
-enum wu_error sun_open_file(struct sun_desc *desc, FILE *ifp) {
-	desc->ifp = ifp;
-	const unsigned char sig[] = {0x59, 0xa6, 0x6a, 0x95};
-	return fmt_sigcmp(sig, sizeof(sig), ifp);
+	*desc = (struct sun_desc) {
+		.ifp = ifp,
+		.type = type,
+		.colormap_type = cm_type,
+	};
+	return (cm_type != sun_no_colormap)
+		? interleave_colormap(desc, img)
+		: WU_OK;
 }
