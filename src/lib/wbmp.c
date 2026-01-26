@@ -1,35 +1,37 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#include <stdlib.h>
+#include <string.h>
 
-#include "raster/fmt.h"
 #include "wbmp.h"
 
-static enum wu_error read_uintvar_dim(FILE *ifp, size_t *value) {
+static struct wu_st read_uintvar_dim(FILE *ifp, size_t *value) {
 	for (size_t i = 7; i < sizeof(*value) * 8; i += 7) {
 		const int c = getc(ifp);
 		if (c == EOF) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 		*value = (*value << 7) | ((unsigned)c & 0x7f);
 		if (c >> 7 == 0) {
-			return wu_ok;
+			return WU_OK;
 		}
 	}
-	return wu_int_overflow;
+	return wuerr(wu_int_overflow, "uintvar too long");
 }
 
-enum wu_error wbmp_open_file(struct wuimg *img, FILE *ifp) {
-	unsigned char sig[2] = {0};
-	enum wu_error status = fmt_sigcmp(sig, sizeof(sig), ifp);
-	if (status == wu_ok) {
-		img->channels = 1;
-		img->bitdepth = 1;
+struct wu_st wbmp_open_file(struct wuimg *img, FILE *ifp) {
+	const unsigned char sig[2] = {0};
+	unsigned char buf[2];
+	if (!fread(buf, sizeof(buf), 1, ifp)) {
+		return WUERR_HERE(wu_alloc_error);
+	} else if (memcmp(buf, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
 
-		status = read_uintvar_dim(ifp, &img->w);
-		if (status == wu_ok) {
-			status = read_uintvar_dim(ifp, &img->h);
-		}
+	img->channels = 1;
+	img->bitdepth = 1;
+	struct wu_st status = read_uintvar_dim(ifp, &img->w);
+	if (wu_isok(status)) {
+		status = read_uintvar_dim(ifp, &img->h);
 	}
 	return status;
 }

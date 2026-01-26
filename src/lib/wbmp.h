@@ -5,6 +5,6 @@
 
 #include "raster/wuimg.h"
 
-enum wu_error wbmp_open_file(struct wuimg *img, FILE *ifp);
+struct wu_st wbmp_open_file(struct wuimg *img, FILE *ifp);
 
 #endif /* LIB_WBMP */
