@@ -115,7 +115,6 @@ src_list += [custom_target('dec_maps',
 	'conf.c',
 	'dec.c',
 	'filesystem.c',
-	'rast_utils.c',
 	'write.c',
 	'wudefs.c',
 
