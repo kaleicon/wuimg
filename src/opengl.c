@@ -163,7 +163,7 @@ static void set_alpha_ops(const struct gl_context *context, const bool print) {
 		alpha >> 1,
 	};
 	glUniform1iv(context->uni[gl_uni_MODE_ALPHA], ARRAY_LEN(ops), ops);
-	(ops[1] || context->unmultiply ? glDisable : glEnable)(GL_BLEND);
+	(ops[1] ? glDisable : glEnable)(GL_BLEND);
 	if (print) {
 		fprintf(stdout, "Alpha: %s, %s\n",
 			alpha_op0_str(ops[0]), alpha_op1_str(ops[1]));
@@ -341,6 +341,8 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 }
 
 static void set_clear_color(const struct gl_context *context) {
+	/* Background needs to be scaled by the output luminance. That involves
+	 * a trip to linear space. */
 	const uint8_t *bg = context->bg;
 	const struct color_space_luminance lum =
 		color_space_get_luminance(&context->tgt);
@@ -1188,7 +1190,9 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 
 		"vec3 gen_check_pattern(float alpha) {"
 			"ivec2 d = ivec2(gl_FragCoord.xy);"
-			"float bg = bool((d.x ^ d.y) & 16) ? .75 : .5;"
+			"float bg = bool((d.x ^ d.y) & 16)"
+				"? exp2(-.25)"
+				": exp2(-.5);"
 			"return vec3(bg - bg * alpha);"
 		"}"
 		"float setsign(float x, float y) {"
@@ -1307,25 +1311,30 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 					"color.rgb =" UNI_MAT_CMS "* color.rgb;"
 				"}"
 			"}"
-			"color.a = color.a *" UNI_ALPHA_MAP "[0] +" UNI_ALPHA_MAP "[1];"
 			"float lum =" UNI_LUM_SCALE "[0];"
-			"switch (" UNI_MODE_ALPHA "[0]) {"
-			"case " ALPHA_COLOR_MULTIPLY ":"
-				"lum *= color.a;"
-				"break;"
-			"case " ALPHA_COLOR_NO_MULTIPLY ": break;"
-			"case " ALPHA_COLOR_UNMULTIPLY ":"
-				"if (color.a != 0.0) {"
-					"lum /= color.a;"
-				"}"
-				"break;"
-			"}"
 			"if (" UNI_TONEMAP_ARGS "== 1.0) {"
 				"lum *=" UNI_LUM_SCALE "[1];"
 				"color.rgb *= vec3(lum);"
 			"} else {"
 				"color.rgb = tone_map(color.rgb * vec3(lum))"
 					"* vec3(" UNI_LUM_SCALE "[1]);"
+			"}"
+
+			"color.rgb = oetf(color.rgb);"
+			/* Perform all alpha operations in non-linear space, as
+			 * that's how OpenGL blends the texture with the
+			 * background. The least we can do is be consistent. */
+			"color.a = color.a *" UNI_ALPHA_MAP "[0] +" UNI_ALPHA_MAP "[1];"
+			"switch (" UNI_MODE_ALPHA "[0]) {"
+			"case " ALPHA_COLOR_MULTIPLY ":"
+				"color.rgb *= vec3(color.a);"
+				"break;"
+			"case " ALPHA_COLOR_NO_MULTIPLY ": break;"
+			"case " ALPHA_COLOR_UNMULTIPLY ":"
+				"if (color.a != 0.0) {"
+					"color.rgb /= color.a;"
+				"}"
+				"break;"
 			"}"
 			"switch (" UNI_MODE_ALPHA "[1]) {"
 			"case " ALPHA_BG_NONE ": break;"
@@ -1334,7 +1343,6 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 				// fallthrough
 			"case " ALPHA_BG_ONE ": color.a = 1.0;"
 			"}"
-			"color.rgb = oetf(color.rgb);"
 		"}";
 	const GLuint vshader = setup_shader(vs, GL_VERTEX_SHADER);
 	if (!vshader) {
@@ -1402,7 +1410,9 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 
 	glHint(GL_FRAGMENT_SHADER_DERIVATIVE_HINT, GL_FASTEST);
 	glDisable(GL_POLYGON_SMOOTH);
-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // associated alpha blend
+	/* Perform associated alpha blending, as the multiplication step is
+	 * done in the shader. */
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
 	gl_clear_color(context, conf->bg);
 
