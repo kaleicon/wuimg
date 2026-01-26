@@ -333,7 +333,12 @@ static enum color_steps colorspace_update(const struct gl_context *context) {
 
 	float lum[2] = {conv.in_lum, conv.out_lum_inv};
 	float mw = lum[0] * lum[1];
-	mw = fminf(1.0f/(mw * mw), 1.0f);
+	if (mw > 1.0f) {
+		mw = 1.0f/(mw * mw);
+	} else {
+		lum[1] = mw;
+		mw = 1.0f;
+	}
 	glUniform1fv(uni[gl_uni_LUM_SCALE], ARRAY_LEN(lum), lum);
 	glUniform1f(uni[gl_uni_TONEMAP_ARGS], mw);
 	glUniform1f(uni[gl_uni_INVERT], conv.eotf.invert_input);
@@ -1281,7 +1286,7 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 			 * This is equivalent to
 				c * (c/(wp*wp) + 1) / (c + 1)
 			 * Color remains unchanged if UNI_TONEMAP_ARGS is 1.0, */
-			"return color * (color *" UNI_TONEMAP_ARGS "+ vec3(1.0))"
+			"return color * (color * vec3(" UNI_TONEMAP_ARGS ") + vec3(1.0))"
 				"/ (color + vec3(1.0));"
 		"}"
 		"void main() {"
@@ -1311,12 +1316,10 @@ const char * gl_context_setup(struct gl_context *context, struct wu_conf *conf) 
 					"color.rgb =" UNI_MAT_CMS "* color.rgb;"
 				"}"
 			"}"
-			"float lum =" UNI_LUM_SCALE "[0];"
-			"if (" UNI_TONEMAP_ARGS "== 1.0) {"
-				"lum *=" UNI_LUM_SCALE "[1];"
-				"color.rgb *= vec3(lum);"
-			"} else {"
-				"color.rgb = tone_map(color.rgb * vec3(lum))"
+
+			"color.rgb *= vec3(" UNI_LUM_SCALE "[0]);"
+			"if (" UNI_TONEMAP_ARGS "!= 1.0) {"
+				"color.rgb = tone_map(color.rgb)"
 					"* vec3(" UNI_LUM_SCALE "[1]);"
 			"}"
 
