@@ -10,6 +10,7 @@ extern const char write_switches[];
 
 struct write_args {
 	const char *outdir;
+	const struct fmt_desc *fmt;
 	bool overwrite;
 	bool stdout;
 	bool null;

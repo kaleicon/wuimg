@@ -246,7 +246,7 @@ const struct wu_conf *wuconf) {
 		wudec_src_mem(&rs->jpeg,
 			wuptr_mem(data->thumbnail.thumb, data->thumbnail.tlength),
 			NULL);
-		wudec_src_format(&rs->jpeg, &jpeg_fn);
+		wudec_src_dec_fn(&rs->jpeg, &jpeg_fn);
 		rs->jpeg.conf = *wuconf;
 	}
 #endif

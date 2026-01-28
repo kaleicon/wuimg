@@ -11,6 +11,7 @@
 
 #include "dec.h"
 #include "filesystem.h"
+#include "fmtmap.h"
 #include "write.h"
 #include "misc/common.h"
 #include "misc/file.h"
@@ -339,7 +340,7 @@ const int len, char **names, const struct wu_conf *conf) {
 		} else {
 			wudec_src_filename(&image, name);
 		}
-
+		wudec_src_format(&image, args->fmt);
 		ok += write_image(&image, args, writer);
 		wudec_recycle_conf(&image);
 		if (args->stdout) {
@@ -379,8 +380,13 @@ const char write_switches[] =
 	"\t-s\n"
 	"\t\tWrite only the initial sub-image to stdout.\n"
 
+	"\t-t ID\n"
+	"\t\tForce input decoder. Use `--fmts` to list compiled decoders.\n"
+
 	"\t-z\n"
 	"\t\tUse null as line terminator when printing filenames.\n";
+
+
 
 int write_args(const int argc, char **argv, struct write_args *args) {
 	int idx = 0;
@@ -407,6 +413,16 @@ int write_args(const int argc, char **argv, struct write_args *args) {
 			break;
 		case 'f': args->overwrite = true; break;
 		case 's': args->stdout = true; break;
+		case 't':
+			if (idx + 1 >= argc) {
+				return idx;
+			}
+			++idx;
+			args->fmt = fmtmap_by_name(argv[idx]);
+			if (!args->fmt) {
+				return -1;
+			}
+			break;
 		case 'z': args->null = true; break;
 		default:
 			return idx;

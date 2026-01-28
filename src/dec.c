@@ -354,8 +354,16 @@ struct wuimg **cur_img) {
 }
 
 
-void wudec_src_format(struct wudec_image *image, const struct image_fn *fn) {
-	image->desc.dec.fn = fn;
+void wudec_src_format(struct wudec_image *image, const struct fmt_desc *fmt) {
+	if (fmt) {
+		image->desc = *fmt;
+	}
+}
+
+void wudec_src_dec_fn(struct wudec_image *image, const struct image_fn *fn) {
+	image->desc = (struct fmt_desc) {
+		.dec.fn = fn,
+	};
 }
 
 void wudec_src_auto_desc(struct wudec_image *image, const struct wuptr *desc) {

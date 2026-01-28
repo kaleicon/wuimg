@@ -105,7 +105,7 @@ const struct wu_conf *conf, struct wuimg *base, struct eb_sff_desc *desc) {
 			if (fn) {
 				struct wudec_image ctx = {.conf = *conf};
 				wudec_src_mem(&ctx, sub.data, NULL);
-				wudec_src_format(&ctx, fn);
+				wudec_src_dec_fn(&ctx, fn);
 				st = wudec_decode_embedded(infile, img, &ctx).st;
 				if (st == wu_ok) {
 					eb_sff_touchup(desc, &sub, img, base);
@@ -172,7 +172,7 @@ const struct wu_conf *conf) {
 
 			struct wudec_image ctx = {.conf = *conf};
 			wudec_src_mem(&ctx, desc.pcx, NULL);
-			wudec_src_format(&ctx, &pcx_fn);
+			wudec_src_dec_fn(&ctx, &pcx_fn);
 			st = wudec_decode(&ctx);
 
 			infile->sub_img = ctx.file.sub_img;

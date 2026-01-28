@@ -87,7 +87,7 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 #ifdef WU_ENABLE_PNG
 			struct wudec_image ctx = {.conf = *wuconf};
 			wudec_src_file(&ctx, infile->ifp, NULL, true, false);
-			wudec_src_format(&ctx, &png_fn);
+			wudec_src_dec_fn(&ctx, &png_fn);
 			st = wudec_decode_embedded(infile, img, &ctx);
 			wudec_free(&ctx);
 #endif // WU_ENABLE_PNG

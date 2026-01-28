@@ -12,15 +12,14 @@ int main(int argc, char **argv) {
 		.conf = conf_default(),
 	};
 	image.conf.max_img_size = 1920;
-	const struct image_fn *fn = NULL;
+	const struct fmt_desc *fmt = NULL;
 	if (argc > 1) {
-		const struct fmt_desc *fmt = fmtmap_by_name(argv[1]);
+		fmt = fmtmap_by_name(argv[1]);
 		if (!fmt) {
 			return 1;
 		} else if (fmt->is_auto) {
 			return 2;
 		}
-		fn = fmt->dec.fn;
 	}
 
 #ifdef __AFL_HAVE_MANUAL_CONTROL
@@ -31,7 +30,7 @@ int main(int argc, char **argv) {
 	while (__AFL_LOOP(1 << 15)) {
 		const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
 		wudec_src_mem(&image, wuptr_mem(buf, (size_t)len), NULL);
-		wudec_src_format(&image, fn);
+		wudec_src_format(&image, fmt);
 		enum wu_error err;
 		do {
 			struct wuimg *img;

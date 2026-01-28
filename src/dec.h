@@ -50,10 +50,13 @@ enum wu_error wudec_iter(struct wudec_image *image,
 struct wuimg **cur_img);
 
 
-// Use `fn` for decoding instead of identifying the file format
-void wudec_src_format(struct wudec_image *image, const struct image_fn *fn);
+// Use `fmt` for decoding instead of identifying the file format
+void wudec_src_format(struct wudec_image *image, const struct fmt_desc *fmt);
 
-// Use `desc` in the auto decoder instead of identifying the file format
+// Use `fn` for decoding
+void wudec_src_dec_fn(struct wudec_image *image, const struct image_fn *fn);
+
+// Use `desc` as spec string for the auto decoder
 void wudec_src_auto_desc(struct wudec_image *image, const struct wuptr *desc);
 
 // Read input data from memory
