@@ -204,8 +204,8 @@ double event_exec(struct window_context *window) {
 	return elapsed;
 }
 
-void print_keys(void) {
-	puts("Keybinds (case insensitive except where noted):\n"
+void event_print_keys(FILE *out) {
+	fputs("Keybinds:\n"
 		"\tq | Alt+F4 | Ctrl+w\n"
 		"\t\tQuit.\n"
 
@@ -266,5 +266,5 @@ void print_keys(void) {
 		"\t\t1x zoom.\n"
 
 		"\t2 .. 9\n"
-		"\t\t[n]x zoom.");
+		"\t\t[n]x zoom.\n", out);
 }

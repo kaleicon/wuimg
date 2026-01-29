@@ -581,7 +581,7 @@ int main(const int argc, char *argv[]) {
 		print_help(stderr);
 		return 0;
 	case mode_keys:
-		print_keys();
+		event_print_keys(stdout);
 		return 0;
 	case mode_formats:
 		fmtmap_print_known(stdout);

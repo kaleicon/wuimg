@@ -7,6 +7,6 @@
 
 double event_exec(struct window_context *window);
 
-void print_keys(void);
+void event_print_keys(FILE *out);
 
 #endif /* WU_EVENTS */
