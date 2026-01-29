@@ -15,7 +15,7 @@
  * As a fallback we pass the -ffp-contract=fast flag to the compiler, which may
  * turn the naive version into a FMA, but also may not be recognized by all
  * compilers. We could pass =on, but then GCC will certainly ignore it. */
-float fm_fmaf(const float a, const float b, const float c) {
+static float fm_fmaf(const float a, const float b, const float c) {
 #if FP_FAST_FMAF == 1 || defined(__FMA__) || defined(__FMA4__) || defined(__ARM_FEATURE_FMA)
 	return fmaf(a,b,c);
 #else
