@@ -211,9 +211,9 @@ bool fmtmap_known_extension(const struct wuptr filename) {
 }
 
 static void print_descs(FILE *out) {
-	int max = (int)sizeof(desc_map->name);
+	const int max = (int)sizeof(desc_map->name);
 	for (size_t i = 0; i < ARRAY_LEN(desc_map); ++i) {
-		fprintf(out, "%.*s:\t%s\n", max, desc_map[i].name,
+		fprintf(out, "%*.*s  %s\n", max, max, desc_map[i].name,
 			desc_map[i].description);
 	}
 	fputc('\n', out);
