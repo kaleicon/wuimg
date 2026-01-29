@@ -6,7 +6,6 @@
 #include "dec.h"
 
 extern const char write_description[];
-extern const char write_switches[];
 
 struct write_args {
 	const char *outdir;
@@ -32,6 +31,9 @@ struct write_writer {
 int write_filelist(const struct write_args *args, struct write_writer *writer,
 int len, char **names, const struct wu_conf *conf);
 
-int write_args(int argc, char **argv, struct write_args *args);
+const char * write_args(int argc, char *const *argv, int *idx,
+struct write_args *args);
+
+void write_help(const char *preamble, FILE *out);
 
 #endif // WU_WRITE

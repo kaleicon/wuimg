@@ -3,8 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "misc/common.h"
 #include "fmtmap.h"
 #include "imgconv.h"
+#include "opts.h"
 #include "write.h"
 
 #define HELP_SHORT "-h"
@@ -12,40 +14,6 @@
 #define FMTS_LONG "--fmts"
 
 #define WUCONV_CANON_NAME "wuconv"
-
-enum what_to_do {
-	convert_images,
-	show_help,
-	show_fmts,
-};
-
-static int print_help(FILE *ofp) {
-	fputs("Usage:\n"
-		"\t" WUCONV_CANON_NAME " [switches] FILE|- [FILE ...]\n\n", ofp);
-	fprintf(ofp, "Description:\n%s\n", write_description);
-	fputs(
-		"Program info:\n"
-		"\t" HELP_SHORT " | " HELP_LONG "\n"
-		"\t\tYou are here.\n"
-
-		"\t" FMTS_LONG "\n"
-		"\t\tPrint supported formats.\n"
-
-		"\n"
-		"Conversion switches:\n",
-		ofp);
-	return fputs(write_switches, ofp);
-}
-
-static enum what_to_do first_arg(int argc, char **argv) {
-	if (argc <= 0
-	|| !strcmp(argv[0], HELP_SHORT) || !strcmp(argv[0], HELP_LONG)) {
-		return show_help;
-	} else if (!strcmp(argv[0], FMTS_LONG)) {
-		return show_fmts;
-	}
-	return convert_images;
-}
 
 static void close_conv(void *state) {
 	imgconv_close(state);
@@ -58,23 +26,50 @@ const struct wuimg *src) {
 	return imgconv_init(state, dst, src);
 }
 
+enum info_opts_c {
+	wo_done = 0,
+	wo_h = 'h',
+	wo_fmts = 0x80,
+};
+
+static const struct opts info_opts[] = {
+	{wo_h, "help", "",
+		"\t\tYou are here."},
+	{wo_fmts, "fmts", "",
+		"\t\tPrint supported formats."},
+};
+
+static void print_help(FILE *ofp) {
+	fputs(
+		"Usage:\n"
+		"\t" WUCONV_CANON_NAME " [switches] FILE|- [FILE ...]\n\n", ofp);
+	fprintf(ofp, "Description:\n%s\n", write_description);
+
+	opts_help("Program info:", info_opts, ARRAY_LEN(info_opts), ofp);
+	write_help(
+		"\n"
+		"Conversion switches:", ofp);
+}
+
 int main(const int argc, char **argv) {
 	struct write_args wargs = {0};
 	int read = 1;
-	switch(first_arg(argc - read, argv + read)) {
-	case convert_images:
-		;const int r = write_args(argc - read, argv + read, &wargs);
-		if (r >= 0) {
-			read += r;
-			break;
-		}
-		// fallthrough
-	case show_help:
+	const char *err = write_args(argc, argv, &read, &wargs);
+	if (err) {
+		fputs(err, stderr);
+		return 1;
+	}
+
+	const enum info_opts_c c = opts_next(argc, argv, &read, info_opts,
+		ARRAY_LEN(info_opts));
+	switch (c) {
+	case wo_h:
 		print_help(stderr);
 		return 0;
-	case show_fmts:
+	case wo_fmts:
 		fmtmap_print_known(stderr);
 		return 0;
+	case wo_done: break;
 	}
 
 	read += read < argc && !strcmp("--", argv[read]);

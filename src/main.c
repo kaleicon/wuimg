@@ -12,6 +12,7 @@
 #include "extract.h"
 #include "filesystem.h"
 #include "fmtmap.h"
+#include "opts.h"
 #include "write.h"
 #include "misc/file.h"
 #include "misc/math.h"
@@ -19,15 +20,16 @@
 #include "misc/time.h"
 
 enum work_mode {
-	guess = 0,
-	help = 'h',
-	keys = 'k',
-	formats = 'f',
-	directory = 'd',
-	sole = 's',
-	archive = 'a',
-	test = 't',
-	writeout = 'w',
+	mode_guess = 0,
+	mode_error,
+	mode_help = 'h',
+	mode_keys = 'k',
+	mode_formats = 'f',
+	mode_directory = 'd',
+	mode_sole = 's',
+	mode_archive = 'a',
+	mode_test = 't',
+	mode_write = 'w',
 };
 
 struct file_list {
@@ -319,8 +321,8 @@ const struct program_mode *mode) {
 		};
 
 		switch (mode->type) {
-		case test: return test_with(&entries, mode->arg.test);
-		case writeout: return convert_files(&entries, &mode->arg.write);
+		case mode_test: return test_with(&entries, mode->arg.test);
+		case mode_write: return convert_files(&entries, &mode->arg.write);
 		default: break;
 		}
 		return run_with_list(&entries, 0, true, &mode->arg.raw);
@@ -357,20 +359,93 @@ static enum wu_error from_path(const char *name) {
 	return result;
 }
 
-#define HELP_SHORT "-h"
-#define KEYS_SHORT "-k"
-#define FMTS_SHORT "-f"
-#define HELP_LONG "--help"
-#define KEYS_LONG "--keys"
-#define FMTS_LONG "--fmts"
+static const struct opts sole_opts[] = {
+	{'r', "", "STRING",
+		"\t\tRead raw data using settings from STRING. Example:\n"
+		"\t\t\t'w:320 h:240 channels:4 bitdepth:8 layout:bgra'\n"
+		"\t\tOne may also perform rudimentary reads and seeks:\n"
+		"\t\t\t'endian:little c:1 b:1 w:<u16> h:<u16> skip:0x80'\n"
+		"\t\tA complete description is yet to be written..."},
+};
+
+static const char * sole_args(const int argc, char *const *argv, int *idx,
+struct wuptr *args) {
+	*args = (struct wuptr){0};
+	for (;;) {
+		const uint8_t c = opts_next(argc, argv, idx, sole_opts,
+			ARRAY_LEN(sole_opts));
+		if (c != 'r') {
+			break;
+		}
+		*args = wuptr_str(argv[*idx]);
+		++*idx;
+	}
+	return NULL;
+}
+
+static const struct opts test_opts[] = {
+	{'m', "", "",
+		"\t\tPrint full metadata for each file. Decode only once."},
+	{'n', "", "N",
+		"\t\tDecode each file N times. Default is 1."},
+	{'w', "", "N",
+		"\t\tDecode N times before measuring. Default is 0."},
+};
+
+static const char * test_args(const int argc, char *const *argv, int *idx,
+struct test_mode_args *args) {
+	*args = (struct test_mode_args) {
+		.iters = 1,
+		.warmup = 0,
+	};
+	for (;;) {
+		const uint8_t c = opts_next(argc, argv, idx, test_opts,
+			ARRAY_LEN(test_opts));
+		unsigned *dst;
+		switch (c) {
+		case 'm': args->metadata = true; ++*idx; continue;
+		case 'n': dst = &args->iters; break;
+		case 'w': dst = &args->warmup; break;
+		default: return NULL;
+		}
+
+		const char *arg = argv[*idx];
+		struct mparser mp = mp_mem(strlen(arg), arg);
+		uintmax_t tmp;
+		if (mp_scan_uint_unsafe(&mp, &tmp) && !mp_next_char_unsafe(&mp)) {
+			*dst = (unsigned)tmp;
+			++*idx;
+		} else {
+			return "bad number argument";
+		}
+	}
+	return NULL;
+}
+
+enum global_opt_c {
+	go_done = 0,
+	go_h = 'h',
+	go_fmts = 0x80,
+	go_keys,
+};
+
+static const struct opts global_opts[] = {
+	{go_h, "help", "",
+		"\t\tYou are here."},
+	{go_fmts, "fmts", "",
+		"\t\tPrint supported formats."},
+	{go_keys, "keys", "",
+		"\t\tPrint keybinds."},
+};
+
 #define DIRECTORY_MODE "directory"
 #define SOLE_MODE "sole"
 #define ARCHIVE_MODE "archive"
 #define WRITE_MODE "write"
 #define TEST_MODE "test"
 
-static void print_help(void) {
-	fputs("Usage:\n"
+static void print_help(FILE *out) {
+	opts_help("Usage:\n"
 		"\t" WU_CANON_NAME "\t(read images from \".\")\n"
 		"\t" WU_CANON_NAME " DIR\t(read from DIR)\n"
 		"\t" WU_CANON_NAME " FILE\t(read from the parent of FILE, starting with FILE)\n"
@@ -379,16 +454,10 @@ static void print_help(void) {
 		"\t" WU_CANON_NAME " MODE [OPTIONS]... [--] [PATH]...\t(explicit mode)\n"
 
 		"\n"
-		"Program info:\n"
-		"\t" HELP_SHORT " | " HELP_LONG "\n"
-		"\t\tYou are here.\n"
+		"Program info:",
+		global_opts, ARRAY_LEN(global_opts), out);
 
-		"\t" KEYS_SHORT " | " KEYS_LONG "\n"
-		"\t\tPrint keybinds.\n"
-
-		"\t" FMTS_SHORT " | " FMTS_LONG "\n"
-		"\t\tPrint supported formats.\n"
-
+	opts_help(
 		"\n"
 		"Operation modes (all exclusive, may be abbreviated):\n"
 		"\t" DIRECTORY_MODE "\n"
@@ -396,93 +465,39 @@ static void print_help(void) {
 		"\t\tparent if it is a file, or from the current directory if\n"
 		"\t\tmissing. Assumed when zero or one paths are given.\n"
 
-		"\t" SOLE_MODE "\n"
+		"\t" SOLE_MODE " [switches]\n"
 		"\t\tRead only the file(s) given, in the order given. Assumed\n"
-		"\t\twhen more than one path, or \"-\" (stdin), is given.\n"
+		"\t\twhen more than one path, or '-' (stdin), is given.\n"
 
 		"\t" ARCHIVE_MODE "\n"
 		"\t\tDisplay any images inside FILE, which must be an archive\n"
-		"\t\tformat supported by libarchive.\n"
+		"\t\ttype supported by libarchive.\n"
 
 		"\t" TEST_MODE " [switches]\n"
-		"\t\tTry decoding each FILE, while measuring the elapsed time.\n"
+		"\t\tTry decoding each FILE, measuring the elapsed time.\n"
 
 		"\t" WRITE_MODE " [switches]\n"
-		"\t\tTranscode files into the selected format, with sub-images\n"
-		"\t\tand animation frames on separate files if not supported\n"
-		"\t\tby the target. Resulting filenames are written to stdout.\n"
+		"\t\tTranscode the given images, with sub-images and animation\n"
+		"\t\tframes on separate files if not supported by the target.\n"
+		"\t\tOutput names are written to stdout.\n"
 		"\t\tThis converter uses an OpenGL context for rendering.\n"
 		"\t\tRefer to `wuconv` for a software converter.\n"
 
 		"\n"
-		SOLE_MODE " switches:\n"
-		"\t-r STRING\n"
-		"\t\tRead a raw image using settings from STRING. Example:\n"
-		"\t\t\t\"w:320 h:240 channels:4 bitdepth:8 layout:bgra\"\n"
-		"\t\tOne may also perform rudimentary reads and seeks:\n"
-		"\t\t\t\"endian:little c:1 b:1 w:<u16> h:<u16> skip:0x80\"\n"
-		"\t\tA complete description is yet to be written...\n"
+		SOLE_MODE " switches:",
+		sole_opts, ARRAY_LEN(sole_opts), out);
 
+	opts_help(
 		"\n"
-		TEST_MODE " switches:\n"
-		"\t-n N\n"
-		"\t\tDecode each file N times. Default is 1.\n"
+		TEST_MODE " switches:",
+		test_opts, ARRAY_LEN(test_opts), out);
 
-		"\t-w N\n"
-		"\t\tDecode N times for warmup before measuring. Default is 0\n"
-
-		"\t-m\n"
-		"\t\tPrint full metadata for each file. Decode only once.\n"
-
+	write_help(
 		"\n"
-		WRITE_MODE " switches:\n", stdout
-	);
-	fputs(write_switches, stdout);
+		WRITE_MODE " switches:", out);
 }
 
-static int sole_args(const int argc, char **argv, struct wuptr *args) {
-	*args = (struct wuptr){0};
-	int read = 0;
-	if (short_opt(argv[read]) == 'r') {
-		++read;
-		if (read >= argc) {
-			return 0;
-		}
-		*args = wuptr_str(argv[read]);
-		++read;
-	}
-	return read;
-}
-
-static int test_args(const int argc, char **argv, struct test_mode_args *args) {
-	*args = (struct test_mode_args) {
-		.iters = 1,
-		.warmup = 0,
-	};
-	int read = 0;
-	while (read < argc) {
-		unsigned int *ptr;
-		switch (short_opt(argv[read])) {
-		case 'n': ptr = &args->iters; break;
-		case 'w': ptr = &args->warmup; break;
-		case 'm': args->metadata = true; ++read; continue;
-		case 'h': return -1;
-		default: return read;
-		}
-
-		struct mparser mp = mp_mem(strlen(argv[read+1]), argv[read+1]);
-		uintmax_t tmp;
-		if (mp_scan_uint_unsafe(&mp, &tmp) && !mp_next_char_unsafe(&mp)) {
-			*ptr = (unsigned)tmp;
-			read += 2;
-		} else {
-			break;
-		}
-	}
-	return read;
-}
-
-static int get_mode(const int argc, char **argv, struct program_mode *mode) {
+static int get_mode(const int argc, char *const *argv, struct program_mode *mode) {
 	int read = 0;
 	const char *arg = argv[read];
 	const size_t arglen = strlen(arg);
@@ -492,56 +507,45 @@ static int get_mode(const int argc, char **argv, struct program_mode *mode) {
 			|| !strncmp(arg, TEST_MODE, arglen)
 			|| !strncmp(arg, SOLE_MODE, arglen)
 			|| !strncmp(arg, DIRECTORY_MODE, arglen);
-
 		if (mode_match) {
 			mode->type = (enum work_mode)arg[0];
 			++read;
-		} else {
-			if (!strcmp(arg, HELP_SHORT)
-			|| !strcmp(arg, HELP_LONG)) {
-				mode->type = help;
-			} else if (!strcmp(arg, KEYS_SHORT)
-			|| !strcmp(arg, KEYS_LONG)) {
-				mode->type = keys;
-			} else if (!strcmp(arg, FMTS_SHORT)
-			|| !strcmp(arg, FMTS_LONG)) {
-				mode->type = formats;
-			}
-			if (mode->type != guess) {
-				return 0;
-			}
 		}
 
-		int r = 0;
+		const char *err = NULL;
 		switch (mode->type) {
-		case sole:
-		case guess:
-			r = sole_args(argc - read, argv + read,
-				&mode->arg.raw);
-			if (mode->type == guess) {
-				if (r > 0) {
-					mode->type = sole;
-				} else {
-					r = 0;
-				}
+		case mode_sole:
+		case mode_guess:
+			;int prev = read;
+			err = sole_args(argc, argv, &read, &mode->arg.raw);
+			if (read > prev) {
+				mode->type = mode_sole;
 			}
 			break;
-		case test:
-			r = test_args(argc - read, argv + read,
-				&mode->arg.test);
+		case mode_test:
+			err = test_args(argc, argv, &read, &mode->arg.test);
 			break;
-		case writeout:
-			r = write_args(argc - read, argv + read,
-				&mode->arg.write);
+		case mode_write:
+			err = write_args(argc, argv, &read, &mode->arg.write);
 			break;
 		default:
 			break;
 		}
-		if (r < 0) {
-			mode->type = help;
-			return 0;
+		if (err) {
+			fprintf(stderr, "Error while parsing switch '%s': ",
+				argv[read - 1]);
+			term_line_put(err, stderr);
+			mode->type = mode_error;
+		} else {
+			const enum global_opt_c c = opts_next(argc, argv,
+				&read, global_opts, ARRAY_LEN(global_opts));
+			switch (c) {
+			case go_h: mode->type = mode_help; break;
+			case go_fmts: mode->type = mode_formats; break;
+			case go_keys: mode->type = mode_keys; break;
+			case go_done: break;
+			}
 		}
-		read += r;
 	}
 	return read;
 }
@@ -551,7 +555,7 @@ int main(const int argc, char *argv[]) {
 		return from_path("");
 	}
 
-	struct program_mode mode = {.type = guess};
+	struct program_mode mode = {.type = mode_guess};
 	int read = 1;
 	read += get_mode(argc - read, argv + read, &mode);
 	if (read > argc) {
@@ -562,36 +566,38 @@ int main(const int argc, char *argv[]) {
 	}
 
 	const size_t remaining = (size_t)(argc - read);
-	if (mode.type == guess) {
+	if (mode.type == mode_guess) {
 		if (!remaining || (remaining == 1 && strcmp("-", argv[read]))) {
-			mode.type = directory;
+			mode.type = mode_directory;
 		} else {
-			mode.type = sole;
+			mode.type = mode_sole;
 		}
 	}
 
 	switch (mode.type) {
-	case help:
-		print_help();
+	case mode_error:
+		return 1;
+	case mode_help:
+		print_help(stderr);
 		return 0;
-	case keys:
+	case mode_keys:
 		print_keys();
 		return 0;
-	case formats:
+	case mode_formats:
 		fmtmap_print_known(stdout);
 		return 0;
-	case sole:
-	case test:
-	case writeout:
+	case mode_sole:
+	case mode_test:
+	case mode_write:
 		return from_argv(remaining, argv + read, &mode);
-	case directory:
+	case mode_directory:
 		return from_path(remaining ? argv[read] : "");
-	case archive:
+	case mode_archive:
 		if (!remaining) {
 			break;
 		}
 		return run_with_archive(argv[read]);
-	case guess:
+	case mode_guess:
 		fatal_bug(__func__, "Unreachable case reached. Well done.");
 		return 1;
 	}

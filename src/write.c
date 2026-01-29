@@ -12,6 +12,7 @@
 #include "dec.h"
 #include "filesystem.h"
 #include "fmtmap.h"
+#include "opts.h"
 #include "write.h"
 #include "misc/common.h"
 #include "misc/file.h"
@@ -363,71 +364,71 @@ const char write_description[] =
 	"\t   the image is converted to sRGB.\n"
 ;
 
-const char write_switches[] =
-	"\t-d OUTDIR\n"
-	"\t\tWrite files to OUTDIR instead of the file's parent.\n"
+enum write_opts_c {
+	wo_done = 0,
+	wo_d = 'd',
+	wo_e = 'e',
+	wo_f = 'f',
+	wo_s = 's',
+	wo_t = 't',
+	wo_z = 'z',
+};
 
-	"\t-e ENCODER\n"
-	"\t\tOutput format. Supported encoders are\n"
+static const struct opts write_opts[] = {
+	{'d', "", "OUTDIR",
+		"\t\tWrite files to OUTDIR instead of the file's parent."},
+	{'e', "", "ENCODER",
+		"\t\tOutput format. Supported encoders are\n"
 #ifdef WU_ENABLE_JPEGXL
-	"\t\t* jxl (animation, ICC profiles, floating-point data)\n"
+		"\t\t* jxl (animation, ICC profiles, floating-point data)\n"
 #endif
-	"\t\t* pam\n"
+		"\t\t* pam"},
+	{'f', "force", "",
+		"\t\tForce overwriting output file(s)."},
+	{'s', "stdout", "",
+		"\t\tWrite only the initial sub-image to stdout."},
+	{'t', "type", "ID",
+		"\t\tForce input decoder. ID must be one of the decoders\n"
+		"\t\tlisted with `--fmts`."},
+	{'z', "null", "",
+		"\t\tUse null as line terminator when printing filenames."},
+};
 
-	"\t-f\n"
-	"\t\tForce overwriting output file(s).\n"
+#define MAYBE_U_FORGOT " (maybe it wasn't compiled in?)"
 
-	"\t-s\n"
-	"\t\tWrite only the initial sub-image to stdout.\n"
-
-	"\t-t ID\n"
-	"\t\tForce input decoder. Use `--fmts` to list compiled decoders.\n"
-
-	"\t-z\n"
-	"\t\tUse null as line terminator when printing filenames.\n";
-
-
-
-int write_args(const int argc, char **argv, struct write_args *args) {
-	int idx = 0;
+const char * write_args(const int argc, char *const *argv, int *idx,
+struct write_args *args) {
 	*args = (struct write_args){0};
-	while (idx < argc) {
-		switch (short_opt(argv[idx])) {
-		case 'h': return -1;
-		case 'd':
-			if (idx + 1 >= argc) {
-				return idx;
-			}
-			++idx;
-			args->outdir = argv[idx];
+	for (;;) {
+		const enum write_opts_c c = opts_next(argc, argv, idx,
+			write_opts, ARRAY_LEN(write_opts));
+		switch (c) {
+		case wo_d:
+			args->outdir = argv[*idx];
 			break;
-		case 'e':
-			if (idx + 1 >= argc) {
-				return idx;
-			}
-			++idx;
-			args->codec = find_codec(argv[idx]);
+		case wo_e:
+			args->codec = find_codec(argv[*idx]);
 			if (args->codec < 0) {
-				return -1;
+				return "unknown encoder" MAYBE_U_FORGOT;
 			}
 			break;
-		case 'f': args->overwrite = true; break;
-		case 's': args->stdout = true; break;
-		case 't':
-			if (idx + 1 >= argc) {
-				return idx;
-			}
-			++idx;
-			args->fmt = fmtmap_by_name(argv[idx]);
+		case wo_f: args->overwrite = true; break;
+		case wo_s: args->stdout = true; break;
+		case wo_t:
+			args->fmt = fmtmap_by_name(argv[*idx]);
 			if (!args->fmt) {
-				return -1;
+				return "unknown decoder" MAYBE_U_FORGOT;
 			}
 			break;
-		case 'z': args->null = true; break;
-		default:
-			return idx;
+		case wo_z: args->null = true; break;
+		case wo_done:
+			return NULL;
 		}
-		++idx;
+		++*idx;
 	}
-	return idx;
+	return NULL;
+}
+
+void write_help(const char *preamble, FILE *out) {
+	opts_help(preamble, write_opts, ARRAY_LEN(write_opts), out);
 }

@@ -15,8 +15,6 @@ enum trit {
 	trit_what = 2,
 };
 
-uint8_t short_opt(const char *opt);
-
 long num_cpus(void);
 
 void * small_realloc(void *ptr, size_t nmemb, size_t size);

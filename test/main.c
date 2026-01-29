@@ -1158,14 +1158,6 @@ static bool test_num_cpus(void) {
 	printf("%s\t%li\n", ok_str(ok), cpus);
 	return ok;
 }
-static bool test_short_opt(const char *str, const char expect) {
-	const uint8_t opt = short_opt(str);
-	const bool ok = opt == expect;
-	const char opt_s[] = {(char)opt, 0};
-	const char exp_s[] = {expect, 0};
-	printf("%s\t%s\t%s\t%s\n", ok_str(ok), str, exp_s, opt_s);
-	return ok;
-}
 static bool common_tests(void) {
 	test_name(__func__);
 	bool kay = true;
@@ -1185,24 +1177,6 @@ static bool common_tests(void) {
 	for (size_t i = 0; i < ARRAY_LEN(p); ++i) {
 		const size_t m = ((size_t)1 << (sizeof(m)*8 - 1)) | 1;
 		kay &= ok_if_null(p + i, m, 2);
-	}
-	puts("");
-
-	puts("short_opt()");
-	puts("\tswitch\texpect\tresult");
-	const struct {
-		const char opt[7];
-		const char expect;
-	} opts[] = {
-		{"-h", 'h'},
-		{"--help", 0},
-		{"help", 0},
-		{"", 0},
-		{"-", 0},
-		{"--", '-'},
-	};
-	for (size_t i = 0; i < ARRAY_LEN(opts); ++i) {
-		kay &= test_short_opt(opts[i].opt, opts[i].expect);
 	}
 	puts("");
 
