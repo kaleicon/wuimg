@@ -18,6 +18,7 @@
 #include "raster/pix.h"
 #include "raster/unpack.h"
 
+#include "opts.h"
 #include "wudefs.h"
 
 #include "fast_math.c"
@@ -227,6 +228,100 @@ static bool fast_math_tests(void) {
 	};
 	for (size_t i = 0; i < ARRAY_LEN(ranges); ++i) {
 		kay &= test_powf(ranges[i][0], ranges[i][1], powf_norm, exp);
+	}
+	puts("");
+	return kay;
+}
+
+/* opts tests */
+enum test_opts_c {
+	to_done = 0,
+
+	to_a = 'a',
+	to_b = 'b',
+
+	to_k = 'k',
+	to_h = 'h',
+
+	to_no_char_flag = 0x80,
+	to_no_char_opt = 0x81,
+};
+static const struct opts test_opts[] = {
+	{to_a, "", "", "flag with short name"},
+	{to_b, "bool", "", "flag with short and long names"},
+	{to_no_char_flag, "enable", "", "flag with long name"},
+
+	{to_k, "", "NUM", "opt with short name"},
+	{to_h, "hey", "KEY", "opt with short and long name"},
+	{to_no_char_opt, "yay", "KEY", "opt with long name"},
+};
+struct test_opts_args {
+	bool a, b, c;
+	const char *k;
+	const char *h;
+	const char *y;
+};
+static bool test_opts_parse(const int argc, char *const *argv, int *idx,
+struct test_opts_args *out) {
+	for (;;) {
+		const enum test_opts_c c = opts_next(argc, argv, idx,
+			test_opts, ARRAY_LEN(test_opts));
+		switch (c) {
+		case to_a: out->a = true; break;
+		case to_b: out->b = true; break;
+		case to_no_char_flag: out->c = true; break;
+		case to_k: out->k = argv[*idx]; break;
+		case to_h: out->h = argv[*idx]; break;
+		case to_no_char_opt: out->y = argv[*idx]; break;
+		case to_done: return true;
+		}
+		++*idx;
+	}
+	return true;
+}
+static bool test_cmdline(const int argc, char *const *argv,
+const struct test_opts_args *expect) {
+	struct test_opts_args result = {0};
+	int read = 0;
+	test_opts_parse(argc, argv, &read, &result);
+	int c = memcmp(expect, &result, sizeof(result));
+	bool ok = !c;
+	printf("%s\t%d\n", ok_str(ok), c);
+	return ok;
+}
+static bool opts_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("opts parsing, really basic test");
+	puts("\tmemcmp(&expect, &result)");
+	const char *ay = "ay";
+	const char *lmao = "lmao";
+	const char *you = "you";
+	const char *me = "me";
+	struct {
+		const char *cmdline[6];
+		struct test_opts_args expect;
+	} cases[] = {
+		{
+			.cmdline = {"-a", "-b", "-k", ay, "-h", lmao},
+			.expect = {
+				.a = true, .b = true,
+				.k = ay, .h = lmao,
+			},
+		}, {
+			.cmdline = {
+				"--bool", "--enable", "--hey", you, "--yay", me,
+			},
+			.expect = {
+				.b = true, .c = true,
+				.h = you, .y = me,
+			},
+		},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(cases); ++i) {
+		kay &= test_cmdline((int)ARRAY_LEN(cases[i].cmdline),
+			(char *const *)cases[i].cmdline, &cases[i].expect);
 	}
 	puts("");
 	return kay;
@@ -1430,6 +1525,7 @@ int main(void) {
 		& palette_tests()
 		& pix_layout_tests()
 		& unpack_tests()
+		& opts_tests()
 		& fast_math_tests()
 		& wudefs_tests();
 	return kay ? 0 : 1;
