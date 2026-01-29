@@ -126,7 +126,7 @@ const int frame) {
 		const watch_t w = watch_look();
 		const struct wuimg *dst = out->passthrough ? src : &out->dst;
 		err_msg = write_frame(enc, dst, src, out, writer, frame);
-		watch_report("Converted", w, report_info);
+		watch_report("Converted", w, report_all);
 	}
 	return err_msg;
 }

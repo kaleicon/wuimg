@@ -25,6 +25,7 @@ enum work_mode {
 	mode_help = 'h',
 	mode_keys = 'k',
 	mode_formats = 'f',
+	mode_envs = 'e',
 	mode_directory = 'd',
 	mode_sole = 's',
 	mode_archive = 'a',
@@ -339,7 +340,7 @@ static enum wu_error from_path(const char *name) {
 		.dynamic = true,
 		.name = fs_filter_sort(name, &entries.nr, &start_idx),
 	};
-	watch_report("Filenames sorted", start, report_whocares);
+	watch_report("Filenames sorted", start, report_all);
 
 	enum wu_error result;
 	if (entries.name) {
@@ -427,6 +428,7 @@ enum global_opt_c {
 	go_h = 'h',
 	go_fmts = 0x80,
 	go_keys,
+	go_envs,
 };
 
 static const struct opts global_opts[] = {
@@ -436,6 +438,8 @@ static const struct opts global_opts[] = {
 		"\t\tPrint supported formats."},
 	{go_keys, "keys", "",
 		"\t\tPrint keybinds."},
+	{go_envs, "envs", "",
+		"\t\tPrint recognized environment variables."},
 };
 
 #define DIRECTORY_MODE "directory"
@@ -543,6 +547,7 @@ static int get_mode(const int argc, char *const *argv, struct program_mode *mode
 			case go_h: mode->type = mode_help; break;
 			case go_fmts: mode->type = mode_formats; break;
 			case go_keys: mode->type = mode_keys; break;
+			case go_envs: mode->type = mode_envs; break;
 			case go_done: break;
 			}
 		}
@@ -585,6 +590,11 @@ int main(const int argc, char *argv[]) {
 		return 0;
 	case mode_formats:
 		fmtmap_print_known(stdout);
+		return 0;
+	case mode_envs:
+		fputs(WU_ENV_VARIABLES, stderr);
+		fputc('\n', stderr);
+		fputs(WINDOW_ENV_VARIABLES, stderr);
 		return 0;
 	case mode_sole:
 	case mode_test:

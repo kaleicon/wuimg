@@ -16,6 +16,8 @@
 #include "window/wayland.h"
 #endif
 
+extern const char WINDOW_ENV_VARIABLES[];
+
 struct window_context {
 	struct window_public pub;
 	union {

@@ -8,6 +8,15 @@
 
 #include "misc/common.h"
 
+const char WU_ENV_VARIABLES[] =
+	"Environment variables:\n"
+	"\tWU_DEBUG\n"
+	"\t\tPrint misc extra information (OpenGL debug info, format\n"
+	"\t\tidentification confidence, other random stuff).\n"
+	"\tWU_TIMING=-1|0|1\n"
+	"\t\tPrint timing measurements. Higher values print stats for\n"
+	"\t\tmore operations. Default is 0.\n";
+
 long num_cpus(void) {
 #if defined(_SC_NPROCESSORS_ONLN)
 	return sysconf(_SC_NPROCESSORS_ONLN); // Linux

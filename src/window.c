@@ -8,6 +8,11 @@
 #include "misc/utf8.h"
 #include "window.h"
 
+const char WINDOW_ENV_VARIABLES[] =
+	"Window env variables:\n"
+	"\tWU_GLFW\n"
+	"\t\tForce GLFW backend, even if the Wayland one is available.\n";
+
 static volatile sig_atomic_t sig_should_close = 0;
 
 static void signal_handler(int _signum) {

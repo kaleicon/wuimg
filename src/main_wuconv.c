@@ -30,6 +30,7 @@ enum info_opts_c {
 	wo_done = 0,
 	wo_h = 'h',
 	wo_fmts = 0x80,
+	wo_envs,
 };
 
 static const struct opts info_opts[] = {
@@ -37,6 +38,8 @@ static const struct opts info_opts[] = {
 		"\t\tYou are here."},
 	{wo_fmts, "fmts", "",
 		"\t\tPrint supported formats."},
+	{wo_envs, "envs", "",
+		"\t\tPrint recognized environment variables."},
 };
 
 static void print_help(FILE *ofp) {
@@ -68,6 +71,9 @@ int main(const int argc, char **argv) {
 		return 0;
 	case wo_fmts:
 		fmtmap_print_known(stderr);
+		return 0;
+	case wo_envs:
+		fputs(WU_ENV_VARIABLES, stderr);
 		return 0;
 	case wo_done: break;
 	}

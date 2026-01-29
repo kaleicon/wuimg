@@ -564,7 +564,7 @@ static void set_cursor(struct wayland *wl) {
 		if (c->surf) {
 			wl_surface_attach(c->surf, c->buf, 0, 0);
 			wl_surface_commit(c->surf);
-			watch_report("Cursor generated", start, report_whocares);
+			watch_report("Cursor generated", start, report_all);
 		}
 	}
 }

@@ -532,7 +532,7 @@ const size_t h, const unsigned char *data) {
 				w, img->bitdepth, img->attr, img->bit,
 				params->op, arg);
 		}
-		watch_report("Unpacked", start, report_detail);
+		watch_report("Unpacked", start, report_all);
 		glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	}
 	return (bool)map;
@@ -883,7 +883,7 @@ cmsHPROFILE out) {
 	tex_cms(size);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	cmsDeleteTransform(xfr);
-	watch_report("icc lut created", start, report_detail);
+	watch_report("ICC lut created", start, report_all);
 	return true;
 }
 

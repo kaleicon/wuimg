@@ -100,7 +100,7 @@ const bool print_draw_time) {
 	if (window_draw(window)) {
 		draw_time = gl_clock_query(&window->pub.gl);
 		if (print_draw_time) {
-			nanosec_report("Drawn", draw_time, report_info);
+			nanosec_report("Drawn", draw_time, report_all);
 		}
 	}
 
@@ -211,7 +211,7 @@ const bool allow_cycle, const bool allow_delete) {
 				next_frame = state->time + min_time(img, state);
 			} else {
 				nanosec_report("Frame uploaded in",
-					gl_clock_query(gl), report_detail);
+					gl_clock_query(gl), report_all);
 			}
 			upload = false;
 			event->image = 0;
@@ -263,7 +263,7 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 	if (tr) {
 		term_noncanon_start(tr);
 	}
-	watch_report("Display set", start, report_info);
+	watch_report("Display set", start, report_all);
 	return true;
 }
 

@@ -10,9 +10,7 @@
 enum report_level {
 	report_always = -1,
 	report_normal = 0,
-	report_info = 1,
-	report_detail = 2,
-	report_whocares = 3,
+	report_all = 1,
 };
 
 typedef uint64_t watch_t;
