@@ -15,7 +15,8 @@ Features
 * Displays EXIF, XMP, and format-specific comments and metadata
 * Support for embedded ICC profiles and format-specific colorspaces
   * At the moment, images are converted to sRGB for display
-    * Unless you're on Wayland and want to try your luck. See below.
+    * Unless you're on Wayland and want to try your luck. See
+     `Wayland color management` below.
 * Browse archives, via libarchive
 * Doesn't modify the original file when rotating!
 * Doesn't recurse infinitely into directories!
@@ -165,9 +166,9 @@ may actually fit in your screen) and contains all the information you need.
 Compiling wuconv
 ----------------
 wu is able to encode most images into PAM or JXL (`wu write FILES...`), but
-uses an OpenGL and windowing context to perform rotations and color conversion.
-For headless machines or where speed is more important, there's a pure-software
-converter, `wuconv`
+uses OpenGL context to perform rotations and color conversion. For headless
+machines or where speed is more important, there's a pure-software converter,
+`wuconv`
 
 	# Creates a binary at BUILDDIR/src/wuconv
 	meson compile -C BUILDDIR wuconv
@@ -187,20 +188,25 @@ This is used for debugging.
 
 	# You need AFL++ installed and a dedicated build directory
 	CC=afl-cc CXX=afl-c++ meson setup FUZZBUILD
+
 	# For better performance, disable all but the format family to fuzz.
-	# To test, say, BMP decoding, you need the DIB family enabled,
-	# which also includes ICO and DIB.
+	# To test, say, BMP decoding, you need the DIB family enabled.
 	meson configure --auto-features disabled -D dib=enabled FUZZBUILD
+
 	# Optimize for the current CPU
 	meson configure -D c_args=-march=native FUZZBUILD
+
 	# Enable a sanitizer to make sure it crashes
 	meson configure -D b_sanitize=address FUZZBUILD
 
+	# Compile
 	meson compile -C FUZZBUILD wufuzz
+
 	# Create a minimal corpus
-	afl-cmin -i bmp_samples/ -o uniq/ -- wufuzz bmp
+	afl-cmin -i bmp_samples/ -o uniq/ -- path/to/wufuzz bmp
+
 	# Fuzz
-	afl-fuzz -i uniq/ -o out/ -- wufuzz bmp
+	afl-fuzz -i uniq/ -o out/ -- path/to/wufuzz bmp
 
 
 Usage
