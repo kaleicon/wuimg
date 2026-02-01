@@ -5,6 +5,9 @@ import enum
 import typing
 import sys
 
+# Produces a Huffman lookup table for fax decoding.
+
+# Fax huffman codes, copy-pasted from the Rec. T.4 PDF
 bw_codes = '''
 0 00110101 0 0000110111
 1 000111 1 010
@@ -119,65 +122,78 @@ long_codes = '''
 
 eol_code = '''EOL 000000000001'''
 
-@enum.unique
-class TableStore(enum.StrEnum):
-	Pack = 'pack'
-	Fields = 'fields'
-	Bitfields = 'bitfields'
+class FaxCode(typing.NamedTuple):
+	'''A G3 code'''
 
-class HuffVal(typing.NamedTuple):
 	val: int
-	bits: int
+	'''Pixel run length'''
 
-	@staticmethod
-	def type(store):
-		if store == TableStore.Pack:
-			return 'uint16_t'
-		return 'struct fax_huff_val'
-
-	@staticmethod
-	def struct(store):
-		if store == TableStore.Fields:
-			tpl = ('uint16_t val', 'uint8_t bits')
-		elif store == TableStore.Bitfields:
-			tpl = ('unsigned val:12', 'unsigned bits:4')
-		else:
-			return ''
-		return '{} {{\n\t{};\n\t{};\n}};'.format(
-			HuffVal.type(store), tpl[0], tpl[1])
-
-	@staticmethod
-	def get_tpl(ret_type, field, type, op):
-		return '''{} fax_huffman_get_{}({} pack) {{\n\treturn {};\n}}'''.format(
-			ret_type, field, type, op)
-
-	@staticmethod
-	def get_val(store):
-		return HuffVal.get_tpl('uint16_t', 'val', HuffVal.type(store),
-			'pack >> 4' if store == TableStore.Pack else 'pack.val')
-
-	@staticmethod
-	def get_bits(store):
-		return HuffVal.get_tpl('uint8_t', 'bits', HuffVal.type(store),
-			'pack & 0xf' if store == TableStore.Pack else 'pack.bits')
-
-	def render(self, store):
-		if store == TableStore.Pack:
-			return f'({self.val} << 4) | {self.bits},'
-		return f'{{ .val={self.val}, .bits={self.bits} }},'
-
-class HuffDef(typing.NamedTuple):
-	val: int
 	bits: str
+	'''Bit code'''
 
 	def expand(self):
 		val = -1 if self.val == "EOL" else int(self.val)
 		return val, len(self.bits), int(self.bits, base=2)
 
-	def __lt__(self, other):
-		if len(self.bits) == len(other.bits):
-			return self.bits < other.bits
-		return len(self.bits) < len(other.bits)
+@enum.unique
+class TableStore(enum.StrEnum):
+	'''Huffman table storage method'''
+
+	Pack = 'pack'
+	'''Store as an uint16_t array, using shifts and masks to extract values. Seems to be the fastest'''
+
+	Fields = 'fields'
+	'''Store as an struct array, each entry being 32-bits due to padding rules'''
+
+	Bitfields = 'bitfields'
+	'''Store as an struct array, using bitfields to reduce to 16-bits. Seems to be the slowest somehow'''
+
+	def type(self):
+		'''C type of table'''
+		if self == TableStore.Pack:
+			return 'uint16_t'
+		return 'struct fax_huff_val'
+
+	def struct(self):
+		'''C struct definition'''
+		if self == TableStore.Fields:
+			tpl = ('uint16_t val', 'uint8_t bits')
+		elif self == TableStore.Bitfields:
+			tpl = ('unsigned val:12', 'unsigned bits:4')
+		else:
+			return ''
+		return '{} {{\n\t{};\n\t{};\n}};'.format(
+			self.type(), tpl[0], tpl[1])
+
+	def fn_tmpl(self, ret_type, field, op):
+		'''Accessor function template'''
+		return '''{} fax_huffman_get_{}({} pack) {{\n\treturn {};\n}}'''.format(
+			ret_type, field, self.type(), op)
+
+	def val_fn(self):
+		'''Val accessor function'''
+		return self.fn_tmpl('uint16_t', 'val',
+			'pack >> 4' if self == TableStore.Pack else 'pack.val')
+
+	def bits_fn(self):
+		'''Bit accessor function'''
+		return self.fn_tmpl('uint8_t', 'bits',
+			'pack & 0xf' if store == TableStore.Pack else 'pack.bits')
+
+class TableEntry(typing.NamedTuple):
+	'''Huffman table entry'''
+
+	val: int
+	'''Pixel run length, or index to second-level table if `bits` is 0'''
+
+	bits: int
+	'''Bits to advance the stream. If 0, use the table bit size'''
+
+	def render(self, store):
+		'''Entry declaration'''
+		if store == TableStore.Pack:
+			return f'({self.val} << 4) | {self.bits},'
+		return f'{{ .val={self.val}, .bits={self.bits} }},'
 
 def print_table(tab):
 	cnt = [0] * 13
@@ -194,15 +210,15 @@ def get_max_bits(tab):
 def make_huffman_table(tab, size, total, store, ofp, offset=0):
 	over = total - size
 	mask = ((1 << over) - 1)
-	huff = [HuffVal(0, 0)] * (1 << size)
-	dhuff = []
+	huff = [TableEntry(0, 0)] * (1 << size)
+	dhuff = [] # second level tables
 	for n, t in enumerate(tab):
 		val, bits, code = t.expand()
 		align = total - bits
 		norm = code << align
 		prefix = norm >> over
 		if bits <= size:
-			v = HuffVal(val, bits)
+			v = TableEntry(val, bits)
 			for n in range(1 << (size - bits)):
 				huff[prefix + n] = v
 		else:
@@ -213,13 +229,13 @@ def make_huffman_table(tab, size, total, store, ofp, offset=0):
 					tgt = dh[1]
 					idx = nn
 			if not tgt:
-				tgt = [HuffVal(0,0)] * (1 << over)
+				tgt = [TableEntry(0,0)] * (1 << over)
 				idx = len(dhuff)
 				dhuff.append((prefix, tgt))
-			v = HuffVal(0, 0) if val < 0 else HuffVal(val, bits - size)
+			v = TableEntry(0, 0) if val < 0 else TableEntry(val, bits - size)
 			for n in range(1 << align):
 				tgt[base + n] = v
-			huff[prefix] = HuffVal(idx, 0)
+			huff[prefix] = TableEntry(idx, 0)
 
 	for n, t in enumerate(huff):
 		print(f'\t[{n+offset}]', t.render(store), sep=' = ', file=ofp)
@@ -233,9 +249,9 @@ def parse_code_strs(short, long):
 	white = []
 	black = []
 	for t in itertools.batched(short.split(), 4):
-		white.append(HuffDef._make(t[:2]))
-		black.append(HuffDef._make(t[2:]))
-	tup = tuple(map(HuffDef._make, itertools.batched(long.split() + eol_code.split(), 2)))
+		white.append(FaxCode._make(t[:2]))
+		black.append(FaxCode._make(t[2:]))
+	tup = tuple(map(FaxCode._make, itertools.batched(long.split() + eol_code.split(), 2)))
 	white += tup
 	black += tup
 	return white, black
@@ -251,17 +267,17 @@ if __name__ == "__main__":
 	white, black = parse_code_strs(bw_codes, long_codes)
 	if len(sys.argv) == 3:
 		store = TableStore.Pack
-		lvl1_bits = 8
+		lvl1_bits = 8 # Produces the smallest table
 		max_bits = max(get_max_bits(white), get_max_bits(black))
 		table_name = 'FAX_HUFFMAN_TABLE'
 		with open(sys.argv[1], "w") as hfp, open(sys.argv[2], "w") as cfp:
-			print(HuffVal.struct(store), file=hfp)
+			print(store.struct(), file=hfp)
 			print_table_dims(lvl1_bits, max_bits, hfp)
-			print('extern const ', HuffVal.type(store), ' ', table_name, '[];',
+			print('extern const ', store.type(), ' ', table_name, '[];',
 				sep='', file=hfp)
 
 			print('#include <stdint.h>', file=cfp)
-			print('const ', HuffVal.type(store), ' ', table_name, '[] = {',
+			print('const ', store.type(), ' ', table_name, '[] = {',
 				sep='', file=cfp)
 			wentries = make_huffman_table(white, lvl1_bits, max_bits, store, cfp)
 			bentries = make_huffman_table(black, lvl1_bits, max_bits, store, cfp,
@@ -270,8 +286,8 @@ if __name__ == "__main__":
 
 			print_offset('FAX_WHITE_OFFSET', 0, hfp)
 			print_offset('FAX_BLACK_OFFSET', wentries, hfp)
-			print('static', HuffVal.get_val(store), file=hfp)
-			print('static', HuffVal.get_bits(store), file=hfp)
+			print('static', store.val_fn(), file=hfp)
+			print('static', store.bits_fn(), file=hfp)
 	else:
 		print('Usage:', sys.argv[0], 'out.h', 'out.c')
 		#print_table(white)
