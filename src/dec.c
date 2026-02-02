@@ -229,6 +229,8 @@ static enum wu_error actually_open(struct wudec_image *image) {
 			}
 		} else {
 			fseek(infile->ifp, offset, SEEK_SET);
+			// propagate seek to file descriptor. needed for tiff
+			fflush(infile->ifp);
 		}
 	} else {
 		if (image->desc.is_auto || !image->desc.dec.fn->mmap) {
