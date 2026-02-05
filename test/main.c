@@ -380,20 +380,23 @@ struct test_unpack_params {
 };
 static bool cmp_unpack(const struct test_unpack_params *p,
 const union test_unpack_mem *e, const uint8_t *blob, enum pix_attr attr) {
-	const size_t elems = p->bitdepth > 32
-		? 2
-		: (p->bitdepth > 8 ? 4 : 8);
+	size_t elems = ARRAY_LEN(e->m8);
+	if (p->bitdepth > 32) { // pack double
+		elems = ARRAY_LEN(e->mf);
+	} else if (p->bitdepth > 8) {
+		elems = ARRAY_LEN(e->m16);
+	}
 	const size_t stride = unpack_stride(elems, p->bitdepth, attr, p->op, NULL);
-	uint8_t out[sizeof(*e)] = {0};
-	unpack_strip(out, blob, elems, p->bitdepth, attr, p->bit, p->op, NULL);
+	union test_unpack_mem out = {0};
+	unpack_strip(&out, blob, elems, p->bitdepth, attr, p->bit, p->op, NULL);
 
-	const bool ok = !memcmp(out, e->m8, sizeof(out)) && stride;
+	const bool ok = !memcmp(&out, e->m8, sizeof(*e)) && stride;
 	printf("%s\t%02i/%s/%s/%s\t%zu\t",
 		ok_str(ok), p->bitdepth,
 		p->bit == big_endian ? "ms" : "ls", unpack_op_str(p->op),
 		pix_attr_str(attr), stride);
 	print_blob(e->m8, sizeof(*e), '\t');
-	print_blob(out, sizeof(*e), '\n');
+	print_blob(&out, sizeof(out), '\n');
 	return ok;
 }
 static void synth_case(union test_unpack_mem *e, const union test_unpack_mem *p,
@@ -476,7 +479,7 @@ static bool unpack_tests(void) {
 			.e.m16 = {0xba98, 0x5432, 0xfedc, 0x9876}},
 		{28, pix_normal, big_endian, op_repack,
 			.e.m16 = {0xba98, 0x4321, 0xdcba, 0x6543}},
-		};
+	};
 	for (size_t i = 0; i < ARRAY_LEN(up); ++i) {
 		kay &= test_unpack_synth(up + i, data.mem);
 	}
