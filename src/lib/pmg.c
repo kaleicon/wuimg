@@ -5,7 +5,7 @@
 #include "misc/endian.h"
 #include "lib/pmg.h"
 
-/* Print Magic Graphic and Card*/
+/* Print Magic Graphic and Card */
 
 static size_t rle_offset(const struct wuptr mem) {
 	return mem.ptr[2] == 'G' ? 24 : 32;

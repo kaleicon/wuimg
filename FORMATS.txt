@@ -117,7 +117,7 @@ pc98      prs       Kirara/IDES PRS, Micro Cabin PRS (Kimagure Orange Road)
 pcf       pcf       PCF bitmap font
 pcx       dcx       Multi-image PCX
 pcx       pcx       PC Paintbrush PCX (all versions, plus CGA mode), Word for DOS screen capture
-pcx       spidygfx  Reunion graphics
+pcx       spidygfx  Reunion (1994) graphics
 pdt       pdt       RealLive engine PDT10 and PDT11
 pgx       pgx       Glib2 engine image
 pi        dpc       Excellents Yuuguri DPC image and palette
@@ -125,7 +125,7 @@ pi        pi        Yanagisawa's Pi, Excellents truncated Pi (.g, .lsp)
 pic       pic       Yanagisawa's PIC
 pic2      pic2      Yanagisawa's PIC2
 pictor    pictor    PCPaint PICtor
-piklib    piklib    Aidem Media Piklib image (uncompressed only)
+piklib    piklib    Aidem Media Piklib engine image (uncompressed only)
 pmg       pmg       Print Magic Graphic (PMGRAF) and Card (PMCARD)
 png       png       Portable Network Graphics, Malie engine MGF
 pnm       pnm       PNM extended family (PNM, PAM, PFM, PHM, Xv Thumbnail, MTV, JPEG2000-PGX)

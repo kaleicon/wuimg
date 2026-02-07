@@ -482,7 +482,11 @@ struct wu_st dcx_open_file(struct dcx_desc *d, const struct wuptr mem) {
 }
 
 
-/* Reunion graphics */
+/* Reunion (1994) graphics
+ * Reverse-engineered in
+https://www.vidarholen.net/contents/junk/reunionpic.html
+ * though it's never connected to the PCX RLE format.
+*/
 struct wu_st spidygfx_decode(const struct wuptr src, struct wuimg *img) {
 	const size_t r =  rle_decode(img->data, img->w*img->h, src.ptr, src.len);
 	if (!r) {

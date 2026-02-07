@@ -953,7 +953,7 @@ DEC_MAP: DecMap = {
 			),
 			mime=("vnd.zbrush.pcx", "x-pcx")
 		),
-		"spidygfx": FmtInfo("Reunion graphics",
+		"spidygfx": FmtInfo("Reunion (1994) graphics",
 			ext="pic",
 			magic=b"SpidyGfx"
 		),
@@ -1009,7 +1009,7 @@ DEC_MAP: DecMap = {
 	},
 
 	"piklib": {
-		"piklib": FmtInfo("Aidem Media Piklib image (uncompressed only)",
+		"piklib": FmtInfo("Aidem Media Piklib engine image (uncompressed only)",
 			ext="img",
 			magic=b"PIK\0"
 		),
