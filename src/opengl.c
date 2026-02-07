@@ -9,6 +9,7 @@
 #include "misc/common.h"
 #include "misc/endian.h"
 #include "misc/math.h"
+#include "misc/term.h"
 #include "raster/strip.h"
 #include "raster/unpack.h"
 
@@ -165,8 +166,10 @@ static void set_alpha_ops(const struct gl_context *context, const bool print) {
 	glUniform1iv(context->uni[gl_uni_MODE_ALPHA], ARRAY_LEN(ops), ops);
 	(ops[1] ? glDisable : glEnable)(GL_BLEND);
 	if (print) {
-		fprintf(stdout, "Alpha: %s, %s\n",
+		char msg[32];
+		snprintf(msg, sizeof(msg), "Alpha: %s, %s",
 			alpha_op0_str(ops[0]), alpha_op1_str(ops[1]));
+		term_line_temp(msg);
 	}
 }
 
