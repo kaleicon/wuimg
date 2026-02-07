@@ -679,6 +679,13 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"eri": {
+		"eri": FmtInfo("Entis Rasterized Image (lossless Gamma-encoded only)",
+			ext="eri",
+			magic=b"Entis\x1a\0\0",
+		),
+	},
+
 	"fax": {
 		"apf": FmtInfo("Async Professional Fax",
 			ext="apf",
