@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include <ctype.h>
+#include <limits.h>
 #include <string.h>
 
 #include <unistd.h>
@@ -12,15 +13,19 @@
 
 void term_print_escaped(const unsigned char *restrict data, size_t len,
 const bool is_utf8, FILE *out) {
-	const unsigned char hex[16] = "0123456789ABCDEF";
+	const unsigned char hex[16] = {
+		'0', '1', '2', '3', '4', '5', '6', '7',
+		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+	};
 	const unsigned char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
 	const unsigned char RESET[] = {0x1b, '[', 'm'};
 
 	bool escaping = false;
 	size_t region_start = 0;
+	const int pass_above = is_utf8 ? 0x80 : UCHAR_MAX + 1;
 	for (size_t i = 0; i < len; ++i) {
 		const unsigned char c = data[i];
-		if (isprint(c) || c == '\n' || c == '\t' || (!isascii(c) && is_utf8)
+		if (isprint(c) || c == '\n' || c == '\t' || (c >= pass_above)
 		|| (c == '\r' && i + 1 < len && data[i+1] == '\n')) {
 			if (escaping) {
 				fwrite(RESET, 1, sizeof(RESET), out);
@@ -65,10 +70,7 @@ void term_print_convert(const char *text, FILE *out) {
 static uint8_t char_run(struct term_queue *t, uint8_t i, uint8_t start,
 uint8_t end) {
 	uint8_t init = i;
-	while (i < t->used) {
-		if (t->buf[i] < start || t->buf[i] > end) {
-			break;
-		}
+	while (i < t->used && t->buf[i] >= start && t->buf[i] <= end) {
 		++i;
 	}
 	return i - init;
