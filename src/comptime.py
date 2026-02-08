@@ -932,7 +932,12 @@ DEC_MAP: DecMap = {
 			", Word for DOS screen capture",
 			ext=(
 				"pcc", "pcx",
-				"mwg", "scr", # Word for DOS
+				# Word for DOS
+				"mwg", "scr",
+				# Bert's Coloring Program
+				# Colors will be wrong because these use a
+				# custom palette, but are still viewable
+				"bmg", "ibg",
 			),
 			mask=(
 				# Second byte is version. Valid values are
