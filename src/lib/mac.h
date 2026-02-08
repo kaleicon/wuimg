@@ -29,22 +29,21 @@ struct mac_binary_header {
 };
 
 struct mac_desc {
-	FILE *ifp;
-
 	uint8_t version;
 	bool has_patterns;
 	bool has_macbin_header;
 	struct mac_binary_header macbin;
+	struct wuptr pat, rle;
 };
 
 time_t mac_time_to_unix(mac_time_t time);
 
-size_t mac_decode(const struct mac_desc *desc, struct wuimg *main);
+struct wu_st mac_decode(const struct mac_desc *desc, struct wuimg *main);
 
-size_t mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats);
+struct wu_st mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats);
 
-enum wu_error mac_get_sizes(struct wuimg *main, struct wuimg *pats);
+void mac_get_sizes(struct wuimg *main, struct wuimg *pats);
 
-enum wu_error mac_open_file(struct mac_desc *desc, FILE *ifp);
+struct wu_st mac_open_file(struct mac_desc *desc, struct wuptr mem);
 
 #endif /* LIB_MAC */
