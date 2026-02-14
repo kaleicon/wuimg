@@ -25,6 +25,21 @@ const struct wuptr aai_desc = DESC(
 	"h:<u32>"
 );
 
+/* Abyss Engine Image
+ * Very likely to be little endian, as though all fields in all samples are a
+ * multiple of 0x100, assuming big endian would leave a single byte on each
+ * end. */
+const struct wuptr aei_desc = DESC(
+	"endian:little\n"
+	"channels:4\n"
+	"bitdepth:8\n"
+
+	"match:[AEimage\0\x01]\n"
+	"w:<u16>\n"
+	"h:<u16>\n"
+	"match:[\0\0]" // ???
+);
+
 /* AIPD National Instruments */
 const struct wuptr aipd_desc = DESC(
 	"endian:big\n"

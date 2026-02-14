@@ -92,6 +92,10 @@ DEC_MAP: DecMap = {
 		"aai": FmtInfo("Dune HD image (uncompliant alpha interpretation)",
 			match="aai",
 		),
+		"aei": FmtInfo("Abyss Engine Image",
+			ext="aei",
+			magic=b"AEimage\0\x01"
+		),
 		"aipd": FmtInfo("National Instruments AIPD (uncertain color interpretation)",
 			ext="apd",
 			magic=b"AIPD"
