@@ -178,6 +178,11 @@ DEC_MAP: DecMap = {
 			),
 			size=0x112c
 		),
+		"msxpal": FmtInfo("MSX-BASIC palette (PL5, PL6, PL7, PL8)"
+			# Don't detect it for now
+			#ext=("pl5", "pl6", "pl7", "pl8"),
+			#size=256,
+		),
 		"olpc565": FmtInfo("OLPC 565 boot graphic",
 			ext="565",
 			magic=b"C565"

@@ -293,6 +293,18 @@ const struct wuptr megapat_desc = DESC(
 	// There are 292 bytes of unknown data after the patterns
 );
 
+/* MSX-BASIC palettes (PL5, PL6, PL7, PL8) */
+const struct wuptr msxpal_desc = DESC(
+	"match:filesize(256)\n"
+	"w:16\n"
+	"h:8\n"
+	"channels:4\n"
+	"bitdepth:4\n"
+	"bitrange:3\n"
+	"layout:rbag\n"
+	"alpha:ignore"
+);
+
 /* OLPC 565
 https://github.com/openbios/openfirmware/blob/master/cpu/x86/pc/olpc/images/README
 */

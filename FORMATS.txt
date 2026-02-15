@@ -1,4 +1,4 @@
-90 families, 160 formats supported
+90 families, 161 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -39,6 +39,7 @@ auto      indy      IndyPaint
 auto      kips      IBM KIPS (no palette)
 auto      kro       Kolor Raw
 auto      megapat   MegaPaint Pattern
+auto      msxpal    MSX-BASIC palette (PL5, PL6, PL7, PL8)
 auto      olpc565   OLPC 565 boot graphic
 auto      ota       Over The Air bitmap (uncompliant)
 auto      pgf       Portfolio Graphics uncompressed
