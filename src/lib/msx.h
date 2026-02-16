@@ -42,4 +42,8 @@ struct wu_st msx_decode(const struct msx_desc *desc, struct wuimg *img);
 struct wu_st msx_parse(struct msx_desc *desc, struct wuimg *img, FILE *ifp,
 const char *name, const uint8_t ext[static 3]);
 
+
+struct wu_st msxgl_parse(struct wuimg *img, FILE *ifp, const char *name,
+const uint8_t ext[static 3]);
+
 #endif /* LIB_MSX */

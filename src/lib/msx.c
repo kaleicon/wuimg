@@ -33,8 +33,7 @@ http://www.bitsavers.org/components/ti/TMS9900/TMS9918A_TMS9928A_TMS9929A_Video_
 https://github.com/Konamiman/MSX2-Technical-Handbook/blob/master/md/Appendix5.md
 
  * Compressed Graph Saurus format:
-https://github.com/hex0cter/xee/issues/310#issuecomment-104523945
-
+https://web.archive.org/web/20200916193219/https://github.com/hex0cter/xee/issues/310#issuecomment-104523945
 */
 
 static const size_t SCR2_W = 256;
@@ -578,6 +577,54 @@ const char *name, const uint8_t ext[static 3]) {
 		if (!desc->external_palette) {
 			default_msx2_pal(pal, pal_depth);
 		}
+	}
+	return WU_OK;
+}
+
+
+/* MSX GL5/6/7/8.
+ * These are uncompressed MSX rasters with arbitrary dimensions. */
+
+struct wu_st msxgl_parse(struct wuimg *img, FILE *ifp, const char *name,
+const uint8_t ext[static 3]) {
+	/* MSX gl? header:
+		Offset  Type    Name
+		0       u16     Width
+		2       u16     Height
+		4       u8      Raster[]
+	 * Raster is packed, so rows may begin in the middle of a byte.
+	*/
+	uint16_t hdr[2];
+	if (!fread(hdr, sizeof(hdr), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	img->w = endian16l(hdr[0]);
+	img->h = endian16l(hdr[1]);
+	img->channels = 1;
+	img->bitrange = 3;
+	img->layout = pix_grba;
+	switch (ext[2]) {
+	case '5': case '7':
+		img->bitdepth = 4;
+		img->align_sh = align_bitpack;
+		break;
+	case '6':
+		img->bitdepth = 2;
+		img->align_sh = align_bitpack;
+		break;
+	case '8':
+		img->bitdepth = 8;
+		if (!wuimg_bitfield_from_id(img, 0x332)) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+		return WU_OK;
+	}
+	struct palette *pal = wuimg_palette_init(img);
+	if (!pal) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+	if (!get_external_pal(pal, name, img->bitdepth)) {
+		default_msx2_pal(pal, img->bitdepth);
 	}
 	return WU_OK;
 }

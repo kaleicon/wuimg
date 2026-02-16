@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
 #include "lib/msx.h"
+#include "raster/fmt.h"
 #include "wudefs.h"
 
 static struct wu_st event_msx(struct image_file *infile,
@@ -37,10 +38,33 @@ const struct wu_conf *conf) {
 		infile->name, infile->ext);
 }
 
+
+static struct wu_st event_msxgl(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf; (void)state;
+	if (ev == ev_subcycle) {
+		return fmt_load_raster_st(infile->sub_img, infile->ifp);
+	}
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_msxgl(struct image_file *infile,
+const struct wu_conf *conf) {
+	(void)conf;
+	return msxgl_parse(infile->sub_img, infile->ifp, infile->name,
+		infile->ext);
+}
+
 const struct image_fn msx_fn = {
 	.alloc_single = true,
 	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct msx_desc),
 	.init = init_msx,
 	.event = event_msx,
+};
+const struct image_fn msxgl_fn = {
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.init = init_msxgl,
+	.event = event_msxgl,
 };
