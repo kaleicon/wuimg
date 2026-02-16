@@ -5,6 +5,8 @@
 
 #include "window.h"
 
+static const float EVENT_FAST_MOVE_FACTOR = 2.0f;
+
 double event_exec(struct window_context *window);
 
 void event_print_keys(FILE *out);

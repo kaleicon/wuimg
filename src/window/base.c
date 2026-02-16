@@ -4,7 +4,8 @@
 #include <math.h>
 #include <string.h>
 
-#include "base.h"
+#include "events.h"
+#include "window/base.h"
 
 double window_timer_update(struct window_public *pub) {
 	const struct timespec start = pub->timer;
@@ -62,7 +63,9 @@ static enum image_event move_state(struct wu_state *state, float x, float y) {
 }
 
 void window_cursor_scroll(struct window_public *pub, double x, double y) {
-	pub->event.image = move_state(&pub->image.state, -(float)x, -(float)y);
+	pub->event.image = move_state(&pub->image.state,
+		(float)x * -EVENT_FAST_MOVE_FACTOR,
+		(float)y * -EVENT_FAST_MOVE_FACTOR);
 }
 
 void window_cursor_move(struct window_public *pub, const double x,

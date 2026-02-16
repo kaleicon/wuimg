@@ -138,10 +138,10 @@ const int code, const float dt, const bool shift) {
 		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/-3.0f));
 		break;
 	case '*':
-		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/6.0f));
+		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/12.0f));
 		break;
 	case '/':
-		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/-6.0f));
+		event->image = wudec_zoom(image, state->zoom * exp2f(1.0f/-12.0f));
 		break;
 	case '=':
 	case '0':
@@ -166,16 +166,15 @@ double event_exec(struct window_context *window) {
 	const bool shift = held_keys->shift;
 
 	const double elapsed = window_timer_update(&window->pub);
-	float msecs = (float)(fmax(elapsed, 1.0/1000) * 1000);
+	float msecs = fmaxf((float)elapsed * 1000, 1.0);
 	const int inc = (int)msecs;
-	if (shift) {
-		msecs *= 2;
-	}
+	const float mul = shift ? EVENT_FAST_MOVE_FACTOR : 1.0f;
+	msecs *= mul;
 
 	unsigned char *map = window_keymap_map(held_keys);
 	for (int key = WINDOW_KEYSTART; key < WINDOW_KEYEND; ++key) {
 		const unsigned char time = map[key];
-		float dt = (float)(16 << shift);
+		float dt = 16.0f * mul;
 		switch (time) {
 		case 0:
 			continue;
@@ -239,7 +238,7 @@ void event_print_keys(FILE *out) {
 		"\th | j | k | l | H | J | K | L | Arrow keys\n"
 		"\t\tMove viewport to the left, down, up, and right,\n"
 		"\t\trespectively. If uppercase (or shift is held), move\n"
-		"\t\ttwice as much.\n"
+		"\t\ttwice as fast.\n"
 
 		"\tz | x\n"
 		"\t\tRotate counter- or clockwise.\n"
@@ -252,8 +251,8 @@ void event_print_keys(FILE *out) {
 		"\t\tthree presses.\n"
 
 		"\t* | / | PageUp+Shift | PageDown+Shift\n"
-		"\t\tLike + and -, but the size is doubled or halved every\n"
-		"\t\tsix presses.\n"
+		"\t\tLike + and -, but size is doubled or halved every twelve\n"
+		"\t\tpresses.\n"
 
 		"\t0 | Home\n"
 		"\t\tCenter image, and fit to window or scale to 1x, whichever\n"
