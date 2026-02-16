@@ -174,7 +174,7 @@ const bool allow_cycle, const bool allow_delete) {
 	};
 
 	set_background_color(window, image);
-	window_set_title(window, image->name);
+	window_set_title(window, infile->name);
 
 	double next_frame = INFINITY;
 	enum image_event evs = ev_subcycle;

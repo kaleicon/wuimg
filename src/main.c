@@ -150,7 +150,7 @@ struct test_mode_args args) {
 				result = wu_ok;
 				if (args.metadata) {
 					fputs("File: ", out);
-					term_print_convert(image.name, out);
+					term_print_convert(image.file.name, out);
 					image_file_print(&image.file, out, 3, true);
 					fputc('\n', out);
 				} else {

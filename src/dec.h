@@ -7,7 +7,6 @@
 #include "dec_fmt_desc.h"
 
 struct wudec_image {
-	const char *name;
 	struct image_file file;
 	struct wu_state state;
 	struct wu_conf conf;

@@ -82,7 +82,6 @@ void wudec_free(struct wudec_image *image) {
 
 static void recycle_base(struct wudec_image *image) {
 	wudec_free(image);
-	image->name = NULL;
 	image->file = (struct image_file){0};
 	image->desc = (struct fmt_desc){0};
 }
@@ -193,12 +192,12 @@ static enum wu_error actually_open(struct wudec_image *image) {
 	if (infile->ifp) {
 		offset = ftell(infile->ifp);
 	} else if (!map->ptr) {
-		if (!image->name) {
+		if (!infile->name) {
 			fatal_bug("wudec_decode()",
 				"No data source for image_context");
 		}
 		errno = 0;
-		infile->ifp = fopen(image->name, "rb");
+		infile->ifp = fopen(infile->name, "rb");
 		if (!infile->ifp) {
 			errno_append(infile, errno);
 			return wu_open_error;
@@ -208,7 +207,7 @@ static enum wu_error actually_open(struct wudec_image *image) {
 	if (!image->desc.dec.fn) {
 		errno = 0;
 		const struct fmt_desc *fmt = fmtmap_identify(infile,
-			image->name);
+			infile->name);
 		if (!fmt) {
 			errno_append(infile, errno);
 			return wu_unknown_file_type;
@@ -377,20 +376,20 @@ void wudec_src_auto_desc(struct wudec_image *image, const struct wuptr *desc) {
 
 void wudec_src_mem(struct wudec_image *image, const struct wuptr data,
 const char *name) {
-	image->name = name;
+	image->file.name = name;
 	image->file.map = data;
 	image->file.keep_map = true;
 }
 
 void wudec_src_file(struct wudec_image *image, FILE *ifp, const char *name,
 const bool keep_file, const bool stat_file) {
-	image->name = name;
+	image->file.name = name;
 	image->file.ifp = ifp;
 	image->file.keep_file = keep_file;
 	image->file.stat = stat_file;
 }
 
 void wudec_src_filename(struct wudec_image *image, const char *filename) {
-	image->name = filename;
+	image->file.name = filename;
 	image->file.stat = true;
 }

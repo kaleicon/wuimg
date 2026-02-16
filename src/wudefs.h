@@ -43,7 +43,8 @@ struct image_file {
 	void *restrict dec_state; // Used by decoder for callbacks
 	struct wustr errors;
 
-	uint8_t ext[8];
+	const char *name;
+	uint8_t ext[8]; // Lowercase extension from `name`
 	struct pix_rgba8 bg;
 
 	bool keep_file;

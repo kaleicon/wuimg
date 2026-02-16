@@ -252,10 +252,10 @@ static bool init_write_file(struct write_file *out,
 const struct write_args *args, const struct wudec_image *image) {
 	struct fs_path path;
 	out->dirfd = fs_get_dir_or_parent(&path,
-		args->outdir ? args->outdir : image->name,
+		args->outdir ? args->outdir : image->file.name,
 		!args->outdir);
 	if (out->dirfd >= 0) {
-		fs_path_set_file(&path, wuptr_str(image->name));
+		fs_path_set_file(&path, wuptr_str(image->file.name));
 		out->name_base = path.file.len;
 		out->parent = path.parent;
 		if (wustr_malloc(&out->file, out->name_base + SUFFIX_SPACE)) {
@@ -270,7 +270,7 @@ const struct write_args *args, const struct wudec_image *image) {
 
 static void print_dec_error(const enum wu_error e, const char *what,
 const struct wudec_image *image) {
-	fprintf(stderr, "Error while %s %s: ", what, image->name);
+	fprintf(stderr, "Error while %s %s: ", what, image->file.name);
 	image_file_error_print(&image->file, e, stderr);
 }
 
