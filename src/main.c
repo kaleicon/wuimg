@@ -41,6 +41,7 @@ struct file_list {
 
 struct sole_mode_args {
 	struct wuptr raw;
+	const struct fmt_desc *fmt;
 };
 
 struct test_mode_args {
@@ -52,7 +53,7 @@ struct test_mode_args {
 struct program_mode {
 	enum work_mode type;
 	union mode_args {
-		struct wuptr raw;
+		struct sole_mode_args sole;
 		struct test_mode_args test;
 		struct write_args write;
 	} arg;
@@ -242,7 +243,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 }
 
 static enum wu_error run_with_list(struct file_list *entries, long idx,
-const bool interpret_stdin, const struct wuptr *raw) {
+const bool interpret_stdin, const struct sole_mode_args *args) {
 	struct window_context window = {
 		.pub.image.conf = conf_load(),
 	};
@@ -280,8 +281,12 @@ const bool interpret_stdin, const struct wuptr *raw) {
 		} else {
 			wudec_src_filename(image, name);
 		}
-		if (raw && raw->ptr) {
-			wudec_src_auto_desc(image, raw);
+		if (args) {
+			if (args->raw.ptr) {
+				wudec_src_auto_desc(image, &args->raw);
+			} else {
+				wudec_src_format(image, args->fmt);
+			}
 		}
 
 		if (!free_entry) {
@@ -326,7 +331,7 @@ const struct program_mode *mode) {
 		case mode_write: return convert_files(&entries, &mode->arg.write);
 		default: break;
 		}
-		return run_with_list(&entries, 0, true, &mode->arg.raw);
+		return run_with_list(&entries, 0, true, &mode->arg.sole);
 	}
 	term_line_put("ERROR: No files given", stderr);
 	return 1;
@@ -367,18 +372,29 @@ static const struct opts sole_opts[] = {
 		"\t\tOne may also perform rudimentary reads and seeks:\n"
 		"\t\t\t'endian:little c:1 b:1 w:<u16> h:<u16> skip:0x80'\n"
 		"\t\tA complete description is yet to be written..."},
+	{'t', "type", "ID",
+		"\t\tForce input decoder. ID must be one of the decoders\n"
+		"\t\tlisted with `--fmts`."},
 };
 
 static const char * sole_args(const int argc, char *const *argv, int *idx,
-struct wuptr *args) {
-	*args = (struct wuptr){0};
+struct sole_mode_args *args) {
+	*args = (struct sole_mode_args){0};
 	for (;;) {
 		const uint8_t c = opts_next(argc, argv, idx, sole_opts,
 			ARRAY_LEN(sole_opts));
-		if (c != 'r') {
+		switch (c) {
+		case 'r':
+			args->raw = wuptr_str(argv[*idx]);
 			break;
+		case 't':
+			args->fmt = fmtmap_by_name(argv[*idx]);
+			if (!args->fmt) {
+				return "unknown decoder";
+			}
+			break;
+		default: return NULL;
 		}
-		*args = wuptr_str(argv[*idx]);
 		++*idx;
 	}
 	return NULL;
@@ -521,7 +537,7 @@ static int get_mode(const int argc, char *const *argv, struct program_mode *mode
 		case mode_sole:
 		case mode_guess:
 			;int prev = read;
-			err = sole_args(argc, argv, &read, &mode->arg.raw);
+			err = sole_args(argc, argv, &read, &mode->arg.sole);
 			if (read > prev) {
 				mode->type = mode_sole;
 			}
