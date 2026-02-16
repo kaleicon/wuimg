@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2022 kaleido
+#include <string.h>
 #include <unistd.h>
 
 #include "dec.h"
 #include "fmtmap.h"
+#include "misc/mem.h"
 
 __AFL_FUZZ_INIT()
 
@@ -13,12 +15,16 @@ int main(int argc, char **argv) {
 	};
 	image.conf.max_img_size = 1920;
 	const struct fmt_desc *fmt = NULL;
+	char lext[sizeof(image.file.ext)] = {0};
 	if (argc > 1) {
 		fmt = fmtmap_by_name(argv[1]);
 		if (!fmt) {
 			return 1;
 		} else if (fmt->is_auto) {
 			return 2;
+		}
+		if (argc > 2) {
+			strncpy(lext, argv[2], sizeof(lext));
 		}
 	}
 
@@ -31,6 +37,7 @@ int main(int argc, char **argv) {
 		const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
 		wudec_src_mem(&image, wuptr_mem(buf, (size_t)len), NULL);
 		wudec_src_format(&image, fmt);
+		memcpy(image.file.ext, lext, sizeof(lext));
 		enum wu_error err;
 		do {
 			struct wuimg *img;

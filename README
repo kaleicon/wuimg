@@ -208,6 +208,9 @@ This is used for debugging.
 	# Fuzz
 	afl-fuzz -i uniq/ -o out/ -- path/to/wufuzz bmp
 
+	# Some decoders expect to look at a (lowercase) extension:
+	afl-fuzz ... -- path/to/wufuzz msx sc5
+
 
 Usage
 -----
