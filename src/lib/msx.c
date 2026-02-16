@@ -491,8 +491,15 @@ const char *name, const uint8_t ext[static 3]) {
 	img->channels = 1;
 	img->bitrange = 3;
 	img->layout = pix_grba;
-	img->cs.transfer = cicp_transfer_bt601_7;
-	img->cs.primaries = cicp_primaries_bt601_7;
+	// Prefer NTSC as the transfer function is the same as sRGB
+	const bool USE_NTSC = true;
+	if (USE_NTSC) {
+		img->cs.transfer = cicp_transfer_bt470_6_system_m;
+		img->cs.primaries = cicp_primaries_bt470_6_system_m;
+	} else { // PAL
+		img->cs.transfer = cicp_transfer_bt470_6_system_b_g;
+		img->cs.primaries = cicp_primaries_bt470_6_system_b_g;
+	}
 	switch (desc->mode) {
 	case msx_screen2:
 	case msx_screen4:
