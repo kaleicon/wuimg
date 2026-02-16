@@ -63,7 +63,8 @@
 #define TF_HLG "2"
 
 static const float VISUAL_EPSILON = 0x1p-16;
-static const align_t DEFAULT_ALIGN = 2;
+static const align_t DEFAULT_GL_ALIGN = 2; // GL_UNPACK_ALIGNMENT == 4
+static const align_t MAX_GL_ALIGN = 3; // GL_UNPACK_ALIGNMENT == 8
 
 enum gl_mag_filter {
 	gl_mag_linear = GL_LINEAR,
@@ -515,7 +516,7 @@ static void gl_alignment(const align_t align) {
 static bool unpack_upload(const GLuint pix_buf,
 const struct gl_upload_params *params, const struct wuimg *img, size_t w,
 const size_t h, const unsigned char *data) {
-	gl_alignment(DEFAULT_ALIGN);
+	gl_alignment(DEFAULT_GL_ALIGN);
 	w *= params->comps;
 	const void *arg = params->op == op_bitfield
 		? (void *)img->u.bitfield : &img->bitrange;
@@ -525,7 +526,7 @@ const size_t h, const unsigned char *data) {
 	if (!outwidth) {
 		fatal_bug("Upload error", "Unsupported raster format");
 	}
-	const size_t outstride = strip_length(outwidth, 8, DEFAULT_ALIGN);
+	const size_t outstride = strip_length(outwidth, 8, DEFAULT_GL_ALIGN);
 
 	uint8_t *map = map_unpack_buffer(pix_buf, outstride * h, GL_WRITE_ONLY);
 	if (map) {
@@ -541,18 +542,29 @@ const size_t h, const unsigned char *data) {
 	return (bool)map;
 }
 
+static align_t find_minimal_alignment(const struct wuimg *img,
+const size_t elems, const align_t align) {
+	if (align > MAX_GL_ALIGN
+	&& strip_padding(elems, img->bitdepth, align) < 8) {
+		return MAX_GL_ALIGN;
+	}
+	return align;
+}
+
 static bool tex_upload(struct gl_context *context, const struct wuimg *img,
 const struct gl_upload_params *params, const size_t w, const size_t h,
 const void *data) {
 	const GLuint pix_buf = context->pixel_unpack_buf;
+	const align_t align = find_minimal_alignment(img, w * params->comps,
+		img->align_sh);
 	bool bind_buffer = false;
 	bool ok = true;
-	if (params->op != op_noop || img->align_sh > 3) {
+	if (params->op != op_noop || align > MAX_GL_ALIGN) {
 		ok = unpack_upload(pix_buf, params, img, w, h, data);
 		data = 0;
 		bind_buffer = true;
 	} else {
-		gl_alignment(img->align_sh);
+		gl_alignment(align);
 	}
 
 	if (ok) {
@@ -573,12 +585,12 @@ const void *data) {
 
 static bool subtex_upload(struct gl_context *context, const struct wuimg *img,
 const struct gl_upload_params *params, const struct compost *region) {
-	gl_alignment(DEFAULT_ALIGN);
+	gl_alignment(DEFAULT_GL_ALIGN);
 	size_t w = region->w * img->channels;
 	size_t full_w = img->w * img->channels;
 
 	const size_t instride = strip_length(full_w, img->bitdepth, img->align_sh);
-	const size_t outstride = strip_length(w, img->bitdepth, DEFAULT_ALIGN);
+	const size_t outstride = strip_length(w, img->bitdepth, DEFAULT_GL_ALIGN);
 	const size_t outlen = strip_base(w, img->bitdepth);
 
 	size_t x_off = strip_base(region->x * img->channels, img->bitdepth);

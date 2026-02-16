@@ -67,16 +67,6 @@ static size_t plane_calc_size(struct wuimg *img, const size_t i) {
 	return p->size;
 }
 
-static void find_better_alignment(struct wuimg *img) {
-	if (img->mode == image_mode_planar) {
-		return;
-	}
-	const size_t w = img->w * img->channels;
-	if (strip_padding(w, img->bitdepth, img->align_sh) < 8) {
-		img->align_sh = 3;
-	}
-}
-
 static const char * geom_verify(const uint8_t ch, const uint8_t bitdepth,
 const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 	if (!bitdepth) {
@@ -166,9 +156,6 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 	if (!img->channels) {
 		img->channels = 1;
 	}
-	if (img->align_sh > 3) {
-		find_better_alignment(img);
-	}
 
 	if (!test_overflow(img)) {
 		return wu_int_overflow;
@@ -176,7 +163,7 @@ enum wu_error wuimg_verify(struct wuimg *img) {
 
 	const uint8_t depth = img->mode == image_mode_palette ? 8 : img->bitdepth;
 	if (img->bitrange > depth) {
-		fatal_bug(__func__, "`bitrange` can't be greater than bitdepth,"
+		fatal_bug(__func__, "bitrange can't be greater than bitdepth,"
 			" or 8 for paletted images");
 	} else if (!img->bitrange) {
 		img->bitrange = img->mode == image_mode_bitfield
