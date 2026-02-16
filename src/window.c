@@ -53,6 +53,10 @@ void window_adapt(struct window_context *window) {
 
 void window_set_title(struct window_context *window, const char *title) {
 	const char *put = "";
+	if (!title) {
+		window->pub.win.fn.title(&window->ctx, put);
+		return;
+	}
 	struct wustr conv;
 	switch (utf8_convert(title, strlen(title), &conv, NULL)) {
 	case trit_false: put = title; break;

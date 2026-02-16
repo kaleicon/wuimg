@@ -273,7 +273,7 @@ const bool interpret_stdin, const struct sole_mode_args *args) {
 			}
 			if (stdin_tmp) {
 				rewind(stdin_tmp);
-				wudec_src_file(image, stdin_tmp, name, true, false);
+				wudec_src_file(image, stdin_tmp, NULL, true, false);
 			} else {
 				free_entry = true;
 			}
