@@ -36,6 +36,7 @@ https://github.com/Konamiman/MSX2-Technical-Handbook/blob/master/md/Appendix5.md
 https://github.com/hex0cter/xee/issues/310#issuecomment-104523945
 
 */
+
 static const size_t SCR2_W = 256;
 static const size_t SCR2_H = 192;
 static const size_t SCR3_W = 64;
@@ -64,51 +65,65 @@ bool msx_mode_may_have_alternate_field(enum msx_screen mode) {
 
 static void set_msx_pal(struct palette *pal, const uint8_t grb[static 30],
 const uint8_t depth, const bool is_yae) {
-	const int scale = ((is_yae ? 0x1f : 0xff) << 8) / 0x07 + 1;
-	// First entry is always transparent
-	pal->color[0] = (struct pix_rgba8){0};
-	for (int i = 0; i < (1 << depth) - 1; ++i) {
+	const uint8_t max = is_yae ? 0x1f : 0x07;
+	const int scale = (max << 8) / 0x07 + 1;
+	for (int i = 0; i < (1 << depth); ++i) {
 		const int hi = grb[i*2 + 1];
 		const int lo = grb[i*2];
 		// Preserve GRB order, because we can
-		pal->color[i+1] = (struct pix_rgba8) {
+		pal->color[i] = (struct pix_rgba8) {
 			(uint8_t)((hi * scale) >> 8),
 			(uint8_t)(((lo >> 4) * scale) >> 8),
 			(uint8_t)(((lo & 0x07) * scale) >> 8),
-			0xff,
+			// First entry is always transparent
+			i ? max : 0x00,
 		};
 	}
 }
 
-static void search_msx_pal(struct palette *pal, const uint8_t *grb,
+static bool search_msx_pal(struct palette *pal, const uint8_t *grb,
 const uint8_t depth, const bool is_yae) {
 	unsigned short acc = 0;
 	for (int i = 0; i < (1 << depth); ++i) {
 		acc |= grb[i*2 + 1] << 8 | grb[i*2];
 	}
 	if (acc && !(acc & 0xf888)) {
-		set_msx_pal(pal, grb + 2, depth, is_yae);
+		set_msx_pal(pal, grb, depth, is_yae);
+		return true;
 	}
+	return false;
+}
+
+static bool read_pal_file(FILE *ifp, struct palette *pal, const uint8_t depth,
+const bool is_yae) {
+	uint8_t grb[0x20];
+	if (fread(grb, 2u << depth, 1, ifp)) {
+		return search_msx_pal(pal, grb, depth, is_yae);
+	}
+	return false;
 }
 
 static bool read_pal_at(const struct msx_desc *desc, const long offset,
 struct palette *pal, const uint8_t depth, const bool is_yae) {
 	if (offset < desc->end) {
 		fseek(desc->ifp, offset + 7, SEEK_SET);
-		uint8_t grb[0x30];
-		if (fread(grb, 1, sizeof(grb), desc->ifp)) {
-			search_msx_pal(pal, grb, depth, is_yae);
-		}
-		return true;
+		return read_pal_file(desc->ifp, pal, depth, is_yae);
 	}
 	return false;
+}
+
+static size_t load_or_zero(uint8_t *buf, const size_t bytes, FILE *ifp) {
+	const size_t read = fread(buf, 1, bytes, ifp);
+	memset(buf + read, 0, bytes - read);
+	return read;
 }
 
 static void default_msx2_pal(struct palette *pal, const uint8_t depth) {
 	/* The TMS9900 specifies it's default palette as YCbCr values, while
 	 * the V9938 uses GRB. We take the later as the intended conversion. */
-	const uint8_t grb[15*2] = {
+	const uint8_t grb[16*2] = {
 		//RB  xG
+		0x00, 0x00, // transparent
 		0x00, 0x00,
 		0x11, 0x06,
 		0x33, 0x07,
@@ -128,7 +143,7 @@ static void default_msx2_pal(struct palette *pal, const uint8_t depth) {
 	set_msx_pal(pal, grb, depth, false);
 }
 
-static size_t scr2_4_decode(const struct msx_desc *desc, struct wuimg *img) {
+static struct wu_st scr2_4_decode(const struct msx_desc *desc, struct wuimg *img) {
 	/* SCREEN 2 and 4 are the same outside of the sprite mode. They display
 	 * at a 256*192 resolution with 4-bit palette indices, and they do this
 	 * by dividing the screen into three bands (256*64), each made up of
@@ -158,14 +173,14 @@ static size_t scr2_4_decode(const struct msx_desc *desc, struct wuimg *img) {
 	const size_t table_len = (GEN_LEN + NAME_LEN + COLOR_LEN) * 3 + GAP_LEN;
 	uint8_t *buf = malloc(table_len);
 	if (!buf) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	const size_t read = fread(buf, 1, table_len, desc->ifp);
+	const size_t read = load_or_zero(buf, table_len, desc->ifp);
 	const size_t min = 0x2000;
 	if (read <= min) {
 		free(buf);
-		return 0;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	search_msx_pal(img->u.palette, buf + 0x1b80, 4, false);
@@ -192,12 +207,12 @@ static size_t scr2_4_decode(const struct msx_desc *desc, struct wuimg *img) {
 		}
 	}
 	free(buf);
-	return read;
+	return wuerr_partial(read, table_len);
 }
 
-static size_t scr3_decode(const struct msx_desc *desc, struct wuimg *img) {
+static struct wu_st scr3_decode(const struct msx_desc *desc, struct wuimg *img) {
 	/* SCREEN 3 displays graphics at a 64*48*16 resolution, using patterns
-	 * 2*2 pixels in size. This is commonly magnified 4 times to a 256*192
+	 * 2*2 pixels in size. This is magnified 4 times to a 256*192
 	 * resolution (we don't to that, though, that's what zooming is for).
 
 		| Generator | 0x0000 - 0x0800 | 0x800 bytes
@@ -221,13 +236,14 @@ static size_t scr3_decode(const struct msx_desc *desc, struct wuimg *img) {
 	 * pattern coordinate plus the upper three Y coord bits as index
 	 * instead.
 	*/
-	const size_t table_len = GEN_LEN + NAME_LEN*3;
+	const bool skip_name = desc->end < 0xaff;
+	const size_t table_len = GEN_LEN + (skip_name ? 0 : NAME_LEN*3);
 	uint8_t *buf = malloc(table_len);
 	if (!buf) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	const size_t read = fread(buf, 1, table_len, desc->ifp);
+	const size_t read = load_or_zero(buf, table_len, desc->ifp);
 
 	const uint8_t *generator = buf;
 	const uint8_t *names = buf + GEN_LEN;
@@ -235,8 +251,8 @@ static size_t scr3_decode(const struct msx_desc *desc, struct wuimg *img) {
 	const size_t h = SCR3_H/2;
 	for (size_t y = 0; y < h; ++y) {
 		for (size_t x = 0; x < w; ++x) {
-			const uint8_t name = read > GEN_LEN
-				? names[y*w + x] : (uint8_t)(((y & 0xfc) << 3) + x);
+			const uint8_t name = table_len > GEN_LEN
+				? names[y*w + x] : (uint8_t)((y >> 2 << 5) + x);
 			const uint8_t *gen = generator + name*8 + (y & 0x03)*2;
 			for (size_t yp = 0; yp < 2; ++yp) {
 				const size_t row = (y*2 + yp)*w;
@@ -247,10 +263,10 @@ static size_t scr3_decode(const struct msx_desc *desc, struct wuimg *img) {
 	free(buf);
 
 	read_pal_at(desc, 0x2020, img->u.palette, 4, false);
-	return read;
+	return wuerr_partial(read, table_len);
 }
 
-static size_t fread_decode(const struct msx_desc *desc, struct wuimg *img,
+static struct wu_st fread_decode(const struct msx_desc *desc, struct wuimg *img,
 const long pal_offset) {
 	/* SCREEN 5, 6, 7, and 8 are basically raw formats. There's only a Name
 	 * section (a normal raster) and optional palette.
@@ -276,30 +292,30 @@ const long pal_offset) {
 
 	*/
 
-	const size_t read = fmt_load_raster(img, desc->ifp);
+	const struct wu_st st = fmt_load_raster_st(img, desc->ifp);
 	if (img->mode == image_mode_palette) {
 		read_pal_at(desc, pal_offset, img->u.palette, img->bitdepth,
 			false);
 	}
-	return read;
+	return st;
 }
 
-static size_t msx2p_decode(const struct msx_desc *desc, struct wuimg *img) {
+static struct wu_st msx2p_decode(const struct msx_desc *desc, struct wuimg *img) {
 	/* SCREEN 10, 11, and 12 are based on SCREEN 8, but instead of a 332
 	 * packing they are encoded in the YJK colorspace. SCREEN 10 and 11
 	 * are additionally in YAE mode.
 	*/
 	struct palette *yae = NULL;
-	const size_t pal_size = (desc->mode != msx_screen12)
-		? sizeof(*yae) : 0;
+	const size_t pal_size = (desc->mode == msx_screen12)
+		? 0 : sizeof(*yae);
 
 	const size_t bytes = img->w * img->h;
 	uint8_t *buf = malloc(bytes + pal_size);
 	if (!buf) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
-	const size_t read = fread(buf, 1, bytes, desc->ifp);
+	const size_t read = load_or_zero(buf, bytes, desc->ifp);
 	if (pal_size) {
 		yae = (struct palette *)(buf + bytes);
 		yae->refs = 0;
@@ -309,70 +325,97 @@ static size_t msx2p_decode(const struct msx_desc *desc, struct wuimg *img) {
 	}
 	v9958_ykj_to_grb((upack1555_t *)img->data, buf, bytes/4, yae);
 	free(buf);
-	return read;
+	return wuerr_partial(read, bytes);
 }
 
-static size_t saurus_rle(const struct msx_desc *desc, struct wuimg *img) {
-	size_t i = 0;
-	size_t o = 0;
+static struct wu_st saurus_rle(const struct msx_desc *desc, struct wuimg *img) {
+	size_t s = 0;
+	size_t d = 0;
 	const size_t pad = 2;
 	uint8_t *src = malloc(desc->end + pad);
-	if (src) {
-		const size_t read = fread(src, 1, desc->end, desc->ifp);
-		const size_t dims = wuimg_size(img);
-		while (i < read && o < dims) {
-			size_t repeat;
-			uint8_t val = src[i];
-			++i;
-			if (val >> 4) {
-				img->data[o] = val;
-				++o;
-			} else {
-				if (val) {
-					repeat = val;
-					val = src[i];
-					++i;
-				} else {
-					repeat = src[i] ? src[i] : 256;
-					val = src[i+1];
-					i += 2;
-				}
-				if (o + repeat >= dims) {
-					break;
-				}
-				memset(img->data + o, val, repeat);
-				o += repeat;
-			}
-		}
-		free(src);
+	if (!src) {
+		return WUERR_HERE(wu_alloc_error);
 	}
-	return o;
+	const size_t read = fread(src, 1, desc->end, desc->ifp);
+	memset(src + read, 0, pad);
+	const size_t dims = wuimg_size(img);
+	while (s < read && d < dims) {
+		size_t repeat;
+		uint8_t val = src[s];
+		++s;
+		if (val >> 4) {
+			img->data[d] = val;
+			++d;
+		} else {
+			if (val) {
+				repeat = val;
+				val = src[s];
+				++s;
+			} else {
+				repeat = src[s] ? src[s] : 256;
+				val = src[s+1];
+				s += 2;
+			}
+			if (dims - d < repeat) {
+				break;
+			}
+			memset(img->data + d, val, repeat);
+			d += repeat;
+		}
+	}
+	free(src);
+	return wuerr_partial(d, dims);
 }
 
-size_t msx_decode(const struct msx_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		switch (desc->mode) {
-		case msx_screen2:
-		case msx_screen4:
-			return scr2_4_decode(desc, img);
-		case msx_screen3:
-			return scr3_decode(desc, img);
-		case msx_screen5:
-		case msx_screen6:
-			return fread_decode(desc, img, 0x7680);
-		case msx_screen7:
-			if (desc->compressed) {
-				return saurus_rle(desc, img);
-			}
-			// fallthrough
-		case msx_screen8:
-			return fread_decode(desc, img, 0xfa80);
-		case msx_screen10:
-		case msx_screen12:
-			return msx2p_decode(desc, img);
+struct wu_st msx_decode(const struct msx_desc *desc, struct wuimg *img) {
+	switch (desc->mode) {
+	case msx_screen2:
+	case msx_screen4:
+		return scr2_4_decode(desc, img);
+	case msx_screen3:
+		return scr3_decode(desc, img);
+	case msx_screen5:
+	case msx_screen6:
+		return fread_decode(desc, img, 0x7680);
+	case msx_screen7:
+		if (desc->compressed) {
+			return saurus_rle(desc, img);
+		}
+		// fallthrough
+	case msx_screen8:
+		return fread_decode(desc, img, 0xfa80);
+	case msx_screen10:
+	case msx_screen12:
+		return msx2p_decode(desc, img);
+	}
+	return wuerr(wu_invalid_params, "bad screen mode on decode");
+}
+
+static bool get_external_pal(struct palette *pal, const char *name,
+const uint8_t pal_depth) {
+	if (!name) {
+		return false;
+	}
+	const size_t len = strlen(name) + 1;
+	char *palname = memdup(name, len);
+	if (!palname) {
+		return false;
+	}
+	char *ext = palname + len - 4;
+	const char cases[][2] = {
+		{'p', 'l'},
+		{'P', 'L'},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(cases); ++i) {
+		memcpy(ext, cases[i], sizeof(cases[i]));
+		FILE *efp = fopen(palname, "rb");
+		if (efp) {
+			bool ok = read_pal_file(efp, pal, pal_depth, false);
+			fclose(efp);
+			return ok;
 		}
 	}
-	return 0;
+	return false;
 }
 
 static enum msx_screen mode_from_ext(const uint8_t ext[static 3]) {
@@ -405,8 +448,8 @@ static enum msx_screen mode_from_ext(const uint8_t ext[static 3]) {
 	return 0;
 }
 
-enum wu_error msx_parse(struct msx_desc *desc, struct wuimg *img, FILE *ifp,
-const uint8_t ext[static 3]) {
+struct wu_st msx_parse(struct msx_desc *desc, struct wuimg *img, FILE *ifp,
+const char *name, const uint8_t ext[static 3]) {
 	/* MSX-BASIC header:
 		Offset  Size    Name
 		0       u8      Type         // 0xfe. 0xfd for graph-saurus rle
@@ -419,32 +462,34 @@ const uint8_t ext[static 3]) {
 	*desc = (struct msx_desc) {
 		.ifp = ifp,
 		.mode = mode_from_ext(ext),
-		.is_alt_field = ext[1] == '1',
+		.mod = ext[1],
 	};
 	if (!desc->mode) {
-		return wu_unknown_file_type;
+		return wuerr(wu_unknown_file_type,
+			"failed to identify MSX mode");
 	}
 
 	uint8_t buf[7];
 	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	switch (buf[0]) {
 	case 0xfe: break;
 	case 0xfd: desc->compressed = true; break;
-	default: return wu_invalid_header;
+	default: return wuerr(wu_invalid_header, "bad type byte");
 	}
 
-	if (buf_endian16(buf + 1, little_endian) != 0
-	|| buf_endian16(buf + 5, little_endian) != 0) {
-		return wu_invalid_header;
+	if (buf_endian16l(buf + 1) != 0 || buf_endian16l(buf + 5) != 0) {
+		return wuerr(wu_invalid_header,
+			"bad start or run addresses");
 	}
 
-	desc->end = buf_endian16(buf + 3, little_endian);
+	desc->end = buf_endian16l(buf + 3);
 	uint16_t min = 0xffff;
 	uint8_t pal_depth = 4;
 	img->bitdepth = 4;
 	img->channels = 1;
+	img->bitrange = 3;
 	img->layout = pix_grba;
 	img->cs.transfer = cicp_transfer_bt601_7;
 	img->cs.primaries = cicp_primaries_bt601_7;
@@ -457,7 +502,7 @@ const uint8_t ext[static 3]) {
 		img->bitdepth = 8;
 		break;
 	case msx_screen3:
-		min = 0; // ???
+		min = 0x5ff; // NYANCAT.SC3
 		img->w = SCR3_W;
 		img->h = SCR3_H;
 		break;
@@ -483,9 +528,10 @@ const uint8_t ext[static 3]) {
 		img->w = 256;
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 8;
+		img->bitrange = 0;
 		img->layout = pix_layout_pack(1, 2, 0, 3);
 		if (!wuimg_bitfield_from_id(img, 0x332)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 		pal_depth = 0;
 		break;
@@ -495,8 +541,9 @@ const uint8_t ext[static 3]) {
 		img->w = 256;
 		img->h = (desc->end < 0xd3ff) ? 192 : 212;
 		img->bitdepth = 16;
+		img->bitrange = 0;
 		if (!wuimg_bitfield_from_id(img, 0x555)) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
 		/* These screen modes render to a higher bitdepth, so we'll
 		 * read the palette when it's needed. */
@@ -505,19 +552,25 @@ const uint8_t ext[static 3]) {
 	}
 	if (desc->compressed) {
 		// I've only seen SR7 compressed files
-		if (desc->mode != msx_screen7) {
-			return wu_samples_wanted;
+		if (!msx_mode_may_be_compressed(desc->mode)) {
+			return wuerr(wu_samples_wanted,
+				"non-SR7 compressed file");
 		}
 	} else if (desc->end < min) {
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header,
+			"end address and screen mode mismatch");
 	}
 
 	if (pal_depth) {
 		struct palette *pal = wuimg_palette_init(img);
 		if (!pal) {
-			return wu_alloc_error;
+			return WUERR_HERE(wu_alloc_error);
 		}
-		default_msx2_pal(pal, pal_depth);
+		desc->external_palette = desc->mod == msx_mod_graph_saurus
+			&& get_external_pal(pal, name, pal_depth);
+		if (!desc->external_palette) {
+			default_msx2_pal(pal, pal_depth);
+		}
 	}
-	return wuimg_verify(img);
+	return WU_OK;
 }

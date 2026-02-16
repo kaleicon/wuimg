@@ -3,31 +3,44 @@
 #include "lib/msx.h"
 #include "wudefs.h"
 
-static enum wu_error msx_dec(struct image_file *infile,
-const struct wu_conf *conf) {
-	struct msx_desc desc;
-	struct wuimg *img = infile->sub_img;
-	const enum wu_error st = msx_parse(&desc, img, infile->ifp,
-		infile->ext);
-	if (st == wu_ok) {
-		if (msx_mode_may_be_compressed(desc.mode)) {
+static struct wu_st event_msx(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf; (void)state;
+	struct msx_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		if (msx_mode_may_be_compressed(desc->mode)) {
 			tree_bud_leaf_bool(&infile->metadata,
-				"Compressed", desc.compressed);
+				"Compressed", desc->compressed);
 		}
-		if (msx_mode_may_have_alternate_field(desc.mode)) {
+		if (msx_mode_may_have_alternate_field(desc->mode)) {
 			tree_bud_leaf_bool(&infile->metadata,
-				"Is alternate field", desc.is_alt_field);
+				"Is alternate field",
+				desc->mod == msx_mod_alt_field);
 		}
-		if (!wuimg_exceeds_limit(img, conf)) {
-			return msx_decode(&desc, img)
-				? wu_ok : wu_decoding_error;
+		if (desc->mod == msx_mod_graph_saurus) {
+			tree_bud_leaf_bool(&infile->metadata,
+				"External palette", desc->external_palette);
 		}
-		return wu_exceeds_size_limit;
+		return WU_OK;
+	case ev_subcycle:
+		return msx_decode(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_msx(struct image_file *infile,
+const struct wu_conf *conf) {
+	(void)conf;
+	return msx_parse(infile->dec_state, infile->sub_img, infile->ifp,
+		infile->name, infile->ext);
 }
 
 const struct image_fn msx_fn = {
 	.alloc_single = true,
-	.dec = msx_dec,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct msx_desc),
+	.init = init_msx,
+	.event = event_msx,
 };
