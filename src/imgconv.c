@@ -582,7 +582,7 @@ static uint8_t * get_row(const struct imgconv *state, size_t y,
 void *restrict tgt) {
 	/* Image may have half-rotations and may be mirrored. It's not
 	 * planar, but may require unpacking before accessing pixels. */
-	const struct wuimg *src = state->src;
+	const struct wuimg *src = state->tmp ? state->tmp : state->src;
 	y = mirror_swap(src) ? src->h - 1 - y : y;
 	uint8_t *u_row = get_unpacked(state, src, y);
 
@@ -831,7 +831,8 @@ const struct wuimg *src) {
 	 * independently either, then we must unpack the whole image and
 	 * refer to the copy instead of the original. */
 	if (state->op != op_noop) {
-		if (src->rotate & 1 || src->mode == image_mode_planar) {
+		if (src->rotate & 1 || src->mode == image_mode_planar
+		|| src->align_sh == align_bitpack) {
 			st = init_tmp_img(state, src);
 			if (st != wu_ok) {
 				return wu_error_str(st);

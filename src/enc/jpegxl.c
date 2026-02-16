@@ -282,7 +282,8 @@ static bool passthrough(const struct wuimg *src) {
 	}
 
 	const struct color_space *cs = &src->cs;
-	if (src->layout == l_expect && cs->matrix == cicp_matrix_rgb) {
+	if (src->align_sh != align_bitpack && src->layout == l_expect
+	&& cs->matrix == cicp_matrix_rgb) {
 		switch (cs->type) {
 		case color_profile_enum:
 		case color_profile_param:
@@ -296,9 +297,6 @@ static bool passthrough(const struct wuimg *src) {
 }
 
 static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
-	if (src->align_sh == align_bitpack) {
-		return false;
-	}
 	dst->w = (src->rotate & 1) ? src->h : src->w;
 	dst->h = (src->rotate & 1) ? src->w : src->h;
 	switch (src->mode) {

@@ -97,7 +97,8 @@ static bool passthrough_pam(const struct wuimg *src) {
 		? pix_rgba : pix_gray;
 	const enum alpha_interpretation a_expect = (src->channels & 1)
 		? alpha_ignore : alpha_unassociated;
-	return src->layout == l_expect
+	return src->align_sh != align_bitpack
+		&& src->layout == l_expect
 		&& src->alpha == a_expect
 		&& src->attr == pix_normal
 		&& src->rotate == 0
@@ -105,9 +106,6 @@ static bool passthrough_pam(const struct wuimg *src) {
 }
 
 static bool best_pam_fit(struct wuimg *dst, const struct wuimg *src) {
-	if (src->align_sh == align_bitpack) {
-		return false;
-	}
 	dst->w = (src->rotate & 1) ? src->h : src->w;
 	dst->h = (src->rotate & 1) ? src->w : src->h;
 	dst->alpha = alpha_unassociated;
