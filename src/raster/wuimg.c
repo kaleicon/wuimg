@@ -71,13 +71,17 @@ static const char * geom_verify(const uint8_t ch, const uint8_t bitdepth,
 const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 	if (!bitdepth) {
 		return "Bitdepth must not be zero";
-	} else if (align < 0) {
+	} else if (align <= align_error) {
 		return "Invalid alignment";
 	}
 
 	switch (mode) {
-	case image_mode_raw:
 	case image_mode_planar:
+		if (align == align_bitpack) {
+			return "Bitpacked planar images unsupported";
+		}
+		// fallthrough
+	case image_mode_raw:
 		if (!ch) {
 			return "Channel number must not be zero for raw or"
 				" planar images";
@@ -96,7 +100,9 @@ const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 		}
 		break;
 	case image_mode_bitfield:
-		if (ch > 1) {
+		if (align == align_bitpack) {
+			return "Bitpacked bitfield unsupported";
+		} else if (ch > 1) {
 			return "Bitfield images must use 1 channel";
 		}
 		break;
@@ -118,7 +124,7 @@ const uint8_t bitdepth, const align_t align) {
 			w *= ch;
 			if (SIZE_MAX / w / bitdepth > 1) {
 				size_t bytes = strip_base(w, bitdepth);
-				const size_t a = ~0lu << align;
+				const size_t a = ~0lu << imax(align, 0);
 				if (SIZE_MAX - ~a >= bytes) {
 					bytes = (bytes + ~a) & a;
 					return SIZE_MAX / h / bytes > 1;
@@ -214,6 +220,9 @@ size_t wuimg_size(const struct wuimg *img) {
 			total += img->u.planes->p[z].size;
 		}
 		return total;
+	} else if (img->align_sh == align_bitpack) {
+		return strip_length(img->w * img->channels * img->h,
+			img->bitdepth, 0);
 	}
 	return wuimg_stride(img) * img->h;
 }

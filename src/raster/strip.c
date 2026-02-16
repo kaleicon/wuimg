@@ -38,7 +38,7 @@ const uint8_t bitdepth) {
 		}
 		return 0;
 	}
-	return -1;
+	return align_error;
 }
 
 void strip_spread(uint8_t *restrict dst, const uint8_t *restrict src,

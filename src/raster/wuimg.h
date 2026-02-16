@@ -93,7 +93,8 @@ struct wuimg {
 	size_t w, h;
 	unsigned char channels;
 	unsigned char bitdepth; // Bits per channel
-	align_t align_sh;
+	align_t align_sh; /* Row memory alignment. If this equals
+		`align_bitpack`, rows may start in the middle of a byte. */
 
 	unsigned char bitrange; /* Number of bits used within each channel,
 		such that `(1 << bitrange) - 1` corresponds to max brightness.

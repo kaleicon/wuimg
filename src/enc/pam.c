@@ -105,6 +105,9 @@ static bool passthrough_pam(const struct wuimg *src) {
 }
 
 static bool best_pam_fit(struct wuimg *dst, const struct wuimg *src) {
+	if (src->align_sh == align_bitpack) {
+		return false;
+	}
 	dst->w = (src->rotate & 1) ? src->h : src->w;
 	dst->h = (src->rotate & 1) ? src->w : src->h;
 	dst->alpha = alpha_unassociated;

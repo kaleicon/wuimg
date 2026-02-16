@@ -654,9 +654,20 @@ const struct wuimg *restrict src, struct imgconv *state) {
 				sp[z].h, src, state->op);
 		}
 	} else {
-		data_unpack(tmp->data, src->data,
-			wuimg_stride(tmp), wuimg_stride(src),
-			tmp->w * tmp->channels, tmp->h, src, state->op);
+		size_t elems = tmp->w * tmp->channels;
+		size_t h = tmp->h;
+		size_t t_stride, s_stride;
+		if (src->align_sh <= 0) {
+			elems *= tmp->h;
+			h = 1;
+			t_stride = wuimg_size(tmp);
+			s_stride = wuimg_size(src);
+		} else {
+			t_stride = wuimg_stride(tmp);
+			s_stride = wuimg_stride(src);
+		}
+		data_unpack(tmp->data, src->data, t_stride, s_stride,
+			elems, h, src, state->op);
 	}
 }
 

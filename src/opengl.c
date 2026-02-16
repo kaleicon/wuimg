@@ -515,9 +515,15 @@ static void gl_alignment(const align_t align) {
 
 static bool unpack_upload(const GLuint pix_buf,
 const struct gl_upload_params *params, const struct wuimg *img, size_t w,
-const size_t h, const unsigned char *data) {
-	gl_alignment(DEFAULT_GL_ALIGN);
+size_t h, const align_t align, const unsigned char *data) {
 	w *= params->comps;
+	if (align == align_bitpack) {
+		w *= h;
+		h = 1;
+		gl_alignment(0);
+	} else {
+		gl_alignment(DEFAULT_GL_ALIGN);
+	}
 	const void *arg = params->op == op_bitfield
 		? (void *)img->u.bitfield : &img->bitrange;
 	const size_t instride = strip_length(w, img->bitdepth, img->align_sh);
@@ -559,8 +565,9 @@ const void *data) {
 		img->align_sh);
 	bool bind_buffer = false;
 	bool ok = true;
-	if (params->op != op_noop || align > MAX_GL_ALIGN) {
-		ok = unpack_upload(pix_buf, params, img, w, h, data);
+	if (params->op != op_noop || align > MAX_GL_ALIGN
+	|| align == align_bitpack) {
+		ok = unpack_upload(pix_buf, params, img, w, h, align, data);
 		data = 0;
 		bind_buffer = true;
 	} else {

@@ -22,6 +22,11 @@ struct sewing_machine {
 	struct sewing_clothe dst, color, alpha;
 };
 
+enum align_code {
+	align_error = -2,
+	align_bitpack = -1,
+};
+
 typedef int8_t align_t;
 
 align_t align_from_int(size_t alignment);
