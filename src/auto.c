@@ -160,6 +160,16 @@ const struct wuptr ckiss_desc = DESC(
 	"skip:16\n" // Reserved. All 0
 );
 
+/* CLM - IDES thumbnail? */
+const struct wuptr clm_desc = DESC(
+	"skip:3\n"
+	"w:<u8>\n"
+	"h:<u8>\n"
+	"channels:1\n"
+	"bitdepth:4\n"
+	"packed:true"
+);
+
 /* COL - Color palette.
  * Used in Dark Legions, but also other games not sharing the same developer
 https://moddingwiki.shikadi.net/wiki/COL_Format_(Dark_Legions)
@@ -1043,6 +1053,14 @@ struct image_file *infile, const struct wuptr op, const struct token *tok) {
 				state->scalar = image_file_size(infile);
 			} else {
 				return pbug("Bad match value");
+			}
+		} else if (wuptr_eq_str(op, "packed")) {
+			if (wuptr_eq_str(arg, "true")) {
+				img->align_sh = align_bitpack;
+			} else if (wuptr_eq_str(arg, "false")) {
+				img->align_sh = 0;
+			} else {
+				return pbug("Bad invert value");
 			}
 		} else {
 			return pbug("Unknown variable-enum pair");

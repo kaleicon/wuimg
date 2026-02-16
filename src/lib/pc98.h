@@ -55,9 +55,4 @@ uint32_t i);
 
 struct wu_st gpc_parse(struct gpc_desc *desc, struct wuptr mem);
 
-
-struct wu_st clm_load(FILE *ifp, struct wuimg *img);
-
-struct wu_st clm_parse(FILE *ifp, struct wuimg *img);
-
 #endif /* LIB_GPC */

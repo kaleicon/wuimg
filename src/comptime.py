@@ -129,6 +129,9 @@ DEC_MAP: DecMap = {
 			ext="cel",
 			magic=b"KiSS\x20\x20"
 		),
+		"clm": FmtInfo("IDES thumbnail? (no palette support)",
+			match="clm",
+		),
 		"col": FmtInfo("COL color palette",
 			ext=("col", "res"),
 			mask=(
@@ -918,9 +921,6 @@ DEC_MAP: DecMap = {
 		"gpc": FmtInfo("IDES GPC (Fairytale, Cocktail)",
 			ext="gpc",
 			magic=b"PC98)GPCFILE   \0"
-		),
-		"clm": FmtInfo("IDES thumbnail? (no palette support)",
-			match="clm"
 		),
 	},
 

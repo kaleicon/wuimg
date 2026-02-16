@@ -73,21 +73,6 @@ const struct wu_conf *_c) {
 	return st;
 }
 
-static struct wu_st init_clm(struct image_file *infile,
-const struct wu_conf *conf) {
-	struct wuimg *img = infile->sub_img;
-	struct wu_st st = clm_parse(infile->ifp, img);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(img, conf);
-		if (e == wu_ok) {
-			st = clm_load(infile->ifp, img);
-		} else {
-			st = WUERR_HERE(e);
-		}
-	}
-	return st;
-}
-
 const struct image_fn prs_fn = {
 	.mmap = true,
 	.alloc_single = true,
@@ -100,8 +85,4 @@ const struct image_fn gpc_fn = {
 	.init = init_gpc,
 	.event = event_gpc,
 	.end = end_gpc,
-};
-const struct image_fn clm_fn = {
-	.alloc_single = true,
-	.init = init_clm,
 };
