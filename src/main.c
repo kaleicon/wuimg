@@ -366,15 +366,13 @@ static enum wu_error from_path(const char *name) {
 }
 
 static const struct opts sole_opts[] = {
-	{'r', "", "STRING",
+	{'r', "raw", "STRING",
 		"\t\tRead raw data using settings from STRING. Example:\n"
 		"\t\t\t'w:320 h:240 channels:4 bitdepth:8 layout:bgra'\n"
 		"\t\tOne may also perform rudimentary reads and seeks:\n"
 		"\t\t\t'endian:little c:1 b:1 w:<u16> h:<u16> skip:0x80'\n"
 		"\t\tA complete description is yet to be written..."},
-	{'t', "type", "ID",
-		"\t\tForce input decoder. ID must be one of the decoders\n"
-		"\t\tlisted with `--fmts`."},
+	OPTS_TYPE,
 };
 
 static const char * sole_args(const int argc, char *const *argv, int *idx,
@@ -390,7 +388,7 @@ struct sole_mode_args *args) {
 		case 't':
 			args->fmt = fmtmap_by_name(argv[*idx]);
 			if (!args->fmt) {
-				return "unknown decoder";
+				return OPTS_UNKNOWN_DECODER;
 			}
 			break;
 		default: return NULL;
@@ -441,21 +439,18 @@ struct test_mode_args *args) {
 
 enum global_opt_c {
 	go_done = 0,
-	go_h = 'h',
-	go_fmts = 0x80,
+	go_h = opts_global_help,
+	go_fmts = opts_global_fmts,
+	go_envs = opts_global_envs,
 	go_keys,
-	go_envs,
 };
 
 static const struct opts global_opts[] = {
-	{go_h, "help", "",
-		"\t\tYou are here."},
-	{go_fmts, "fmts", "",
-		"\t\tPrint supported formats."},
+	OPTS_HELP,
+	OPTS_FMTS,
 	{go_keys, "keys", "",
 		"\t\tPrint keybinds."},
-	{go_envs, "envs", "",
-		"\t\tPrint recognized environment variables."},
+	OPTS_ENVS,
 };
 
 #define DIRECTORY_MODE "directory"

@@ -370,7 +370,7 @@ enum write_opts_c {
 	wo_e = 'e',
 	wo_f = 'f',
 	wo_s = 's',
-	wo_t = 't',
+	wo_t = opts_global_type,
 	wo_z = 'z',
 };
 
@@ -387,14 +387,10 @@ static const struct opts write_opts[] = {
 		"\t\tForce overwriting output file(s)."},
 	{'s', "stdout", "",
 		"\t\tWrite only the initial sub-image to stdout."},
-	{'t', "type", "ID",
-		"\t\tForce input decoder. ID must be one of the decoders\n"
-		"\t\tlisted with `--fmts`."},
+	OPTS_TYPE,
 	{'z', "null", "",
 		"\t\tUse null as line terminator when printing filenames."},
 };
-
-#define MAYBE_U_FORGOT " (maybe it wasn't compiled in?)"
 
 const char * write_args(const int argc, char *const *argv, int *idx,
 struct write_args *args) {
@@ -409,7 +405,7 @@ struct write_args *args) {
 		case wo_e:
 			args->codec = find_codec(argv[*idx]);
 			if (args->codec < 0) {
-				return "unknown encoder" MAYBE_U_FORGOT;
+				return OPTS_UNKNOWN_ENCODER;
 			}
 			break;
 		case wo_f: args->overwrite = true; break;
@@ -417,7 +413,7 @@ struct write_args *args) {
 		case wo_t:
 			args->fmt = fmtmap_by_name(argv[*idx]);
 			if (!args->fmt) {
-				return "unknown decoder" MAYBE_U_FORGOT;
+				return OPTS_UNKNOWN_DECODER;
 			}
 			break;
 		case wo_z: args->null = true; break;

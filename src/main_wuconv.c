@@ -26,20 +26,10 @@ const struct wuimg *src) {
 	return imgconv_init(state, dst, src);
 }
 
-enum info_opts_c {
-	wo_done = 0,
-	wo_h = 'h',
-	wo_fmts = 0x80,
-	wo_envs,
-};
-
 static const struct opts info_opts[] = {
-	{wo_h, "help", "",
-		"\t\tYou are here."},
-	{wo_fmts, "fmts", "",
-		"\t\tPrint supported formats."},
-	{wo_envs, "envs", "",
-		"\t\tPrint recognized environment variables."},
+	OPTS_HELP,
+	OPTS_FMTS,
+	OPTS_ENVS,
 };
 
 static void print_help(FILE *ofp) {
@@ -63,19 +53,19 @@ int main(const int argc, char **argv) {
 		return 1;
 	}
 
-	const enum info_opts_c c = opts_next(argc, argv, &read, info_opts,
+	const enum opts_global c = opts_next(argc, argv, &read, info_opts,
 		ARRAY_LEN(info_opts));
 	switch (c) {
-	case wo_h:
+	case opts_global_help:
 		print_help(stderr);
 		return 0;
-	case wo_fmts:
+	case opts_global_fmts:
 		fmtmap_print_known(stderr);
 		return 0;
-	case wo_envs:
+	case opts_global_envs:
 		fputs(WU_ENV_VARIABLES, stderr);
 		return 0;
-	case wo_done: break;
+	default: break;
 	}
 
 	read += read < argc && !strcmp("--", argv[read]);

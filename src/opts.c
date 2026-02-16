@@ -4,6 +4,10 @@
 
 #include "opts.h"
 
+#define MAYBE_U_FORGOT " (maybe it wasn't compiled in?)"
+const char OPTS_UNKNOWN_DECODER[] = "unknown decoder" MAYBE_U_FORGOT,
+        OPTS_UNKNOWN_ENCODER[] = "unknown encoder" MAYBE_U_FORGOT;
+
 static void print_argname(const struct opts *opt, FILE *out) {
 	if (opt->argname[0]) {
 		fprintf(out, " %.*s", (int)sizeof(opt->argname), opt->argname);
