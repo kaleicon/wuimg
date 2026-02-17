@@ -21,7 +21,7 @@ auto      avs       Stardent AVS X
 auto      bob       Bob raytracer raster
 auto      bru       Degas Brush
 auto      chky      IFF Chunky
-auto      ckiss     Cherry KiSS CEL
+auto      ckiss     Cherry KiSS 32-bit CEL, unpaletted 4/8-bit CEL
 auto      clm       IDES thumbnail? (no palette support)
 auto      coke      COKE (Atari Falcon)
 auto      col       COL color palette
@@ -203,7 +203,7 @@ cbg       b'CompressedBG___\x00'
 chky      b'FORM\x00\x00\x00\x00CHKY'
 cisrle    b'\x1bGH'
 cisrle    b'\x1bGM'
-ckiss     b'KiSS  '
+ckiss     b'KiSS '
 coke      b'COKE format.'
 col       b'\x00\x00\x00\x00#\xb1\x00\x00'
 crg       b'CALAMUSCRG'

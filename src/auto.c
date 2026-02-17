@@ -146,13 +146,18 @@ const struct wuptr chky_desc = DESC(
 /* CKiSS - Cherry KiSS CEL
  * 32-bit RGBA variant of
 https://otakuworld.com/kiss/download/kissfrmt.txt
-*/
+ * We also support 4-bit and 8-bit files, but those require an external
+ * palette, controlled by a CNF file. */
 const struct wuptr ckiss_desc = DESC(
 	"endian:little\n"
-	"channels:4\n"
-	"bitdepth:8\n"
+	"channels:1\n"
 
-	"match:[KiSS\x20\x20]\n"
+	"match:[KiSS\x20]\n"
+	"(match:<u8>\n"
+		"4 bitdepth:4\n"
+		"8 bitdepth:8\n"
+		"32 channels:4 bitdepth:8\n"
+	")\n"
 	"skip:2\n"
 	"w:<u16>\n"
 	"h:<u16>\n"

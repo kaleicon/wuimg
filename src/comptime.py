@@ -125,9 +125,9 @@ DEC_MAP: DecMap = {
 				b"FORM" b"\0\0\0\0" b"CHKY",
 			)
 		),
-		"ckiss": FmtInfo("Cherry KiSS CEL",
+		"ckiss": FmtInfo("Cherry KiSS 32-bit CEL, unpaletted 4/8-bit CEL",
 			ext="cel",
-			magic=b"KiSS\x20\x20"
+			magic=b"KiSS\x20"
 		),
 		"clm": FmtInfo("IDES thumbnail? (no palette support)",
 			match="clm",
