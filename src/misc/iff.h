@@ -28,6 +28,7 @@ struct iff_state {
 	const struct iff_table *table;
 	unsigned table_len;
 	enum endianness endian:8;
+	enum endianness id_endian:8;
 	align_t align_sh;
 	iff_fn_t fallback;
 	void *user;

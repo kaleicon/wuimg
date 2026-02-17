@@ -833,6 +833,7 @@ const struct iff_table *table, const unsigned table_len) {
 		.table = table,
 		.table_len = table_len,
 		.endian = desc->endian,
+		.id_endian = desc->endian,
 		.align_sh = 1,
 		.fallback = ilbm_fallback,
 		.user = desc,

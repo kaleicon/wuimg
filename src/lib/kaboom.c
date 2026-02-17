@@ -6,8 +6,6 @@
 #include "raster/fmt.h"
 #include "lib/kaboom.h"
 
-#define FOURCC_REV(a, b, c, d) ((a) | (b << 8) | (c << 16) | (d << 24))
-
 void bmb_cleanup(struct bmb_desc *desc) {
 	free((void *)desc->idx2.mem);
 }
@@ -33,8 +31,8 @@ const struct iff_chunk chunk) {
 }
 
 static const struct iff_table bmb_end_table[] = {
-	{.id = FOURCC_REV('E', 'N', 'D', ' '), .fn = end},
-	{.id = FOURCC_REV('C', 'L', 'U', 'T'), .fn = clut},
+	{.id = FOURCC('E', 'N', 'D', ' '), .fn = end},
+	{.id = FOURCC('C', 'L', 'U', 'T'), .fn = clut},
 };
 
 struct wu_st bmb_decode(struct bmb_desc *desc, struct wuimg *img) {
@@ -147,9 +145,9 @@ const struct iff_chunk chunk) {
 }
 
 static const struct iff_table bmb_image_info[] = {
-	{.id = FOURCC_REV('I', 'N', 'F', 'O'), .fn = info},
-	{.id = FOURCC_REV('M', 'I', 'P', 'M'), .fn = mipm},
-	{.id = FOURCC_REV('I', 'M', 'A', 'G'), .fn = imag},
+	{.id = FOURCC('I', 'N', 'F', 'O'), .fn = info},
+	{.id = FOURCC('M', 'I', 'P', 'M'), .fn = mipm},
+	{.id = FOURCC('I', 'M', 'A', 'G'), .fn = imag},
 };
 
 struct wu_st bmb_parse_next(struct bmb_desc *desc, struct wuimg *img) {
@@ -182,7 +180,7 @@ const struct iff_chunk chunk) {
 }
 
 static const struct iff_table bmb_init_table[] = {
-	{.id = FOURCC_REV('I', 'D', 'X', '2'), .fn = idx2},
+	{.id = FOURCC('I', 'D', 'X', '2'), .fn = idx2},
 };
 
 struct wu_st bmb_init(struct bmb_desc *desc, FILE *ifp) {
@@ -202,6 +200,7 @@ struct wu_st bmb_init(struct bmb_desc *desc, FILE *ifp) {
 			.table_len = ARRAY_LEN(bmb_init_table),
 			.user = desc,
 			.endian = little_endian,
+			.id_endian = big_endian,
 			.align_sh = 0,
 		},
 	};

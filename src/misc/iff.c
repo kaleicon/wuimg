@@ -55,7 +55,7 @@ struct iff_chunk chunk) {
 }
 
 struct wu_st iff_swap(struct iff_state *iff, void *_p, struct iff_chunk chunk) {
-	chunk.id = endian32(chunk.id, iff->endian);
+	chunk.id = endian32(chunk.id, iff->id_endian);
 	chunk.len = endian32(chunk.len, iff->endian);
 	return iff_search(iff, _p, chunk);
 }

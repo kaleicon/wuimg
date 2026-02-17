@@ -1121,6 +1121,16 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"riff": {
+		"riffpal": FmtInfo("RIFF Palette (simple only)",
+			ext=("pa", "pal"),
+			mask=(
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+				b"RIFF" b"\0\0\0\0" b"PAL ",
+			),
+		),
+	},
+
 	"sgf": {
 		"sgf": FmtInfo("Somera Graphic Format",
 			ext="sgf",
