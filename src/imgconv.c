@@ -562,7 +562,7 @@ const ptrdiff_t stride, const struct wuimg *src, const struct imgconv *state) {
 static uint8_t * get_unpacked(const struct imgconv *state,
 const struct wuimg *src, const size_t y) {
 	uint8_t *s_row = src->data + wuimg_stride(src) * y;
-	if (state->op == op_noop) {
+	if (state->op == op_noop || src == state->tmp) {
 		// Nothing needs to be done, return pointer to original row
 		return s_row;
 	}
