@@ -324,6 +324,8 @@ DEC_MAP: DecMap = {
 			size=(0x1c00, 0x1880, 0x180b, 0x180a)
 		),
 	},
+
+	# Always present
 	"icc": {
 		"icc": FmtInfo("ICC color palette",
 			match="icc"

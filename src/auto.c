@@ -26,9 +26,8 @@ const struct wuptr aai_desc = DESC(
 );
 
 /* Abyss Engine Image
- * Very likely to be little endian, as though all fields in all samples are a
- * multiple of 0x100, assuming big endian would leave a single byte on each
- * end. */
+ * Very likely to be little endian. All fields in all samples are a multiple
+ * of 0x100, and assuming big endian would leave a single byte on each end. */
 const struct wuptr aei_desc = DESC(
 	"endian:little\n"
 	"channels:4\n"
@@ -114,6 +113,7 @@ const struct wuptr bob_desc = DESC(
 
 // BRU - Degas Elite Brush
 const struct wuptr bru_desc = DESC(
+	"match:filesize(64)\n"
 	"w:8\n"
 	"h:8\n"
 	"channels:1\n"
@@ -312,6 +312,7 @@ const struct wuptr kro_desc = DESC(
 
 /* MegaPaint Pattern */
 const struct wuptr megapat_desc = DESC(
+	"match:filesize(0x112c)\n"
 	"w:32\n"
 	"h:1024\n" // There are always 32 patterns, each 32x32
 	"channels:1\n"
@@ -418,6 +419,7 @@ const struct wuptr pictris_desc = DESC(
 
 /* Portfolio Graphics uncompressed */
 const struct wuptr pgf_desc = DESC(
+	"match:filesize(0x780)\n"
 	"w:240\n"
 	"h:64\n"
 	"channels:1\n"
@@ -555,8 +557,9 @@ const struct wuptr eggpaint_desc = DESC(
 	"h:<u16>"
 );
 
-// FTC (Falcon True Color)
+/* FTC (Falcon True Color) */
 const struct wuptr ftc_desc = DESC(
+	"match:filesize(0x2d000)\n"
 	"w:384\n"
 	"h:240\n"
 	"bitdepth:16\n"
@@ -647,8 +650,9 @@ const struct wuptr trp_desc = DESC(
 );
 
 /* Atari ST */
-// DA4 (PaintShop)
+/* DA4 (PaintShop) */
 const struct wuptr da4_desc = DESC(
+	"match:filesize(0xfa00)\n"
 	"w:640\n"
 	"h:800\n"
 	"channels:1\n"
@@ -656,8 +660,9 @@ const struct wuptr da4_desc = DESC(
 	"invert:true"
 );
 
-// DOO (Atari Doodle)
+/* DOO (Atari Doodle) */
 const struct wuptr doo_desc = DESC(
+	"match:filesize(0x7d00)\n"
 	"w:640\n"
 	"h:400\n"
 	"channels:1\n"
@@ -679,16 +684,16 @@ const struct wuptr imgscan_desc = DESC(
 );
 
 /* TRS-80 family */
-// TRS-80 Clip Art
+/* TRS-80 Clip Art */
 const struct wuptr trs80clp_desc = DESC(
+	"match:filesize(0x132)\n"
 	"w:0x28\n"
 	"h:0x38\n"
 	"channels:1\n"
 	"bitdepth:1\n"
 	"invert:true\n"
 
-	/* It's hard to make sense of the header, so match against it and move
-	 * on. */
+	// No idea what this means
 	"match:[\x00\x00\x00\x03\x01\x5e\x00\x00\x20\x00\x20\x01]\n"
 	"match:[\x01\x2c\x00\x0a\x00\x38\x00\x20\x00\x38\x00\x20\x05]"
 );
