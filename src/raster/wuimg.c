@@ -558,12 +558,13 @@ const int verbosity) {
 	pix_layout_print(img->layout, out);
 	fprintf(out,
 		"  Alignment: %d\n"
-		"  Rotation: %d\n"
-		"  Mirror: %s\n"
+		"  Rotation: %s%d\n"
 		"  Alpha: %s\n"
-		"  Ratio: %g\n"
+		"  Pixel ratio: %g\n"
 		"  Bits used: %d\n",
-		img->align_sh, img->rotate, img->mirror ? "yes" : "no",
+		img->align_sh,
+		img->mirror ? "vflip " : "",
+		img->rotate,
 		alpha_str(img->alpha), img->ratio, img->bitrange);
 
 	print_colorspace_data(&img->cs, out);
@@ -578,8 +579,7 @@ const int verbosity) {
 					"   Plane %d:\n"
 					"    Subsampling: %d:%d\n"
 					"    Cositing: %d:%d\n"
-					"    Width: %zu\n"
-					"    Height: %zu\n"
+					"    Dimensions: %zu x %zu\n"
 					"    Stride: %zu\n",
 					i,
 					p[i].x.subsamp, p[i].y.subsamp,
@@ -593,7 +593,7 @@ const int verbosity) {
 					p[i].x.subsamp, p[i].y.subsamp,
 					(i == img->channels - 1) ? '\n' : '/');
 			}
-			fputs("   Positioning: ", out);
+			fputs("   Cositing: ", out);
 			for (int i = 0; i < img->channels; ++i) {
 				fprintf(out, "%d:%d%c",
 					p[i].x.cosit, p[i].y.cosit,
