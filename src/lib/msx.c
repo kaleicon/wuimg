@@ -582,11 +582,13 @@ const char *name, const uint8_t ext[static 3]) {
 }
 
 
-/* MSX GL5/6/7/8.
- * These are uncompressed MSX rasters with arbitrary dimensions. */
+/* MSX GL5/6/7/8, and Dynamic Publisher Shape/Stamp (.stp)
+ * These are uncompressed MSX rasters with arbitrary dimensions.
+https://marmsx.msxall.com/projetos/sketch/stp_en.php
+*/
 
 struct wu_st msxgl_parse(struct wuimg *img, FILE *ifp, const char *name,
-const uint8_t ext[static 3]) {
+const uint8_t ext[static 4]) {
 	/* MSX gl? header:
 		Offset  Type    Name
 		0       u16     Width
@@ -598,9 +600,21 @@ const uint8_t ext[static 3]) {
 	if (!fread(hdr, sizeof(hdr), 1, ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
+
 	img->w = endian16l(hdr[0]);
 	img->h = endian16l(hdr[1]);
 	img->channels = 1;
+	const char stp[] = "stp";
+	const bool is_stamp = !memcmp(ext, stp, sizeof(stp));
+	if (is_stamp) {
+		/* Like GL6, but black and white using the lower bit.
+		 * Upper bit is reserved for GUI according to RECOIL. */
+		img->bitdepth = 2;
+		img->bitrange = 1;
+		img->align_sh = align_bitpack;
+		img->cs.invert = true;
+		return WU_OK;
+	}
 	img->bitrange = 3;
 	img->layout = pix_grba;
 	switch (ext[2]) {

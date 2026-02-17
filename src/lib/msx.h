@@ -44,6 +44,6 @@ const char *name, const uint8_t ext[static 3]);
 
 
 struct wu_st msxgl_parse(struct wuimg *img, FILE *ifp, const char *name,
-const uint8_t ext[static 3]);
+const uint8_t ext[static 4]);
 
 #endif /* LIB_MSX */

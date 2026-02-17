@@ -889,8 +889,8 @@ DEC_MAP: DecMap = {
 				b"\xff\xff\xff\0\0\xff\xff", b"\xfd\0\0\0\0\0\0",
 			)
 		),
-		"msxgl": FmtInfo("MSX GL5/6/7/8",
-			match=("gl5", "gl6", "gl7", "gl8")
+		"msxgl": FmtInfo("MSX GL5/6/7/8, Dynamic Publisher Shape/Stamp",
+			match=("gl5", "gl6", "gl7", "gl8", "stp")
 		),
 	},
 
