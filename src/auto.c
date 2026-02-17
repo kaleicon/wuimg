@@ -282,7 +282,24 @@ const struct wuptr kips_desc = DESC(
 	"skip:0x10"
 );
 
-// KRO - Kolor Raw
+/* KCF - KiSS Color File palette
+https://otakuworld.com/kiss/download/kissfrmt.txt
+*/
+const struct wuptr kcf_desc = DESC(
+	"endian:little\n"
+
+	"match:[KiSS\x10]\n"
+	"(match:<u8>\n"
+		"12 channels:4 bitdepth:4 layout:rbag alpha:ignore\n"
+		"24 channels:3 bitdepth:8\n"
+	")\n"
+	"skip:2\n"
+	"w:<u16>\n" // palette entries
+	"h:<u16>\n" // nr of palettes
+	"skip:20"
+);
+
+/* KRO - Kolor Raw */
 const struct wuptr kro_desc = DESC(
 	"endian:big\n"
 

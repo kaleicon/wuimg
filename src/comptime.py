@@ -165,6 +165,10 @@ DEC_MAP: DecMap = {
 			ext="iim",
 			magic=b"IS_IMAGE\0"
 		),
+		"kcf": FmtInfo("KiSS Color File palette",
+			ext="kcf",
+			magic=b"KiSS\x10"
+		),
 		"kips": FmtInfo("IBM KIPS (no palette)",
 			ext="kps",
 			magic=b"DFIMAG00"
