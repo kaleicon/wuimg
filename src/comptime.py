@@ -185,11 +185,6 @@ DEC_MAP: DecMap = {
 			),
 			size=0x112c
 		),
-		"msxpal": FmtInfo("MSX-BASIC palette (PL5, PL6, PL7, PL8)"
-			# Don't detect it for now
-			#ext=("pl5", "pl6", "pl7", "pl8"),
-			#size=256,
-		),
 		"olpc565": FmtInfo("OLPC 565 boot graphic",
 			ext="565",
 			magic=b"C565"
@@ -300,6 +295,22 @@ DEC_MAP: DecMap = {
 				# those are probably more common
 			),
 			size=(64000, 256000, 128000)
+		),
+
+		# MSX
+		"msxalf": FmtInfo("MSX Alfabeto/Graphos III Font",
+			ext="alf",
+			mask=(
+				# Start and Exec address is 0x9200 in
+				# Graphos III 1.2, and reportedly 0x9000 before
+				b"\xfe\x00\x92\xff\x99\x00\x92",
+				b"\xff\xff\xfd\x00\x00\xff\xfd",
+			),
+		),
+		"msxpal": FmtInfo("MSX-BASIC palette (PL5, PL6, PL7, PL8)"
+			# Don't detect it for now
+			#ext=("pl5", "pl6", "pl7", "pl8"),
+			#size=256,
 		),
 
 		# TRS-80

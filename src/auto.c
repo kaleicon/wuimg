@@ -326,18 +326,6 @@ const struct wuptr megapat_desc = DESC(
 	// There are 292 bytes of unknown data after the patterns
 );
 
-/* MSX-BASIC palettes (PL5, PL6, PL7, PL8) */
-const struct wuptr msxpal_desc = DESC(
-	"match:filesize(256)\n"
-	"w:16\n"
-	"h:8\n"
-	"channels:4\n"
-	"bitdepth:4\n"
-	"bitrange:3\n"
-	"layout:rbag\n"
-	"alpha:ignore"
-);
-
 /* OLPC 565
 https://github.com/openbios/openfirmware/blob/master/cpu/x86/pc/olpc/images/README
 */
@@ -681,6 +669,36 @@ const struct wuptr imgscan_desc = DESC(
 		"256000 w:640 h:400\n" // RWH
 		"128000 w:640 h:200\n" // RAW
 	")"
+);
+
+/* MSX family */
+/* MSX ALF Font
+https://aerothermalsolutions.co/wp-content/uploads/2023/12/cpu_msx_7.pdf
+ * Start and Exec address is 0x9200 in all samples I've found, but the spec
+ * seems to be saying that it could also be 0x9000 for old versions.
+*/
+const struct wuptr msxalf_desc = DESC(
+	"match:[\xfe]\n"
+	"skip:6\n"
+
+	"w:8\n"
+	"h:2048\n" // 256 glyphs * 8
+	"channels:1\n"
+	"bitdepth:1"
+	/* Some files are slightly bigger than 2048+7 bytes. There seems to be
+	 * only garbage there though. */
+);
+
+/* MSX-BASIC palettes (PL5, PL6, PL7, PL8) */
+const struct wuptr msxpal_desc = DESC(
+	"match:filesize(256)\n"
+	"w:16\n"
+	"h:8\n"
+	"channels:4\n"
+	"bitdepth:4\n"
+	"bitrange:3\n"
+	"layout:rbag\n"
+	"alpha:ignore"
 );
 
 /* TRS-80 family */
