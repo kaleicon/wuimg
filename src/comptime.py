@@ -1029,6 +1029,16 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"piff": {
+		"vvtp": FmtInfo("House of the Dead PIFF/VVTP texture",
+			ext=("vmc", "vram"),
+			mask=(
+				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
+				b"PIFF" b"\0\0\0\0" b"VVTP",
+			)
+		),
+	},
+
 	"piklib": {
 		"piklib": FmtInfo("Aidem Media Piklib engine image (uncompressed only)",
 			ext="img",
