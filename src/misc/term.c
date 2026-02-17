@@ -151,16 +151,15 @@ void term_line_key_val(const char *key, const char *val, FILE *out) {
 	fputc('\n', out);
 }
 
-static const char CLEAR_LINE[] = "\x1b[K";
 void term_line_temp(const char *text) {
-	fputs(CLEAR_LINE, stdout);
+	fputs(TERM_CLEAR_LINE, stdout);
 	fputs(text, stdout);
-	fputc('\r', stdout);
+	fputs(TERM_TEMP_CLOSE, stdout);
 	fflush(stdout);
 }
 
 void term_line_clear(void) {
-	fputs(CLEAR_LINE, stdout);
+	fputs(TERM_CLEAR_LINE, stdout);
 	fflush(stdout);
 }
 

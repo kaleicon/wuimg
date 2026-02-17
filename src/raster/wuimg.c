@@ -629,10 +629,11 @@ const size_t memsize) {
 		fprintf(out, "(%s) ", pix_attr_str(img->attr));
 	}
 	fprintf(out, "= %zu bytes%s", memsize,
-		wuimg_has_data(img) ? "\n" : " (Not loaded)\n");
+		wuimg_has_data(img) ? "" : " (Not loaded)");
 }
 
-size_t wuimg_print(const struct wuimg *img, FILE *out, const int verbosity) {
+size_t wuimg_print(const struct wuimg *img, FILE *out, const int verbosity,
+const char *short_end) {
 	const size_t memsize = wuimg_size(img);
 	if (verbosity > 0) {
 		if (img->metadata) {
@@ -643,7 +644,10 @@ size_t wuimg_print(const struct wuimg *img, FILE *out, const int verbosity) {
 		}
 		print_dimensions(img, out, memsize);
 		if (verbosity > 1) {
+			fputc('\n', stdout);
 			print_more_data(img, out, verbosity);
+		} else {
+			fputs(short_end, out);
 		}
 	}
 	return memsize;

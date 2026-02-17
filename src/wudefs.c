@@ -45,6 +45,12 @@ void image_file_free_if_single(struct image_file *file) {
 	}
 }
 
+size_t image_file_print_single(const struct image_file *file, FILE *out,
+const int verbosity, const size_t i, const char *short_end) {
+	fprintf(out, " %zu/%zu: ", i+1, file->nr);
+	return wuimg_print(file->sub_img + i, out, verbosity, short_end);
+}
+
 void image_file_print(const struct image_file *file, FILE *out,
 const int verbosity, const bool unloaded_too) {
 	size_t max_x = 0;
@@ -76,8 +82,8 @@ const int verbosity, const bool unloaded_too) {
 	for (size_t i = 0; i < file->nr; ++i) {
 		const struct wuimg *img = file->sub_img + i;
 		if (unloaded_too || wuimg_has_data(img)) {
-			fprintf(out, " %zu/%zu: ", i+1, file->nr);
-			overall_size += wuimg_print(img, out, verbosity);
+			overall_size += image_file_print_single(file, out,
+				verbosity, i, "\n");
 		} else {
 			++not_loaded;
 		}

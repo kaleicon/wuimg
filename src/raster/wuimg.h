@@ -202,6 +202,7 @@ void wuimg_clear(struct wuimg *img);
 
 bool wuimg_has_data(const struct wuimg *img);
 
-size_t wuimg_print(const struct wuimg *img, FILE *out, int verbosity);
+size_t wuimg_print(const struct wuimg *img, FILE *out, int verbosity,
+const char *short_end);
 
 #endif /* WUIMG */

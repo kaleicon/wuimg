@@ -188,6 +188,14 @@ const bool allow_cycle, const bool allow_delete) {
 				evs = wudec_cur_events(image);
 				window->pub.win.playing =
 					wudec_cur_is_anim(image);
+
+				if (!first_iter) {
+					fputs(TERM_CLEAR_LINE, stdout);
+					image_file_print_single(infile, stdout,
+						1, (size_t)state->idx,
+						TERM_TEMP_CLOSE);
+					fflush(stdout);
+				}
 			} else {
 				subupload = !(event->image & ev_transform);
 			}
@@ -206,9 +214,9 @@ const bool allow_cycle, const bool allow_delete) {
 				first_iter = false;
 			}
 
-			const struct wuimg *img = infile->sub_img + state->idx;
 			if (evs & ev_frame) {
-				next_frame = state->time + min_time(img, state);
+				next_frame = state->time + min_time(
+					infile->sub_img + state->idx, state);
 			} else {
 				nanosec_report("Frame uploaded in",
 					gl_clock_query(gl), report_all);

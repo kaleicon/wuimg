@@ -19,6 +19,9 @@ struct term_queue {
 	unsigned char used;
 };
 
+#define TERM_CLEAR_LINE "\x1b[K"
+#define TERM_TEMP_CLOSE "\r"
+
 void term_print_escaped(const unsigned char *restrict data, size_t len,
 bool is_utf8, FILE *out);
 
