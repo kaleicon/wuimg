@@ -1003,6 +1003,21 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"peak": {
+		"peak": FmtInfo("Adobe Audition/Cool Edit Peak Graphical Waveform",
+			ext="pk",
+			magic=b"\xf1\x06\0\0\0\x01\0\0",
+		),
+		"rpkn": FmtInfo("Sound Forge Peak",
+			ext="reapeaks",
+			magic=b"RPKN",
+		),
+		"sfpk": FmtInfo("Sound Forge Peak",
+			ext="sfk",
+			magic=b"SFPK\x01\0\0\0\x40\0\0\0",
+		),
+	},
+
 	"pgx": {
 		"pgx": FmtInfo("Glib2 engine image",
 			ext="pgx",
