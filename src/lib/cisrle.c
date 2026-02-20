@@ -19,35 +19,32 @@ const char * cis_resolution_str(enum cis_resolution res) {
 }
 
 struct wu_st cis_decode(const struct cis_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		const struct wuptr src = desc->data;
-		const size_t dst_len = wuimg_size(img);
-		size_t d = 0;
-		bool on = desc->swap;
-		for (size_t s = 0; s < src.len; ++s) {
-			size_t c = src.ptr[s];
-			if (c >= 0x20) {
-				c -= 0x20;
-				if (dst_len - d < c) {
-					c = dst_len - d;
-				}
-				memset(img->data + d, on, c);
-				d += c;
-				on = !on;
-				if (d == dst_len) {
-					break;
-				}
-			} else if (c == ESC) {
-				d = dst_len;
+	const struct wuptr src = desc->data;
+	const size_t dst_len = wuimg_size(img);
+	size_t d = 0;
+	bool on = desc->swap;
+	for (size_t s = 0; s < src.len; ++s) {
+		size_t c = src.ptr[s];
+		if (c >= 0x20) {
+			c -= 0x20;
+			if (dst_len - d < c) {
+				c = dst_len - d;
+			}
+			memset(img->data + d, on, c);
+			d += c;
+			on = !on;
+			if (d == dst_len) {
 				break;
 			}
+		} else if (c == ESC) {
+			d = dst_len;
+			break;
 		}
-		return wuerr_partial(d, dst_len);
 	}
-	return WUERR_HERE(wu_alloc_error);
+	return wuerr_partial(d, dst_len);
 }
 
-static void skip_black(struct cis_desc *desc) {
+static void cis_skip_black(struct cis_desc *desc) {
 	/* Some files begin with 2 or 4 black rows, switch to white
 	 * inmediately, and are truncated at the bottom. If so, skip
 	 * the black section so that they're displayed fully.
@@ -95,9 +92,9 @@ const struct wuptr mem, const bool try_fix) {
 			img->bitdepth = 8;
 			img->bitrange = 1;
 			if (img->w == 256 && try_fix) {
-				skip_black(desc);
+				cis_skip_black(desc);
 			}
-			return wuimg_verify_st(img);
+			return WU_OK;
 		}
 		return WUERR_HERE(wu_invalid_header);
 	}
