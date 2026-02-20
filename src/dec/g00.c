@@ -7,24 +7,35 @@ static void g00_end(struct image_file *infile) {
 	g00_cleanup(infile->dec_state, infile->sub_img);
 }
 
-static enum wu_error g00_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st event_g00(struct image_file *infile,
+const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev) {
+	(void)state;
 	struct g00_desc *desc = infile->dec_state;
 	struct wuimg *img = infile->sub_img;
-	enum wu_error st = g00_parse(desc, img, infile->map);
-	if (st == wu_ok) {
+	switch (ev) {
+	case ev_metadata:
 		tree_bud_leaf_u(&infile->metadata, "Version", desc->version);
-		st = wuimg_exceeds_limit(img, wuconf)
-			? wu_exceeds_size_limit
-			: g00_decode(desc, img);
+		return wuimg_exceeds_limit(img, wuconf)
+			? WUERR_HERE(wu_exceeds_size_limit)
+			: WU_OK;
+	case ev_subcycle:
+		return g00_decode(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_g00(struct image_file *infile,
+const struct wu_conf *wuconf) {
+	(void)wuconf;
+	return g00_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn g00_fn = {
 	.mmap = true,
 	.alloc_single = true,
 	.state_size = sizeof(struct g00_desc),
-	.dec = g00_dec,
+	.init = init_g00,
+	.event = event_g00,
 	.end = g00_end,
 };

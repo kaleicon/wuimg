@@ -35,9 +35,9 @@ struct g00_desc {
 
 void g00_cleanup(struct g00_desc *desc, struct wuimg *img);
 
-enum wu_error g00_decode(struct g00_desc *desc, struct wuimg *img);
+struct wu_st g00_decode(struct g00_desc *desc, struct wuimg *img);
 
-enum wu_error g00_parse(struct g00_desc *desc, struct wuimg *img,
+struct wu_st g00_parse(struct g00_desc *desc, struct wuimg *img,
 struct wuptr mem);
 
 #endif /* LIB_G00 */

@@ -26,7 +26,7 @@ void g00_cleanup(struct g00_desc *desc, struct wuimg *img) {
 }
 
 #define ENDSECTION (1 + 3*8)
-static size_t lzss_decomp(uint8_t *restrict dst, const size_t dst_len,
+static size_t g00_lzss_decomp(uint8_t *restrict dst, const size_t dst_len,
 const uint8_t *restrict src, size_t src_len, const size_t elem_size,
 const size_t min_run) {
 	uint8_t alt[ENDSECTION*2];
@@ -44,14 +44,14 @@ const size_t min_run) {
 		++s;
 		for (int i = 0; i < 8; ++i, flags >>= 1) {
 			if (flags & 1) {
-				if (d + elem_size > dst_len) {
+				if (dst_len - d < elem_size) {
 					return d;
 				}
 				memcpy(dst + d, src + s, elem_size);
 				d += elem_size;
 				s += elem_size;
 			} else {
-				const uint16_t dt = buf_endian16(src + s, little_endian);
+				const uint16_t dt = buf_endian16l(src + s);
 				s += 2;
 
 				const size_t len = ((dt & 0x0f) + min_run) * elem_size;
@@ -69,29 +69,25 @@ const size_t min_run) {
 	return d;
 }
 
-static size_t v1_finish(struct g00_desc *desc, struct wuimg *img,
+static size_t g00_v1_finish(struct g00_desc *desc, struct wuimg *img,
 const size_t written) {
 	/* V1 decoded data format:
-		Offset  Size    Name
+		Offset  Type    Name
 		0       WORD    NrEntries
-		2       BYTE[4] PaletteEntries[NrEntries]
+		2       BYTE    PaletteEntries[NrEntries][4]
 		*       BYTE    PixelData
 	*/
 	if (written < 2) {
 		return 0;
 	}
 
-	const uint16_t pal_entries = buf_endian16(desc->u.buf, little_endian);
+	const uint16_t pal_entries = buf_endian16l(desc->u.buf);
 	if (!pal_entries || pal_entries > 256) {
 		return 0;
 	}
 
 	const size_t pal_bytes = pal_entries * 4u + 2;
 	if (pal_bytes >= written) {
-		return 0;
-	}
-
-	if (desc->decomp_size - pal_bytes < wuimg_size(img)) {
 		return 0;
 	}
 
@@ -103,7 +99,7 @@ const size_t written) {
 	return written - pal_bytes;
 }
 
-static size_t v2_compost(struct g00_desc *desc, struct wuimg *img,
+static struct wu_st g00_v2_compost(struct g00_desc *desc, struct wuimg *img,
 const size_t written, const uint8_t *buf) {
 	/* V2 decoded data format:
 		Offset  Type    Name
@@ -147,7 +143,7 @@ const size_t written, const uint8_t *buf) {
 	*/
 
 	if (!wuimg_alloc_noverify(img)) {
-		return 0;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	const void *data_end = buf + written;
@@ -155,38 +151,41 @@ const size_t written, const uint8_t *buf) {
 
 	struct g00_part_loc *loc = (struct g00_part_loc *)(buf + 4);
 	if ((void *)(loc + v2->dir_count) >= data_end
-	|| buf_endian32(buf, little_endian) != v2->dir_count) {
-		return 0;
+	|| buf_endian32l(buf) != v2->dir_count) {
+		return wuerr(wu_invalid_header, "g00 v2: dir_count mismatch");
 	}
 
+	size_t total = v2->dir_count;
 	size_t composted = 0;
 	for (uint32_t i = 0; i < v2->dir_count; ++i) {
-		const uint8_t *part = buf + endian32(loc[i].offset, little_endian);
+		const uint8_t *part = buf + endian32l(loc[i].offset);
 		if ((void *)(part + 4) >= data_end) {
 			continue;
 		}
+		++composted;
 
-		if (buf_endian16(part, little_endian) != 1) {
+		const uint16_t block_count = buf_endian16l(part + 2);
+		total += block_count;
+		if (buf_endian16l(part) != 1) {
 			continue;
 		}
 
-		const uint16_t block_count = buf_endian16(part + 2, little_endian);
 		const uint8_t *block = part + G00_PART_SIZE;
 		if ((const void *)block >= data_end) {
 			continue;
 		}
-		const uint32_t xstart = buf_endian32(v2->dir + i*G00_DIR_SIZE, little_endian);
-		const uint32_t ystart = buf_endian32(v2->dir + i*G00_DIR_SIZE + 4, little_endian);
+		const uint32_t xstart = buf_endian32l(v2->dir + i*G00_DIR_SIZE);
+		const uint32_t ystart = buf_endian32l(v2->dir + i*G00_DIR_SIZE + 4);
 		for (uint16_t b = 0; b < block_count; ++b) {
 			const uint8_t *rast = block + G00_BLOCK_SIZE;
 			if ((const void *)rast >= data_end) {
 				break;
 			}
 			const struct compost reg = {
-				.x = xstart + buf_endian16(block, little_endian),
-				.y = ystart + buf_endian16(block + 2, little_endian),
-				.w = buf_endian16(block + 6, little_endian),
-				.h = buf_endian16(block + 8, little_endian),
+				.x = xstart + buf_endian16l(block),
+				.y = ystart + buf_endian16l(block + 2),
+				.w = buf_endian16l(block + 6),
+				.h = buf_endian16l(block + 8),
 			};
 			if (!compost_bounds_check(img->w, img->h, &reg)) {
 				continue;
@@ -201,16 +200,16 @@ const size_t written, const uint8_t *buf) {
 			++composted;
 		}
 	}
-	return composted;
+	return wuerr_partial(composted, total);
 }
 
-enum wu_error g00_decode(struct g00_desc *desc, struct wuimg *img) {
-	void *dst = malloc(desc->decomp_size);
+struct wu_st g00_decode(struct g00_desc *desc, struct wuimg *img) {
+	uint8_t *dst = calloc(desc->decomp_size, 1);
 	if (dst) {
 		const struct wuptr src = mp_avail(&desc->mp, desc->comp_size);
 		const size_t elem_size = (desc->version == g00_v0) ? 3 : 1;
 		const size_t min_run = (desc->version == g00_v0) ? 1 : 2;
-		size_t written = lzss_decomp(dst, desc->decomp_size,
+		size_t written = g00_lzss_decomp(dst, desc->decomp_size,
 			src.ptr, src.len, elem_size, min_run);
 		switch (desc->version) {
 		case g00_v0:
@@ -218,43 +217,20 @@ enum wu_error g00_decode(struct g00_desc *desc, struct wuimg *img) {
 			break;
 		case g00_v1:
 			desc->u.buf = dst;
-			written = v1_finish(desc, img, written);
+			written = g00_v1_finish(desc, img, written);
 			break;
 		case g00_v2:
-			written = v2_compost(desc, img, written, dst);
+			;struct wu_st st = g00_v2_compost(desc, img, written,
+				dst);
 			free(dst);
-			break;
+			return st;
 		}
-		return written ? wu_ok : wu_decoding_error;
+		return wuerr_partial(written, wuimg_size(img));
 	}
-	return wu_alloc_error;
+	return WUERR_HERE(wu_alloc_error);
 }
 
-static enum wu_error header_set(struct g00_desc *desc, struct wuimg *img,
-const enum g00_version version, const uint16_t width, const uint16_t height) {
-	uint8_t ch;
-	switch (version) {
-	case g00_v0: ch = 3; break;
-	case g00_v1:
-		if (!wuimg_palette_init(img)) {
-			return wu_alloc_error;
-		}
-		ch = 1;
-		break;
-	case g00_v2: ch = 4; break;
-	default: return wu_unsupported_feature;
-	}
-
-	desc->version = version;
-	img->w = width;
-	img->h = height;
-	img->channels = ch;
-	img->bitdepth = 8;
-	img->layout = pix_bgra;
-	return wuimg_verify(img);
-}
-
-enum wu_error g00_parse(struct g00_desc *desc, struct wuimg *img,
+struct wu_st g00_parse(struct g00_desc *desc, struct wuimg *img,
 const struct wuptr mem) {
 	/* Base header:
 		Offset  Type    Name
@@ -294,53 +270,67 @@ const struct wuptr mem) {
 	};
 	const uint8_t *header = mp_slice(&desc->mp, 5);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	enum wu_error st = header_set(desc, img, header[0],
-		buf_endian16(header + 1, little_endian),
-		buf_endian16(header + 3, little_endian));
-	if (st != wu_ok) {
-		return st;
-	}
+	img->w = buf_endian16l(header + 1);
+	img->h = buf_endian16l(header + 3);
+	img->bitdepth = 8;
+	img->layout = pix_bgra;
 
 	const size_t dims = img->w * img->h;
-	if (desc->version == g00_v2) {
+	desc->version = header[0];
+	switch (desc->version) {
+	case g00_v0:
+		img->channels = 3;
+		break;
+	case g00_v1:
+		if (!wuimg_palette_init(img)) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+		img->channels = 1;
+		break;
+	case g00_v2:
+		img->channels = 4;
+
 		header = mp_slice(&desc->mp, 4);
 		if (!header) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 
 		struct g00_desc_v2 *v2 = &desc->u.v2;
-		v2->dir_count = buf_endian32(header, little_endian);
+		v2->dir_count = buf_endian32l(header);
 		if (!v2->dir_count || v2->dir_count >= zumin(dims, 0xffff)) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"g00 v2: dir_count out of bounds");
 		}
 
 		const size_t table_len = v2->dir_count * G00_DIR_SIZE;
 		desc->u.v2.dir = mp_slice(&desc->mp, table_len);
 		if (!desc->u.v2.dir) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
+		break;
+	default:
+		return wuerr(wu_invalid_header, "g00 version > 2");
 	}
 
 	header = mp_slice(&desc->mp, 8);
 	if (!header) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	desc->comp_size = buf_endian32(header, little_endian);
+	desc->comp_size = buf_endian32l(header);
 	if (desc->comp_size <= 8) {
-		return wu_invalid_header;
+		return WUERR_HERE(wu_invalid_header);
 	}
 	desc->comp_size -= 8;
-
-	if (desc->version == g00_v2) {
-		desc->decomp_size = buf_endian32(header + 4, little_endian);
-	} else {
-		desc->decomp_size = dims * img->channels;
+	desc->decomp_size = buf_endian32l(header + 4);
+	if (desc->version != g00_v2) {
+		size_t max = dims * img->channels;
 		if (desc->version == g00_v1) {
-			desc->decomp_size += 2 + 4*256;
+			max += 2 + 4*256;
 		}
+		desc->decomp_size = (uint32_t)zumin(desc->decomp_size, max);
 	}
-	return wu_ok;
+	return wuimg_verify_st(img);
 }
