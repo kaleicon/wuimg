@@ -14,10 +14,10 @@ struct q4_desc {
 
 time_t q4_approximate_date(const struct q4_desc *desc);
 
-size_t q4_decode(const struct q4_desc *desc, struct wuimg *img);
+struct wu_st q4_decode(const struct q4_desc *desc, struct wuimg *img);
 
-enum wu_error q4_open(struct q4_desc *desc, struct wuptr mem);
+struct wu_st q4_img_info(struct wuimg *img);
 
-enum wu_error q4_info(struct wuimg *img);
+struct wu_st q4_open(struct q4_desc *desc, struct wuptr mem);
 
 #endif // LIB_Q4

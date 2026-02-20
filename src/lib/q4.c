@@ -39,7 +39,7 @@ time_t q4_approximate_date(const struct q4_desc *desc) {
 	return time_from_dos((time_t)(desc->creation_date * 30));
 }
 
-static bool read_block(struct q4_block *block, struct mparser *mp) {
+static bool read_q4_block(struct q4_block *block, struct mparser *mp) {
 	const uint8_t *head = mp_slice(mp, 6);
 	if (head) {
 		const uint16_t comp_len = buf_endian16(head, little_endian);
@@ -52,7 +52,7 @@ static bool read_block(struct q4_block *block, struct mparser *mp) {
 }
 
 #define MAX_RLE_READ 5
-static size_t rledec(uint8_t *restrict dst, const uint8_t *restrict src,
+static size_t q4_rledec(uint8_t *restrict dst, const uint8_t *restrict src,
 const size_t dst_len, size_t src_len) {
 	size_t s = 0;
 	size_t d = 0;
@@ -88,7 +88,7 @@ const size_t dst_len, size_t src_len) {
 	return d;
 }
 
-static size_t lzwdec(uint8_t *restrict orig_dst, struct q4_block *block) {
+static size_t q4_lzwdec(uint8_t *restrict orig_dst, struct q4_block *block) {
 	struct bitstrm bs;
 	bitstrm_from_wuptr(&bs, block->data);
 
@@ -137,10 +137,10 @@ static size_t lzwdec(uint8_t *restrict orig_dst, struct q4_block *block) {
 		++cur;
 	}
 exit:
-	return rledec(orig_dst, rle, block->orig_len, r);
+	return q4_rledec(orig_dst, rle, block->orig_len, r);
 }
 
-static size_t decode_block(uint8_t *restrict dst, struct q4_block *block) {
+static size_t decode_q4_block(uint8_t *restrict dst, struct q4_block *block) {
 	if (block->off_alloc < block->codes) {
 		free(block->off);
 		const size_t alloc = zumin(0xffff, block->codes + block->codes/4);
@@ -151,79 +151,87 @@ static size_t decode_block(uint8_t *restrict dst, struct q4_block *block) {
 		}
 		block->off_alloc = (uint16_t)alloc;
 	}
-	return lzwdec(dst, block);
+	return q4_lzwdec(dst, block);
 }
 
-static bool write_palette(struct mparser *mp, struct q4_block *block,
+static struct wu_st q4_write_palette(struct mparser *mp, struct q4_block *block,
 struct wuimg *img) {
-	if (!read_block(block, mp)
-	|| block->orig_len != 0x60 || block->comp_len != block->data.len) {
-		return false;
+	if (!read_q4_block(block, mp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (block->orig_len != 0x60 || block->comp_len != block->data.len) {
+		return wuerr(wu_invalid_header, "bad palette block size");
 	}
 
 	struct palette *pal = img->u.palette;
 	uint8_t *buf = (uint8_t *)(pal->color + 16);
-	const size_t w = decode_block(buf, block);
+	const size_t w = decode_q4_block(buf, block);
+	if (w != block->orig_len) {
+		return wuerr(wu_decoding_error, "incomplete palette block");
+	}
 	for (uint8_t i = 0; i < w/6; ++i) {
 		const unsigned z = (i & 0x8u) | ((i >> 2) & 0x1u) | (i & 0x3u) << 1;
 		pal->color[i] = (struct pix_rgba8) {
 			// 4-bit colors stored in 16-bits little-endian words
-			.r = buf[6*z + 1]*0x11u,
-			.g = buf[6*z + 3]*0x11u,
-			.b = buf[6*z + 5]*0x11u,
-			.a = 0xff,
+			.r = buf[6*z + 1],
+			.g = buf[6*z + 3],
+			.b = buf[6*z + 5],
+			.a = 0xf,
 		};
 	}
-	return w;
+	return WU_OK;
 }
 
-static size_t write_image(struct mparser *mp, struct q4_block *block,
+static struct wu_st q4_write_image(struct mparser *mp, struct q4_block *block,
 struct wuimg *img) {
-	const size_t max = img->w * img->h;
+	const size_t dst_len = img->w * img->h;
 	size_t d = 0;
-	while (read_block(block, mp)) {
-		if (!block->data.len || max - d < block->orig_len) {
+	while (read_q4_block(block, mp)) {
+		if (!block->data.len || dst_len - d < block->orig_len) {
 			break;
 		}
-		d += decode_block(img->data + d, block);
+		d += decode_q4_block(img->data + d, block);
 	}
-	return d;
+	return wuerr_partial(d, dst_len);
 }
 
-size_t q4_decode(const struct q4_desc *desc, struct wuimg *img) {
-	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		struct q4_block *block = malloc(sizeof(*block));
-		if (block) {
-			block->off = NULL;
-			block->off_alloc = 0;
-			struct mparser mp = desc->mp;
-			if (write_palette(&mp, block, img)) {
-				for (uint8_t k = 0; k < desc->skip; ++k) {
-					// TODO: What are these blocks?
-					if (!read_block(block, &mp)) {
-						return 0;
-					}
-				}
-				w = write_image(&mp, block, img);
+struct wu_st q4_decode(const struct q4_desc *desc, struct wuimg *img) {
+	struct wu_st st = WU_OK;
+	struct q4_block *block = malloc(sizeof(*block));
+	if (block) {
+		block->off = NULL;
+		block->off_alloc = 0;
+		struct mparser mp = desc->mp;
+		st = q4_write_palette(&mp, block, img);
+		if (wu_isok(st)) {
+			bool ok = true;
+			for (uint8_t k = 0; k < desc->skip && ok; ++k) {
+				// TODO: What are these blocks?
+				ok = read_q4_block(block, &mp);
 			}
-			free(block->off);
-			free(block);
+			st = ok
+				? q4_write_image(&mp, block, img)
+				: wuerr(wu_unexpected_eof,
+					"failed to skip mystery blocks");
 		}
+		free(block->off);
+		free(block);
+	} else {
+		st = WUERR_HERE(wu_alloc_error);
 	}
-	return w;
+	return st;
 }
 
-enum wu_error q4_info(struct wuimg *img) {
+struct wu_st q4_img_info(struct wuimg *img) {
 	img->w = 640;
 	img->h = 400;
 	img->channels = 1;
 	img->bitdepth = 8;
+	img->bitrange = 4;
 	return wuimg_palette_init(img)
-		? wuimg_verify(img) : wu_alloc_error;
+		? WU_OK : WUERR_HERE(wu_alloc_error);
 }
 
-enum wu_error q4_open(struct q4_desc *desc, const struct wuptr mem) {
+struct wu_st q4_open(struct q4_desc *desc, const struct wuptr mem) {
 	/* Q4 format:
 		Offset  Type    Name
 		0       u8      EOF          // 0x1a
@@ -248,16 +256,18 @@ enum wu_error q4_open(struct q4_desc *desc, const struct wuptr mem) {
 	};
 	const uint8_t *head = mp_slice(&desc->mp, 16);
 	if (!head) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 	const uint8_t sig[] = {'M', 'A', 'J', 'Y', 'O'};
-	if (!memcmp(head+11, sig, sizeof(sig))) {
-		if (head[2] != 2 && (head[1] > 1 || head[3] > 1)) {
-			return wu_invalid_header;
-		}
-		desc->skip = (bool)(head[4] & 0x2u) + (bool)(head[4] & 0x8u);
-		desc->creation_date = buf_endian24(head + 5, little_endian);
-		return wu_ok;
+	if (memcmp(head+11, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_invalid_signature;
+
+	if (head[2] != 2 && (head[1] > 1 || head[3] > 1)) {
+		return wuerr(wu_invalid_header,
+			"mysterious header check failed (don't ask me)");
+	}
+	desc->skip = (bool)(head[4] & 0x2u) + (bool)(head[4] & 0x8u);
+	desc->creation_date = buf_endian24(head + 5, little_endian);
+	return WU_OK;
 }
