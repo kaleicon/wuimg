@@ -691,7 +691,7 @@ DEC_MAP: DecMap = {
 
 	"ea": {
 		"eafnt": FmtInfo("Electronic Arts Fonts (FNTF, FNTS, FNTI)",
-			ext=("ffn", "sfn"),
+			ext=("ffn", "sfn", "vfn"),
 			mask=(
 				# Middle letters can be upper or lowercase
 				b"\xff\xdf\xdf\xff",
