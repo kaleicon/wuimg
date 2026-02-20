@@ -405,16 +405,18 @@ const uint8_t pal_depth) {
 		{'p', 'l'},
 		{'P', 'L'},
 	};
+	bool ok = false;
 	for (size_t i = 0; i < ARRAY_LEN(cases); ++i) {
 		memcpy(ext, cases[i], sizeof(cases[i]));
 		FILE *efp = fopen(palname, "rb");
 		if (efp) {
-			bool ok = read_pal_file(efp, pal, pal_depth, false);
+			ok = read_pal_file(efp, pal, pal_depth, false);
 			fclose(efp);
-			return ok;
+			break;
 		}
 	}
-	return false;
+	free(palname);
+	return ok;
 }
 
 static enum msx_screen mode_from_ext(const uint8_t ext[static 3]) {

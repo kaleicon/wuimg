@@ -354,10 +354,6 @@ const uint8_t quant_size, const size_t stride) {
 }
 
 struct wu_st wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-
 	const bool will_sew = desc->mask_idx >= 0;
 	const uint8_t ch = (uint8_t)(desc->depth / 8);
 	struct sewing_machine sew;

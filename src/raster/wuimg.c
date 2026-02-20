@@ -249,6 +249,9 @@ static void plane_alloc(struct wuimg *img) {
 }
 
 bool wuimg_alloc_noverify(struct wuimg *img) {
+	if (img->data) {
+		fatal_bug("wuimg_alloc()", "image was already allocated");
+	}
 	if (img->mode == image_mode_planar) {
 		plane_alloc(img);
 	} else {

@@ -311,8 +311,11 @@ struct wuimg *img, struct wudec_image *src) {
 	if (err == wu_ok) {
 		struct wutree *metadata = img->metadata;
 		memcpy(img, src->file.sub_img, sizeof(*img));
-		memset(src->file.sub_img, 0, sizeof(*img));
+		if (img->metadata) {
+			tree_unroot(img->metadata);
+		}
 		img->metadata = metadata;
+		memset(src->file.sub_img, 0, sizeof(*img));
 	}
 	wustr_append_wustr(&infile->errors, &src->file.errors);
 	return wuerr(err, err == wu_ok ? NULL : "failed to decode embedded file");
