@@ -13,6 +13,8 @@ NAME_LIMIT = 8
 
 ALWAYS_ENABLED = set(("auto",))
 
+IFF_MASK = b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff"
+
 # Various RAW camera formats are actually TIFF with extra data, and can only be
 # distinguished by their extension. Still, they may contain a thumbnail that
 # libtiff can handle, so we define these for both formats.
@@ -121,8 +123,7 @@ DEC_MAP: DecMap = {
 		"chky": FmtInfo("IFF Chunky",
 			ext="ciff",
 			mask=(
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-				b"FORM" b"\0\0\0\0" b"CHKY",
+				IFF_MASK, b"FORM" b"\0\0\0\0" b"CHKY",
 			)
 		),
 		"ckiss": FmtInfo("Cherry KiSS 32-bit CEL, unpaletted 4/8-bit CEL",
@@ -606,6 +607,20 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"cdi": {
+		"cdi": FmtInfo("CD-i IFF Image",
+			ext=(
+				"iff",
+				"2c4", "4c4", "6c4",
+				"2r7", "6r7",
+				"4dy", "6dy",
+			),
+			mask=(
+				IFF_MASK, b"FORM" b"\0\0\0\0" b"IMAG",
+			),
+		),
+	},
+
 	"chunsoft": {
 		"at6p": FmtInfo("999 AT6P",
 			ext="dat",
@@ -723,11 +738,8 @@ DEC_MAP: DecMap = {
 		"faxx": FmtInfo("IFF-FAXX, GPFax (FAX3)",
 			ext=("fax", "faxx"),
 			mask=(
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-				b"FORM" b"\0\0\0\0" b"FAXX",
-
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-				b"FORM" b"\0\0\0\0" b"FAX3",
+				IFF_MASK, b"FORM" b"\0\0\0\0" b"FAXX",
+				IFF_MASK, b"FORM" b"\0\0\0\0" b"FAX3",
 			),
 		),
 		"g3": FmtInfo("Raw Group3/T.4 One-dimensional MSB stream",
@@ -782,24 +794,16 @@ DEC_MAP: DecMap = {
 				"brs", # Whale's Voyage
 			),
 			mask=(
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"FORM\0\0\0\0ACBM",
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"FORM\0\0\0\0ILBM",
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"FORM\0\0\0\0MLDF",
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"FORM\0\0\0\0PBM ",
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"FORM\0\0\0\0RGB8",
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"FORM\0\0\0\0RGBN",
+				IFF_MASK, b"FORM\0\0\0\0ACBM",
+				IFF_MASK, b"FORM\0\0\0\0ILBM",
+				IFF_MASK, b"FORM\0\0\0\0MLDF",
+				IFF_MASK, b"FORM\0\0\0\0PBM ",
+				IFF_MASK, b"FORM\0\0\0\0RGB8",
+				IFF_MASK, b"FORM\0\0\0\0RGBN",
 				# Command Simulations
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"MROF\0\0\0\0MBLI",
+				IFF_MASK, b"MROF\0\0\0\0MBLI",
 				# Whale's Voyage
-				b"\xff\xff\xff\xff" b"\0\0\0\0" b"\xff\xff\xff\xff",
-					b"NEO!\0\0\0\0NEOP",
+				IFF_MASK, b"NEO!\0\0\0\0NEOP",
 			),
 			mime="x-ilbm"
 		),
