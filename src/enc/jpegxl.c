@@ -23,12 +23,12 @@ struct jxl_state {
 	uint8_t buf[BUFSIZ];
 };
 
-static void end(void *state) {
+static void end_jxl_enc(void *state) {
 	struct jxl_state *js = state;
 	JxlEncoderDestroy(js->enc);
 }
 
-static bool process_output(struct jxl_state *js, FILE *ofp) {
+static bool process_jxl_output(struct jxl_state *js, FILE *ofp) {
 	JxlEncoderStatus st;
 	do {
 		uint8_t *out = js->buf;
@@ -42,7 +42,7 @@ static bool process_output(struct jxl_state *js, FILE *ofp) {
 	return st == JXL_ENC_SUCCESS;
 }
 
-size_t write_frame(void *state, const struct wuimg *dst, FILE *ofp,
+static size_t enc_jxl_frame(void *state, const struct wuimg *dst, FILE *ofp,
 const int frame) {
 	struct jxl_state *js = state;
 	bool final = true;
@@ -66,7 +66,7 @@ const int frame) {
 	if (final) {
 		JxlEncoderCloseInput(js->enc);
 	}
-	return process_output(js, ofp);
+	return process_jxl_output(js, ofp);
 }
 
 static uint32_t same_time_res(const struct image_frames *frames) {
@@ -80,7 +80,7 @@ static uint32_t same_time_res(const struct image_frames *frames) {
 	return den;
 }
 
-static int get_transfer(const struct wuimg *img, double *gamma) {
+static int get_jxlenc_transfer(const struct wuimg *img, double *gamma) {
 	const double g = color_space_get_gamma(&img->cs);
 	if (g != 0.0) {
 		if (gamma) {
@@ -104,7 +104,7 @@ static int get_transfer(const struct wuimg *img, double *gamma) {
 	return NO_TRANSFER;
 }
 
-static JxlPrimaries get_primaries(const struct wuimg *img) {
+static JxlPrimaries get_jxlenc_primaries(const struct wuimg *img) {
 	if (img->cs.type == color_profile_enum) {
 		switch (img->cs.primaries) {
 		case cicp_primaries_bt709_6: return JXL_PRIMARIES_SRGB;
@@ -120,7 +120,7 @@ static JxlPrimaries get_primaries(const struct wuimg *img) {
 	return JXL_PRIMARIES_CUSTOM;
 }
 
-static JxlWhitePoint get_white_point(const struct wuimg *img) {
+static JxlWhitePoint get_jxlenc_white_point(const struct wuimg *img) {
 	switch (color_space_white_point_type(&img->cs)) {
 	case color_white_other:
 	case color_white_c:
@@ -135,7 +135,7 @@ static JxlWhitePoint get_white_point(const struct wuimg *img) {
 	return JXL_WHITE_POINT_CUSTOM;
 }
 
-static JxlOrientation get_orientation(const struct wuimg *img) {
+static JxlOrientation get_jxlenc_orientation(const struct wuimg *img) {
 	switch (img->mirror << 2 | img->rotate) {
 	case 1: return JXL_ORIENT_ROTATE_90_CW;
 	case 2: return JXL_ORIENT_ROTATE_180;
@@ -148,7 +148,7 @@ static JxlOrientation get_orientation(const struct wuimg *img) {
 	return JXL_ORIENT_IDENTITY;
 }
 
-static const char * init_jxl(void *state, const struct wuimg *dst,
+static const char * init_jxl_enc(void *state, const struct wuimg *dst,
 const struct wuimg *src, FILE *ofp) {
 	struct jxl_state *js = state;
 	js->enc = JxlEncoderCreate(NULL);
@@ -191,7 +191,7 @@ const struct wuimg *src, FILE *ofp) {
 		? 0 : info.exponent_bits_per_sample;
 	info.alpha_premultiplied = dst->alpha == alpha_associated;
 	info.uses_original_profile = JXL_TRUE;
-	info.orientation = get_orientation(dst);
+	info.orientation = get_jxlenc_orientation(dst);
 	if (js->frames) {
 		info.have_animation = JXL_TRUE;
 		info.animation.tps_denominator = 1;
@@ -216,12 +216,12 @@ const struct wuimg *src, FILE *ofp) {
 		JxlColorEncodingSetToSRGB(&color, dst->channels < 3);
 		const struct color_primaries *pri = color_space_get_primaries(&dst->cs);
 		if (pri) {
-			color.white_point = get_white_point(dst);
+			color.white_point = get_jxlenc_white_point(dst);
 			if (color.white_point == JXL_WHITE_POINT_CUSTOM) {
 				color.white_point_xy[0] = pri->w.x;
 				color.white_point_xy[1] = pri->w.y;
 			}
-			color.primaries = get_primaries(dst);
+			color.primaries = get_jxlenc_primaries(dst);
 			if (color.primaries == JXL_PRIMARIES_CUSTOM) {
 				color.primaries_red_xy[0] = pri->r.x;
 				color.primaries_red_xy[1] = pri->r.y;
@@ -231,7 +231,7 @@ const struct wuimg *src, FILE *ofp) {
 				color.primaries_blue_xy[1] = pri->b.y;
 			}
 		}
-		const int transfer = get_transfer(dst, &color.gamma);
+		const int transfer = get_jxlenc_transfer(dst, &color.gamma);
 		if (transfer != NO_TRANSFER) {
 			color.transfer_function = (JxlTransferFunction)transfer;
 		}
@@ -248,10 +248,10 @@ const struct wuimg *src, FILE *ofp) {
 		compress_better ? 0 : 4);
 	JxlEncoderFrameSettingsSetOption(js->settings, JXL_ENC_FRAME_SETTING_BROTLI_EFFORT,
 		compress_better ? 11 : 0);
-	return process_output(js, ofp) ? NULL : "couldn't write header";
+	return process_jxl_output(js, ofp) ? NULL : "couldn't write header";
 }
 
-static bool passthrough(const struct wuimg *src) {
+static bool jxl_passthrough(const struct wuimg *src) {
 	switch (src->attr) {
 	case pix_normal:
 		switch (src->bitdepth) {
@@ -288,7 +288,7 @@ static bool passthrough(const struct wuimg *src) {
 		case color_profile_enum:
 		case color_profile_param:
 			return cs->limited == false
-				&& get_transfer(src, NULL) != NO_TRANSFER;
+				&& get_jxlenc_transfer(src, NULL) != NO_TRANSFER;
 		case color_profile_icc:
 			return true;
 		}
@@ -296,7 +296,7 @@ static bool passthrough(const struct wuimg *src) {
 	return false;
 }
 
-static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
+static bool best_jxl_fit(struct wuimg *dst, const struct wuimg *src) {
 	dst->w = (src->rotate & 1) ? src->h : src->w;
 	dst->h = (src->rotate & 1) ? src->w : src->h;
 	switch (src->mode) {
@@ -305,7 +305,7 @@ static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
 		dst->channels = src->channels;
 		dst->bitdepth = src->bitdepth > 8 ? 16 : 8;
 		if (src->mode == image_mode_raw) {
-			return passthrough(src);
+			return jxl_passthrough(src);
 		}
 		break;
 	case image_mode_palette:
@@ -323,8 +323,8 @@ static bool best_fit(struct wuimg *dst, const struct wuimg *src) {
 const struct enc_fn jpegxl_enc = {
 	.state_size = sizeof(struct jxl_state),
 	.anim = true,
-	.best_fit = best_fit,
-	.init = init_jxl,
-	.write_frame = write_frame,
-	.end = end,
+	.best_fit = best_jxl_fit,
+	.init = init_jxl_enc,
+	.write_frame = enc_jxl_frame,
+	.end = end_jxl_enc,
 };
