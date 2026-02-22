@@ -98,6 +98,9 @@ bool tree_bud_leaves(struct wutree *par, const struct wutree_sap *sap,
 size_t len);
 
 
+struct wutree * tree_graft_branch(struct wutree *par, struct wutree *graft,
+const char *new_name);
+
 struct wutree * tree_add_branch(struct wutree *par, const char *name);
 
 struct wutree * tree_findadd_branch(struct wutree *par, const char *name);

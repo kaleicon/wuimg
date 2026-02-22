@@ -10,8 +10,13 @@
 #include "misc/utf8.h"
 #include "misc/wutree.h"
 
+static bool would_be_emb(const size_t len) {
+	struct wu_emb_str emb;
+	return len > sizeof(emb.s.arr);
+}
+
 static bool is_emb_ptr(const struct wu_emb_str *emb) {
-	return emb->len > sizeof(emb->s.arr);
+	return would_be_emb(emb->len);
 }
 
 static void free_emb_str(const struct wu_emb_str *emb) {
@@ -35,12 +40,16 @@ static void graft_emb_mem(struct wu_emb_str *emb, struct wustr src) {
 }
 
 static bool copy_emb_mem(struct wu_emb_str *emb, const struct wuptr src) {
-	emb->len = src.len;
-	if (is_emb_ptr(emb)) {
-		emb->s.str = memdup(src.ptr, emb->len);
-		return (bool)emb->s.str;
+	if (would_be_emb(src.len)) {
+		void *hold = memdup(src.ptr, src.len);
+		if (!hold) {
+			return false;
+		}
+		emb->s.str = hold;
+	} else {
+		memcpy(emb->s.arr, src.ptr, src.len);
 	}
-	memcpy(emb->s.arr, src.ptr, emb->len);
+	emb->len = src.len;
 	return true;
 }
 
@@ -281,6 +290,22 @@ const size_t len) {
 		}
 	}
 	return buds;
+}
+
+struct wutree * tree_graft_branch(struct wutree *par, struct wutree *graft,
+const char *new_name) {
+	struct wutree *branch = irrigate(par, 1);
+	if (branch) {
+		*branch = *graft;
+		++par->leaf.val.branch.len;
+		if (new_name) {
+			struct wu_emb_str prev_emb = branch->name;
+			if (copy_name(branch, new_name)) {
+				free_emb_str(&prev_emb);
+			}
+		}
+	}
+	return branch;
 }
 
 struct wutree * tree_add_branch(struct wutree *par, const char *name) {

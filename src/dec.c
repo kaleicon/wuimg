@@ -309,13 +309,20 @@ struct wu_st wudec_decode_embedded(struct image_file *infile,
 struct wuimg *img, struct wudec_image *src) {
 	enum wu_error err = wudec_decode(src);
 	if (err == wu_ok) {
-		struct wutree *metadata = img->metadata;
-		memcpy(img, src->file.sub_img, sizeof(*img));
-		if (img->metadata) {
-			tree_unroot(img->metadata);
+		struct wutree *metadata = img->metadata; // may be null
+		struct wuimg *src_img = src->file.sub_img;
+		struct wutree *src_meta = src_img->metadata;
+		if (src_meta) {
+			metadata = wuimg_get_metadata(img);
+			if (!metadata
+			|| !tree_graft_branch(metadata, src_meta, "Embedded")) {
+				tree_unroot(src_meta);
+			}
+			free(src_meta);
 		}
+		*img = *src_img;
 		img->metadata = metadata;
-		memset(src->file.sub_img, 0, sizeof(*img));
+		*src_img = (struct wuimg){0};
 	}
 	wustr_append_wustr(&infile->errors, &src->file.errors);
 	return wuerr(err, err == wu_ok ? NULL : "failed to decode embedded file");
