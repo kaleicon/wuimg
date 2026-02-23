@@ -909,6 +909,21 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"nds": {
+		"ncgr": FmtInfo("Nitro Character Graphics",
+			ext="ncgr",
+			magic=b"RGCN"
+		),
+		"nclr": FmtInfo("Nitro Color Palette",
+			ext="nclr",
+			magic=b"RLCN"
+		),
+		"nscr": FmtInfo("Nitro Screen",
+			ext="nscr",
+			magic=b"RCSN"
+		),
+	},
+
 	"nokia": {
 		"nlm": FmtInfo("Nokia Logo Manager",
 			ext="nlm",
