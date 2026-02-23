@@ -3,15 +3,14 @@
 #include "wudefs.h"
 #include "lib/fax.h"
 
-static struct wu_st init_g3(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_g3(struct image_file *infile) {
 	enum fax_coding std;
 	enum endianness order;
 	if (!g3_identify(infile->sub_img, infile->map, &std, &order)) {
 		return wuerr(wu_unknown_file_type,
 			"couldn't identify g3 stream parameters");
 	}
-	enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+	enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
 	if (e == wu_ok) {
 		tree_add_leaf_utf8(&infile->metadata, "Coding",
 			fax_coding_str(std));
@@ -23,12 +22,11 @@ const struct wu_conf *conf) {
 }
 
 /* ZyXEL fax */
-static struct wu_st init_zyxel(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_zyxel(struct image_file *infile) {
 	struct wuptr data;
 	struct wu_st st = zyxel_parse(infile->sub_img, infile->map, &data);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
 		if (e == wu_ok) {
 			st = zyxel_decode(infile->sub_img, data);
 		} else {
@@ -41,8 +39,7 @@ const struct wu_conf *conf) {
 
 /* QFX */
 static struct wu_st event_qfx(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	const uint16_t idx = (uint16_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
 	switch (ev) {
@@ -53,9 +50,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_qfx(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_qfx(struct image_file *infile) {
 	struct qfx_desc *desc = infile->dec_state;
 	struct wu_st st = qfx_parse(desc, infile->map);
 	if (wu_isok(st)) {
@@ -86,13 +81,12 @@ struct wutree *tree) {
 	}
 }
 
-static struct wu_st init_faxx(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_faxx(struct image_file *infile) {
 	struct faxx_desc desc;
 	struct wu_st st = faxx_init(&desc, infile->map);
 	if (wu_isok(st)) {
 		faxx_set_image(&desc, infile->sub_img);
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
 		if (e == wu_ok) {
 			read_faxx_metadata(&desc, &infile->metadata);
 			st = faxx_decode(&desc, infile->sub_img);
@@ -106,7 +100,7 @@ const struct wu_conf *conf) {
 
 /* APF */
 static struct wu_st event_apf(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		struct apf_desc *desc = infile->dec_state;
@@ -117,7 +111,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			if (!wu_isok(st)) {
 				break;
 			}
-			enum wu_error e = wuimg_alloc_limit(img, conf);
+			enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 			if (e != wu_ok) {
 				st = WUERR_HERE(e);
 				break;
@@ -136,9 +130,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_apf(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_apf(struct image_file *infile) {
 	struct apf_desc *desc = infile->dec_state;
 	struct wu_st st = apf_parse(desc, infile->map);
 	if (wu_isok(st)) {

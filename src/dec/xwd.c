@@ -4,7 +4,7 @@
 #include "misc/common.h"
 #include "wudefs.h"
 
-static void get_metadata(const struct xwd_desc *desc, struct wutree *meta) {
+static void get_xwd_metadata(const struct xwd_desc *desc, struct wutree *meta) {
 	tree_add_leaf_utf8(meta, "Version", xwd_version_str(desc->version));
 	tree_add_leaf_utf8(meta, "Format", xwd_format_str(desc->format));
 	tree_add_leaf_utf8(meta, "Visual", xwd_visual_str(desc->visual));
@@ -31,11 +31,12 @@ static void get_metadata(const struct xwd_desc *desc, struct wutree *meta) {
 }
 
 static struct wu_st event_xwd(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *_s, const enum image_event ev) {
+struct wu_state *_s, const enum image_event ev) {
 	(void)_s;
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
+			infile->conf);
 		if (e == wu_ok) {
 			st = xwd_decode(infile->dec_state, infile->sub_img);
 		} else {
@@ -45,14 +46,12 @@ const struct wu_conf *conf, struct wu_state *_s, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_xwd(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_xwd(struct image_file *infile) {
 	struct wu_st st = xwd_open(infile->dec_state, infile->ifp);
 	if (wu_isok(st)) {
 		st = xwd_parse(infile->dec_state, infile->sub_img);
 		if (wu_isok(st)) {
-			get_metadata(infile->dec_state, &infile->metadata);
+			get_xwd_metadata(infile->dec_state, &infile->metadata);
 			xwd_cleanup(infile->dec_state);
 		}
 	}

@@ -12,7 +12,7 @@ static void monkey_trouble_handler(const char *msg, void *userdata) {
 	image_file_strerror_append(userdata, msg);
 }
 
-static OPJ_SIZE_T file_read(void *buf, const OPJ_SIZE_T len, void *file) {
+static OPJ_SIZE_T read_opj_file(void *buf, const OPJ_SIZE_T len, void *file) {
 	FILE *ifp = file;
 	const size_t count = fread(buf, 1, len, ifp);
 	if (!count) {
@@ -21,17 +21,17 @@ static OPJ_SIZE_T file_read(void *buf, const OPJ_SIZE_T len, void *file) {
 	return (OPJ_SIZE_T)count;
 }
 
-static OPJ_OFF_T file_skip(const OPJ_OFF_T offset, void *file) {
+static OPJ_OFF_T skip_opj_file(const OPJ_OFF_T offset, void *file) {
 	FILE *ifp = file;
 	return fseek(ifp, offset, SEEK_CUR) == -1 ? -1 : offset;
 }
 
-static OPJ_BOOL file_seek(const OPJ_OFF_T offset, void *file) {
+static OPJ_BOOL seek_opj_file(const OPJ_OFF_T offset, void *file) {
 	FILE *ifp = file;
 	return fseek(ifp, offset, SEEK_SET) != -1;
 }
 
-static opj_stream_t setup_jp2_stream(FILE *ifp) {
+static opj_stream_t setup_opj_stream(FILE *ifp) {
 	fseek(ifp, 0, SEEK_END);
 	const long size = ftell(ifp);
 	fseek(ifp, 0, SEEK_SET);
@@ -40,14 +40,14 @@ static opj_stream_t setup_jp2_stream(FILE *ifp) {
 	if (stream) {
 		opj_stream_set_user_data(stream, ifp, NULL);
 		opj_stream_set_user_data_length(stream, (size_t)size);
-		opj_stream_set_read_function(stream, file_read);
-		opj_stream_set_skip_function(stream, file_skip);
-		opj_stream_set_seek_function(stream, file_seek);
+		opj_stream_set_read_function(stream, read_opj_file);
+		opj_stream_set_skip_function(stream, skip_opj_file);
+		opj_stream_set_seek_function(stream, seek_opj_file);
 	}
 	return stream;
 }
 
-static struct wu_st dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
+static struct wu_st wrap_opj_dec(struct wuimg *img, const opj_image_t *jp2) {
 	img->channels = (unsigned char)u32min(jp2->numcomps, 4);
 	img->bitdepth = 32;
 
@@ -114,8 +114,8 @@ static struct wu_st dec_wrap(struct wuimg *img, const opj_image_t *jp2) {
 	return st;
 }
 
-static struct wu_st set_decode_size(opj_codec_t *dec, const opj_image_t *jp2,
-struct wuimg *img, const struct wu_conf *wuconf) {
+static struct wu_st set_opj_decode_size(opj_codec_t *dec,
+const opj_image_t *jp2, struct wuimg *img, const struct wu_conf *wuconf) {
 	OPJ_UINT32 ch = jp2->numcomps;
 	if (jp2->numcomps > 4) {
 		const OPJ_UINT32 comps[4] = {0,1,2,3};
@@ -163,7 +163,7 @@ struct wuimg *img, const struct wu_conf *wuconf) {
 }
 
 static struct wu_st jpeg2000_dec(struct image_file *infile,
-const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
+const OPJ_CODEC_FORMAT format) {
 	opj_codec_t *dec = opj_create_decompress(format);
 	if (!dec) {
 		return WUERR_HERE(wu_alloc_error);
@@ -175,7 +175,7 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 
 	opj_dparameters_t params;
 	opj_set_default_decoder_parameters(&params);
-	params.cp_layer = wuconf->jpeg2000_quality_layers;
+	params.cp_layer = infile->conf->jpeg2000_quality_layers;
 
 	opj_image_t *jp2 = NULL;
 	struct wu_st st = WUERR_HERE(wu_invalid_params);
@@ -183,11 +183,11 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 		if (opj_has_thread_support()) {
 			opj_codec_set_threads(dec, (int)num_cpus());
 		}
-		opj_stream_t *stream = setup_jp2_stream(infile->ifp);
+		opj_stream_t *stream = setup_opj_stream(infile->ifp);
 		if (stream) {
 			if (opj_read_header(stream, dec, &jp2)) {
-				st = set_decode_size(dec, jp2, infile->sub_img,
-					wuconf);
+				st = set_opj_decode_size(dec, jp2, infile->sub_img,
+					infile->conf);
 				if (wu_isok(st)) {
 					if (opj_decode(dec, stream, jp2)) {
 						opj_end_decompress(dec, stream);
@@ -205,7 +205,7 @@ const struct wu_conf *wuconf, const OPJ_CODEC_FORMAT format) {
 
 	if (wu_isok(st)) {
 		infile->dec_state = jp2;
-		st = dec_wrap(infile->sub_img, jp2);
+		st = wrap_opj_dec(infile->sub_img, jp2);
 	} else if (jp2) {
 		opj_image_destroy(jp2);
 	}
@@ -216,13 +216,11 @@ static void jpeg2000_end(struct image_file *infile) {
 	opj_image_destroy(infile->dec_state);
 }
 
-static struct wu_st init_jp2(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_JP2);
+static struct wu_st init_jp2(struct image_file *infile) {
+	return jpeg2000_dec(infile, OPJ_CODEC_JP2);
 }
-static struct wu_st init_j2k(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	return jpeg2000_dec(infile, wuconf, OPJ_CODEC_J2K);
+static struct wu_st init_j2k(struct image_file *infile) {
+	return jpeg2000_dec(infile, OPJ_CODEC_J2K);
 }
 
 const struct image_fn jp2_fn = {

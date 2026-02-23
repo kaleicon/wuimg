@@ -8,17 +8,16 @@ static void cleanup_sir0(struct image_file *infile) {
 }
 
 static struct wu_st event_sir0(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	const uint8_t i = (uint8_t)state->idx;
 	struct wuimg *img = infile->sub_img + i;
 	struct sir0_spr_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_subcycle:
 		;const struct wu_st st = sir0_spr_assemble_info(desc, img, i);
-
 		if (!wu_isok(st)) {
 			return st;
-		} else if (wuimg_exceeds_limit(img, conf)) {
+		} else if (wuimg_exceeds_limit(img, infile->conf)) {
 			return WUERR_HERE(wu_exceeds_size_limit);
 		}
 
@@ -31,17 +30,11 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return wuerr(wu_no_change, NULL);
 }
 
-static struct wu_st init_sir0(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_sir0(struct image_file *infile) {
 	struct sir0_spr_desc *desc = infile->dec_state;
 	const struct wu_st st = sir0_spr_init(desc, infile->map);
-	if (wu_isok(st)) {
-		if (!alloc_sub_images(infile, desc->nb_images)) {
-			return WUERR_HERE(wu_alloc_error);
-		}
-		//tree_add_leaf_len(&infile->metadata, "Name", desc->name, NULL);
-	}
+	infile->nr = desc->nb_images;
+	//tree_add_leaf_len(&infile->metadata, "Name", desc->name, NULL);
 	return st;
 }
 
@@ -49,16 +42,14 @@ static void cleanup_at6p(struct image_file *infile) {
 	at6p_cleanup(infile->dec_state);
 }
 
-static struct wu_st init_at6p(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_at6p(struct image_file *infile) {
 	struct at6p_desc *desc = infile->dec_state;
 	struct wu_st st = at6p_unpack(desc, infile->map);
 	if (wu_isok(st)) {
 		struct wuimg *img = infile->sub_img;
 		st = at6p_info(desc, img);
 		if (wu_isok(st)) {
-			st = wuimg_exceeds_limit(img, conf)
+			st = wuimg_exceeds_limit(img, infile->conf)
 				? WUERR_HERE(wu_exceeds_size_limit)
 				: at6p_load(desc, img);
 		}

@@ -35,9 +35,9 @@ static void end_jbig2(struct image_file *infile) {
 }
 
 static enum wu_error add_jbig2_page(struct image_file *infile,
-const struct wu_conf *wuconf, struct jbig2_state *ds, Jbig2Image *page,
+struct jbig2_state *ds, Jbig2Image *page,
 const size_t i) {
-	if (zumax(page->width, page->height) > wuconf->max_img_size) {
+	if (zumax(page->width, page->height) > infile->conf->max_img_size) {
 		return wu_exceeds_size_limit;
 	}
 
@@ -65,14 +65,13 @@ const size_t i) {
 }
 
 static struct wu_st get_jbig2_pages(struct image_file *infile,
-const struct wu_conf *wuconf, struct jbig2_state *ds) {
+struct jbig2_state *ds) {
 	Jbig2Image *page;
 	size_t i = 0;
 	size_t seen = 0;
 	while ((page = jbig2_page_out(ds->ctx))) {
 		++seen;
-		const enum wu_error st = add_jbig2_page(infile, wuconf, ds,
-			page, i);
+		const enum wu_error st = add_jbig2_page(infile, ds, page, i);
 		if (st == wu_ok) {
 			++i;
 		} else {
@@ -86,14 +85,13 @@ const struct wu_conf *wuconf, struct jbig2_state *ds) {
 	return i ? WU_OK : wuerr(wu_decoding_error, "no pages would be decoded");
 }
 
-static struct wu_st init_jbig2(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_jbig2(struct image_file *infile) {
 	struct jbig2_state *ds = infile->dec_state;
 	ds->ctx = jbig2_ctx_new(NULL, 0, NULL, err_jbig2, infile);
 	if (ds->ctx) {
 		if (!jbig2_data_in(ds->ctx,
 		infile->map.ptr, infile->map.len)) {
-			return get_jbig2_pages(infile, wuconf, ds);
+			return get_jbig2_pages(infile, ds);
 		}
 		return wuerr(wu_decoding_error, "jbig2_data_in() failed");
 	}

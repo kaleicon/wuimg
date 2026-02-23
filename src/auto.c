@@ -1221,17 +1221,16 @@ struct image_file *infile) {
 
 struct wu_st auto_load(struct image_file *infile) {
 	struct wuimg *img = infile->sub_img;
-	enum wu_error st = wuimg_alloc(img);
-	if (st == wu_ok) {
+	enum wu_error err = wuimg_alloc_limit(img, infile->conf);
+	if (err == wu_ok) {
 		const enum endianness e = (enum endianness)(uintptr_t)infile->dec_state;
 		return wuerr_partial(fmt_load_raster_swap(img, infile->ifp, e),
 			wuimg_size(img));
 	}
-	return wuerr(st, NULL);
+	return WUERR_HERE(err);
 }
 
-struct wu_st auto_init(struct image_file *infile, const struct wu_conf *conf,
-const struct wuptr desc) {
+struct wu_st auto_init(struct image_file *infile, const struct wuptr desc) {
 	struct mparser mp = mp_wuptr(desc);
 	struct auto_state state = {0};
 	const struct wu_st st = parse(&mp, &state, infile);
@@ -1244,6 +1243,5 @@ const struct wuptr desc) {
 		return st;
 	}
 	infile->dec_state = (void *)state.e;
-	return wuerr(wuimg_exceeds_limit(infile->sub_img, conf)
-		? wu_exceeds_size_limit : wu_ok, NULL);
+	return WU_OK;
 }

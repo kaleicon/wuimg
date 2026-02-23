@@ -285,7 +285,7 @@ const bool is_first) {
 	return st;
 }
 
-static void decode_raw(struct wuimg *img,
+static void decode_jpeg_raw(struct wuimg *img,
 struct jpeg_decompress_struct *dinfo) {
 	const unsigned dct_h = (unsigned)dinfo->max_v_samp_factor * DCTSIZE;
 
@@ -309,7 +309,7 @@ struct jpeg_decompress_struct *dinfo) {
 	}
 }
 
-static bool set_colorspace(struct wuimg *img,
+static bool get_jpeg_colorspace(struct wuimg *img,
 const struct jpeg_decompress_struct *dinfo) {
 	img->alpha = img->channels == 4 ? alpha_key : alpha_ignore;
 	switch (dinfo->jpeg_color_space) {
@@ -347,8 +347,7 @@ const struct jpeg_decompress_struct *dinfo) {
 	return true;
 }
 
-static struct wu_st decode_img(struct image_file *infile,
-const struct wu_conf *conf, const int i) {
+static struct wu_st decode_jpeg_img(struct image_file *infile, const int i) {
 	struct jpeg_state *js = infile->dec_state;
 	const int val = setjmp(js->jmp);
 	if (val) {
@@ -376,13 +375,13 @@ const struct wu_conf *conf, const int i) {
 	dinfo->raw_data_out = TRUE;
 	dinfo->out_color_space = dinfo->jpeg_color_space;
 	dinfo->do_block_smoothing = FALSE;
-	dinfo->dct_method = conf->jpeg_fast_dct
+	dinfo->dct_method = infile->conf->jpeg_fast_dct
 		? JDCT_FASTEST : JDCT_DEFAULT;
 
 	jpeg_calc_output_dimensions(dinfo);
 	img->w = dinfo->output_width;
 	img->h = dinfo->output_height;
-	if (wuimg_exceeds_limit(img, conf)) {
+	if (wuimg_exceeds_limit(img, infile->conf)) {
 		return WUERR_HERE(wu_exceeds_size_limit);
 	}
 
@@ -391,13 +390,13 @@ const struct wu_conf *conf, const int i) {
 	img->channels = (unsigned char)dinfo->output_components;
 	img->bitdepth = 8;
 	wuimg_align(img, DCTSIZE);
-	if (!set_colorspace(img, dinfo)) {
+	if (!get_jpeg_colorspace(img, dinfo)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
 	struct wu_st st = WUERR_CHECK(wuimg_alloc(img));
 	if (wu_isok(st)) {
-		decode_raw(img, dinfo);
+		decode_jpeg_raw(img, dinfo);
 
 		if (dinfo->marker_list) {
 			st = iter_markers(dinfo->marker_list, infile, img,
@@ -413,10 +412,9 @@ const struct wu_conf *conf, const int i) {
 }
 
 static struct wu_st event_jpeg(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state,
-const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	return (ev == ev_subcycle)
-		? decode_img(infile, conf, state->idx)
+		? decode_jpeg_img(infile, state->idx)
 		: WU_NO_CHANGE;
 }
 
@@ -428,9 +426,7 @@ static long header_skip(int c) {
 	return 0;
 }
 
-static struct wu_st init_jpeg(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_jpeg(struct image_file *infile) {
 	struct jpeg_state *js = infile->dec_state;
 	const int c = fgetc(infile->ifp);
 	js->file_offset = header_skip(c);

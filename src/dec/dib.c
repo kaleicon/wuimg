@@ -10,14 +10,14 @@
 #include "dec_fn.h"
 
 static struct wu_st common_dib(struct image_file *infile,
-const struct wu_conf *conf, struct dib_desc *desc) {
+struct dib_desc *desc) {
 	struct wuimg *img = infile->sub_img;
 	struct wu_st st = dib_parse_header(desc, img);
 	if (!wu_isok(st)) {
 		return st;
 	}
 
-	enum wu_error e = wuimg_alloc_limit(img, conf);
+	enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 	if (e != wu_ok) {
 		return WUERR_HERE(e);
 	}
@@ -40,25 +40,22 @@ const struct wu_conf *conf, struct dib_desc *desc) {
 	return st;
 }
 
-static struct wu_st decode_dib(struct image_file *infile,
-const struct wu_conf *wuconf, const bool is_bmp) {
+static struct wu_st decode_dib(struct image_file *infile, const bool is_bmp) {
 	struct dib_desc desc;
 	const struct wu_st st = dib_open_file(&desc, infile->ifp, is_bmp,
 		trit_what);
 	if (wu_isok(st)) {
-		return common_dib(infile, wuconf, &desc);
+		return common_dib(infile, &desc);
 	}
 	return st;
 }
 
-static struct wu_st init_bmp(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	return decode_dib(infile, wuconf, true);
+static struct wu_st init_bmp(struct image_file *infile) {
+	return decode_dib(infile, true);
 }
 
-static struct wu_st init_dib(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	return decode_dib(infile, wuconf, false);
+static struct wu_st init_dib(struct image_file *infile) {
+	return decode_dib(infile, false);
 }
 
 const struct image_fn bmp_fn = {
@@ -76,7 +73,7 @@ static void end_ico(struct image_file *infile) {
 }
 
 static struct wu_st event_ico(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	const uint16_t idx = (uint16_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
 	struct wu_st st = WU_NO_CHANGE;
@@ -85,14 +82,14 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 	case ev_subcycle:
 		if (desc->is_png) {
 #ifdef WU_ENABLE_PNG
-			struct wudec_image ctx = {.conf = *wuconf};
+			struct wudec_image ctx = {.conf = *infile->conf};
 			wudec_src_file(&ctx, infile->ifp, NULL, true, false);
 			wudec_src_dec_fn(&ctx, &png_fn);
 			st = wudec_decode_embedded(infile, img, &ctx);
 			wudec_free(&ctx);
 #endif // WU_ENABLE_PNG
 		} else {
-			enum wu_error e = wuimg_alloc_limit(img, wuconf);
+			enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 			st = (e == wu_ok)
 				? ico_decode(desc, img)
 				: WUERR_HERE(e);
@@ -119,9 +116,7 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 	return st;
 }
 
-static struct wu_st init_ico(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_ico(struct image_file *infile) {
 	struct ico_desc *desc = infile->dec_state;
 	struct wu_st st = ico_parse(desc, infile->ifp);
 	if (wu_isok(st)) {
@@ -143,12 +138,11 @@ const struct image_fn ico_fn = {
 
 #include "dec_enable.def"
 #ifdef WU_ENABLE_BMZ
-static struct wu_st init_bmz(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_bmz(struct image_file *infile) {
 	struct bmz_desc desc;
 	struct wu_st st = bmz_open(&desc, mp_wuptr(infile->map));
 	if (wu_isok(st)) {
-		st = common_dib(infile, wuconf, &desc.bmp);
+		st = common_dib(infile, &desc.bmp);
 		bmz_cleanup(&desc);
 	}
 	return st;

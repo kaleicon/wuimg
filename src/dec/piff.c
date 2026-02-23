@@ -4,8 +4,7 @@
 #include "raster/fmt.h"
 #include "wudefs.h"
 
-static struct wu_st init_vvtp(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_vvtp(struct image_file *infile) {
 	struct wu_st st = vvtp_init(infile->ifp);
 	if (!wu_isok(st)) {
 		return st;
@@ -24,7 +23,7 @@ const struct wu_conf *conf) {
 			break;
 		}
 
-		enum wu_error e = wuimg_alloc_limit(img, conf);
+		enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 		if (e != wu_ok) {
 			st = WUERR_HERE(e);
 			break;

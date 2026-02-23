@@ -4,8 +4,8 @@
 #include "lib/tlg.h"
 
 static struct wu_st event_tlg(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev) {
-	(void)wuconf; (void)state;
+struct wu_state *state, enum image_event ev) {
+	(void)state;
 	struct tlg_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -19,9 +19,7 @@ const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_tlg(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_tlg(struct image_file *infile) {
 	return tlg_read_header(infile->dec_state, infile->map, infile->sub_img);
 }
 

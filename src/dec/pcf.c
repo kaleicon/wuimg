@@ -8,8 +8,7 @@ static void end_pcf(struct image_file *infile) {
 }
 
 static struct wu_st event_pcf(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf;
+struct wu_state *state, const enum image_event ev) {
 	struct pcf_desc *desc = infile->dec_state;
 	const uint32_t i = (uint32_t)state->idx;
 	struct wuimg *img = infile->sub_img + i;
@@ -23,7 +22,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
+static void read_pcf_metadata(struct image_file *infile, struct pcf_desc *desc) {
 	struct wutree *meta = &infile->metadata;
 	bool all_ok = true;
 	for (uint32_t i = 0; i < desc->prop.len; ++i) {
@@ -45,14 +44,12 @@ static void read_metadata(struct image_file *infile, struct pcf_desc *desc) {
 	}
 }
 
-static struct wu_st init_pcf(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_pcf(struct image_file *infile) {
 	struct pcf_desc *desc = infile->dec_state;
 	struct wu_st st = pcf_parse(desc, infile->ifp);
 	if (wu_isok(st)) {
 		if (alloc_sub_images(infile, desc->glyphs)) {
-			read_metadata(infile, desc);
+			read_pcf_metadata(infile, desc);
 			return WU_OK;
 		}
 		return WUERR_HERE(wu_alloc_error);

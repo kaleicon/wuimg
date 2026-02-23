@@ -3,13 +3,13 @@
 #include "wudefs.h"
 #include "lib/pdt.h"
 
-static void cleanup(struct image_file *infile) {
+static void cleanup_pdt(struct image_file *infile) {
 	pdt_cleanup(infile->dec_state);
 }
 
 static struct wu_st event_pdt(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct pdt_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -23,9 +23,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_pdt(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_pdt(struct image_file *infile) {
 	return pdt_init(infile->dec_state, infile->sub_img, infile->map);
 }
 
@@ -36,5 +34,5 @@ const struct image_fn pdt_fn = {
 	.alloc_on_subcycle = true,
 	.init = init_pdt,
 	.event = event_pdt,
-	.end = cleanup,
+	.end = cleanup_pdt,
 };

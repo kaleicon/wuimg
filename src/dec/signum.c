@@ -4,16 +4,14 @@
 #include "lib/signum.h"
 
 static struct wu_st event_imc(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	return (ev == ev_subcycle)
 		? imc_decode(infile->dec_state, infile->sub_img)
 		: WU_NO_CHANGE;
 }
 
-static struct wu_st init_imc(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_imc(struct image_file *infile) {
 	return imc_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 

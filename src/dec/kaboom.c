@@ -8,7 +8,7 @@ static void end_bmb(struct image_file *infile) {
 }
 
 static struct wu_st event_bmb(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = WU_NO_CHANGE;
 	struct bmb_desc *desc = infile->dec_state;
 	if (ev == ev_subcycle) {
@@ -18,7 +18,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			if (!wu_isok(st)) {
 				break;
 			}
-			enum wu_error e = wuimg_alloc_limit(img, conf);
+			enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 			if (e != wu_ok) {
 				st = WUERR_HERE(e);
 				break;
@@ -32,9 +32,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_bmb(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_bmb(struct image_file *infile) {
 	struct bmb_desc *desc = infile->dec_state;
 	struct wu_st st = bmb_init(desc, infile->ifp);
 	infile->nr = desc->nr;

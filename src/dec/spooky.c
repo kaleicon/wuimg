@@ -3,12 +3,11 @@
 #include "wudefs.h"
 #include "lib/spooky.h"
 
-static struct wu_st init_tre(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_tre(struct image_file *infile) {
 	struct tre_desc desc;
 	struct wu_st st = tre_parse(&desc, infile->sub_img, infile->map);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
 		if (e == wu_ok) {
 			st = tre_decode(&desc, infile->sub_img);
 		} else {
@@ -20,8 +19,7 @@ const struct wu_conf *conf) {
 
 
 static struct wu_st event_trs(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf;
+struct wu_state *state, const enum image_event ev) {
 	const uint16_t i = (uint16_t)state->idx;
 	struct wuimg *img = infile->sub_img + i;
 	switch (ev) {
@@ -34,14 +32,10 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_trs(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_trs(struct image_file *infile) {
 	struct trs_desc *desc = infile->dec_state;
 	struct wu_st st = trs_parse(desc, infile->map);
-	if (wu_isok(st) && !alloc_sub_images(infile, desc->nr)) {
-		st = WUERR_HERE(wu_alloc_error);
-	}
+	infile->nr = desc->nr;
 	return st;
 }
 

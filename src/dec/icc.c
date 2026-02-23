@@ -5,8 +5,7 @@
 #include "misc/file.h"
 #include "wudefs.h"
 
-static struct wu_st init_icc(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_icc(struct image_file *infile) {
 	size_t size = file_remaining(infile->ifp);
 	uint8_t *cpy = malloc(size);
 	if (!cpy) {
@@ -28,7 +27,7 @@ const struct wu_conf *conf) {
 	if (!color_space_set_icc_owned(&img->cs, cpy, size)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
-	enum wu_error e = wuimg_alloc_limit(img, conf);
+	enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 	if (e != wu_ok) {
 		return WUERR_HERE(e);
 	}

@@ -7,7 +7,7 @@
 #include "raster/wuimg.h"
 
 struct aliaspix_desc {
-	struct mparser mp;
+	struct wuptr data;
 	uint16_t x, y;
 };
 

@@ -40,6 +40,7 @@ struct image_file {
 	struct wuimg *sub_img;
 	struct wutree metadata;
 
+	const struct wu_conf *conf;
 	void *restrict dec_state; // Used by decoder for callbacks
 	struct wustr errors;
 
@@ -52,10 +53,9 @@ struct image_file {
 	bool stat;
 };
 
-typedef struct wu_st (*fmt_init_t)(struct image_file *infile,
-	const struct wu_conf *conf);
+typedef struct wu_st (*fmt_init_t)(struct image_file *infile);
 typedef struct wu_st (*fmt_event_t)(struct image_file *infile,
-	const struct wu_conf *conf, struct wu_state *state, enum image_event ev);
+	struct wu_state *state, enum image_event ev);
 
 typedef enum wu_error (*fmt_dec_t)(struct image_file *infile,
 	const struct wu_conf *conf);

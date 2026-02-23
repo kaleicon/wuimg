@@ -4,7 +4,7 @@
 #include "misc/common.h"
 #include "wudefs.h"
 
-static void read_television(const struct dpx_desc *desc, struct wutree *tree) {
+static void read_dpx_television(const struct dpx_desc *desc, struct wutree *tree) {
 	const struct dpx_industry_television *t = &desc->industry.tv;
 	char buf[16];
 	const int w = snprintf(buf, sizeof(buf), "%x:%x:%x %x",
@@ -24,7 +24,7 @@ static void read_television(const struct dpx_desc *desc, struct wutree *tree) {
 	tree_bud_leaves(tree, vid, ARRAY_LEN(vid));
 }
 
-static void read_film(const struct dpx_desc *desc, struct wutree *tree) {
+static void read_dpx_film(const struct dpx_desc *desc, struct wutree *tree) {
 	const struct dpx_industry_film *f = &desc->industry.film;
 	struct wutree *edge = tree_add_branch(tree, "Edge codes");
 	if (edge) {
@@ -52,19 +52,19 @@ static void read_film(const struct dpx_desc *desc, struct wutree *tree) {
 	tree_add_leaf_limit(tree, "Slate info", WUPTR_ARRAY(f->slate_info), NULL);
 }
 
-static void read_industry(const struct dpx_desc *desc, struct wutree *tree) {
+static void read_dpx_industry(const struct dpx_desc *desc, struct wutree *tree) {
 	struct wutree *b = tree_add_branch(tree, "Film");
 	if (b) {
-		read_film(desc, b);
+		read_dpx_film(desc, b);
 	}
 
 	b = tree_add_branch(tree, "Television");
 	if (b) {
-		read_television(desc, b);
+		read_dpx_television(desc, b);
 	}
 }
 
-static void read_source(const struct dpx_desc *desc, struct wutree *tree) {
+static void read_dpx_source(const struct dpx_desc *desc, struct wutree *tree) {
 	const struct dpx_generic_source *s = &desc->generic.src;
 	const struct wutree_sap sap[] = {
 		{"X", {wu_leaf_unsigned, {.u = s->x}}},
@@ -107,65 +107,57 @@ static void read_file(const struct dpx_desc *desc, struct wutree *tree) {
 	tree_add_leaf_limit(tree, "Copyright", WUPTR_ARRAY(f->copyright), NULL);
 }
 
-static void read_generic(const struct dpx_desc *desc, struct wutree *tree) {
+static void read_dpx_generic(const struct dpx_desc *desc, struct wutree *tree) {
 	struct wutree *b = tree_add_branch(tree, "File");
 	if (b) {
 		read_file(desc, b);
 	}
 	b = tree_add_branch(tree, "Source");
 	if (b) {
-		read_source(desc, b);
+		read_dpx_source(desc, b);
 	}
 }
 
-static void read_metadata(const struct dpx_desc *desc, struct wutree *tree) {
+static void read_dpx_metadata(const struct dpx_desc *desc, struct wutree *tree) {
 	struct wutree *b = tree_add_branch(tree, "Generic");
 	if (b) {
-		read_generic(desc, b);
+		read_dpx_generic(desc, b);
 	}
 
 	if (desc->has_industry) {
 		b = tree_add_branch(tree, "Industry");
 		if (b) {
-			read_industry(desc, b);
+			read_dpx_industry(desc, b);
 		}
 	}
 }
 
 static struct wu_st event_dpx(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	if (ev != ev_subcycle) {
-		return WU_NO_CHANGE;
-	}
+struct wu_state *state, const enum image_event ev) {
 	const uint8_t idx = (uint8_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
-	struct wu_st st = dpx_set_image(infile->dec_state, img, idx);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(img, conf);
-		if (e == wu_ok) {
-			st = dpx_decode(infile->dec_state, img, idx);
-		} else {
-			st = WUERR_HERE(e);
-		}
+	switch (ev) {
+	case ev_metadata:
+		return dpx_set_image(infile->dec_state, img, idx);
+	case ev_subcycle:
+		return dpx_decode(infile->dec_state, img, idx);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_dpx(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_dpx(struct image_file *infile) {
 	struct dpx_desc *desc = infile->dec_state;
 	struct wu_st st = dpx_parse(desc, infile->ifp);
 	if (wu_isok(st)) {
-		read_metadata(desc, &infile->metadata);
-		if (!alloc_sub_images(infile, desc->generic.image.nb_elem)) {
-			st = WUERR_HERE(wu_alloc_error);
-		}
+		read_dpx_metadata(desc, &infile->metadata);
+		infile->nr = desc->generic.image.nb_elem;
 	}
 	return st;
 }
 
 const struct image_fn dpx_fn = {
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct dpx_desc),
 	.init = init_dpx,
 	.event = event_dpx,

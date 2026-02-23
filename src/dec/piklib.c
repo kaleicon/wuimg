@@ -4,8 +4,8 @@
 #include "lib/piklib.h"
 
 static struct wu_st event_piklib(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		st = piklib_load(infile->dec_state, infile->sub_img);
@@ -13,9 +13,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_piklib(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_piklib(struct image_file *infile) {
 	return piklib_init(infile->dec_state, infile->sub_img, infile->ifp);
 }
 

@@ -26,8 +26,8 @@ static void get_ncgr_metadata(struct wutree *meta, const struct ncgr_desc *desc)
 }
 
 static struct wu_st event_nclr(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct nclr_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -40,9 +40,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_nclr(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_nclr(struct image_file *infile) {
 	return nclr_init(infile->dec_state, infile->map);
 }
 
@@ -52,8 +50,8 @@ static void end_ncgr(struct image_file *infile) {
 }
 
 static struct wu_st event_ncgr(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct ncgr_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -66,9 +64,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_ncgr(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_ncgr(struct image_file *infile) {
 	struct wu_st st = ncgr_init(infile->dec_state, infile->map);
 	if (wu_isok(st)) {
 		struct wu_st st2 = ncgr_search_nclr(infile->dec_state,
@@ -86,8 +82,8 @@ static void end_nscr(struct image_file *infile) {
 }
 
 static struct wu_st event_nscr(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct nscr_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -107,26 +103,22 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_nscr(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_nscr(struct image_file *infile) {
 	return nscr_init(infile->dec_state, infile->sub_img, infile->map,
 		infile->name);
 }
 
 
 static struct wu_st event_bgd(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	if (ev == ev_subcycle) {
 		return bgd_decode(infile->dec_state, infile->sub_img);
 	}
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_bgd(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_bgd(struct image_file *infile) {
 	return bgd_init(infile->dec_state, infile->sub_img, infile->map);
 }
 

@@ -28,7 +28,7 @@ struct gif_state {
 	struct palette local_pal;
 };
 
-static enum wu_error map_error_to_wu(const int e) {
+static enum wu_error map_gif_error(const int e) {
 	switch (e) {
 	case D_GIF_SUCCEEDED:
 		return wu_ok;
@@ -114,7 +114,7 @@ const struct palette *palette, const int trans) {
 	}
 }
 
-static void get_palette(struct palette *pal,
+static void get_gif_palette(struct palette *pal,
 const ColorMapObject *gif_map, const int alpha_idx) {
 	palette_from_rgb8(pal, gif_map->Colors, (size_t)gif_map->ColorCount);
 	if (alpha_idx != -1) {
@@ -122,7 +122,7 @@ const ColorMapObject *gif_map, const int alpha_idx) {
 	}
 }
 
-static struct compost get_region(const struct GifImageDesc *desc) {
+static struct compost get_gif_region(const struct GifImageDesc *desc) {
 	return (struct compost) {
 		.x = (size_t)desc->Left, .y = (size_t)desc->Top,
 		.w = (size_t)desc->Width, .h = (size_t)desc->Height,
@@ -133,7 +133,7 @@ static bool should_cache_prev(struct gif_state *ds) {
 	return ds->previous.num_of_disposals > 1 || !ds->previous.written;
 }
 
-static struct wu_st render_frame(struct wuimg *img, struct gif_state *ds,
+static struct wu_st render_gif_frame(struct wuimg *img, struct gif_state *ds,
 const int idx) {
 	const GraphicsControlBlock *gcb = ds->gcb + idx;
 	const int trans = gcb->TransparentColor;
@@ -163,7 +163,7 @@ const int idx) {
 		case DISPOSE_BACKGROUND:
 			;const SavedImage *prev_image = ds->gif_file->SavedImages
 				+ idx - 1;
-			const struct compost prev = get_region(
+			const struct compost prev = get_gif_region(
 				&prev_image->ImageDesc);
 			compost_clear(img->data, img->w, img->channels, fill,
 				&prev);
@@ -179,13 +179,13 @@ const int idx) {
 
 	const SavedImage *gif_image = ds->gif_file->SavedImages + idx;
 	const GifImageDesc *desc = &gif_image->ImageDesc;
-	const struct compost reg = get_region(desc);
+	const struct compost reg = get_gif_region(desc);
 	struct palette *pal;
 	if (img->mode == image_mode_palette) {
 		pal = img->u.palette;
 	} else if (desc->ColorMap) {
 		pal = &ds->local_pal;
-		get_palette(pal, desc->ColorMap, trans);
+		get_gif_palette(pal, desc->ColorMap, trans);
 	} else {
 		pal = &ds->global_pal;
 	}
@@ -194,8 +194,7 @@ const int idx) {
 }
 
 static struct wu_st event_gif(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event event) {
-	(void)_c;
+struct wu_state *state, const enum image_event event) {
 	if (event != ev_frame) {
 		return WU_NO_CHANGE;
 	}
@@ -204,7 +203,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event event) 
 	int idx = wuimg_frame_prev_nearest(img, img->frames->current,
 		state->frame);
 	while (idx <= state->frame) {
-		const struct wu_st st = render_frame(infile->sub_img, ds, idx);
+		const struct wu_st st = render_gif_frame(infile->sub_img, ds, idx);
 		++idx;
 		if (!wu_isok(st)) {
 			return st;
@@ -214,7 +213,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event event) 
 	return WU_OK;
 }
 
-static int read_extensions(const int count, ExtensionBlock *ext,
+static int read_gif_extensions(const int count, ExtensionBlock *ext,
 GraphicsControlBlock *gcb, struct wutree *tree) {
 	int status = GIF_ERROR;
 	for (int j = 0; j < count; ++j) {
@@ -235,7 +234,7 @@ GraphicsControlBlock *gcb, struct wutree *tree) {
 	return status;
 }
 
-static struct wu_st gather_info(struct image_file *infile,
+static struct wu_st gather_gif_info(struct image_file *infile,
 struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 	GifFileType *gif_file = ds->gif_file;
 
@@ -256,7 +255,7 @@ struct gif_state *ds, int *pal_num, bool *enable_paletted_mode) {
 		SavedImage *image = gif_file->SavedImages + i;
 
 		const int block_count = image->ExtensionBlockCount;
-		const int gcb_status = read_extensions(block_count,
+		const int gcb_status = read_gif_extensions(block_count,
 			image->ExtensionBlocks, gcb, &infile->metadata);
 		if (gcb_status != GIF_OK) {
 			gcb->DisposalMode = DISPOSAL_UNSPECIFIED;
@@ -338,14 +337,13 @@ static bool actual_canvas_size(struct wuimg *img, const GifFileType *gif_file) {
 	return true;
 }
 
-static struct wu_st init_gif(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_gif(struct image_file *infile) {
 	struct gif_state *ds = infile->dec_state;
 	int error = 0;
 	GifFileType *gif_file = DGifOpen(infile->ifp, dgif_input_fn, &error);
 	if (error) {
 		image_file_strerror_append(infile, GifErrorString(error));
-		return WUERR_HERE(map_error_to_wu(error));
+		return WUERR_HERE(map_gif_error(error));
 	}
 	ds->gif_file = gif_file;
 
@@ -369,7 +367,7 @@ const struct wu_conf *conf) {
 	int pal_num = 0;
 	bool enable_paletted_mode = true;
 	ds->opaque_first_frame = true;
-	struct wu_st st = gather_info(infile, ds, &pal_num,
+	struct wu_st st = gather_gif_info(infile, ds, &pal_num,
 		&enable_paletted_mode);
 	if (!wu_isok(st)) {
 		return st;
@@ -391,7 +389,7 @@ const struct wu_conf *conf) {
 			pal = &ds->global_pal;
 			trans = -1;
 		}
-		get_palette(pal, gif_file->SColorMap, trans);
+		get_gif_palette(pal, gif_file->SColorMap, trans);
 
 		const int bg = gif_file->SBackGroundColor;
 		if (bg > -1 && bg < gif_file->SColorMap->ColorCount) {
@@ -400,7 +398,7 @@ const struct wu_conf *conf) {
 	}
 	tree_bud_leaf_d(&infile->metadata, "Palettes", pal_num);
 
-	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	const enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 	if (err != wu_ok) {
 		return WUERR_HERE(err);
 	}
@@ -412,7 +410,7 @@ const struct wu_conf *conf) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 	}
-	return render_frame(img, ds, 0);
+	return render_gif_frame(img, ds, 0);
 }
 
 const struct image_fn gif_fn = {

@@ -17,7 +17,7 @@ static void end_flif(struct image_file *infile) {
 	flif_destroy_decoder(ds->dec);
 }
 
-static struct wu_st decode_frame(struct wuimg *img, FLIF_IMAGE *frame,
+static struct wu_st decode_flif_frame(struct wuimg *img, FLIF_IMAGE *frame,
 struct flif_state *ds) {
 	const size_t stride = wuimg_stride(img);
 	for (uint32_t y = 0; y < img->h; ++y) {
@@ -27,17 +27,16 @@ struct flif_state *ds) {
 }
 
 static struct wu_st event_flif(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	struct flif_state *ds = infile->dec_state;
 	FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec,
 		(size_t)state->frame);
 	return (ev == ev_frame)
-		? decode_frame(infile->sub_img, frame, ds)
+		? decode_flif_frame(infile->sub_img, frame, ds)
 		: WU_NO_CHANGE;
 }
 
-static void read_metadata(struct wutree *tree, FLIF_IMAGE *frame) {
+static void read_flif_metadata(struct wutree *tree, FLIF_IMAGE *frame) {
 	struct {
 		const char *name;
 		enum metadata_type type;
@@ -55,8 +54,15 @@ static void read_metadata(struct wutree *tree, FLIF_IMAGE *frame) {
 	}
 }
 
-static struct wu_st setup_img(struct image_file *infile,
-const struct wu_conf *conf, struct flif_state *ds) {
+static struct wu_st init_flif(struct image_file *infile) {
+	struct flif_state *ds = infile->dec_state;
+	ds->dec = flif_create_decoder();
+	const int32_t success = flif_decoder_decode_memory(ds->dec,
+		infile->map.ptr, infile->map.len);
+	if (!success) {
+		return WUERR_HERE(wu_decoding_error);
+	}
+
 	struct wuimg *img = infile->sub_img;
 	FLIF_IMAGE *frame = flif_decoder_get_image(ds->dec, 0);
 	img->w = flif_image_get_width(frame);
@@ -84,7 +90,7 @@ const struct wu_conf *conf, struct flif_state *ds) {
 			: flif_image_read_row_RGBA16;
 	}
 
-	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	const enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 	if (err != wu_ok) {
 		return WUERR_HERE(err);
 	}
@@ -100,20 +106,8 @@ const struct wu_conf *conf, struct flif_state *ds) {
 		}
 	}
 
-	read_metadata(&infile->metadata, frame);
-	return decode_frame(img, frame, ds);
-}
-
-static struct wu_st init_flif(struct image_file *infile,
-const struct wu_conf *conf) {
-	struct flif_state *ds = infile->dec_state;
-	ds->dec = flif_create_decoder();
-	const int32_t success = flif_decoder_decode_memory(ds->dec,
-		infile->map.ptr, infile->map.len);
-	if (success) {
-		return setup_img(infile, conf, ds);
-	}
-	return WUERR_HERE(wu_decoding_error);
+	read_flif_metadata(&infile->metadata, frame);
+	return decode_flif_frame(img, frame, ds);
 }
 
 const struct image_fn flif_fn = {

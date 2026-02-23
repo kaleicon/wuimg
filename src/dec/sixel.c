@@ -3,15 +3,15 @@
 #include "lib/sixel.h"
 #include "wudefs.h"
 
-static struct wu_st init_sixel(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_sixel(struct image_file *infile) {
 	struct sixel_desc desc;
 	struct wu_st st = sixel_try_parse(&desc, infile->sub_img, infile->map,
 		4096);
 	if (wu_isok(st)) {
 		tree_bud_leaf_u(&infile->metadata, "Horizontal grid size",
 			desc.horizontal_grid_size);
-		enum wu_error err = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error err = wuimg_alloc_limit(infile->sub_img,
+			infile->conf);
 		if (err == wu_ok) {
 			st = sixel_decode(&desc, infile->sub_img);
 		} else {

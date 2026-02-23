@@ -8,7 +8,6 @@
 
 struct wu_st auto_load(struct image_file *infile);
 
-struct wu_st auto_init(struct image_file *infile, const struct wu_conf *conf,
-const struct wuptr desc);
+struct wu_st auto_init(struct image_file *infile, const struct wuptr desc);
 
 #endif /* WUAUTO */

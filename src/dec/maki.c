@@ -3,12 +3,12 @@
 #include "wudefs.h"
 #include "lib/maki.h"
 
-static struct wu_st init_maki(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_maki(struct image_file *infile) {
 	struct maki_desc desc;
 	struct wu_st st = maki_parse(&desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
+			infile->conf);
 		if (e == wu_ok) {
 			struct wutree *tree = &infile->metadata;
 			tree_add_leaf_utf8(tree, "Version",

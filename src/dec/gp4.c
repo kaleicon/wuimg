@@ -3,13 +3,12 @@
 #include "wudefs.h"
 #include "lib/gp4.h"
 
-static struct wu_st init_gp4(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_gp4(struct image_file *infile) {
 	struct gp4_desc desc;
 	struct wuimg *img = infile->sub_img;
 	struct wu_st st = gp4_parse(&desc, infile->map, img);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(img, conf);
+		enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 		if (e == wu_ok) {
 			tree_bud_leaf_u(&infile->metadata, "X", desc.x);
 			tree_bud_leaf_u(&infile->metadata, "Y", desc.y);

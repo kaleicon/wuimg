@@ -98,7 +98,7 @@ struct raw_state *rs, struct wu_state *state) {
 }
 #endif
 
-static unsigned char convert_rotate(const int flip) {
+static unsigned char convert_to_raw_rotate(const int flip) {
 	switch (flip) {
 	case 3: return 2;
 	case 5: return 3;
@@ -108,8 +108,7 @@ static unsigned char convert_rotate(const int flip) {
 }
 
 static struct wu_st event_raw(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state,
-const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	if (ev != ev_subcycle) {
 		return WU_NO_CHANGE;
 	}
@@ -119,7 +118,7 @@ const enum image_event ev) {
 
 	libraw_data_t *data = rs->data;
 	// flip is set to 0 after processing
-	img->rotate = convert_rotate(data->sizes.flip);
+	img->rotate = convert_to_raw_rotate(data->sizes.flip);
 	if (i < rs->raw.count) {
 		data->rawparams.shot_select = i;
 
@@ -135,7 +134,7 @@ const enum image_event ev) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 		rs->raw.proc[i] = proc;
-		if (umax(proc->width, proc->height) > wuconf->max_img_size) {
+		if (umax(proc->width, proc->height) > infile->conf->max_img_size) {
 			return WUERR_HERE(wu_exceeds_size_limit);
 		}
 
@@ -175,7 +174,7 @@ static bool big_enough_thumb(const libraw_data_t *data) {
 	return thumb_dims >= img_dims / 2;
 }
 
-static enum raw_thumbnail unpack_thumb(const struct wu_conf *wuconf,
+static enum raw_thumbnail unpack_raw_thumb(const struct wu_conf *wuconf,
 libraw_data_t *data) {
 	const libraw_thumbnail_t *thumb = &data->thumbnail;
 	const unsigned int thumb_dims = umax(thumb->twidth, thumb->theight);
@@ -222,8 +221,7 @@ static void read_raw_metadata(struct wutree *tree, libraw_data_t *data) {
 	metadata_parse(metadata_xmp, idata->xmpdata, idata->xmplen, tree);
 }
 
-static struct wu_st init_raw(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_raw(struct image_file *infile) {
 	struct raw_state *rs = infile->dec_state;
 	libraw_data_t *data = libraw_init(0);
 	if (!data) {
@@ -240,7 +238,8 @@ const struct wu_conf *wuconf) {
 
 	read_raw_metadata(&infile->metadata, data);
 
-	rs->thumb_type = unpack_thumb(wuconf, data);
+	const struct wu_conf *wuconf = infile->conf;
+	rs->thumb_type = unpack_raw_thumb(wuconf, data);
 #ifdef WU_ENABLE_JPEG
 	if (rs->thumb_type == raw_thumb_jpeg) {
 		wudec_src_mem(&rs->jpeg,

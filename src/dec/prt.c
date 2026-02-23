@@ -7,12 +7,12 @@ static void end_prt(struct image_file *infile) {
 	prt_cleanup(infile->dec_state);
 }
 
-static struct wu_st init_prt(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_prt(struct image_file *infile) {
 	struct prt_desc *desc = infile->dec_state;
 	struct wu_st st = prt_parse(desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
+			infile->conf);
 		if (e == wu_ok) {
 			struct wutree *tree = &infile->metadata;
 			tree_bud_leaf_u(tree, "Version", desc->version);

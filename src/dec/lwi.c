@@ -3,8 +3,7 @@
 #include "lib/lwi.h"
 #include "wudefs.h"
 
-static struct wu_st init_lwi(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_lwi(struct image_file *infile) {
 	struct mparser mp = mp_wuptr(infile->map);
 	struct wuimg *img = infile->sub_img;
 	enum lwi_field type;
@@ -12,7 +11,7 @@ const struct wu_conf *conf) {
 	struct wu_st st;
 	while (wu_isok( (st = lwi_next_field(&mp, img, &type, &data)) )) {
 		if (type == lwi_image) {
-			st = wuimg_exceeds_limit(img, conf)
+			st = wuimg_exceeds_limit(img, infile->conf)
 				? WUERR_HERE(wu_exceeds_size_limit)
 				: lwi_decode(mp, img);
 			break;

@@ -19,7 +19,7 @@ static size_t is_readable_garbage(const unsigned char *data, const size_t len) {
 	return i;
 }
 
-static void add_metadata(const struct pcx_desc *desc, struct wuimg *img) {
+static void read_pcx_metadata(const struct pcx_desc *desc, struct wuimg *img) {
 	struct wutree *metadata = wuimg_get_metadata(img);
 	if (!metadata) {
 		return;
@@ -60,24 +60,23 @@ const struct wu_conf *wuconf) {
 	if (wuimg_exceeds_limit(img, wuconf)) {
 		return WUERR_HERE(wu_exceeds_size_limit);
 	}
-	add_metadata(desc, img);
+	read_pcx_metadata(desc, img);
 	return pcx_decode(desc, img);
 }
 
-static struct wu_st init_pcx(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_pcx(struct image_file *infile) {
 	struct pcx_desc desc;
 	struct wu_st st = pcx_read_header(&desc, infile->sub_img, infile->map,
 		true);
 	if (wu_isok(st)) {
-		st = common_pcx(&desc, infile->sub_img, wuconf);
+		st = common_pcx(&desc, infile->sub_img, infile->conf);
 	}
 	return st;
 }
 
 
 static struct wu_st event_dcx(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_subcycle) {
 		struct dcx_desc *desc = infile->dec_state;
 		const uint32_t i = (uint32_t)state->idx;
@@ -86,16 +85,14 @@ const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev)
 		struct pcx_desc pcx;
 		struct wu_st st = dcx_set_file(desc, &pcx, img, i);
 		if (wu_isok(st)) {
-			st = common_pcx(&pcx, img, wuconf);
+			st = common_pcx(&pcx, img, infile->conf);
 		}
 		return st;
 	}
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_dcx(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_dcx(struct image_file *infile) {
 	struct dcx_desc *desc = infile->dec_state;
 	const struct wu_st st = dcx_open_file(desc, infile->map);
 	if (wu_isok(st)) {
@@ -106,17 +103,15 @@ const struct wu_conf *wuconf) {
 
 
 static struct wu_st event_spidygfx(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	const struct wuptr *data = infile->dec_state;
 	return (ev == ev_subcycle)
 		? spidygfx_decode(*data, infile->sub_img)
 		: WU_NO_CHANGE;
 }
 
-static struct wu_st init_spidygfx(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_spidygfx(struct image_file *infile) {
 	return spidygfx_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 

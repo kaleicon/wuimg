@@ -10,23 +10,21 @@ static void get_kyg_meta(const struct kyg_desc *desc, struct wutree *metadata) {
 }
 
 static struct wu_st event_kyg(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
-	if (ev == ev_subcycle) {
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		get_kyg_meta(infile->dec_state, &infile->metadata);
+		return WU_OK;
+	case ev_subcycle:
 		return kyg_decode(infile->dec_state, infile->sub_img);
+	default: break;
 	}
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_kyg(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
-	struct wu_st st = kyg_parse(infile->dec_state, infile->sub_img,
-		infile->map);
-	if (wu_isok(st)) {
-		get_kyg_meta(infile->dec_state, &infile->metadata);
-	}
-	return st;
+static struct wu_st init_kyg(struct image_file *infile) {
+	return kyg_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn kyg_fn = {

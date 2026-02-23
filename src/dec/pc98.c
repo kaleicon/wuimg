@@ -3,12 +3,12 @@
 #include "wudefs.h"
 #include "lib/pc98.h"
 
-static struct wu_st init_prs(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_prs(struct image_file *infile) {
 	struct prs_desc desc;
 	struct wu_st st = prs_parse(&desc, infile->map, infile->sub_img);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
+			infile->conf);
 		if (e == wu_ok) {
 			tree_add_leaf_utf8(&infile->metadata, "Company",
 				desc.micro_cabin ? "Micro Cabin" : "IDES");
@@ -36,8 +36,7 @@ static void end_gpc(struct image_file *infile) {
 }
 
 static struct wu_st event_gpc(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	struct gpc_desc *desc = infile->dec_state;
 	const uint32_t i = (uint32_t)state->idx;
 	struct wuimg *img = infile->sub_img + i;
@@ -60,9 +59,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_gpc(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_gpc(struct image_file *infile) {
 	struct gpc_desc *desc = infile->dec_state;
 	struct wu_st st = gpc_parse(desc, infile->map);
 	if (wu_isok(st)) {

@@ -4,7 +4,7 @@
 #include "lib/wgtspr.h"
 
 static struct wu_st wrap_wgtspr_loop(struct image_file *infile,
-const struct wu_conf *conf, struct wgtspr_desc *desc) {
+struct wgtspr_desc *desc) {
 	struct wu_st st = wgtspr_init(desc, infile->ifp);
 	if (!wu_isok(st)) {
 		return st;
@@ -24,7 +24,7 @@ const struct wu_conf *conf, struct wgtspr_desc *desc) {
 		st = wgtspr_next_sprite(desc, img);
 		switch (st.st) {
 		case wu_ok:
-			if (wuimg_alloc_limit(img, conf) == wu_ok
+			if (wuimg_alloc_limit(img, infile->conf) == wu_ok
 			&& wu_isok(wgtspr_get_sprite(desc, img))) {
 				++decoded;
 				continue;
@@ -43,10 +43,9 @@ const struct wu_conf *conf, struct wgtspr_desc *desc) {
 
 }
 
-static struct wu_st init_wgtspr(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_wgtspr(struct image_file *infile) {
 	struct wgtspr_desc desc;
-	const struct wu_st st = wrap_wgtspr_loop(infile, conf, &desc);
+	const struct wu_st st = wrap_wgtspr_loop(infile, &desc);
 	wgtspr_cleanup(&desc);
 	return st;
 }

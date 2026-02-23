@@ -4,8 +4,8 @@
 #include "wudefs.h"
 
 static struct wu_st event_peak(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct peak_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -19,19 +19,13 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_peak(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_peak(struct image_file *infile) {
 	return peak_init(infile->dec_state, infile->sub_img, infile->map);
 }
-static struct wu_st init_rpkn(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_rpkn(struct image_file *infile) {
 	return rpkn_init(infile->dec_state, infile->sub_img, infile->map);
 }
-static struct wu_st init_sfpk(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_sfpk(struct image_file *infile) {
 	return sfpk_init(infile->dec_state, infile->sub_img, infile->map);
 }
 

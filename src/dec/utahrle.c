@@ -4,7 +4,7 @@
 #include "misc/math.h"
 #include "wudefs.h"
 
-static void get_metadata(const struct utah_desc *desc,
+static void get_utah_metadata(const struct utah_desc *desc,
 struct image_file *infile) {
 	struct wuimg *img = infile->sub_img;
 	if (desc->pal_ch) {
@@ -36,16 +36,15 @@ struct image_file *infile) {
 	}
 }
 
-static struct wu_st init_utah(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_utah(struct image_file *infile) {
 	struct utah_desc desc;
 	struct wuimg *img = infile->sub_img;
 	struct wu_st st = utah_parse(&desc, img, infile->map);
 	if (wu_isok(st)) {
-		if (wuimg_exceeds_limit(img, conf)) {
+		if (wuimg_exceeds_limit(img, infile->conf)) {
 			st = WUERR_HERE(wu_exceeds_size_limit);
 		} else {
-			get_metadata(&desc, infile);
+			get_utah_metadata(&desc, infile);
 			st = utah_decode(&desc, img);
 		}
 	}

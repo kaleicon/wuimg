@@ -4,8 +4,7 @@
 #include "wudefs.h"
 
 static struct wu_st event_mgxicn(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state,
-const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		struct mgxicn_desc *desc = infile->dec_state;
@@ -16,7 +15,7 @@ const enum image_event ev) {
 			if (!wu_isok(st)) {
 				break;
 			}
-			enum wu_error err = wuimg_alloc_limit(img, conf);
+			enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 			if (err != wu_ok) {
 				st = WUERR_HERE(err);
 				break;
@@ -30,9 +29,7 @@ const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_mgxicn(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_mgxicn(struct image_file *infile) {
 	struct mgxicn_desc *desc = infile->dec_state;
 	struct wu_st st = mgxicn_init(desc, infile->ifp);
 	infile->nr = desc->nr;

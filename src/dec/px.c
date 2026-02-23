@@ -4,8 +4,7 @@
 #include "lib/px.h"
 
 static struct wu_st event_px(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	const uint32_t idx = (uint32_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
 	switch (ev) {
@@ -16,14 +15,10 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_px(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_px(struct image_file *infile) {
 	struct px_desc *desc = infile->dec_state;
 	const struct wu_st st = px_parse(desc, infile->map);
-	if (wu_isok(st)) {
-		infile->nr = desc->nr;
-	}
+	infile->nr = desc->nr;
 	return st;
 }
 

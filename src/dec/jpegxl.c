@@ -45,7 +45,7 @@ static size_t release_box_buf(struct jpegxl_state *ds) {
 	return ds->box.len - JxlDecoderReleaseBoxBuffer(ds->jd);
 }
 
-static void process_metadata(struct image_file *infile,
+static void process_jxl_metadata(struct image_file *infile,
 struct jpegxl_state *ds) {
 	if (ds->pending) {
 		size_t written = release_box_buf(ds);
@@ -71,7 +71,7 @@ struct jpegxl_state *ds) {
 	}
 }
 
-static void realloc_metadata(struct jpegxl_state *ds) {
+static void realloc_jxl_metadata(struct jpegxl_state *ds) {
 	const size_t written = release_box_buf(ds);
 	if (bigger_box_buf(&ds->box)) {
 		JxlDecoderSetBoxBuffer(ds->jd, ds->box.str + written,
@@ -79,7 +79,7 @@ static void realloc_metadata(struct jpegxl_state *ds) {
 	}
 }
 
-static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
+static void read_jxl_metadata(struct image_file *infile, struct jpegxl_state *ds) {
 	ds->pending = metadata_none;
 	ds->box_written = 0;
 	JxlBoxType type;
@@ -114,7 +114,7 @@ static void read_metadata(struct image_file *infile, struct jpegxl_state *ds) {
 	}
 }
 
-static void get_primaries(struct color_space *cs, JxlColorEncoding *enc) {
+static void get_jxl_primaries(struct color_space *cs, JxlColorEncoding *enc) {
 	struct broken_cicp {
 		JxlWhitePoint white;
 		JxlPrimaries primaries;
@@ -142,14 +142,14 @@ static void get_primaries(struct color_space *cs, JxlColorEncoding *enc) {
 		enc->primaries_blue_xy[1]);
 }
 
-static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
+static void get_jxl_colorspace(struct wuimg *img, JxlDecoder *jd) {
 	const JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
 	JxlColorEncoding enc;
 	if (JxlDecoderGetColorAsEncodedProfile(jd, target, &enc)
 	== JXL_DEC_SUCCESS) {
 		switch (enc.color_space) {
 		case JXL_COLOR_SPACE_RGB:
-			get_primaries(&img->cs, &enc);
+			get_jxl_primaries(&img->cs, &enc);
 			// fallthrough
 		case JXL_COLOR_SPACE_GRAY:
 			if (enc.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
@@ -181,7 +181,7 @@ static void set_colorspace(struct wuimg *img, JxlDecoder *jd) {
 	}
 }
 
-static bool set_fmt(const struct wuimg *img, JxlPixelFormat *fmt) {
+static bool get_jxl_imgfmt(const struct wuimg *img, JxlPixelFormat *fmt) {
 	fmt->num_channels = img->channels;
 	fmt->align = 1 << img->align_sh;
 	switch (img->bitdepth) {
@@ -199,7 +199,7 @@ static bool set_fmt(const struct wuimg *img, JxlPixelFormat *fmt) {
 	return true;
 }
 
-static struct wu_st render_frame(struct wuimg *img, struct jpegxl_state *ds) {
+static struct wu_st render_jxl_frame(struct wuimg *img, struct jpegxl_state *ds) {
 	bool ok = true;
 	do {
 		switch (JxlDecoderProcessInput(ds->jd)) {
@@ -237,41 +237,40 @@ static struct wu_st render_frame(struct wuimg *img, struct jpegxl_state *ds) {
 	return WUERR_HERE(wu_decoding_error);
 }
 
-static void input_init(struct image_file *infile, struct jpegxl_state *ds) {
+static void init_jxl_input(struct image_file *infile, struct jpegxl_state *ds) {
 	JxlDecoderSetInput(ds->jd, infile->map.ptr, infile->map.len);
 	JxlDecoderCloseInput(ds->jd);
 	ds->idx = -1;
 }
 
-static void rewind_anim(struct image_file *infile, struct jpegxl_state *ds) {
+static void rewind_jxl(struct image_file *infile, struct jpegxl_state *ds) {
 	JxlDecoderRewind(ds->jd);
-	input_init(infile, ds);
+	init_jxl_input(infile, ds);
 }
 
-static struct wu_st get_frame(struct image_file *infile, int idx) {
+static struct wu_st get_jxl_frame(struct image_file *infile, int idx) {
 	struct jpegxl_state *ds = infile->dec_state;
 	if (idx == ds->idx) {
 		return WU_NO_CHANGE;
 	} else if (idx < ds->idx) {
-		rewind_anim(infile, infile->dec_state);
+		rewind_jxl(infile, infile->dec_state);
 	}
 	const int diff = idx - ds->idx - 1;
 	if (diff) {
 		JxlDecoderSkipFrames(ds->jd, (size_t)diff);
 		ds->idx += diff;
 	}
-	return render_frame(infile->sub_img, ds);
+	return render_jxl_frame(infile->sub_img, ds);
 }
 
 static struct wu_st event_jpegxl(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	return (ev == ev_frame)
-		? get_frame(infile, state->frame)
+		? get_jxl_frame(infile, state->frame)
 		: WU_NO_CHANGE;
 }
 
-static struct wu_st gather_info(struct image_file *infile,
+static struct wu_st gather_jxl_info(struct image_file *infile,
 struct jpegxl_state *ds) {
 	struct wuimg *img = infile->sub_img;
 	bool ok = true;
@@ -295,12 +294,12 @@ struct jpegxl_state *ds) {
 			img->alpha = ds->info.alpha_premultiplied
 				? alpha_associated : alpha_unassociated;
 			wuimg_exif_orientation(img, (int)ds->info.orientation);
-			if (!set_fmt(img, &ds->fmt)) {
+			if (!get_jxl_imgfmt(img, &ds->fmt)) {
 				return WUERR_HERE(wu_unsupported_feature);
 			}
 			break;
 		case JXL_DEC_COLOR_ENCODING:
-			set_colorspace(img, ds->jd);
+			get_jxl_colorspace(img, ds->jd);
 			break;
 		case JXL_DEC_FRAME:
 			++ds->idx;
@@ -311,13 +310,13 @@ struct jpegxl_state *ds) {
 			}
 			break;
 		case JXL_DEC_BOX:
-			read_metadata(infile, ds);
+			read_jxl_metadata(infile, ds);
 			break;
 		case JXL_DEC_BOX_NEED_MORE_OUTPUT:
-			realloc_metadata(ds);
+			realloc_jxl_metadata(ds);
 			break;
 		case JXL_DEC_BOX_COMPLETE:
-			process_metadata(infile, ds);
+			process_jxl_metadata(infile, ds);
 			break;
 		case JXL_DEC_SUCCESS:
 			return WU_OK;
@@ -329,8 +328,7 @@ struct jpegxl_state *ds) {
 	return WUERR_HERE(wu_invalid_header);
 }
 
-static struct wu_st init_jpegxl(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_jpegxl(struct image_file *infile) {
 	struct jpegxl_state *ds = infile->dec_state;
 	ds->jd = JxlDecoderCreate(NULL);
 	if (!ds->jd) {
@@ -338,7 +336,7 @@ const struct wu_conf *conf) {
 	}
 
 	struct wuimg *img = infile->sub_img;
-	input_init(infile, ds);
+	init_jxl_input(infile, ds);
 	JxlDecoderSetKeepOrientation(ds->jd, JXL_TRUE);
 	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_BASIC_INFO
 		| JXL_DEC_COLOR_ENCODING
@@ -347,7 +345,7 @@ const struct wu_conf *conf) {
 		| JXL_DEC_BOX_COMPLETE);
 	ds->decompress = JxlDecoderSetDecompressBoxes(ds->jd, JXL_TRUE) == JXL_DEC_SUCCESS;
 
-	struct wu_st st = gather_info(infile, ds);
+	struct wu_st st = gather_jxl_info(infile, ds);
 	if (!wu_isok(st)) {
 		return st;
 	}
@@ -357,12 +355,12 @@ const struct wu_conf *conf) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 	}
-	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	const enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 	if (err != wu_ok) {
 		return WUERR_HERE(err);
 	}
 
-	rewind_anim(infile, infile->dec_state);
+	rewind_jxl(infile, infile->dec_state);
 	JxlDecoderSubscribeEvents(ds->jd, JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE);
 	const uint32_t threads = JxlResizableParallelRunnerSuggestThreads(
 		img->w, img->h);
@@ -374,7 +372,7 @@ const struct wu_conf *conf) {
 				JxlResizableParallelRunner, ds->runner);
 		}
 	}
-	return get_frame(infile, 0);
+	return get_jxl_frame(infile, 0);
 }
 
 const struct image_fn jpegxl_fn = {

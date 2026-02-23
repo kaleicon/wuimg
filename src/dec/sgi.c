@@ -4,8 +4,8 @@
 #include "lib/sgi.h"
 
 static struct wu_st event_sgi(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev) {
-	(void)wuconf; (void)state;
+struct wu_state *state, enum image_event ev) {
+	(void)state;
 	const struct sgi_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -21,9 +21,7 @@ const struct wu_conf *wuconf, struct wu_state *state, enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_sgi(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_sgi(struct image_file *infile) {
 	return sgi_parse_header(infile->dec_state, infile->sub_img, infile->ifp);
 }
 

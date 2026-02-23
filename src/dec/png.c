@@ -98,7 +98,7 @@ struct image_file *infile) {
 	}
 }
 
-static void get_color_profile(const png_struct *png, png_info *info,
+static void get_png_color_profile(const png_struct *png, png_info *info,
 struct color_space *cs) {
 #ifdef PNG_cICP_SUPPORTED
 	uint8_t c[4];
@@ -142,7 +142,7 @@ struct color_space *cs) {
 	(void)png; (void)info; (void)cs;
 }
 
-static bool read_palette(const struct png_state *png, struct wuimg *img) {
+static bool read_png_palette(const struct png_state *png, struct wuimg *img) {
 	struct palette *palette = wuimg_palette_init(img);
 	if (palette) {
 		png_color *plte;
@@ -163,8 +163,8 @@ static bool read_palette(const struct png_state *png, struct wuimg *img) {
 	return palette;
 }
 
-static struct wu_st decode_image(struct image_file *infile,
-const struct wu_conf *conf, struct png_state *png) {
+static struct wu_st decode_png_image(struct image_file *infile,
+struct png_state *png) {
 	struct wuimg *img = infile->sub_img;
 	img->w = png_get_image_width(png->png, png->info);
 	img->h = png_get_image_height(png->png, png->info);
@@ -172,14 +172,14 @@ const struct wu_conf *conf, struct png_state *png) {
 	img->bitdepth = png_get_bit_depth(png->png, png->info);
 	img->alpha = alpha_unassociated;
 	if (png_get_color_type(png->png, png->info) == PNG_COLOR_TYPE_PALETTE) {
-		if (!read_palette(png, img)) {
+		if (!read_png_palette(png, img)) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 	}
 	img->ratio = png_get_pixel_aspect_ratio(png->png, png->info);
-	get_color_profile(png->png, png->info, &img->cs);
+	get_png_color_profile(png->png, png->info, &img->cs);
 
-	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	const enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 	if (err == wu_ok) {
 		const size_t stride = wuimg_stride(img);
 		int passes = 1;
@@ -205,8 +205,8 @@ const struct wu_conf *conf, struct png_state *png) {
 	return WUERR_HERE(err);
 }
 
-static struct wu_st dec_wrap(struct image_file *infile,
-const struct wu_conf *conf, struct png_state *png) {
+static struct wu_st wrap_png_dec(struct image_file *infile,
+struct png_state *png) {
 	png->info = png_create_info_struct(png->png);
 	if (!png->info) {
 		return WUERR_HERE(wu_alloc_error);
@@ -222,12 +222,15 @@ const struct wu_conf *conf, struct png_state *png) {
 	png_init_io(png->png, infile->ifp);
 	png_set_sig_bytes(png->png, 8);
 #ifdef PNG_SET_USER_LIMITS_SUPPORTED
-	png_set_user_limits(png->png, conf->max_img_size, conf->max_img_size);
+	{
+		unsigned max_dim = infile->conf->max_img_size;
+		png_set_user_limits(png->png, max_dim, max_dim);
+	}
 #endif
 	png_set_crc_action(png->png, PNG_CRC_WARN_USE, PNG_CRC_WARN_DISCARD);
 	png_read_info(png->png, png->info);
 
-	const struct wu_st st = decode_image(infile, conf, png);
+	const struct wu_st st = decode_png_image(infile, png);
 	if (wu_isok(st)) {
 		png->end = png_create_info_struct(png->png);
 		if (png->end) {
@@ -239,13 +242,12 @@ const struct wu_conf *conf, struct png_state *png) {
 	return st;
 }
 
-static struct wu_st init_png(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_png(struct image_file *infile) {
 	struct png_state png = {0};
 	png.png = png_create_read_struct(PNG_LIBPNG_VER_STRING,
 		infile, big_trouble_fn, little_trouble_fn);
 	if (png.png) {
-		const struct wu_st st = dec_wrap(infile, conf, &png);
+		const struct wu_st st = wrap_png_dec(infile, &png);
 		free_png_state(&png);
 		return st;
 	}

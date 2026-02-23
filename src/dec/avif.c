@@ -14,7 +14,7 @@ static void end_avif(struct image_file *infile) {
 	avifDecoderDestroy(infile->dec_state);
 }
 
-static void read_metadata_item(struct wuimg *img, const avifRWData *meta,
+static void get_avif_metadata_item(struct wuimg *img, const avifRWData *meta,
 const enum metadata_type type) {
 	if (meta->size) {
 		struct wutree *tree = wuimg_get_metadata(img);
@@ -24,12 +24,12 @@ const enum metadata_type type) {
 	}
 }
 
-static void get_metadata(struct wuimg *img, const avifImage *avif) {
-	read_metadata_item(img, &avif->exif, metadata_exif);
-	read_metadata_item(img, &avif->xmp, metadata_xmp);
+static void get_avif_metadata(struct wuimg *img, const avifImage *avif) {
+	get_avif_metadata_item(img, &avif->exif, metadata_exif);
+	get_avif_metadata_item(img, &avif->xmp, metadata_xmp);
 }
 
-static void get_colorspace(struct wuimg *img, const avifImage *avif) {
+static void get_avif_colorspace(struct wuimg *img, const avifImage *avif) {
 	if (avif->icc.size) {
 		color_space_set_icc_copy(&img->cs, avif->icc.data,
 			avif->icc.size);
@@ -44,7 +44,7 @@ static void get_colorspace(struct wuimg *img, const avifImage *avif) {
 	}
 }
 
-static void get_transforms(struct wuimg *img, const avifImage *avif) {
+static void get_avif_transforms(struct wuimg *img, const avifImage *avif) {
 	if (avif->transformFlags & AVIF_TRANSFORM_PASP) {
 		wuimg_aspect_ratio(img, avif->pasp.hSpacing, avif->pasp.vSpacing);
 	}
@@ -79,8 +79,8 @@ const uint8_t *restrict plane_data, const size_t row_bytes) {
 	}
 }
 
-static struct wu_st dec_subimg(struct image_file *infile,
-const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
+static struct wu_st dec_avif_subimg(struct image_file *infile,
+struct wuimg *img, const uint32_t idx) {
 	avifDecoder *dec = infile->dec_state;
 
 	const avifResult res = avifDecoderNthImage(dec, idx);
@@ -101,9 +101,9 @@ const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
 	img->alpha = avif->alphaPremultiplied
 		? alpha_associated : alpha_unassociated;
 
-	get_colorspace(img, avif);
-	get_transforms(img, avif);
-	get_metadata(img, avif);
+	get_avif_colorspace(img, avif);
+	get_avif_transforms(img, avif);
+	get_avif_metadata(img, avif);
 
 	struct image_planes *planes = wuimg_plane_init(img);
 	if (!planes) {
@@ -128,7 +128,7 @@ const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
 
 	/* libavif's memory layout is weird in all sorts of ways, so we need to
 	 * do a full memcpy */
-	const enum wu_error err = wuimg_alloc_limit(img, conf);
+	const enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 	if (err != wu_ok) {
 		return WUERR_HERE(err);
 	}
@@ -146,16 +146,15 @@ const struct wu_conf *conf, struct wuimg *img, const uint32_t idx) {
 }
 
 static struct wu_st event_avif(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	const uint32_t idx = (uint32_t)state->idx;
-	struct wuimg *img = infile->sub_img + idx;
 	return (ev == ev_subcycle)
-		? dec_subimg(infile, conf, img, idx)
+		? dec_avif_subimg(infile, infile->sub_img + idx, idx)
 		: WU_NO_CHANGE;
 }
 
-static struct wu_st decode_map(struct image_file *infile, avifDecoder *dec,
-avifResult *res) {
+static struct wu_st decode_avif_from_map(struct image_file *infile,
+avifDecoder *dec, avifResult *res) {
 	dec->strictFlags = AVIF_STRICT_DISABLED;
 	dec->maxThreads = (int)num_cpus();
 	*res = avifDecoderSetIOMemory(dec, infile->map.ptr, infile->map.len);
@@ -169,14 +168,12 @@ avifResult *res) {
 	return WUERR_HERE(wu_invalid_header);
 }
 
-static struct wu_st init_avif(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_avif(struct image_file *infile) {
 	avifDecoder *dec = avifDecoderCreate();
 	if (dec) {
 		infile->dec_state = dec;
 		avifResult res;
-		const struct wu_st st = decode_map(infile, dec, &res);
+		const struct wu_st st = decode_avif_from_map(infile, dec, &res);
 		if (res != AVIF_RESULT_OK) {
 			image_file_strerror_append(infile, dec->diag.error);
 		}

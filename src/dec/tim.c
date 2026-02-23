@@ -8,8 +8,7 @@ static void end_tim(struct image_file *infile) {
 }
 
 static struct wu_st event_tim(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_subcycle) {
 		const uint16_t idx = (uint16_t)state->idx;
 		struct wuimg *img = infile->sub_img + idx;
@@ -23,7 +22,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static void get_metadata(const struct tim_desc *desc, struct wutree *tree) {
+static void get_tim_metadata(const struct tim_desc *desc, struct wutree *tree) {
 	struct wutree *offset = tree_add_branch(tree, "Offset");
 	if (offset) {
 		tree_bud_leaf_u(offset, "X", desc->x);
@@ -39,15 +38,14 @@ static void get_metadata(const struct tim_desc *desc, struct wutree *tree) {
 	}
 }
 
-static struct wu_st init_tim(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_tim(struct image_file *infile) {
 	struct tim_desc *desc = infile->dec_state;
 	struct wu_st st = tim_parse(desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
-		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+		if (wuimg_exceeds_limit(infile->sub_img, infile->conf)) {
 			st = WUERR_HERE(wu_exceeds_size_limit);
 		} else {
-			get_metadata(desc, &infile->metadata);
+			get_tim_metadata(desc, &infile->metadata);
 			if (desc->clut.nb > 1
 			&& !realloc_sub_images(infile, desc->clut.nb)) {
 				st.msg = "couldn't allocate alternate palettes"

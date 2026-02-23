@@ -3,12 +3,11 @@
 #include "wudefs.h"
 #include "lib/qoi.h"
 
-static struct wu_st init_qoi(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_qoi(struct image_file *infile) {
 	struct mparser mp;
 	struct wu_st st = qoi_parse(&mp, infile->sub_img, infile->map);
 	if (wu_isok(st)) {
-		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+		if (wuimg_exceeds_limit(infile->sub_img, infile->conf)) {
 			st = WUERR_HERE(wu_exceeds_size_limit);
 		} else {
 			st = qoi_decode(&mp, infile->sub_img);

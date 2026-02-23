@@ -39,7 +39,7 @@ static void end_tiff(struct image_file *infile) {
 	TIFFCleanup(infile->dec_state);
 }
 
-static void get_metadata_tags(TIFF *tif, struct wuimg *img) {
+static void get_tiff_metadata(TIFF *tif, struct wuimg *img) {
 	struct tifftag {
 		ttag_t tag;
 		const char *name;
@@ -81,7 +81,7 @@ static void get_metadata_tags(TIFF *tif, struct wuimg *img) {
 
 // Default and safe libtiff decoding.
 static struct wu_st libtiff_decode(TIFF *tif, struct image_file *infile,
-const struct wu_conf *conf, struct wuimg *img) {
+struct wuimg *img) {
 	TIFFRGBAImage tifimg;
 	char emsg[1024];
 	if (!TIFFRGBAImageBegin(&tifimg, tif, 0, emsg)) {
@@ -99,7 +99,7 @@ const struct wu_conf *conf, struct wuimg *img) {
 		img->alpha = alpha_ignore;
 	}
 
-	struct wu_st st = WUERR_CHECK(wuimg_alloc_limit(img, conf));
+	struct wu_st st = WUERR_CHECK(wuimg_alloc_limit(img, infile->conf));
 	if (wu_isok(st)) {
 		st = TIFFRGBAImageGet(&tifimg, (uint32_t *)img->data,
 			tifimg.width, tifimg.height)
@@ -123,7 +123,7 @@ const uint16_t bps) {
 	}
 }
 
-static struct wu_st read_tiles(TIFF *tif, struct wuimg *img,
+static struct wu_st read_tiff_tiles(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info, const enum unpack_op op) {
 	struct tile_info tiles;
 	if (TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tiles.width) != 1
@@ -175,7 +175,7 @@ const struct tiff_info *info, const enum unpack_op op) {
 	return WU_OK;
 }
 
-static struct wu_st read_strips(TIFF *tif, struct wuimg *img,
+static struct wu_st read_tiff_strips(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info) {
 	const tsize_t buflen = TIFFStripSize(tif);
 
@@ -200,7 +200,7 @@ const struct tiff_info *info) {
 	return WU_OK;
 }
 
-static bool load_palette(TIFF *tif, struct wuimg *img, uint16_t bps) {
+static bool load_tiff_palette(TIFF *tif, struct wuimg *img, uint16_t bps) {
 	uint16_t *red, *green, *blue;
 	if (TIFFGetField(tif, TIFFTAG_COLORMAP, &red, &green, &blue) == 1) {
 		struct palette *pal = wuimg_palette_init(img);
@@ -218,7 +218,7 @@ static bool load_palette(TIFF *tif, struct wuimg *img, uint16_t bps) {
 	return NULL;
 }
 
-static struct wu_st get_color_info(TIFF *tif, struct wuimg *img,
+static struct wu_st get_tiff_color_info(TIFF *tif, struct wuimg *img,
 const struct tiff_info *info) {
 	uint16_t cnt;
 	uint16_t *types;
@@ -247,7 +247,7 @@ const struct tiff_info *info) {
 		img->cs.invert = true;
 		break;
 	case PHOTOMETRIC_PALETTE:
-		if (!load_palette(tif, img, info->bps)) {
+		if (!load_tiff_palette(tif, img, info->bps)) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 		img->bitrange = 8;
@@ -311,20 +311,20 @@ const struct wu_conf *conf, struct tiff_info *info) {
 	TIFFGetFieldDefaulted(tif, TIFFTAG_ORIENTATION, &orientation);
 	wuimg_exif_orientation(img, orientation);
 
-	struct wu_st st = get_color_info(tif, img, info);
+	struct wu_st st = get_tiff_color_info(tif, img, info);
 	if (wu_isok(st)) {
 		enum wu_error err = wuimg_alloc_limit(img, conf);
 		if (err == wu_ok) {
 			return (info->is_tiled)
-				? read_tiles(tif, img, info, op)
-				: read_strips(tif, img, info);
+				? read_tiff_tiles(tif, img, info, op)
+				: read_tiff_strips(tif, img, info);
 		}
 		st = WUERR_HERE(err);
 	}
 	return st;
 }
 
-static bool check_support(const struct tiff_info *info) {
+static bool check_tiff_support(const struct tiff_info *info) {
 	/* Subsampled data is stored interleaved, and that's too much trouble
 	 * for a somewhat rare case. */
 	if (!info->spp || !info->bps || info->bps > 64 || info->is_subsampled) {
@@ -411,8 +411,8 @@ static const char * get_tiff_info(TIFF *tif, struct tiff_info *info) {
 	return NULL;
 }
 
-static struct wu_st get_dir(struct image_file *infile,
-const struct wu_conf *conf, TIFF *tif, struct wuimg *img, const tdir_t i) {
+static struct wu_st get_tiff_dir(struct image_file *infile,
+TIFF *tif, struct wuimg *img, const tdir_t i) {
 	if (!TIFFSetDirectory(tif, (tdir_t)i)) {
 		return wuerr(wu_invalid_header, "couldn't set TIFF directory");
 	}
@@ -422,13 +422,13 @@ const struct wu_conf *conf, TIFF *tif, struct wuimg *img, const tdir_t i) {
 	if (err) {
 		return wuerr(wu_invalid_header, err);
 	}
-	const bool do_it_ourselves = conf->tiff_use_homegrown_unpacker
-		&& check_support(&info);
+	const bool do_it_ourselves = infile->conf->tiff_use_homegrown_unpacker
+		&& check_tiff_support(&info);
 
 	struct wu_st st;
 	switch ((int)do_it_ourselves) {
 	case true:
-		st = nih_decode(tif, img, conf, &info);
+		st = nih_decode(tif, img, infile->conf, &info);
 		if (wu_isok(st)) {
 			break;
 		}
@@ -437,28 +437,26 @@ const struct wu_conf *conf, TIFF *tif, struct wuimg *img, const tdir_t i) {
 			"failed, falling back on libtiff.");
 		// fallthrough
 	case false:
-		st = libtiff_decode(tif, infile, conf, img);
+		st = libtiff_decode(tif, infile, img);
 	}
 
 	if (wu_isok(st)) {
-		get_metadata_tags(tif, img);
+		get_tiff_metadata(tif, img);
 	}
 	return st;
 }
 
 static struct wu_st event_tiff(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	TIFF *tif = infile->dec_state;
 	const tdir_t idx = (tdir_t)state->idx;
 	struct wuimg *img = infile->sub_img + idx;
 	return (ev == ev_subcycle)
-		? get_dir(infile, conf, tif, img, idx)
+		? get_tiff_dir(infile, tif, img, idx)
 		: WU_NO_CHANGE;
 }
 
-static struct wu_st init_tiff(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_tiff(struct image_file *infile) {
 	const int fd = fileno(infile->ifp);
 	// libtiff insists on knowing the filename for some of its errors.
 	TIFF *tif = TIFFFdOpen(fd, "", "r");
@@ -467,8 +465,8 @@ const struct wu_conf *_c) {
 	}
 
 	infile->dec_state = tif;
-	return alloc_sub_images(infile, TIFFNumberOfDirectories(tif))
-		? WU_OK : WUERR_HERE(wu_alloc_error);
+	infile->nr = TIFFNumberOfDirectories(tif);
+	return WU_OK;
 }
 
 const struct image_fn tiff_fn = {

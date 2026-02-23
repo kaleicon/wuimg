@@ -16,7 +16,7 @@ const enum wu_error fallback_fail) {
 	return wu_unknown_error;
 }
 
-static struct wu_st set_mask(struct wuimg *img, const struct wu_conf *conf,
+static struct wu_st set_lerc_mask(struct wuimg *img, const struct wu_conf *conf,
 const unsigned w, const unsigned h, const unsigned mask_nb) {
 	img->w = w;
 	img->h = h;
@@ -29,7 +29,7 @@ const unsigned w, const unsigned h, const unsigned mask_nb) {
 	return WUERR_HERE(wu_alloc_error);
 }
 
-static struct wu_st set_main(struct wuimg *img, const struct wu_conf *conf,
+static struct wu_st set_lerc_main(struct wuimg *img, const struct wu_conf *conf,
 const unsigned w, const unsigned h, const unsigned dims, const unsigned bands,
 const unsigned type) {
 	img->w = w;
@@ -56,8 +56,7 @@ const unsigned type) {
 	return WUERR_CHECK(wuimg_alloc_limit(img, conf));
 }
 
-static struct wu_st init_lerc(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_lerc(struct image_file *infile) {
 	const struct wuptr *mm = &infile->map;
 	unsigned info[9];
 	enum wu_error err = map_lerc_to_wu(lerc_getBlobInfo(mm->ptr,
@@ -81,15 +80,16 @@ const struct wu_conf *conf) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
+	const struct wu_conf *conf = infile->conf;
 	const unsigned type = info[1];
-	struct wu_st st = set_main(img, conf, w, h, dims, bands, type);
+	struct wu_st st = set_lerc_main(img, conf, w, h, dims, bands, type);
 	if (!wu_isok(st)) {
 		return st;
 	}
 
 	uint8_t *mask = NULL;
 	if (mask_nb) {
-		st = set_mask(img + 1, conf, w, h, mask_nb);
+		st = set_lerc_mask(img + 1, conf, w, h, mask_nb);
 		if (!wu_isok(st)) {
 			return st;
 		}

@@ -37,7 +37,7 @@ static void end_heif(struct image_file *infile) {
 	heif_deinit();
 }
 
-static void read_block(const struct heif_image_handle* handle,
+static void read_heif_block(const struct heif_image_handle* handle,
 struct wuimg *img, const heif_item_id id, unsigned char *buf,
 const size_t len) {
 	const struct heif_error herr = heif_image_handle_get_metadata(handle,
@@ -73,7 +73,7 @@ struct wuimg *img) {
 				handle, ids[i]);
 			unsigned char *buf = malloc(len);
 			if (buf) {
-				read_block(handle, img, ids[i], buf, len);
+				read_heif_block(handle, img, ids[i], buf, len);
 				free(buf);
 			}
 		}
@@ -209,7 +209,7 @@ struct heif_image *himg, const bool alpha, int *bpl, size_t *scanline) {
 }
 
 static struct wu_st event_heif(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	if (ev != ev_subcycle) {
 		return WU_NO_CHANGE;
 	}
@@ -250,7 +250,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	struct heif_image *himg = ds->himgs[i];
 	img->w = (size_t)heif_image_get_primary_width(himg);
 	img->h = (size_t)heif_image_get_primary_height(himg);
-	if (wuimg_exceeds_limit(img, conf)) {
+	if (wuimg_exceeds_limit(img, infile->conf)) {
 		return WUERR_HERE(wu_exceeds_size_limit);
 	}
 	img->borrowed = true;
@@ -288,9 +288,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_heif(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_heif(struct image_file *infile) {
 	struct heif_state *ds = infile->dec_state;
 	infile->dec_state = ds;
 	struct heif_error herr = heif_init(&ds->params);

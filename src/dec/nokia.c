@@ -5,8 +5,7 @@
 #include "wudefs.h"
 
 static struct wu_st event_nlm(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = wuerr(wu_no_change, NULL);
 	if (ev == ev_subcycle) {
 		const uint8_t idx = (uint8_t)state->idx;
@@ -19,12 +18,11 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_nlm(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_nlm(struct image_file *infile) {
 	struct nlm_desc *desc = infile->dec_state;
 	struct wu_st st = nlm_parse(desc, infile->ifp);
 	if (wu_isok(st)) {
-		if (umax(desc->w, desc->h) > conf->max_img_size) {
+		if (umax(desc->w, desc->h) > infile->conf->max_img_size) {
 			st = WUERR_HERE(wu_exceeds_size_limit);
 		} else {
 			if (!alloc_sub_images(infile, desc->nr_images)) {
@@ -39,12 +37,11 @@ const struct wu_conf *conf) {
 	return st;
 }
 
-static struct wu_st init_nol(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_nol(struct image_file *infile) {
 	struct nol_desc desc;
 	struct wu_st st = nol_parse(&desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
-		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+		if (wuimg_exceeds_limit(infile->sub_img, infile->conf)) {
 			st = WUERR_HERE(wu_exceeds_size_limit);
 		} else {
 			struct wutree *t = &infile->metadata;
@@ -61,12 +58,11 @@ const struct wu_conf *conf) {
 	return st;
 }
 
-static struct wu_st init_npm(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_npm(struct image_file *infile) {
 	struct npm_desc desc;
 	struct wu_st st = npm_parse(&desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
-		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+		if (wuimg_exceeds_limit(infile->sub_img, infile->conf)) {
 			st = WUERR_HERE(wu_exceeds_size_limit);
 		} else {
 			tree_add_leaf_len(&infile->metadata, "Comment",
@@ -83,12 +79,11 @@ static void end_nsl(struct image_file *infile) {
 	nsl_clean(infile->dec_state);
 }
 
-static struct wu_st init_nsl(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_nsl(struct image_file *infile) {
 	struct nsl_desc *desc = infile->dec_state;
 	struct wu_st st = nsl_parse(desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
-		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
+		if (wuimg_exceeds_limit(infile->sub_img, infile->conf)) {
 			st = WUERR_HERE(wu_exceeds_size_limit);
 		} else {
 			tree_add_leaf_len(&infile->metadata, "Version",

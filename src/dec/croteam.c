@@ -5,17 +5,15 @@
 #include "lib/croteam.h"
 
 static struct wu_st event_tbn(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_subcycle || ev == ev_frame) {
 		return tbn_frame(infile->dec_state, infile->sub_img,
 			(uint32_t)state->frame);
 	}
-	return wuerr(wu_no_change, NULL);
+	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_tbn(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_tbn(struct image_file *infile) {
 	struct tbn_desc *desc = infile->dec_state;
 	struct wu_st st = tbn_init(desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
@@ -33,16 +31,13 @@ const struct wu_conf *conf) {
 		size_t len = tbn_read_animadat(desc, anima);
 		tree_add_leaf_len(&infile->metadata, "ANIMADAT",
 			wuptr_trim_end(wuptr_mem(anima, len), 0), NULL);
-
-		if (wuimg_exceeds_limit(infile->sub_img, conf)) {
-			st = WUERR_HERE(wu_exceeds_size_limit);
-		}
 	}
 	return st;
 }
 
 const struct image_fn tbn_fn = {
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct tbn_desc),
 	.init = init_tbn,
 	.event = event_tbn,

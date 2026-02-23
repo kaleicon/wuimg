@@ -3,8 +3,7 @@
 #include "wudefs.h"
 #include "lib/hg3.h"
 
-static struct wu_st init_hg3(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_hg3(struct image_file *infile) {
 	struct hg3_desc desc;
 	struct wu_st st = hg3_open(&desc, infile->map);
 	if (!wu_isok(st)) {
@@ -24,7 +23,7 @@ const struct wu_conf *conf) {
 
 		st = hg3_parse_image(&desc, img);
 		if (wu_isok(st)) {
-			enum wu_error e = wuimg_alloc_limit(img, conf);
+			enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 			if (e == wu_ok) {
 				st = hg3_decode(&desc, img);
 				if (wu_isok(st)) {

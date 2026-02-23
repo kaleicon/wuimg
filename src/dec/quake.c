@@ -9,7 +9,7 @@ static void end_idsp(struct image_file *infile) {
 }
 
 static struct wu_st event_idsp(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	if (ev != ev_subcycle) {
 		return WU_NO_CHANGE;
 	}
@@ -21,7 +21,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 		if (!wu_isok(st)) {
 			return st;
 		}
-		const enum wu_error e = wuimg_alloc_limit(img, conf);
+		const enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 		if (e != wu_ok) {
 			return WUERR_HERE(e);
 		}
@@ -33,9 +33,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_OK;
 }
 
-static struct wu_st init_idsp(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_idsp(struct image_file *infile) {
 	struct idsp_desc *desc = infile->dec_state;
 	struct wu_st st = idsp_init(desc, infile->ifp);
 	if (!wu_isok(st)) {
@@ -62,16 +60,14 @@ const struct wu_conf *conf) {
 
 
 static struct wu_st event_lmp(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	return (ev == ev_subcycle)
 		? fmt_load_raster_st(infile->sub_img, infile->ifp)
 		: WU_NO_CHANGE;
 }
 
-static struct wu_st init_lmp(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_lmp(struct image_file *infile) {
 	return lmp_init(infile->sub_img, infile->ifp);
 }
 

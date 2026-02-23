@@ -10,7 +10,7 @@ static void end_fnhd(struct image_file *infile) {
 }
 
 static struct wu_st event_fnhd(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		struct fnhd_desc *desc = infile->dec_state;
@@ -20,7 +20,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			if (!wu_isok(st)) {
 				break;
 			}
-			enum wu_error e = wuimg_alloc_limit(img, conf);
+			enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 			if (e != wu_ok) {
 				st = WUERR_HERE(e);
 				break;
@@ -34,9 +34,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_fnhd(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_fnhd(struct image_file *infile) {
 	struct fnhd_desc *desc = infile->dec_state;
 	struct wu_st st = fnhd_init(desc, infile->ifp);
 	if (wu_isok(st)) {
@@ -54,7 +52,7 @@ static void end_gxa(struct image_file *infile) {
 }
 
 static struct wu_st event_gxa(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		struct gxa_desc *desc = infile->dec_state;
@@ -64,7 +62,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			if (!wu_isok(st)) {
 				break;
 			}
-			enum wu_error e = wuimg_alloc_limit(img, conf);
+			enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 			if (e != wu_ok) {
 				st = WUERR_HERE(e);
 				break;
@@ -78,9 +76,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_gxa(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_gxa(struct image_file *infile) {
 	struct gxa_desc *desc = infile->dec_state;
 	struct wu_st st = gxa_init(desc, infile->ifp);
 	if (wu_isok(st)) {
@@ -97,8 +93,7 @@ static void end_bsi(struct image_file *infile) {
 }
 
 static struct wu_st event_bsi(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	struct wuimg *img = infile->sub_img + state->idx;
 	switch (ev) {
 	case ev_metadata:
@@ -111,9 +106,7 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_bsi(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_bsi(struct image_file *infile) {
 	struct bsi_desc *desc = infile->dec_state;
 	struct wu_st st = bsi_init(desc, infile->ifp);
 	if (wu_isok(st)) {

@@ -35,8 +35,7 @@ struct wutree *tree) {
 }
 
 static struct wu_st event_mac(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf;
+struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_subcycle) {
 		struct wuimg *img = infile->sub_img + state->idx;
 		return state->idx == 0
@@ -46,9 +45,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_mac(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_mac(struct image_file *infile) {
 	struct mac_desc *desc = infile->dec_state;
 	struct wu_st st = mac_open_file(desc, infile->map);
 	if (!wu_isok(st)) {

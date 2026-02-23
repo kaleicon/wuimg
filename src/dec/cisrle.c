@@ -4,8 +4,8 @@
 #include "wudefs.h"
 
 static struct wu_st event_cis(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct cis_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -19,9 +19,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_cis(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_cis(struct image_file *infile) {
 	return cis_parse(infile->dec_state, infile->sub_img, infile->map, true);
 }
 

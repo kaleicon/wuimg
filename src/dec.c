@@ -103,8 +103,7 @@ const enum image_event event) {
 	const struct fmt_desc *desc = &image->desc;
 	const struct wu_st st = (desc->is_auto)
 		? auto_load(&image->file)
-		: desc->dec.fn->event(&image->file, &image->conf,
-			&image->state, event);
+		: desc->dec.fn->event(&image->file, &image->state, event);
 	if (st.msg) {
 		image_file_strerror_append(&image->file, st.msg);
 	}
@@ -130,7 +129,7 @@ enum image_event event) {
 			if (image->desc.dec.fn->alloc_on_subcycle) {
 				e = wuimg_alloc_limit(
 					infile->sub_img + state->idx,
-					&image->conf);
+					image->file.conf);
 				if (e != wu_ok) {
 					return e;
 				}
@@ -187,6 +186,7 @@ static void errno_append(struct image_file *infile, const int n) {
 
 static enum wu_error actually_open(struct wudec_image *image) {
 	struct image_file *infile = &image->file;
+	infile->conf = &image->conf;
 	struct wuptr *map = &infile->map;
 	long offset = 0;
 	if (infile->ifp) {
@@ -249,9 +249,9 @@ static enum wu_error call_decoder(struct image_file *infile,
 const struct wu_conf *conf, const struct fmt_desc *desc) {
 	struct wu_st st;
 	if (desc->is_auto) {
-		st = auto_init(infile, conf, *desc->dec.desc);
+		st = auto_init(infile, *desc->dec.desc);
 	} else if (desc->dec.fn->init) {
-		st = desc->dec.fn->init(infile, conf);
+		st = desc->dec.fn->init(infile);
 	} else {
 		return desc->dec.fn->dec(infile, conf);
 	}
@@ -265,7 +265,7 @@ enum wu_error wudec_decode(struct wudec_image *image) {
 	enum wu_error st = actually_open(image);
 	if (st == wu_ok) {
 		struct image_file *infile = &image->file;
-		const struct wu_conf *conf = &image->conf;
+		const struct wu_conf *conf = infile->conf;
 		const struct fmt_desc *desc = &image->desc;
 		if (desc->is_auto || desc->dec.fn->alloc_single) {
 			if (!alloc_sub_images(infile, 1)) {

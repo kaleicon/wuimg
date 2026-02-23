@@ -4,8 +4,7 @@
 #include "lib/hel.h"
 
 static struct wu_st event_hel(struct image_file *infile,
-const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
-	(void)_c;
+struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_frame) {
 		struct wuimg *img = infile->sub_img;
 		int i = img->frames->current;
@@ -24,12 +23,11 @@ const struct wu_conf *_c, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_hel(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_hel(struct image_file *infile) {
 	struct wuimg *img = infile->sub_img;
 	struct wu_st st = hel_identify(infile->map, img, 0);
 	if (wu_isok(st)) {
-		st = WUERR_CHECK(wuimg_alloc_limit(img, conf));
+		st = WUERR_CHECK(wuimg_alloc_limit(img, infile->conf));
 		if (wu_isok(st)) {
 			st = hel_render_frame(infile->map, img, 0);
 		}

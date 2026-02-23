@@ -5,8 +5,8 @@
 #include "wudefs.h"
 
 static struct wu_st event_msx(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	struct msx_desc *desc = infile->dec_state;
 	switch (ev) {
 	case ev_metadata:
@@ -31,26 +31,22 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_msx(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_msx(struct image_file *infile) {
 	return msx_parse(infile->dec_state, infile->sub_img, infile->ifp,
 		infile->name, infile->ext);
 }
 
 
 static struct wu_st event_msxgl(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
-	(void)conf; (void)state;
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
 	if (ev == ev_subcycle) {
 		return fmt_load_raster_st(infile->sub_img, infile->ifp);
 	}
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_msxgl(struct image_file *infile,
-const struct wu_conf *conf) {
-	(void)conf;
+static struct wu_st init_msxgl(struct image_file *infile) {
 	return msxgl_parse(infile->sub_img, infile->ifp, infile->name,
 		infile->ext);
 }

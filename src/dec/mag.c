@@ -17,12 +17,11 @@ static void get_mag_metadata(const struct mag_desc *desc, struct wutree *tree) {
 	tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
 }
 
-static struct wu_st init_mag(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_mag(struct image_file *infile) {
 	struct mag_desc desc;
 	struct wu_st st = mag_parse(&desc, infile->sub_img, infile->map);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
 		if (e == wu_ok) {
 			get_mag_metadata(&desc, &infile->metadata);
 			mag_decode(&desc, infile->sub_img);

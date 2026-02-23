@@ -3,24 +3,31 @@
 #include "lib/aliaspix.h"
 #include "wudefs.h"
 
-static struct wu_st init_aliaspix(struct image_file *infile,
-const struct wu_conf *conf) {
-	struct wuimg *img = infile->sub_img;
-	struct aliaspix_desc desc;
-	struct wu_st st = aliaspix_init(&desc, img, infile->map);
-	if (wu_isok(st)) {
-		tree_bud_leaf_u(&infile->metadata, "X", desc.x);
-		tree_bud_leaf_u(&infile->metadata, "Y", desc.y);
-		if (wuimg_exceeds_limit(img, conf)) {
-			return WUERR_HERE(wu_exceeds_size_limit);
-		}
-		st = aliaspix_decode(&desc, img);
+static struct wu_st event_aliaspix(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	struct aliaspix_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_bud_leaf_u(&infile->metadata, "X", desc->x);
+		tree_bud_leaf_u(&infile->metadata, "Y", desc->y);
+		return WU_OK;
+	case ev_subcycle:
+		return aliaspix_decode(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_aliaspix(struct image_file *infile) {
+	return aliaspix_init(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn aliaspix_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct aliaspix_desc),
 	.init = init_aliaspix,
+	.event = event_aliaspix,
 };

@@ -4,7 +4,7 @@
 #include "wudefs.h"
 
 static struct wu_st event_sgf(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		struct sgf_desc *desc = infile->dec_state;
@@ -14,7 +14,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			if (!wu_isok(st)) {
 				break;
 			}
-			enum wu_error err = wuimg_alloc_limit(img, conf);
+			enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 			if (err != wu_ok) {
 				st = WUERR_HERE(err);
 				break;
@@ -28,15 +28,10 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_sgf(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_sgf(struct image_file *infile) {
 	struct sgf_desc *desc = infile->dec_state;
 	struct wu_st st = sgf_parse(desc, infile->map);
-	if (wu_isok(st)) {
-		st = alloc_sub_images(infile, desc->nr)
-			? WU_OK : WUERR_HERE(wu_alloc_error);
-	}
+	infile->nr = desc->nr;
 	return st;
 }
 

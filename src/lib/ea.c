@@ -5,7 +5,6 @@
 
 #include "misc/common.h"
 #include "misc/math.h"
-#include "raster/fmt.h"
 #include "lib/ea.h"
 
 /* Electronic Arts Fonts (FNTF, FNTI, FNTS)
@@ -15,10 +14,6 @@ https://web.archive.org/web/20230518105443/https://wiki.xentax.com/index.php/EA_
 
  * FNTI is somewhat different but describes the texture in the same way.
 */
-
-struct wu_st eafnt_load(struct eafnt_desc *desc, struct wuimg *img) {
-	return fmt_load_raster_st(img, desc->ifp);
-}
 
 static struct wu_st parse_eafnt(struct eafnt_desc *desc, struct wuimg *img) {
 	/* FFN & SFN char table:

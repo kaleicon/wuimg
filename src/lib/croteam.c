@@ -53,19 +53,16 @@ void *restrict ptr) {
 }
 
 struct wu_st tbn_frame(struct tbn_desc *desc, struct wuimg *img, uint32_t i) {
-	if (img->data || wuimg_alloc_noverify(img)) {
-		const size_t size = wuimg_size(img);
-		fseek(desc->ifp, (long)(40 + i*size), SEEK_SET);
-		if (img->frames->nr == 1 && img->channels == 4) {
-			enum alpha_interpretation a = img->alpha;
-			const size_t r = fmt_load_raster_callback(img,
-				desc->ifp, check_alpha, &a);
-			img->alpha = a;
-			return wuerr_partial(r, size);
-		}
-		return fmt_load_raster_st(img, desc->ifp);
+	const size_t size = wuimg_size(img);
+	fseek(desc->ifp, (long)(40 + i*size), SEEK_SET);
+	if (img->frames->nr == 1 && img->channels == 4) {
+		enum alpha_interpretation a = img->alpha;
+		const size_t r = fmt_load_raster_callback(img,
+			desc->ifp, check_alpha, &a);
+		img->alpha = a;
+		return wuerr_partial(r, size);
 	}
-	return WUERR_HERE(wu_alloc_error);
+	return fmt_load_raster_st(img, desc->ifp);
 }
 
 struct wu_st tbn_init(struct tbn_desc *desc, struct wuimg *img, FILE *ifp) {
@@ -113,7 +110,7 @@ struct wu_st tbn_init(struct tbn_desc *desc, struct wuimg *img, FILE *ifp) {
 				}
 				desc->anim_off = img->w*img->h*img->channels
 					* frames + 40;
-				st = wuerr(wuimg_verify(img), NULL);
+				st = WU_OK;
 			} else {
 				st = WUERR_HERE(wu_alloc_error);
 			}

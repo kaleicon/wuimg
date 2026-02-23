@@ -3,12 +3,12 @@
 #include "lib/ant.h"
 #include "wudefs.h"
 
-static struct wu_st init_ant(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_ant(struct image_file *infile) {
 	struct ant_desc desc;
 	struct wu_st st = ant_init(&desc, infile->sub_img, infile->ifp);
 	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, conf);
+		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
+			infile->conf);
 		if (e == wu_ok) {
 			st = ant_decode(&desc, infile->sub_img);
 		} else {

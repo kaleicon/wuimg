@@ -10,14 +10,13 @@ static void end_ilbm(struct image_file *infile) {
 }
 
 static struct wu_st event_ilbm(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state,
-const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct ilbm_desc *desc = infile->dec_state;
 	int idx = state->idx;
 	struct wuimg *img = infile->sub_img + idx;
 	switch (ev) {
 	case ev_subcycle:
-		;enum wu_error err = wuimg_alloc_limit(img, conf);
+		;enum wu_error err = wuimg_alloc_limit(img, infile->conf);
 		if (err == wu_ok) {
 			return ilbm_decode(desc, img, idx != 0);
 		}
@@ -56,7 +55,7 @@ static void fourcc_to_str(char str[static FOURCC_STR_LEN], uint32_t id) {
 	str[pos] = 0;
 }
 
-static void chunk_metadata(void *ptr, const struct iff_chunk chunk,
+static void chunk_ilbm_metadata(void *ptr, const struct iff_chunk chunk,
 const struct wuptr data) {
 	char name[FOURCC_STR_LEN];
 	fourcc_to_str(name, chunk.id);
@@ -67,7 +66,7 @@ const struct wuptr data) {
 	}
 }
 
-static void add_metadata(const struct ilbm_desc *desc, struct wutree *meta) {
+static void read_ilbm_metadata(const struct ilbm_desc *desc, struct wutree *meta) {
 	tree_add_leaf_utf8(meta, "Compression",
 		ilbm_compression_str(desc->compression));
 	tree_bud_leaf_u(meta, "Depth", desc->planes);
@@ -85,9 +84,7 @@ static void add_metadata(const struct ilbm_desc *desc, struct wutree *meta) {
 	}
 }
 
-static struct wu_st init_ilbm(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_ilbm(struct image_file *infile) {
 	struct ilbm_desc *desc = infile->dec_state;
 	struct wu_st st = ilbm_open(desc, infile->map);
 	if (!wu_isok(st)) {
@@ -97,7 +94,7 @@ const struct wu_conf *_c) {
 	fourcc_to_str(type, desc->format);
 	struct wutree *type_meta = tree_add_branch(&infile->metadata, type);
 	if (type_meta) {
-		ilbm_set_callbacks(desc, chunk_metadata, type_meta);
+		ilbm_set_callbacks(desc, chunk_ilbm_metadata, type_meta);
 	}
 
 	struct wuimg *img = infile->sub_img;
@@ -117,7 +114,7 @@ const struct wu_conf *_c) {
 		}
 		ilbm_setup_tiny(desc, img, img + 1);
 	}
-	add_metadata(desc, &infile->metadata);
+	read_ilbm_metadata(desc, &infile->metadata);
 	return WU_OK;
 }
 

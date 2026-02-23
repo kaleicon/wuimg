@@ -6,7 +6,7 @@
 #include "misc/math.h"
 #include "wudefs.h"
 
-static struct wu_st single_decode(struct wuimg *img,
+static struct wu_st single_wbm_decode(struct wuimg *img,
 const struct wu_conf *wuconf, const struct wuptr mem) {
 	struct wpx_bmp_desc desc;
 	struct wu_st status = wpx_bmp_parse(&desc, mem, img);
@@ -22,9 +22,8 @@ const struct wu_conf *wuconf, const struct wuptr mem) {
 	return status;
 }
 
-static struct wu_st init_wbm(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	return single_decode(infile->sub_img, wuconf, infile->map);
+static struct wu_st init_wbm(struct image_file *infile) {
+	return single_wbm_decode(infile->sub_img, infile->conf, infile->map);
 }
 
 
@@ -33,18 +32,18 @@ static void end_wia(struct image_file *infile) {
 }
 
 static struct wu_st event_wia(struct image_file *infile,
-const struct wu_conf *wuconf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wpx_ia2_desc *desc = infile->dec_state;
 	struct wuimg *img = infile->sub_img + state->idx;
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
-		st = single_decode(img, wuconf,
+		st = single_wbm_decode(img, infile->conf,
 			wpx_ia2_get_frame(desc, (uint32_t)state->idx));
 	}
 	return st;
 }
 
-static void add_list(struct wutree *tree, const char *branch_name,
+static void add_wia_list(struct wutree *tree, const char *branch_name,
 const struct wpx_ia2_list *list, const uint32_t nr) {
 	struct wutree *br = NULL;
 	const size_t m = zumin(nr, 1024);
@@ -78,9 +77,9 @@ const uint32_t nr, const size_t size) {
 	}
 }
 
-static void anim_metadata(struct wutree *tree, const struct wpx_ia2_desc *desc) {
-	add_list(tree, "Names", &desc->names, desc->nr.frames);
-	add_list(tree, "SFX", &desc->sfx, desc->nr.sfx);
+static void get_wia_metadata(struct wutree *tree, const struct wpx_ia2_desc *desc) {
+	add_wia_list(tree, "Names", &desc->names, desc->nr.frames);
+	add_wia_list(tree, "SFX", &desc->sfx, desc->nr.sfx);
 	const bool debug = false;
 	if (debug) {
 		array_print("Geom", desc->geom, desc->nr.geom, sizeof(*desc->geom));
@@ -89,13 +88,11 @@ static void anim_metadata(struct wutree *tree, const struct wpx_ia2_desc *desc) 
 	}
 }
 
-static struct wu_st init_wia(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	(void)wuconf;
+static struct wu_st init_wia(struct image_file *infile) {
 	struct wpx_ia2_desc *desc = infile->dec_state;
 	struct wu_st st = wpx_ia2_parse(desc, infile->map);
 	if (wu_isok(st)) {
-		anim_metadata(&infile->metadata, desc);
+		get_wia_metadata(&infile->metadata, desc);
 		infile->nr = desc->nr.frames;
 	}
 	return st;

@@ -4,7 +4,7 @@
 #include "wudefs.h"
 
 static struct wu_st event_tim2(struct image_file *infile,
-const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+struct wu_state *state, const enum image_event ev) {
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
 		const uint32_t idx = (uint32_t)state->idx;
@@ -15,7 +15,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 			if (!wu_isok(st)) {
 				break;
 			}
-			enum wu_error e = wuimg_alloc_limit(img, conf);
+			enum wu_error e = wuimg_alloc_limit(img, infile->conf);
 			if (e != wu_ok) {
 				return WUERR_HERE(e);
 			}
@@ -46,9 +46,7 @@ const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
 	return st;
 }
 
-static struct wu_st init_tim2(struct image_file *infile,
-const struct wu_conf *_c) {
-	(void)_c;
+static struct wu_st init_tim2(struct image_file *infile) {
 	struct tim2_desc *desc = infile->dec_state;
 	struct wu_st st = tim2_init(desc, infile->ifp);
 	if (wu_isok(st)) {

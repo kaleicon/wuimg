@@ -26,13 +26,13 @@ static const char * interleave_str(const charls_interleave_mode mode) {
 	return "???";
 }
 
-static int comment_handler(const void *data, const size_t size, void *ptr) {
+static int handle_jls_comment(const void *data, const size_t size, void *ptr) {
 	tree_add_leaf_len(ptr, "Comment", wuptr_mem(data, size), NULL);
 	return 0;
 }
 
-static struct wu_st read_data(struct image_file *infile,
-const struct wu_conf *conf, charls_jpegls_decoder *dec, charls_jpegls_errc *err) {
+static struct wu_st read_jls_data(struct image_file *infile,
+charls_jpegls_decoder *dec, charls_jpegls_errc *err) {
 	int32_t found;
 	charls_spiff_header spiff;
 	*err = charls_jpegls_decoder_read_spiff_header(dec, &spiff, &found);
@@ -83,7 +83,7 @@ const struct wu_conf *conf, charls_jpegls_decoder *dec, charls_jpegls_errc *err)
 		wuimg_plane_init(img);
 	}
 
-	const enum wu_error st = wuimg_alloc_limit(img, conf);
+	const enum wu_error st = wuimg_alloc_limit(img, infile->conf);
 	if (st != wu_ok) {
 		return WUERR_HERE(st);
 	}
@@ -102,19 +102,18 @@ const struct wu_conf *conf, charls_jpegls_decoder *dec, charls_jpegls_errc *err)
 	return WU_OK;
 }
 
-static struct wu_st init_jpegls(struct image_file *infile,
-const struct wu_conf *conf) {
+static struct wu_st init_jpegls(struct image_file *infile) {
 	struct wu_st st = WUERR_HERE(wu_alloc_error);
 	charls_jpegls_decoder *dec = charls_jpegls_decoder_create();
 	if (dec) {
 		// Result can't be ignored here
 		charls_jpegls_errc err = charls_jpegls_decoder_at_comment(dec,
-			comment_handler, &infile->metadata);
+			handle_jls_comment, &infile->metadata);
 
 		err = charls_jpegls_decoder_set_source_buffer(dec,
 			infile->map.ptr, infile->map.len);
 		if (err == CHARLS_JPEGLS_ERRC_SUCCESS) {
-			st = read_data(infile, conf, dec, &err);
+			st = read_jls_data(infile, dec, &err);
 		}
 
 		if (err != CHARLS_JPEGLS_ERRC_SUCCESS) {

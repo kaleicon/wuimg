@@ -13,8 +13,6 @@ struct eafnt_desc {
 	uint32_t char_off, unk_off, img_off;
 };
 
-struct wu_st eafnt_load(struct eafnt_desc *desc, struct wuimg *img);
-
 struct wu_st eafnt_init(struct eafnt_desc *desc, struct wuimg *img, FILE *ifp);
 
 #endif /* LIB_EA */
