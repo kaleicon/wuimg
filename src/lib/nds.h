@@ -121,4 +121,7 @@ struct wu_st bgd_decode(const struct bgd_desc *desc, struct wuimg *img);
 struct wu_st bgd_init(struct bgd_desc *desc, struct wuimg *img,
 const struct wuptr mem);
 
+
+struct wu_st r00_parse_next(struct wuimg *img, FILE *ifp);
+
 #endif /* LIB_NDS */

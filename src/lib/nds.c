@@ -87,7 +87,7 @@ const char * nds_colormode_str(enum nds_colormode color) {
 	return "???";
 }
 
-static uint8_t nds_texfmt_tile_depth(enum nds_texfmt fmt) {
+static uint8_t nds_texfmt_depth(enum nds_texfmt fmt) {
 	return fmt == nds_texfmt_pltt16 ? 4 : 8;
 }
 
@@ -234,7 +234,7 @@ struct wuptr *map) {
 	return false;
 }
 
-static void nds_unpack555_pal(struct palette *pal, const uint8_t *restrict src,
+static void nds_unpack555_pal(struct palette *pal, const void *restrict src,
 const size_t len) {
 	struct bitfield bf;
 	bitfield_from_id(&bf, 0x1555, 16);
@@ -351,7 +351,7 @@ struct wu_st ncgr_load(const struct ncgr_desc *desc, struct wuimg *img) {
 	}
 	const size_t vtiles = img->h/NDS_TILE_DIM;
 	const size_t htiles = img->w/NDS_TILE_DIM;
-	const uint8_t depth = nds_texfmt_tile_depth(desc->fmt);
+	const uint8_t depth = nds_texfmt_depth(desc->fmt);
 	const size_t avail = src.len / (NDS_TILE_DIM * depth);
 	for (size_t ty = 0; ty < vtiles; ++ty) {
 		for (size_t tx = 0; tx < htiles; ++tx) {
@@ -376,7 +376,7 @@ static void ncgr_img_baseinfo(struct ncgr_desc *desc, struct wuimg *img) {
 struct wu_st ncgr_img_info(struct ncgr_desc *desc, struct wuimg *img) {
 	ncgr_img_baseinfo(desc, img);
 	img->channels = 1;
-	img->bitdepth = nds_texfmt_tile_depth(desc->fmt);
+	img->bitdepth = nds_texfmt_depth(desc->fmt);
 	img->bit = little_endian;
 	if (desc->mapping_1d) {
 		img->h = (desc->graphics_size - 1)/img->bitdepth + 1;
@@ -461,7 +461,7 @@ struct wu_st ncgr_init(struct ncgr_desc *desc, const struct wuptr mem) {
 
 	desc->graphics_size = buf_endian32l(hdr + 16);
 	if (!desc->mapping_1d) {
-		size_t tw = nds_texfmt_tile_depth(desc->fmt);
+		size_t tw = nds_texfmt_depth(desc->fmt);
 		size_t max = (size_t)desc->h*NDS_TILE_DIM * desc->w*tw;
 		desc->graphics_size = (uint32_t)zumin(desc->graphics_size, max);
 	}
@@ -515,7 +515,7 @@ size_t dst_stride, uint8_t depth, const uint16_t ctrl) {
 struct wu_st nscr_decode(const struct nscr_desc *desc, struct wuimg *img) {
 	const struct wuptr idx = desc->data;
 	const struct wuptr tile = desc->ncgr.data;
-	const uint8_t tile_depth = nds_texfmt_tile_depth(desc->ncgr.fmt);
+	const uint8_t tile_depth = nds_texfmt_depth(desc->ncgr.fmt);
 	const size_t tile_size = tile_depth * NDS_TILE_DIM;
 
 	size_t dst_stride = img->w;
@@ -628,7 +628,7 @@ const struct wuptr mem, const char *name) {
 
 	desc->substract = false;
 	if (NSCR_CHECK_SUBSTRACT) {
-		const uint8_t tile_depth = nds_texfmt_tile_depth(desc->ncgr.fmt);
+		const uint8_t tile_depth = nds_texfmt_depth(desc->ncgr.fmt);
 		const size_t tile_size = tile_depth * NDS_TILE_DIM;
 		const size_t nr_tiles = desc->ncgr.data.len/tile_size;
 		for (size_t i = 0; i < desc->data.len/2 && !desc->substract; ++i) {
@@ -711,4 +711,63 @@ const struct wuptr mem) {
 	return wuimg_palette_init(img)
 		? WU_OK
 		: WUERR_HERE(wu_alloc_error);
+}
+
+/* R00 resource file.
+ * This is a bunch of concatenated files, with only some padding for alignment
+ * in between. The offset and size table is hardcoded in the NDS binary.
+ * Used in Tsubasa Chronicle, where it happens to begin with sprite data. */
+struct wu_st r00_parse_next(struct wuimg *img, FILE *ifp) {
+	/* R00 struct:
+		Offset  Type    Name
+		0       struct  R00Image[]
+
+	 * R00 image struct:
+		0       u16     TexFmt
+		2       u16     PaletteBytes
+		4       u32     RasterSize
+		8       u16     ???
+		10      u16     ???
+		12      u16     Width?
+		14      u16     Height?
+		16      u16     Width?
+		18      u16     Height?
+		20      u8      Palette[PaletteBytes]
+		52      u4      Raster[Width*Height]
+	*/
+	uint16_t hdr[10];
+	if (!fread(hdr, sizeof(hdr), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	const enum nds_texfmt fmt = endian16l(hdr[0]);
+	switch (fmt) {
+	case nds_texfmt_pltt16:
+	case nds_texfmt_pltt256:
+		break;
+	default:
+		return wuerr(wu_invalid_header,
+			"Tex format is not PLTT16 nor PLTT256");
+	}
+	img->w = endian16l(hdr[6]);
+	img->h = endian16l(hdr[7]);
+	img->channels = 1;
+	img->bitdepth = nds_texfmt_depth(fmt);
+	img->bit = little_endian;
+	img->alpha = alpha_ignore;
+	const uint16_t pal_size = endian16l(hdr[1]);
+	const size_t max = 1u << img->bitdepth;
+	if (!pal_size || (pal_size & 1) || pal_size > max*2) {
+		return wuerr(wu_invalid_header, "bad palette size");
+	}
+	struct palette *pal = wuimg_palette_init(img);
+	if (!pal) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+	const size_t pal_entries = pal_size/2;
+	uint8_t *buf = (uint8_t *)pal->color + pal_entries*2;
+	if (!fread(buf, pal_entries*2, 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	nds_unpack555_pal(pal, buf, pal_entries);
+	return WU_OK;
 }

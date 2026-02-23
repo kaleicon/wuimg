@@ -925,6 +925,9 @@ DEC_MAP: DecMap = {
 			ext="nscr",
 			magic=b"RCSN"
 		),
+		"r00": FmtInfo("Tsubasa Chronicle R00 Resources (beginning only)",
+			match="r00",
+		),
 	},
 
 	"nokia": {

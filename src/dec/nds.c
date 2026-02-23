@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2026 kaleido
 #include "lib/nds.h"
+#include "raster/fmt.h"
 #include "wudefs.h"
 
 static void get_texfmt_metadata(struct wutree *meta, const enum nds_texfmt fmt) {
@@ -122,6 +123,37 @@ static struct wu_st init_bgd(struct image_file *infile) {
 	return bgd_init(infile->dec_state, infile->sub_img, infile->map);
 }
 
+
+static struct wu_st init_r00(struct image_file *infile) {
+	size_t decoded = 0;
+	struct wu_st st = WU_OK;
+	for (;;) {
+		if (!realloc_sub_images(infile, decoded + 1)) {
+			st = WUERR_HERE(wu_alloc_error);
+			break;
+		}
+		struct wuimg *img = infile->sub_img + decoded;
+		st = r00_parse_next(img, infile->ifp);
+		if (!wu_isok(st)) {
+			break;
+		}
+		enum wu_error e = wuimg_alloc_limit(img, infile->conf);
+		if (e != wu_ok) {
+			st = WUERR_HERE(e);
+			break;
+		}
+		st = fmt_load_raster_st(img, infile->ifp);
+		if (!wu_isok(st)) {
+			break;
+		}
+		++decoded;
+	}
+	return decoded
+		? WUERR_CHECK(image_file_total_decoded(infile, decoded))
+		: st;
+}
+
+
 const struct image_fn nclr_fn = {
 	.mmap = true,
 	.alloc_single = true,
@@ -155,4 +187,7 @@ const struct image_fn bgd_fn = {
 	.state_size = sizeof(struct bgd_desc),
 	.init = init_bgd,
 	.event = event_bgd,
+};
+const struct image_fn r00_fn = {
+	.init = init_r00,
 };
