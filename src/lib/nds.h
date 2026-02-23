@@ -107,4 +107,18 @@ struct wu_st nscr_decode(const struct nscr_desc *desc, struct wuimg *img);
 struct wu_st nscr_init(struct nscr_desc *desc, struct wuimg *img,
 struct wuptr mem, const char *name);
 
+
+struct bgd_desc {
+	uint16_t nr_tiles;
+	uint16_t pal_entries;
+	const uint8_t *data;
+	const uint8_t *idx;
+	const uint8_t *pal;
+};
+
+struct wu_st bgd_decode(const struct bgd_desc *desc, struct wuimg *img);
+
+struct wu_st bgd_init(struct bgd_desc *desc, struct wuimg *img,
+const struct wuptr mem);
+
 #endif /* LIB_NDS */

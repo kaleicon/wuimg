@@ -910,6 +910,9 @@ DEC_MAP: DecMap = {
 	},
 
 	"nds": {
+		"bgd": FmtInfo("Tsubasa Chronicle Background",
+			match="bgd",
+		),
 		"ncgr": FmtInfo("Nitro Character Graphics",
 			ext="ncgr",
 			magic=b"RGCN"

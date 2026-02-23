@@ -114,6 +114,22 @@ const struct wu_conf *_c) {
 		infile->name);
 }
 
+
+static struct wu_st event_bgd(struct image_file *infile,
+const struct wu_conf *conf, struct wu_state *state, const enum image_event ev) {
+	(void)conf; (void)state;
+	if (ev == ev_subcycle) {
+		return bgd_decode(infile->dec_state, infile->sub_img);
+	}
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_bgd(struct image_file *infile,
+const struct wu_conf *_c) {
+	(void)_c;
+	return bgd_init(infile->dec_state, infile->sub_img, infile->map);
+}
+
 const struct image_fn nclr_fn = {
 	.mmap = true,
 	.alloc_single = true,
@@ -139,4 +155,12 @@ const struct image_fn nscr_fn = {
 	.init = init_nscr,
 	.event = event_nscr,
 	.end = end_nscr,
+};
+const struct image_fn bgd_fn = {
+	.mmap = true,
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct bgd_desc),
+	.init = init_bgd,
+	.event = event_bgd,
 };

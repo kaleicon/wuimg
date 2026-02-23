@@ -234,10 +234,25 @@ struct wuptr *map) {
 	return false;
 }
 
+static void nds_unpack555_pal(struct palette *pal, const uint8_t *restrict src,
+const size_t len) {
+	struct bitfield bf;
+	bitfield_from_id(&bf, 0x1555, 16);
+	bitfield_unpack(&bf, pal->color, src, len);
+}
+
 static struct wu_st nds_partial_cpy(struct wuimg *img, const struct wuptr data,
 const uint32_t size) {
 	memcpy(img->data, data.ptr, data.len);
 	return wuerr_partial(data.len, size);
+}
+
+static void nds_tilecpy(uint8_t *restrict dst, const uint8_t *restrict src,
+size_t htiles, size_t ty, size_t tx, size_t nr, size_t depth) {
+	for (size_t y = 0; y < NDS_TILE_DIM; ++y) {
+		uint8_t *row = dst + ((ty*NDS_TILE_DIM + y)*htiles + tx)*depth;
+		memcpy(row, src + (nr*NDS_TILE_DIM + y)*depth, depth);
+	}
 }
 
 /* NCLR - Color palette
@@ -318,9 +333,7 @@ const struct wuptr nclr_data, struct palette *pal) {
 	if (!wu_isok(st)) {
 		return st;
 	}
-	struct bitfield bf;
-	bitfield_from_id(&bf, 0x1555, 16);
-	bitfield_unpack(&bf, pal->color, desc->data.ptr, desc->data.len/2);
+	nds_unpack555_pal(pal, desc->data.ptr, desc->data.len/2);
 	return wuerr_partial(desc->data.len, desc->pal_size);
 }
 
@@ -346,12 +359,8 @@ struct wu_st ncgr_load(const struct ncgr_desc *desc, struct wuimg *img) {
 			if (nr == avail) {
 				return wuerr_partial(nr, avail);
 			}
-			for (size_t y = 0; y < NDS_TILE_DIM; ++y) {
-				uint8_t *dst = img->data
-					+ ((ty*NDS_TILE_DIM + y)*htiles + tx)*depth;
-				memcpy(dst, src.ptr + (nr*NDS_TILE_DIM + y)*depth,
-					depth);
-			}
+			nds_tilecpy(img->data, src.ptr, htiles, ty, tx, nr,
+				depth);
 		}
 	}
 	return WU_OK;
@@ -631,4 +640,75 @@ const struct wuptr mem, const char *name) {
 	struct wu_st st2 = ncgr_search_nclr(&desc->ncgr, name);
 	ncgr_img_baseinfo(&desc->ncgr, img);
 	return wuerr(wu_ok, st2.msg);
+}
+
+
+/* BGD. Used in Tsubasa Chronicle.
+ * People complain about the anime but what an OST it has, oh my god. */
+struct wu_st bgd_decode(const struct bgd_desc *desc, struct wuimg *img) {
+	const size_t vtiles = img->h/NDS_TILE_DIM;
+	const size_t htiles = img->w/NDS_TILE_DIM;
+	const size_t depth = 8;
+	size_t decoded = 0;
+	for (size_t ty = 0; ty < vtiles; ++ty) {
+		for (size_t tx = 0; tx < htiles; ++tx) {
+			size_t nr = ty*htiles + tx;
+			size_t idx = buf_endian16l(desc->idx + nr*2);
+			if (idx >= desc->nr_tiles) {
+				continue;
+			}
+			nds_tilecpy(img->data, desc->data, htiles, ty, tx, idx,
+				depth);
+			++decoded;
+		}
+	}
+	nds_unpack555_pal(img->u.palette, desc->pal, desc->pal_entries);
+	return wuerr_partial(decoded, vtiles*htiles);
+}
+
+struct wu_st bgd_init(struct bgd_desc *desc, struct wuimg *img,
+const struct wuptr mem) {
+	/* BGD header:
+		Offset  Type    Name
+		0       u16     NrTiles
+		2       u16     XTiles
+		4       u16     YTiles
+		6       u16     PalEntries
+		8       u8      TileData[NrTiles][8*8]
+		-       u16     TileIdx[XTiles*YTiles]
+		-       u16     Palette[PalEntries]
+	*/
+	if (mem.len <= 8) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	const uint8_t *hdr = mem.ptr;
+	const uint16_t xtiles = buf_endian16l(hdr + 2);
+	const uint16_t ytiles = buf_endian16l(hdr + 4);
+	img->w = xtiles*NDS_TILE_DIM;
+	img->h = ytiles*NDS_TILE_DIM;
+	img->channels = 1;
+	img->bitdepth = 8;
+	img->alpha = alpha_ignore;
+
+	desc->nr_tiles = buf_endian16l(hdr);
+	desc->pal_entries = buf_endian16l(hdr + 6);
+	if (!desc->nr_tiles) {
+		return wuerr(wu_no_image_data, "no tile data");
+	} else if (!desc->pal_entries || desc->pal_entries > 256) {
+		return wuerr(wu_invalid_header,
+			"nr of palette entries out of bounds");
+	}
+	const size_t data_size = desc->nr_tiles * NDS_TILE_DIM*NDS_TILE_DIM;
+	const size_t idx_size = sizeof(uint16_t)*xtiles*ytiles;
+	const size_t total = data_size + idx_size
+		+ sizeof(uint16_t)*desc->pal_entries;
+	if (mem.len - 8 < total) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	desc->data = hdr + 8;
+	desc->idx = desc->data + data_size;
+	desc->pal = desc->idx + idx_size;
+	return wuimg_palette_init(img)
+		? WU_OK
+		: WUERR_HERE(wu_alloc_error);
 }
