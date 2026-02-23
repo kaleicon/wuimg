@@ -14,12 +14,9 @@
  * Unlike normal IFF, chunks aren't aligned to word units. */
 
 struct wu_st pim_decode(struct pim_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
 	struct wuptr src;
 	if (desc->type == pim_anim) {
-		const uint32_t len = buf_endian32(desc->frame_sizes, little_endian);
+		const uint32_t len = buf_endian32l(desc->frame_sizes);
 		src = mp_avail(&desc->mp, len);
 	} else {
 		src = mp_remaining(&desc->mp);
@@ -30,13 +27,12 @@ struct wu_st pim_decode(struct pim_desc *desc, struct wuimg *img) {
 		dst_len);
 }
 
-static struct wu_st body(struct iff_state *iff, void *ptr,
+static struct wu_st pim_body(struct iff_state *iff, void *ptr,
 const struct iff_chunk chunk) {
 	(void)iff;
 	struct pim_desc *desc = ptr;
 	desc->start = desc->mp.pos;
 
-	struct wuimg *img = desc->img;
 	const char *msg = NULL;
 	if (desc->type == pim_anim) {
 		/* BODY contents for animations:
@@ -59,14 +55,10 @@ const struct iff_chunk chunk) {
 		desc->mp.pos = desc->start;
 		msg = "animated PIM not supported, will only render first frame";
 	}
-	struct wu_st st = wuerr(wuimg_verify(img), NULL);
-	if (wu_isok(st)) {
-		st.msg = msg;
-	}
-	return st;
+	return wuerr(wu_ok, msg);
 }
 
-static struct wu_st cmap(struct iff_state *iff, void *ptr,
+static struct wu_st pim_cmap(struct iff_state *iff, void *ptr,
 const struct iff_chunk chunk) {
 	/* CMAP contents:
 		Offset  Type    Name
@@ -92,7 +84,7 @@ const struct iff_chunk chunk) {
 	return iff_next_mparser(iff, &desc->mp, chunk);
 }
 
-static struct wu_st ahdr(struct iff_state *iff, void *ptr,
+static struct wu_st pim_ahdr(struct iff_state *iff, void *ptr,
 const struct iff_chunk chunk) {
 	/* AHDR contents:
 		Offset  Type    Name
@@ -132,20 +124,20 @@ const struct iff_chunk chunk) {
 		return wuerr(wu_samples_wanted, "image type neither 1 or 3");
 	}
 	desc->type = hdr[1];
-	img->w = buf_endian16(hdr + 2, little_endian);
-	img->h = buf_endian16(hdr + 4, little_endian);
+	img->w = buf_endian16l(hdr + 2);
+	img->h = buf_endian16l(hdr + 4);
 	img->channels = 1;
 	img->bitdepth = 8;
-	desc->frames = buf_endian16(hdr + 6, little_endian);
+	desc->frames = buf_endian16l(hdr + 6);
 
 	++iff->table;
 	return iff_next_mparser(iff, &desc->mp, chunk);
 }
 
 static const struct iff_table PIM_TABLE[] = {
-	{FOURCC('A', 'H', 'D', 'R'), ahdr},
-	{FOURCC('C', 'M', 'A', 'P'), cmap},
-	{FOURCC('B', 'O', 'D', 'Y'), body},
+	{FOURCC('A', 'H', 'D', 'R'), pim_ahdr},
+	{FOURCC('C', 'M', 'A', 'P'), pim_cmap},
+	{FOURCC('B', 'O', 'D', 'Y'), pim_body},
 };
 
 struct wu_st pim_parse(struct pim_desc *desc, struct wuimg *img,
@@ -154,7 +146,7 @@ const struct wuptr mem) {
 	const uint8_t *hdr = mp_slice(&desc->mp, 12);
 	if (hdr) {
 		if (!memcmp(hdr, "SIFF", 4) && !memcmp(hdr+8, "PXAN", 4)) {
-			const uint32_t len = buf_endian32(hdr + 4, big_endian);
+			const uint32_t len = buf_endian32b(hdr + 4);
 			desc->mp.len = zumin(desc->mp.len - desc->mp.pos, len);
 			desc->mp.mem += desc->mp.pos;
 			desc->mp.pos = 0;

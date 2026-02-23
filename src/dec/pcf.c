@@ -48,11 +48,8 @@ static struct wu_st init_pcf(struct image_file *infile) {
 	struct pcf_desc *desc = infile->dec_state;
 	struct wu_st st = pcf_parse(desc, infile->ifp);
 	if (wu_isok(st)) {
-		if (alloc_sub_images(infile, desc->glyphs)) {
-			read_pcf_metadata(infile, desc);
-			return WU_OK;
-		}
-		return WUERR_HERE(wu_alloc_error);
+		infile->nr = desc->glyphs;
+		read_pcf_metadata(infile, desc);
 	}
 	return st;
 }

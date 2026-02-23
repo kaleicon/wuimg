@@ -6,24 +6,19 @@
 static struct wu_st event_pim(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
 	(void)state;
-	if (ev == ev_subcycle) {
-		return pim_decode(infile->dec_state, infile->sub_img);
-	}
-	return WU_NO_CHANGE;
+	return (ev == ev_subcycle)
+		? pim_decode(infile->dec_state, infile->sub_img)
+		: WU_NO_CHANGE;
 }
 
 static struct wu_st init_pim(struct image_file *infile) {
-	struct pim_desc *desc = infile->dec_state;
-	struct wu_st st = pim_parse(desc, infile->sub_img, infile->map);
-	if (wu_isok(st) && wuimg_exceeds_limit(infile->sub_img, infile->conf)) {
-		st = WUERR_HERE(wu_exceeds_size_limit);
-	}
-	return st;
+	return pim_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn pim_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct pim_desc),
 	.init = init_pim,
 	.event = event_pim,

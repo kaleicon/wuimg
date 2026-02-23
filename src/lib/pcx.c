@@ -95,7 +95,7 @@ const struct wuimg *img) {
 	return img->bitdepth == 2 && !memchk(desc->file_pal + 6, 0, 6);
 }
 
-static bool load_palette(const struct pcx_desc *desc,
+static bool load_pcx_palette(const struct pcx_desc *desc,
 struct wuimg *img, const struct pix_rgb8 *pal_data) {
 	// Take a deep breath...
 	struct palette *pal = wuimg_palette_init(img);
@@ -210,13 +210,13 @@ const size_t rle_remaining) {
 		break;
 	}
 
-	if (!load_palette(desc, img, pal_data)) {
+	if (!load_pcx_palette(desc, img, pal_data)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 	return WU_OK;
 }
 
-static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
+static size_t pcx_rle(unsigned char *restrict dst, const size_t dst_len,
 const unsigned char *restrict rle, const size_t rle_len) {
 	size_t d = 0;
 	size_t r = 0;
@@ -259,7 +259,7 @@ struct wu_st pcx_decode(struct pcx_desc *desc, struct wuimg *img) {
 		// e.g. 0xc1 0x01 0xc1 0x02 -> 0x01 0x02
 		src = mp_avail_at(&desc->mp, desc->mp.pos,
 			VGA_PAL_LEN + 1 + dims*2);
-		r = rle_decode(img->data, dims, src.ptr, src.len);
+		r = pcx_rle(img->data, dims, src.ptr, src.len);
 	} else {
 		src = mp_avail_at(&desc->mp, desc->mp.pos,
 			VGA_PAL_LEN + 1 + dims);
@@ -488,7 +488,7 @@ https://www.vidarholen.net/contents/junk/reunionpic.html
  * though it's never connected to the PCX RLE format.
 */
 struct wu_st spidygfx_decode(const struct wuptr src, struct wuimg *img) {
-	const size_t r =  rle_decode(img->data, img->w*img->h, src.ptr, src.len);
+	const size_t r =  pcx_rle(img->data, img->w*img->h, src.ptr, src.len);
 	if (!r) {
 		return WUERR_HERE(wu_unexpected_eof);
 	} else if (has_vga_palette(src.len - r, src.ptr + r)) {

@@ -54,7 +54,7 @@ struct wuimg *img, const unsigned char *restrict src) {
 		img->h);
 }
 
-static size_t rle_decode(unsigned char *restrict dst, const size_t dst_len,
+static size_t pictor_rle(unsigned char *restrict dst, const size_t dst_len,
 const size_t blocks, FILE *ifp) {
 	/* Block format:
 		Offset  Size    Name
@@ -164,7 +164,7 @@ struct wu_st pictor_decode(const struct pictor_desc *desc, struct wuimg *img) {
 
 	size_t written = 0;
 	if (desc->blocks) {
-		written = rle_decode(raster, raster_len, desc->blocks, desc->ifp);
+		written = pictor_rle(raster, raster_len, desc->blocks, desc->ifp);
 	} else {
 		written = fread(raster, 1, raster_len, desc->ifp);
 	}
@@ -176,8 +176,8 @@ struct wu_st pictor_decode(const struct pictor_desc *desc, struct wuimg *img) {
 	return wuerr_partial(written, raster_len);
 }
 
-static struct wu_st load_palette(struct pictor_desc *desc, struct wuimg *img,
-const enum pictor_palette_type pal_type, const uint16_t size) {
+static struct wu_st pictor_load_palette(struct pictor_desc *desc,
+struct wuimg *img, const enum pictor_palette_type pal_type, const uint16_t size) {
 	desc->pal_type = pal_type;
 	const int bpp = desc->depth * desc->planes;
 	switch (pal_type) {
@@ -346,7 +346,7 @@ FILE *ifp) {
 	img->bitdepth = desc->depth;
 	img->mirror = true;
 
-	const struct wu_st status = load_palette(desc, img,
+	const struct wu_st status = pictor_load_palette(desc, img,
 		buf_endian16(buf + 13, little_endian),
 		buf_endian16(buf + 15, little_endian));
 	if (!wu_isok(status)) {

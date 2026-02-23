@@ -9,7 +9,7 @@
 
 /* Somera Graphics Format, used in the "Touch Games" series */
 
-static const size_t HEADER_SIZE = 0x100;
+static const size_t SGF_HEADER_SIZE = 0x100;
 
 struct wu_st sgf_decode(struct sgf_desc *desc, struct wuimg *img) {
 	uint16_t *dst = (uint16_t *)img->data;
@@ -76,11 +76,11 @@ struct wu_st sgf_parse(struct sgf_desc *desc, const struct wuptr mem) {
 		"T.Pomar a.k.a. S"
 		"obakus";
 	*desc = (struct sgf_desc){.mp = mp_wuptr(mem)};
-	const uint8_t *hdr = mp_slice(&desc->mp, HEADER_SIZE);
+	const uint8_t *hdr = mp_slice(&desc->mp, SGF_HEADER_SIZE);
 	if (!hdr) {
 		return WUERR_HERE(wu_unexpected_eof);
 	} else if (memcmp(hdr + 1, magic, sizeof(magic))
-	|| memchk(hdr + 1 + sizeof(magic), 0, HEADER_SIZE - sizeof(magic) - 1)) {
+	|| memchk(hdr + 1 + sizeof(magic), 0, SGF_HEADER_SIZE - sizeof(magic) - 1)) {
 		return WUERR_HERE(wu_invalid_header);
 	}
 	desc->nr = hdr[0] + 1;

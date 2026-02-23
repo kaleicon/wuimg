@@ -8,8 +8,8 @@
 #include "raster/fmt.h"
 #include "sgi.h"
 
-static const unsigned HEADER_SIZE = 512;
-static const uint8_t RLE_LEN_MASK = 0x7f;
+static const unsigned SGI_HEADER_SIZE = 512;
+static const uint8_t SGI_RLE_LEN_MASK = 0x7f;
 
 const char * sgi_compression_str(const enum sgi_compression c) {
 	switch (c) {
@@ -27,13 +27,13 @@ struct rle_info {
 	uint32_t *row_len;
 };
 
-static size_t rle_loop16(uint16_t *restrict output, const size_t out_limit,
+static size_t sgi_rle_loop16(uint16_t *restrict output, const size_t out_limit,
 const uint16_t *restrict rle, const uint32_t rle_limit) {
 	size_t o = 0;
 	uint32_t r = 0;
 	while (rle_limit - r > 1) {
 		const uint16_t packet = endian16(rle[r], big_endian);
-		const uint16_t len = packet & RLE_LEN_MASK;
+		const uint16_t len = packet & SGI_RLE_LEN_MASK;
 		if (len > out_limit - o) {
 			break;
 		}
@@ -59,13 +59,13 @@ const uint16_t *restrict rle, const uint32_t rle_limit) {
 	return o;
 }
 
-static size_t rle_loop8(uint8_t *restrict output, const size_t out_limit,
+static size_t sgi_rle_loop8(uint8_t *restrict output, const size_t out_limit,
 const uint8_t *restrict rle, const uint32_t rle_limit) {
 	size_t o = 0;
 	uint32_t r = 0;
 	while (rle_limit - r > 1) {
 		const uint8_t packet = rle[r];
-		const uint8_t len = packet & RLE_LEN_MASK;
+		const uint8_t len = packet & SGI_RLE_LEN_MASK;
 		if (len > out_limit - o) {
 			break;
 		}
@@ -85,7 +85,7 @@ const uint8_t *restrict rle, const uint32_t rle_limit) {
 	return o;
 }
 
-static size_t rle_loop(const struct sgi_desc *desc, struct wuimg *img,
+static size_t sgi_rle_loop(const struct sgi_desc *desc, struct wuimg *img,
 const struct rle_info *rle) {
 	size_t w = 0;
 	for (size_t i = 0; i < rle->rows; ++i) {
@@ -100,17 +100,17 @@ const struct rle_info *rle) {
 		off /= desc->bytedepth;
 		len /= desc->bytedepth;
 		if (desc->bytedepth == 1) {
-			w += rle_loop8((uint8_t *)img->data + line, width,
+			w += sgi_rle_loop8((uint8_t *)img->data + line, width,
 				(uint8_t *)rle->buf + off, len);
 		} else {
-			w += rle_loop16((uint16_t *)img->data + line, width,
+			w += sgi_rle_loop16((uint16_t *)img->data + line, width,
 				(uint16_t *)rle->buf + off, len);
 		}
 	}
 	return w;
 }
 
-static size_t get_total_size(const struct sgi_desc *desc,
+static size_t get_sgirle_size(const struct sgi_desc *desc,
 const size_t non_rle, const size_t dims) {
 	fseek(desc->ifp, 0, SEEK_END);
 	const size_t size = (size_t)ftell(desc->ifp);
@@ -135,8 +135,8 @@ static size_t rle_decode(const struct sgi_desc *desc, struct wuimg *img) {
 	struct rle_info rle;
 	rle.rows = img->h * img->channels;
 	const size_t table_size = rle.rows * sizeof(uint32_t) * 2;
-	const size_t non_rle = HEADER_SIZE + table_size;
-	rle.total = get_total_size(desc, non_rle, wuimg_size(img));
+	const size_t non_rle = SGI_HEADER_SIZE + table_size;
+	rle.total = get_sgirle_size(desc, non_rle, wuimg_size(img));
 
 	size_t w = 0;
 	if (rle.total) {
@@ -146,11 +146,14 @@ static size_t rle_decode(const struct sgi_desc *desc, struct wuimg *img) {
 
 		if (rle.buf) {
 			fseek(desc->ifp, 0, SEEK_SET);
-			const size_t read = fread(rle.buf, 1, rle.total, desc->ifp);
+			const size_t read = fread(rle.buf, 1, rle.total,
+				desc->ifp);
 			if (read > non_rle) {
-				rle.row_offset = (uint32_t *)(rle.buf + HEADER_SIZE);
+				rle.row_offset = (uint32_t *)(
+					rle.buf + SGI_HEADER_SIZE
+				);
 				rle.row_len = rle.row_offset + rle.rows;
-				w = rle_loop(desc, img, &rle);
+				w = sgi_rle_loop(desc, img, &rle);
 			}
 			free(rle.buf);
 		}
@@ -163,7 +166,7 @@ struct wu_st sgi_decode(const struct sgi_desc *desc, struct wuimg *img) {
 	if (desc->compression == sgi_rle) {
 		w = rle_decode(desc, img);
 	} else {
-		fseek(desc->ifp, (long)HEADER_SIZE, SEEK_SET);
+		fseek(desc->ifp, (long)SGI_HEADER_SIZE, SEEK_SET);
 		w = fmt_load_raster_swap(img, desc->ifp, big_endian);
 	}
 	return wuerr_partial(w, wuimg_size(img));

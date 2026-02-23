@@ -903,7 +903,7 @@ static struct wu_st read_token(struct mparser *mp, struct token *tok) {
 	return WU_OK;
 }
 
-static uint8_t tohex(const uint8_t c) {
+static uint8_t fromhex(const uint8_t c) {
 	switch (c) {
 	case '0': case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
@@ -941,8 +941,8 @@ static struct wu_st str_file_cmp(const struct wuptr arg, FILE *ifp) {
 					return eof;
 				}
 				uint8_t x[2] = {
-					tohex(arg.ptr[i]),
-					tohex(arg.ptr[i+1]),
+					fromhex(arg.ptr[i]),
+					fromhex(arg.ptr[i+1]),
 				};
 				if (x[0] >= 0x10 || x[1] >= 0x10) {
 					return pbug("Invalid hex literal");
@@ -961,7 +961,7 @@ static struct wu_st str_file_cmp(const struct wuptr arg, FILE *ifp) {
 	return WU_OK;
 }
 
-static struct wu_st load_pal(struct auto_state *state, struct wuimg *img,
+static struct wu_st load_auto_pal(struct auto_state *state, struct wuimg *img,
 FILE *ifp, const struct load l) {
 	const size_t elems = l.array
 		? l.array
@@ -1140,7 +1140,8 @@ struct image_file *infile, const struct wuptr op, const struct token *tok) {
 		return err;
 	case token_load_array:
 		if (wuptr_eq_str(op, "pal")) {
-			return load_pal(state, img, infile->ifp, tok->u.load);
+			return load_auto_pal(state, img, infile->ifp,
+				tok->u.load);
 		}
 		return pbug("Unknown variable-array pair");
 	default:

@@ -161,11 +161,12 @@ avifDecoder *dec, avifResult *res) {
 	if (*res == AVIF_RESULT_OK) {
 		*res = avifDecoderParse(dec);
 		if (*res == AVIF_RESULT_OK) {
-			return alloc_sub_images(infile, (size_t)dec->imageCount)
-				? WU_OK : WUERR_HERE(wu_alloc_error);
+			infile->nr = (size_t)dec->imageCount;
+			return WU_OK;
 		}
+		return WUERR_HERE(wu_invalid_header);
 	}
-	return WUERR_HERE(wu_invalid_header);
+	return wuerr(wu_open_error, "couldn't setup libavif IO");
 }
 
 static struct wu_st init_avif(struct image_file *infile) {

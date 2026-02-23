@@ -15,8 +15,7 @@
  * big-endian, contents are little-endian. Great obfuscation everyone, got me
  * stumpted longer than the RLE algo. */
 
-/* Common functions */
-static struct wu_st load_pal(struct palette **pal, FILE *ifp,
+static struct wu_st bethesda_load_pal(struct palette **pal, FILE *ifp,
 const uint32_t chunk_len) {
 	if (chunk_len == 0x300) {
 		*pal = palette_new();
@@ -66,13 +65,13 @@ struct wu_st fnhd_next_glyph(struct fnhd_desc *desc, struct wuimg *img) {
 	return WU_OK;
 }
 
-static struct wu_st fbmp(struct iff_state *iff, void *ptr,
+static struct wu_st fnhd_fbmp(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	(void)iff; (void)ptr; (void)chunk;
 	return WU_OK;
 }
 
-static struct wu_st fpal(struct iff_state *iff, void *ptr,
+static struct wu_st fnhd_fpal(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "FPAL" and "BPAL" contents:
 		Offset  Type    Name
@@ -81,14 +80,15 @@ struct iff_chunk chunk) {
 	*/
 
 	struct fnhd_desc *desc = ptr;
-	const struct wu_st st = load_pal(&desc->pal, desc->ifp, chunk.len);
+	const struct wu_st st = bethesda_load_pal(&desc->pal, desc->ifp,
+		chunk.len);
 	desc->pal->color[0].a = 0;
 	iff->table += 2;
 	iff->table_len = 1;
 	return wu_isok(st) ? iff_next_FILE(iff, desc->ifp, chunk) : st;
 }
 
-static struct wu_st fnhd(struct iff_state *iff, void *ptr,
+static struct wu_st fnhd_fnhd(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "FNHD" contents:
 		Offset  Type    Name
@@ -114,10 +114,10 @@ struct iff_chunk chunk) {
 }
 
 static const struct iff_table fnhd_table[] = {
-	{.id = FOURCC('F', 'N', 'H', 'D'), .fn = fnhd},
-	{.id = FOURCC('B', 'P', 'A', 'L'), .fn = fpal}, // BPAL and FPAL are
-	{.id = FOURCC('F', 'P', 'A', 'L'), .fn = fpal}, // exactly the same
-	{.id = FOURCC('F', 'B', 'M', 'P'), .fn = fbmp},
+	{.id = FOURCC('F', 'N', 'H', 'D'), .fn = fnhd_fnhd},
+	{.id = FOURCC('B', 'P', 'A', 'L'), .fn = fnhd_fpal}, // BPAL and FPAL are
+	{.id = FOURCC('F', 'P', 'A', 'L'), .fn = fnhd_fpal}, // exactly the same
+	{.id = FOURCC('F', 'B', 'M', 'P'), .fn = fnhd_fbmp},
 };
 
 struct wu_st fnhd_init(struct fnhd_desc *desc, FILE *ifp) {
@@ -225,14 +225,14 @@ struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
 	return WU_OK;
 }
 
-static struct wu_st bbmp(struct iff_state *iff, void *ptr,
+static struct wu_st gxa_bbmp(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	(void)iff; (void)ptr; (void)chunk;
 	// Finish parsing.
 	return WU_OK;
 }
 
-static struct wu_st bpal(struct iff_state *iff, void *ptr,
+static struct wu_st gxa_bpal(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "BPAL" contents:
 		Offset  Type    Name
@@ -241,12 +241,13 @@ struct iff_chunk chunk) {
 	*/
 
 	struct gxa_desc *desc = ptr;
-	const struct wu_st st = load_pal(&desc->pal, desc->ifp, chunk.len);
+	const struct wu_st st = bethesda_load_pal(&desc->pal, desc->ifp,
+		chunk.len);
 	++iff->table;
 	return wu_isok(st) ? iff_next_FILE(iff, desc->ifp, chunk) : st;
 }
 
-static struct wu_st bmhd(struct iff_state *iff, void *ptr,
+static struct wu_st gxa_bmhd(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "BMHD" contents:
 		Offset  Type    Name
@@ -281,9 +282,9 @@ struct iff_chunk chunk) {
 /* GXA chunks are fixed, so for brevity set table_len to 1 and increase the
  * base pointer every time we get a match. */
 static const struct iff_table gxa_table[] = {
-	{.id = FOURCC('B', 'M', 'H', 'D'), .fn = bmhd},
-	{.id = FOURCC('B', 'P', 'A', 'L'), .fn = bpal},
-	{.id = FOURCC('B', 'B', 'M', 'P'), .fn = bbmp},
+	{.id = FOURCC('B', 'M', 'H', 'D'), .fn = gxa_bmhd},
+	{.id = FOURCC('B', 'P', 'A', 'L'), .fn = gxa_bpal},
+	{.id = FOURCC('B', 'B', 'M', 'P'), .fn = gxa_bbmp},
 };
 
 struct wu_st gxa_init(struct gxa_desc *desc, FILE *ifp) {
@@ -321,8 +322,8 @@ void bsi_cleanup(struct bsi_desc *desc) {
 	palette_unref(desc->pal);
 }
 
-static struct wu_st load_scanlines(struct bsi_desc *desc, struct wuimg *img,
-const uint16_t i) {
+static struct wu_st bsi_load_scanliness(struct bsi_desc *desc,
+struct wuimg *img, const uint16_t i) {
 	uint32_t *tab;
 	if (!desc->table) {
 		desc->table = malloc(desc->comp_len);
@@ -358,7 +359,7 @@ struct wu_st bsi_load_image(struct bsi_desc *desc, struct wuimg *img, uint16_t i
 		fseek(desc->ifp, desc->pos + desc->w*desc->h*i, SEEK_SET);
 		return fmt_load_raster_st(img, desc->ifp);
 	case bsi_scanlines:
-		return load_scanlines(desc, img, i);
+		return bsi_load_scanliness(desc, img, i);
 	}
 	return WUERR_HERE(wu_unsupported_feature);
 }
@@ -375,7 +376,7 @@ struct wu_st bsi_set_image(struct bsi_desc *desc, struct wuimg *img) {
 	return WU_OK;
 }
 
-static struct wu_st data(struct iff_state *iff, void *ptr,
+static struct wu_st bsi_data(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "DATA" contents:
 		Offset  Type    Name
@@ -398,7 +399,7 @@ struct iff_chunk chunk) {
 	return WU_OK;
 }
 
-static struct wu_st cmap(struct iff_state *iff, void *ptr,
+static struct wu_st bsi_cmap(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "CMAP" contents:
 		Offset  Type    Name
@@ -407,18 +408,19 @@ struct iff_chunk chunk) {
 	*/
 
 	struct bsi_desc *desc = ptr;
-	const struct wu_st st = load_pal(&desc->pal, desc->ifp, chunk.len);
+	const struct wu_st st = bethesda_load_pal(&desc->pal, desc->ifp,
+		chunk.len);
 	++iff->table;
 	iff->table_len = 1;
 	return wu_isok(st) ? iff_next_FILE(iff, desc->ifp, chunk) : st;
 }
 
 static const struct iff_table bsi_table[] = {
-	{.id = FOURCC('C', 'M', 'A', 'P'), .fn = cmap},
-	{.id = FOURCC('D', 'A', 'T', 'A'), .fn = data},
+	{.id = FOURCC('C', 'M', 'A', 'P'), .fn = bsi_cmap},
+	{.id = FOURCC('D', 'A', 'T', 'A'), .fn = bsi_data},
 };
 
-static struct wu_st bhdr(struct iff_state *iff, void *ptr,
+static struct wu_st bsi_bhdr(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "BHDR" contents:
 		Offset  Type    Name
@@ -474,10 +476,10 @@ struct iff_chunk chunk) {
 }
 
 static const struct iff_table bsi_bitmap_header[] = {
-	{.id = FOURCC('B', 'H', 'D', 'R'), .fn = bhdr},
+	{.id = FOURCC('B', 'H', 'D', 'R'), .fn = bsi_bhdr},
 };
 
-static struct wu_st ifhd(struct iff_state *iff, void *ptr,
+static struct wu_st bsi_ifhd(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	/* "IFHD" contents:
 		Offset  Type    Name
@@ -494,7 +496,7 @@ struct iff_chunk chunk) {
 	return iff_skip_FILE(iff, desc->ifp, chunk);
 }
 
-static struct wu_st bsif(struct iff_state *iff, void *ptr,
+static struct wu_st bsi_bsif(struct iff_state *iff, void *ptr,
 struct iff_chunk chunk) {
 	// "BSIF" contains nothing
 	if (chunk.len != 0) {
@@ -508,8 +510,8 @@ struct iff_chunk chunk) {
 }
 
 static const struct iff_table bsi_init_table[] = {
-	{.id = FOURCC('B', 'S', 'I', 'F'), .fn = bsif},
-	{.id = FOURCC('I', 'F', 'H', 'D'), .fn = ifhd},
+	{.id = FOURCC('B', 'S', 'I', 'F'), .fn = bsi_bsif},
+	{.id = FOURCC('I', 'F', 'H', 'D'), .fn = bsi_ifhd},
 };
 
 struct wu_st bsi_init(struct bsi_desc *desc, FILE *ifp) {

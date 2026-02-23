@@ -439,15 +439,15 @@ struct wu_st gpc_decode(const struct gpc_desc *desc, struct wuimg *img) {
 	return wuerr_partial(zumin(w, max), max);
 }
 
-static uint32_t get_offset(struct gpc_desc *desc, const size_t i) {
+static uint32_t gpc_sub_offset(struct gpc_desc *desc, const size_t i) {
 	return buf_endian32l(desc->sub_info + (i+1)*4);
 }
 
 struct wu_st gpc_set_image(struct gpc_desc *desc, struct wuimg *img,
 const uint32_t i) {
 	if (i) {
-		const uint32_t off = get_offset(desc, i);
-		const uint32_t next = get_offset(desc, i+1);
+		const uint32_t off = gpc_sub_offset(desc, i);
+		const uint32_t next = gpc_sub_offset(desc, i+1);
 		if (next < 10 || next - 10 <= off) {
 			return wuerr(wu_invalid_header, "too small image header");
 		}
@@ -504,7 +504,7 @@ static void read_sub_data(struct gpc_desc *desc) {
 	}
 }
 
-static struct wu_st load_pal(struct gpc_desc *desc) {
+static struct wu_st gpc_load_pal(struct gpc_desc *desc) {
 	const uint8_t *header = mp_slice(&desc->mp, 4);
 	if (!header) {
 		return WUERR_HERE(wu_unexpected_eof);
@@ -630,7 +630,7 @@ struct wu_st gpc_parse(struct gpc_desc *desc, const struct wuptr mem) {
 	desc->sub_off = buf_endian32l(header + 28);
 
 	mp_seek_set(&desc->mp, pal_off);
-	const struct wu_st st = load_pal(desc);
+	const struct wu_st st = gpc_load_pal(desc);
 	if (!wu_isok(st)) {
 		return st;
 	}

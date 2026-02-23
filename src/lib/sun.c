@@ -21,8 +21,8 @@ const char * sun_type_str(const enum sun_type t) {
 	return "???";
 }
 
-static size_t run_length_loop(unsigned char *restrict dst, const size_t dst_len,
-const unsigned char *restrict rle, const size_t rle_len) {
+static size_t sun_run_length_loop(unsigned char *restrict dst,
+const size_t dst_len, const unsigned char *restrict rle, const size_t rle_len) {
 	const unsigned char RLE_FLAG = 0x80;
 	size_t d = 0;
 	size_t r = 0;
@@ -47,8 +47,8 @@ const unsigned char *restrict rle, const size_t rle_len) {
 				++d;
 			}
 		} else {
-			const size_t read = memccpy_cur(dst + d, rle + r, RLE_FLAG,
-				dst_len - d, rle_len - r);
+			const size_t read = memccpy_cur(dst + d, rle + r,
+				RLE_FLAG, dst_len - d, rle_len - r);
 			d += read;
 			r += read;
 		}
@@ -56,7 +56,7 @@ const unsigned char *restrict rle, const size_t rle_len) {
 	return d;
 }
 
-static size_t rle_decode(const struct sun_desc *desc,
+static size_t sun_rle_decode(const struct sun_desc *desc,
 unsigned char *restrict dst, const size_t dst_len) {
 	// E.g. 0x80 0x00 0x80 0x00... -> 0x80 0x80...
 	const size_t pathological_rle = dst_len * 2;
@@ -66,7 +66,7 @@ unsigned char *restrict dst, const size_t dst_len) {
 	const size_t rle_len = zumin(file_size, pathological_rle);
 	unsigned char *rle = malloc(rle_len);
 	if (rle) {
-		written = run_length_loop(dst, dst_len, rle,
+		written = sun_run_length_loop(dst, dst_len, rle,
 			fread(rle, 1, rle_len, desc->ifp));
 		free(rle);
 	}
@@ -76,12 +76,12 @@ unsigned char *restrict dst, const size_t dst_len) {
 struct wu_st sun_decode(const struct sun_desc *desc, struct wuimg *img) {
 	const size_t size = wuimg_size(img);
 	size_t w = (desc->type == sun_byte_encoded)
-		? rle_decode(desc, img->data, size)
+		? sun_rle_decode(desc, img->data, size)
 		: fmt_load_raster(img, desc->ifp);
 	return wuerr_partial(w, size);
 }
 
-static struct wu_st interleave_colormap(struct sun_desc *desc,
+static struct wu_st sun_interleave_colormap(struct sun_desc *desc,
 struct wuimg *img) {
 	uint8_t buf[256*3];
 	if (fread(buf, sizeof(buf), 1, desc->ifp)) {
@@ -196,7 +196,7 @@ FILE *ifp) {
 		.type = type,
 		.colormap_type = cm_type,
 	};
-	return (cm_type != sun_no_colormap)
-		? interleave_colormap(desc, img)
-		: WU_OK;
+	return (cm_type == sun_no_colormap)
+		? WU_OK
+		: sun_interleave_colormap(desc, img);
 }

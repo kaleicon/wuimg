@@ -94,7 +94,7 @@ static bool dib_get_colorspace(const struct dib_desc *desc, struct color_space *
 	return true;
 }
 
-static size_t rle_loop4(unsigned char *restrict dst, const size_t dst_len,
+static size_t dib_rle_loop4(unsigned char *restrict dst, const size_t dst_len,
 const unsigned char *restrict src, const size_t src_len, const size_t scan_len) {
 	size_t s = 0;
 	size_t d = 0;
@@ -145,7 +145,7 @@ const unsigned char *restrict src, const size_t src_len, const size_t scan_len) 
 	return d;
 }
 
-static size_t rle_loop(unsigned char *restrict dst,
+static size_t dib_rle_loop(unsigned char *restrict dst,
 const size_t dst_len, unsigned char *restrict src, const size_t src_len,
 const size_t scan_len, const unsigned char pix_size) {
 	size_t s = 0;
@@ -195,7 +195,7 @@ const size_t scan_len, const unsigned char pix_size) {
 	return d;
 }
 
-static size_t rle_decode(const struct dib_desc *desc, struct wuimg *img) {
+static size_t dib_rle(const struct dib_desc *desc, struct wuimg *img) {
 	uint8_t *rle = malloc(desc->size);
 	size_t w = 0;
 	if (rle) {
@@ -204,9 +204,9 @@ static size_t rle_decode(const struct dib_desc *desc, struct wuimg *img) {
 		const size_t row = wuimg_stride(img);
 		const size_t dst_len = row * img->h;
 		if (desc->compression == dib_4bit_rle) {
-			w = rle_loop4(img->data, dst_len, rle, rle_len, row);
+			w = dib_rle_loop4(img->data, dst_len, rle, rle_len, row);
 		} else {
-			w = rle_loop(img->data, dst_len, rle, rle_len, row,
+			w = dib_rle_loop(img->data, dst_len, rle, rle_len, row,
 				img->channels);
 		}
 		free(rle);
@@ -224,7 +224,7 @@ struct wu_st dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 	case dib_8bit_rle:
 	case dib_4bit_rle:
 	case os2_24bit_rle:
-		w = rle_decode(desc, img);
+		w = dib_rle(desc, img);
 		break;
 	}
 	struct wu_st st = wuerr_partial(w, wuimg_size(img));
@@ -234,7 +234,7 @@ struct wu_st dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 	return st;
 }
 
-static struct dib_ciexyz load_xyz(uint8_t *buf) {
+static struct dib_ciexyz dib_load_xyz(uint8_t *buf) {
 	return (struct dib_ciexyz) {
 		.x = buf_endian32l(buf),
 		.y = buf_endian32l(buf+4),
@@ -242,8 +242,8 @@ static struct dib_ciexyz load_xyz(uint8_t *buf) {
 	};
 }
 
-static struct wu_st load_colorspace(struct dib_desc *desc, struct wuimg *img,
-uint8_t *buf) {
+static struct wu_st load_dib_colorspace(struct dib_desc *desc,
+struct wuimg *img, uint8_t *buf) {
 	/* BITMAPV4HEADER (after previous fields):
 		Offset  Type    Name
 		0       u32     ColorSpaceType
@@ -274,9 +274,9 @@ uint8_t *buf) {
 	lcs->type = buf_endian32l(buf);
 	switch (lcs->type) {
 	case dib_lcs_calibrated_rgb:
-		lcs->r = load_xyz(buf + 4),
-		lcs->g = load_xyz(buf + 16),
-		lcs->b = load_xyz(buf + 28),
+		lcs->r = dib_load_xyz(buf + 4),
+		lcs->g = dib_load_xyz(buf + 16),
+		lcs->b = dib_load_xyz(buf + 28),
 		lcs->gamma = (struct dib_gamma) {
 			.r = buf_endian32l(buf + 40),
 			.g = buf_endian32l(buf + 44),
@@ -325,7 +325,7 @@ uint8_t *buf) {
 	return WU_OK;
 }
 
-static enum wu_error load_mask(struct dib_desc *desc, struct wuimg *img,
+static enum wu_error dib_load_mask(struct dib_desc *desc, struct wuimg *img,
 uint8_t *buf) {
 	uint8_t ch = desc->type < dib_v3_info_header ? 3 : 4;
 	const uint32_t mask[4] = {
@@ -337,7 +337,7 @@ uint8_t *buf) {
 	return wuimg_bitfield_from_mask(img, mask, ch, desc->depth);
 }
 
-static struct wu_st validate_common(struct dib_desc *desc, struct wuimg *img,
+static struct wu_st validate_dib_common(struct dib_desc *desc, struct wuimg *img,
 const uint16_t planes, const uint32_t horz_res, const uint32_t vert_res,
 const uint32_t colors) {
 	if (planes > 1) { // Some files set it to 0
@@ -525,7 +525,7 @@ struct wuimg *img) {
 		buf_endian16l(buf + 40),
 		buf_endian32l(buf + 52));
 	if (wu_isok(status)) {
-		status = validate_common(desc, img,
+		status = validate_dib_common(desc, img,
 			buf_endian16l(buf + 8),
 			buf_endian32l(buf + 20),
 			buf_endian32l(buf + 24),
@@ -565,7 +565,7 @@ struct wuimg *img) {
 		48      u32     AlphaMask
 		52
 
-	 * For BITMAPV4HEADER and BITMAPV5HEADER, see load_colorspace().
+	 * For BITMAPV4HEADER and BITMAPV5HEADER, see load_dib_colorspace().
 	 * Afterwards comes the palette if Depth <= 8.
 	*/
 
@@ -585,7 +585,7 @@ struct wuimg *img) {
 		return status;
 	}
 
-	status = validate_common(desc, img,
+	status = validate_dib_common(desc, img,
 		buf_endian16l(buf + 8),
 		buf_endian32l(buf + 20),
 		buf_endian32l(buf + 24),
@@ -601,14 +601,14 @@ struct wuimg *img) {
 			}
 		}
 		img->layout = pix_rgba;
-		enum wu_error err = load_mask(desc, img, buf + 36);
+		enum wu_error err = dib_load_mask(desc, img, buf + 36);
 		if (err != wu_ok) {
 			return wuerr(err, "Couldn't load mask");
 		}
 	}
 
 	if (desc->type >= dib_v4_header) {
-		status = load_colorspace(desc, img, buf + 52);
+		status = load_dib_colorspace(desc, img, buf + 52);
 	}
 	return status;
 }
@@ -640,7 +640,7 @@ struct wuimg *img) {
 	if (!wu_isok(status)) {
 		return status;
 	}
-	return validate_common(desc, img, endian16l(buf[2]), 0, 0, 0);
+	return validate_dib_common(desc, img, endian16l(buf[2]), 0, 0, 0);
 }
 
 static struct wu_st dib_parse_header_inner(struct dib_desc *desc,

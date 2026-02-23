@@ -10,15 +10,15 @@
 https://discmaster.textfiles.com/browse/657/FM%20Towns%20Free%20Software%20Collection%2010.iso/t_os/tool/helplay
 */
 
-static const size_t HEADER_SIZE = 12;
-static const uint16_t FRAME_SIZE = 160/8*120;
+static const size_t HEL_HEADER_SIZE = 12;
+static const uint16_t HEL_FRAME_SIZE = 160/8*120;
 
 struct wu_st hel_render_frame(const struct wuptr map, struct wuimg *img,
 const uint32_t frame) {
 	size_t w = 0;
-	size_t pos = HEADER_SIZE + frame*FRAME_SIZE;
+	size_t pos = HEL_HEADER_SIZE + frame*HEL_FRAME_SIZE;
 	if (pos < map.len) {
-		w = zumin(FRAME_SIZE, map.len - pos);
+		w = zumin(HEL_FRAME_SIZE, map.len - pos);
 		if (frame) {
 			for (size_t i = 0; i < w; ++i) {
 				img->data[i] ^= map.ptr[pos + i];
@@ -27,7 +27,7 @@ const uint32_t frame) {
 			memcpy(img->data, map.ptr + pos, w);
 		}
 	}
-	return wuerr_partial(w, FRAME_SIZE);
+	return wuerr_partial(w, HEL_FRAME_SIZE);
 }
 
 struct wu_st hel_identify(const struct wuptr map, struct wuimg *img, unsigned fps) {
@@ -47,7 +47,7 @@ struct wu_st hel_identify(const struct wuptr map, struct wuimg *img, unsigned fp
 		'h', 'e', '1', 0,
 		1, 0, 0, 0
 	};
-	if (map.len > HEADER_SIZE) {
+	if (map.len > HEL_HEADER_SIZE) {
 		if (!memcmp(map.ptr, sig, sizeof(sig))) {
 			img->w = 160;
 			img->h = 120;
