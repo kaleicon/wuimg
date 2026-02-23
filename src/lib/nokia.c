@@ -24,11 +24,8 @@ const char * nlm_logo_type_str(const enum nlm_logo_type logo) {
 
 struct wu_st nlm_load(const struct nlm_desc *desc, struct wuimg *img,
 const uint8_t i) {
-	if (wuimg_alloc_noverify(img)) {
-		fseek(desc->ifp, 10 + (long)wuimg_size(img)*i, SEEK_SET);
-		return fmt_load_raster_st(img, desc->ifp);
-	}
-	return WUERR_HERE(wu_alloc_error);
+	fseek(desc->ifp, 10 + (long)wuimg_size(img)*i, SEEK_SET);
+	return fmt_load_raster_st(img, desc->ifp);
 }
 
 struct wu_st nlm_image_info(const struct nlm_desc *desc, struct wuimg *img) {
@@ -37,7 +34,7 @@ struct wu_st nlm_image_info(const struct nlm_desc *desc, struct wuimg *img) {
 	img->channels = 1;
 	img->bitdepth = 1;
 	img->cs.invert = true;
-	return wuimg_verify_st(img);
+	return WU_OK;
 }
 
 struct wu_st nlm_parse(struct nlm_desc *desc, FILE *ifp) {
@@ -68,7 +65,7 @@ struct wu_st nlm_parse(struct nlm_desc *desc, FILE *ifp) {
 		.w = buf[7],
 		.h = buf[8],
 	};
-	return wuok();
+	return WU_OK;
 }
 
 
@@ -84,12 +81,9 @@ void *restrict _n) {
 }
 
 struct wu_st nol_load(const struct nol_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		return wuerr_partial(
-			fmt_load_raster_callback(img, desc->ifp, txt2bin, NULL),
-			wuimg_size(img));
-	}
-	return WUERR_HERE(wu_alloc_error);
+	return wuerr_partial(
+		fmt_load_raster_callback(img, desc->ifp, txt2bin, NULL),
+		wuimg_size(img));
 }
 
 struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp) {
@@ -114,7 +108,7 @@ struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp) {
 	uint16_t buf[10];
 	if (!fread(buf, 16, 1, ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
-	} else if (endian16(buf[2], little_endian) != 1) {
+	} else if (endian16l(buf[2]) != 1) {
 		return WUERR_HERE(wu_invalid_header);
 	}
 
@@ -129,8 +123,8 @@ struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
 		desc->is_nol = true;
-		desc->country = endian16(buf[i], little_endian);
-		desc->network = endian16(buf[i+1], little_endian);
+		desc->country = endian16l(buf[i]);
+		desc->network = endian16l(buf[i+1]);
 		i += 2;
 	} else if (!memcmp(buf, ngg, sizeof(ngg))) {
 		// nothing
@@ -138,19 +132,18 @@ struct wu_st nol_parse(struct nol_desc *desc, struct wuimg *img, FILE *ifp) {
 		return WUERR_HERE(wu_invalid_header);
 	}
 
-	desc->mystery = endian16(buf[i+4], little_endian);
-	if (endian16(buf[i+2], little_endian) != 1
-	|| endian16(buf[i+3], little_endian) != 1) {
+	desc->mystery = endian16l(buf[i+4]);
+	if (endian16l(buf[i+2]) != 1 || endian16l(buf[i+3]) != 1) {
 		return wuerr(wu_uncertain_validity, "mystery fields != 1");
 	}
 
-	img->w = endian16(buf[i], little_endian);
-	img->h = endian16(buf[i+1], little_endian);
+	img->w = endian16l(buf[i]);
+	img->h = endian16l(buf[i+1]);
 	img->channels = 1;
 	img->bitdepth = 8;
 	img->bitrange = 1;
 	img->cs.invert = true;
-	return wuimg_verify_st(img);
+	return WU_OK;
 }
 
 
@@ -161,10 +154,7 @@ struct wuptr npm_get_comment(const struct npm_desc *desc) {
 }
 
 struct wu_st npm_load(const struct npm_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		return fmt_load_raster_st(img, desc->ifp);
-	}
-	return WUERR_HERE(wu_alloc_error);
+	return fmt_load_raster_st(img, desc->ifp);
 }
 
 struct wu_st npm_parse(struct npm_desc *desc, struct wuimg *img, FILE *ifp) {
@@ -203,7 +193,7 @@ struct wu_st npm_parse(struct npm_desc *desc, struct wuimg *img, FILE *ifp) {
 	img->channels = 1;
 	img->bitdepth = 1;
 	img->cs.invert = true;
-	return wuimg_verify_st(img);
+	return WU_OK;
 }
 
 
@@ -217,9 +207,7 @@ void nsl_clean(struct nsl_desc *desc) {
 
 struct wu_st nsl_load(struct nsl_desc *desc, struct wuimg *img) {
 	uint8_t buf[NSL_BUF_SIZE];
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	} else if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
+	if (!fread(buf, sizeof(buf), 1, desc->ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
@@ -234,7 +222,7 @@ struct wu_st nsl_load(struct nsl_desc *desc, struct wuimg *img) {
 			}
 		}
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st load_str(struct wustr *str, FILE *ifp, uint16_t len) {
@@ -285,7 +273,7 @@ struct wu_st nsl_parse(struct nsl_desc *desc, struct wuimg *img, FILE *ifp) {
 			img->bitdepth = 8;
 			img->bitrange = 1;
 			img->cs.invert = true;
-			return wuimg_verify_st(img);
+			return WU_OK;
 		} else {
 			return wuerr(wu_uncertain_validity,
 				"unexpected chunk");
