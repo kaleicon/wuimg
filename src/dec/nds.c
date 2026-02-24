@@ -33,7 +33,7 @@ struct wu_state *state, const enum image_event ev) {
 	switch (ev) {
 	case ev_metadata:
 		get_nclr_metadata(&infile->metadata, desc);
-		return nclr_img_info(infile->sub_img);
+		return nds_pal_as_img_info(infile->sub_img);
 	case ev_subcycle:
 		return nclr_into_img(desc, infile->sub_img);
 	default: break;
@@ -115,8 +115,7 @@ struct wu_state *state, const enum image_event ev) {
 	(void)state;
 	switch (ev) {
 	case ev_metadata:
-		nclr_img_info(infile->sub_img);
-		return WU_OK;
+		return nds_pal_as_img_info(infile->sub_img);
 	case ev_subcycle:
 		return ancl_into_img(infile->sub_img, infile->ifp);
 	default: break;

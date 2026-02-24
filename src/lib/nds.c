@@ -242,17 +242,23 @@ const bool search_sibling_dir, struct wuptr *map) {
 	return false;
 }
 
-static void nds_unpack555_pal(struct palette *pal, const void *restrict src,
-const size_t len) {
-	struct bitfield bf;
-	bitfield_from_id(&bf, 0x1555, 16);
-	bitfield_unpack(&bf, pal->color, src, len);
+static void nds_unpack555_pal_depth(struct palette *pal,
+const uint8_t *restrict src, const size_t len, const uint8_t depth) {
+	const unsigned index_mask = (1u << depth) - 1;
+	for (size_t i = 0; i < len; ++i) {
+		const uint16_t w = buf_endian16l(src + i*2);
+		pal->color[i] = (struct pix_rgba8) {
+			.r = w & 0x1f,
+			.g = (w >> 5) & 0x1f,
+			.b = (w >> 10) & 0x1f,
+			.a = (i & index_mask) ? 0x1f : 0,
+		};
+	}
 }
 
-static struct wu_st nds_partial_cpy(struct wuimg *img, const struct wuptr data,
-const uint32_t size) {
-	memcpy(img->data, data.ptr, data.len);
-	return wuerr_partial(data.len, size);
+static void nds_unpack555_pal(struct palette *pal,
+const uint8_t *restrict src, const size_t len) {
+	nds_unpack555_pal_depth(pal, src, len, 8);
 }
 
 static void nds_tilecpy(uint8_t *restrict dst, const uint8_t *restrict src,
@@ -263,22 +269,26 @@ size_t htiles, size_t ty, size_t tx, size_t nr, size_t depth) {
 	}
 }
 
-/* NCLR - Color palette
-https://wiki.dshack.org/Wiki.jsp?page=NCLR
-*/
-
-struct wu_st nclr_into_img(const struct nclr_desc *desc, struct wuimg *img) {
-	return nds_partial_cpy(img, desc->data, desc->pal_size);
-}
-
-struct wu_st nclr_img_info(struct wuimg *img) {
+struct wu_st nds_pal_as_img_info(struct wuimg *img) {
 	img->w = 16;
 	img->h = img->w;
 	img->channels = 1;
 	img->bitdepth = 16;
-	return wuimg_bitfield_from_id(img, 0x555)
+	return wuimg_bitfield_from_id(img, 0x1555)
 		? WU_OK
 		: WUERR_HERE(wu_alloc_error);
+}
+
+/* NCLR - Color palette
+https://wiki.dshack.org/Wiki.jsp?page=NCLR
+*/
+struct wu_st nclr_into_img(const struct nclr_desc *desc, struct wuimg *img) {
+	uint16_t *dst = (uint16_t *)img->data;
+	const size_t entries = desc->data.len/sizeof(*dst);
+	for (size_t i = 0; i < entries; ++i) {
+		dst[i] = buf_endian16l(desc->data.ptr + i*2) | 0x8000;
+	}
+	return wuerr_partial(entries*2, desc->pal_size);
 }
 
 struct wu_st nclr_init(struct nclr_desc *desc, const struct wuptr mem) {
@@ -336,12 +346,12 @@ struct wu_st nclr_init(struct nclr_desc *desc, const struct wuptr mem) {
 }
 
 static struct wu_st nclr_into_palette(struct nclr_desc *desc,
-const struct wuptr nclr_data, struct palette *pal) {
+const struct wuptr nclr_data, struct palette *pal, uint8_t depth) {
 	struct wu_st st = nclr_init(desc, nclr_data);
 	if (!wu_isok(st)) {
 		return st;
 	}
-	nds_unpack555_pal(pal, desc->data.ptr, desc->data.len/2);
+	nds_unpack555_pal_depth(pal, desc->data.ptr, desc->data.len/2, depth);
 	return wuerr_partial(desc->data.len, desc->pal_size);
 }
 
@@ -355,7 +365,8 @@ void ncgr_cleanup(struct ncgr_desc *desc) {
 struct wu_st ncgr_load(const struct ncgr_desc *desc, struct wuimg *img) {
 	const struct wuptr src = desc->data;
 	if (desc->mapping_1d || desc->charfmt == nds_charfmt_bmp) {
-		return nds_partial_cpy(img, src, desc->graphics_size);
+		memcpy(img->data, src.ptr, src.len);
+		return wuerr_partial(src.len, desc->graphics_size);
 	}
 	const size_t vtiles = img->h/NDS_TILE_DIM;
 	const size_t htiles = img->w/NDS_TILE_DIM;
@@ -376,7 +387,7 @@ struct wu_st ncgr_load(const struct ncgr_desc *desc, struct wuimg *img) {
 
 static void ncgr_img_baseinfo(struct ncgr_desc *desc, struct wuimg *img) {
 	if (desc->pal) {
-		img->alpha = alpha_ignore;
+		img->bitrange = 5;
 		wuimg_palette_set(img, palette_ref(desc->pal));
 	}
 }
@@ -406,7 +417,8 @@ struct wu_st ncgr_search_nclr(struct ncgr_desc *desc, const char *name) {
 		return wuerr(wu_open_error, "couldn't find NCLR palette file");
 	}
 	desc->pal = pal;
-	struct wu_st st = nclr_into_palette(&desc->nclr, nclr_data, pal);
+	struct wu_st st = nclr_into_palette(&desc->nclr, nclr_data, pal,
+		nds_texfmt_depth(desc->fmt));
 	file_unmap(&nclr_data);
 	return st;
 }
@@ -691,7 +703,12 @@ struct wu_st ancl_into_img(struct wuimg *img, FILE *ifp) {
 	uint16_t entries;
 	struct wu_st st = ancl_parse(ifp, &entries);
 	if (wu_isok(st)) {
-		st = wuerr_partial(fread(img->data, 2, entries, ifp), entries);
+		uint16_t *dst = (uint16_t *)img->data;
+		size_t r = fread(dst, 2, entries, ifp);
+		for (size_t i = 0; i < entries; ++i) {
+			dst[i] = endian16l(dst[i]) | 0x8000;
+		}
+		st = wuerr_partial(r, entries);
 	}
 	return st;
 }
@@ -717,24 +734,26 @@ struct wu_st atex_parse(struct wuimg *img, FILE *ifp, const char *name) {
 	img->w = endian16l(hdr[4]);
 	img->h = endian16l(hdr[5]);
 	img->channels = 1;
-	img->alpha = alpha_ignore;
 	img->bit = little_endian;
 	const uint16_t depth = buf_endian16l(hdr + 6);
 	switch (depth) {
 	case 4: case 8: img->bitdepth = (uint8_t)depth; break;
 	default: return wuerr(wu_invalid_header, "depth is not 4 nor 8");
 	}
-	struct palette *pal = wuimg_palette_init(img);
-	if (!pal) {
-		return WUERR_HERE(wu_alloc_error);
-	}
 
 	struct wu_st st = WU_OK;
 	FILE *ancl = fdopen(nds_search_sibling(name, "ANCL", false), "rb");
 	if (ancl) {
+		struct palette *pal = wuimg_palette_init(img);
+		if (!pal) {
+			fclose(ancl);
+			return WUERR_HERE(wu_alloc_error);
+		}
 		st = ancl_into_pal(pal, ancl);
 		fclose(ancl);
-		if (!wu_isok(st)) {
+		if (wu_isok(st)) {
+			img->bitrange = 5;
+		} else {
 			st = wuerr(wu_ok, "couldn't find ANCL palette");
 		}
 	}
@@ -749,6 +768,8 @@ struct wu_st bgd_decode(const struct bgd_desc *desc, struct wuimg *img) {
 	const size_t htiles = img->w/NDS_TILE_DIM;
 	const size_t depth = 8;
 	size_t decoded = 0;
+	/* Maybe this should be handled like NSCR, but I've yet to find a file
+	 * making use of its features. */
 	for (size_t ty = 0; ty < vtiles; ++ty) {
 		for (size_t tx = 0; tx < htiles; ++tx) {
 			size_t nr = ty*htiles + tx;
@@ -787,7 +808,7 @@ const struct wuptr mem) {
 	img->h = ytiles*NDS_TILE_DIM;
 	img->channels = 1;
 	img->bitdepth = 8;
-	img->alpha = alpha_ignore;
+	img->bitrange = 5;
 
 	desc->nr_tiles = buf_endian16l(hdr);
 	desc->pal_entries = buf_endian16l(hdr + 6);
@@ -851,8 +872,8 @@ struct wu_st r00_parse_next(struct wuimg *img, FILE *ifp) {
 	img->h = endian16l(hdr[7]);
 	img->channels = 1;
 	img->bitdepth = nds_texfmt_depth(fmt);
+	img->bitrange = 5;
 	img->bit = little_endian;
-	img->alpha = alpha_ignore;
 	const uint16_t pal_size = endian16l(hdr[1]);
 	const size_t max = 1u << img->bitdepth;
 	if (!pal_size || (pal_size & 1) || pal_size > max*2) {

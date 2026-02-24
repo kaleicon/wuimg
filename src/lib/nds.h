@@ -50,6 +50,8 @@ const char * nds_mapping_str(enum nds_mapping mapping);
 const char * nds_charfmt_str(enum nds_charfmt fmt);
 const char * nds_colormode_str(enum nds_colormode color);
 
+struct wu_st nds_pal_as_img_info(struct wuimg *img);
+
 
 struct nclr_desc {
 	struct g2d_desc g2d;
