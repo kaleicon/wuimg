@@ -142,7 +142,7 @@ static struct wu_st attempt_native(struct image_file *infile) {
 
 	const cairo_format_t format = CAIRO_FORMAT_ARGB32;
 	const int width = (int)ceil(viewport.width);
-	const int height = (int)ceil(viewport.width);
+	const int height = (int)ceil(viewport.height);
 	const int stride = cairo_format_stride_for_width(format, width);
 
 	struct wuimg *img = infile->sub_img;
