@@ -1,4 +1,4 @@
-95 families, 175 formats supported
+96 families, 178 formats supported
 
 Family    Format    Description
 --------------------------------
@@ -65,6 +65,7 @@ bethesda  gxa       Bethesda GXA image (BMHD)
 bmz       bmz       GSD engine compressed BMP. Requires DIB
 c         c         C code formats: DEGAS Elite Icon, XBM X10 and X11
 c64       c64       Hires and Multicolor formats: AFLI editor, Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Faces Painter, FLI Designer, Hi-Eddi, HiPic Creator, HiRes Editor, Hires FLI (HFC), Image System, Interpaint, KoalaPainter (raw & compressed), Paint Magic, Picasso 64, Runpaint, Saracen Paint, Vidcom 64, probably others by accident
+caiman    caiman    Caiman Co. GFX Data File
 cbg       cbg       BGI/Ethornell CompressedBG (v1)
 cdi       cdi       CD-i IFF Image
 chunsoft  at6p      999 AT6P
@@ -114,6 +115,8 @@ mayaicon  mayaicon  Maya Icons or Swatches
 mgx       mgxicn    Micrografx ICN
 msx       msx       MSX-BASIC dump, Graph Saurus
 msx       msxgl     MSX GL5/6/7/8, Dynamic Publisher Shape/Stamp
+nds       ancl      ANCL Color Palette
+nds       atex      ATEX Texture
 nds       bgd       Tsubasa Chronicle Background
 nds       ncgr      Nitro Character Graphics
 nds       nclr      Nitro Color Palette
@@ -178,17 +181,19 @@ xcursor   xcursor   X11 cursor
 xwd       xwd       X11 Window Dump
 xyz       xyz       RPG Maker image
 
-Known extensions: 378
-2c4, 2r7, 3fr, 4c4, 4dy, 565, 6c4, 6dy, 6r7, a64, aai, aas, abm, acbm, aei, afl, alf, als, ant, apd, apf, art, arw, avif, avifs, avs, bgd, bie, bl1, bl2, bl3, bld, bmb, bmg, bmp, bmp24, bmz, bob, bp, bpl, brs, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, clt2, cm, col, cph, cpn, cps, cr2, cr3, crg, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpc, dpx, dt, dt2, dta, dvm, erf, eri, eza, fax, faxx, fcp, fcs, fd2, ff, fff, ffn, fli, flif, fnt, fpt, ftc, g, g00, g3, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, gl5, gl6, gl7, gl8, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, ibg, icc, icn, ico, icon, icons, iff, iim, iiq, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kcf, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lsp, lux, lwi, lzs, mac, mag, max, mbfavs, mef, mgf, mki, mld, mos, mpo, mrw, mtv, mwg, ncgr, nclr, nef, ngg, nlm, no, nol, npm, nrw, nscr, nsl, ocp, orf, ori, otb, p2, p41, p64, p7, pa, pac, pal, pam, pan, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, pk, pmc, pmg, png, pnm, pntg, ppm, prs, prt, puf, px, pxy, pzl, q4, qdv, qfx, qoi, qtk, r00, raf, ras, raw, reapeaks, res, rgb, rgba, rle, rot, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, scr, sd0, sd1, sd2, sff, sfk, sfn, sgf, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, sti, stj, stp, suh, sul, sun, svg, svgz, swatches, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tim2, tlg, tm2, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vfn, vic, vid, vmc, vram, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
+Known extensions: 380
+2c4, 2r7, 3fr, 4c4, 4dy, 565, 6c4, 6dy, 6r7, a64, aai, aas, abm, acbm, aei, afl, alf, als, ancl, ant, apd, apf, art, arw, atex, avif, avifs, avs, bgd, bie, bl1, bl2, bl3, bld, bmb, bmg, bmp, bmp24, bmz, bob, bp, bpl, brs, bru, bsi, bw, cdu, cel, che, ciff, clm, clp, clt2, cm, col, cph, cpn, cps, cr2, cr3, crg, crw, cur, cwg, da4, dat, dcr, dcx, dd, ddl, dib, dit, dmp, dng, doo, dpc, dpx, dt, dt2, dta, dvm, erf, eri, eza, fax, faxx, fcp, fcs, fd2, ff, fff, ffn, fli, flif, fnt, fpt, ftc, g, g00, g3, g3n, ge5, ge7, ge8, gg, gif, gif87, gif89, gig, gl5, gl6, gl7, gl8, god, gp4, gpc, grf, grp, gxa, hcp, hed, heic, heics, heif, heifs, hel, het, hfc, hg3, hgr, hif, hir, hpc, hpi, hr, ibg, icc, icn, ico, icon, icons, iff, iim, iiq, ilbm, im1, im24, im32, im4, im8, imc, img, ims, ip64h, iph, ipt, ish, ism, j2c, j2k, j6i, jam, jb2, jbg, jbig, jfi, jfif, jhc, jif, jig, jj, jls, jp2, jpc, jpe, jpeg, jpg, jph, jps, jxl, k25, kcf, kdc, kla, koa, koala, kps, kro, kyg, lbm, lerc, lerc1, lerc2, lmp, lrc, lsp, lux, lwi, lzs, mac, mag, max, mbfavs, mef, mgf, mki, mld, mos, mpo, mrw, mtv, mwg, ncgr, nclr, nef, ngg, nlm, no, nol, npm, nrw, nscr, nsl, ocp, orf, ori, otb, p2, p41, p64, p7, pa, pac, pal, pam, pan, pat, pbm, pc1, pc2, pc3, pcc, pcf, pcx, pdt, pef, pfm, pgf, pgm, pgx, phm, pi, pi1, pi2, pi3, pic, pim, pix, pk, pmc, pmg, png, pnm, pntg, ppm, prs, prt, puf, px, pxy, pzl, q4, qdv, qfx, qoi, qtk, r00, raf, ras, raw, reapeaks, res, rgb, rgba, rle, rot, rpm, rw2, rwh, rwl, s16, s17, s1a, s1c, sah, sal, sar, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sca, scc, sch, scl, scr, sd0, sd1, sd2, sff, sfk, sfn, sgf, sgi, shp, six, sixel, spr, spr32, spu, sr2, sr5, sr6, sr7, sr8, srf, srs, sti, stj, stp, suh, sul, sun, svg, svgz, swatches, tbn, tcp, tex, tg1, tga, thm, tif, tiff, tile, tim, tim2, tlg, tm2, tmsk, tn1, tn2, tn3, tn4, tn5, tn6, tny, tre, trp, trs, tru, txf, vfn, vic, vid, vmc, vram, wbm, wbmp, webp, wia, wig, x, xbm, xwd, xyz, yjk
 
-Known magic sequences: 231
+Known magic sequences: 234
 aei       b'AEimage\x00\x01'
 aipd      b'AIPD'
 aliaspix  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08'
 amibios   b'GRFX'
+ancl      b'ANCL'
 ant       b'ANTI\x10\x00\x00\x00'
 apf       b'APF10\x1a'
 at6p      b'AT6P'
+atex      b'ATEX'
 avif      b'\x00\x00\x00\x00ftypavic'
 avif      b'\x00\x00\x00\x00ftypavif'
 bmb       b'\x00\x00\x00\x00IDX2'
@@ -211,6 +216,7 @@ c64       b'\x00\x80'
 c64       b'\x00\xa0'
 c64       b'\x8e?'
 c64       b'\xef~'
+caiman    b'GFX Data File.'
 cbg       b'CompressedBG___\x00'
 cdi       b'FORM\x00\x00\x00\x00IMAG'
 chky      b'FORM\x00\x00\x00\x00CHKY'

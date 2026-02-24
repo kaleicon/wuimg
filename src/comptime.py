@@ -601,6 +601,13 @@ DEC_MAP: DecMap = {
 		),
 	},
 
+	"caiman": {
+		"caiman": FmtInfo("Caiman Co. GFX Data File",
+			ext="dat",
+			magic=b"GFX Data File.",
+		),
+	},
+
 	"cbg": {
 		"cbg": FmtInfo("BGI/Ethornell CompressedBG (v1)",
 			magic=b"CompressedBG___\0",
