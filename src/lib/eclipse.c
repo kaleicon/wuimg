@@ -8,17 +8,13 @@
 static const uint32_t TSIZE = 0x100;
 
 struct wu_st eclipse_load(struct eclipse_desc *desc, struct wuimg *img) {
-	size_t r = 0;
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-
 	fseek(desc->ifp, 0x1000, SEEK_SET);
 	const uint32_t tw = desc->w >> 8;
 	const uint32_t th = desc->h >> 8;
 	const size_t stride = (size_t)desc->w * img->channels;
 	const size_t tstride = TSIZE * img->channels;
 	uint8_t *dst = img->data;
+	size_t r = 0;
 	for (uint32_t ty = 0; ty < th; ++ty) {
 		for (uint32_t tx = 0; tx < tw; ++tx) {
 			uint8_t *d = dst + ty*TSIZE*stride + tx*tstride;
@@ -105,7 +101,7 @@ FILE *ifp) {
 				"unknown colorspace");
 		}
 		desc->colorspace = colorspace;
-		return wuerr(wuimg_verify(img), NULL);
+		return WU_OK;
 	}
 	return WUERR_HERE(wu_unexpected_eof);
 }

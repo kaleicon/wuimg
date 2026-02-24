@@ -66,8 +66,8 @@ struct wu_st prt_parse(struct prt_desc *desc, struct wuimg *img, FILE *ifp) {
 
 	 * Notes:
 	 *  · A bitdepth of 8 always uses a palette.
-	 *  · The raster is stored bottom-up and has an alignment of 4.
-	 *  · The mask is top-down and has an alignment of 1.
+	 *  · Raster is stored bottom-up and has an alignment of 4.
+	 *  · Mask is top-down and has an alignment of 1.
 	*/
 	const uint8_t magic[4] = {'P', 'R', 'T', 0};
 	uint8_t buf[20];

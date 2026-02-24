@@ -62,13 +62,14 @@ static struct wu_st init_idsp(struct image_file *infile) {
 static struct wu_st event_lmp(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
 	(void)state;
-	return (ev == ev_subcycle)
-		? fmt_load_raster_st(infile->sub_img, infile->ifp)
-		: WU_NO_CHANGE;
-}
-
-static struct wu_st init_lmp(struct image_file *infile) {
-	return lmp_init(infile->sub_img, infile->ifp);
+	switch (ev) {
+	case ev_metadata:
+		return lmp_init(infile->sub_img, infile->ifp);
+	case ev_subcycle:
+		return fmt_load_raster_st(infile->sub_img, infile->ifp);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
 const struct image_fn idsp_fn = {
@@ -80,6 +81,5 @@ const struct image_fn idsp_fn = {
 const struct image_fn lmp_fn = {
 	.alloc_single = true,
 	.alloc_on_subcycle = true,
-	.init = init_lmp,
 	.event = event_lmp,
 };

@@ -3,22 +3,25 @@
 #include "wudefs.h"
 #include "lib/jam.h"
 
-static struct wu_st init_jam(struct image_file *infile) {
-	struct mparser mp = mp_wuptr(infile->map);
-	struct wu_st st = jam_parse(&mp, infile->sub_img);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
-		if (e == wu_ok) {
-			st = jam_decode(mp, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
-		}
+static struct wu_st event_jam(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	struct mparser *mp = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		*mp = mp_wuptr(infile->map);
+		return jam_parse(mp, infile->sub_img);
+	case ev_subcycle:
+		return jam_decode(*mp, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 const struct image_fn jam_fn = {
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct mparser),
 	.mmap = true,
-	.init = init_jam,
+	.event = event_jam,
 };

@@ -3,19 +3,22 @@
 #include "lib/pmg.h"
 #include "wudefs.h"
 
-static struct wu_st init_pmg(struct image_file *infile) {
-	struct wu_st st = pmg_init(infile->map, infile->sub_img);
-	if (wu_isok(st)) {
-		st = WUERR_CHECK(wuimg_alloc_limit(infile->sub_img, infile->conf));
-		if (wu_isok(st)) {
-			st = pmg_decode(infile->map, infile->sub_img);
-		}
+static struct wu_st event_pmg(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		return pmg_init(infile->map, infile->sub_img);
+	case ev_subcycle:
+		return pmg_decode(infile->map, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 const struct image_fn pmg_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = init_pmg,
+	.alloc_on_subcycle = true,
+	.event = event_pmg,
 };

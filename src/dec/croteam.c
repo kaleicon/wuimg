@@ -6,18 +6,11 @@
 
 static struct wu_st event_tbn(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
-	if (ev == ev_subcycle || ev == ev_frame) {
-		return tbn_frame(infile->dec_state, infile->sub_img,
-			(uint32_t)state->frame);
-	}
-	return WU_NO_CHANGE;
-}
-
-static struct wu_st init_tbn(struct image_file *infile) {
+	(void)state;
 	struct tbn_desc *desc = infile->dec_state;
-	struct wu_st st = tbn_init(desc, infile->sub_img, infile->ifp);
-	if (wu_isok(st)) {
-		struct wutree *res = tree_add_branch(&infile->metadata,
+	switch (ev) {
+	case ev_metadata:
+		;struct wutree *res = tree_add_branch(&infile->metadata,
 			"Resolution");
 		if (res) {
 			tree_bud_leaf_u(res, "X", desc->xres);
@@ -31,8 +24,17 @@ static struct wu_st init_tbn(struct image_file *infile) {
 		size_t len = tbn_read_animadat(desc, anima);
 		tree_add_leaf_len(&infile->metadata, "ANIMADAT",
 			wuptr_trim_end(wuptr_mem(anima, len), 0), NULL);
+		return WU_OK;
+	case ev_subcycle:
+	case ev_frame:
+		return tbn_frame(desc, infile->sub_img, (uint32_t)state->frame);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_tbn(struct image_file *infile) {
+	return tbn_init(infile->dec_state, infile->sub_img, infile->ifp);
 }
 
 const struct image_fn tbn_fn = {

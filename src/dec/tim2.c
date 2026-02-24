@@ -49,9 +49,7 @@ struct wu_state *state, const enum image_event ev) {
 static struct wu_st init_tim2(struct image_file *infile) {
 	struct tim2_desc *desc = infile->dec_state;
 	struct wu_st st = tim2_init(desc, infile->ifp);
-	if (wu_isok(st)) {
-		infile->nr = desc->nr;
-	}
+	infile->nr = desc->nr;
 	return st;
 }
 

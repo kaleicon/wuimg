@@ -4,24 +4,30 @@
 #include "lib/ea.h"
 #include "wudefs.h"
 
-static struct wu_st init_eafnt(struct image_file *infile) {
-	struct eafnt_desc desc;
-	struct wuimg *img = infile->sub_img;
-	struct wu_st st = eafnt_init(&desc, img, infile->ifp);
-	if (wu_isok(st)) {
-		tree_bud_leaf_u(&infile->metadata, "Characters", desc.chars);
-		tree_bud_leaf_u(&infile->metadata, "Image code", desc.image_code);
-		enum wu_error err = wuimg_alloc_limit(img, infile->conf);
-		if (err == wu_ok) {
-			st = fmt_load_raster_st(img, infile->ifp);
-		} else {
-			st = WUERR_HERE(err);
-		}
+static struct wu_st event_eafnt(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		;struct eafnt_desc *desc = infile->dec_state;
+		tree_bud_leaf_u(&infile->metadata, "Characters", desc->chars);
+		tree_bud_leaf_u(&infile->metadata, "Image code",
+			desc->image_code);
+		return WU_OK;
+	case ev_subcycle:
+		return fmt_load_raster_st(infile->sub_img, infile->ifp);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+static struct wu_st init_eafnt(struct image_file *infile) {
+	return eafnt_init(infile->dec_state, infile->sub_img, infile->ifp);
 }
 
 const struct image_fn eafnt_fn = {
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct eafnt_desc),
 	.init = init_eafnt,
+	.event = event_eafnt,
 };

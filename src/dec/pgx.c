@@ -3,23 +3,24 @@
 #include "wudefs.h"
 #include "lib/pgx.h"
 
-static struct wu_st init_pgx(struct image_file *infile) {
-	struct wuptr comp;
-	struct wu_st st = pgx_read_header(&comp, infile->map, infile->sub_img);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
-			infile->conf);
-		if (e == wu_ok) {
-			st = pgx_decode(comp, infile->sub_img);
-		} else {
-			st = WUERR_HERE(wu_exceeds_size_limit);
-		}
+static struct wu_st event_pgx(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	struct wuptr *comp = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		return pgx_read_header(comp, infile->map, infile->sub_img);
+	case ev_subcycle:
+		return pgx_decode(*comp, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 const struct image_fn pgx_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = init_pgx,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct wuptr),
+	.event = event_pgx,
 };

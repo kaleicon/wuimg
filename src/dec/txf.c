@@ -3,26 +3,32 @@
 #include "wudefs.h"
 #include "lib/txf.h"
 
-static struct wu_st init_txf(struct image_file *infile) {
-	struct txf_desc desc;
-	struct wu_st st = txf_parse(&desc, infile->sub_img, infile->ifp);
-	if (wu_isok(st)) {
-		const enum wu_error e = wuimg_alloc_limit(infile->sub_img,
-			infile->conf);
-		if (e == wu_ok) {
-			tree_bud_leaf_u(&infile->metadata, "Max ascent",
-				desc.max_ascent);
-			tree_bud_leaf_u(&infile->metadata, "Max descent",
-				desc.max_descent);
-			st = txf_load(&desc, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
-		}
+static struct wu_st event_txf(struct image_file *infile,
+struct wu_state *state, enum image_event ev) {
+	(void)state;
+	struct txf_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_bud_leaf_u(&infile->metadata, "Max ascent",
+			desc->max_ascent);
+		tree_bud_leaf_u(&infile->metadata, "Max descent",
+			desc->max_descent);
+		return WU_OK;
+	case ev_subcycle:
+		return txf_load(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_txf(struct image_file *infile) {
+	return txf_parse(infile->dec_state, infile->sub_img, infile->ifp);
 }
 
 const struct image_fn txf_fn = {
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct txf_desc),
 	.init = init_txf,
+	.event = event_txf,
 };

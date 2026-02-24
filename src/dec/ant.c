@@ -3,22 +3,23 @@
 #include "lib/ant.h"
 #include "wudefs.h"
 
-static struct wu_st init_ant(struct image_file *infile) {
-	struct ant_desc desc;
-	struct wu_st st = ant_init(&desc, infile->sub_img, infile->ifp);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
-			infile->conf);
-		if (e == wu_ok) {
-			st = ant_decode(&desc, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
-		}
+static struct wu_st event_ant(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	struct ant_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		return ant_init(desc, infile->sub_img, infile->ifp);
+	case ev_subcycle:
+		return ant_decode(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 const struct image_fn ant_fn = {
 	.alloc_single = true,
-	.init = init_ant,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct ant_desc),
+	.event = event_ant,
 };

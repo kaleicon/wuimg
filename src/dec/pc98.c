@@ -3,31 +3,34 @@
 #include "wudefs.h"
 #include "lib/pc98.h"
 
-static struct wu_st init_prs(struct image_file *infile) {
-	struct prs_desc desc;
-	struct wu_st st = prs_parse(&desc, infile->map, infile->sub_img);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
-			infile->conf);
-		if (e == wu_ok) {
-			tree_add_leaf_utf8(&infile->metadata, "Company",
-				desc.micro_cabin ? "Micro Cabin" : "IDES");
-			if (!desc.micro_cabin) {
-				tree_bud_leaf_u(&infile->metadata, "X",
-					desc.u.ides.x);
-				tree_bud_leaf_u(&infile->metadata, "Y",
-					desc.u.ides.y);
-				tree_bud_leaf_u(&infile->metadata, "Planes",
-					desc.u.ides.ch);
-				tree_bud_leaf_u(&infile->metadata, "Transparent",
-					desc.u.ides.trans);
-			}
-			st = prs_decode(&desc, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
+static struct wu_st event_prs(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	struct prs_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_add_leaf_utf8(&infile->metadata, "Company",
+			desc->micro_cabin ? "Micro Cabin" : "IDES");
+		if (!desc->micro_cabin) {
+			tree_bud_leaf_u(&infile->metadata, "X",
+				desc->u.ides.x);
+			tree_bud_leaf_u(&infile->metadata, "Y",
+				desc->u.ides.y);
+			tree_bud_leaf_u(&infile->metadata, "Planes",
+				desc->u.ides.ch);
+			tree_bud_leaf_u(&infile->metadata, "Transparent",
+				desc->u.ides.trans);
 		}
+		return WU_OK;
+	case ev_subcycle:
+		return prs_decode(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_prs(struct image_file *infile) {
+	return prs_parse(infile->dec_state, infile->map, infile->sub_img);
 }
 
 
@@ -73,7 +76,10 @@ static struct wu_st init_gpc(struct image_file *infile) {
 const struct image_fn prs_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct prs_desc),
 	.init = init_prs,
+	.event = event_prs,
 };
 const struct image_fn gpc_fn = {
 	.mmap = true,

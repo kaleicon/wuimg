@@ -8,15 +8,17 @@ static void atari_res_metadata(struct wutree *meta, const enum atari_st_res res)
 }
 
 /* Calamus Raster Graphic */
-static struct wu_st init_crg(struct image_file *infile) {
-	struct wu_st st = crg_get_info(infile->map, infile->sub_img);
-	if (wu_isok(st)) {
-		st = WUERR_CHECK(wuimg_alloc_limit(infile->sub_img, infile->conf));
-		if (wu_isok(st)) {
-			st = crg_decode(infile->map, infile->sub_img);
-		}
+static struct wu_st event_crg(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		return crg_get_info(infile->map, infile->sub_img);
+	case ev_subcycle:
+		return crg_decode(infile->map, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 /* Dali */
@@ -68,43 +70,30 @@ static struct wu_st init_degas(struct image_file *infile) {
 static struct wu_st event_ez(struct image_file *infile,
 struct wu_state *_s, const enum image_event ev) {
 	(void)_s;
-	if (ev == ev_subcycle) {
-		enum wu_error err = wuimg_alloc_limit(infile->sub_img,
-			infile->conf);
-		if (err == wu_ok) {
-			struct mparser *mp = infile->dec_state;
-			return ez_decode(*mp, infile->sub_img);
-		}
-		return WUERR_HERE(err);
+	struct mparser *mp = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		return ez_parse(mp, infile->sub_img, infile->map);
+	case ev_subcycle:
+		return ez_decode(*mp, infile->sub_img);
+	default: break;
 	}
 	return WU_NO_CHANGE;
-}
-
-static struct wu_st init_ez(struct image_file *infile) {
-	return ez_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 /* GFA Raytrace */
 static struct wu_st event_gfa(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
 	switch (ev) {
+	case ev_metadata:
+		return gfa_init(infile->dec_state, infile->sub_img, infile->ifp);
 	case ev_subcycle:
-		;enum wu_error err = wuimg_alloc_limit(infile->sub_img,
-			infile->conf);
-		if (err != wu_ok) {
-			return WUERR_HERE(err);
-		}
-		// fallthrough
 	case ev_frame:
 		;uint8_t frame = (uint8_t)state->frame;
 		return gfa_decode(infile->dec_state, infile->sub_img, frame);
 	default: break;
 	}
 	return WU_NO_CHANGE;
-}
-
-static struct wu_st init_gfa(struct image_file *infile) {
-	return gfa_init(infile->dec_state, infile->sub_img, infile->ifp);
 }
 
 /* MegaPaint */
@@ -123,16 +112,17 @@ static struct wu_st init_bld(struct image_file *infile) {
 }
 
 /* Spectrum 512 */
-static struct wu_st init_spu(struct image_file *infile) {
-	struct spu_desc desc;
-	struct wu_st st = spu_init(&desc, infile->sub_img, infile->ifp);
-	if (wu_isok(st)) {
-		st = WUERR_CHECK(wuimg_alloc_limit(infile->sub_img, infile->conf));
-		if (wu_isok(st)) {
-			st = spu_decode(&desc, infile->sub_img);
-		}
+static struct wu_st event_spu(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		return spu_init(infile->dec_state, infile->sub_img, infile->ifp);
+	case ev_subcycle:
+		return spu_decode(infile->dec_state, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 /* STAD PAC, Arabesque */
@@ -183,7 +173,8 @@ static struct wu_st init_tiny(struct image_file *infile) {
 const struct image_fn crg_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = init_crg,
+	.alloc_on_subcycle = true,
+	.event = event_crg,
 };
 const struct image_fn dali_fn = {
 	.alloc_single = true,
@@ -200,14 +191,14 @@ const struct image_fn degas_fn = {
 const struct image_fn ez_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct mparser),
-	.init = init_ez,
 	.event = event_ez,
 };
 const struct image_fn gfa_fn = {
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct gfa_desc),
-	.init = init_gfa,
 	.event = event_gfa,
 };
 const struct image_fn bld_fn = {
@@ -216,7 +207,9 @@ const struct image_fn bld_fn = {
 };
 const struct image_fn spu_fn = {
 	.alloc_single = true,
-	.init = init_spu,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct spu_desc),
+	.event = event_spu,
 };
 const struct image_fn stad_fn = {
 	.mmap = true,

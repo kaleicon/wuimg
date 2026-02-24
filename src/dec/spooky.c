@@ -3,18 +3,18 @@
 #include "wudefs.h"
 #include "lib/spooky.h"
 
-static struct wu_st init_tre(struct image_file *infile) {
-	struct tre_desc desc;
-	struct wu_st st = tre_parse(&desc, infile->sub_img, infile->map);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
-		if (e == wu_ok) {
-			st = tre_decode(&desc, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
-		}
+static struct wu_st event_tre(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		return tre_parse(infile->dec_state, infile->sub_img,
+			infile->map);
+	case ev_subcycle:
+		return tre_decode(infile->dec_state, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 
@@ -42,7 +42,9 @@ static struct wu_st init_trs(struct image_file *infile) {
 const struct image_fn tre_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = init_tre,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct tre_desc),
+	.event = event_tre,
 };
 const struct image_fn trs_fn = {
 	.mmap = true,

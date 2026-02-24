@@ -40,15 +40,15 @@ static struct wu_st init_msx(struct image_file *infile) {
 static struct wu_st event_msxgl(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
 	(void)state;
-	if (ev == ev_subcycle) {
+	switch (ev) {
+	case ev_metadata:
+		return msxgl_parse(infile->sub_img, infile->ifp, infile->name,
+			infile->ext);
+	case ev_subcycle:
 		return fmt_load_raster_st(infile->sub_img, infile->ifp);
+	default: break;
 	}
 	return WU_NO_CHANGE;
-}
-
-static struct wu_st init_msxgl(struct image_file *infile) {
-	return msxgl_parse(infile->sub_img, infile->ifp, infile->name,
-		infile->ext);
 }
 
 const struct image_fn msx_fn = {
@@ -61,6 +61,5 @@ const struct image_fn msx_fn = {
 const struct image_fn msxgl_fn = {
 	.alloc_single = true,
 	.alloc_on_subcycle = true,
-	.init = init_msxgl,
 	.event = event_msxgl,
 };

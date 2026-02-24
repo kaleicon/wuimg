@@ -7,18 +7,18 @@
 static struct wu_st event_wbmp(struct image_file *infile,
 struct wu_state *state, enum image_event ev) {
 	(void)state;
-	return (ev == ev_subcycle)
-		? fmt_load_raster_st(infile->sub_img, infile->ifp)
-		: WU_NO_CHANGE;
-}
-
-static struct wu_st init_wbmp(struct image_file *infile) {
-	return wbmp_open_file(infile->sub_img, infile->ifp);
+	switch (ev) {
+	case ev_metadata:
+		return wbmp_open_file(infile->sub_img, infile->ifp);
+	case ev_subcycle:
+		return fmt_load_raster_st(infile->sub_img, infile->ifp);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
 const struct image_fn wbmp_fn = {
 	.alloc_single = true,
 	.alloc_on_subcycle = true,
-	.init = init_wbmp,
 	.event = event_wbmp,
 };
