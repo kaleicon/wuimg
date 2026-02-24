@@ -10,7 +10,7 @@
 struct tim_clut {
 	uint16_t nb;
 	uint16_t x, y;
-	struct palette *clut;
+	struct palette **clut;
 };
 
 struct tim_desc {

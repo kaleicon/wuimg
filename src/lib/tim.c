@@ -8,8 +8,13 @@
 #include "tim.h"
 
 void tim_cleanup(struct tim_desc *desc) {
+	if (desc->clut.clut) {
+		for (size_t i = 0; i < desc->clut.nb; ++i) {
+			palette_unref(desc->clut.clut[i]);
+		}
+		free(desc->clut.clut);
+	}
 	free(desc->raster);
-	palette_unref(desc->clut.clut);
 }
 
 static void special_transparency_process(uint16_t *buf, const size_t nmemb) {
@@ -30,7 +35,7 @@ void *restrict _u) {
 void tim_alt_clut(struct tim_desc *desc, const struct wuimg *main,
 struct wuimg *alt, const uint16_t clut_nb) {
 	*alt = *main;
-	alt->u.palette = palette_ref(desc->clut.clut + clut_nb);
+	alt->u.palette = palette_ref(desc->clut.clut[clut_nb]);
 }
 
 struct wu_st tim_decode_main(struct tim_desc *desc, struct wuimg *img) {
@@ -66,9 +71,12 @@ unsigned char header[static 12]) {
 	if (!clut->clut) {
 		return WUERR_HERE(wu_alloc_error);
 	}
-	wuimg_palette_set(img, palette_ref(clut->clut));
 	for (size_t n = 0; n < clut->nb; ++n) {
-		struct palette *pal = clut->clut + n;
+		struct palette *pal = palette_new();
+		if (!pal) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+		clut->clut[n] = pal;
 		uint16_t *buf = (uint16_t *)(pal + 1) - colors;
 		if (fread(buf, sizeof(*buf), colors, desc->ifp) != colors) {
 			return WUERR_HERE(wu_unexpected_eof);
@@ -79,6 +87,7 @@ unsigned char header[static 12]) {
 		bitfield_from_id(&bf, 0x1555, 16);
 		bitfield_unpack(&bf, pal->color, buf, colors);
 	}
+	wuimg_palette_set(img, palette_ref(clut->clut[0]));
 	return WU_OK;
 }
 
