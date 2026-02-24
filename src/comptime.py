@@ -10,6 +10,8 @@ from collections.abc import Callable, Iterable, Sequence
 EXT_LIMIT = 8
 MAGIC_LIMIT = 0xff
 NAME_LIMIT = 8
+# Whether to include extensions for uninteresting formats (like color palettes)
+INCLUDE_ANNOYING = False
 
 ALWAYS_ENABLED = set(("auto",))
 
@@ -63,6 +65,10 @@ TIFF_MAGICS = (
 )
 
 type StrSeq = str | tuple[str, ...]
+
+def annoying(seq: StrSeq) -> StrSeq:
+	return seq if INCLUDE_ANNOYING else tuple()
+
 class FmtInfo(typing.NamedTuple):
 	desc: str
 	'''Description'''
@@ -308,10 +314,9 @@ DEC_MAP: DecMap = {
 				b"\xff\xff\xfd\x00\x00\xff\xfd",
 			),
 		),
-		"msxpal": FmtInfo("MSX-BASIC palette (PL5, PL6, PL7, PL8)"
-			# Don't detect it for now
-			#ext=("pl5", "pl6", "pl7", "pl8"),
-			#size=256,
+		"msxpal": FmtInfo("MSX-BASIC palette (PL5, PL6, PL7, PL8)",
+			ext=annoying(("pl5", "pl6", "pl7", "pl8")),
+			size=256,
 		),
 
 		# TRS-80
@@ -918,7 +923,7 @@ DEC_MAP: DecMap = {
 
 	"nds": {
 		"ancl": FmtInfo("ANCL Color Palette",
-			ext="ancl",
+			ext=annoying("ancl"),
 			magic=b"ANCL",
 		),
 		"atex": FmtInfo("ATEX Texture",
@@ -933,7 +938,7 @@ DEC_MAP: DecMap = {
 			magic=b"RGCN",
 		),
 		"nclr": FmtInfo("Nitro Color Palette",
-			ext="nclr",
+			ext=annoying("nclr"),
 			magic=b"RLCN",
 		),
 		"nscr": FmtInfo("Nitro Screen",
