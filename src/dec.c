@@ -247,13 +247,15 @@ static enum wu_error actually_open(struct wudec_image *image) {
 
 static enum wu_error call_decoder(struct image_file *infile,
 const struct wu_conf *conf, const struct fmt_desc *desc) {
-	struct wu_st st;
+	struct wu_st st = wuerr(wu_invalid_params, "no decoding function!");
 	if (desc->is_auto) {
 		st = auto_init(infile, *desc->dec.desc);
 	} else if (desc->dec.fn->init) {
 		st = desc->dec.fn->init(infile);
-	} else {
+	} else if (desc->dec.fn->dec) {
 		return desc->dec.fn->dec(infile, conf);
+	} else if (desc->dec.fn->alloc_single) {
+		return wu_ok;
 	}
 	if (st.msg) {
 		image_file_strerror_append(infile, st.msg);
