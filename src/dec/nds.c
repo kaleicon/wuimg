@@ -110,17 +110,46 @@ static struct wu_st init_nscr(struct image_file *infile) {
 }
 
 
-static struct wu_st event_bgd(struct image_file *infile,
+static struct wu_st event_ancl(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
 	(void)state;
-	if (ev == ev_subcycle) {
-		return bgd_decode(infile->dec_state, infile->sub_img);
+	switch (ev) {
+	case ev_metadata:
+		nclr_img_info(infile->sub_img);
+		return WU_OK;
+	case ev_subcycle:
+		return ancl_into_img(infile->sub_img, infile->ifp);
+	default: break;
 	}
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_bgd(struct image_file *infile) {
-	return bgd_init(infile->dec_state, infile->sub_img, infile->map);
+
+static struct wu_st event_atex(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		return atex_parse(infile->sub_img, infile->ifp, infile->name);
+	case ev_subcycle:
+		return fmt_load_raster_st(infile->sub_img, infile->ifp);
+	default: break;
+	}
+	return WU_NO_CHANGE;
+}
+
+
+static struct wu_st event_bgd(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		return bgd_init(infile->dec_state, infile->sub_img, infile->map);
+	case ev_subcycle:
+		return bgd_decode(infile->dec_state, infile->sub_img);
+	default: break;
+	}
+	return WU_NO_CHANGE;
 }
 
 
@@ -180,12 +209,21 @@ const struct image_fn nscr_fn = {
 	.event = event_nscr,
 	.end = end_nscr,
 };
+const struct image_fn ancl_fn = {
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.event = event_ancl,
+};
+const struct image_fn atex_fn = {
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.event = event_atex,
+};
 const struct image_fn bgd_fn = {
 	.mmap = true,
 	.alloc_single = true,
 	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct bgd_desc),
-	.init = init_bgd,
 	.event = event_bgd,
 };
 const struct image_fn r00_fn = {

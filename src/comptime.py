@@ -910,20 +910,28 @@ DEC_MAP: DecMap = {
 	},
 
 	"nds": {
+		"ancl": FmtInfo("ANCL Color Palette",
+			ext="ancl",
+			magic=b"ANCL",
+		),
+		"atex": FmtInfo("ATEX Texture",
+			ext="atex",
+			magic=b"ATEX",
+		),
 		"bgd": FmtInfo("Tsubasa Chronicle Background",
 			match="bgd",
 		),
 		"ncgr": FmtInfo("Nitro Character Graphics",
 			ext="ncgr",
-			magic=b"RGCN"
+			magic=b"RGCN",
 		),
 		"nclr": FmtInfo("Nitro Color Palette",
 			ext="nclr",
-			magic=b"RLCN"
+			magic=b"RLCN",
 		),
 		"nscr": FmtInfo("Nitro Screen",
 			ext="nscr",
-			magic=b"RCSN"
+			magic=b"RCSN",
 		),
 		"r00": FmtInfo("Tsubasa Chronicle R00 Resources (beginning only)",
 			match="r00",

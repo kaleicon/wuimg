@@ -17,7 +17,7 @@
 
  * Format briefing:
  * - NSCR: An image made up of tile indexes
- * - NCGR: Tiles made up of palette indexes
+ * - NCGR: 8x8 pixel tiles made up of palette indexes
  * - NCLR: Palette made up of RGB555 data
 
  * G2D base format:
@@ -179,10 +179,10 @@ const bool upper) {
 	}
 }
 
-static bool nds_search_sibling(const char *name, const char *new_ext,
-struct wuptr *map) {
+static int nds_search_sibling(const char *name, const char *new_ext,
+const bool search_sibling_dir) {
 	if (!name) {
-		return false;
+		return -1;
 	}
 	const size_t len = strlen(name);
 	const char *slash = memrchr(name, '/', len);
@@ -192,7 +192,7 @@ struct wuptr *map) {
 	const size_t ext_len = strlen(new_ext);
 	if (base_len < ext_len + 1 || name[len - ext_len - 1] != '.'
 	|| memchr(name + len - ext_len, '.', ext_len)) {
-		return false;
+		return -1;
 	}
 	const size_t ext_pos = len - ext_len;
 
@@ -203,7 +203,7 @@ struct wuptr *map) {
 	const size_t dir_len = dir_pre_len + ext_len + dir_post_len;
 	char *new_name = malloc(len + dir_len + 1);
 	if (!new_name) {
-		return false;
+		return -1;
 	}
 
 	int fd = -1;
@@ -213,6 +213,8 @@ struct wuptr *map) {
 		fd = open(new_name, O_RDONLY);
 		if (fd >= 0) {
 			break;
+		} else if (!search_sibling_dir) {
+			continue;
 		}
 		char *new_base = new_name + base_pos;
 		memmove(new_base + dir_len, new_base, base_len + 1);
@@ -226,6 +228,12 @@ struct wuptr *map) {
 		}
 	}
 	free(new_name);
+	return fd;
+}
+
+static bool nds_map_sibling(const char *name, const char *new_ext,
+const bool search_sibling_dir, struct wuptr *map) {
+	int fd = nds_search_sibling(name, new_ext, search_sibling_dir);
 	if (fd >= 0) {
 		bool ok = file_map_fd(map, fd);
 		close(fd);
@@ -393,7 +401,7 @@ struct wu_st ncgr_search_nclr(struct ncgr_desc *desc, const char *name) {
 	struct palette *pal = palette_new();
 	if (!pal) {
 		return wuerr(wu_alloc_error, "NCGR: failed to allocate palette");
-	} else  if (!nds_search_sibling(name, "NCLR", &nclr_data)) {
+	} else  if (!nds_map_sibling(name, "NCLR", true, &nclr_data)) {
 		palette_unref(pal);
 		return wuerr(wu_open_error, "couldn't find NCLR palette file");
 	}
@@ -618,7 +626,7 @@ const struct wuptr mem, const char *name) {
 	desc->data = mp_avail(&desc->g2d.mp, expect_size);
 
 	struct wuptr ncgr_data;
-	if (!nds_search_sibling(name, "NCGR", &ncgr_data)) {
+	if (!nds_map_sibling(name, "NCGR", true, &ncgr_data)) {
 		return wuerr(wu_open_error, "couldn't find NCGR tile file");
 	}
 	st = ncgr_init(&desc->ncgr, ncgr_data);
@@ -640,6 +648,97 @@ const struct wuptr mem, const char *name) {
 	struct wu_st st2 = ncgr_search_nclr(&desc->ncgr, name);
 	ncgr_img_baseinfo(&desc->ncgr, img);
 	return wuerr(wu_ok, st2.msg);
+}
+
+
+/* ANCL - Color palette */
+static struct wu_st ancl_parse(FILE *ifp, uint16_t *entries) {
+	/* ANCL struct:
+		Offset  Type    Name
+		0       u8      Magic[4]
+		4       u16     Entries
+		6       u16     ???
+		8       u16     Palette[Entries]
+	*/
+	*entries = 0;
+	const uint8_t magic[4] = {'A', 'N', 'C', 'L'};
+	uint16_t hdr[4];
+	if (!fread(hdr, sizeof(hdr), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(hdr, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	*entries = endian16l(hdr[2]);
+	return (!*entries || *entries > 256)
+		? wuerr(wu_invalid_header, "bad ANCL palette size")
+		: WU_OK;
+}
+
+static struct wu_st ancl_into_pal(struct palette *pal, FILE *ifp) {
+	uint16_t entries;
+	struct wu_st st = ancl_parse(ifp, &entries);
+	if (wu_isok(st)) {
+		uint8_t *dst = (uint8_t *)pal->color + entries*2;
+		st = wuerr_partial(fread(dst, 2, entries, ifp), entries);
+		if (wu_isok(st)) {
+			nds_unpack555_pal(pal, dst, entries);
+		}
+	}
+	return st;
+}
+
+struct wu_st ancl_into_img(struct wuimg *img, FILE *ifp) {
+	uint16_t entries;
+	struct wu_st st = ancl_parse(ifp, &entries);
+	if (wu_isok(st)) {
+		st = wuerr_partial(fread(img->data, 2, entries, ifp), entries);
+	}
+	return st;
+}
+
+/* ATEX - Texture */
+struct wu_st atex_parse(struct wuimg *img, FILE *ifp, const char *name) {
+	/* ATEX struct:
+		Offset  Type    Name
+		0       u8      Magic[4]
+		4       u32     RasterSize
+		8       u16     Width
+		10      u16     Height
+		12      u32     Bitdepth
+		16      u8      Raster[]
+	*/
+	const uint8_t magic[4] = {'A', 'T', 'E', 'X'};
+	uint16_t hdr[8];
+	if (!fread(hdr, sizeof(hdr), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(hdr, magic, sizeof(magic))) {
+		return WUERR_HERE(wu_invalid_signature);
+	}
+	img->w = endian16l(hdr[4]);
+	img->h = endian16l(hdr[5]);
+	img->channels = 1;
+	img->alpha = alpha_ignore;
+	img->bit = little_endian;
+	const uint16_t depth = buf_endian16l(hdr + 6);
+	switch (depth) {
+	case 4: case 8: img->bitdepth = (uint8_t)depth; break;
+	default: return wuerr(wu_invalid_header, "depth is not 4 nor 8");
+	}
+	struct palette *pal = wuimg_palette_init(img);
+	if (!pal) {
+		return WUERR_HERE(wu_alloc_error);
+	}
+
+	struct wu_st st = WU_OK;
+	FILE *ancl = fdopen(nds_search_sibling(name, "ANCL", false), "rb");
+	if (ancl) {
+		st = ancl_into_pal(pal, ancl);
+		fclose(ancl);
+		if (!wu_isok(st)) {
+			st = wuerr(wu_ok, "couldn't find ANCL palette");
+		}
+	}
+	return st;
 }
 
 

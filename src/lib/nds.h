@@ -108,6 +108,12 @@ struct wu_st nscr_init(struct nscr_desc *desc, struct wuimg *img,
 struct wuptr mem, const char *name);
 
 
+struct wu_st ancl_into_img(struct wuimg *img, FILE *ifp);
+
+
+struct wu_st atex_parse(struct wuimg *img, FILE *ifp, const char *filename);
+
+
 struct bgd_desc {
 	uint16_t nr_tiles;
 	uint16_t pal_entries;
