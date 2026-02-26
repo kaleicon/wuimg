@@ -48,19 +48,19 @@ https://studiostyle.sk/dmagic/gallery/gfxmodes.htm
  * 0x400 bytes.
 */
 
-static const size_t TW = 40; // Width in tiles, both modes
-static const size_t TH = 25; // Height in tiles
+static const size_t C64_TW = 40; // Width in tiles, both modes
+static const size_t C64_TH = 25; // Height in tiles
 
-static const size_t HR_WIDTH = TW*8;
-static const size_t MC_WIDTH = TW*4;
-static const size_t HEIGHT = TH*8;
+static const size_t C64_HR_WIDTH = C64_TW*8;
+static const size_t C64_MC_WIDTH = C64_TW*4;
+static const size_t C64_HEIGHT = C64_TH*8;
 
-static const size_t RAM_LEN = TW * TH;
-static const size_t COLOR_LEN = RAM_LEN;
-static const size_t SCREEN_LEN = RAM_LEN;
-static const size_t BITMAP_LEN = RAM_LEN * 8;
-static const size_t FLI_SCREEN_LEN = 0x400;
-static const size_t BG_LEN = 1;
+static const size_t C64_RAM_LEN = C64_TW * C64_TH;
+static const size_t C64_COLOR_LEN = C64_RAM_LEN;
+static const size_t C64_SCREEN_LEN = C64_RAM_LEN;
+static const size_t C64_BITMAP_LEN = C64_RAM_LEN * 8;
+static const size_t C64_FLI_SCREEN_LEN = 0x400;
+static const size_t C64_BG_LEN = 1;
 
 struct c64_mem_offsets {
 	const uint8_t *restrict bitmap;
@@ -105,12 +105,13 @@ const char * c64_fmt_str(const enum c64_fmt fmt) {
 
 static void multicolor_expand(uint16_t *dst, const struct c64_mem_offsets *off,
 const bool fli, const bool crippled) {
-	for (size_t tile_y = 0; tile_y < TH; ++tile_y) {
-		for (size_t tile_x = 0; tile_x < TW; ++tile_x) {
-			const size_t tile = tile_y*TW + tile_x;
+	for (size_t tile_y = 0; tile_y < C64_TH; ++tile_y) {
+		for (size_t tile_x = 0; tile_x < C64_TW; ++tile_x) {
+			const size_t tile = tile_y*C64_TW + tile_x;
 			for (size_t y = 0; y < 8; ++y) {
 				// Grab all colors sources unconditionally
-				const unsigned screen = off->screen[tile + y*fli*FLI_SCREEN_LEN];
+				const unsigned screen = off->screen[tile
+					+ y*fli*C64_FLI_SCREEN_LEN];
 				const unsigned byte = off->bitmap[tile*8 + y];
 				const unsigned color = off->color[crippled ? 0 : tile];
 				// Join into a single word
@@ -127,7 +128,7 @@ const bool fli, const bool crippled) {
 					unsigned n = (src >> (couple * 4)) & 0xf;
 					out |= n << (x*4);
 				}
-				const size_t d = (tile_y*8 + y)*TW + tile_x;
+				const size_t d = (tile_y*8 + y)*C64_TW + tile_x;
 				dst[d] = endian16((uint16_t)out, big_endian);
 			}
 		}
@@ -136,19 +137,20 @@ const bool fli, const bool crippled) {
 
 static void hires_expand(uint32_t *dst, const struct c64_mem_offsets *off,
 const bool fli) {
-	for (size_t tile_y = 0; tile_y < TH; ++tile_y) {
-		for (size_t tile_x = 0; tile_x < TW; ++tile_x) {
-			const size_t tile = tile_y*TW + tile_x;
+	for (size_t tile_y = 0; tile_y < C64_TH; ++tile_y) {
+		for (size_t tile_x = 0; tile_x < C64_TW; ++tile_x) {
+			const size_t tile = tile_y*C64_TW + tile_x;
 			for (size_t y = 0; y < 8; ++y) {
 				uint32_t byte = off->bitmap[tile*8 + y];
-				uint32_t src = off->screen[tile + y*fli*FLI_SCREEN_LEN];
+				uint32_t src = off->screen[tile
+					+ y*fli*C64_FLI_SCREEN_LEN];
 				uint32_t out = 0;
 				for (size_t x = 0; x < 8; ++x) {
 					uint32_t b = (byte >> x) & 1;
 					uint32_t n = (src >> (b*4)) & 0xf;
 					out |= n << (x*4);
 				}
-				const size_t d = (tile_y*8 + y)*TW + tile_x;
+				const size_t d = (tile_y*8 + y)*C64_TW + tile_x;
 				dst[d] = endian32(out, big_endian);
 			}
 		}
@@ -159,17 +161,26 @@ static bool get_offsets(struct mparser *mp, struct c64_mem_offsets *off,
 const struct c64_fmt_info *info) {
 	const uint8_t len = ARRAY_LEN(info->tbl);
 	const uint8_t *bg = NULL;
-	const size_t screen_len = info->fli ? FLI_SCREEN_LEN*8 : SCREEN_LEN;
+	const size_t screen_len = info->fli
+		? C64_FLI_SCREEN_LEN*8 : C64_SCREEN_LEN;
 	for (uint8_t i = 0; i < len; ++i) {
 		const enum c64_field f = i;
 		const uint16_t pos = info->tbl[f];
 		if (pos) {
 			mp_seek_set(mp, pos);
 			switch (f & 0x3) {
-			case c64_bitmap: off->bitmap = mp_slice(mp, BITMAP_LEN); break;
-			case c64_screen: off->screen = mp_slice(mp, screen_len); break;
-			case c64_color: off->color = mp_slice(mp, COLOR_LEN); break;
-			case c64_bg: bg = mp_slice(mp, BG_LEN); break;
+			case c64_bitmap:
+				off->bitmap = mp_slice(mp, C64_BITMAP_LEN);
+				break;
+			case c64_screen:
+				off->screen = mp_slice(mp, screen_len);
+				break;
+			case c64_color:
+				off->color = mp_slice(mp, C64_COLOR_LEN);
+				break;
+			case c64_bg:
+				bg = mp_slice(mp, C64_BG_LEN);
+				break;
 			}
 		}
 	}
@@ -291,8 +302,8 @@ inline static struct pix_rgb8 gen_e(const uint8_t level, const uint8_t angle) {
 }
 
 struct wu_st c64_set(const struct c64_desc *desc, struct wuimg *img) {
-	img->w = desc->info.mode == c64_hires ? HR_WIDTH : MC_WIDTH;
-	img->h = HEIGHT;
+	img->w = desc->info.mode == c64_hires ? C64_HR_WIDTH : C64_MC_WIDTH;
+	img->h = C64_HEIGHT;
 	img->channels = 1;
 	img->bitdepth = 4;
 	img->ratio = desc->info.mode == c64_hires ? 1 : 2;

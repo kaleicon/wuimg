@@ -41,10 +41,10 @@ static const size_t SCR2_H = 192;
 static const size_t SCR3_W = 64;
 static const size_t SCR3_H = 48;
 
-static const size_t GEN_LEN = 0x800;
-static const size_t NAME_LEN = 0x100;
-static const size_t GAP_LEN = 0x500;
-static const size_t COLOR_LEN = 0x800;
+static const size_t MSX_GEN_LEN = 0x800;
+static const size_t MSX_NAME_LEN = 0x100;
+static const size_t MSX_GAP_LEN = 0x500;
+static const size_t MSX_COLOR_LEN = 0x800;
 
 bool msx_mode_may_be_compressed(enum msx_screen mode) {
 	return mode == msx_screen7;
@@ -62,7 +62,7 @@ bool msx_mode_may_have_alternate_field(enum msx_screen mode) {
 	return false;
 }
 
-static void set_msx_pal(struct palette *pal, const uint8_t grb[static 30],
+static void set_msx_pal(struct palette *pal, const uint8_t grb[static 32],
 const uint8_t depth, const bool is_yae) {
 	const uint8_t max = is_yae ? 0x1f : 0x07;
 	const int scale = (max << 8) / 0x07 + 1;
@@ -169,7 +169,8 @@ static struct wu_st scr2_4_decode(const struct msx_desc *desc, struct wuimg *img
 	 * then (x8, y0) to (x15, y7), then (x16, y0) to (x23, y7), etc.
 	*/
 
-	const size_t table_len = (GEN_LEN + NAME_LEN + COLOR_LEN) * 3 + GAP_LEN;
+	const size_t table_len = (MSX_GEN_LEN + MSX_NAME_LEN + MSX_COLOR_LEN) * 3
+		+ MSX_GAP_LEN;
 	uint8_t *buf = malloc(table_len);
 	if (!buf) {
 		return WUERR_HERE(wu_alloc_error);
@@ -185,10 +186,10 @@ static struct wu_st scr2_4_decode(const struct msx_desc *desc, struct wuimg *img
 	search_msx_pal(img->u.palette, buf + 0x1b80, 4, false);
 
 	for (size_t i = 0; i < 3; ++i) {
-		const uint8_t *generator = buf + i*GEN_LEN;
-		const uint8_t *names = buf + 3*GEN_LEN + i*NAME_LEN;
-		const uint8_t *colors = buf + 3*GEN_LEN + 3*NAME_LEN + GAP_LEN
-			+ i*COLOR_LEN;
+		const uint8_t *generator = buf + i*MSX_GEN_LEN;
+		const uint8_t *names = buf + 3*MSX_GEN_LEN + i*MSX_NAME_LEN;
+		const uint8_t *colors = buf + 3*MSX_GEN_LEN + 3*MSX_NAME_LEN
+			+ MSX_GAP_LEN + i*MSX_COLOR_LEN;
 		uint8_t *dst = img->data + 32*8 * 8*8 * i;
 		for (size_t y = 0; y < 8; ++y) {
 			for (size_t x = 0; x < 32; ++x) {
@@ -236,7 +237,7 @@ static struct wu_st scr3_decode(const struct msx_desc *desc, struct wuimg *img) 
 	 * instead.
 	*/
 	const bool skip_name = desc->end < 0xaff;
-	const size_t table_len = GEN_LEN + (skip_name ? 0 : NAME_LEN*3);
+	const size_t table_len = MSX_GEN_LEN + (skip_name ? 0 : MSX_NAME_LEN*3);
 	uint8_t *buf = malloc(table_len);
 	if (!buf) {
 		return WUERR_HERE(wu_alloc_error);
@@ -245,12 +246,12 @@ static struct wu_st scr3_decode(const struct msx_desc *desc, struct wuimg *img) 
 	const size_t read = load_or_zero(buf, table_len, desc->ifp);
 
 	const uint8_t *generator = buf;
-	const uint8_t *names = buf + GEN_LEN;
+	const uint8_t *names = buf + MSX_GEN_LEN;
 	const size_t w = SCR3_W/2;
 	const size_t h = SCR3_H/2;
 	for (size_t y = 0; y < h; ++y) {
 		for (size_t x = 0; x < w; ++x) {
-			const uint8_t name = table_len > GEN_LEN
+			const uint8_t name = table_len > MSX_GEN_LEN
 				? names[y*w + x] : (uint8_t)((y >> 2 << 5) + x);
 			const uint8_t *gen = generator + name*8 + (y & 0x03)*2;
 			for (size_t yp = 0; yp < 2; ++yp) {
