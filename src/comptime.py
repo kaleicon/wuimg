@@ -1053,7 +1053,7 @@ DEC_MAP: DecMap = {
 			ext="pk",
 			magic=b"\xf1\x06\0\0\0\x01\0\0",
 		),
-		"rpkn": FmtInfo("Sound Forge Peak",
+		"rpkn": FmtInfo("REAPER ReaPeaks",
 			ext="reapeaks",
 			magic=b"RPKN",
 		),
