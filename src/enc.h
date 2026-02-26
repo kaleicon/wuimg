@@ -11,12 +11,18 @@ typedef const char * (*enc_init_t)(void *state, const struct wuimg *dst,
 typedef size_t (*enc_write_row_t)(void *state, const struct wuimg *dst,
 	FILE *ofp, uint8_t *restrict row);
 typedef size_t (*enc_write_frame_t)(void *state, const struct wuimg *dst,
-	FILE *ofp, const int frame);
+	FILE *ofp, int frame);
 typedef void (*enc_end_t)(void *state);
+
+enum enc_support {
+	enc_single,
+	enc_anim,
+	enc_subimg,
+};
 
 struct enc_fn {
 	uint16_t state_size;
-	bool anim;
+	enum enc_support support:16;
 	enc_best_fit_t best_fit;
 	enc_init_t init;
 	enc_write_row_t write_row;

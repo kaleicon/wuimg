@@ -322,7 +322,7 @@ static bool best_jxl_fit(struct wuimg *dst, const struct wuimg *src) {
 
 const struct enc_fn jpegxl_enc = {
 	.state_size = sizeof(struct jxl_state),
-	.anim = true,
+	.support = enc_anim,
 	.best_fit = best_jxl_fit,
 	.init = init_jxl_enc,
 	.write_frame = enc_jxl_frame,

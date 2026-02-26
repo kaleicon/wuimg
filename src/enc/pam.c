@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "misc/bit.h"
+#include "misc/common.h"
 #include "misc/endian.h"
 
 #include "enc.h"
@@ -137,4 +138,50 @@ const struct enc_fn pam_enc = {
 	.write_row = write_pam_row,
 	.write_frame = write_pam_frame,
 	.end = end_pam,
+};
+
+
+static size_t dump_raw_row(void *state, const struct wuimg *dst, FILE *ofp,
+uint8_t *restrict row) {
+	(void)state;
+	return fwrite(row, 1, wuimg_stride(dst), ofp);
+}
+
+static size_t dump_raw_frame(void *state, const struct wuimg *dst, FILE *ofp,
+const int frame) {
+	(void)state; (void)frame;
+	size_t w = 0;
+	switch (dst->mode) {
+	case image_mode_palette:
+		// Always hash the palette in case it's modified between frames
+		;const struct palette *pal = dst->u.palette;
+		w += fwrite(pal->color, 1, sizeof(pal->color), ofp);
+		// fallthrough
+	case image_mode_raw:
+	case image_mode_bitfield:
+		w += fwrite(dst->data, 1, wuimg_size(dst), ofp);
+		break;
+	case image_mode_planar:
+		;const struct plane_info *p = dst->u.planes->p;
+		for (size_t z = 0; z < dst->channels; ++z) {
+			w += fwrite(p[z].ptr, 1, p[z].size, ofp);
+		}
+		break;
+	}
+	return w;
+}
+
+static const char * no_need_for_this(void *state, const struct wuimg *dst,
+const struct wuimg *src, FILE *ofp) {
+	(void)state; (void)dst; (void)src; (void)ofp;
+	return NULL;
+}
+
+const struct enc_fn raw_enc = {
+	.support = enc_subimg,
+	.best_fit = best_pam_fit,
+	.init = no_need_for_this,
+	.write_row = dump_raw_row,
+	.write_frame = dump_raw_frame,
+	.end = null_function,
 };

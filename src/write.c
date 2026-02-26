@@ -31,6 +31,7 @@ struct enc_info {
 #ifdef WU_ENABLE_JPEGXL
 extern const struct enc_fn jpegxl_enc;
 #endif
+extern const struct enc_fn raw_enc;
 extern const struct enc_fn pam_enc;
 
 static const struct enc_info ENC_TABLE[] = {
@@ -39,12 +40,14 @@ static const struct enc_info ENC_TABLE[] = {
 #ifdef WU_ENABLE_JPEGXL
 	{"jxl", &jpegxl_enc},
 #endif
+	{"raw", &raw_enc},
 };
 
 struct write_file {
 	struct wustr parent;
 	struct wustr file;
 	size_t name_base;
+	const struct enc_fn *enc;
 	FILE *ofp;
 	int dirfd;
 	bool with_idx;
@@ -53,24 +56,50 @@ struct write_file {
 	struct wuimg dst;
 };
 
-static int find_codec(const char *ext) {
-	for (int i = 0; i < (int)ARRAY_LEN(ENC_TABLE); ++i) {
-		if (!strncmp(ext, ENC_TABLE[i].ext, sizeof(ENC_TABLE[i].ext))) {
-			return i;
+static bool is_last_frame(const struct wu_state *state, const struct wuimg *src) {
+	return (size_t)state->frame + 1 == wuimg_frames_nr(src);
+}
+static bool write_should_open_file(const struct write_file *out,
+const struct wudec_image *image) {
+	const struct wu_state *state = &image->state;
+	switch (out->enc->support) {
+	case enc_subimg:
+		if (state->idx == 0) {
+	case enc_anim:
+			if (state->frame == 0) {
+	case enc_single:
+				return true;
+			}
 		}
+		break;
 	}
-	return -1;
+	return false;
+}
+static bool write_should_close_file(const struct write_file *out,
+const struct wudec_image *image, const struct wuimg *src) {
+	const struct wu_state *state = &image->state;
+	switch (out->enc->support) {
+	case enc_subimg:
+		if ((size_t)state->idx + 1 == image->file.nr) {
+	case enc_anim:
+			if (is_last_frame(state, src)) {
+	case enc_single:
+				return true;
+			}
+		}
+		break;
+	}
+	return false;
 }
 
-static const char * write_frame(const struct enc_fn *enc,
-const struct wuimg *dst, const struct wuimg *src, struct write_file *out,
-struct write_writer *writer, const int frame) {
+static const char * actually_write_frame(struct write_file *out,
+struct write_writer *writer, const struct wudec_image *image,
+const struct wuimg *dst, const struct wuimg *src) {
+	const watch_t watch = watch_look();
 	const char *msg = out->passthrough
 		? NULL : writer->set_image(writer->state, dst, src);
-	if (!msg && (frame == 0 || !enc->anim)) {
-		msg = enc->init(out->enc_state, dst, src, out->ofp);
-	}
 	if (!msg) {
+		const struct enc_fn *enc = out->enc;
 		size_t w = 0;
 		if (!out->passthrough) {
 			const size_t stride = wuimg_stride(dst);
@@ -79,11 +108,12 @@ struct write_writer *writer, const int frame) {
 					+ (enc->write_row ? 0 : stride*y);
 				writer->get_row(writer->state, y, tgt);
 				if (enc->write_row) {
-					w += enc->write_row(out->enc_state, dst,
-						out->ofp, tgt);
+					w += enc->write_row(out->enc_state,
+						dst, out->ofp, tgt);
 				}
 			}
 		}
+		const int frame = image->state.frame;
 		if (out->passthrough || !enc->write_row) {
 			w = enc->write_frame(out->enc_state, dst,
 				out->ofp, frame);
@@ -95,25 +125,50 @@ struct write_writer *writer, const int frame) {
 	if (!out->passthrough && writer->close) {
 		writer->close(writer->state);
 	}
+	watch_report("Converted", watch, report_all);
 	return msg;
 }
 
-static const char * write_sub_img(const struct wuimg *src,
-struct write_file *out, struct write_writer *writer, const struct enc_fn *enc,
-const int frame) {
+static void write_close_encoder(struct write_file *out,
+const struct wudec_image *image, const struct wuimg *src, const bool failed) {
+	if (failed || write_should_close_file(out, image, src)) {
+		out->enc->end(out->enc_state);
+	}
+}
+static const char * write_prepare_encoder(struct write_file *out,
+const struct wudec_image *image, const struct wuimg *dst, const struct wuimg *src) {
+	if (write_should_open_file(out, image)) {
+		return out->enc->init(out->enc_state, dst, src, out->ofp);
+	}
+	return NULL;
+}
+
+static void write_clear_dst_img(struct write_file *out,
+const struct wudec_image *image, const struct wuimg *src, const bool failed) {
+	if (failed || out->enc->support == enc_single
+	|| is_last_frame(&image->state, src)) {
+		wuimg_free(&out->dst);
+	}
+}
+static const char * write_prepare_dst_img(struct write_file *out,
+const struct wudec_image *image, const struct wuimg *src,
+const struct wuimg **tgt) {
+	*tgt = src;
 	const char *err_msg = NULL;
-	if (frame == 0) {
-		out->dst = (struct wuimg){0};
-		out->passthrough = enc->best_fit(&out->dst, src);
+	if (image->state.frame == 0) {
+		struct wuimg *dst = &out->dst;
+		*dst = (struct wuimg){0};
+		out->passthrough = out->enc->best_fit(dst, src);
 		if (getenv("WU_DEBUG")) {
 			fprintf(stderr, "passthrough: %s\n",
 				out->passthrough ? "yes" : "no");
 		}
 		if (!out->passthrough) {
-			if (wuimg_verify(&out->dst) == wu_ok) {
-				const size_t rows = enc->write_row ? 1 : out->dst.h;
-				out->dst.data = malloc(wuimg_stride(&out->dst) * rows);
-				if (!out->dst.data) {
+			*tgt = dst;
+			if (wuimg_verify(dst) == wu_ok) {
+				size_t rows = out->enc->write_row ? 1 : dst->h;
+				dst->data = malloc(wuimg_stride(dst) * rows);
+				if (!dst->data) {
 					err_msg = "Output image allocation failure";
 				}
 			} else {
@@ -122,17 +177,12 @@ const int frame) {
 			}
 		}
 	}
-	if (!err_msg) {
-		const watch_t w = watch_look();
-		const struct wuimg *dst = out->passthrough ? src : &out->dst;
-		err_msg = write_frame(enc, dst, src, out, writer, frame);
-		watch_report("Converted", w, report_all);
-	}
 	return err_msg;
 }
 
-static const size_t SUFFIX_SPACE = sizeof(int)*3*2 // index and frame number
-	+ sizeof(uint32_t)*3*2 // frame time numerator and denominator
+static const size_t DECIMAL_LEN = 3;
+static const size_t SUFFIX_LEN = sizeof(int)*DECIMAL_LEN*2 // index and frame number
+	+ sizeof(uint32_t)*DECIMAL_LEN*2 // frame time numerator and denominator
 	+ 5 // delimiters and extension dot
 	+ sizeof(ENC_TABLE->ext) // extension
 	+ 1; // ending nul
@@ -140,7 +190,7 @@ static const size_t SUFFIX_SPACE = sizeof(int)*3*2 // index and frame number
 static FILE * create_file(struct write_file *out, const struct wu_state *state,
 const bool overwrite, const struct image_frames *frames, const char ext[static 4]) {
 	char *suffix = (char *)out->file.str + out->name_base;
-	const size_t rem = SUFFIX_SPACE;
+	const size_t rem = SUFFIX_LEN;
 
 	const int prec = 5;
 	const int ext_len = sizeof(ENC_TABLE->ext);
@@ -163,7 +213,6 @@ const bool overwrite, const struct image_frames *frames, const char ext[static 4
 	FILE *ofp = NULL;
 	if (w > 0 && (size_t)w < rem) {
 		out->file.len = out->name_base + (size_t)w;
-		errno = 0;
 		const int fd = openat(out->dirfd, (char *)out->file.str,
 			O_WRONLY | O_CREAT | O_TRUNC | (overwrite ? 0 : O_EXCL),
 			S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -177,17 +226,24 @@ const bool overwrite, const struct image_frames *frames, const char ext[static 4
 	return ofp;
 }
 
-static const char * get_file(struct write_file *out,
+static void write_close_file(struct write_file *out,
+const struct wudec_image *image, struct wuimg *src, const bool failed) {
+	if (failed || write_should_close_file(out, image, src)) {
+		fclose(out->ofp);
+	}
+}
+static const char * write_prepare_file(struct write_file *out,
 const struct write_args *args, const struct wudec_image *image,
 struct wuimg *src) {
 	const char *msg = NULL;
-	if (!out->ofp) {
+	if (write_should_open_file(out, image)) {
+		errno = 0;
 		if (args->stdout) {
 			out->ofp = stdout;
 		} else {
-			const bool supports_anim = ENC_TABLE[args->codec].enc->anim;
-			errno = 0;
-			out->ofp = create_file(out, &image->state, args->overwrite,
+			const bool supports_anim = out->enc->support >= enc_anim;
+			out->ofp = create_file(out, &image->state,
+				args->overwrite,
 				supports_anim ? NULL : src->frames,
 				ENC_TABLE[args->codec].ext);
 		}
@@ -200,34 +256,25 @@ struct wuimg *src) {
 	return msg;
 }
 
-static bool close_file(struct write_file *out, const struct write_args *args,
-const struct wudec_image *image, const struct wuimg *src, const bool failed) {
-	const bool final_frame = failed
-		|| (size_t)(image->state.frame + 1) == wuimg_frames_nr(src);
-	const struct enc_fn *enc = ENC_TABLE[args->codec].enc;
-	if (final_frame || (!enc->anim && args->stdout)) {
-		wuimg_free(&out->dst);
-	}
-	if (final_frame || !enc->anim) {
-		if (enc->end) {
-			enc->end(out->enc_state);
+static const char * write_frame(struct write_file *out,
+const struct write_args *args, struct write_writer *writer,
+const struct wudec_image *image, struct wuimg *src) {
+	const char *msg = write_prepare_file(out, args, image, src);
+	if (!msg) {
+		const struct wuimg *tgt;
+		msg = write_prepare_dst_img(out, image, src, &tgt);
+		if (!msg) {
+			msg = write_prepare_encoder(out, image, tgt, src);
+			if (!msg) {
+				msg = actually_write_frame(out, writer, image,
+					tgt, src);
+			}
+			write_close_encoder(out, image, src, msg);
 		}
-		if (out->ofp) {
-			fclose(out->ofp);
-			out->ofp = NULL;
-			return true;
-		}
+		write_clear_dst_img(out, image, &out->dst, msg);
+		write_close_file(out, image, src, msg);
 	}
-	return false;
-}
-
-static void free_write_file(struct write_file *out) {
-	if (out->dirfd >= 0) {
-		close(out->dirfd);
-	}
-	wustr_free(&out->parent);
-	wustr_free(&out->file);
-	free(out->enc_state);
+	return msg;
 }
 
 static void print_write_file(const struct write_file *out, FILE *ofp) {
@@ -248,9 +295,19 @@ FILE *ofp) {
 	term_line_put(msg, ofp);
 }
 
+static void free_write_file(struct write_file *out) {
+	if (out->dirfd >= 0) {
+		close(out->dirfd);
+	}
+	wustr_free(&out->parent);
+	wustr_free(&out->file);
+	free(out->enc_state);
+}
+
 static bool init_write_file(struct write_file *out,
 const struct write_args *args, const struct wudec_image *image) {
 	struct fs_path path;
+	out->enc = ENC_TABLE[args->codec].enc;
 	out->dirfd = fs_get_dir_or_parent(&path,
 		args->outdir ? args->outdir : image->file.name,
 		!args->outdir);
@@ -258,10 +315,11 @@ const struct write_args *args, const struct wudec_image *image) {
 		fs_path_set_file(&path, wuptr_str(image->file.name));
 		out->name_base = path.file.len;
 		out->parent = path.parent;
-		if (wustr_malloc(&out->file, out->name_base + SUFFIX_SPACE)) {
+		if (wustr_malloc(&out->file, out->name_base + SUFFIX_LEN)) {
 			memcpy(out->file.str, path.file.ptr, out->name_base);
-			out->with_idx = image->file.nr > 1;
-			out->enc_state = calloc(ENC_TABLE[args->codec].enc->state_size, 1);
+			out->with_idx = (out->enc->support != enc_subimg)
+				&& (image->file.nr > 1);
+			out->enc_state = calloc(out->enc->state_size, 1);
 			return out->enc_state;
 		}
 	}
@@ -288,22 +346,15 @@ struct write_writer *writer) {
 	bool all_ok = init_write_file(&out, args, image);
 	if (all_ok) {
 		do {
-			const char *msg = get_file(&out, args, image, cur);
-			if (!msg) {
-				msg = write_sub_img(cur, &out, writer,
-					ENC_TABLE[args->codec].enc,
-					image->state.frame);
-			}
-			bool print = close_file(&out, args, image, cur, msg);
+			const char *msg = write_frame(&out, args, writer,
+				image, cur);
 			if (msg) {
 				print_write_error(&out, msg, stderr);
 				all_ok = false;
 				break;
-			}
-			if (print) {
-				if (args->stdout) {
-					break;
-				}
+			} else if (args->stdout) {
+				break;
+			} else {
 				print_write_file(&out, stdout);
 				fputc(args->null ? 0 : '\n', stdout);
 			}
@@ -380,9 +431,10 @@ static const struct opts write_opts[] = {
 	{'e', "", "ENCODER",
 		"\t\tOutput format. Supported encoders are\n"
 #ifdef WU_ENABLE_JPEGXL
-		"\t\t* jxl (animation, ICC profiles, floating-point data)\n"
+		"\t\t* jxl: animation, ICC profiles, floating-point data\n"
 #endif
-		"\t\t* pam"},
+		"\t\t* pam\n"
+		"\t\t* raw: dumps all decoded data senselessly"},
 	{'f', "force", "",
 		"\t\tForce overwriting output file(s)."},
 	{'s', "stdout", "",
@@ -391,6 +443,15 @@ static const struct opts write_opts[] = {
 	{'z', "null", "",
 		"\t\tUse null as line terminator when printing filenames."},
 };
+
+static int find_codec(const char *ext) {
+	for (int i = 0; i < (int)ARRAY_LEN(ENC_TABLE); ++i) {
+		if (!strncmp(ext, ENC_TABLE[i].ext, sizeof(ENC_TABLE[i].ext))) {
+			return i;
+		}
+	}
+	return -1;
+}
 
 const char * write_args(const int argc, char *const *argv, int *idx,
 struct write_args *args) {
