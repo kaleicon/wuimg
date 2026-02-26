@@ -13,10 +13,6 @@
 
 void term_print_escaped(const unsigned char *restrict data, size_t len,
 const bool is_utf8, FILE *out) {
-	const unsigned char hex[16] = {
-		'0', '1', '2', '3', '4', '5', '6', '7',
-		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-	};
 	const unsigned char HIGHLIGHT[] = {0x1b, '[', '7', 'm'};
 	const unsigned char RESET[] = {0x1b, '[', 'm'};
 
@@ -39,7 +35,9 @@ const bool is_utf8, FILE *out) {
 				fwrite(HIGHLIGHT, 1, sizeof(HIGHLIGHT), out);
 				escaping = true;
 			}
-			unsigned char byte[] = {'x', hex[c >> 4], hex[c & 0x0f]};
+			unsigned char byte[] = {
+				'x', tohex_upper(c >> 4), tohex_upper(c & 0x0f)
+			};
 			fwrite(byte, 1, sizeof(byte), out);
 		}
 	}

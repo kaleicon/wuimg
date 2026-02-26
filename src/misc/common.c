@@ -27,6 +27,14 @@ long num_cpus(void) {
 #endif
 }
 
+uint8_t tohex_upper(unsigned x) {
+	return (uint8_t)(x + ((x < 0xa) ? '0' : 'A' - 0xa));
+}
+
+uint8_t tohex_lower(unsigned x) {
+	return (uint8_t)(x + ((x < 0xa) ? '0' : 'a' - 0xa));
+}
+
 static bool is_smol(const size_t nmemb, const size_t size) {
 	const size_t limit = 0x7fffff;
 	return nmemb && limit/nmemb > size;

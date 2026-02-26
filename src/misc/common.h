@@ -19,6 +19,10 @@ enum trit {
 
 long num_cpus(void);
 
+uint8_t tohex_upper(unsigned x);
+
+uint8_t tohex_lower(unsigned x);
+
 void * small_realloc(void *ptr, size_t nmemb, size_t size);
 
 void * small_calloc(size_t nmemb, size_t size);

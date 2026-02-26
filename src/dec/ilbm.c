@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2023 kaleido
+#include "misc/common.h"
 #include "lib/ilbm.h"
 #include "wudefs.h"
 
@@ -29,14 +30,6 @@ struct wu_state *state, const enum image_event ev) {
 	return WU_NO_CHANGE;
 }
 
-static char tohex(uint8_t c) {
-	c &= 0xf;
-	if (c < 0xa) {
-		return (char)(c + '0');
-	}
-	return (char)(c - 0xa + 'a');
-}
-
 static void fourcc_to_str(char str[static FOURCC_STR_LEN], uint32_t id) {
 	size_t pos = 0;
 	for (size_t i = 0; i < 4; ++i) {
@@ -44,8 +37,8 @@ static void fourcc_to_str(char str[static FOURCC_STR_LEN], uint32_t id) {
 		if (c < ' ' || c > 0x7f) {
 			str[pos] = '\\';
 			str[pos+1] = 'x';
-			str[pos+2] = tohex(c >> 4);
-			str[pos+3] = tohex(c);
+			str[pos+2] = (char)tohex_lower(c >> 4);
+			str[pos+3] = (char)tohex_lower(c & 0xf);
 			pos += 4;
 		} else {
 			str[pos] = (char)c;
