@@ -26,13 +26,13 @@ const struct pix_rgba8 cur) {
 	memcpy(seen + hash_pxl(cur), &cur, sizeof(cur));
 }
 
-static size_t qoi_inner(struct mparser mp, struct wuimg *img,
+static size_t qoi_inner(const struct wuptr src, struct wuimg *img,
 const size_t dst_len) {
-	const struct wuptr src = mp_remaining(&mp);
 	struct pix_rgba8 seen[64] = {0};
 	size_t s = 0;
 	size_t d = 0;
 	struct pix_rgba8 cur = {0, 0, 0, 255};
+	const uint8_t channels = img->channels;
 
 	if (s < src.len) {
 		/* Cache initial color if the first instruction is a pixel run
@@ -90,7 +90,7 @@ const size_t dst_len) {
 				s += ch;
 				break;
 			default:
-				ch = img->channels;
+				ch = channels;
 				const size_t run = arg + 1;
 				if (run*ch > dst_len - d) {
 					return d;
@@ -106,21 +106,21 @@ const size_t dst_len) {
 			break;
 		}
 		memcpy(img->data + d, &cur, 4);
-		d += img->channels;
+		d += channels;
 	}
 	return d;
 }
 
-struct wu_st qoi_decode(const struct mparser *mp, struct wuimg *img) {
+struct wu_st qoi_decode(struct wuptr data, struct wuimg *img) {
 	const size_t dst_len = wuimg_size(img);
 	// Add 1 byte of padding so we can use a faster 4-byte memcpy
 	img->data = malloc(dst_len + (bool)(img->channels == 3));
 	return img->data
-		? wuerr_partial(qoi_inner(*mp, img, dst_len), dst_len)
+		? wuerr_partial(qoi_inner(data, img, dst_len), dst_len)
 		: WUERR_HERE(wu_alloc_error);
 }
 
-struct wu_st qoi_parse(struct mparser *mp, struct wuimg *img,
+struct wu_st qoi_parse(struct wuptr *data, struct wuimg *img,
 const struct wuptr mem) {
 	/* QOI header:
 		Offset  Type    Name
@@ -131,23 +131,23 @@ const struct wuptr mem) {
 		13      u8      IsLinearRGB
 		14
 	*/
-	*mp = mp_wuptr(mem);
 	const uint8_t magic[4] = {'q', 'o', 'i', 'f'};
-	const uint8_t *header = mp_slice(mp, 14);
-	if (!header) {
+	if (mem.len < 14) {
 		return WUERR_HERE(wu_unexpected_eof);
-	} else if (memcmp(header, magic, sizeof(magic))) {
+	} else if (memcmp(mem.ptr, magic, sizeof(magic))) {
 		return WUERR_HERE(wu_invalid_signature);
 	}
-	switch (header[12]) {
+	switch (mem.ptr[12]) {
 	case 3: case 4:
-		img->w = buf_endian32b(header + 4);
-		img->h = buf_endian32b(header + 8);
-		img->channels = header[12];
+		img->w = buf_endian32b(mem.ptr + 4);
+		img->h = buf_endian32b(mem.ptr + 8);
+		img->channels = mem.ptr[12];
 		img->bitdepth = 8;
-		if (header[9]) {
+		if (mem.ptr[9]) {
 			img->cs.transfer = cicp_transfer_linear;
 		}
+		data->ptr = mem.ptr + 14;
+		data->len = mem.len - 14;
 		return wuimg_verify_st(img);
 	}
 	return wuerr(wu_invalid_header, "image channels is neither 3 or 4");

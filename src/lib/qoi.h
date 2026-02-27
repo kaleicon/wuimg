@@ -4,10 +4,9 @@
 #define LIB_QOI
 
 #include "raster/wuimg.h"
-#include "misc/mparser.h"
 
-struct wu_st qoi_decode(const struct mparser *mp, struct wuimg *img);
+struct wu_st qoi_decode(struct wuptr data, struct wuimg *img);
 
-struct wu_st qoi_parse(struct mparser *mp, struct wuimg *img, struct wuptr mem);
+struct wu_st qoi_parse(struct wuptr *data, struct wuimg *img, struct wuptr mem);
 
 #endif /* LIB_QOI */
