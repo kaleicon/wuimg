@@ -114,22 +114,22 @@ enum wu_error wudec_callback(struct wudec_image *image,
 enum image_event event) {
 	struct image_file *infile = &image->file;
 	struct wu_state *state = &image->state;
+	struct wuimg *img = infile->sub_img + state->idx;
 	event &= wudec_cur_events(image);
 	switch (event) {
 	case ev_none:
 		break;
 	case ev_subcycle:
-		if (infile->sub_img[state->idx].data) {
+		if (img->data) {
 			break;
 		} else if (!image->desc.is_auto) {
 			enum wu_error e = call_event(image, ev_metadata);
 			if (e != wu_ok && e != wu_no_change) {
 				return e;
 			}
-			if (image->desc.dec.fn->alloc_on_subcycle) {
-				e = wuimg_alloc_limit(
-					infile->sub_img + state->idx,
-					image->file.conf);
+			if (image->desc.dec.fn->alloc_on_subcycle
+			&& !img->borrowed) {
+				e = wuimg_alloc_limit(img, image->file.conf);
 				if (e != wu_ok) {
 					return e;
 				}

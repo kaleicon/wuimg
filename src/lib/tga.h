@@ -10,6 +10,18 @@
 #include "raster/wuimg.h"
 #include "raster/pix.h"
 
+enum tga_attr_type {
+	tga_attr_ignore = 0,
+	tga_attr_undefined_ignorable = 1,
+	tga_attr_undefined_important = 2,
+	tga_attr_useful_alpha = 3,
+	tga_attr_associated_alpha = 4,
+};
+
+struct tga_ratio {
+	uint16_t num, den;
+};
+
 struct tga_metadata {
 	unsigned char id_len;
 	unsigned char id[255];
@@ -18,6 +30,8 @@ struct tga_metadata {
 		char name[41];
 		char comment[324];
 	} author;
+
+	enum tga_attr_type attr:8;
 
 	time_t timestamp;
 
@@ -34,6 +48,9 @@ struct tga_metadata {
 
 	struct pix_rgba8 key_color;
 
+	struct tga_ratio pixel_ratio;
+	struct tga_ratio gamma;
+
 	uint32_t color_correction_offset;
 	uint32_t stamp_offset;
 };
@@ -49,37 +66,41 @@ enum tga_image_type {
 };
 
 struct tga_colormap {
-	struct palette *extra_pal;
+	struct palette *pal;
 	uint16_t offset, len;
 	uint8_t depth;
+	bool use;
 };
 
 struct tga_desc {
 	FILE *ifp;
 	enum tga_image_type type:8;
-	unsigned char depth;
+	uint8_t depth;
+	uint8_t img_desc;
+	bool ext_area;
+	uint16_t x, y, w, h;
 
 	long data_start;
 	struct tga_colormap map;
 	struct tga_metadata meta;
 };
 
+const char * tga_attr_type_str(enum tga_attr_type type);
+
 const char * tga_type_str(enum tga_image_type type);
 
 void tga_cleanup(struct tga_desc *desc);
 
-size_t tga_decode_stamp(const struct tga_desc *desc, struct wuimg *stamp);
+struct wu_st tga_load_stamp(const struct tga_desc *desc, struct wuimg *stamp);
 
-size_t tga_decode(const struct tga_desc *desc, struct wuimg *img);
+struct wu_st tga_decode(const struct tga_desc *desc, struct wuimg *img);
 
-struct palette * tga_take_extra_palette(struct tga_desc *desc);
+struct wu_st tga_img_info(struct tga_desc *desc, struct wuimg *img);
 
-enum wu_error tga_parse_stamp(const struct tga_desc *desc,
-struct wuimg *main, struct wuimg *stamp);
+struct wu_st tga_parse_stamp(struct tga_desc *desc, struct wuimg *stamp);
 
-bool tga_parse_footer(struct tga_desc *desc, struct wuimg *img);
+bool tga_parse_footer(struct tga_desc *desc);
 
-enum wu_error tga_parse_header(struct tga_desc *desc, struct wuimg *img,
-FILE *ifp);
+struct wu_st tga_parse_header(struct tga_desc *desc, FILE *ifp);
 
 #endif /* LIB_TGA */

@@ -7,17 +7,61 @@
 
 #include "lib/tga.h"
 
-static void read_extension_area(struct wutree *tree,
+static void end_tga(struct image_file *infile) {
+	tga_cleanup(infile->dec_state);
+}
+
+static struct wu_st event_tga(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	struct tga_desc *desc = infile->dec_state;
+	struct wuimg *img = infile->sub_img + state->idx;
+	switch (ev) {
+	case ev_metadata:
+		switch (state->idx) {
+		case 0: return tga_img_info(desc, img);
+		case 1:
+			if (desc->meta.stamp_offset) {
+				return tga_parse_stamp(desc, img);
+			}
+			// fallthrough
+		case 2:
+			img->w = 16;
+			img->h = 16;
+			img->channels = 4;
+			img->bitdepth = 8;
+			img->borrowed = true;
+			return WU_OK;
+		}
+		break;
+	case ev_subcycle:
+		switch (state->idx) {
+		case 0: return tga_decode(desc, img);
+		case 1:
+			if (desc->meta.stamp_offset) {
+				return tga_load_stamp(desc, img);
+			}
+			// fallthrough
+		case 2:
+			img->data = (uint8_t *)desc->map.pal->color;
+			return WU_OK;
+		}
+		break;
+	default: break;
+	}
+	return WU_NO_CHANGE;
+}
+
+static void add_tga_ext_area(struct wutree *tree,
 const struct tga_metadata *meta) {
 	tree = tree_add_branch(tree, "Extension area");
 	if (!tree) {
 		return;
 	}
 
-	tree_add_leaf_limit(tree, "Author name", WUPTR_ARRAY(meta->author.name),
-		NULL);
-	tree_add_leaf_limit(tree, "Author comment", WUPTR_ARRAY(meta->author.comment),
-		NULL);
+	tree_add_leaf_limit(tree, "Author name",
+		WUPTR_ARRAY(meta->author.name), NULL);
+	tree_add_leaf_limit(tree, "Author comment",
+		WUPTR_ARRAY(meta->author.comment), NULL);
 
 	if (meta->timestamp) {
 		tree_bud_leaf_time(tree, "Timestamp", meta->timestamp);
@@ -44,83 +88,45 @@ const struct tga_metadata *meta) {
 		tree_bud_leaf_u(tree, "Software version number",
 			meta->software.version_number);
 	}
+	tree_add_leaf_utf8(tree, "Attr type", tga_attr_type_str(meta->attr));
 }
 
 static void read_tga_info(struct wutree *tree, const struct tga_desc *desc) {
 	tree_add_leaf_utf8(tree, "Type", tga_type_str(desc->type));
 	tree_add_leaf_len(tree, "ID", wuptr_mem(desc->meta.id, desc->meta.id_len),
 		NULL);
+	tree_bud_leaf_u(tree, "X", desc->x);
+	tree_bud_leaf_u(tree, "Y", desc->y);
 	tree_bud_leaf_u(tree, "Depth", desc->depth);
+	tree_bud_leaf_u(tree, "Attr bits", desc->img_desc & 0xf);
 	tree_bud_leaf_u(tree, "Map depth", desc->map.depth);
 }
 
-static enum wu_error dec_wrapper(struct image_file *infile,
-const struct wu_conf *wuconf, struct tga_desc *desc) {
-	struct wuimg *img = infile->sub_img;
-	enum wu_error st = tga_parse_header(desc, img, infile->ifp);
-	if (st) {
+static struct wu_st init_tga(struct image_file *infile) {
+	struct tga_desc *desc = infile->dec_state;
+	struct wu_st st = tga_parse_header(desc, infile->ifp);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
 	read_tga_info(&infile->metadata, desc);
-	bool extra_pal = (bool)desc->map.extra_pal;
+	bool extra_pal = desc->map.pal && !desc->map.use;
 	bool has_stamp = false;
-	if (tga_parse_footer(desc, img)) {
-		read_extension_area(&infile->metadata, &desc->meta);
+	if (tga_parse_footer(desc)) {
+		add_tga_ext_area(&infile->metadata, &desc->meta);
 		infile->bg = desc->meta.key_color;
 		if (desc->meta.stamp_offset) {
 			has_stamp = true;
 		}
 	}
-
-	img = realloc_sub_images(infile, 1u + extra_pal + has_stamp);
-	if (!img) {
-		return wu_alloc_error;
-	}
-
-	size_t i = 1;
-	if (has_stamp) {
-		st = tga_parse_stamp(desc, img, img + i);
-		if (st != wu_ok) {
-			return st;
-		}
-		++i;
-	}
-	if (extra_pal) {
-		struct palette *pal = tga_take_extra_palette(desc);
-		img[i].data = (uint8_t *)pal;
-		img[i].w = 16;
-		img[i].h = 16;
-		img[i].channels = 4;
-		img[i].bitdepth = 8;
-		memmove(img[i].data, pal->color, sizeof(pal->color));
-	}
-	for (i = 0; i < infile->nr; ++i) {
-		if (wuimg_exceeds_limit(img + i, wuconf)) {
-			return wu_exceeds_size_limit;
-		}
-	}
-
-	if (!tga_decode(desc, img)) {
-		return wu_decoding_error;
-	}
-	if (has_stamp) {
-		if (!tga_decode_stamp(desc, img + 1)) {
-			return wu_decoding_error;
-		}
-	}
-	return wu_ok;
-}
-
-static enum wu_error tga_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
-	struct tga_desc desc;
-	const enum wu_error err = dec_wrapper(infile, wuconf, &desc);
-	tga_cleanup(&desc);
-	return err;
+	infile->nr = 1u + has_stamp + extra_pal;
+	return WU_OK;
 }
 
 const struct image_fn tga_fn = {
-	.alloc_single = true,
-	.dec = tga_dec
+	.state_size = sizeof(struct tga_desc),
+	.alloc_on_subcycle = true,
+	.init = init_tga,
+	.event = event_tga,
+	.end = end_tga,
 };
