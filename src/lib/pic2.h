@@ -51,15 +51,13 @@ const char * pic2_encoding_str(enum pic2_id id);
 
 void pic2_rewind(struct pic2_desc *desc);
 
-size_t pic2_decode(const struct pic2_block *block, struct wuimg *img);
+struct wu_st pic2_decode(const struct pic2_block *block, struct wuimg *img);
 
-enum wu_error pic2_set_image(const struct pic2_desc *desc,
+struct wu_st pic2_set_image(const struct pic2_desc *desc,
 const struct pic2_block *block, struct wuimg *img);
 
-enum wu_error pic2_next_block(struct pic2_desc *desc, struct pic2_block *block);
+struct wu_st pic2_next_block(struct pic2_desc *desc, struct pic2_block *block);
 
-enum wu_error pic2_parse(struct pic2_desc *desc);
-
-enum wu_error pic2_init(struct pic2_desc *desc, struct wuptr mem);
+struct wu_st pic2_parse(struct pic2_desc *desc, struct wuptr mem);
 
 #endif // LIB_PIC2

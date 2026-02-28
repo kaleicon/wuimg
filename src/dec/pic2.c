@@ -5,17 +5,17 @@
 #include "wudefs.h"
 #include "lib/pic2.h"
 
-static void add_str(const char *name, const struct wuptr value,
+static void add_pic2_str(const char *name, const struct wuptr value,
 struct wutree *tree) {
 	tree_add_leaf_len(tree, name, value, "SHIFT_JIS");
 }
 
-static void read_metadata(const struct pic2_desc *desc, struct wutree *tree) {
-	add_str("Name", desc->name, tree);
-	add_str("Subtitle", desc->subtitle, tree);
-	add_str("Title", desc->title, tree);
-	add_str("Saver", desc->saver, tree);
-	add_str("Comment", desc->comment, tree);
+static void read_pic2_metadata(const struct pic2_desc *desc, struct wutree *tree) {
+	add_pic2_str("Name", desc->name, tree);
+	add_pic2_str("Subtitle", desc->subtitle, tree);
+	add_pic2_str("Title", desc->title, tree);
+	add_pic2_str("Saver", desc->saver, tree);
+	add_pic2_str("Comment", desc->comment, tree);
 
 	tree_bud_leaf_time(tree, "Created", desc->created);
 	tree_bud_leaf_u(tree, "Image number", desc->image_number);
@@ -24,7 +24,7 @@ static void read_metadata(const struct pic2_desc *desc, struct wutree *tree) {
 	tree_bud_leaf_u(tree, "Depth", desc->depth);
 }
 
-static void read_block_metadata(const struct pic2_block *block,
+static void read_pic2_block_metadata(const struct pic2_block *block,
 struct wutree *tree) {
 	if (tree) {
 		tree_bud_leaf_u(tree, "X", block->u.image.x);
@@ -33,33 +33,27 @@ struct wutree *tree) {
 	}
 }
 
-static enum wu_error pic2_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_pic2(struct image_file *infile) {
 	struct pic2_desc desc;
-	enum wu_error st = pic2_init(&desc, infile->map);
-	if (st != wu_ok) {
+	struct wu_st st = pic2_parse(&desc, infile->map);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
-	st = pic2_parse(&desc);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	read_metadata(&desc, &infile->metadata);
-
+	read_pic2_metadata(&desc, &infile->metadata);
 
 	size_t total = 0;
 	size_t i = 0;
 	struct pic2_block block;
 	while (i < SHRT_MAX) {
 		st = pic2_next_block(&desc, &block);
-		if (st == wu_no_change) {
+		if (st.st == wu_no_change) {
 			if (!i) {
-				return wu_no_image_data;
+				return wuerr(wu_no_image_data,
+					"no image blocks found");
 			}
 			break;
-		} else if (st != wu_ok) {
+		} else if (st.st != wu_ok) {
 			return st;
 		}
 		++total;
@@ -71,15 +65,15 @@ const struct wu_conf *wuconf) {
 	tree_bud_leaf_u(&infile->metadata, "Blocks", total);
 
 	if (!alloc_sub_images(infile, i)) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	pic2_rewind(&desc);
 	i = 0;
 	while (i < infile->nr) {
 		st = pic2_next_block(&desc, &block);
-		if (st != wu_ok) {
-			if (st == wu_no_change) {
+		if (st.st != wu_ok) {
+			if (st.st == wu_no_change) {
 				break;
 			}
 			continue;
@@ -87,11 +81,11 @@ const struct wu_conf *wuconf) {
 		if (block.is_image) {
 			struct wuimg *img = infile->sub_img + i;
 			st = pic2_set_image(&desc, &block, img);
-			if (st == wu_ok) {
-				if (!wuimg_exceeds_limit(img, wuconf)) {
-					read_block_metadata(&block,
+			if (wu_isok(st)) {
+				if (wuimg_alloc_limit(img, infile->conf) == wu_ok) {
+					read_pic2_block_metadata(&block,
 						wuimg_get_metadata(img));
-					if (pic2_decode(&block, img)) {
+					if (wu_isok(pic2_decode(&block, img))) {
 						++i;
 						continue;
 					}
@@ -100,7 +94,10 @@ const struct wu_conf *wuconf) {
 			wuimg_clear(img + i);
 		}
 	}
-	return image_file_total_decoded(infile, i);
+	return WUERR_CHECK(image_file_total_decoded(infile, i));
 }
 
-const struct image_fn pic2_fn = {.mmap = true, .dec = pic2_dec};
+const struct image_fn pic2_fn = {
+	.mmap = true,
+	.init = init_pic2,
+};
