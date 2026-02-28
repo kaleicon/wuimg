@@ -16,7 +16,7 @@
 https://vt100.net/docs/vt3xx-gp/chapter14.html
 */
 
-static const size_t LINE_HEIGHT = 6;
+static const size_t SIXEL_LINE_HEIGHT = 6;
 
 struct sixel_colormap {
 	struct pix_rgba8 active;
@@ -62,7 +62,7 @@ const int32_t h, const int32_t l, const int32_t s, const int32_t point) {
 	return l - (a * i32clamp(k3, -point, point))/point;
 }
 
-static void normalize_color(struct pix_rgba8 *entry,
+static void sixel_normalize_color(struct pix_rgba8 *entry,
 uint32_t comp[static 3], const enum sixel_colorspace pu) {
 	unsigned char *rgba = (unsigned char *)entry;
 
@@ -91,7 +91,7 @@ uint32_t comp[static 3], const enum sixel_colorspace pu) {
 	}
 }
 
-static void read_color(struct mparser *tp, struct sixel_colormap *map) {
+static void sixel_read_color(struct mparser *tp, struct sixel_colormap *map) {
 	uintmax_t idx;
 	mp_scan_uint_unsafe(tp, &idx);
 	if (mp_next_char_unsafe(tp) == ';') {
@@ -103,20 +103,20 @@ static void read_color(struct mparser *tp, struct sixel_colormap *map) {
 			mp_scan_uint_unsafe(tp, &t);
 			tmp[i] = (uint32_t)t;
 		}
-		normalize_color(map->map.color + idx, tmp, pu);
+		sixel_normalize_color(map->map.color + idx, tmp, pu);
 	} else {
 		--tp->pos;
 	}
 	map->active = map->map.color[idx];
 }
 
-static bool uint_check(struct mparser *tp, size_t digits, uintmax_t max_val) {
+static bool sixel_uint_check(struct mparser *tp, size_t digits, uintmax_t max_val) {
 	uintmax_t out;
 	size_t d = mp_scan_uint(tp, digits, &out);
 	return d > 0 && d < digits && out <= max_val;
 }
 
-static bool validate_color(struct mparser *tp) {
+static bool sixel_validate_color(struct mparser *tp) {
 	/* Format:
 	 * (select color entry) '#' Pc
 	 * (set color value)    '#' Pc ; Pu ; Px ; Py ; Pz
@@ -134,7 +134,7 @@ static bool validate_color(struct mparser *tp) {
 	 *    Green: H=240, L=50, S=100
 	*/
 	const size_t max_digits = 4;
-	if (!uint_check(tp, max_digits, UCHAR_MAX)) {
+	if (!sixel_uint_check(tp, max_digits, UCHAR_MAX)) {
 		return false;
 	}
 	int c = mp_next_char(tp);
@@ -151,7 +151,7 @@ static bool validate_color(struct mparser *tp) {
 				return false;
 			}
 			const unsigned max = (i == 0) ? first_max : 100;
-			if (!uint_check(tp, max_digits, max)) {
+			if (!sixel_uint_check(tp, max_digits, max)) {
 				return false;
 			}
 		}
@@ -161,10 +161,11 @@ static bool validate_color(struct mparser *tp) {
 	return c != EOF;
 }
 
-static void write_color(struct pix_rgba8 *dst, const struct sixel_colormap *map,
-const size_t w, unsigned char sixel, const size_t len) {
+static void sixel_write_color(struct pix_rgba8 *dst,
+const struct sixel_colormap *map, const size_t w, unsigned char sixel,
+const size_t len) {
 	sixel -= '?';
-	for (size_t y = 0; y < LINE_HEIGHT; ++y) {
+	for (size_t y = 0; y < SIXEL_LINE_HEIGHT; ++y) {
 		if ((sixel >> y) & 1) {
 			for (size_t x = 0; x < len; ++x) {
 				dst[w*y + x] = map->active;
@@ -242,7 +243,7 @@ struct wu_st sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 		unsigned char c = mp_next_char_unsafe(&tp);
 		switch (c) {
 		case graphics_new_line:
-			y += LINE_HEIGHT;
+			y += SIXEL_LINE_HEIGHT;
 			// fallthrough
 		case graphics_carriage_return:
 			x = 0;
@@ -253,23 +254,23 @@ struct wu_st sixel_decode(const struct sixel_desc *desc, struct wuimg *img) {
 			c = mp_next_char_unsafe(&tp);
 
 			const size_t pixs = (size_t)repeat;
-			write_color(dst + line + x, &map, img->w, c, pixs);
+			sixel_write_color(dst + line + x, &map, img->w, c, pixs);
 			x += pixs;
 			break;
 		case color_introducer:
-			read_color(&tp, &map);
+			sixel_read_color(&tp, &map);
 			break;
 		case '\n': case '\r':
 			break;
 		default:
-			write_color(dst + line + x, &map, img->w, c, 1);
+			sixel_write_color(dst + line + x, &map, img->w, c, 1);
 			++x;
 		}
 	}
 	return WU_OK;
 }
 
-static struct wu_st calc_dimensions(struct sixel_desc *desc,
+static struct wu_st sixel_calc_dimensions(struct sixel_desc *desc,
 struct wuimg *img) {
 	/* We must do a pass over the whole stream to know the image
 	 * dimensions. No other way around it. */
@@ -319,7 +320,7 @@ struct wuimg *img) {
 			}
 			break;
 		case color_introducer:
-			if (!validate_color(&tp)) {
+			if (!sixel_validate_color(&tp)) {
 				msg = "stopping at bad color";
 			}
 			break;
@@ -341,7 +342,7 @@ struct wuimg *img) {
 		img->w = row_width;
 	}
 	if (img->w) {
-		height = (height + partial_line) * LINE_HEIGHT;
+		height = (height + partial_line) * SIXEL_LINE_HEIGHT;
 		if (height > img->h) {
 			img->h = height;
 		}
@@ -351,7 +352,7 @@ struct wuimg *img) {
 	return wuerr(wu_decoding_error, msg);
 }
 
-static struct wu_st get_raster_attributes(struct mparser *tp,
+static struct wu_st sixel_get_raster_attr(struct mparser *tp,
 unsigned int *raster, const size_t len) {
 	/* Format: '"' Pan ; Pad ; Ph ; Pv
 	 * Pan (aspect numerator) is the vertical aspect ratio. Required.
@@ -448,7 +449,7 @@ struct wuimg *img) {
 	const int c = mp_next_nonspace(tp);
 	if (c == raster_attributes) {
 		unsigned raster[4];
-		status = get_raster_attributes(tp, raster, ARRAY_LEN(raster));
+		status = sixel_get_raster_attr(tp, raster, ARRAY_LEN(raster));
 		if (!wu_isok(status)) {
 			return status;
 		} else if (!raster[0] || !raster[1]) {
@@ -467,7 +468,7 @@ struct wuimg *img) {
 	img->channels = 4;
 	img->bitdepth = 8;
 	wuimg_aspect_ratio(img, pad, pan);
-	return calc_dimensions(desc, img);
+	return sixel_calc_dimensions(desc, img);
 }
 
 struct wu_st sixel_try_parse(struct sixel_desc *desc, struct wuimg *img,

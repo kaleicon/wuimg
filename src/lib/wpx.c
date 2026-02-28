@@ -31,7 +31,7 @@
 	16
 */
 
-static const size_t TABLE_DIM = 256;
+static const size_t WPX_TABLE_DIM = 256;
 
 enum wpx_ts_type {
 	wpx_ts_single_byte,
@@ -129,21 +129,21 @@ static size_t next_bits(struct bit_and_byte_reader *reader, const int32_t n) {
 }
 
 static void init_dict(uint8_t *dict) {
-	for (int y = 0; y < (int)TABLE_DIM; ++y) {
-		for (int x = 0; x < (int)TABLE_DIM; ++x) {
-			dict[(int)TABLE_DIM*y + x] = (uint8_t)(-1 - y - x);
+	for (int y = 0; y < (int)WPX_TABLE_DIM; ++y) {
+		for (int x = 0; x < (int)WPX_TABLE_DIM; ++x) {
+			dict[(int)WPX_TABLE_DIM*y + x] = (uint8_t)(-1 - y - x);
 		}
 	}
 }
 
 static bool init_table(uint8_t *restrict table,
 const uint8_t *restrict bitstream, size_t *bitpos, size_t src_len) {
-	*bitpos = TABLE_DIM/2 * 8;
+	*bitpos = WPX_TABLE_DIM/2 * 8;
 	src_len *= 8;
 	if (*bitpos >= src_len) {
 		return false;
 	}
-	for (size_t n = 0; n < TABLE_DIM; ++n) {
+	for (size_t n = 0; n < WPX_TABLE_DIM; ++n) {
 		const uint8_t size = (bitstream[n/2] >> ((n & 1) * 4))
 			& 0x0f;
 		if (size) {
@@ -169,7 +169,7 @@ const uint8_t *bitstream, size_t *bitpos, const size_t src_len) {
 		rt->type = wpx_rt_stream;
 		return true;
 	}
-	const size_t dims = TABLE_DIM * TABLE_DIM;
+	const size_t dims = WPX_TABLE_DIM * WPX_TABLE_DIM;
 	const size_t total = dims * (rt->type == wpx_rt_dict ? 2 : 1);
 	rt->table = malloc(total);
 	if (!rt->table) {
@@ -380,7 +380,7 @@ struct wu_st wpx_bmp_decode(const struct wpx_bmp_desc *desc, struct wuimg *img) 
 	return wuerr_partial(written, expect);
 }
 
-static struct wu_st read_palette(struct wpx_bmp_desc *desc,
+static struct wu_st wpx_read_palette(struct wpx_bmp_desc *desc,
 const struct wpx_section *section) {
 	const size_t size = section->decomp_size;
 	if (size % 3 || size > 256*3) {
@@ -403,7 +403,7 @@ const struct wpx_section *section) {
 	return WU_OK;
 }
 
-static struct wu_st read_metadata(struct wpx_bmp_desc *desc,
+static struct wu_st wpx_read_metadata(struct wpx_bmp_desc *desc,
 struct wuimg *img, const struct wpx_section *section) {
 	uint8_t metadata[16];
 	if (get_section_data(&desc->mp, section, metadata, sizeof(metadata), 1, 0)
@@ -434,7 +434,7 @@ static struct wpx_section * process_section(struct wpx_section *s) {
 	return s;
 }
 
-static struct wu_st load_section_dir(struct wpx_dir *dir,
+static struct wu_st wpx_load_section_dir(struct wpx_dir *dir,
 struct mparser *mp, const uint8_t min_sections) {
 	/* WPX BMP/IA2 struct (after magic bytes):
 		Offset  Type    Size
@@ -480,7 +480,7 @@ struct wuimg *img) {
 		return WUERR_HERE(e);
 	}
 
-	struct wu_st st = load_section_dir(&desc->dir, &desc->mp, 2);
+	struct wu_st st = wpx_load_section_dir(&desc->dir, &desc->mp, 2);
 	if (!wu_isok(st)) {
 		return st;
 	}
@@ -492,13 +492,13 @@ struct wuimg *img) {
 		switch (s->id) {
 		case wpx_bmp_info:
 			info_idx = i;
-			st = read_metadata(desc, img, s);
+			st = wpx_read_metadata(desc, img, s);
 			break;
 		case wpx_bmp_data:
 			desc->raster_idx = i;
 			break;
 		case wpx_bmp_palette:
-			st = read_palette(desc, s);
+			st = wpx_read_palette(desc, s);
 			break;
 		case wpx_bmp_mask:
 			desc->mask_idx = i;
@@ -578,7 +578,7 @@ static void struct_swap(void *ptr, const size_t bytes) {
 	endian_loop32(arr, little_endian, bytes / sizeof(*arr));
 }
 
-static struct wu_st read_array(struct wpx_ia2_desc *desc,
+static struct wu_st wpx_read_array(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, void *arr_ptr,
 const uint32_t nmemb, const size_t size) {
 	const size_t bytes = size * nmemb;
@@ -594,24 +594,24 @@ const uint32_t nmemb, const size_t size) {
 	return wuerr(wu_invalid_header, "array decompressed size mismatch");
 }
 
-static bool list_check(struct wpx_ia2_list *list, const uint32_t nr) {
+static bool wpx_list_check(struct wpx_ia2_list *list, const uint32_t nr) {
 	const bool mismatch = (bool)nr ^ (bool)list->off;
 	return !mismatch;
 }
 
-static struct wu_st read_list_idx(struct wpx_ia2_desc *desc,
+static struct wu_st wpx_read_list_idx(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, struct wpx_ia2_list *list, uint32_t nr) {
-	return read_array(desc, section, &list->off, nr, sizeof(*list->off));
+	return wpx_read_array(desc, section, &list->off, nr, sizeof(*list->off));
 }
 
-static struct wu_st read_list_str(struct wpx_ia2_desc *desc,
+static struct wu_st wpx_read_list_str(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, struct wpx_ia2_list *list) {
 	list->str_len = section->decomp_size;
 	return alloc_section_data(desc, section, &list->str,
 		section->decomp_size);
 }
 
-static struct wu_st read_frame_count(struct wpx_ia2_desc *desc,
+static struct wu_st wpx_read_frame_count(struct wpx_ia2_desc *desc,
 const struct wpx_section *section) {
 	struct wpx_ia2_count_t *nr = &desc->nr;
 	// Reject if already seen
@@ -636,7 +636,7 @@ struct wu_st wpx_ia2_parse(struct wpx_ia2_desc *desc, const struct wuptr mem) {
 		return WUERR_HERE(e);
 	}
 
-	struct wu_st st = load_section_dir(&desc->dir, &desc->mp, 3);
+	struct wu_st st = wpx_load_section_dir(&desc->dir, &desc->mp, 3);
 	if (!wu_isok(st)) {
 		return st;
 	}
@@ -650,10 +650,10 @@ struct wu_st wpx_ia2_parse(struct wpx_ia2_desc *desc, const struct wuptr mem) {
 			desc->dir.sections + i);
 		switch (s->id) {
 		case wpx_ia2_count:
-			st = read_frame_count(desc, s);
+			st = wpx_read_frame_count(desc, s);
 			break;
 		case wpx_ia2_offsets:
-			st = read_array(desc, s, &desc->frames, desc->nr.frames,
+			st = wpx_read_array(desc, s, &desc->frames, desc->nr.frames,
 				sizeof(*desc->frames));
 			break;
 		case wpx_ia2_files:
@@ -661,28 +661,28 @@ struct wu_st wpx_ia2_parse(struct wpx_ia2_desc *desc, const struct wuptr mem) {
 			break;
 
 		case wpx_ia2_geom:
-			st = read_array(desc, s, &desc->geom, desc->nr.geom,
+			st = wpx_read_array(desc, s, &desc->geom, desc->nr.geom,
 				sizeof(*desc->geom));
 			break;
 		case wpx_ia2_mys4:
-			st = read_array(desc, s, &desc->range, desc->nr.range,
+			st = wpx_read_array(desc, s, &desc->range, desc->nr.range,
 				sizeof(*desc->range));
 			break;
 		case wpx_ia2_mys5:
-			st = read_array(desc, s, &desc->mys5, desc->nr.mys5,
+			st = wpx_read_array(desc, s, &desc->mys5, desc->nr.mys5,
 				sizeof(*desc->mys5));
 			break;
 		case wpx_ia2_name_idx:
-			st = read_list_idx(desc, s, &desc->names, desc->nr.frames);
+			st = wpx_read_list_idx(desc, s, &desc->names, desc->nr.frames);
 			break;
 		case wpx_ia2_names:
-			st = read_list_str(desc, s, &desc->names);
+			st = wpx_read_list_str(desc, s, &desc->names);
 			break;
 		case wpx_ia2_sfx_idx:
-			st = read_list_idx(desc, s, &desc->sfx, desc->nr.sfx);
+			st = wpx_read_list_idx(desc, s, &desc->sfx, desc->nr.sfx);
 			break;
 		case wpx_ia2_sfx:
-			st = read_list_str(desc, s, &desc->sfx);
+			st = wpx_read_list_str(desc, s, &desc->sfx);
 			break;
 		default:
 			break;
@@ -692,8 +692,8 @@ struct wu_st wpx_ia2_parse(struct wpx_ia2_desc *desc, const struct wuptr mem) {
 		}
 	}
 	if (!desc->frames || !desc->base
-	|| !list_check(&desc->names, desc->nr.frames)
-	|| !list_check(&desc->sfx, desc->nr.sfx)) {
+	|| !wpx_list_check(&desc->names, desc->nr.frames)
+	|| !wpx_list_check(&desc->sfx, desc->nr.sfx)) {
 		return wuerr(wu_invalid_header,
 			"bad frame offsets or bad list configuration");
 	}
