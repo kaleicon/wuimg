@@ -2057,7 +2057,10 @@ def gen_maps(fmt_map: Iterable[FmtDesc]) -> None:
 	print_include('fmtmap.c')
 
 def fmt_desc_header() -> int:
+	print('#ifndef FMT_DESC')
+	print('#define FMT_DESC')
 	print(FmtDesc.struct(NAME_LIMIT))
+	print('#endif /* FMT_DESC */')
 	return 0
 
 def dec_header(fmt_map: Iterable[FmtDesc]) -> None:
