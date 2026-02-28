@@ -209,32 +209,30 @@ const struct wuptr src) {
 	return d;
 }
 
-size_t eb_sff2_dec(const struct eb_sff_sub *sub, struct wuimg *img) {
+struct wu_st eb_sff2_dec(const struct eb_sff_sub *sub, struct wuimg *img) {
 	size_t w = 0;
-	if (wuimg_alloc_noverify(img)) {
-		const struct wuptr data = sub->data;
-		const size_t img_size = wuimg_size(img);
-		switch (sub->u.v2.fmt) {
-		case eb_sff2_raw:
-			w = zumin(img_size, data.len);
-			memcpy(img->data, data.ptr, w);
-			break;
-		case eb_sff2_rle8:
-			w = rle8_decode(img->data, img_size, data);
-			break;
-		case eb_sff2_rle5:
-			w = rle5_decode(img->data, img_size, data);
-			break;
-		case eb_sff2_lz5:
-			w = lz5_decode(img->data, img_size, data);
-			break;
-		default: break;
-		}
+	const struct wuptr data = sub->data;
+	const size_t img_size = wuimg_size(img);
+	switch (sub->u.v2.fmt) {
+	case eb_sff2_raw:
+		w = zumin(img_size, data.len);
+		memcpy(img->data, data.ptr, w);
+		break;
+	case eb_sff2_rle8:
+		w = rle8_decode(img->data, img_size, data);
+		break;
+	case eb_sff2_rle5:
+		w = rle5_decode(img->data, img_size, data);
+		break;
+	case eb_sff2_lz5:
+		w = lz5_decode(img->data, img_size, data);
+		break;
+	default: break;
 	}
-	return w;
+	return wuerr_partial(w, img_size);
 }
 
-enum wu_error eb_sff2_get_dims(const struct eb_sff_sub *sub,
+struct wu_st eb_sff2_get_dims(const struct eb_sff_sub *sub,
 struct wuimg *img) {
 	const struct eb_sff2_sub *sub2 = &sub->u.v2;
 	img->w = sub2->w;
@@ -245,14 +243,14 @@ struct wuimg *img) {
 		img->alpha = alpha_ignore;
 		wuimg_palette_set(img, palette_ref(sub2->pal));
 	}
-	return wuimg_verify(img);
+	return WU_OK;
 }
 
 static struct wuptr get_comment(const uint8_t *data, const size_t len) {
 	return wuptr_trim_end(wuptr_mem(data, len), 0);
 }
 
-static enum wu_error load_v2_pal(struct eb_sff_desc *desc,
+static struct wu_st load_v2_pal(struct eb_sff_desc *desc,
 struct eb_sff_sub *sub, uint16_t i) {
 	/* Palette struct:
 		Offset  Type    Name
@@ -271,23 +269,24 @@ struct eb_sff_sub *sub, uint16_t i) {
 	struct eb_sff2 *v2 = &desc->u.v2;
 	for (int tries = 0; tries < 2; ++tries) {
 		if (i >= v2->pal_nr) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"palette number out of bounds");
 		}
 
 		struct palette *pal = v2->pals[i];
 		if (pal) {
 			sub->u.v2.pal = pal;
-			return wu_ok;
+			return WU_OK;
 		}
 
 		const uint8_t *hdr = mp_slice_at(&desc->mp,
 			v2->pal_off + i*hdr_size, hdr_size);
 		if (!hdr) {
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
 
-		uint32_t off = buf_endian32(hdr + 8, little_endian);
-		size_t len = zumin(buf_endian32(hdr + 12, little_endian),
+		uint32_t off = buf_endian32l(hdr + 8);
+		size_t len = zumin(buf_endian32l(hdr + 12),
 			(1 << sub->u.v2.depth) * 4);
 		if (len) {
 			struct mparser data = mp_wuptr(v2->ldata);
@@ -295,18 +294,18 @@ struct eb_sff_sub *sub, uint16_t i) {
 			if (color) {
 				pal = palette_new();
 				if (!pal) {
-					return wu_alloc_error;
+					return WUERR_HERE(wu_alloc_error);
 				}
 				v2->pals[i] = pal;
 				sub->u.v2.pal = pal;
 				memcpy(pal->color, color, len);
-				return wu_ok;
+				return WU_OK;
 			}
-			return wu_unexpected_eof;
+			return WUERR_HERE(wu_unexpected_eof);
 		}
-		i = buf_endian16(hdr + 6, little_endian);
+		i = buf_endian16l(hdr + 6);
 	}
-	return wu_invalid_header;
+	return wuerr(wu_invalid_header, "followed too many linked palettes");
 }
 
 static bool valid_fmt_depth(const enum eb_sff2_format fmt, const uint8_t depth) {
@@ -330,7 +329,7 @@ static bool valid_fmt_depth(const enum eb_sff2_format fmt, const uint8_t depth) 
 	return false;
 }
 
-static enum wu_error sff2_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub) {
+static struct wu_st sff2_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub) {
 	/* SFFv2 Image header:
 		Offset  Type    Name
 		0       u16     Group
@@ -353,7 +352,7 @@ static enum wu_error sff2_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub)
 	*/
 	struct eb_sff2 *v2 = &desc->u.v2;
 	if (v2->cur >= desc->images) {
-		return wu_no_change;
+		return WU_NO_CHANGE;
 	}
 	mp_seek_set(&desc->mp, v2->image_off + v2->cur * 28);
 	++v2->cur;
@@ -361,46 +360,47 @@ static enum wu_error sff2_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub)
 	if (hdr) {
 		const enum eb_sff2_format fmt = hdr[14];
 		uint8_t depth = hdr[15];
-		const uint32_t len = buf_endian32(hdr + 20, little_endian);
-		const uint16_t flags = buf_endian16(hdr + 26, little_endian);
+		const uint32_t len = buf_endian32l(hdr + 20);
+		const uint16_t flags = buf_endian16l(hdr + 26);
 
 		if (!len) {
-			return wu_no_change;
+			return WU_NO_CHANGE;
 		}
 
 		if (!valid_fmt_depth(fmt, depth) || flags > 1) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"bad depth or unknown flags set");
 		}
 
 		struct mparser data = mp_wuptr(flags ? v2->tdata : v2->ldata);
 		*sub = (struct eb_sff_sub) {
 			.u.v2 = {
-				.group = buf_endian16(hdr, little_endian),
-				.item = buf_endian16(hdr + 2, little_endian),
-				.w = buf_endian16(hdr + 4, little_endian),
-				.h = buf_endian16(hdr + 6, little_endian),
-				.x = buf_endian16(hdr + 8, little_endian),
-				.y = buf_endian16(hdr + 10, little_endian),
+				.group = buf_endian16l(hdr),
+				.item = buf_endian16l(hdr + 2),
+				.w = buf_endian16l(hdr + 4),
+				.h = buf_endian16l(hdr + 6),
+				.x = buf_endian16l(hdr + 8),
+				.y = buf_endian16l(hdr + 10),
 				.fmt = fmt,
 				.depth = depth,
 			},
 			.data = mp_avail_at(&data,
-				buf_endian32(hdr + 16, little_endian),
-				buf_endian32(hdr + 20, little_endian)),
+				buf_endian32l(hdr + 16),
+				buf_endian32l(hdr + 20)),
 		};
 		if (sub->data.len > 4) {
-			uint16_t paln = buf_endian16(hdr + 24, little_endian);
+			uint16_t paln = buf_endian16l(hdr + 24);
 			sub->data.len -= 4;
 			sub->data.ptr += 4;
 			return (depth > 8)
-				? wu_ok
+				? WU_OK
 				: load_v2_pal(desc, sub, paln);
 		}
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-static enum wu_error sff1_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub) {
+static struct wu_st sff1_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub) {
 	/* SFFv1 Image header:
 		Offset  Type    Name
 		0       u32     NextImageOffset
@@ -415,43 +415,44 @@ static enum wu_error sff1_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub)
 		32      u8      PCXData[FileLength]
 	*/
 	if (desc->mp.pos == 0) {
-		return wu_no_change;
+		return WU_NO_CHANGE;
 	}
 
 	const uint8_t *subhdr = mp_slice(&desc->mp, 32);
 	if (subhdr) {
-		const uint32_t next = buf_endian32(subhdr, little_endian);
-		const uint32_t len = buf_endian32(subhdr + 4, little_endian);
+		const uint32_t next = buf_endian32l(subhdr);
+		const uint32_t len = buf_endian32l(subhdr + 4);
 		if (subhdr[18] <= 1) {
 			*sub = (struct eb_sff_sub) {
 				.u.v1 = {
-					.x = (int16_t)buf_endian16(subhdr + 8, little_endian),
-					.y = (int16_t)buf_endian16(subhdr + 10, little_endian),
-					.group = (int16_t)buf_endian16(subhdr + 12, little_endian),
-					.image = (int16_t)buf_endian16(subhdr + 14, little_endian),
-					.prev = (int16_t)buf_endian16(subhdr + 16, little_endian),
+					.x = (int16_t)buf_endian16l(subhdr + 8),
+					.y = (int16_t)buf_endian16l(subhdr + 10),
+					.group = (int16_t)buf_endian16l(subhdr + 12),
+					.image = (int16_t)buf_endian16l(subhdr + 14),
+					.prev = (int16_t)buf_endian16l(subhdr + 16),
 					.shared_pal = subhdr[18],
 					.comm = get_comment(subhdr + 19, 32 - 19),
 				},
 				.data = mp_avail(&desc->mp, len),
 			};
 			mp_seek_set(&desc->mp, next);
-			return len ? wu_ok : wu_no_change;
+			return len ? WU_OK : WU_NO_CHANGE;
 		}
-		return wu_invalid_header;
+		return wuerr(wu_invalid_header, "use_prev_palette neither 0 nor 1");
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-enum wu_error eb_sff_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub) {
+struct wu_st eb_sff_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub) {
 	switch (eb_sff_get_version(desc)) {
 	case 1: return sff1_next(desc, sub);
 	case 2: return sff2_next(desc, sub);
 	}
-	return wu_invalid_params;
+	return wuerr(wu_invalid_params,
+		"tried to iterate over unknown sff version");
 }
 
-static enum wu_error sff2_parse(struct eb_sff_desc *desc) {
+static struct wu_st sff2_parse(struct eb_sff_desc *desc) {
 	/* ElecbyteSpr v2 header (after signature and version):
 		Offset  Type    Name
 		0       u8      Reserved[8]
@@ -477,34 +478,35 @@ static enum wu_error sff2_parse(struct eb_sff_desc *desc) {
 	*/
 	const uint8_t *hdr = mp_slice(&desc->mp, 496);
 	if (hdr) {
-		desc->images = buf_endian32(hdr + 24, little_endian);
+		desc->images = buf_endian32l(hdr + 24);
 		desc->comm = get_comment(hdr + 60, 496 - 60);
 
 		struct eb_sff2 *v2 = &desc->u.v2;
-		uint32_t pal_nr = buf_endian32(hdr + 32, little_endian);
+		uint32_t pal_nr = buf_endian32l(hdr + 32);
 		// Images can't address palettes higher than this
 		if (pal_nr > 0x10000) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "palette_nr > 0x10000");
 		}
-		v2->image_off = buf_endian32(hdr + 20, little_endian);
-		v2->pal_off = buf_endian32(hdr + 28, little_endian);
+		v2->image_off = buf_endian32l(hdr + 20);
+		v2->pal_off = buf_endian32l(hdr + 28);
 		v2->pal_nr = pal_nr;
 		v2->ldata = mp_avail_at(&desc->mp,
-			buf_endian32(hdr + 36, little_endian),
-			buf_endian32(hdr + 40, little_endian));
+			buf_endian32l(hdr + 36),
+			buf_endian32l(hdr + 40));
 		v2->tdata = mp_avail_at(&desc->mp,
-			buf_endian32(hdr + 44, little_endian),
-			buf_endian32(hdr + 48, little_endian));
+			buf_endian32l(hdr + 44),
+			buf_endian32l(hdr + 48));
 		if (pal_nr) {
 			v2->pals = small_calloc(pal_nr, sizeof(*v2->pals));
-			return v2->pals ? wu_ok : wu_alloc_error;
+			return v2->pals
+				? WU_OK : WUERR_HERE(wu_alloc_error);
 		}
-		return wu_ok;
+		return WU_OK;
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
-static enum wu_error sff1_parse(struct eb_sff_desc *desc) {
+static struct wu_st sff1_parse(struct eb_sff_desc *desc) {
 	/* ElecbyteSpr v1 header (after signature and version):
 		Offset  Type    Name
 		0       u32     Groups
@@ -517,33 +519,29 @@ static enum wu_error sff1_parse(struct eb_sff_desc *desc) {
 		496
 	*/
 	const uint8_t *hdr = mp_slice(&desc->mp, 496);
-	if (hdr) {
-		uint32_t hdr_size = buf_endian32(hdr + 12, little_endian);
-		if ((hdr_size == 32 || hdr_size == 512) && hdr[16] <= 1) {
-			desc->images = buf_endian32(hdr + 4, little_endian);
-			desc->comm = get_comment(hdr + 20, 496 - 20);
-
-			struct eb_sff1 *v1 = &desc->u.v1;
-			v1->groups = buf_endian32(hdr, little_endian);
-			v1->first = buf_endian32(hdr + 8, little_endian);
-			v1->shared_pal = hdr[16];
-			mp_seek_set(&desc->mp, v1->first);
-			return wu_ok;
-		}
-		return wu_invalid_header;
+	if (!hdr) {
+		return WUERR_HERE(wu_unexpected_eof);
 	}
-	return wu_unexpected_eof;
+	const uint32_t hdr_size = buf_endian32l(hdr + 12);
+	if (hdr_size != 32 && hdr_size != 512) {
+		return wuerr(wu_invalid_header,
+			"header size neither 32 nor 512");
+	} else if (hdr[16] >= 2) {
+		return wuerr(wu_invalid_header,
+			"palette type neither 0 nor 1");
+	}
+	desc->images = buf_endian32l(hdr + 4);
+	desc->comm = get_comment(hdr + 20, 496 - 20);
+
+	struct eb_sff1 *v1 = &desc->u.v1;
+	v1->groups = buf_endian32l(hdr);
+	v1->first = buf_endian32l(hdr + 8);
+	v1->shared_pal = hdr[16];
+	mp_seek_set(&desc->mp, v1->first);
+	return WU_OK;
 }
 
-enum wu_error eb_sff_parse(struct eb_sff_desc *desc) {
-	switch (eb_sff_get_version(desc)) {
-	case 1: return sff1_parse(desc);
-	case 2: return sff2_parse(desc);
-	}
-	return wu_invalid_params;
-}
-
-enum wu_error eb_sff_init(struct eb_sff_desc *desc, const struct wuptr mem) {
+struct wu_st eb_sff_parse(struct eb_sff_desc *desc, const struct wuptr mem) {
 	/* ElecbyteSpr signature:
 		Offset  Type    Name
 		0       u8      Magic[12]
@@ -559,11 +557,16 @@ enum wu_error eb_sff_init(struct eb_sff_desc *desc, const struct wuptr mem) {
 	if (hdr) {
 		if (!memcmp(hdr, sig, sizeof(sig))) {
 			memcpy(desc->version, hdr + 12, sizeof(desc->version));
-			return wu_ok;
+			switch (eb_sff_get_version(desc)) {
+			case 1: return sff1_parse(desc);
+			case 2: return sff2_parse(desc);
+			}
+			return wuerr(wu_invalid_header,
+				"sff version is neither 1 nor 2");
 		}
-		return wu_unknown_file_type;
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_unexpected_eof;
+	return WUERR_HERE(wu_unexpected_eof);
 }
 
 static struct wuptr get_loc(struct mparser *mp, const uint8_t *hdr) {
@@ -572,35 +575,34 @@ static struct wuptr get_loc(struct mparser *mp, const uint8_t *hdr) {
 		buf_endian32(hdr + 4, little_endian));
 }
 
-enum wu_error eb_fnt_parse(struct eb_fnt_desc *desc) {
-	/* ElecbyteFnt header (after signature):
+struct wu_st eb_fnt_parse(struct eb_fnt_desc *desc, const struct wuptr mem) {
+	/* ElecbyteFnt header:
 		Offset  Type    Name
-		0       u8      VersionLow3
-		1       u8      VersionLow2
-		2       u8      VersionLow1
-		3       u8      VersionHigh
-		4       u32     PCXOffset
-		8       u32     PCXLength
-		12      u32     TextOffset
-		16      u32     TextLength
-		20      u8      Comment[32]
-		52
+		0       u8      Magic[12]
+		12      u8      VersionLow3
+		13      u8      VersionLow2
+		14      u8      VersionLow1
+		15      u8      VersionHigh
+		16      u32     PCXOffset
+		20      u32     PCXLength
+		24      u32     TextOffset
+		28      u32     TextLength
+		32      u8      Comment[32]
+		64
 	*/
-	const uint8_t *hdr = mp_slice(&desc->mp, 52);
-	if (hdr) {
-		memcpy(desc->version, hdr, sizeof(desc->version));
-		desc->pcx = get_loc(&desc->mp, hdr + 4);
-		desc->text = get_loc(&desc->mp, hdr + 12);
-		desc->comment = get_comment(hdr + 20, 32);
-		if (desc->pcx.len) {
-			return wu_ok;
-		}
+	struct mparser mp = mp_wuptr(mem);
+	const uint8_t sig[12] = {'E','l','e','c','b','y','t','e','F','n','t',0};
+	const uint8_t *hdr = mp_slice(&mp, 64);
+	if (!hdr) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(hdr, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
-	return wu_unexpected_eof;
-}
-
-enum wu_error eb_fnt_init(struct eb_fnt_desc *desc, const struct wuptr mem) {
-	*desc = (struct eb_fnt_desc) {.mp = mp_wuptr(mem)};
-	const uint8_t sig[12] = "ElecbyteFnt\0";
-	return fmt_sigcmp_mem(sig, sizeof(sig), &desc->mp);
+	memcpy(desc->version, hdr + 12, sizeof(desc->version));
+	desc->pcx = get_loc(&mp, hdr + 16);
+	desc->text = get_loc(&mp, hdr + 24);
+	desc->comment = get_comment(hdr + 32, 32);
+	return (desc->pcx.len)
+		? WU_OK
+		: WUERR_HERE(wu_unexpected_eof);
 }

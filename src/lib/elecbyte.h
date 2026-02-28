@@ -90,25 +90,20 @@ void eb_sff_cleanup(struct eb_sff_desc *desc);
 void eb_sff_touchup(const struct eb_sff_desc *desc,
 const struct eb_sff_sub *sub, struct wuimg *dst, struct wuimg *first);
 
-size_t eb_sff2_dec(const struct eb_sff_sub *sub, struct wuimg *img);
+struct wu_st eb_sff2_dec(const struct eb_sff_sub *sub, struct wuimg *img);
 
-enum wu_error eb_sff2_get_dims(const struct eb_sff_sub *sub, struct wuimg *img);
+struct wu_st eb_sff2_get_dims(const struct eb_sff_sub *sub, struct wuimg *img);
 
-enum wu_error eb_sff_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub);
+struct wu_st eb_sff_next(struct eb_sff_desc *desc, struct eb_sff_sub *sub);
 
-enum wu_error eb_sff_parse(struct eb_sff_desc *desc);
-
-enum wu_error eb_sff_init(struct eb_sff_desc *desc, struct wuptr mem);
+struct wu_st eb_sff_parse(struct eb_sff_desc *desc, struct wuptr mem);
 
 
 struct eb_fnt_desc {
-	struct mparser mp;
 	struct wuptr pcx, text, comment;
 	uint8_t version[4];
 };
 
-enum wu_error eb_fnt_parse(struct eb_fnt_desc *desc);
-
-enum wu_error eb_fnt_init(struct eb_fnt_desc *desc, struct wuptr mem);
+struct wu_st eb_fnt_parse(struct eb_fnt_desc *desc, struct wuptr mem);
 
 #endif /* LIB_ELECBYTE */
