@@ -59,16 +59,14 @@ void xcursor_free(struct xcursor_desc *desc);
 size_t xcursor_get_chunk_data(const struct xcursor_desc *desc,
 const struct xcursor_chunk *chunk, void *restrict dst);
 
-enum wu_error xcursor_get_image_info(const struct xcursor_desc *desc,
+struct wu_st xcursor_get_image_info(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
 struct wuimg *img);
 
-enum wu_error xcursor_get_comment_info(const struct xcursor_desc *desc,
+struct wu_st xcursor_get_comment_info(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk);
 
-enum wu_error xcursor_parse_header(struct xcursor_desc *desc,
+struct wu_st xcursor_parse_header(struct xcursor_desc *desc, FILE *ifp,
 uint32_t max_entries);
-
-enum wu_error xcursor_open_file(struct xcursor_desc *desc, FILE *ifp);
 
 #endif /* LIB_XCURSOR */

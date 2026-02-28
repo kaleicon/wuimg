@@ -53,7 +53,7 @@ const struct xcursor_chunk *chunk, void *restrict dst) {
 	return fread(dst, 1, chunk->len, desc->ifp);
 }
 
-static enum wu_error common_chunk(const struct xcursor_desc *desc,
+static struct wu_st common_xcur_chunk(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
 const size_t elems, uint32_t *buf) {
 	/* Common chunk structure:
@@ -90,76 +90,89 @@ const size_t elems, uint32_t *buf) {
 	const size_t size = elems * sizeof(*buf);
 	fseek(desc->ifp, entry->pos, SEEK_SET);
 	if (!fread(buf, size, 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	const uint32_t header_size = endian32(buf[0], little_endian);
-	chunk->type = type_to_enum(endian32(buf[1], little_endian));
-	const uint32_t subtype = endian32(buf[2], little_endian);
-	const uint32_t version = endian32(buf[3], little_endian);
+	const uint32_t header_size = endian32l(buf[0]);
+	chunk->type = type_to_enum(endian32l(buf[1]));
+	const uint32_t subtype = endian32l(buf[2]);
+	const uint32_t version = endian32l(buf[3]);
 
-	if (header_size != size || chunk->type != entry->type
-	|| subtype != entry->subtype || version != 1) {
-		return wu_invalid_header;
+	const char *msg = NULL;
+	if (header_size != size) {
+		msg = "unexpected chunk header size";
+	} else if (chunk->type != entry->type) {
+		msg = "chunk type doesn't match that of TOC index";
+	} else if (subtype != entry->subtype) {
+		msg = "chunk subtype doesn't match that of TOC index";
+	} else if (version != 1) {
+		msg = "chunk version != 1";
+	}
+	if (msg) {
+		return wuerr(wu_invalid_header, msg);
 	}
 	chunk->pos = ftell(desc->ifp);
-	return wu_ok;
+	return WU_OK;
 }
 
-enum wu_error xcursor_get_image_info(const struct xcursor_desc *desc,
+struct wu_st xcursor_get_image_info(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk,
 struct wuimg *img) {
 	uint32_t buf[9];
-	enum wu_error st = common_chunk(desc, entry, chunk, ARRAY_LEN(buf), buf);
-	if (st == wu_ok) {
-		img->w = endian32(buf[4], little_endian);
-		img->h = endian32(buf[5], little_endian);
+	struct wu_st st = common_xcur_chunk(desc, entry, chunk, ARRAY_LEN(buf),
+		buf);
+	if (wu_isok(st)) {
+		img->w = endian32l(buf[4]);
+		img->h = endian32l(buf[5]);
 		img->channels = 4;
 		img->bitdepth = 8;
 		img->layout = pix_bgra;
 		chunk->u.image = (struct xcursor_image) {
-			.xhot = endian32(buf[6], little_endian),
-			.yhot = endian32(buf[7], little_endian),
-			.delay = endian32(buf[8], little_endian),
+			.xhot = endian32l(buf[6]),
+			.yhot = endian32l(buf[7]),
+			.delay = endian32l(buf[8]),
 		};
 		const size_t max = zumax(img->w, img->h);
 		if (!max || max > XCURSOR_DIM_LIMIT) {// || max != subtype) {
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header,
+				"image exceeds xcursor size limit");
 		}
-		st = wuimg_verify(img);
-		if (st == wu_ok) {
+		st = wuimg_verify_st(img);
+		if (wu_isok(st)) {
 			chunk->len = wuimg_size(img);
 		}
 	}
 	return st;
 }
 
-enum wu_error xcursor_get_comment_info(const struct xcursor_desc *desc,
+struct wu_st xcursor_get_comment_info(const struct xcursor_desc *desc,
 const struct xcursor_toc *entry, struct xcursor_chunk *chunk) {
 	uint32_t buf[5];
-	enum wu_error st = common_chunk(desc, entry, chunk, ARRAY_LEN(buf), buf);
-	if (st == wu_ok) {
+	struct wu_st st = common_xcur_chunk(desc, entry, chunk, ARRAY_LEN(buf),
+		buf);
+	if (wu_isok(st)) {
 		switch (entry->subtype) {
 		case xcursor_comment_copyright:
 		case xcursor_comment_license:
 		case xcursor_comment_other:
 			break;
 		default:
-			return wu_invalid_header;
+			return wuerr(wu_invalid_header, "unknown entry subtype");
 		}
 
 		chunk->u.comment = (struct xcursor_comment) {
 			.type = entry->subtype,
 		};
-		chunk->len = endian32(buf[4], little_endian);
+		chunk->len = endian32l(buf[4]);
 		if (chunk->len > XCURSOR_STR_LIMIT) {
-			return wu_invalid_header;
+			return wuerr(wu_exceeds_size_limit,
+				"comment exceeds xcursor size limit");
 		}
 	}
 	return st;
 }
 
-static enum wu_error load_toc(struct xcursor_desc *desc) {
+static struct wu_st load_xcur_toc(struct xcursor_desc *desc) {
 	/* TOC structure:
 		Offset  Size    Name
 		0       DWORD   ChunkType
@@ -170,11 +183,11 @@ static enum wu_error load_toc(struct xcursor_desc *desc) {
 
 	desc->toc = small_malloc(desc->ntoc, sizeof(*desc->toc));
 	if (!desc->toc) {
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	if (!fread(desc->toc, desc->ntoc * sizeof(*desc->toc), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+		return WUERR_HERE(wu_unexpected_eof);
 	}
 
 	for (uint32_t i = 0; i < desc->ntoc; ++i) {
@@ -190,42 +203,46 @@ static enum wu_error load_toc(struct xcursor_desc *desc) {
 			break;
 		}
 	}
-	return wu_ok;
+	return WU_OK;
 }
 
-enum wu_error xcursor_parse_header(struct xcursor_desc *desc, uint32_t limit) {
-	/* File header (after magic bytes)
+struct wu_st xcursor_parse_header(struct xcursor_desc *desc, FILE *ifp,
+uint32_t limit) {
+	/* Xcursor header:
 		Offset  Size    Name
+		0       BYTE    Signature[4]
 		0       DWORD   HeaderBytes     // 16
 		4       DWORD   FileVersion     // 0x00010000 (means 1.0)
 		8       DWORD   NrOfEntries
 		12              TableOfContents
 	*/
-	uint32_t header[3];
-	if (!fread(header, sizeof(header), 1, desc->ifp)) {
-		return wu_unexpected_eof;
+	*desc = (struct xcursor_desc) {
+		.ifp = ifp,
+	};
+	const uint8_t sig[] = {'X', 'c', 'u', 'r'};
+	uint32_t header[4];
+	if (!fread(header, sizeof(header), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	} else if (memcmp(header, sig, sizeof(sig))) {
+		return WUERR_HERE(wu_invalid_signature);
 	}
 
-	const uint32_t size = endian32(header[0], little_endian);
-	const uint32_t version = endian32(header[1], little_endian);
-	desc->ntoc = endian32(header[2], little_endian);
+	const uint32_t size = endian32l(header[1]);
+	const uint32_t version = endian32l(header[2]);
+	desc->ntoc = endian32l(header[3]);
 
 	if (!limit) {
 		limit = XCURSOR_TOC_LIMIT;
 	}
-	if (size == 16 && version == 0x00010000 && desc->ntoc && desc->ntoc <= limit) {
-		return load_toc(desc);
+	if (size != 16) {
+		return wuerr(wu_invalid_header, "xcursor header size != 16");
+	} else if (version != 0x10000) {
+		return wuerr(wu_invalid_header, "xcursor version != 1.0");
+	} else if (!desc->ntoc) {
+		return wuerr(wu_no_image_data, "no chunks in xcur file");
+	} else if (desc->ntoc > limit) {
+		return wuerr(wu_exceeds_size_limit,
+			"nr of TOC entries exceeds limit");
 	}
-	return wu_invalid_header;
-}
-
-enum wu_error xcursor_open_file(struct xcursor_desc *desc, FILE *ifp) {
-	const uint8_t sig[] = {'X', 'c', 'u', 'r'};
-	const enum wu_error st = fmt_sigcmp(sig, sizeof(sig), ifp);
-	if (st == wu_ok) {
-		*desc = (struct xcursor_desc) {
-			.ifp = ifp,
-		};
-	}
-	return st;
+	return load_xcur_toc(desc);
 }

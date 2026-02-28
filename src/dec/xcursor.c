@@ -5,23 +5,16 @@
 #include "wudefs.h"
 #include "lib/xcursor.h"
 
-static enum wu_error xcursor_dec(struct image_file *infile,
-const struct wu_conf *wuconf) {
+static struct wu_st init_xcursor(struct image_file *infile) {
 	struct xcursor_desc desc;
-	enum wu_error st = xcursor_open_file(&desc, infile->ifp);
-	if (st != wu_ok) {
-		return st;
-	}
-
-	st = xcursor_parse_header(&desc, 0);
-	if (st != wu_ok) {
-		xcursor_free(&desc);
+	struct wu_st st = xcursor_parse_header(&desc, infile->ifp, 0);
+	if (!wu_isok(st)) {
 		return st;
 	}
 
 	if (!alloc_sub_images(infile, desc.images)) {
 		xcursor_free(&desc);
-		return wu_alloc_error;
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	uint32_t o = 0;
@@ -29,21 +22,20 @@ const struct wu_conf *wuconf) {
 		const struct xcursor_toc *entry = desc.toc + i;
 		struct xcursor_chunk chunk;
 		struct wuimg *img = NULL;
-		enum wu_error err = wu_decoding_error;
 		switch (entry->type) {
 		case xcursor_chunk_comment:
-			err = xcursor_get_comment_info(&desc, entry, &chunk);
-			if (err != wu_ok) {
+			st = xcursor_get_comment_info(&desc, entry, &chunk);
+			if (!wu_isok(st)) {
 				continue;
 			}
 			break;
 		case xcursor_chunk_image:
 			img = infile->sub_img + o;
-			err = xcursor_get_image_info(&desc, entry, &chunk, img);
-			if (err != wu_ok) {
+			st = xcursor_get_image_info(&desc, entry, &chunk, img);
+			if (!wu_isok(st)) {
 				continue;
 			}
-			if (wuimg_exceeds_limit(img, wuconf)) {
+			if (wuimg_exceeds_limit(img, infile->conf)) {
 				continue;
 			}
 			break;
@@ -73,7 +65,9 @@ const struct wu_conf *wuconf) {
 		}
 	}
 	xcursor_free(&desc);
-	return image_file_total_decoded(infile, o);
+	return WUERR_CHECK(image_file_total_decoded(infile, o));
 }
 
-const struct image_fn xcursor_fn = {.dec = xcursor_dec};
+const struct image_fn xcursor_fn = {
+	.init = init_xcursor,
+};
