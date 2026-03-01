@@ -263,17 +263,10 @@ uint32_t cc, const enum arith_code v) {
 		while (i < 5 && !arithmetic_decode_bit(st, v + i)) {
 			++i;
 		}
-		int8_t off;
-		uint8_t code;
-		switch (i) {
-		case 1: off = 0; code = arith_chain_center; break;
-		case 2: off = -1; code = arith_chain_left; break;
-		case 3: off = 1; code = arith_chain_right; break;
-		case 4: off = -2; code = arith_chain_left2; break;
-		case 5: off = 2; code = arith_chain_right2; break;
-		}
+		enum arith_code next = arith_chain_base + 6u*i;
+		ptrdiff_t off = i/2 * (i & 1 ? 1 : -1);
 		st->row_next[x + off] = cc;
-		st->pos_next[x + off] |= code << PIC2_CHAIN_SH;
+		st->pos_next[x + off] |= (uint16_t)(next << PIC2_CHAIN_SH);
 	}
 }
 
