@@ -15,10 +15,12 @@ https://mooncore.eu/bunny/txt/pi-pic.htm
 
  * Spec (in japanese)
 https://mooncore.eu/bunny/txt/pitech.txt
+https://www.vector.co.jp/soft/data/art/se003018.html
 
  * DPC and .g/.lsp:
 https://gitlab.com/bunnylin/supersakura/-/blob/dev/doc/gfx/cgl-dpc-p-g.md
-*/
+
+ * random fact: decoding pi files is the main reason why wuimg was made */
 
 // Enable to use slightly slower but clearly correct code.
 static const bool EXACT_BITS = false;

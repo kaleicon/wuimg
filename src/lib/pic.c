@@ -16,6 +16,7 @@
 
 /* Based on
 https://mooncore.eu/bunny/txt/picfmt_e.txt
+https://www.vector.co.jp/soft/data/art/se003198.html
  * with some studying of
 https://github.com/DavidGriffith/xv/blob/master/xvpic.c
 

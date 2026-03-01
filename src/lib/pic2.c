@@ -12,11 +12,19 @@
 #include "pic2.h"
 
 /* Yanagisawa's PIC2 format. Studied from
-https://github.com/jasper-software/xv/blob/main/src/xvpic2.c
+https://www.vector.co.jp/soft/mac/art/se034104.html
  * and
-https://discmaster.textfiles.com/view/10329/MACPOWER-1996-09.ISO.7z/MACPOWER-1996-09.ISO/%E7%AC%AC%EF%BC%92%E7%89%B9%E9%9B%86%EF%BC%9A%E3%83%97%E3%83%A9%E3%82%B0%E3%82%A4%E3%83%B3%E5%A4%A7%E9%9B%86%E5%90%88/PIC2%20Save/p2load.c
+https://github.com/jasper-software/xv/blob/main/src/xvpic2.c
 
- * Despite appearances, this format is surprisingly simple.
+ * There seems to be no written spec like with Pi and PIC, which is a pity.
+ * Would also like to know what became of Yanagisawa.
+
+ * Some format info (doesn't even have it's own page):
+https://ja.wikipedia.org/wiki/PIC_(%E7%94%BB%E5%83%8F%E5%9C%A7%E7%B8%AE)#PIC2
+ * which finishes with:
+ * "As of 2025, no material about PIC2 can be found on the Internet."
+
+ * * *
 
  * Due to a lack of samples, only arithmetic decoding with 24- and 15-bit
  * images is supported. xvpic2.c says any depth % 3 == 0 is possible, and in
