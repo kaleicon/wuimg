@@ -21,31 +21,40 @@ const char * sun_type_str(const enum sun_type t) {
 	return "???";
 }
 
-static size_t sun_run_length_loop(unsigned char *restrict dst,
-const size_t dst_len, const unsigned char *restrict rle, const size_t rle_len) {
+static struct wu_st sun_rle_decode(unsigned char *restrict dst,
+const size_t dst_len, FILE *ifp) {
 	const unsigned char RLE_FLAG = 0x80;
+	uint8_t rle[BUFSIZ];
+	const size_t RLE_MAX = 3;
+	memset(rle, 0, RLE_MAX); // in case of eof at the start
 	size_t d = 0;
 	size_t r = 0;
-	while (d < dst_len && r < rle_len) {
-		if (rle[r] == RLE_FLAG) {
-			++r;
-			if (r >= rle_len) {
+	size_t rle_len = 0;
+	while (d < dst_len) {
+		if (rle_len - r < RLE_MAX) {
+			rle_len -= r;
+			memcpy(rle, rle + r, rle_len);
+			rle_len += fread(rle + rle_len, 1, sizeof(rle) - rle_len, ifp);
+			if (!rle_len) {
 				break;
 			}
-			const unsigned char run_count = rle[r];
+			r = 0;
+		}
+		uint8_t c = rle[r];
+		if (c == RLE_FLAG) {
+			++r;
+			size_t run_count = rle[r];
 			++r;
 			if (run_count) {
-				if (dst_len - d < (size_t)run_count + 1
-				|| r >= rle_len) {
-					return d;
-				}
-				memset(dst + d, rle[r], run_count + 1);
-				d += run_count + 1;
+				c = rle[r];
 				++r;
-			} else {
-				dst[d] = RLE_FLAG;
-				++d;
 			}
+			++run_count;
+			if (dst_len - d < run_count) {
+				break;
+			}
+			memset(dst + d, c, run_count);
+			d += run_count;
 		} else {
 			const size_t read = memccpy_cur(dst + d, rle + r,
 				RLE_FLAG, dst_len - d, rle_len - r);
@@ -53,32 +62,13 @@ const size_t dst_len, const unsigned char *restrict rle, const size_t rle_len) {
 			r += read;
 		}
 	}
-	return d;
-}
-
-static size_t sun_rle_decode(const struct sun_desc *desc,
-unsigned char *restrict dst, const size_t dst_len) {
-	// E.g. 0x80 0x00 0x80 0x00... -> 0x80 0x80...
-	const size_t pathological_rle = dst_len * 2;
-	const size_t file_size = file_remaining(desc->ifp);
-
-	size_t written = 0;
-	const size_t rle_len = zumin(file_size, pathological_rle);
-	unsigned char *rle = malloc(rle_len);
-	if (rle) {
-		written = sun_run_length_loop(dst, dst_len, rle,
-			fread(rle, 1, rle_len, desc->ifp));
-		free(rle);
-	}
-	return written;
+	return wuerr_partial(d, dst_len);
 }
 
 struct wu_st sun_decode(const struct sun_desc *desc, struct wuimg *img) {
-	const size_t size = wuimg_size(img);
-	size_t w = (desc->type == sun_byte_encoded)
-		? sun_rle_decode(desc, img->data, size)
-		: fmt_load_raster(img, desc->ifp);
-	return wuerr_partial(w, size);
+	return (desc->type == sun_byte_encoded)
+		? sun_rle_decode(img->data, wuimg_size(img), desc->ifp)
+		: fmt_load_raster_st(img, desc->ifp);
 }
 
 static struct wu_st sun_interleave_colormap(struct sun_desc *desc,
