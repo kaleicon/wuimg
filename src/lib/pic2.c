@@ -94,7 +94,7 @@ struct arith_state {
 	uint16_t *pos_next2;
 
 	struct bitstrm bs;
-	uint16_t aa, dd;
+	uint16_t upper, lower;
 	uint16_t prob[arith_last_code];
 	uint8_t cache_last[512];
 	enum arith_code cache_code;
@@ -134,23 +134,27 @@ static bool arith_state_alloc(struct arith_state *st, size_t len) {
 
 static bool arithmetic_decode_bit(struct arith_state *st,
 const enum arith_code c) {
-	/* top bit of st->aa is always set, and always greater than st->dd by
-	 * at least 1 */
-	const unsigned mul = (st->aa >> 8);
-	const unsigned p = (mul * st->prob[c]) >> 8;
-	const uint16_t ps = (uint16_t)(p | !p);
-	const bool bit = st->dd >= ps;
+	/* 0xffff >= st->upper >= 0x8000
+	 *           st->upper > st->lower >= 0 */
+	const unsigned mul = (st->upper >> 8);
+	/* ps needs to be >= 1, which is guaranteed by making prob >= 2
+	 * when loading */
+	const uint16_t ps = (uint16_t)((mul * st->prob[c]) >> 8);
+	const bool bit = ps <= st->lower;
 	if (bit) {
-		st->dd -= ps;
-		st->aa -= ps;
+		st->lower -= ps;
+		st->upper -= ps;
 	} else {
-		st->aa = ps;
+		st->upper = ps;
 	}
-	const uint32_t bits = bitstrm_msb_peek_high25(&st->bs);
-	const uint32_t i = bit_clz32((uint32_t)(st->aa << 16));
-	st->aa <<= i;
-	st->dd = (uint16_t)(st->dd << i | bits >> 1 >> (31 - i));
-	bitstrm_seek(&st->bs, i);
+	const uint32_t i = bit_clz32((uint32_t)(st->upper << 16));
+	if (i) {
+		// renormalize bounds
+		const uint32_t bits = bitstrm_msb_peek_high25(&st->bs);
+		st->upper <<= i;
+		st->lower = (uint16_t)(st->lower << i | bits >> 1 >> (31 - i));
+		bitstrm_seek(&st->bs, i);
+	}
 	return bit;
 }
 
@@ -236,7 +240,7 @@ const void *prev_row) {
 		int nb = arithmetic_get_num(st, arith_blue, maxval, b + ng - g);
 
 		cc = (uint32_t)(nr << depth*2 | ng << depth | nb);
-		cc |= ((cc != opaque) ? 0xffu : 0) << depth*3;
+		cc |= ((uint32_t)0 - (cc != opaque)) << depth*3;
 
 		tgt = (st->cache_last[key] - 1) & cache_mask;
 		st->cache_last[key] = tgt;
@@ -282,14 +286,16 @@ struct wuimg *img) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 	for (size_t i = 0; i < ARRAY_LEN(st.prob); ++i) {
-		st.prob[i] = buf_endian16b(b->data.ptr + i*2);
+		// make probs >= 2 to save some operations in decode_bit()
+		st.prob[i] = (uint16_t)umax(buf_endian16b(b->data.ptr + i*2), 2);
 	}
-	bitstrm_from_bytes(&st.bs, b->data.ptr + strm_start,
-		b->data.len - strm_start);
-	st.aa = 0xffff;
-	st.dd = buf_endian16b(b->data.ptr + prob_table_size);
+	st.upper = 0xffff;
+	st.lower = buf_endian16b(b->data.ptr + prob_table_size);
 	memset(st.cache_last, 0, sizeof(st.cache_last));
 	st.cache_code = arith_cache_miss;
+
+	bitstrm_from_bytes(&st.bs, b->data.ptr + strm_start,
+		b->data.len - strm_start);
 
 	const size_t stride = img->w * (b->depth > 5 ? 4 : 2);
 	uint32_t cc = 0;
