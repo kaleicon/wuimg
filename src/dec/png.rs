@@ -88,20 +88,23 @@ fn add_text(infile: &mut wudefs::image_file, key: &str, val: &str) {
 
 fn get_png_metadata(infile: &mut wudefs::image_file, img: &mut wudefs::wuimg,
 info: &png::Info) {
-	info.utf8_text.iter()
-		.for_each(|text| {
+	info.utf8_text.iter().for_each(
+		|text| {
 			if let Ok(val) = text.get_text() {
 				add_text(infile, &text.keyword, &val);
 			}
-		});
-	info.uncompressed_latin1_text.iter()
-		.for_each(|text| add_text(infile, &text.keyword, &text.text));
-	info.compressed_latin1_text.iter()
-		.for_each(|text| {
+		}
+	);
+	info.uncompressed_latin1_text.iter().for_each(
+		|text| add_text(infile, &text.keyword, &text.text)
+	);
+	info.compressed_latin1_text.iter().for_each(
+		|text| {
 			if let Ok(val) = text.get_text() {
 				add_text(infile, &text.keyword, &val);
 			}
-		});
+		}
+	);
 	if let Some(bkgd) = &info.bkgd {
 		match bkgd.len() {
 			1 => {
@@ -167,10 +170,14 @@ fn get_png_colorspace(img: &mut wudefs::wuimg, info: &png::Info) -> wudefs::wu_s
 	if let Some(chrm) = info.chrm_chunk {
 		unsafe {
 			let ok = wudefs::color_space_set_primaries(&mut img.cs,
-				chrm.white.0.into_value() as f64, chrm.white.1.into_value() as f64,
-				chrm.red.0.into_value() as f64, chrm.red.1.into_value() as f64,
-				chrm.green.0.into_value() as f64, chrm.green.1.into_value() as f64,
-				chrm.blue.0.into_value() as f64, chrm.blue.1.into_value() as f64);
+				chrm.white.0.into_value() as f64,
+				chrm.white.1.into_value() as f64,
+				chrm.red.0.into_value() as f64,
+				chrm.red.1.into_value() as f64,
+				chrm.green.0.into_value() as f64,
+				chrm.green.1.into_value() as f64,
+				chrm.blue.0.into_value() as f64,
+				chrm.blue.1.into_value() as f64);
 			if !ok {
 				return wudefs::wu_st {
 					st: wudefs::wu_alloc_error,
@@ -203,17 +210,79 @@ fn get_png_palette(img: &mut wudefs::wuimg, info: &png::Info) -> wudefs::wu_st {
 	return wuok();
 }
 
+fn get_dec_state(infile: &mut wudefs::image_file) -> *mut png::Reader<FakeSig> {
+	return infile.dec_state as *mut png::Reader<FakeSig>;
+}
+
+extern "C" fn end_png(infile_ptr: *mut wudefs::image_file) {
+	let infile = unsafe {&mut *infile_ptr};
+	let _ = unsafe { std::boxed::Box::from_raw(get_dec_state(infile)) };
+	infile.dec_state = std::ptr::null_mut();
+}
+
+extern "C" fn event_png(infile_ptr: *mut wudefs::image_file,
+_state: *mut wudefs::wu_state, ev: wudefs::image_event) -> wudefs::wu_st {
+	let infile = unsafe {&mut *infile_ptr};
+	let reader = unsafe {&mut *get_dec_state(infile)};
+	let img = unsafe {&mut *infile.sub_img};
+
+	match ev {
+		wudefs::ev_metadata => {		
+			let info = reader.info();
+			img.w = info.width as usize;
+			img.h = info.height as usize;
+			img.channels = info.color_type.samples() as u8;
+			img.bitdepth = info.bit_depth as u8;
+			let mut st = get_png_colorspace(img, info);
+			if st.st != wudefs::wu_ok {
+				return st;
+			}
+			if info.color_type == png::ColorType::Indexed {
+				st = get_png_palette(img, info);
+				if st.st != wudefs::wu_ok {
+					return st;
+				}
+			}
+			return st;
+		},
+		wudefs::ev_subcycle => {
+			let data = unsafe {
+				std::slice::from_raw_parts_mut(img.data, wudefs::wuimg_size(img))
+			};
+			if let Err(_) = reader.next_frame(data) {
+				return wudefs::wu_st {
+					st: wudefs::wu_decoding_error,
+					msg: c"(png.rs) next_frame() failed".as_ptr(),
+				};
+			}
+			// SWAP_ENDIAN currently not implemented by the crate
+			if img.bitdepth == 16 {
+				unsafe {
+					wudefs::endian_loop16(img.data as *mut u16,
+						wudefs::big_endian, data.len()/2);
+				}
+			}
+
+			get_png_metadata(infile, img, reader.info());
+			return wuok();
+		},
+		_ => {},
+	};
+	wudefs::wu_st {
+		st: wudefs::wu_no_change,
+		msg: std::ptr::null(),
+	}
+}
+
 extern "C" fn init_png(infile_ptr: *mut wudefs::image_file) -> wudefs::wu_st {
 	let infile = unsafe {&mut *infile_ptr};
-
 	let sig = b"\x89PNG\r\n\x1a\n";
 	let map = unsafe {
 		std::slice::from_raw_parts(infile.map.ptr, infile.map.len)
 	};
 	let decoder = png::Decoder::new(FakeSig::new(sig, map));
-
-	let mut reader = match decoder.read_info() {
-		Ok(r) => r,
+	let reader = match decoder.read_info() {
+		Ok(r) => std::boxed::Box::new(r),
 		Err(_) => {
 			return wudefs::wu_st {
 				st: wudefs::wu_invalid_header,
@@ -221,52 +290,7 @@ extern "C" fn init_png(infile_ptr: *mut wudefs::image_file) -> wudefs::wu_st {
 			};
 		}
 	};
-
-	let info = reader.info();
-	let img = unsafe {&mut *infile.sub_img};
-	img.w = info.width as usize;
-	img.h = info.height as usize;
-	img.channels = info.color_type.samples() as u8;
-	img.bitdepth = info.bit_depth as u8;
-	let st = get_png_colorspace(img, info);
-	if st.st != wudefs::wu_ok {
-		return st;
-	}
-	if info.color_type == png::ColorType::Indexed {
-		let st = get_png_palette(img, info);
-		if st.st != wudefs::wu_ok {
-			return st;
-		}
-	}
-
-	let st = unsafe {wudefs::wuimg_alloc_limit(img, infile.conf)};
-	if st != wudefs::wu_ok {
-		return wudefs::wu_st {
-			st,
-			msg: c"(png.rs) failed to allocate image buffer".as_ptr(),
-		};
-	}
-
-	let data = unsafe {
-		std::slice::from_raw_parts_mut(img.data, wudefs::wuimg_size(img))
-	};
-	if let Err(_) = reader.next_frame(data) {
-		return wudefs::wu_st {
-			st: wudefs::wu_decoding_error,
-			msg: c"(png.rs) next_frame() failed".as_ptr(),
-		};
-	}
-	// SWAP_ENDIAN currently not implemented by the crate, so do it ourselves
-	if img.bitdepth == 16 {
-		unsafe {
-			wudefs::endian_loop16(img.data as *mut u16,
-				wudefs::big_endian, data.len()/2);
-		}
-	}
-
-	let info = reader.info();
-	get_png_metadata(infile, img, info);
-
+	infile.dec_state = std::boxed::Box::into_raw(reader) as *mut std::ffi::c_void;
 	wuok()
 }
 
@@ -274,10 +298,10 @@ extern "C" fn init_png(infile_ptr: *mut wudefs::image_file) -> wudefs::wu_st {
 pub static png_fn: wudefs::image_fn = wudefs::image_fn {
 	mmap: true,
 	alloc_single: true,
+	alloc_on_subcycle: true,
 	init: Some(init_png),
+	event: Some(event_png),
+	end: Some(end_png),
 
-	alloc_on_subcycle: false,
-	event: None,
-	end: None,
 	state_size: 0,
 };
