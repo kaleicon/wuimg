@@ -58,7 +58,7 @@ Here is a representative but not exhaustive listing:
   * BGI/Ethornell CBG v1
   * elf's AI5 engine GP4
   * RealLive's G00 and PDT
-  * PSX's TIM
+  * PSX's TIM and TIM2
 
 Refer to `FORMATS.txt' for a full list.
 
@@ -69,16 +69,21 @@ Prerequisites
 -------------
 For building you'll need
 * meson
-* A C and C++ compiler (both GCC and Clang work fine, no idea about others)
+* A C and C++ compiler (GCC works fine, Clang may emit some harmless warnings)
 * python3
 
-and at a very minimum the development files for
+plus the development files for
 * libarchive
 * libepoxy
 * libexiv2
 * libicu
 * liblcms2
 * libuchardet
+
+For rust support (optional but greatly recommended):
+* rustc
+* bindgen
+* An internet connection so that meson can fetch crates during setup
 
 Window backends and decoder families can be enabled or disabled independently.
 The default is to compile them if the required dev files are detected, so
@@ -107,11 +112,12 @@ For image decoding:
 * libcharls (JPEG-LS)
 * libjxl (needed for encoding, too)
 * liblerc
-* libpng
+* libpng or rust (via image-rs/png)
 * libraw
 * librsvg
 * libtiff
 * libwebp and libwebpdemux
+* zlib (for some rare formats)
 
 To actually run the program you'll need
 * Linux (it might work on other POSIX systems, I don't know)
@@ -123,7 +129,7 @@ Compiling the viewer
 --------------------
 Pick a good name for a build directory and run
 
-	meson BUILDDIR
+	meson setup BUILDDIR
 
 This will by default enable as many features as possible. In case you want to
 explicitely disable or enable some (like for, say, fast fuzzing because you
@@ -176,9 +182,9 @@ machines or where speed is more important, there's a pure-software converter,
 Both tools feature the same options and mostly the same output, upsampling
 quality and roundoff errors notwithstanding. Main differences are
 * `wuconv` is faster (GPU roundtrips may not be well implemented, or may simply
-   be slow, not sure which)
+   be slow on my machine, not sure which)
 * `wu write` supports half-precision floating point formats, which is used in
-   PHM and occasionally JXL and TIFF
+   PHM and occasionally by JXL and TIFF
 
 
 Compiling the fuzzer
@@ -208,7 +214,8 @@ This is used for debugging.
 	# Fuzz
 	afl-fuzz -i uniq/ -o out/ -- path/to/wufuzz bmp
 
-	# Some decoders expect to look at a (lowercase) extension:
+	# Some decoders need to look at a (lowercase) extension to know what
+	# they're dealing with:
 	afl-fuzz ... -- path/to/wufuzz msx sc5
 
 

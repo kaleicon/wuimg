@@ -68,16 +68,28 @@ enum image_event wudec_frame_cycle(struct wudec_image *image, int steps) {
 void wudec_free(struct wudec_image *image) {
 	/* dec_state must be freed first, as some formats may use this
 	 * interface to decode an embedded file. */
-	if (image->file.dec_state && !image->desc.is_auto) {
+	struct image_file *file = &image->file;
+	if (file->dec_state && !image->desc.is_auto) {
 		const struct image_fn *fn = image->desc.dec.fn;
 		if (fn->end) {
-			fn->end(&image->file);
+			fn->end(file);
 		}
 		if (fn->state_size) {
-			free(image->file.dec_state);
+			free(file->dec_state);
 		}
 	}
-	image_file_free(&image->file);
+	image_file_free(file);
+	if (file->map.ptr && !file->keep_map) {
+		struct wuptr map = file->map;
+		if (file->ifp) {
+			map.ptr -= file->off;
+			map.len += (size_t)file->off;
+		}
+		file_unmap(&map);
+	}
+	if (file->ifp && !file->keep_file) {
+		fclose(file->ifp);
+	}
 }
 
 static void recycle_base(struct wudec_image *image) {
@@ -188,10 +200,7 @@ static enum wu_error actually_open(struct wudec_image *image) {
 	struct image_file *infile = &image->file;
 	infile->conf = &image->conf;
 	struct wuptr *map = &infile->map;
-	long offset = 0;
-	if (infile->ifp) {
-		offset = ftell(infile->ifp);
-	} else if (!map->ptr) {
+	if (!infile->ifp && !map->ptr) {
 		if (!infile->name) {
 			fatal_bug("wudec_decode()",
 				"No data source for image_context");
@@ -225,9 +234,11 @@ static enum wu_error actually_open(struct wudec_image *image) {
 					errno_append(infile, errno);
 					return wu_open_error;
 				}
+				map->ptr += infile->off;
+				map->len -= (size_t)infile->off;
 			}
 		} else {
-			fseek(infile->ifp, offset, SEEK_SET);
+			fseek(infile->ifp, infile->off, SEEK_SET);
 			// propagate seek to file descriptor. needed for tiff
 			fflush(infile->ifp);
 		}
@@ -394,6 +405,7 @@ void wudec_src_file(struct wudec_image *image, FILE *ifp, const char *name,
 const bool keep_file, const bool stat_file) {
 	image->file.name = name;
 	image->file.ifp = ifp;
+	image->file.off = ftell(ifp);
 	image->file.keep_file = keep_file;
 	image->file.stat = stat_file;
 }

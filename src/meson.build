@@ -3,6 +3,7 @@
 python = find_program('python3')
 comptime = files('comptime.py')
 fmt_names = run_command(python, comptime, 'names', check : true).stdout().split()
+incdir = include_directories('.')
 
 external_map = {
 	# For empty arrays, use cc.find_library(key) instead of dependency()
@@ -35,11 +36,14 @@ pkg_map = external_map + {
 attr_map = {
 	'encoder': ['jpegxl'],
 	'freerider': ['bmz'],
+	'rust': ['png']
 }
 
 # Core setup
 src_list = []
+rust_dec_list = []
 dec_enable = configuration_data()
+dec_rs_mod = [find_program('echo')]
 dep_list = [
 	cc.find_library('m', required : false),
 	dependency('exiv2'),
@@ -48,15 +52,17 @@ dep_list = [
 	dependency('icu-uc'),
 	dependency('uchardet')
 ]
+enable_rust = add_languages('rust', required : get_option('compile_rust'))
 
 foreach f : fmt_names
 	is_external = f in external_map
+	use_rust = enable_rust and f in attr_map['rust']
 	state = get_option(f).disable_auto_if(
 		is_external and get_option('disable_external')
 	)
 
 	deps = []
-	if f in pkg_map
+	if f in pkg_map and not use_rust
 		if pkg_map[f].length() == 0
 			deps += cc.find_library(f, required : state)
 		else
@@ -74,29 +80,63 @@ foreach f : fmt_names
 	if state.require(enable).allowed()
 		dec_enable.set('WU_ENABLE_' + f.to_upper(), true)
 		dep_list += deps
-		fmtfile = f.to_lower() + '.c'
-		if f not in attr_map['freerider']
-			src_list += 'dec' / fmtfile
-			if not is_external
-				src_list += 'lib' / fmtfile
+		f_lower = f.to_lower()
+		if use_rust
+			rust_dec_list += 'dec' / f_lower + '.rs'
+			dec_rs_mod += 'pub mod ' + f_lower + ';'
+		else
+			fmtfile = f_lower + '.c'
+			if f not in attr_map['freerider']
+				src_list += 'dec' / fmtfile
+				if not is_external
+					src_list += 'lib' / fmtfile
+				endif
+			endif
+			if f in attr_map['encoder']
+				src_list += 'enc' / fmtfile
 			endif
 		endif
-		if f in attr_map['encoder']
-			src_list += 'enc' / fmtfile
-		endif
-
 	endif
 endforeach
+
+# Rust setup
+wu_rs = []
+if rust_dec_list.length() > 0
+	rustmod = import('rust')
+	cargo_ws = rustmod.workspace()
+
+	wudefs_rs = rustmod.bindgen(
+		input : 'wudefs.h',
+		output : 'wudefs.rs',
+		include_directories : [incdir],
+		args : [
+			'--with-derive-default',
+			'--no-prepend-enum-name',
+			'--raw-line',
+			'#![allow(non_camel_case_types, non_upper_case_globals, non_snake_case, unnecessary_transmutes)]'
+		],
+		language : 'c',
+	)
+	dec_rs = custom_target('dec.rs',
+		output : 'dec.rs',
+		command : dec_rs_mod,
+		capture : true,
+	)
+	rust_struct = structured_sources(['lib.rs', wudefs_rs, dec_rs], {'dec': rust_dec_list})
+	wu_rs += cargo_ws.package().library('wu_rs', rust_struct, rust_abi : 'c')
+endif
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
 
 fax_table = custom_target('fax_table',
 	output : ['fax_table.h', 'fax_table.c'],
-	command : [python, files('misc/fax.py'), '@OUTPUT@'])
+	command : [python, files('misc/fax.py'), '@OUTPUT@']
+)
 fmt_desc = custom_target('dec_fmt_desc',
 	output : 'dec_fmt_desc.h',
 	capture : true,
-	command : [python, comptime, 'fmt_desc'])
+	command : [python, comptime, 'fmt_desc']
+)
 src_list += [custom_target('dec_maps',
 		input : dec_enable,
 		output : 'dec_maps.c',
@@ -154,7 +194,7 @@ src_list += [custom_target('dec_maps',
 	'raster/wuimg.c']
 
 # FIXME: seriously?
-libuwu = static_library('uwu', src_list, dependencies : dep_list)
+libuwu = static_library('uwu', src_list, dependencies : dep_list, link_with : wu_rs)
 
 # Viewer setup
 window_map = {
@@ -234,25 +274,29 @@ window_enable = configure_file(output : 'window_enable.def', configuration : win
 executable('wu', window_src_list + [fmt_desc],
 	dependencies : dep_list + window_dep_list,
 	link_with : libuwu,
-	install : true)
+	install : true
+)
 executable('wuconv', ['main_wuconv.c', 'imgconv.c', fmt_desc],
 	dependencies : dep_list,
 	link_with : libuwu,
-	build_by_default : false)
+	build_by_default : false
+)
 executable('wufuzz', ['main_fuzz.c', fmt_desc],
 	dependencies : dep_list,
 	link_with : libuwu,
-	build_by_default : false)
+	build_by_default : false
+)
 custom_target('desktop',
 	feed : true,
 	input : dec_enable,
 	output : ['wu.desktop', 'wu-archive.desktop'],
 	command : [python, comptime, 'desktop', '@OUTPUT@'],
 	install : true,
-	install_dir: get_option('datadir') / 'applications')
+	install_dir: get_option('datadir') / 'applications'
+)
 custom_target('formats',
 	capture : true,
 	output : 'FORMATS.txt',
 	command : [python, comptime, '-all', 'show'],
-	build_by_default : false)
-incdir = include_directories('.')
+	build_by_default : false
+)

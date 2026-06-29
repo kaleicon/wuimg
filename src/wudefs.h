@@ -34,6 +34,7 @@ enum image_event {
 
 struct image_file {
 	FILE *ifp;
+	long off;
 	struct wuptr map;
 
 	size_t nr;

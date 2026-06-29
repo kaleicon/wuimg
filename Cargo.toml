@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2026 kaleido
+
+[package]
+name = "wuimg"
+version = "18446744073709551615.18446744073709551615.18446744073709551615"
+edition = "2021"
+
+[dependencies]
+png = "0.18.0"
+
+[lib]
+crate-type = ["staticlib"]

@@ -2,15 +2,17 @@
 # SPDX-FileCopyrightText: 2020 kaleido
 project('wu', 'c', 'cpp',
 	default_options : [
+		'buildtype=release',
 		'optimization=3',
 		'warning_level=3',
 		'b_lto=true',
 		'b_pie=true',
-		'c_std=c99'
+		'c_std=c99',
+		'rust_std=2021'
 	],
-	license : '0BSD')
-
-cc = meson.get_compiler('c')
+	license : '0BSD',
+	meson_version : '>= 1.11', # needed by rust-workspace
+)
 
 add_project_arguments(
 	'-D_DEFAULT_SOURCE',
@@ -27,6 +29,8 @@ add_project_arguments(
 	'-fno-trapping-math',
 	'-ffp-contract=fast',
 	language : 'c')
+
+cc = meson.get_compiler('c')
 cc_id = cc.get_id()
 if cc_id == 'gcc'
 	add_project_arguments(

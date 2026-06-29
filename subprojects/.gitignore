@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2026 kaleido
+# meson downloads cargo crates here and needs this directory to exist on setup
+*
+!.gitignore
