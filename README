@@ -148,6 +148,7 @@ don't trust me or the C language in general), run some of the following:
 	# Optimize for the current CPU, at the expense of probably not
 	# running on a different machine.
 	meson configure -D c_args=-march=native BUILDDIR
+	meson configure -D rust_args='-C target-cpu=native' BUILDDIR
 
 	# Disable all decoders and window backends by default
 	meson configure --auto-features disabled BUILDDIR
