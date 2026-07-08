@@ -52,7 +52,14 @@ dep_list = [
 	dependency('icu-uc'),
 	dependency('uchardet')
 ]
-enable_rust = add_languages('rust', required : get_option('compile_rust'))
+meson_version = meson.version().split('.')
+meson_major = meson_version[0].to_int()
+meson_minor = meson_version[1].to_int()
+enable_rust = add_languages('rust',
+	required : get_option('compile_rust').disable_auto_if(
+		meson_major == 1 and meson_minor < 11
+	)
+)
 
 foreach f : fmt_names
 	is_external = f in external_map
@@ -111,28 +118,12 @@ if rust_dec_list.length() > 0
 	rustmod = import('rust')
 	cargo_ws = rustmod.workspace()
 
-	wu_rs = rustmod.bindgen(
-		input : custom_target('wu_rust_amalgam',
-			output : 'wu_rust_amalgam.h',
-			command : amalgam,
-			capture : true,
-		),
-		output : 'wu.rs',
-		include_directories : [incdir],
-		args : [
-			'--with-derive-default',
-			'--no-prepend-enum-name',
-			'--raw-line',
-			'#![allow(non_camel_case_types, non_upper_case_globals, non_snake_case, unnecessary_transmutes)]'
-		],
-		language : 'c',
-	)
 	dec_rs = custom_target('dec.rs',
 		output : 'dec.rs',
 		command : dec_rs_mod,
 		capture : true,
 	)
-	rust_struct = structured_sources(['lib.rs', wu_rs, dec_rs, 'wurs.rs'], {'dec': rust_dec_list})
+	rust_struct = structured_sources(['lib.rs', 'wu.rs', dec_rs, 'wurs.rs'], {'dec': rust_dec_list})
 	wu_rust_lib += cargo_ws.package().library('wu_rust', rust_struct, rust_abi : 'c')
 endif
 

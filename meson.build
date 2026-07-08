@@ -11,7 +11,6 @@ project('wu', 'c', 'cpp',
 		'rust_std=2021'
 	],
 	license : '0BSD',
-	meson_version : '>= 1.11', # needed by rust-workspace
 )
 
 add_project_arguments(

@@ -81,8 +81,8 @@ plus the development files for
 * libuchardet
 
 For rust support (optional but greatly recommended):
+* meson >= 1.11
 * rustc
-* bindgen
 * An internet connection so that meson can fetch crates during setup
 
 Window backends and decoder families can be enabled or disabled independently.
