@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2026 kaleido
-use crate::wudefs;
+use crate::wu;
+use crate::wurs;
 
 // Disclaimer: I'm a rust n00b
 
@@ -69,24 +70,20 @@ impl std::io::BufRead for FakeSig {
 }
 
 
-fn wuok() -> wudefs::wu_st {
-	wudefs::wu_st { st: wudefs::wu_ok, msg: std::ptr::null() }
-}
-
-fn add_text(infile: &mut wudefs::image_file, key: &str, val: &str) {
+fn add_text(infile: &mut wu::image_file, key: &str, val: &str) {
 	if let Ok(ckey) = std::ffi::CString::new(key) {
-		let val_wuptr = wudefs::wuptr {
+		let val_wuptr = wu::wuptr {
 			ptr: val.as_ptr(),
 			len: val.len(),
 		};
 		unsafe {
-			wudefs::tree_add_leaf_utf8_len(&mut infile.metadata,
+			wu::tree_add_leaf_utf8_len(&mut infile.metadata,
 				ckey.as_ptr(), val_wuptr);
 		};
 	}
 }
 
-fn get_png_metadata(infile: &mut wudefs::image_file, img: &mut wudefs::wuimg,
+fn get_png_metadata(infile: &mut wu::image_file, img: &mut wu::wuimg,
 info: &png::Info) {
 	info.utf8_text.iter().for_each(
 		|text| {
@@ -105,10 +102,13 @@ info: &png::Info) {
 			}
 		}
 	);
+	if let Some(exif) = &info.exif_metadata {
+		infile.metadata.parse(wu::metadata_exif, exif);
+	}
 	if let Some(bkgd) = &info.bkgd {
 		match bkgd.len() {
 			1 => {
-				if img.mode() == wudefs::image_mode_palette {
+				if img.mode() == wu::image_mode_palette {
 					infile.bg = unsafe {
 						(*img.u.palette).color[bkgd[0] as usize]
 					};
@@ -129,47 +129,45 @@ info: &png::Info) {
 	}
 }
 
-fn get_png_colorspace(img: &mut wudefs::wuimg, info: &png::Info) -> wudefs::wu_st {
+fn get_png_colorspace(img: &mut wu::wuimg, info: &png::Info) -> wu::wu_st {
 	if let Some(cicp) = info.coding_independent_code_points {
 		img.cs.set_primaries(cicp.color_primaries.into());
 		img.cs.set_transfer(cicp.transfer_function.into());
 		img.cs.set_matrix(cicp.matrix_coefficients.into());
 		img.cs.set_limited(!cicp.is_video_full_range_image);
-		return wuok();
+		return wu::wu_st::ok();
 	}
 
 	if let Some(icc) = &info.icc_profile {
 		unsafe {
-			let ok = wudefs::color_space_set_icc_copy(
+			let ok = wu::color_space_set_icc_copy(
 				&mut img.cs,
 				icc.as_ptr() as *const std::ffi::c_void,
 				icc.len());
 			if ok {
-				return wuok();
+				return wu::wu_st::ok();
 			}
 		};
 	}
 
 	if let Some(_) = info.srgb {
-		return wuok();
+		return wu::wu_st::ok();
 	}
 
 	if let Some(gama) = info.gama_chunk {
 		unsafe {
-			let ok = wudefs::color_space_set_gamma(&mut img.cs,
+			let ok = wu::color_space_set_gamma(&mut img.cs,
 				1.0 / (gama.into_value() as f64));
 			if !ok {
-				return wudefs::wu_st {
-					st: wudefs::wu_alloc_error,
-					msg: c"(png.rs) failed to set gamma".as_ptr(),
-				};
+				return wurs::wuerr_here!(wu::wu_alloc_error,
+					"failed to set gamma");
 			}
 		}
 	}
 
 	if let Some(chrm) = info.chrm_chunk {
 		unsafe {
-			let ok = wudefs::color_space_set_primaries(&mut img.cs,
+			let ok = wu::color_space_set_primaries(&mut img.cs,
 				chrm.white.0.into_value() as f64,
 				chrm.white.1.into_value() as f64,
 				chrm.red.0.into_value() as f64,
@@ -179,24 +177,22 @@ fn get_png_colorspace(img: &mut wudefs::wuimg, info: &png::Info) -> wudefs::wu_s
 				chrm.blue.0.into_value() as f64,
 				chrm.blue.1.into_value() as f64);
 			if !ok {
-				return wudefs::wu_st {
-					st: wudefs::wu_alloc_error,
-					msg: c"(png.rs) failed to set chromacities".as_ptr(),
-				};
+				return wurs::wuerr_here!(wu::wu_alloc_error,
+					"failed to set chromacities");
 			}
 		}		
 	}
 
-	return wuok();
+	return wu::wu_st::ok();
 }
 
-fn get_png_palette(img: &mut wudefs::wuimg, info: &png::Info) -> wudefs::wu_st {
+fn get_png_palette(img: &mut wu::wuimg, info: &png::Info) -> wu::wu_st {
 	if let Some(palette) = &info.palette {
 		let st = unsafe {
-			wudefs::wuimg_palette_from_buf(img, 3, palette.len()/3,
+			wu::wuimg_palette_from_buf(img, 3, palette.len()/3,
 				palette.as_ptr())
 		};
-		if st.st != wudefs::wu_ok {
+		if !st.isok() {
 			return st;
 		}
 		if let Some(trns) = &info.trns {
@@ -207,21 +203,21 @@ fn get_png_palette(img: &mut wudefs::wuimg, info: &png::Info) -> wudefs::wu_st {
 		}
 	}
 
-	return wuok();
+	return wu::wu_st::ok();
 }
 
-fn get_dec_state(infile: &mut wudefs::image_file) -> *mut png::Reader<FakeSig> {
+fn get_dec_state(infile: &mut wu::image_file) -> *mut png::Reader<FakeSig> {
 	return infile.dec_state as *mut png::Reader<FakeSig>;
 }
 
-extern "C" fn end_png(infile_ptr: *mut wudefs::image_file) {
+extern "C" fn end_png(infile_ptr: *mut wu::image_file) {
 	let infile = unsafe {&mut *infile_ptr};
 	let _ = unsafe { std::boxed::Box::from_raw(get_dec_state(infile)) };
 	infile.dec_state = std::ptr::null_mut();
 }
 
-extern "C" fn event_png(infile_ptr: *mut wudefs::image_file,
-state: *mut wudefs::wu_state, ev: wudefs::image_event) -> wudefs::wu_st {
+extern "C" fn event_png(infile_ptr: *mut wu::image_file,
+state: *mut wu::wu_state, ev: wu::image_event) -> wu::wu_st {
 	let infile = unsafe {&mut *infile_ptr};
 	let state = unsafe {&mut *state};
 	let img = unsafe {&mut *(infile.sub_img.add(state.idx as usize))};
@@ -229,9 +225,9 @@ state: *mut wudefs::wu_state, ev: wudefs::image_event) -> wudefs::wu_st {
 	let info = reader.info();
 
 	match ev {
-		wudefs::ev_metadata => {		
+		wu::ev_metadata => {
 			let mut st = get_png_colorspace(img, info);
-			if st.st != wudefs::wu_ok {
+			if !st.isok() {
 				return st;
 			}
 			if state.idx == 0 {
@@ -241,7 +237,7 @@ state: *mut wudefs::wu_state, ev: wudefs::image_event) -> wudefs::wu_st {
 				img.bitdepth = info.bit_depth as u8;
 				if info.color_type == png::ColorType::Indexed {
 					st = get_png_palette(img, info);
-					if st.st != wudefs::wu_ok {
+					if !st.isok() {
 						return st;
 					}
 				}
@@ -253,23 +249,19 @@ state: *mut wudefs::wu_state, ev: wudefs::image_event) -> wudefs::wu_st {
 			}
 			return st;
 		},
-		wudefs::ev_subcycle => {
-			let data = unsafe {
-				std::slice::from_raw_parts_mut(img.data, wudefs::wuimg_size(img))
-			};
+		wu::ev_subcycle => {
+			let data = img.get_data();
 			if state.idx == 0 {
 				if let Err(_) = reader.next_frame(data) {
-					return wudefs::wu_st {
-						st: wudefs::wu_decoding_error,
-						msg: c"(png.rs) next_frame() failed".as_ptr(),
-					};
+					return wurs::wuerr_here!(wu::wu_decoding_error,
+						"next_frame() failed");
 				}
 				// SWAP_ENDIAN currently not implemented by the crate
 				if img.bitdepth == 16 {
 					unsafe {
-						wudefs::endian_loop16(
+						wu::endian_loop16(
 							img.data as *mut u16,
-							wudefs::big_endian,
+							wu::big_endian,
 							data.len()/2);
 					}
 				}
@@ -286,35 +278,29 @@ state: *mut wudefs::wu_state, ev: wudefs::image_event) -> wudefs::wu_st {
 					slice_copy(data, plte);
 				}
 			} else {
-				return wudefs::wu_st {
-					st: wudefs::wu_decoding_error,
-					msg: c"(png.rs) palette disappeared".as_ptr(),
-				};
+				return wurs::wuerr_here!(wu::wu_decoding_error,
+					"palette disappeared");
 			}
-			return wuok();
+			return wu::wu_st::ok();
 		},
 		_ => {},
 	};
-	wudefs::wu_st {
-		st: wudefs::wu_no_change,
+	wu::wu_st {
+		st: wu::wu_no_change,
 		msg: std::ptr::null(),
 	}
 }
 
-extern "C" fn init_png(infile_ptr: *mut wudefs::image_file) -> wudefs::wu_st {
+extern "C" fn init_png(infile_ptr: *mut wu::image_file) -> wu::wu_st {
 	let infile = unsafe {&mut *infile_ptr};
 	let sig = b"\x89PNG\r\n\x1a\n";
-	let map = unsafe {
-		std::slice::from_raw_parts(infile.map.ptr, infile.map.len)
-	};
+	let map = infile.get_map();
 	let decoder = png::Decoder::new(FakeSig::new(sig, map));
 	let reader = match decoder.read_info() {
 		Ok(r) => std::boxed::Box::new(r),
 		Err(_) => {
-			return wudefs::wu_st {
-				st: wudefs::wu_invalid_header,
-				msg: c"(png.rs) failed to read png info".as_ptr()
-			};
+			return wurs::wuerr_here!(wu::wu_invalid_header,
+				"failed to read png info");
 		}
 	};
 
@@ -324,11 +310,11 @@ extern "C" fn init_png(infile_ptr: *mut wudefs::image_file) -> wudefs::wu_st {
 	infile.nr = 1 + opt_pal as usize;
 
 	infile.dec_state = std::boxed::Box::into_raw(reader) as *mut std::ffi::c_void;
-	wuok()
+	wu::wu_st::ok()
 }
 
 #[no_mangle]
-pub static png_fn: wudefs::image_fn = wudefs::image_fn {
+pub static png_fn: wu::image_fn = wu::image_fn {
 	mmap: true,
 	alloc_on_subcycle: true,
 	init: Some(init_png),

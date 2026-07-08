@@ -100,14 +100,24 @@ foreach f : fmt_names
 endforeach
 
 # Rust setup
-wu_rs = []
+wu_rust_lib = []
 if rust_dec_list.length() > 0
+	binds = ['wudefs.h', 'misc/metadata.h']
+	amalgam = [find_program('echo')]
+	foreach b : binds
+		amalgam += '#include "@0@"\n'.format(b)
+	endforeach
+
 	rustmod = import('rust')
 	cargo_ws = rustmod.workspace()
 
-	wudefs_rs = rustmod.bindgen(
-		input : 'wudefs.h',
-		output : 'wudefs.rs',
+	wu_rs = rustmod.bindgen(
+		input : custom_target('wu_rust_amalgam',
+			output : 'wu_rust_amalgam.h',
+			command : amalgam,
+			capture : true,
+		),
+		output : 'wu.rs',
 		include_directories : [incdir],
 		args : [
 			'--with-derive-default',
@@ -122,8 +132,8 @@ if rust_dec_list.length() > 0
 		command : dec_rs_mod,
 		capture : true,
 	)
-	rust_struct = structured_sources(['lib.rs', wudefs_rs, dec_rs], {'dec': rust_dec_list})
-	wu_rs += cargo_ws.package().library('wu_rs', rust_struct, rust_abi : 'c')
+	rust_struct = structured_sources(['lib.rs', wu_rs, dec_rs, 'wurs.rs'], {'dec': rust_dec_list})
+	wu_rust_lib += cargo_ws.package().library('wu_rust', rust_struct, rust_abi : 'c')
 endif
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)
@@ -194,7 +204,7 @@ src_list += [custom_target('dec_maps',
 	'raster/wuimg.c']
 
 # FIXME: seriously?
-libuwu = static_library('uwu', src_list, dependencies : dep_list, link_with : wu_rs)
+libuwu = static_library('uwu', src_list, dependencies : dep_list, link_with : wu_rust_lib)
 
 # Viewer setup
 window_map = {
