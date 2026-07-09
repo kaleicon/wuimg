@@ -11,6 +11,8 @@ project('wu', 'c', 'cpp',
 		'rust_std=2021'
 	],
 	license : '0BSD',
+	# 0.59.0: {'feature_option.allowed()', 'feature_option.disable_auto_if()', 'feature_option.require()', 'feed arg in custom_target'}
+	meson_version : '>= 0.59'
 )
 
 add_project_arguments(

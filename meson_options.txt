@@ -80,7 +80,7 @@ option('xcursor', type : 'feature', description : 'X11 cursor')
 option('xwd', type : 'feature', description : 'X11 Window Dump')
 option('xyz', type : 'feature', description : 'RPG Maker image')
 
-option('compile_rust', type : 'feature', description : 'Compile Rust decoders, ignoring C libraries')
+option('compile_rust', type : 'feature', description : 'Compile Rust decoders, ignoring C libraries. Requires meson >= 1.11')
 option('disable_external', type : 'boolean', value : false, description : 'Disable all external formats')
 option('avif', type : 'feature', description : 'via libavif')
 option('flif', type : 'feature', description : 'via libflif')
