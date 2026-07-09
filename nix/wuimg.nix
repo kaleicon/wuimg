@@ -52,6 +52,9 @@ stdenv.mkDerivation {
     [
       # Enable lto
       "-Db_lto=true"
+      # Disable rust
+      # TODO: when meson 1.11 is merged into nix, removing this line should be fine.
+      "-Dcompile_rust=disabled"
     ]
     ++ lib.optionals (!withX11) [
       # Configure X11 support
