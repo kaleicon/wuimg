@@ -140,8 +140,7 @@ fn get_png_colorspace(img: &mut wu::wuimg, info: &png::Info) -> wu::wu_st {
 
 	if let Some(icc) = &info.icc_profile {
 		unsafe {
-			let ok = wu::color_space_set_icc_copy(
-				&mut img.cs,
+			let ok = wu::color_space_set_icc_copy(&mut img.cs,
 				icc.as_ptr() as *const std::ffi::c_void,
 				icc.len());
 			if ok {
@@ -207,7 +206,7 @@ fn get_png_palette(img: &mut wu::wuimg, info: &png::Info) -> wu::wu_st {
 }
 
 fn get_dec_state(infile: &mut wu::image_file) -> *mut png::Reader<FakeSig> {
-	return infile.dec_state as *mut png::Reader<FakeSig>;
+	infile.dec_state as *mut _
 }
 
 extern "C" fn end_png(infile_ptr: *mut wu::image_file) {
