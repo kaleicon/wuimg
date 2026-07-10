@@ -86,18 +86,10 @@ ds: &mut GifState) -> wu::wu_st {
 	match ds.prev.dispose {
 		gif::DisposalMethod::Any | gif::DisposalMethod::Keep => {},
 		gif::DisposalMethod::Background => {
-			for y in 0..p.h {
-				let start = (y + p.y)*stride + p.x*ch;
-				dst[start..start + p.w*ch].fill(0);
-			}
+			img.compost_clear(0, &p);
 		},
 		gif::DisposalMethod::Previous => {
-			let rstride = p.w * ch;
-			for y in 0..p.h {
-				let start = (y + p.y)*stride + p.x*ch;
-				dst[start..start + rstride].copy_from_slice(
-					&restore[y*rstride..(y+1)*rstride]);
-			}
+			img.compost_overwrite(restore, &p);
 		},
 	};
 
@@ -105,12 +97,7 @@ ds: &mut GifState) -> wu::wu_st {
 	ds.prev.frame = cur;
 	// Save canvas area for later restoral
 	if dispose == gif::DisposalMethod::Previous {
-		let rstride = cur.w * ch;
-		for y in 0..cur.h {
-			let start = (y + cur.y)*stride + cur.x*ch;
-			restore[y*rstride..(y+1)*rstride].copy_from_slice(
-				&dst[start..start + rstride]);
-		}
+		img.compost_extract(restore, &p);
 	}
 
 	for y in 0..cur.h {

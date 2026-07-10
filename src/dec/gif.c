@@ -140,13 +140,8 @@ const int idx) {
 	ds->restore.dispose = gcb->DisposalMode;
 	ds->restore.frame = cur;
 	if (gcb->DisposalMode == DISPOSE_PREVIOUS) {
-		const size_t rstride = cur.w * img->channels;
-		const size_t stride = wuimg_stride(img);
-		for (size_t y = 0; y < cur.h; ++y) {
-			const size_t d = (y + cur.y)*stride + cur.x*img->channels;
-			memcpy(ds->restore.buf + y*rstride, img->data + d,
-				rstride);
-		}
+		compost_extract(ds->restore.buf, &ds->restore.frame,
+			img->data, img->w, img->channels);
 	}
 
 	struct palette *pal;

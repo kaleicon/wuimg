@@ -30,6 +30,27 @@ impl wu::wuimg {
 			wu::wuimg_frames_init(self, nr).as_mut()
 		}
 	}
+
+	pub fn compost_clear(&self, fill: u8, reg: &wu::compost) {
+		unsafe {
+			wu::compost_clear(self.data as *mut _, self.w,
+				self.channels, fill as std::ffi::c_int, reg);
+		}
+	}
+
+	pub fn compost_overwrite(&self, src: &[u8], reg: &wu::compost) {
+		unsafe {
+			wu::compost_overwrite(self.data as *mut _, self.w,
+				self.channels, src.as_ptr() as *const _, reg);
+		}
+	}
+
+	pub fn compost_extract(&self, dst: &mut [u8], reg: &wu::compost) {
+		unsafe {
+			wu::compost_extract(dst.as_mut_ptr() as *mut _, reg,
+				self.data as *mut _, self.w, self.channels);
+		}
+	}
 }
 
 impl wu::image_file {

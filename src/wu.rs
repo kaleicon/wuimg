@@ -3269,6 +3269,15 @@ unsafe extern "C" {
 	);
 }
 unsafe extern "C" {
+	pub fn compost_extract(
+		dst: *mut ::std::os::raw::c_void,
+		reg: *const compost,
+		src: *const ::std::os::raw::c_void,
+		w: usize,
+		ch: u8,
+	);
+}
+unsafe extern "C" {
 	pub fn compost_bounds_check(w: usize, h: usize, reg: *const compost) -> bool;
 }
 pub const wu_no_change: wu_error = -1;

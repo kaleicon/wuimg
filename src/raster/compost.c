@@ -47,7 +47,7 @@ const void *restrict src, const struct compost *reg) {
 	const uint8_t ch = 4;
 	size_t dst_pos = (reg->y * w + reg->x) * ch;
 	size_t src_pos = 0;
-	for (size_t i = 0; i < reg->h; ++i) {
+	for (size_t y = 0; y < reg->h; ++y) {
 		blend_row((uint8_t *)dst + dst_pos,
 			(const uint8_t *)src + src_pos, reg->w, ch);
 		dst_pos += w * ch;
@@ -59,7 +59,7 @@ void compost_overwrite(void *restrict dst, const size_t w, const uint8_t ch,
 const void *restrict src, const struct compost *reg) {
 	size_t dst_pos = (reg->y * w + reg->x) * ch;
 	size_t src_pos = 0;
-	for (size_t i = 0; i < reg->h; ++i) {
+	for (size_t y = 0; y < reg->h; ++y) {
 		memcpy((uint8_t *)dst + dst_pos,
 			(const uint8_t *)src + src_pos, reg->w * ch);
 		dst_pos += w * ch;
@@ -70,9 +70,21 @@ const void *restrict src, const struct compost *reg) {
 void compost_clear(void *restrict dst, const size_t w, const uint8_t ch,
 const int c, const struct compost *reg) {
 	size_t dst_pos = (reg->y * w + reg->x) * ch;
-	for (size_t i = 0; i < reg->h; ++i) {
+	for (size_t y = 0; y < reg->h; ++y) {
 		memset((uint8_t *)dst + dst_pos, c, reg->w * ch);
 		dst_pos += w * ch;
+	}
+}
+
+void compost_extract(void *restrict dst, const struct compost *reg,
+const void *restrict src, const size_t w, const uint8_t ch) {
+	size_t dst_pos = 0;
+	size_t src_pos = (reg->y * w + reg->x) * ch;
+	for (size_t y = 0; y < reg->h; ++y) {
+		memcpy((uint8_t *)dst + dst_pos,
+			(const uint8_t *)src + src_pos, reg->w * ch);
+		dst_pos += reg->w * ch;
+		src_pos += w * ch;
 	}
 }
 

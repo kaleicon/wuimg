@@ -21,6 +21,9 @@ const void *restrict src, const struct compost *reg);
 void compost_clear(void *restrict dst, size_t w, uint8_t ch, int c,
 const struct compost *reg);
 
+void compost_extract(void *restrict dst, const struct compost *reg,
+const void *restrict src, size_t w, uint8_t ch);
+
 bool compost_bounds_check(size_t w, size_t h, const struct compost *reg);
 
 #endif /* ANIM_COMMON */
