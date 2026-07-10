@@ -8,6 +8,7 @@ edition = "2021"
 
 [dependencies]
 png = "0.18.0"
+gif = "0.14.2"
 
 [lib]
 crate-type = ["staticlib"]

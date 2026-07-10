@@ -73,11 +73,13 @@ enum image_mode {
 	image_mode_bitfield,
 };
 
+struct frame_time {
+	uint32_t num, den;
+};
+
 struct frame_info {
 	struct compost reg;
-	struct frame_time {
-		uint32_t num, den;
-	} sec;
+	struct frame_time sec;
 	bool keyframe;
 };
 

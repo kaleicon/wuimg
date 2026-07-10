@@ -36,7 +36,7 @@ pkg_map = external_map + {
 attr_map = {
 	'encoder': ['jpegxl'],
 	'freerider': ['bmz'],
-	'rust': ['png']
+	'rust': ['gif', 'png']
 }
 
 # Core setup

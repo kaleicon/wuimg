@@ -24,6 +24,12 @@ impl wu::wuimg {
 			std::slice::from_raw_parts_mut(self.data, wu::wuimg_size(self))
 		}
 	}
+
+	pub fn frames_init<'a>(&'a mut self, nr: usize) -> Option<&'a mut wu::image_frames> {
+		unsafe {
+			wu::wuimg_frames_init(self, nr).as_mut()
+		}
+	}
 }
 
 impl wu::image_file {
@@ -35,6 +41,13 @@ impl wu::image_file {
 }
 
 macro_rules! wuerr_here {
+	($st:expr) => {
+		wu::wu_st {
+			st: $st,
+			msg: concat!(file!(), ":", line!(), "\0").as_ptr() as *const std::ffi::c_char,
+		}
+	};
+
 	($st:expr, $msg:literal) => {
 		wu::wu_st {
 			st: $st,

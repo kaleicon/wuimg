@@ -13,11 +13,14 @@ case "$1" in
 		echo 'Usage:' "$0" 'src_root'
 		;;
 	*)
+		conf=$(dirname $(realpath "$0"))/rustfmt.toml
 		cd "$1"
 		amalgam=$(mktemp amalgamXXXXXX.h)
 		gen_include > "$amalgam"
 		bindgen \
+			--with-derive-default \
 			--no-prepend-enum-name \
+			--rustfmt-configuration-file "$conf" \
 			--raw-line \
 			'#![allow(non_camel_case_types, non_upper_case_globals, non_snake_case, unnecessary_transmutes)]' \
 			"$amalgam" -- -I .

@@ -103,7 +103,7 @@ For window backends you need:
 For image decoding:
 * libavif
 * libflif (abandoned by upstream, enable at your own peril)
-* libgif
+* libgif or rust (via image-rs/gif)
 * libheif
 * libjbig
 * libjbig2dec

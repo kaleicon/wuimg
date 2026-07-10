@@ -84,7 +84,7 @@ option('compile_rust', type : 'feature', description : 'Compile Rust decoders, i
 option('disable_external', type : 'boolean', value : false, description : 'Disable all external formats')
 option('avif', type : 'feature', description : 'via libavif')
 option('flif', type : 'feature', description : 'via libflif')
-option('gif', type : 'feature', description : 'via libgif')
+option('gif', type : 'feature', description : 'via image-rs/gif or libgif')
 option('heif', type : 'feature', description : 'via libheif, supports avif if libavif is not used')
 option('icc', type : 'feature', description : 'via liblcms2')
 option('jbig', type : 'feature', description : 'via libjbig')
