@@ -80,11 +80,11 @@ const int code, const float dt, const bool shift) {
 		pub->win.playing = false;
 		break;
 	case ';':
-		event->image = wudec_sub_cycle(image, -5);
+		event->image = wudec_frame_cycle(image, -5);
 		pub->win.playing = false;
 		break;
 	case ':':
-		event->image = wudec_sub_cycle(image, 5);
+		event->image = wudec_frame_cycle(image, 5);
 		pub->win.playing = false;
 		break;
 	case ' ':
