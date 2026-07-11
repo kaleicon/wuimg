@@ -2,7 +2,17 @@
 // SPDX-FileCopyrightText: 2020 kaleido
 #include <string.h>
 
-#include "compost.h"
+#include "misc/math.h"
+#include "raster/compost.h"
+#include "raster/wuimg.h"
+
+static size_t canvas_off(size_t stride, uint8_t ch, const struct compost *reg, size_t y) {
+	return (reg->y + y) * stride + reg->x*ch;
+}
+
+static size_t frame_off(uint8_t ch, const struct compost *reg, size_t y) {
+	return ch*reg->w*y;
+}
 
 static void blend_rgba_pixel(unsigned char *restrict d,
 const unsigned char *restrict s) {
@@ -42,50 +52,98 @@ const unsigned char *restrict src, const size_t len, const size_t ch) {
 	}
 }
 
-void compost_alpha_blend(void *restrict dst, const size_t w,
-const void *restrict src, const struct compost *reg) {
+void compost_alpha_blend(const struct compost *reg, const struct wuimg *img,
+const uint8_t *restrict src) {
 	const uint8_t ch = 4;
-	size_t dst_pos = (reg->y * w + reg->x) * ch;
-	size_t src_pos = 0;
+	const size_t stride = wuimg_stride(img);
 	for (size_t y = 0; y < reg->h; ++y) {
-		blend_row((uint8_t *)dst + dst_pos,
-			(const uint8_t *)src + src_pos, reg->w, ch);
-		dst_pos += w * ch;
-		src_pos += reg->w * 4;
+		blend_row(img->data + canvas_off(stride, ch, reg, y),
+			src + frame_off(ch, reg, y), reg->w, ch);
 	}
 }
 
-void compost_overwrite(void *restrict dst, const size_t w, const uint8_t ch,
-const void *restrict src, const struct compost *reg) {
-	size_t dst_pos = (reg->y * w + reg->x) * ch;
-	size_t src_pos = 0;
-	for (size_t y = 0; y < reg->h; ++y) {
-		memcpy((uint8_t *)dst + dst_pos,
-			(const uint8_t *)src + src_pos, reg->w * ch);
-		dst_pos += w * ch;
-		src_pos += reg->w * ch;
+static void span_expand(uint8_t *restrict dst, const uint8_t *restrict src,
+const struct palette *pal, size_t w, uint8_t ch) {
+	for (size_t x = 0; x < w; ++x) {
+		const uint8_t c = src[x];
+		memcpy(dst + x*ch, pal->color + c, ch);
 	}
 }
 
-void compost_clear(void *restrict dst, const size_t w, const uint8_t ch,
-const int c, const struct compost *reg) {
-	size_t dst_pos = (reg->y * w + reg->x) * ch;
+static void pal_to_color(uint8_t *restrict dst, const uint8_t *restrict src,
+const struct palette *pal, size_t w, uint8_t ch, const int idx) {
+	if (idx == (uint8_t)idx) {
+		for (;;) {
+			const uint8_t *alpha = memchr(src, idx, w);
+			if (!alpha) {
+				break;
+			}
+			const size_t span = (size_t)(alpha - src);
+			span_expand(dst, src, pal, span, ch);
+			dst += (span + 1)*ch;
+			src += span + 1;
+			w -= span + 1;
+
+			while (w && *src == idx) {
+				dst += ch;
+				++src;
+				--w;
+			}
+		}
+	}
+	span_expand(dst, src, pal, w, ch);
+}
+
+void compost_pal_expand_idx_ignore(const struct compost *reg,
+const struct wuimg *img, const uint8_t *restrict src, const int alpha_idx,
+const struct palette *pal) {
+	const uint8_t src_ch = 1;
+	const uint8_t dst_ch = 4;
+	const size_t stride = wuimg_stride(img);
 	for (size_t y = 0; y < reg->h; ++y) {
-		memset((uint8_t *)dst + dst_pos, c, reg->w * ch);
-		dst_pos += w * ch;
+		pal_to_color(img->data + canvas_off(stride, dst_ch, reg, y),
+			src + frame_off(src_ch, reg, y), pal, reg->w, dst_ch,
+			alpha_idx);
 	}
 }
 
-void compost_extract(void *restrict dst, const struct compost *reg,
-const void *restrict src, const size_t w, const uint8_t ch) {
-	size_t dst_pos = 0;
-	size_t src_pos = (reg->y * w + reg->x) * ch;
+void compost_overwrite(const struct compost *reg, const struct wuimg *img,
+const uint8_t *restrict src) {
+	const uint8_t ch = img->channels;
+	const size_t stride = wuimg_stride(img);
 	for (size_t y = 0; y < reg->h; ++y) {
-		memcpy((uint8_t *)dst + dst_pos,
-			(const uint8_t *)src + src_pos, reg->w * ch);
-		dst_pos += reg->w * ch;
-		src_pos += w * ch;
+		memcpy(img->data + canvas_off(stride, ch, reg, y),
+			src + frame_off(ch, reg, y), reg->w * ch);
 	}
+}
+
+void compost_clear(const struct compost *reg, const struct wuimg *img) {
+	const uint8_t ch = img->channels;
+	const size_t stride = wuimg_stride(img);
+	for (size_t y = 0; y < reg->h; ++y) {
+		memset(img->data + canvas_off(stride, ch, reg, y), 0, reg->w*ch);
+	}
+}
+
+void compost_extract(const struct compost *reg, uint8_t *restrict dst,
+const struct wuimg *img) {
+	const uint8_t ch = img->channels;
+	const size_t stride = wuimg_stride(img);
+	for (size_t y = 0; y < reg->h; ++y) {
+		memcpy(dst + frame_off(ch, reg, y),
+			img->data + canvas_off(stride, ch, reg, y),
+			ch*reg->w);
+	}
+}
+
+void compost_affect(struct compost *restrict aa,
+const struct compost *restrict bb) {
+	size_t x1 = zumax(aa->x + aa->w, bb->x + bb->w);
+	size_t y1 = zumax(aa->y + aa->h, bb->y + bb->h);
+	aa->x = zumin(aa->x, bb->x);
+	aa->y = zumin(aa->y, bb->y);
+	aa->w = x1 - aa->x;
+	aa->h = y1 - aa->y;
 }
 
 bool compost_bounds_check(const size_t w, const size_t h,

@@ -3226,127 +3226,6 @@ unsafe extern "C" {
 	pub fn color_space_ref(orig: *mut color_space) -> color_space;
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
-pub struct compost {
-	pub x: usize,
-	pub y: usize,
-	pub w: usize,
-	pub h: usize,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-	["Size of compost"][::std::mem::size_of::<compost>() - 32usize];
-	["Alignment of compost"][::std::mem::align_of::<compost>() - 8usize];
-	["Offset of field: compost::x"][::std::mem::offset_of!(compost, x) - 0usize];
-	["Offset of field: compost::y"][::std::mem::offset_of!(compost, y) - 8usize];
-	["Offset of field: compost::w"][::std::mem::offset_of!(compost, w) - 16usize];
-	["Offset of field: compost::h"][::std::mem::offset_of!(compost, h) - 24usize];
-};
-unsafe extern "C" {
-	pub fn compost_alpha_blend(
-		dst: *mut ::std::os::raw::c_void,
-		w: usize,
-		src: *const ::std::os::raw::c_void,
-		reg: *const compost,
-	);
-}
-unsafe extern "C" {
-	pub fn compost_overwrite(
-		dst: *mut ::std::os::raw::c_void,
-		w: usize,
-		ch: u8,
-		src: *const ::std::os::raw::c_void,
-		reg: *const compost,
-	);
-}
-unsafe extern "C" {
-	pub fn compost_clear(
-		dst: *mut ::std::os::raw::c_void,
-		w: usize,
-		ch: u8,
-		c: ::std::os::raw::c_int,
-		reg: *const compost,
-	);
-}
-unsafe extern "C" {
-	pub fn compost_extract(
-		dst: *mut ::std::os::raw::c_void,
-		reg: *const compost,
-		src: *const ::std::os::raw::c_void,
-		w: usize,
-		ch: u8,
-	);
-}
-unsafe extern "C" {
-	pub fn compost_bounds_check(w: usize, h: usize, reg: *const compost) -> bool;
-}
-pub const wu_no_change: wu_error = -1;
-pub const wu_ok: wu_error = 0;
-pub const wu_alloc_error: wu_error = 1;
-pub const wu_open_error: wu_error = 2;
-pub const wu_unknown_file_type: wu_error = 3;
-pub const wu_unexpected_eof: wu_error = 4;
-pub const wu_invalid_signature: wu_error = 5;
-pub const wu_invalid_header: wu_error = 6;
-pub const wu_unsupported_feature: wu_error = 7;
-pub const wu_samples_wanted: wu_error = 8;
-pub const wu_uncertain_validity: wu_error = 9;
-pub const wu_no_image_data: wu_error = 10;
-pub const wu_exceeds_size_limit: wu_error = 11;
-pub const wu_int_overflow: wu_error = 12;
-pub const wu_decoding_error: wu_error = 13;
-pub const wu_invalid_params: wu_error = 14;
-pub const wu_string_parse_error: wu_error = 15;
-pub const wu_display_error: wu_error = 16;
-pub const wu_unknown_error: wu_error = 17;
-pub type wu_error = ::std::os::raw::c_int;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct wu_st {
-	pub st: wu_error,
-	pub msg: *const ::std::os::raw::c_char,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-	["Size of wu_st"][::std::mem::size_of::<wu_st>() - 16usize];
-	["Alignment of wu_st"][::std::mem::align_of::<wu_st>() - 8usize];
-	["Offset of field: wu_st::st"][::std::mem::offset_of!(wu_st, st) - 0usize];
-	["Offset of field: wu_st::msg"][::std::mem::offset_of!(wu_st, msg) - 8usize];
-};
-impl Default for wu_st {
-	fn default() -> Self {
-		let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-		unsafe {
-			::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-			s.assume_init()
-		}
-	}
-}
-unsafe extern "C" {
-	pub fn wu_error_str(err: wu_error) -> *const ::std::os::raw::c_char;
-}
-unsafe extern "C" {
-	pub fn wuerr(err: wu_error, msg: *const ::std::os::raw::c_char) -> wu_st;
-}
-unsafe extern "C" {
-	pub fn wuerr_check(err: wu_error, msg: *const ::std::os::raw::c_char) -> wu_st;
-}
-unsafe extern "C" {
-	pub static WU_OK: wu_st;
-}
-unsafe extern "C" {
-	pub static WU_NO_CHANGE: wu_st;
-}
-unsafe extern "C" {
-	pub fn wuerr_partial(written: usize, max: usize) -> wu_st;
-}
-unsafe extern "C" {
-	pub fn wuok() -> wu_st;
-}
-unsafe extern "C" {
-	pub fn wu_isok(st: wu_st) -> bool;
-}
-#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct palette {
 	pub refs: u32,
@@ -3473,6 +3352,116 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
 	pub fn palette_cycle_new(slots: u8) -> *mut palette_cycle;
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct compost {
+	pub x: usize,
+	pub y: usize,
+	pub w: usize,
+	pub h: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+	["Size of compost"][::std::mem::size_of::<compost>() - 32usize];
+	["Alignment of compost"][::std::mem::align_of::<compost>() - 8usize];
+	["Offset of field: compost::x"][::std::mem::offset_of!(compost, x) - 0usize];
+	["Offset of field: compost::y"][::std::mem::offset_of!(compost, y) - 8usize];
+	["Offset of field: compost::w"][::std::mem::offset_of!(compost, w) - 16usize];
+	["Offset of field: compost::h"][::std::mem::offset_of!(compost, h) - 24usize];
+};
+unsafe extern "C" {
+	pub fn compost_alpha_blend(reg: *const compost, img: *const wuimg, src: *const u8);
+}
+unsafe extern "C" {
+	pub fn compost_pal_expand_idx_ignore(
+		reg: *const compost,
+		img: *const wuimg,
+		src: *const u8,
+		alpha_idx: ::std::os::raw::c_int,
+		pal: *const palette,
+	);
+}
+unsafe extern "C" {
+	pub fn compost_overwrite(reg: *const compost, img: *const wuimg, src: *const u8);
+}
+unsafe extern "C" {
+	pub fn compost_clear(reg: *const compost, img: *const wuimg);
+}
+unsafe extern "C" {
+	pub fn compost_extract(reg: *const compost, dst: *mut u8, img: *const wuimg);
+}
+unsafe extern "C" {
+	pub fn compost_affect(aa: *mut compost, bb: *const compost);
+}
+unsafe extern "C" {
+	pub fn compost_bounds_check(w: usize, h: usize, reg: *const compost) -> bool;
+}
+pub const wu_no_change: wu_error = -1;
+pub const wu_ok: wu_error = 0;
+pub const wu_alloc_error: wu_error = 1;
+pub const wu_open_error: wu_error = 2;
+pub const wu_unknown_file_type: wu_error = 3;
+pub const wu_unexpected_eof: wu_error = 4;
+pub const wu_invalid_signature: wu_error = 5;
+pub const wu_invalid_header: wu_error = 6;
+pub const wu_unsupported_feature: wu_error = 7;
+pub const wu_samples_wanted: wu_error = 8;
+pub const wu_uncertain_validity: wu_error = 9;
+pub const wu_no_image_data: wu_error = 10;
+pub const wu_exceeds_size_limit: wu_error = 11;
+pub const wu_int_overflow: wu_error = 12;
+pub const wu_decoding_error: wu_error = 13;
+pub const wu_invalid_params: wu_error = 14;
+pub const wu_string_parse_error: wu_error = 15;
+pub const wu_display_error: wu_error = 16;
+pub const wu_unknown_error: wu_error = 17;
+pub type wu_error = ::std::os::raw::c_int;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct wu_st {
+	pub st: wu_error,
+	pub msg: *const ::std::os::raw::c_char,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+	["Size of wu_st"][::std::mem::size_of::<wu_st>() - 16usize];
+	["Alignment of wu_st"][::std::mem::align_of::<wu_st>() - 8usize];
+	["Offset of field: wu_st::st"][::std::mem::offset_of!(wu_st, st) - 0usize];
+	["Offset of field: wu_st::msg"][::std::mem::offset_of!(wu_st, msg) - 8usize];
+};
+impl Default for wu_st {
+	fn default() -> Self {
+		let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+		unsafe {
+			::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+			s.assume_init()
+		}
+	}
+}
+unsafe extern "C" {
+	pub fn wu_error_str(err: wu_error) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+	pub fn wuerr(err: wu_error, msg: *const ::std::os::raw::c_char) -> wu_st;
+}
+unsafe extern "C" {
+	pub fn wuerr_check(err: wu_error, msg: *const ::std::os::raw::c_char) -> wu_st;
+}
+unsafe extern "C" {
+	pub static WU_OK: wu_st;
+}
+unsafe extern "C" {
+	pub static WU_NO_CHANGE: wu_st;
+}
+unsafe extern "C" {
+	pub fn wuerr_partial(written: usize, max: usize) -> wu_st;
+}
+unsafe extern "C" {
+	pub fn wuok() -> wu_st;
+}
+unsafe extern "C" {
+	pub fn wu_isok(st: wu_st) -> bool;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

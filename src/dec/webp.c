@@ -95,11 +95,9 @@ static struct wu_st map_webp_status(VP8StatusCode status) {
 static void compost_webp_frame(struct wuimg *img, struct homegrown_anim *hanim,
 const struct compost *reg) {
 	if (hanim->iter.blend_method == WEBP_MUX_NO_BLEND || !hanim->iter.has_alpha) {
-		compost_overwrite(img->data, img->w, img->channels,
-			hanim->dec_buf.str, reg);
+		compost_overwrite(reg, img, hanim->dec_buf.str);
 	} else {
-		compost_alpha_blend(img->data, img->w, //img->channels,
-			hanim->dec_buf.str, reg);
+		compost_alpha_blend(reg, img, hanim->dec_buf.str);
 	}
 }
 
@@ -144,8 +142,7 @@ struct webp_state *ds, const int idx) {
 		} else {
 			switch (hanim->dispose.method) {
 			case WEBP_MUX_DISPOSE_BACKGROUND:
-				compost_clear(img->data, img->w, img->channels, 0,
-					hanim->dispose.bg_geom);
+				compost_clear(hanim->dispose.bg_geom, img);
 				break;
 			case WEBP_MUX_DISPOSE_NONE:
 				break;

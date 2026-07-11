@@ -24,7 +24,7 @@ struct GifState<'a> {
 	prev: GifPrev,
 	buf: Vec<u8>,
 	frame_area_size: usize,
-	pal: [[u8; 4]; 256],
+	pal: wu::palette,
 }
 
 fn gif_frame_to_compost(fr: &gif::Frame) -> wu::compost {
@@ -34,13 +34,6 @@ fn gif_frame_to_compost(fr: &gif::Frame) -> wu::compost {
 		w: fr.width as usize,
 		h: fr.height as usize,
 	}
-}
-
-fn rgb_to_rgba(dst: &mut [[u8; 4]; 256], src: &[u8]) {
-	dst.into_iter().zip(src.as_chunks::<3>().0.into_iter()).for_each(|(d, s)| {
-		d[..s.len()].copy_from_slice(s);
-		d[s.len()] = 0xff;
-	});
 }
 
 fn compost_frame(img: &wu::wuimg, frames: &mut wu::image_frames,
@@ -59,7 +52,9 @@ ds: &mut GifState) -> wu::wu_st {
 
 	// Expand to RGBA for faster copies
 	match ds.decoder.palette() {
-		Ok(src_pal) => rgb_to_rgba(&mut ds.pal, src_pal),
+		Ok(src_pal) => unsafe {
+			wu::palette_from_rgb8(&mut ds.pal, src_pal.as_ptr() as *const _, src_pal.len()/3);
+		},
 		Err(_) => return wurs::wuerr_here!(
 			wu::wu_decoding_error,
 			"no palette for frame"),
@@ -73,10 +68,6 @@ ds: &mut GifState) -> wu::wu_st {
 			"failed to decode frame"),
 	};
 
-	let dst = img.get_data();
-	let stride = unsafe { wu::wuimg_stride(img) };
-	let ch = 4;
-
 	/* Disposal explanation: https://usage.imagemagick.org/anim_basics/#dispose
 	 * Any | Keep: Do nothing
 	 * Background: Clear frame area to transparency after it's shown
@@ -86,31 +77,23 @@ ds: &mut GifState) -> wu::wu_st {
 	match ds.prev.dispose {
 		gif::DisposalMethod::Any | gif::DisposalMethod::Keep => {},
 		gif::DisposalMethod::Background => {
-			img.compost_clear(0, &p);
+			p.compost_clear(img);
 		},
 		gif::DisposalMethod::Previous => {
-			img.compost_overwrite(restore, &p);
+			p.compost_overwrite(img, restore);
 		},
 	};
 
-	ds.prev.dispose = dispose;
-	ds.prev.frame = cur;
 	// Save canvas area for later restoral
 	if dispose == gif::DisposalMethod::Previous {
-		img.compost_extract(restore, &p);
+		p.compost_extract(restore, img);
 	}
+	ds.prev.dispose = dispose;
+	ds.prev.frame = cur;
 
-	for y in 0..cur.h {
-		for x in 0..cur.w {
-			let c = src[y*cur.w + x];
-			if let Some(t) = trns {
-				if c == t {
-					continue;
-				}
-			}
-			let pix = (y+cur.y)*stride + (x+cur.x)*ch;
-			dst[pix..pix+ch].copy_from_slice(&ds.pal[c as usize]);
-		}
+	unsafe {
+		wu::compost_pal_expand_idx_ignore(&cur, img, src.as_ptr(),
+			if let Some(t) = trns {t.into()} else {-1}, &ds.pal);
 	}
 	frames.current += 1;
 	wu::wu_st::ok()
@@ -138,18 +121,13 @@ ds: &mut GifState) -> wu::wu_st {
 	/* Get number of frames and calculate canvas dimensions.
 	 * Frames may be bigger or be located outside the canvas area given in
 	 * the header. If so, we'll just make a bigger canvas. */
-	let mut w = ds.decoder.width();
-	let mut h = ds.decoder.height();
+	let mut w = ds.decoder.width() as u32;
+	let mut h = ds.decoder.height() as u32;
 	let mut nr_frames = 0;
 	let mut msg = None;
 	while let Ok(Some(fr)) = ds.decoder.next_frame_info() {
-		if let (Some(mw), Some(mh)) = (fr.width.checked_add(fr.left), fr.height.checked_add(fr.top)) {
-			w = std::cmp::max(w, mw);
-			h = std::cmp::max(h, mh);
-		} else {
-			msg = Some(c"frame position causes u16 overflow, will truncate animation");
-			break;
-		}
+		w = std::cmp::max(w, fr.width as u32 + fr.left as u32);
+		h = std::cmp::max(h, fr.height as u32 + fr.top as u32);
 		nr_frames += 1;
 	}
 	if nr_frames < 1 {
@@ -199,12 +177,9 @@ ds: &mut GifState) -> wu::wu_st {
 			cur
 		};
 		if let Some(dreg) = dispose {
-			let x1 = std::cmp::max(reg.x + reg.w, dreg.x + dreg.w);
-			let y1 = std::cmp::max(reg.y + reg.h, dreg.y + dreg.h);
-			reg.x = std::cmp::min(reg.x, dreg.x);
-			reg.y = std::cmp::min(reg.y, dreg.y);
-			reg.w = x1 - reg.x;
-			reg.h = y1 - reg.y;
+			unsafe {
+				wu::compost_affect(&mut reg, &dreg);
+			}
 		}
 		frames[i] = wu::frame_info {
 			reg: reg,
@@ -308,7 +283,7 @@ extern "C" fn init_gif(infile_ptr: *mut wu::image_file) -> wu::wu_st {
 		prev: Default::default(),
 		buf: Default::default(),
 		frame_area_size: Default::default(),
-		pal: [[0; 4]; 256],
+		pal: Default::default(),
 	});
 	if let (Some(pal), Some(bg)) = (ds.decoder.global_palette(), ds.decoder.bg_color()) {
 		if let Some(c) = pal.get(bg*3..bg*3+3) {

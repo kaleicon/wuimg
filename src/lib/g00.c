@@ -196,7 +196,7 @@ const size_t written, const uint8_t *buf) {
 				break;
 			}
 
-			compost_overwrite(img->data, img->w, 4, rast, &reg);
+			compost_overwrite(&reg, img, rast);
 			++composted;
 		}
 	}

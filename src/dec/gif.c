@@ -61,47 +61,6 @@ static void end_gif(struct image_file *infile) {
 	free(ds->gcb);
 }
 
-static void palette_to_color(unsigned char *restrict out,
-const GifByteType *restrict raster, const struct palette *pal, size_t len,
-const unsigned char ch, const int alpha_idx) {
-	if (alpha_idx != -1) {
-		for (;;) {
-			const GifByteType *alpha = memchr(raster, alpha_idx,
-				len);
-			if (!alpha) {
-				break;
-			}
-			const size_t stride = (size_t)(alpha - raster);
-			palette_expand(out, raster, pal, stride, 8);
-			out += (stride+1) * ch;
-			raster += (stride+1);
-			len -= (stride+1);
-
-			while (len && *raster == alpha_idx) {
-				out += ch;
-				++raster;
-				--len;
-			}
-		}
-	}
-	palette_expand(out, raster, pal, len, 8);
-}
-
-static void compost_gif_frame(struct wuimg *img,
-const struct compost *geom, const GifByteType *restrict raster,
-const struct palette *palette, const int trans) {
-	const unsigned char ch = 4;
-
-	size_t offset = (geom->y * img->w + geom->x) * ch;
-	size_t raster_offset = 0;
-	for (size_t i = 0; i < geom->h; ++i) {
-		palette_to_color(img->data + offset, raster + raster_offset,
-			palette, geom->w, ch, trans);
-		raster_offset += geom->w;
-		offset += img->w * ch;
-	}
-}
-
 static void get_gif_palette(struct palette *pal,
 const ColorMapObject *gif_map) {
 	palette_from_rgb8(pal, gif_map->Colors, (size_t)gif_map->ColorCount);
@@ -123,12 +82,10 @@ const int idx) {
 
 	switch (ds->restore.dispose) {
 	case DISPOSE_BACKGROUND:
-		compost_clear(img->data, img->w, img->channels, 0,
-			&ds->restore.frame);
+		compost_clear(&ds->restore.frame, img);
 		break;
 	case DISPOSE_PREVIOUS:
-		compost_overwrite(img->data, img->w, img->channels,
-			ds->restore.buf, &ds->restore.frame);
+		compost_overwrite(&ds->restore.frame, img, ds->restore.buf);
 		break;
 	}
 
@@ -140,8 +97,7 @@ const int idx) {
 	ds->restore.dispose = gcb->DisposalMode;
 	ds->restore.frame = cur;
 	if (gcb->DisposalMode == DISPOSE_PREVIOUS) {
-		compost_extract(ds->restore.buf, &ds->restore.frame,
-			img->data, img->w, img->channels);
+		compost_extract(&ds->restore.frame, ds->restore.buf, img);
 	}
 
 	struct palette *pal;
@@ -151,8 +107,8 @@ const int idx) {
 	} else {
 		pal = &ds->global_pal;
 	}
-	compost_gif_frame(img, &cur, gif_image->RasterBits, pal,
-		gcb->TransparentColor);
+	compost_pal_expand_idx_ignore(&cur, img, gif_image->RasterBits,
+		gcb->TransparentColor, pal);
 	return WU_OK;
 }
 
@@ -217,12 +173,7 @@ struct gif_state *ds, int *pal_num) {
 			? cur
 			: (struct compost) {.x = 0, .y = 0, .w = img->w, .h = img->h};
 		if (dispose_last) {
-			size_t x1 = zumax(diff.x + diff.w, dispose.x + dispose.w);
-			size_t y1 = zumax(diff.y + diff.h, dispose.y + dispose.h);
-			diff.x = zumin(diff.x, dispose.x);
-			diff.y = zumin(diff.y, dispose.y);
-			diff.w = x1 - diff.x;
-			diff.h = y1 - diff.y;
+			compost_affect(&diff, &dispose);
 		}
 
 		const bool valid_frame = wuimg_frame_set(img, i,
