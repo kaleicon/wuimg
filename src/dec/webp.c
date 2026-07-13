@@ -118,7 +118,7 @@ struct webp_state *ds, const int idx) {
 	WebPDemuxGetFrame(hanim->dmux, idx + 1 /* 1-based */, &hanim->iter);
 
 	const struct frame_info *frame = img->anim->f + idx;
-	const size_t stride = wuimg_stride(img);
+	const size_t stride = (size_t)hanim->iter.width * img->channels;
 	const size_t buf_size = stride * (size_t)hanim->iter.height;
 	ds->config.output.colorspace = MODE_BGRA;
 	ds->config.output.u.RGBA.stride = (int)stride;
@@ -126,7 +126,7 @@ struct webp_state *ds, const int idx) {
 	const struct compost reg = iter_to_region(&hanim->iter);
 	if (!frame->keyframe) {
 		if (idx == 0) {
-			memset(img->data, 0, stride * img->h);
+			memset(img->data, 0, wuimg_size(img));
 			img->anim->dt = (struct compost) {
 				.w = img->w, .h = img->h,
 			};
@@ -429,6 +429,10 @@ static struct wu_st init_webp(struct image_file *infile) {
 		img->channels = 4;
 		img->layout = pix_bgra;
 		st = setup_webp_anim(img, ds, conf, &infile->bg);
+		if (wu_isok(st)) {
+			st = dec_webp_frame(img, ds, 0);
+			img->anim->cur = 0;
+		}
 	} else {
 		st = single_image_decode(img, ds, conf);
 	}
