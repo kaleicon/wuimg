@@ -19,7 +19,7 @@ struct jxl_state {
 	JxlPixelFormat fmt;
 	JxlBitDepth depth;
 	bool round_time;
-	const struct image_frames *frames;
+	const struct image_anim *anim;
 	uint8_t buf[BUFSIZ];
 };
 
@@ -46,9 +46,9 @@ static size_t enc_jxl_frame(void *state, const struct wuimg *dst, FILE *ofp,
 const int frame) {
 	struct jxl_state *js = state;
 	bool final = true;
-	if (js->frames) {
-		final = (size_t)(frame + 1) == js->frames->nr;
-		const struct frame_time *sec = &js->frames->f[frame].sec;
+	if (js->anim) {
+		final = (size_t)(frame + 1) == js->anim->nr;
+		const struct frame_time *sec = &js->anim->f[frame].sec;
 		JxlFrameHeader header;
 		JxlEncoderInitFrameHeader(&header);
 		if (js->round_time) {
@@ -69,10 +69,10 @@ const int frame) {
 	return process_jxl_output(js, ofp);
 }
 
-static uint32_t same_time_res(const struct image_frames *frames) {
-	const struct frame_info *info = frames->f;
+static uint32_t same_time_res(const struct image_anim *anim) {
+	const struct frame_info *info = anim->f;
 	const uint32_t den = info[0].sec.den;
-	for (size_t i = 1; i < frames->nr; ++i) {
+	for (size_t i = 1; i < anim->nr; ++i) {
 		if (info[i].sec.den != den) {
 			return 0;
 		}
@@ -173,7 +173,7 @@ const struct wuimg *src, FILE *ofp) {
 			? JXL_BIT_DEPTH_FROM_PIXEL_FORMAT
 			: JXL_BIT_DEPTH_FROM_CODESTREAM,
 	};
-	js->frames = src->frames;
+	js->anim = src->anim;
 	js->round_time = false;
 
 	JxlBasicInfo info;
@@ -192,10 +192,10 @@ const struct wuimg *src, FILE *ofp) {
 	info.alpha_premultiplied = dst->alpha == alpha_associated;
 	info.uses_original_profile = JXL_TRUE;
 	info.orientation = get_jxlenc_orientation(dst);
-	if (js->frames) {
+	if (js->anim) {
 		info.have_animation = JXL_TRUE;
 		info.animation.tps_denominator = 1;
-		info.animation.tps_numerator = same_time_res(js->frames);
+		info.animation.tps_numerator = same_time_res(js->anim);
 		if (!info.animation.tps_numerator) {
 			info.animation.tps_numerator = APPROX_TIME_RES;
 			js->round_time = true;

@@ -7,17 +7,17 @@ static struct wu_st event_hel(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
 	if (ev == ev_frame) {
 		struct wuimg *img = infile->sub_img;
-		int i = img->frames->current;
-		i = state->frame < i ? 0 : i + 1;
-		while (i <= state->frame) {
+		int i = img->anim->cur;
+		i = i <= state->frame ? i : -1;
+		while (i < state->frame) {
+			++i;
 			struct wu_st st = hel_render_frame(infile->map, img,
 				(uint32_t)i);
-			++i;
 			if (!wu_isok(st)) {
 				return st;
 			}
 		}
-		img->frames->current = state->frame;
+		img->anim->cur = i;
 		return WU_OK;
 	}
 	return WU_NO_CHANGE;

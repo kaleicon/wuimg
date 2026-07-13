@@ -210,7 +210,7 @@ static struct wu_st render_jxl_frame(struct wuimg *img, struct jpegxl_state *ds)
 			}
 			break;
 		case JXL_DEC_FRAME:
-			if (img->frames) {
+			if (img->anim) {
 				++ds->idx;
 				JxlFrameHeader header;
 				if (JxlDecoderGetFrameHeader(ds->jd, &header)
@@ -223,8 +223,8 @@ static struct wu_st render_jxl_frame(struct wuimg *img, struct jpegxl_state *ds)
 				const uint32_t num = ds->info.animation.tps_numerator;
 				const uint32_t den = ds->info.animation.tps_denominator;
 				const uint32_t duration = den*header.duration;
-				wuimg_frame_set(img, (size_t)ds->idx, 0, 0,
-					img->w, img->h, duration, num, false);
+				wuimg_anim_frame_set(img, (size_t)ds->idx,
+					duration, num, false);
 			}
 			break;
 		case JXL_DEC_FULL_IMAGE:
@@ -351,7 +351,7 @@ static struct wu_st init_jpegxl(struct image_file *infile) {
 	}
 
 	if (ds->info.have_animation) {
-		if (!wuimg_frames_init(img, (size_t)(ds->idx + 1))) {
+		if (!wuimg_anim_init(img, (size_t)(ds->idx + 1))) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 	}

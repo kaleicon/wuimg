@@ -97,11 +97,11 @@ static struct wu_st init_flif(struct image_file *infile) {
 
 	const size_t nr = flif_decoder_num_images(ds->dec);
 	if (nr > 1) {
-		if (!wuimg_frames_init(img, nr)) {
+		if (!wuimg_anim_init(img, nr)) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 		for (size_t i = 0; i < nr; ++i) {
-			wuimg_frame_set(img, i, 0, 0, img->w, img->h,
+			wuimg_anim_frame_set(img, i,
 				flif_image_get_frame_delay(frame), 1000, true);
 		}
 	}

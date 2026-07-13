@@ -15,7 +15,7 @@
  * As a fallback we pass the -ffp-contract=fast flag to the compiler, which may
  * turn the naive version into a FMA, but also may not be recognized by all
  * compilers. We could pass =on, but then GCC will certainly ignore it. */
-static float fm_fmaf(const float a, const float b, const float c) {
+static inline float fm_fmaf(const float a, const float b, const float c) {
 #if FP_FAST_FMAF == 1 || defined(__FMA__) || defined(__FMA4__) || defined(__ARM_FEATURE_FMA)
 	return fmaf(a,b,c);
 #else
@@ -23,14 +23,14 @@ static float fm_fmaf(const float a, const float b, const float c) {
 #endif
 }
 
-static float fm_mix(const float a, const float b, const float k) {
+static inline float fm_mix(const float a, const float b, const float k) {
 	/* Linear interpolation. Equivalent to
 	 *	a*(1 - k) + b*k
 	*/
 	return fm_fmaf(b, k, fm_fmaf(a, -k, a));
 }
 
-static float fm_fractf(float val) {
+static inline float fm_fractf(float val) {
 	/* Returns the positive fractional part. This is different from
 	 * fmod() and modf(), which return negative results for val < 0.
 	 * This gets turned into a roundss and subss instruction pair. */
@@ -39,19 +39,19 @@ static float fm_fractf(float val) {
 
 /* Faster fmax()/fmin() replacements that don't believe in NaNs. These get
  * turned into maxss/minss. */
-static float fm_fminf(const float x, const float y) {
+static inline float fm_fminf(const float x, const float y) {
 	return x < y ? x : y;
 }
 
-static float fm_fmaxf(const float x, const float y) {
+static inline float fm_fmaxf(const float x, const float y) {
 	return x > y ? x : y;
 }
 
-static float fm_fclampf(const float val, const float a, const float b) {
+static inline float fm_fclampf(const float val, const float a, const float b) {
 	return fm_fminf(fm_fmaxf(val, a), b);
 }
 
-static float fm_saturatef(const float val) {
+static inline float fm_saturatef(const float val) {
 	return fm_fclampf(val, 0, 1);
 }
 
@@ -65,7 +65,7 @@ static float fm_saturatef(const float val) {
 https://www.sollya.org/
  * The exact script is in scripts/fast_math_polynomials.sollya
 */
-static float fm_exp2f_unchecked(float x) {
+static inline float fm_exp2f_unchecked(float x) {
 	/* Build a float equal to 2^(intpart - 127)
 	 * x is assumed not to overflow the exponent field. That is, in
 	 * range [-127, 128]. */
@@ -92,7 +92,7 @@ static float fm_exp2f_unchecked(float x) {
 	return fm_fmaf(fm_fmaf(fm_fmaf(fm_fmaf(a4, f, a3), f, a2), f, a1), f*e, e);
 }
 
-static float fm_log2f_for_pow(float x, float mul) {
+static inline float fm_log2f_for_pow(float x, float mul) {
 	/* log2() that accepts the exponent of its powf() parent to save a
 	 * single instruction. */
 
@@ -120,23 +120,23 @@ static float fm_log2f_for_pow(float x, float mul) {
 	return fm_fmaf(x, fm_fmaf(mul, m, -mul), e * mul);
 }
 
-static float fm_exp2f(const float x) {
+static inline float fm_exp2f(const float x) {
 	// Prevent under- or over-flowing the exponent
 	return fm_exp2f_unchecked(fm_fclampf(x, -127, 128));
 }
 
-static float fm_powf_unchecked(const float x, const float e) {
+static inline float fm_powf_unchecked(const float x, const float e) {
 	/* If `e` is in range [-127.0/128.0, 1.0], there's no need for clamping
 	 * for exp2f */
 	return fm_exp2f_unchecked(fm_log2f_for_pow(x, e));
 }
 
-static float fm_powf(const float x, const float e) {
+static inline float fm_powf(const float x, const float e) {
 	// This doesn't attempt to handle negative x, not even for integer e
 	return fm_exp2f(fm_log2f_for_pow(x, e));
 }
 
-static float fm_pre_roundf(float val, float scale) {
+static inline float fm_pre_roundf(float val, float scale) {
 	/* A dumber and faster roundf() replacement that's worthless for
 	 * numbers above 2^22. That's fine since we only care up to 2^16.
 	 * On par with lrintf() when FMA is supported, and slightly slower when

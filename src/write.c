@@ -57,7 +57,7 @@ struct write_file {
 };
 
 static bool is_last_frame(const struct wu_state *state, const struct wuimg *src) {
-	return (size_t)state->frame + 1 == wuimg_frames_nr(src);
+	return (size_t)state->frame + 1 == wuimg_anim_nr(src);
 }
 static bool write_should_open_file(const struct write_file *out,
 const struct wudec_image *image) {
@@ -188,15 +188,15 @@ static const size_t SUFFIX_LEN = sizeof(int)*DECIMAL_LEN*2 // index and frame nu
 	+ 1; // ending nul
 
 static FILE * create_file(struct write_file *out, const struct wu_state *state,
-const bool overwrite, const struct image_frames *frames, const char ext[static 4]) {
+const bool overwrite, const struct image_anim *anim, const char ext[static 4]) {
 	char *suffix = (char *)out->file.str + out->name_base;
 	const size_t rem = SUFFIX_LEN;
 
 	const int prec = 5;
 	const int ext_len = sizeof(ENC_TABLE->ext);
 	int w;
-	if (frames) {
-		const struct frame_time sec = frames->f[state->frame].sec;
+	if (anim) {
+		const struct frame_time sec = anim->f[state->frame].sec;
 		w = snprintf(suffix, rem,
 			"_%.*d.%.*d.%" PRIu32 ".%" PRIu32 ".%.*s",
 			prec, state->idx,
@@ -244,7 +244,7 @@ struct wuimg *src) {
 			const bool supports_anim = out->enc->support >= enc_anim;
 			out->ofp = create_file(out, &image->state,
 				args->overwrite,
-				supports_anim ? NULL : src->frames,
+				supports_anim ? NULL : src->anim,
 				ENC_TABLE[args->codec].ext);
 		}
 		if (out->ofp) {

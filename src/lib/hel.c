@@ -55,16 +55,12 @@ struct wu_st hel_identify(const struct wuptr map, struct wuimg *img, unsigned fp
 			img->bitdepth = 1;
 			const uint32_t nr = buf_endian32(map.ptr + sizeof(sig),
 				little_endian);
-			if (!wuimg_frames_init(img, nr)) {
+			if (!wuimg_anim_init(img, nr)) {
 				return WUERR_HERE(wu_alloc_error);
 			}
 			for (size_t i = 0; i < nr; ++i) {
-				const bool ok = wuimg_frame_set(img, i,
-					0, 0, img->w, img->h,
+				wuimg_anim_frame_set(img, i,
 					1, (fps ? fps : 12), i == 0);
-				if (!ok) {
-					return WUERR_HERE(wu_invalid_params);
-				}
 			}
 			return WU_OK;
 		}

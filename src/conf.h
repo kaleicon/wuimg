@@ -67,13 +67,6 @@ struct wu_conf {
 		decoded quality layers to this amount. Depending on the file,
 		this may reduce quality in exchange for faster decoding. */
 
-	// TIFF
-	bool tiff_use_homegrown_unpacker; /* Use our own pixel unpacking
-		routines instead of libtiff's high-level interface if the image
-		fits certain criteria. Where applicable, this usually results
-		in lower memory usage, faster decoding and display, and
-		support for some exotic bitdepths. Enabled by default. */
-
 	// RAW
 	bool raw_16bit; // Render with 16 bits per component instead of 8.
 	bool raw_half_size; // Render at half the original size.
@@ -83,7 +76,7 @@ struct wu_conf {
 		If the thumbnail is a JPEG image, the jpeg decoder function
 		will be used and so its settings will also apply to it.
 		  Note that the thumbnail might have camera effects applied,
-		and so might be very different from a straight render of the
+		and so might look very different from a straight render of the
 		raw data. */
 
 	// SVG
@@ -94,14 +87,22 @@ struct wu_conf {
 		  If false, the image is rasterized once, and behaves like any
 		other image. */
 
+	// TIFF
+	bool tiff_use_homegrown_unpacker; /* Use our own pixel unpacking
+		routines instead of libtiff's high-level interface if the image
+		fits certain criteria. Where applicable, this usually results
+		in lower memory usage, faster decoding and display, and
+		support for some exotic bitdepths. Enabled by default. */
+
 	// WEBP
 	bool webp_bypass_filtering; // Skip the filtering stage for lossy WebP.
 	bool webp_fast_upsamp; /* Use a faster chroma upsampler for lossy WebP.
 		This only applies to lossy animations, as static images are
 		upsampled in the GPU. */
 	bool webp_use_homegrown_renderer; /* Composite animation frames using
-		our own routines instead of libwebp's. They seem to be slightly
-		faster. */
+		our own routines instead of libwebp's. This may be faster and
+		allows uploading partial updates to the GPU, but may also be
+		buggy. */
 };
 
 struct wu_conf conf_default(void);

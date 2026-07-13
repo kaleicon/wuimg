@@ -688,17 +688,12 @@ const struct gl_upload_params *params, const struct compost *region) {
 			GL_UNSIGNED_BYTE, img->u.palette->color);
 		// fallthrough
 	case image_mode_raw:
-		if (region) {
-			if (!region->w || !region->h) {
-				return true;
-			}
-			if (params->op == op_noop) {
-				switch (img->bitdepth) {
-				case 8: case 16: case 32:
-					tex_active(gl_tex_img);
-					return subtex_upload(context, img,
-						params, region);
-				}
+		if (region && params->op == op_noop) {
+			switch (img->bitdepth) {
+			case 8: case 16: case 32:
+				tex_active(gl_tex_img);
+				return subtex_upload(context, img,
+					params, region);
 			}
 		}
 		// fallthrough
@@ -978,7 +973,7 @@ const struct wuimg *img, const enum heed_ratio heed) {
 	context->tex.mirror = img->mirror;
 	context->tex.rotate = img->rotate;
 	context->tex.bitdepth = params.bd;
-	context->tex.shown_frame = img->frames ? img->frames->current : 0;
+	context->tex.shown_frame = img->anim ? img->anim->cur : 0;
 	context->tex.ratio = get_pixel_ratio(img, heed);
 	context->user_alpha = img->alpha;
 	set_cms(context);
@@ -1009,12 +1004,17 @@ const struct wu_state *state) {
 	}
 
 	const struct compost *region = NULL;
-	if (img->frames && context->tex.shown_frame + 1 == state->frame) {
-		region = &img->frames->f[state->frame].reg;
+	if (img->anim) {
+		region = &img->anim->dt;
+		if (!region->w || !region->h) {
+			return true;
+		}
 	}
 	context->update = true;
 	context->tex.shown_frame = state->frame;
-	return mode_upload(context, img, &params, region);
+	const bool b = mode_upload(context, img, &params, region);
+	img->anim->dt = (struct compost){0};
+	return b;
 }
 
 void gl_reader_read_row(struct gl_reader_context *reader, const size_t y,

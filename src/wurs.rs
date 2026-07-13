@@ -25,29 +25,35 @@ impl wu::wuimg {
 		}
 	}
 
-	pub fn frames_init<'a>(&'a mut self, nr: usize) -> Option<&'a mut wu::image_frames> {
+	pub fn anim_init<'a>(&'a mut self, nr: usize) -> Option<&'a mut wu::image_anim> {
 		unsafe {
-			wu::wuimg_frames_init(self, nr).as_mut()
+			wu::wuimg_anim_init(self, nr).as_mut()
 		}
 	}
 }
 
 impl wu::compost {
-	pub fn compost_clear(&self, img: &wu::wuimg) {
+	pub fn clear(&self, img: &wu::wuimg) {
 		unsafe {
 			wu::compost_clear(self, img);
 		}
 	}
 
-	pub fn compost_overwrite(&self, img: &wu::wuimg, src: &[u8]) {
+	pub fn overwrite(&self, img: &wu::wuimg, src: &[u8]) {
 		unsafe {
 			wu::compost_overwrite(self, img, src.as_ptr());
 		}
 	}
 
-	pub fn compost_extract(&self, dst: &mut [u8], img: &wu::wuimg) {
+	pub fn extract(&self, dst: &mut [u8], img: &wu::wuimg) {
 		unsafe {
 			wu::compost_extract(self, dst.as_mut_ptr(), img);
+		}
+	}
+
+	pub fn affect(&mut self, reg: &wu::compost) {
+		unsafe {
+			wu::compost_affect(self, reg);
 		}
 	}
 }

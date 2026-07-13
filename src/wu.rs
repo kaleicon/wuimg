@@ -399,11 +399,11 @@ pub struct wu_conf {
 	pub custom_cursor: bool,
 	pub jpeg_fast_dct: bool,
 	pub jpeg2000_quality_layers: ::std::os::raw::c_uint,
-	pub tiff_use_homegrown_unpacker: bool,
 	pub raw_16bit: bool,
 	pub raw_half_size: bool,
 	pub raw_prefer_thumbnail: bool,
 	pub svg_window_adapt: bool,
+	pub tiff_use_homegrown_unpacker: bool,
 	pub webp_bypass_filtering: bool,
 	pub webp_fast_upsamp: bool,
 	pub webp_use_homegrown_renderer: bool,
@@ -436,15 +436,15 @@ const _: () = {
 		[::std::mem::offset_of!(wu_conf, jpeg_fast_dct) - 25usize];
 	["Offset of field: wu_conf::jpeg2000_quality_layers"]
 		[::std::mem::offset_of!(wu_conf, jpeg2000_quality_layers) - 28usize];
-	["Offset of field: wu_conf::tiff_use_homegrown_unpacker"]
-		[::std::mem::offset_of!(wu_conf, tiff_use_homegrown_unpacker) - 32usize];
-	["Offset of field: wu_conf::raw_16bit"][::std::mem::offset_of!(wu_conf, raw_16bit) - 33usize];
+	["Offset of field: wu_conf::raw_16bit"][::std::mem::offset_of!(wu_conf, raw_16bit) - 32usize];
 	["Offset of field: wu_conf::raw_half_size"]
-		[::std::mem::offset_of!(wu_conf, raw_half_size) - 34usize];
+		[::std::mem::offset_of!(wu_conf, raw_half_size) - 33usize];
 	["Offset of field: wu_conf::raw_prefer_thumbnail"]
-		[::std::mem::offset_of!(wu_conf, raw_prefer_thumbnail) - 35usize];
+		[::std::mem::offset_of!(wu_conf, raw_prefer_thumbnail) - 34usize];
 	["Offset of field: wu_conf::svg_window_adapt"]
-		[::std::mem::offset_of!(wu_conf, svg_window_adapt) - 36usize];
+		[::std::mem::offset_of!(wu_conf, svg_window_adapt) - 35usize];
+	["Offset of field: wu_conf::tiff_use_homegrown_unpacker"]
+		[::std::mem::offset_of!(wu_conf, tiff_use_homegrown_unpacker) - 36usize];
 	["Offset of field: wu_conf::webp_bypass_filtering"]
 		[::std::mem::offset_of!(wu_conf, webp_bypass_filtering) - 37usize];
 	["Offset of field: wu_conf::webp_fast_upsamp"]
@@ -3395,7 +3395,10 @@ unsafe extern "C" {
 	pub fn compost_affect(aa: *mut compost, bb: *const compost);
 }
 unsafe extern "C" {
-	pub fn compost_bounds_check(w: usize, h: usize, reg: *const compost) -> bool;
+	pub fn compost_is_full(reg: *const compost, img: *const wuimg) -> bool;
+}
+unsafe extern "C" {
+	pub fn compost_bounds_check(reg: *const compost, img: *const wuimg) -> bool;
 }
 pub const wu_no_change: wu_error = -1;
 pub const wu_ok: wu_error = 0;
@@ -3666,34 +3669,33 @@ const _: () = {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct frame_info {
-	pub reg: compost,
 	pub sec: frame_time,
 	pub keyframe: bool,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-	["Size of frame_info"][::std::mem::size_of::<frame_info>() - 48usize];
-	["Alignment of frame_info"][::std::mem::align_of::<frame_info>() - 8usize];
-	["Offset of field: frame_info::reg"][::std::mem::offset_of!(frame_info, reg) - 0usize];
-	["Offset of field: frame_info::sec"][::std::mem::offset_of!(frame_info, sec) - 32usize];
+	["Size of frame_info"][::std::mem::size_of::<frame_info>() - 12usize];
+	["Alignment of frame_info"][::std::mem::align_of::<frame_info>() - 4usize];
+	["Offset of field: frame_info::sec"][::std::mem::offset_of!(frame_info, sec) - 0usize];
 	["Offset of field: frame_info::keyframe"]
-		[::std::mem::offset_of!(frame_info, keyframe) - 40usize];
+		[::std::mem::offset_of!(frame_info, keyframe) - 8usize];
 };
 #[repr(C)]
 #[derive(Debug, Default)]
-pub struct image_frames {
+pub struct image_anim {
 	pub nr: usize,
-	pub current: ::std::os::raw::c_int,
+	pub cur: ::std::os::raw::c_int,
+	pub dt: compost,
 	pub f: __IncompleteArrayField<frame_info>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-	["Size of image_frames"][::std::mem::size_of::<image_frames>() - 16usize];
-	["Alignment of image_frames"][::std::mem::align_of::<image_frames>() - 8usize];
-	["Offset of field: image_frames::nr"][::std::mem::offset_of!(image_frames, nr) - 0usize];
-	["Offset of field: image_frames::current"]
-		[::std::mem::offset_of!(image_frames, current) - 8usize];
-	["Offset of field: image_frames::f"][::std::mem::offset_of!(image_frames, f) - 16usize];
+	["Size of image_anim"][::std::mem::size_of::<image_anim>() - 48usize];
+	["Alignment of image_anim"][::std::mem::align_of::<image_anim>() - 8usize];
+	["Offset of field: image_anim::nr"][::std::mem::offset_of!(image_anim, nr) - 0usize];
+	["Offset of field: image_anim::cur"][::std::mem::offset_of!(image_anim, cur) - 8usize];
+	["Offset of field: image_anim::dt"][::std::mem::offset_of!(image_anim, dt) - 16usize];
+	["Offset of field: image_anim::f"][::std::mem::offset_of!(image_anim, f) - 48usize];
 };
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -3713,7 +3715,7 @@ pub struct wuimg {
 	pub u: wuimg__bindgen_ty_1,
 	pub ratio: f32,
 	pub cs: color_space,
-	pub frames: *mut image_frames,
+	pub anim: *mut image_anim,
 	pub metadata: *mut wutree,
 }
 #[repr(C)]
@@ -3758,7 +3760,7 @@ const _: () = {
 	["Offset of field: wuimg::u"][::std::mem::offset_of!(wuimg, u) - 32usize];
 	["Offset of field: wuimg::ratio"][::std::mem::offset_of!(wuimg, ratio) - 40usize];
 	["Offset of field: wuimg::cs"][::std::mem::offset_of!(wuimg, cs) - 48usize];
-	["Offset of field: wuimg::frames"][::std::mem::offset_of!(wuimg, frames) - 64usize];
+	["Offset of field: wuimg::anim"][::std::mem::offset_of!(wuimg, anim) - 64usize];
 	["Offset of field: wuimg::metadata"][::std::mem::offset_of!(wuimg, metadata) - 72usize];
 };
 impl Default for wuimg {
@@ -4208,30 +4210,32 @@ unsafe extern "C" {
 		-> wu_st;
 }
 unsafe extern "C" {
-	pub fn wuimg_frame_prev_nearest(
-		img: *mut wuimg,
-		shown: ::std::os::raw::c_int,
-		i: ::std::os::raw::c_int,
-	) -> ::std::os::raw::c_int;
+	pub fn wuimg_anim_seek_nearest(img: *mut wuimg, i: ::std::os::raw::c_int) -> bool;
 }
 unsafe extern "C" {
-	pub fn wuimg_frame_set(
+	pub fn wuimg_anim_frame_set(
 		img: *mut wuimg,
 		i: usize,
-		x: usize,
-		y: usize,
-		w: usize,
-		h: usize,
+		sec_num: u32,
+		sec_den: u32,
+		independent: bool,
+	);
+}
+unsafe extern "C" {
+	pub fn wuimg_anim_frame_set_checked(
+		img: *mut wuimg,
+		i: usize,
+		reg: *const compost,
 		sec_num: u32,
 		sec_den: u32,
 		independent: bool,
 	) -> bool;
 }
 unsafe extern "C" {
-	pub fn wuimg_frames_nr(img: *const wuimg) -> usize;
+	pub fn wuimg_anim_nr(img: *const wuimg) -> usize;
 }
 unsafe extern "C" {
-	pub fn wuimg_frames_init(img: *mut wuimg, nr: usize) -> *mut image_frames;
+	pub fn wuimg_anim_init(img: *mut wuimg, nr: usize) -> *mut image_anim;
 }
 unsafe extern "C" {
 	pub fn wuimg_align(img: *mut wuimg, alignment: u8);

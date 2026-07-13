@@ -397,44 +397,58 @@ size_t nmemb, const uint8_t *src) {
 }
 
 
-int wuimg_frame_prev_nearest(struct wuimg *img, const int shown, int i) {
-	const int limit = i < shown ? 0 : shown + 1;
-	while (i > limit && !img->frames->f[i].keyframe) {
+bool wuimg_anim_seek_nearest(struct wuimg *img, int i) {
+	struct image_anim *anim = img->anim;
+	anim->dt = (struct compost){0};
+	const int cur = anim->cur;
+	const int limit = i < cur ? -1 : cur;
+	while (i > limit) {
 		--i;
+		if (anim->f[i+1].keyframe) {
+			break;
+		}
 	}
-	return i;
+	const bool changed = i != anim->cur;
+	anim->cur = i;
+	return changed;
 }
 
-bool wuimg_frame_set(struct wuimg *img, const size_t i, const size_t x,
-const size_t y, const size_t w, const size_t h, const uint32_t sec_num,
-const uint32_t sec_den, const bool independent) {
-	img->frames->f[i] = (struct frame_info) {
-		.reg = {
-			.x = x, .y = y,
-			.w = w, .h = h,
-		},
+void wuimg_anim_frame_set(struct wuimg *img, const size_t i,
+const uint32_t sec_num, const uint32_t sec_den, const bool independent) {
+	img->anim->f[i] = (struct frame_info) {
 		.sec = {
 			.num = sec_num,
 			.den = sec_den,
 		},
-		.keyframe = (independent && !x && !y && w == img->w && h == img->h),
+		.keyframe = independent,
 	};
-	return compost_bounds_check(img->w, img->h, &img->frames->f[i].reg);
 }
 
-size_t wuimg_frames_nr(const struct wuimg *img) {
-	return img->frames ? img->frames->nr : 1;
+bool wuimg_anim_frame_set_checked(struct wuimg *img, const size_t i,
+const struct compost *reg, const uint32_t sec_num, const uint32_t sec_den,
+const bool independent) {
+	wuimg_anim_frame_set(img, i, sec_num, sec_den,
+		independent && compost_is_full(reg, img));
+	return compost_bounds_check(reg, img);
 }
 
-struct image_frames * wuimg_frames_init(struct wuimg *img, size_t nr) {
+size_t wuimg_anim_nr(const struct wuimg *img) {
+	return img->anim ? img->anim->nr : 1;
+}
+
+struct image_anim * wuimg_anim_init(struct wuimg *img, size_t nr) {
 	if (nr < 1) {
 		return false;
 	}
-	img->frames = small_calloc(sizeof(*img->frames) + nr * sizeof(*img->frames->f), 1);
-	if (img->frames) {
-		img->frames->nr = nr;
+	img->anim = small_calloc(sizeof(*img->anim) + nr * sizeof(*img->anim->f), 1);
+	if (img->anim) {
+		img->anim->nr = nr;
+		img->anim->cur = -1;
+		img->anim->dt = (struct compost) {
+			.w = img->w, .h = img->h,
+		};
 	}
-	return img->frames;
+	return img->anim;
 }
 
 void wuimg_align(struct wuimg *img, const uint8_t alignment) {
@@ -444,7 +458,7 @@ void wuimg_align(struct wuimg *img, const uint8_t alignment) {
 bool wuimg_clone(struct wuimg *dst, struct wuimg *src) {
 	*dst = *src;
 	dst->data = NULL;
-	dst->frames = NULL;
+	dst->anim = NULL;
 	dst->mode = image_mode_raw;
 	dst->metadata = NULL;
 	bool ok = false;
@@ -486,7 +500,7 @@ void wuimg_free(struct wuimg *img) {
 	case image_mode_raw:
 		break;
 	}
-	free(img->frames);
+	free(img->anim);
 	if (img->metadata) {
 		tree_unroot(img->metadata);
 		free(img->metadata);
@@ -642,8 +656,8 @@ const char *short_end) {
 		if (img->metadata) {
 			fputs("(*) ", out);
 		}
-		if (img->frames) {
-			fprintf(out, "frames: %zu, ", img->frames->nr);
+		if (img->anim) {
+			fprintf(out, "frames: %zu, ", img->anim->nr);
 		}
 		print_dimensions(img, out, memsize);
 		if (verbosity > 1) {

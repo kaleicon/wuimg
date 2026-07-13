@@ -33,9 +33,6 @@ struct wu_conf conf_default(void) {
 
 		// TIFF
 		.tiff_use_homegrown_unpacker = true,
-
-		// WEBP
-		.webp_use_homegrown_renderer = true,
 	};
 }
 

@@ -39,6 +39,8 @@ const struct wuimg *img);
 void compost_affect(struct compost *restrict aa,
 const struct compost *restrict bb);
 
-bool compost_bounds_check(size_t w, size_t h, const struct compost *reg);
+bool compost_is_full(const struct compost *reg, const struct wuimg *img);
+
+bool compost_bounds_check(const struct compost *reg, const struct wuimg *img);
 
 #endif /* ANIM_COMMON */

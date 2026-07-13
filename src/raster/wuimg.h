@@ -78,14 +78,14 @@ struct frame_time {
 };
 
 struct frame_info {
-	struct compost reg;
 	struct frame_time sec;
 	bool keyframe;
 };
 
-struct image_frames {
+struct image_anim {
 	size_t nr;
-	int current; // Frame currently rendered in .data
+	int cur; // Frame currently rendered in .data
+	struct compost dt; // region affected since last display
 	struct frame_info f[];
 };
 
@@ -126,7 +126,7 @@ struct wuimg {
 	float ratio;
 
 	struct color_space cs;
-	struct image_frames *frames;
+	struct image_anim *anim;
 
 	struct wutree *metadata;
 };
@@ -182,16 +182,28 @@ struct wu_st wuimg_palette_from_buf(struct wuimg *img, uint8_t size,
 size_t nmemb, const uint8_t *src);
 
 
-/* With `shown` as the currently shown frame, get the closest starting point
- * needed to render frame `i`. */
-int wuimg_frame_prev_nearest(struct wuimg *img, int shown, int i);
+/* Setup `img->anim` to the closest frame needed to render frame `i`
+ * Returns false if we're already at frame `i`
+ * Pseudo-usage:
+	wuimg_anim_seek_nearest(img, state->frame);
+	while (img->anim->cur < state->frame) {
+		++img->anim->cur;
+		render_frame(img, dec_state)
+		...
+	}
+ */
+bool wuimg_anim_seek_nearest(struct wuimg *img, int i);
 
-bool wuimg_frame_set(struct wuimg *img, size_t i, size_t x, size_t y, size_t w,
-size_t h, uint32_t sec_num, uint32_t sec_den, bool independent);
+void wuimg_anim_frame_set(struct wuimg *img, size_t i, uint32_t sec_num,
+uint32_t sec_den, bool independent);
 
-size_t wuimg_frames_nr(const struct wuimg *img);
+bool wuimg_anim_frame_set_checked(struct wuimg *img, size_t i,
+const struct compost *reg, uint32_t sec_num, uint32_t sec_den,
+bool independent);
 
-struct image_frames * wuimg_frames_init(struct wuimg *img, size_t nr);
+size_t wuimg_anim_nr(const struct wuimg *img);
+
+struct image_anim * wuimg_anim_init(struct wuimg *img, size_t nr);
 
 
 void wuimg_align(struct wuimg *img, uint8_t alignment);

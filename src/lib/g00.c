@@ -187,7 +187,7 @@ const size_t written, const uint8_t *buf) {
 				.w = buf_endian16l(block + 6),
 				.h = buf_endian16l(block + 8),
 			};
-			if (!compost_bounds_check(img->w, img->h, &reg)) {
+			if (!compost_bounds_check(&reg, img)) {
 				continue;
 			}
 

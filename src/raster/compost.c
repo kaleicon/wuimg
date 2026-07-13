@@ -6,7 +6,13 @@
 #include "raster/compost.h"
 #include "raster/wuimg.h"
 
-static size_t canvas_off(size_t stride, uint8_t ch, const struct compost *reg, size_t y) {
+#include "fast_math.c"
+
+// Clear but slow alpha blend function to compare against
+static const bool REFERENCE_BLEND = false;
+
+static size_t canvas_off(size_t stride, uint8_t ch, const struct compost *reg,
+size_t y) {
 	return (reg->y + y) * stride + reg->x*ch;
 }
 
@@ -16,37 +22,47 @@ static size_t frame_off(uint8_t ch, const struct compost *reg, size_t y) {
 
 static void blend_rgba_pixel(unsigned char *restrict d,
 const unsigned char *restrict s) {
-	const unsigned int ch = 4;
+	/* Unassociated alpha blending.
+	 * Note that libwebp does alpha blending in non-linear light.
+	 * Not that we complain.
+	*/
+	const uint8_t ch = 4;
 	switch (s[3]) {
-	case 0xff: // (1 - src.A / 255) == 0
+	case 0xff: // dst_a * (1 - src_a / 255) == 0
 		memcpy(d, s, ch);
 		return;
-	case 0x00: // blend.A == 0
+	case 0x00: // blend_a == 0
 		return;
 	}
 
-	// FIXME: Proper alpha blending is done on linear light
-	const int blend_a = s[3] + d[3];
-	for (unsigned int k = 0; k < ch - 1; ++k) {
-		d[k] = (unsigned char)(
-			(s[k] * s[3] + d[k] * d[3]) / blend_a
-		);
+	if (REFERENCE_BLEND) {
+		const float sa = s[3];
+		const float da = d[3];
+		const float bb = da * (1 - sa/255.f);
+		const float blend_a = sa + bb;
+		for (uint8_t k = 0; k < ch - 1; ++k) {
+			d[k] = (uint8_t)lroundf(
+				(s[k]* sa + d[k] * bb) / blend_a
+			);
+		}
+		d[3] = (uint8_t)lroundf(blend_a);
+	} else {
+		float sa = s[3];
+		float da = d[3];
+		float bb = fm_fmaf(sa * (-1/255.f), da, da);
+		const float blend_a = sa + bb;
+		const float iba = 1/blend_a;
+		for (uint8_t k = 0; k < ch - 1; ++k) {
+			d[k] = (uint8_t)(
+				fm_fmaf(fm_fmaf(s[k], sa, d[k] * bb), iba, .5f)
+			);
+		}
+		d[3] = (uint8_t)(blend_a + .5f);
 	}
-	d[3] = (unsigned char)blend_a;
 }
 
 static void blend_row(unsigned char *restrict dst,
 const unsigned char *restrict src, const size_t len, const size_t ch) {
-	/* Unassociated alpha blending, as given by the WebP docs:
-
-		blend.A = src.A + dst.A * (1 - src.A / 255)
-		if blend.A = 0 then
-			blend.RGB = 0
-		else
-			blend.RGB = (src.RGB * src.A
-				+ dst.RGB * dst.A * (1 - src.A / 255)) / blend.A
-	*/
-
 	for (size_t j = 0; j < len; ++j) {
 		blend_rgba_pixel(dst + j*ch, src + j*ch);
 	}
@@ -138,15 +154,23 @@ const struct wuimg *img) {
 
 void compost_affect(struct compost *restrict aa,
 const struct compost *restrict bb) {
-	size_t x1 = zumax(aa->x + aa->w, bb->x + bb->w);
-	size_t y1 = zumax(aa->y + aa->h, bb->y + bb->h);
-	aa->x = zumin(aa->x, bb->x);
-	aa->y = zumin(aa->y, bb->y);
-	aa->w = x1 - aa->x;
-	aa->h = y1 - aa->y;
+	if (aa->w && aa->h) {
+		size_t x1 = zumax(aa->x + aa->w, bb->x + bb->w);
+		size_t y1 = zumax(aa->y + aa->h, bb->y + bb->h);
+		aa->x = zumin(aa->x, bb->x);
+		aa->y = zumin(aa->y, bb->y);
+		aa->w = x1 - aa->x;
+		aa->h = y1 - aa->y;
+	} else {
+		*aa = *bb;
+	}
 }
 
-bool compost_bounds_check(const size_t w, const size_t h,
-const struct compost *reg) {
-	return (reg->x + reg->w <= w) && (reg->y + reg->h <= h);
+bool compost_is_full(const struct compost *reg, const struct wuimg *img) {
+	return !reg->x & !reg->y & (reg->w == img->w) & (reg->h == img->h);
+}
+
+bool compost_bounds_check(const struct compost *reg, const struct wuimg *img) {
+	return (reg->w <= img->w) & (reg->x <= img->w - reg->w)
+		& (reg->h <= img->h) & (reg->y <= img->h - reg->h);
 }

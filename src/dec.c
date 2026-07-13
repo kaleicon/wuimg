@@ -20,7 +20,7 @@ struct wuimg * wudec_cur_sub_img(const struct wudec_image *image) {
 
 bool wudec_cur_is_anim(const struct wudec_image *image) {
 	const struct wuimg *img = wudec_cur_sub_img(image);
-	return img->evolving || img->frames;
+	return img->evolving || img->anim;
 }
 
 enum image_event wudec_cur_events(const struct wudec_image *image) {
@@ -28,7 +28,7 @@ enum image_event wudec_cur_events(const struct wudec_image *image) {
 	return ev_subcycle
 		| (img->evolving ? ev_time : 0)
 		| (img->scalable ? ev_transform : 0)
-		| (img->frames ? ev_frame : 0);
+		| (img->anim ? ev_frame : 0);
 }
 
 enum image_event wudec_zoom(struct wudec_image *image, float new_zoom) {
@@ -53,9 +53,9 @@ enum image_event wudec_sub_cycle(struct wudec_image *image, int steps) {
 }
 
 enum image_event wudec_frame_cycle(struct wudec_image *image, int steps) {
-	const struct image_frames *frames = wudec_cur_sub_img(image)->frames;
-	if (frames) {
-		const int f = imod(image->state.frame + steps, (int)frames->nr);
+	const struct image_anim *anim = wudec_cur_sub_img(image)->anim;
+	if (anim) {
+		const int f = imod(image->state.frame + steps, (int)anim->nr);
 		if (f != image->state.frame) {
 			image->state.frame = f;
 			return ev_frame;
@@ -147,9 +147,14 @@ enum image_event event) {
 				}
 			}
 		}
+		if (img->anim) {
+	case ev_frame:
+			img->anim->dt = (struct compost) {
+				.w = img->w, .h = img->h
+			};
+		}
 		// fallthrough
 	case ev_metadata:
-	case ev_frame:
 	case ev_time:
 	case ev_transform:
 		return call_event(image, event);
@@ -350,7 +355,7 @@ struct wuimg **cur_img) {
 
 	enum image_event ev = 0;
 	struct wuimg *img = image->file.sub_img + state->idx;
-	const int frames = (int)wuimg_frames_nr(img);
+	const int frames = (int)wuimg_anim_nr(img);
 	if (state->frame + 1 < frames) {
 		ev = ev_frame;
 		++state->frame;

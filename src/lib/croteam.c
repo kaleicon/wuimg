@@ -55,7 +55,7 @@ void *restrict ptr) {
 struct wu_st tbn_frame(struct tbn_desc *desc, struct wuimg *img, uint32_t i) {
 	const size_t size = wuimg_size(img);
 	fseek(desc->ifp, (long)(40 + i*size), SEEK_SET);
-	if (img->frames->nr == 1 && img->channels == 4) {
+	if (img->anim->nr == 1 && img->channels == 4) {
 		enum alpha_interpretation a = img->alpha;
 		const size_t r = fmt_load_raster_callback(img,
 			desc->ifp, check_alpha, &a);
@@ -103,10 +103,10 @@ struct wu_st tbn_init(struct tbn_desc *desc, struct wuimg *img, FILE *ifp) {
 			img->bitdepth = 8;
 			img->alpha = frames > 1
 				? alpha_unassociated : alpha_ignore;
-			if (wuimg_frames_init(img, frames)) {
+			if (wuimg_anim_init(img, frames)) {
 				for (uint32_t i = 0; i < frames; ++i) {
-					wuimg_frame_set(img, i, 0, 0, img->w,
-						img->h, 1, 12, true);
+					wuimg_anim_frame_set(img, i, 1, 12,
+						true);
 				}
 				desc->anim_off = img->w*img->h*img->channels
 					* frames + 40;

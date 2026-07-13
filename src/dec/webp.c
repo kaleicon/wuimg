@@ -10,16 +10,18 @@
 #include <webp/demux.h>
 
 #include "wudefs.h"
+#include "misc/math.h"
 #include "misc/metadata.h"
 #include "raster/compost.h"
 
 struct frame_dispose {
 	WebPMuxAnimDispose method;
-	const struct compost *bg_geom;
+	struct compost reg;
 };
 
 struct homegrown_anim {
-	struct wustr dec_buf;
+	uint8_t *buf;
+	size_t buf_size;
 	WebPDemuxer *dmux;
 	WebPIterator iter;
 	struct frame_dispose dispose;
@@ -47,7 +49,7 @@ static void end_webp(struct image_file *infile) {
 	case webp_homegrown:
 		WebPDemuxReleaseIterator(&ds->anim.h.iter);
 		WebPDemuxDelete(ds->anim.h.dmux);
-		wustr_free(&ds->anim.h.dec_buf);
+		free(ds->anim.h.buf);
 		break;
 	case webp_library:
 		WebPAnimDecoderDelete(ds->anim.dec);
@@ -58,16 +60,18 @@ static void end_webp(struct image_file *infile) {
 	WebPFreeDecBuffer(&ds->config.output);
 }
 
-static int rewind_webp_state(struct webp_state *ds, struct wuimg *img,
-const int current, const int frame) {
+static void rewind_webp_state(struct webp_state *ds, struct wuimg *img,
+const int frame) {
 	if (ds->anim_render == webp_library) {
-		if (frame < current) {
+		if (frame < img->anim->cur) {
 			WebPAnimDecoderReset(ds->anim.dec);
-			return 0;
+			img->anim->cur = -1;
 		}
-		return current + 1;
+	} else {
+		if (wuimg_anim_seek_nearest(img, frame)) {
+			ds->anim.h.dispose.method = WEBP_MUX_DISPOSE_NONE;
+		}
 	}
-	return wuimg_frame_prev_nearest(img, current, frame);
 }
 
 static struct wu_st map_webp_status(VP8StatusCode status) {
@@ -92,13 +96,13 @@ static struct wu_st map_webp_status(VP8StatusCode status) {
 	return wuerr(wu_unknown_error, "No message defined for this error code");
 }
 
-static void compost_webp_frame(struct wuimg *img, struct homegrown_anim *hanim,
-const struct compost *reg) {
-	if (hanim->iter.blend_method == WEBP_MUX_NO_BLEND || !hanim->iter.has_alpha) {
-		compost_overwrite(reg, img, hanim->dec_buf.str);
-	} else {
-		compost_alpha_blend(reg, img, hanim->dec_buf.str);
-	}
+static struct compost iter_to_region(WebPIterator *iter) {
+	return (struct compost) {
+		.x = (size_t)iter->x_offset,
+		.y = (size_t)iter->y_offset,
+		.w = (size_t)iter->width,
+		.h = (size_t)iter->height,
+	};
 }
 
 static struct wu_st libwebp_dec_frame(struct wuimg *img,
@@ -111,24 +115,45 @@ struct webp_state *ds) {
 static struct wu_st homegrown_dec_frame(struct wuimg *img,
 struct webp_state *ds, const int idx) {
 	struct homegrown_anim *hanim = &ds->anim.h;
-	WebPDemuxGetFrame(hanim->dmux, idx + 1, &hanim->iter);
+	WebPDemuxGetFrame(hanim->dmux, idx + 1 /* 1-based */, &hanim->iter);
 
-	const struct frame_info *frame = img->frames->f + idx;
-	const int stride = hanim->iter.width * img->channels;
-	const size_t buf_size = (size_t)(stride * hanim->iter.height);
+	const struct frame_info *frame = img->anim->f + idx;
+	const size_t stride = wuimg_stride(img);
+	const size_t buf_size = stride * (size_t)hanim->iter.height;
 	ds->config.output.colorspace = MODE_BGRA;
-	ds->config.output.u.RGBA.stride = stride;
+	ds->config.output.u.RGBA.stride = (int)stride;
 	ds->config.output.u.RGBA.size = buf_size;
-	if (frame->keyframe) {
-		ds->config.output.u.RGBA.rgba = img->data;
-	} else {
-		if (hanim->dec_buf.len < buf_size) {
-			if (!wustr_realloc(&hanim->dec_buf, buf_size)) {
-				return WUERR_HERE(wu_alloc_error);
+	const struct compost reg = iter_to_region(&hanim->iter);
+	if (!frame->keyframe) {
+		if (idx == 0) {
+			memset(img->data, 0, stride * img->h);
+			img->anim->dt = (struct compost) {
+				.w = img->w, .h = img->h,
+			};
+		} else {
+			switch (hanim->dispose.method) {
+			case WEBP_MUX_DISPOSE_BACKGROUND:
+				compost_clear(&hanim->dispose.reg, img);
+				compost_affect(&img->anim->dt,
+					&hanim->dispose.reg);
+				break;
+			case WEBP_MUX_DISPOSE_NONE:
+				break;
 			}
 		}
-		ds->config.output.u.RGBA.rgba = hanim->dec_buf.str;
 	}
+	compost_affect(&img->anim->dt, &reg);
+	hanim->dispose.method = hanim->iter.dispose_method;
+	if (hanim->dispose.method == WEBP_MUX_DISPOSE_BACKGROUND) {
+		hanim->dispose.reg = reg;
+	}
+
+	const bool overwrite = hanim->iter.blend_method == WEBP_MUX_NO_BLEND
+		|| !hanim->iter.has_alpha || idx == 0;
+	const bool direct_decode = overwrite && reg.w == img->w;
+	ds->config.output.u.RGBA.rgba = direct_decode
+		? img->data + stride*reg.y
+		: hanim->buf;
 
 	VP8StatusCode status = WebPDecode(hanim->iter.fragment.bytes,
 		hanim->iter.fragment.size, &ds->config);
@@ -136,23 +161,11 @@ struct webp_state *ds, const int idx) {
 		return map_webp_status(status);
 	}
 
-	if (!frame->keyframe) {
-		if (idx == 0) {
-			memset(img->data, 0, wuimg_size(img));
+	if (!direct_decode) {
+		if (overwrite) {
+			compost_overwrite(&reg, img, hanim->buf);
 		} else {
-			switch (hanim->dispose.method) {
-			case WEBP_MUX_DISPOSE_BACKGROUND:
-				compost_clear(hanim->dispose.bg_geom, img);
-				break;
-			case WEBP_MUX_DISPOSE_NONE:
-				break;
-			}
-		}
-		compost_webp_frame(img, hanim, &frame->reg);
-
-		hanim->dispose.method = hanim->iter.dispose_method;
-		if (hanim->dispose.method == WEBP_MUX_DISPOSE_BACKGROUND) {
-			hanim->dispose.bg_geom = &frame->reg;
+			compost_alpha_blend(&reg, img, hanim->buf);
 		}
 	}
 	return WU_OK;
@@ -168,42 +181,51 @@ struct webp_state *ds, const int idx) {
 
 static struct wu_st event_webp(struct image_file *infile,
 struct wu_state *state, const enum image_event event) {
-	if (event != ev_frame) {
-		return WU_NO_CHANGE;
-	}
-
-	struct webp_state *ds = infile->dec_state;
-	struct wuimg *img = infile->sub_img;
-	int idx = rewind_webp_state(ds, img, img->frames->current, state->frame);
-	while (idx <= state->frame) {
-		const struct wu_st st = dec_webp_frame(img, ds, idx);
-		++idx;
-		if (!wu_isok(st)) {
-			return st;
+	switch (event) {
+	case ev_subcycle:
+	case ev_frame:
+		;struct webp_state *ds = infile->dec_state;
+		struct wuimg *img = infile->sub_img;
+		struct image_anim *anim = img->anim;
+		rewind_webp_state(ds, img, state->frame);
+		while (anim->cur < state->frame) {
+			++anim->cur;
+			const struct wu_st st = dec_webp_frame(img, ds,
+				anim->cur);
+			if (!wu_isok(st)) {
+				return st;
+			}
 		}
+		return WU_OK;
+	default: break;
 	}
-	img->frames->current = state->frame;
-	return WU_OK;
+	return WU_NO_CHANGE;
 }
 
-static struct wu_st gather_webp_info(struct wuimg *img, WebPIterator *iter) {
-	if (!wuimg_frames_init(img, (size_t)iter->num_frames)) {
+static struct wu_st gather_webp_info(struct wuimg *img, WebPIterator *iter,
+size_t *max_frame_size) {
+	if (!wuimg_anim_init(img, (size_t)iter->num_frames)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
+	bool valid = true;
 	size_t i = 0;
+	size_t max_size = 0;
 	do {
-		const bool valid = wuimg_frame_set(img, i,
-			(size_t)iter->x_offset, (size_t)iter->y_offset,
-			(size_t)iter->width, (size_t)iter->height,
+		const struct compost reg = iter_to_region(iter);
+		valid = wuimg_anim_frame_set_checked(img, i, &reg,
 			(uint32_t)iter->duration, 1000,
 			iter->blend_method == WEBP_MUX_NO_BLEND);
-		if (!valid) {
-			return WUERR_HERE(wu_alloc_error);
-		}
+		max_size = zumax(max_size, (size_t)iter->width
+			* (size_t)iter->height);
 		++i;
-	} while (WebPDemuxNextFrame(iter));
-	return WU_OK;
+	} while (valid && WebPDemuxNextFrame(iter));
+	if (max_frame_size) {
+		*max_frame_size = max_size;
+	}
+	return valid
+		? WU_OK
+		: wuerr(wu_invalid_header, "frame is outside the canvas");
 }
 
 static struct pix_rgba8 get_webp_bg_color(const uint32_t color) {
@@ -231,7 +253,15 @@ struct webp_state *ds, const struct wu_conf *conf, struct pix_rgba8 *bg_color) {
 	*bg_color = get_webp_bg_color(
 		WebPDemuxGetI(hanim->dmux, WEBP_FF_BACKGROUND_COLOR));
 	hanim->dispose.method = WEBP_MUX_DISPOSE_NONE;
-	return gather_webp_info(img, &hanim->iter);
+	size_t buf_size = 0;
+	struct wu_st st = gather_webp_info(img, &hanim->iter, &buf_size);
+	if (wu_isok(st)) {
+		hanim->buf = malloc(buf_size*img->channels);
+		if (!hanim->buf) {
+			st = WUERR_HERE(wu_alloc_error);
+		}
+	}
+	return st;
 }
 
 static struct wu_st library_anim_setup(struct wuimg *img,
@@ -258,7 +288,7 @@ struct webp_state *ds, const struct wu_conf *conf, struct pix_rgba8 *bg_color) {
 	WebPIterator iter;
 	WebPDemuxGetFrame(dmux, 1, &iter);
 	img->borrowed = true;
-	return gather_webp_info(img, &iter);
+	return gather_webp_info(img, &iter, NULL);
 }
 
 static struct wu_st setup_webp_anim(struct wuimg *img, struct webp_state *ds,
@@ -398,11 +428,7 @@ static struct wu_st init_webp(struct image_file *infile) {
 	if (ds->config.input.has_animation) {
 		img->channels = 4;
 		img->layout = pix_bgra;
-
 		st = setup_webp_anim(img, ds, conf, &infile->bg);
-		if (wu_isok(st)) {
-			st = dec_webp_frame(img, ds, 0);
-		}
 	} else {
 		st = single_image_decode(img, ds, conf);
 	}

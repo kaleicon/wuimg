@@ -660,8 +660,7 @@ const uint8_t hdr[53]) {
 	if (!wu_isok(st)) {
 		return st;
 	}
-	struct image_frames *f = wuimg_frames_init(img, desc->frames);
-	if (!f) {
+	if (!wuimg_anim_init(img, desc->frames)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
@@ -671,7 +670,7 @@ const uint8_t hdr[53]) {
 		desc->frame[i].off = file_off;
 		desc->frame[i].len = buf_endian32b(hdr + 13 + i*4);
 		file_off += pal_size + desc->frame[i].len;
-		wuimg_frame_set(img, i, 0, 0, img->w, img->h, 10, 100, true);
+		wuimg_anim_frame_set(img, i, 10, 100, true);
 	}
 	return WU_OK;
 }

@@ -21,7 +21,6 @@ struct gif_state {
 	GifFileType *gif_file;
 	GraphicsControlBlock *gcb;
 	struct gif_restore restore;
-	bool opaque_first_frame;
 	struct palette global_pal;
 	struct palette local_pal;
 };
@@ -75,24 +74,31 @@ static struct compost get_gif_region(const struct GifImageDesc *desc) {
 
 static struct wu_st render_gif_frame(struct wuimg *img, struct gif_state *ds,
 const int idx) {
-	if (idx == 0 && !ds->opaque_first_frame) {
+	if (idx == 0 && !img->anim->f[idx].keyframe) {
 		memset(img->data, 0, wuimg_size(img));
 		ds->restore.dispose = DISPOSAL_UNSPECIFIED;
-	}
-
-	switch (ds->restore.dispose) {
-	case DISPOSE_BACKGROUND:
-		compost_clear(&ds->restore.frame, img);
-		break;
-	case DISPOSE_PREVIOUS:
-		compost_overwrite(&ds->restore.frame, img, ds->restore.buf);
-		break;
 	}
 
 	const GraphicsControlBlock *gcb = ds->gcb + idx;
 	const SavedImage *gif_image = ds->gif_file->SavedImages + idx;
 	const GifImageDesc *desc = &gif_image->ImageDesc;
 	const struct compost cur = get_gif_region(desc);
+	img->anim->dt = cur;
+
+	bool dispose = false;
+	switch (ds->restore.dispose) {
+	case DISPOSE_BACKGROUND:
+		dispose = true;
+		compost_clear(&ds->restore.frame, img);
+		break;
+	case DISPOSE_PREVIOUS:
+		dispose = true;
+		compost_overwrite(&ds->restore.frame, img, ds->restore.buf);
+		break;
+	}
+	if (dispose) {
+		compost_affect(&img->anim->dt, &ds->restore.frame);
+	}
 
 	ds->restore.dispose = gcb->DisposalMode;
 	ds->restore.frame = cur;
@@ -139,7 +145,7 @@ struct gif_state *ds, int *pal_num) {
 
 	const size_t count = (size_t)gif_file->ImageCount;
 	struct wuimg *img = infile->sub_img;
-	if (!wuimg_frames_init(img, count)) {
+	if (!wuimg_anim_init(img, count)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
@@ -171,14 +177,13 @@ struct gif_state *ds, int *pal_num) {
 		struct compost cur = get_gif_region(desc);
 		struct compost diff = i
 			? cur
-			: (struct compost) {.x = 0, .y = 0, .w = img->w, .h = img->h};
+			: (struct compost) {.w = img->w, .h = img->h};
 		if (dispose_last) {
 			compost_affect(&diff, &dispose);
 		}
 
-		const bool valid_frame = wuimg_frame_set(img, i,
-			diff.x, diff.y, diff.w, diff.h,
-			(uint32_t)gcb->DelayTime, 100,
+		const bool valid_frame = wuimg_anim_frame_set_checked(img, i,
+			&diff, (uint32_t)gcb->DelayTime, 100,
 			!dispose_last && gcb->TransparentColor == NO_TRANSPARENT_COLOR);
 		if (!valid_frame) {
 			return WUERR_HERE(wu_invalid_header);
@@ -199,9 +204,6 @@ struct gif_state *ds, int *pal_num) {
 
 		if (desc->ColorMap) {
 			*pal_num += 1;
-		}
-		if (i == 0) {
-			ds->opaque_first_frame = img->frames->f[0].keyframe;
 		}
 	}
 	ds->restore.buf = malloc((size_t)restore_w * (size_t)restore_h * img->channels);
@@ -292,16 +294,16 @@ struct wu_state *state, const enum image_event event) {
 	case ev_frame:
 		;struct gif_state *ds = infile->dec_state;
 		struct wuimg *img = infile->sub_img;
-		int idx = wuimg_frame_prev_nearest(img, img->frames->current,
-			state->frame);
-		while (idx <= state->frame) {
-			const struct wu_st st = render_gif_frame(img, ds, idx);
-			++idx;
+		wuimg_anim_seek_nearest(img, state->frame);
+		struct image_anim *anim = img->anim;
+		while (anim->cur < state->frame) {
+			++anim->cur;
+			const struct wu_st st = render_gif_frame(img, ds,
+				anim->cur);
 			if (!wu_isok(st)) {
 				return st;
 			}
 		}
-		img->frames->current = state->frame;
 		return WU_OK;
 	default: break;
 	}

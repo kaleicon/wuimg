@@ -28,8 +28,6 @@ https://projectpokemon.org/home/docs/mystery-dungeon-nds/sir0siro-format-r46/
  * being parsed correctly?
  * * akane_douyou_c.dat
  * * kubota_obie_c.dat
-
- * TODO: Get rid of top and left padding.
 */
 
 void sir0_spr_cleanup(struct sir0_spr_desc *desc) {
@@ -146,6 +144,7 @@ struct wuimg *img, const uint8_t i, const uint16_t frame) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
+	img->anim->dt = afr;
 	const uint16_t off = buf_endian16(hdr + 2, little_endian);
 	const size_t dims = afr.w * afr.h;
 	const struct wuptr tile = mp_avail_at(&desc->mp, desc->raster_off + off,
@@ -191,13 +190,12 @@ const struct compost *fr, const struct compost *afr, const uint16_t frames) {
 		tree_bud_leaf_u(tree, "Y", fr->y);
 	}
 	if (frames) {
-		if (!wuimg_frames_init(img, frames)) {
+		if (!wuimg_anim_init(img, frames)) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 		for (uint16_t f = 0; f < frames; ++f) {
-			const bool ok = wuimg_frame_set(img, f,
-				afr->x, afr->y, afr->w, afr->h,
-				4, 60, true);
+			const bool ok = wuimg_anim_frame_set_checked(img, f,
+				afr, 4, 60, true);
 			if (!ok) {
 				return WUERR_HERE(wu_invalid_params);
 			}

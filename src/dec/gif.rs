@@ -36,7 +36,7 @@ fn gif_frame_to_compost(fr: &gif::Frame) -> wu::compost {
 	}
 }
 
-fn compost_frame(img: &wu::wuimg, frames: &mut wu::image_frames,
+fn compost_frame(img: &wu::wuimg, anim: &mut wu::image_anim,
 ds: &mut GifState) -> wu::wu_st {
 	let frame = match ds.decoder.next_frame_info() {
 		Ok(Some(f)) => f,
@@ -53,7 +53,8 @@ ds: &mut GifState) -> wu::wu_st {
 	// Expand to RGBA for faster copies
 	match ds.decoder.palette() {
 		Ok(src_pal) => unsafe {
-			wu::palette_from_rgb8(&mut ds.pal, src_pal.as_ptr() as *const _, src_pal.len()/3);
+			wu::palette_from_rgb8(&mut ds.pal,
+				src_pal.as_ptr() as *const _, src_pal.len()/3);
 		},
 		Err(_) => return wurs::wuerr_here!(
 			wu::wu_decoding_error,
@@ -77,25 +78,27 @@ ds: &mut GifState) -> wu::wu_st {
 	match ds.prev.dispose {
 		gif::DisposalMethod::Any | gif::DisposalMethod::Keep => {},
 		gif::DisposalMethod::Background => {
-			p.compost_clear(img);
+			p.clear(img);
+			anim.dt.affect(&p);
 		},
 		gif::DisposalMethod::Previous => {
-			p.compost_overwrite(img, restore);
+			p.overwrite(img, restore);
+			anim.dt.affect(&p);
 		},
 	};
 
 	// Save canvas area for later restoral
 	if dispose == gif::DisposalMethod::Previous {
-		p.compost_extract(restore, img);
+		p.extract(restore, img);
 	}
 	ds.prev.dispose = dispose;
 	ds.prev.frame = cur;
+	anim.dt.affect(&cur);
 
 	unsafe {
 		wu::compost_pal_expand_idx_ignore(&cur, img, src.as_ptr(),
 			if let Some(t) = trns {t.into()} else {-1}, &ds.pal);
 	}
-	frames.current += 1;
 	wu::wu_st::ok()
 }
 
@@ -148,13 +151,9 @@ ds: &mut GifState) -> wu::wu_st {
 			msg = Some(c"failed to set icc profile, will ignore");
 		}
 	}
-	match img.frames_init(nr_frames) {
+	match img.anim_init(nr_frames) {
 		Some(_) => {},
 		None => return wurs::wuerr_here!(wu::wu_alloc_error),
-	};
-	let frames = unsafe {
-		let frames = &mut *img.frames;
-		frames.f.as_mut_slice(frames.nr)
 	};
 
 	/* Do a second pass, this time getting timing info and calculating
@@ -177,15 +176,12 @@ ds: &mut GifState) -> wu::wu_st {
 			cur
 		};
 		if let Some(dreg) = dispose {
-			unsafe {
-				wu::compost_affect(&mut reg, &dreg);
-			}
+			reg.affect(&dreg);
 		}
-		frames[i] = wu::frame_info {
-			reg: reg,
-			sec: wu::frame_time {num: fr.delay as u32, den: 100},
-			keyframe: i == 0,
-		};
+		unsafe {
+			wu::wuimg_anim_frame_set(img, i,
+				fr.delay as u32, 100, i == 0);
+		}
 
 		max_w = std::cmp::max(max_w, fr.width);
 		max_h = std::cmp::max(max_h, fr.height);
@@ -244,9 +240,10 @@ state: *mut wu::wu_state, ev: wu::image_event) -> wu::wu_st {
 			return gather_gif_info(img, infile, ds);
 		},
 		wu::ev_subcycle | wu::ev_frame => {
-			let frames = unsafe {&mut *img.frames};
-			if ev == wu::ev_subcycle || state.frame < frames.current {
-				if state.frame < frames.current {
+			let anim = unsafe {&mut *img.anim};
+			anim.dt = Default::default();
+			if ev == wu::ev_subcycle || state.frame < anim.cur {
+				if state.frame < anim.cur {
 					img.get_data().fill(0);
 				}
 				ds.decoder = match build_gif_decoder(infile.get_map(), false) {
@@ -254,11 +251,12 @@ state: *mut wu::wu_state, ev: wu::image_event) -> wu::wu_st {
 					Err(e) => return e,
 				};
 				ds.prev = Default::default();
-				frames.current = -1;
+				anim.cur = -1;
 			}
 			let mut st = wu::wu_st::ok();
-			while frames.current < state.frame {
-				st = compost_frame(img, frames, ds);
+			while anim.cur < state.frame {
+				anim.cur += 1;
+				st = compost_frame(img, anim, ds);
 				if !st.isok() {
 					return st;
 				}

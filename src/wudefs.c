@@ -38,7 +38,7 @@ struct wuimg * alloc_sub_images(struct image_file *file, const size_t nr) {
 void image_file_free_if_single(struct image_file *file) {
 	if (!file->dec_state && file->nr == 1) {
 		struct wuimg *img = file->sub_img;
-		if (!img->borrowed && !img->frames) {
+		if (!img->borrowed && !img->anim) {
 			free(img->data);
 			img->data = NULL;
 		}
