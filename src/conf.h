@@ -100,9 +100,9 @@ struct wu_conf {
 		This only applies to lossy animations, as static images are
 		upsampled in the GPU. */
 	bool webp_use_homegrown_renderer; /* Composite animation frames using
-		our own routines instead of libwebp's. This may be faster and
-		allows uploading partial updates to the GPU, but may also be
-		buggy. */
+		our own routines instead of libwebp's. These may be slightly
+		slower but lets us send partial updates to the GPU, which may
+		or may not make up for it. These could also be buggy. */
 };
 
 struct wu_conf conf_default(void);
