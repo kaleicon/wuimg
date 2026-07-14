@@ -36,7 +36,7 @@ fn gif_frame_to_compost(fr: &gif::Frame) -> wu::compost {
 	}
 }
 
-fn compost_frame(img: &wu::wuimg, anim: &mut wu::image_anim,
+fn compost_gif_frame(img: &wu::wuimg, anim: &mut wu::image_anim,
 ds: &mut GifState) -> wu::wu_st {
 	let frame = match ds.decoder.next_frame_info() {
 		Ok(Some(f)) => f,
@@ -50,7 +50,7 @@ ds: &mut GifState) -> wu::wu_st {
 	let trns = frame.transparent;
 	let dispose = frame.dispose;
 
-	// Expand to RGBA for faster copies
+	// Expand palette to RGBA
 	match ds.decoder.palette() {
 		Ok(src_pal) => unsafe {
 			wu::palette_from_rgb8(&mut ds.pal,
@@ -61,13 +61,7 @@ ds: &mut GifState) -> wu::wu_st {
 			"no palette for frame"),
 	}
 
-	// Decode into our preallocated buffer
-	let (src, restore) = ds.buf.split_at_mut(ds.frame_area_size);
-	match ds.decoder.read_into_buffer(src) {
-		Ok(_) => {},
-		Err(_) => return wurs::wuerr_here!(wu::wu_decoding_error,
-			"failed to decode frame"),
-	};
+	let (buf, restore) = ds.buf.split_at_mut(ds.frame_area_size);
 
 	/* Disposal explanation: https://usage.imagemagick.org/anim_basics/#dispose
 	 * Any | Keep: Do nothing
@@ -86,17 +80,23 @@ ds: &mut GifState) -> wu::wu_st {
 			anim.dt.affect(&p);
 		},
 	};
+	anim.dt.affect(&cur);
+	ds.prev.frame = cur;
+	ds.prev.dispose = dispose;
 
 	// Save canvas area for later restoral
 	if dispose == gif::DisposalMethod::Previous {
-		p.extract(restore, img);
+		cur.extract(restore, img);
 	}
-	ds.prev.dispose = dispose;
-	ds.prev.frame = cur;
-	anim.dt.affect(&cur);
 
+	// Decode into our preallocated buffer
+	match ds.decoder.read_into_buffer(buf) {
+		Ok(_) => {},
+		Err(_) => return wurs::wuerr_here!(wu::wu_decoding_error,
+			"failed to decode frame"),
+	};
 	unsafe {
-		wu::compost_pal_expand_idx_ignore(&cur, img, src.as_ptr(),
+		wu::compost_pal_expand_idx_ignore(&cur, img, buf.as_ptr(),
 			if let Some(t) = trns {t.into()} else {-1}, &ds.pal);
 	}
 	wu::wu_st::ok()
@@ -156,8 +156,8 @@ ds: &mut GifState) -> wu::wu_st {
 		None => return wurs::wuerr_here!(wu::wu_alloc_error),
 	};
 
-	/* Do a second pass, this time getting timing info and calculating
-	 * frame change regions (different from frame sizes due to disposal) */
+	/* Do a second pass to get timing info and calculate the size of our
+	 * our buffers. */
 	ds.decoder = match build_gif_decoder(infile.get_map(), true) {
 		Ok(d) => d,
 		Err(e) => return e,
@@ -166,18 +166,8 @@ ds: &mut GifState) -> wu::wu_st {
 	let mut restore_h = 0;
 	let mut max_w = 0;
 	let mut max_h = 0;
-	let mut dispose: Option<wu::compost> = None;
 	let mut i = 0;
 	while let Ok(Some(fr)) = ds.decoder.next_frame_info() {
-		let cur = gif_frame_to_compost(fr);
-		let mut reg = if i == 0 {
-			wu::compost {x: 0, y: 0, w: img.w, h: img.h}
-		} else {
-			cur
-		};
-		if let Some(dreg) = dispose {
-			reg.affect(&dreg);
-		}
 		unsafe {
 			wu::wuimg_anim_frame_set(img, i,
 				fr.delay as u32, 100, i == 0);
@@ -185,15 +175,9 @@ ds: &mut GifState) -> wu::wu_st {
 
 		max_w = std::cmp::max(max_w, fr.width);
 		max_h = std::cmp::max(max_h, fr.height);
-		let is_previous = fr.dispose == gif::DisposalMethod::Previous;
-		if is_previous || fr.dispose == gif::DisposalMethod::Background {
-			if is_previous {
-				restore_w = std::cmp::max(restore_w, fr.width);
-				restore_h = std::cmp::max(restore_h, fr.height);
-			}
-			dispose = Some(cur);
-		} else {
-			dispose = None;
+		if fr.dispose == gif::DisposalMethod::Previous {
+			restore_w = std::cmp::max(restore_w, fr.width);
+			restore_h = std::cmp::max(restore_h, fr.height);
 		}
 		i += 1;
 	}
@@ -256,7 +240,7 @@ state: *mut wu::wu_state, ev: wu::image_event) -> wu::wu_st {
 			let mut st = wu::wu_st::ok();
 			while anim.cur < state.frame {
 				anim.cur += 1;
-				st = compost_frame(img, anim, ds);
+				st = compost_gif_frame(img, anim, ds);
 				if !st.isok() {
 					return st;
 				}
