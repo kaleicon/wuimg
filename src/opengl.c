@@ -688,12 +688,17 @@ const struct gl_upload_params *params, const struct compost *region) {
 			GL_UNSIGNED_BYTE, img->u.palette->color);
 		// fallthrough
 	case image_mode_raw:
-		if (region && params->op == op_noop) {
-			switch (img->bitdepth) {
-			case 8: case 16: case 32:
-				tex_active(gl_tex_img);
-				return subtex_upload(context, img,
-					params, region);
+		if (region) {
+			if (!region->w || !region->h) {
+				return true;
+			}
+			if (params->op == op_noop) {
+				switch (img->bitdepth) {
+				case 8: case 16: case 32:
+					tex_active(gl_tex_img);
+					return subtex_upload(context, img,
+						params, region);
+				}
 			}
 		}
 		// fallthrough
@@ -1006,15 +1011,10 @@ const struct wu_state *state) {
 	const struct compost *region = NULL;
 	if (img->anim) {
 		region = &img->anim->dt;
-		if (!region->w || !region->h) {
-			return true;
-		}
 	}
 	context->update = true;
 	context->tex.shown_frame = state->frame;
-	const bool b = mode_upload(context, img, &params, region);
-	img->anim->dt = (struct compost){0};
-	return b;
+	return mode_upload(context, img, &params, region);
 }
 
 void gl_reader_read_row(struct gl_reader_context *reader, const size_t y,
