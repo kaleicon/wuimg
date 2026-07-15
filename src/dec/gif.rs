@@ -69,18 +69,26 @@ ds: &mut GifState) -> wu::wu_st {
 	 * Background: Clear frame area to transparency after it's shown
 	 * Previous: Restore frame area to what it was before. That implies the
 	 *           empty canvas if the very first frame uses Previous. */
-	let p = ds.prev.frame;
-	match ds.prev.dispose {
-		gif::DisposalMethod::Any | gif::DisposalMethod::Keep => {},
-		gif::DisposalMethod::Background => {
-			p.clear(img);
-			anim.dt.affect(&p);
-		},
-		gif::DisposalMethod::Previous => {
-			p.overwrite(img, restore);
-			anim.dt.affect(&p);
-		},
-	};
+	if !anim.is_keyframe() {
+		if anim.cur == 0 {
+			img.get_data().fill(0);
+
+		} else {
+			let p = ds.prev.frame;
+			match ds.prev.dispose {
+				gif::DisposalMethod::Any
+				| gif::DisposalMethod::Keep => {},
+				gif::DisposalMethod::Background => {
+					p.clear(img);
+					anim.dt.affect(&p);
+				},
+				gif::DisposalMethod::Previous => {
+					p.overwrite(img, restore);
+					anim.dt.affect(&p);
+				},
+			};
+		}
+	}
 	anim.dt.affect(&cur);
 	ds.prev.frame = cur;
 	ds.prev.dispose = dispose;
@@ -127,11 +135,21 @@ ds: &mut GifState) -> wu::wu_st {
 	 * the header. If so, we'll just make a bigger canvas. */
 	let mut w = ds.decoder.width() as u32;
 	let mut h = ds.decoder.height() as u32;
+	let mut restore_w = 0;
+	let mut restore_h = 0;
+	let mut max_w = 0;
+	let mut max_h = 0;
 	let mut nr_frames = 0;
 	let mut msg = None;
 	while let Ok(Some(fr)) = ds.decoder.next_frame_info() {
 		w = std::cmp::max(w, fr.width as u32 + fr.left as u32);
 		h = std::cmp::max(h, fr.height as u32 + fr.top as u32);
+		max_w = std::cmp::max(max_w, fr.width);
+		max_h = std::cmp::max(max_h, fr.height);
+		if fr.dispose == gif::DisposalMethod::Previous {
+			restore_w = std::cmp::max(restore_w, fr.width);
+			restore_h = std::cmp::max(restore_h, fr.height);
+		}
 		nr_frames += 1;
 	}
 	if nr_frames < 1 {
@@ -157,29 +175,23 @@ ds: &mut GifState) -> wu::wu_st {
 		None => return wurs::wuerr_here!(wu::wu_alloc_error),
 	};
 
-	/* Do a second pass to get timing info and calculate the size of our
-	 * our buffers. */
+	/* Do a second pass to get whether frames are keyframes. */
 	ds.decoder = match build_gif_decoder(infile.get_map(), true) {
 		Ok(d) => d,
 		Err(e) => return e,
 	};
-	let mut restore_w = 0;
-	let mut restore_h = 0;
-	let mut max_w = 0;
-	let mut max_h = 0;
 	let mut i = 0;
 	while let Ok(Some(fr)) = ds.decoder.next_frame_info() {
+		let is_key = fr.width as usize == img.w
+			&& fr.height as usize == img.h
+			&& fr.transparent.is_none();
 		unsafe {
-			wu::wuimg_anim_frame_set(img, i, i == 0);
-		}
-
-		max_w = std::cmp::max(max_w, fr.width);
-		max_h = std::cmp::max(max_h, fr.height);
-		if fr.dispose == gif::DisposalMethod::Previous {
-			restore_w = std::cmp::max(restore_w, fr.width);
-			restore_h = std::cmp::max(restore_h, fr.height);
+			wu::wuimg_anim_frame_set(img, i, is_key);
 		}
 		i += 1;
+		if i >= nr_frames {
+			break;
+		}
 	}
 
 	// Alloc buffer for decoded frames and Previous disposal restoration
@@ -226,16 +238,18 @@ state: *mut wu::wu_state, ev: wu::image_event) -> wu::wu_st {
 		wu::ev_subcycle | wu::ev_frame => {
 			let anim = unsafe {&mut *img.anim};
 			anim.dt = Default::default();
-			if ev == wu::ev_subcycle || state.frame < anim.cur {
-				if state.frame < anim.cur {
-					img.get_data().fill(0);
-				}
+			if ev == wu::ev_subcycle
+			|| img.anim_seek_nearest(state.frame) {
 				ds.decoder = match build_gif_decoder(infile.get_map(), false) {
 					Ok(d) => d,
 					Err(e) => return e,
 				};
 				ds.prev = Default::default();
-				anim.cur = -1;
+				for _ in -1..anim.cur {
+					let _ = ds.decoder.next_frame_info();
+				}
+				anim.dt.w = img.w;
+				anim.dt.h = img.h;
 			}
 			let mut st = wu::wu_st::ok();
 			while anim.cur < state.frame {

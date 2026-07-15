@@ -18,10 +18,24 @@ impl wu::wu_st {
 	}
 }
 
+impl wu::image_anim {
+	pub fn is_keyframe(&self) -> bool {
+		unsafe {
+			self.keyframe.as_slice(self.nr)[self.cur as usize]
+		}
+	}
+}
+
 impl wu::wuimg {
 	pub fn get_data(&self) -> &mut [u8] {
 		unsafe {
 			std::slice::from_raw_parts_mut(self.data, wu::wuimg_size(self))
+		}
+	}
+
+	pub fn anim_seek_nearest(&mut self, i: std::ffi::c_int) -> bool {
+		unsafe {
+			wu::wuimg_anim_seek_nearest(self, i)
 		}
 	}
 
