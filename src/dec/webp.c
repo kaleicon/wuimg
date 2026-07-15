@@ -27,6 +27,11 @@ struct homegrown_anim {
 	struct frame_dispose dispose;
 };
 
+struct library_anim {
+	int msec;
+	WebPAnimDecoder *dec;
+};
+
 struct webp_state {
 	WebPData data;
 	WebPDecoderConfig config;
@@ -39,7 +44,7 @@ struct webp_state {
 
 	union {
 		struct homegrown_anim h;
-		WebPAnimDecoder *dec;
+		struct library_anim l;
 	} anim;
 };
 
@@ -52,7 +57,7 @@ static void end_webp(struct image_file *infile) {
 		free(ds->anim.h.buf);
 		break;
 	case webp_library:
-		WebPAnimDecoderDelete(ds->anim.dec);
+		WebPAnimDecoderDelete(ds->anim.l.dec);
 		break;
 	case webp_single: break;
 	}
@@ -64,7 +69,8 @@ static void rewind_webp_state(struct webp_state *ds, struct wuimg *img,
 const int frame) {
 	if (ds->anim_render == webp_library) {
 		if (frame < img->anim->cur) {
-			WebPAnimDecoderReset(ds->anim.dec);
+			WebPAnimDecoderReset(ds->anim.l.dec);
+			ds->anim.l.msec = 0;
 			img->anim->cur = -1;
 		}
 	} else {
@@ -107,8 +113,12 @@ static struct compost iter_to_region(WebPIterator *iter) {
 
 static struct wu_st libwebp_dec_frame(struct wuimg *img,
 struct webp_state *ds) {
-	int msec;
-	return WebPAnimDecoderGetNext(ds->anim.dec, (uint8_t **)&img->data, &msec)
+	int msec = 0;
+	bool ok = WebPAnimDecoderGetNext(ds->anim.l.dec, (uint8_t **)&img->data,
+		&msec);
+	img->anim->sec.num = (uint32_t)(msec - ds->anim.l.msec);
+	ds->anim.l.msec = msec;
+	return ok
 		? WU_OK : WUERR_HERE(wu_decoding_error);
 }
 
@@ -117,14 +127,14 @@ struct webp_state *ds, const int idx) {
 	struct homegrown_anim *hanim = &ds->anim.h;
 	WebPDemuxGetFrame(hanim->dmux, idx + 1 /* 1-based */, &hanim->iter);
 
-	const struct frame_info *frame = img->anim->f + idx;
+	const bool keyframe = img->anim->keyframe[idx];
 	const size_t stride = (size_t)hanim->iter.width * img->channels;
 	const size_t buf_size = stride * (size_t)hanim->iter.height;
 	ds->config.output.colorspace = MODE_BGRA;
 	ds->config.output.u.RGBA.stride = (int)stride;
 	ds->config.output.u.RGBA.size = buf_size;
 	const struct compost reg = iter_to_region(&hanim->iter);
-	if (!frame->keyframe) {
+	if (!keyframe) {
 		if (idx == 0) {
 			memset(img->data, 0, wuimg_size(img));
 			img->anim->dt = (struct compost) {
@@ -168,13 +178,13 @@ struct webp_state *ds, const int idx) {
 			compost_alpha_blend(&reg, img, hanim->buf);
 		}
 	}
+	img->anim->sec.num = (uint32_t)hanim->iter.duration;
 	return WU_OK;
 }
 
-static struct wu_st dec_webp_frame(struct wuimg *img,
-struct webp_state *ds, const int idx) {
+static struct wu_st dec_webp_frame(struct wuimg *img, struct webp_state *ds) {
 	if (ds->anim_render == webp_homegrown) {
-		return homegrown_dec_frame(img, ds, idx);
+		return homegrown_dec_frame(img, ds, img->anim->cur);
 	}
 	return libwebp_dec_frame(img, ds);
 }
@@ -190,8 +200,7 @@ struct wu_state *state, const enum image_event event) {
 		rewind_webp_state(ds, img, state->frame);
 		while (anim->cur < state->frame) {
 			++anim->cur;
-			const struct wu_st st = dec_webp_frame(img, ds,
-				anim->cur);
+			const struct wu_st st = dec_webp_frame(img, ds);
 			if (!wu_isok(st)) {
 				return st;
 			}
@@ -204,7 +213,7 @@ struct wu_state *state, const enum image_event event) {
 
 static struct wu_st gather_webp_info(struct wuimg *img, WebPIterator *iter,
 size_t *max_frame_size) {
-	if (!wuimg_anim_init(img, (size_t)iter->num_frames)) {
+	if (!wuimg_anim_init(img, (size_t)iter->num_frames, 0, 1000)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
@@ -214,7 +223,6 @@ size_t *max_frame_size) {
 	do {
 		const struct compost reg = iter_to_region(iter);
 		valid = wuimg_anim_frame_set_checked(img, i, &reg,
-			(uint32_t)iter->duration, 1000,
 			iter->blend_method == WEBP_MUX_NO_BLEND);
 		max_size = zumax(max_size, (size_t)iter->width
 			* (size_t)iter->height);
@@ -279,12 +287,12 @@ struct webp_state *ds, const struct wu_conf *conf, struct pix_rgba8 *bg_color) {
 	anim_opts.color_mode = MODE_BGRA;
 	anim_opts.use_threads = true;
 
-	ds->anim.dec = WebPAnimDecoderNew(&ds->data, &anim_opts);
+	ds->anim.l.dec = WebPAnimDecoderNew(&ds->data, &anim_opts);
 	WebPAnimInfo info;
-	WebPAnimDecoderGetInfo(ds->anim.dec, &info);
+	WebPAnimDecoderGetInfo(ds->anim.l.dec, &info);
 	*bg_color = get_webp_bg_color(info.bgcolor);
 
-	const WebPDemuxer *dmux = WebPAnimDecoderGetDemuxer(ds->anim.dec);
+	const WebPDemuxer *dmux = WebPAnimDecoderGetDemuxer(ds->anim.l.dec);
 	WebPIterator iter;
 	WebPDemuxGetFrame(dmux, 1, &iter);
 	img->borrowed = true;
@@ -430,8 +438,8 @@ static struct wu_st init_webp(struct image_file *infile) {
 		img->layout = pix_bgra;
 		st = setup_webp_anim(img, ds, conf, &infile->bg);
 		if (wu_isok(st)) {
-			st = dec_webp_frame(img, ds, 0);
 			img->anim->cur = 0;
+			st = dec_webp_frame(img, ds);
 		}
 	} else {
 		st = single_image_decode(img, ds, conf);

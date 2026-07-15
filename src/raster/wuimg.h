@@ -74,19 +74,16 @@ enum image_mode {
 };
 
 struct frame_time {
-	uint32_t num, den;
-};
-
-struct frame_info {
-	struct frame_time sec;
-	bool keyframe;
+	uint32_t num;
+	uint32_t den;
 };
 
 struct image_anim {
 	size_t nr;
-	int cur; // Frame currently rendered in .data
 	struct compost dt; // region affected since last display
-	struct frame_info f[];
+	struct frame_time sec; // frame duration
+	int cur; // frame currently rendered in .data
+	bool keyframe[];
 };
 
 struct wuimg {
@@ -194,16 +191,15 @@ size_t nmemb, const uint8_t *src);
  */
 bool wuimg_anim_seek_nearest(struct wuimg *img, int i);
 
-void wuimg_anim_frame_set(struct wuimg *img, size_t i, uint32_t sec_num,
-uint32_t sec_den, bool independent);
+void wuimg_anim_frame_set(struct wuimg *img, size_t i, bool independent);
 
 bool wuimg_anim_frame_set_checked(struct wuimg *img, size_t i,
-const struct compost *reg, uint32_t sec_num, uint32_t sec_den,
-bool independent);
+const struct compost *reg, bool independent);
 
 size_t wuimg_anim_nr(const struct wuimg *img);
 
-struct image_anim * wuimg_anim_init(struct wuimg *img, size_t nr);
+struct image_anim * wuimg_anim_init(struct wuimg *img, size_t nr,
+uint32_t time_num, uint32_t time_den);
 
 
 void wuimg_align(struct wuimg *img, uint8_t alignment);

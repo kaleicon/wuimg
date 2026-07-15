@@ -103,10 +103,9 @@ struct wu_st tbn_init(struct tbn_desc *desc, struct wuimg *img, FILE *ifp) {
 			img->bitdepth = 8;
 			img->alpha = frames > 1
 				? alpha_unassociated : alpha_ignore;
-			if (wuimg_anim_init(img, frames)) {
+			if (wuimg_anim_init(img, frames, 1, 12)) {
 				for (uint32_t i = 0; i < frames; ++i) {
-					wuimg_anim_frame_set(img, i, 1, 12,
-						true);
+					wuimg_anim_frame_set(img, i, true);
 				}
 				desc->anim_off = img->w*img->h*img->channels
 					* frames + 40;

@@ -404,7 +404,7 @@ bool wuimg_anim_seek_nearest(struct wuimg *img, int i) {
 	const int limit = i < cur ? -1 : cur;
 	while (i > limit) {
 		--i;
-		if (anim->f[i+1].keyframe) {
+		if (anim->keyframe[i+1]) {
 			break;
 		}
 	}
@@ -414,21 +414,13 @@ bool wuimg_anim_seek_nearest(struct wuimg *img, int i) {
 }
 
 void wuimg_anim_frame_set(struct wuimg *img, const size_t i,
-const uint32_t sec_num, const uint32_t sec_den, const bool independent) {
-	img->anim->f[i] = (struct frame_info) {
-		.sec = {
-			.num = sec_num,
-			.den = sec_den,
-		},
-		.keyframe = independent,
-	};
+const bool independent) {
+	img->anim->keyframe[i] = independent;
 }
 
 bool wuimg_anim_frame_set_checked(struct wuimg *img, const size_t i,
-const struct compost *reg, const uint32_t sec_num, const uint32_t sec_den,
-const bool independent) {
-	wuimg_anim_frame_set(img, i, sec_num, sec_den,
-		independent && compost_is_full(reg, img));
+const struct compost *reg, const bool independent) {
+	wuimg_anim_frame_set(img, i, independent & compost_is_full(reg, img));
 	return compost_bounds_check(reg, img);
 }
 
@@ -436,16 +428,22 @@ size_t wuimg_anim_nr(const struct wuimg *img) {
 	return img->anim ? img->anim->nr : 1;
 }
 
-struct image_anim * wuimg_anim_init(struct wuimg *img, size_t nr) {
+struct image_anim * wuimg_anim_init(struct wuimg *img, const size_t nr,
+const uint32_t time_num, const uint32_t time_den) {
 	if (nr < 1) {
 		return false;
 	}
-	img->anim = small_calloc(sizeof(*img->anim) + nr * sizeof(*img->anim->f), 1);
+	img->anim = small_calloc(
+		sizeof(*img->anim) + nr * sizeof(*img->anim->keyframe), 1);
 	if (img->anim) {
 		img->anim->nr = nr;
-		img->anim->cur = -1;
 		img->anim->dt = (struct compost) {
 			.w = img->w, .h = img->h,
+		};
+		img->anim->cur = -1;
+		img->anim->sec = (struct frame_time) {
+			.num = time_num,
+			.den = time_den,
 		};
 	}
 	return img->anim;

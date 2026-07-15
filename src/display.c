@@ -146,11 +146,11 @@ const enum image_event evs, const bool allow_cycle) {
 	return false;
 }
 
-static double min_time(const struct wuimg *img, const struct wu_state *state) {
+static double min_time(const struct wuimg *img) {
 	struct image_anim *anim = img->anim;
 	if (anim) {
-		const struct frame_time *time = &anim->f[state->frame].sec;
-		const double secs = (double)time->num / (double)time->den;
+		const struct frame_time time = anim->sec;
+		const double secs = (double)time.num / (double)time.den;
 		return fmax(secs, 1.0 / 30);
 	}
 	return INFINITY;
@@ -216,7 +216,7 @@ const bool allow_cycle, const bool allow_delete) {
 
 			if (evs & ev_frame) {
 				next_frame = state->time + min_time(
-					infile->sub_img + state->idx, state);
+					infile->sub_img + state->idx);
 			} else {
 				nanosec_report("Frame uploaded in",
 					gl_clock_query(gl), report_all);

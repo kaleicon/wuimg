@@ -660,7 +660,7 @@ const uint8_t hdr[53]) {
 	if (!wu_isok(st)) {
 		return st;
 	}
-	if (!wuimg_anim_init(img, desc->frames)) {
+	if (!wuimg_anim_init(img, desc->frames, 100, 1000)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
@@ -670,7 +670,7 @@ const uint8_t hdr[53]) {
 		desc->frame[i].off = file_off;
 		desc->frame[i].len = buf_endian32b(hdr + 13 + i*4);
 		file_off += pal_size + desc->frame[i].len;
-		wuimg_anim_frame_set(img, i, 10, 100, true);
+		wuimg_anim_frame_set(img, i, true);
 	}
 	return WU_OK;
 }

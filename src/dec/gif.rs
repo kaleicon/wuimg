@@ -49,6 +49,7 @@ ds: &mut GifState) -> wu::wu_st {
 	let cur = gif_frame_to_compost(frame);
 	let trns = frame.transparent;
 	let dispose = frame.dispose;
+	anim.sec.num = frame.delay as u32;
 
 	// Expand palette to RGBA
 	match ds.decoder.palette() {
@@ -151,7 +152,7 @@ ds: &mut GifState) -> wu::wu_st {
 			msg = Some(c"failed to set icc profile, will ignore");
 		}
 	}
-	match img.anim_init(nr_frames) {
+	match img.anim_init(nr_frames, 0, 100) {
 		Some(_) => {},
 		None => return wurs::wuerr_here!(wu::wu_alloc_error),
 	};
@@ -169,8 +170,7 @@ ds: &mut GifState) -> wu::wu_st {
 	let mut i = 0;
 	while let Ok(Some(fr)) = ds.decoder.next_frame_info() {
 		unsafe {
-			wu::wuimg_anim_frame_set(img, i,
-				fr.delay as u32, 100, i == 0);
+			wu::wuimg_anim_frame_set(img, i, i == 0);
 		}
 
 		max_w = std::cmp::max(max_w, fr.width);

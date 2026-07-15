@@ -3667,35 +3667,24 @@ const _: () = {
 	["Offset of field: frame_time::den"][::std::mem::offset_of!(frame_time, den) - 4usize];
 };
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
-pub struct frame_info {
-	pub sec: frame_time,
-	pub keyframe: bool,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-	["Size of frame_info"][::std::mem::size_of::<frame_info>() - 12usize];
-	["Alignment of frame_info"][::std::mem::align_of::<frame_info>() - 4usize];
-	["Offset of field: frame_info::sec"][::std::mem::offset_of!(frame_info, sec) - 0usize];
-	["Offset of field: frame_info::keyframe"]
-		[::std::mem::offset_of!(frame_info, keyframe) - 8usize];
-};
-#[repr(C)]
 #[derive(Debug, Default)]
 pub struct image_anim {
 	pub nr: usize,
-	pub cur: ::std::os::raw::c_int,
 	pub dt: compost,
-	pub f: __IncompleteArrayField<frame_info>,
+	pub sec: frame_time,
+	pub cur: ::std::os::raw::c_int,
+	pub keyframe: __IncompleteArrayField<bool>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-	["Size of image_anim"][::std::mem::size_of::<image_anim>() - 48usize];
+	["Size of image_anim"][::std::mem::size_of::<image_anim>() - 56usize];
 	["Alignment of image_anim"][::std::mem::align_of::<image_anim>() - 8usize];
 	["Offset of field: image_anim::nr"][::std::mem::offset_of!(image_anim, nr) - 0usize];
-	["Offset of field: image_anim::cur"][::std::mem::offset_of!(image_anim, cur) - 8usize];
-	["Offset of field: image_anim::dt"][::std::mem::offset_of!(image_anim, dt) - 16usize];
-	["Offset of field: image_anim::f"][::std::mem::offset_of!(image_anim, f) - 48usize];
+	["Offset of field: image_anim::dt"][::std::mem::offset_of!(image_anim, dt) - 8usize];
+	["Offset of field: image_anim::sec"][::std::mem::offset_of!(image_anim, sec) - 40usize];
+	["Offset of field: image_anim::cur"][::std::mem::offset_of!(image_anim, cur) - 48usize];
+	["Offset of field: image_anim::keyframe"]
+		[::std::mem::offset_of!(image_anim, keyframe) - 52usize];
 };
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -4213,21 +4202,13 @@ unsafe extern "C" {
 	pub fn wuimg_anim_seek_nearest(img: *mut wuimg, i: ::std::os::raw::c_int) -> bool;
 }
 unsafe extern "C" {
-	pub fn wuimg_anim_frame_set(
-		img: *mut wuimg,
-		i: usize,
-		sec_num: u32,
-		sec_den: u32,
-		independent: bool,
-	);
+	pub fn wuimg_anim_frame_set(img: *mut wuimg, i: usize, independent: bool);
 }
 unsafe extern "C" {
 	pub fn wuimg_anim_frame_set_checked(
 		img: *mut wuimg,
 		i: usize,
 		reg: *const compost,
-		sec_num: u32,
-		sec_den: u32,
 		independent: bool,
 	) -> bool;
 }
@@ -4235,7 +4216,12 @@ unsafe extern "C" {
 	pub fn wuimg_anim_nr(img: *const wuimg) -> usize;
 }
 unsafe extern "C" {
-	pub fn wuimg_anim_init(img: *mut wuimg, nr: usize) -> *mut image_anim;
+	pub fn wuimg_anim_init(
+		img: *mut wuimg,
+		nr: usize,
+		time_num: u32,
+		time_den: u32,
+	) -> *mut image_anim;
 }
 unsafe extern "C" {
 	pub fn wuimg_align(img: *mut wuimg, alignment: u8);

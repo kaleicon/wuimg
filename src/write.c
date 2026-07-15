@@ -196,7 +196,7 @@ const bool overwrite, const struct image_anim *anim, const char ext[static 4]) {
 	const int ext_len = sizeof(ENC_TABLE->ext);
 	int w;
 	if (anim) {
-		const struct frame_time sec = anim->f[state->frame].sec;
+		const struct frame_time sec = anim->sec;
 		w = snprintf(suffix, rem,
 			"_%.*d.%.*d.%" PRIu32 ".%" PRIu32 ".%.*s",
 			prec, state->idx,

@@ -25,9 +25,10 @@ impl wu::wuimg {
 		}
 	}
 
-	pub fn anim_init<'a>(&'a mut self, nr: usize) -> Option<&'a mut wu::image_anim> {
+	pub fn anim_init<'a>(&'a mut self, nr: usize, time_num: u32, time_den: u32)
+	-> Option<&'a mut wu::image_anim> {
 		unsafe {
-			wu::wuimg_anim_init(self, nr).as_mut()
+			wu::wuimg_anim_init(self, nr, time_num, time_den).as_mut()
 		}
 	}
 }

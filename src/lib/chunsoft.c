@@ -164,8 +164,6 @@ struct wu_st sir0_spr_assemble(struct sir0_spr_desc *desc, struct wuimg *img) {
 		struct compost fr;
 		uint16_t off;
 		get_tile_info(desc, &fr, &off);
-		//fr.x -= desc->fr.x;
-		//fr.y -= desc->fr.y;
 
 		const size_t dims = fr.w * fr.h;
 		const struct wuptr tile = mp_avail_at(&desc->mp,
@@ -190,12 +188,12 @@ const struct compost *fr, const struct compost *afr, const uint16_t frames) {
 		tree_bud_leaf_u(tree, "Y", fr->y);
 	}
 	if (frames) {
-		if (!wuimg_anim_init(img, frames)) {
+		if (!wuimg_anim_init(img, frames, 4, 60)) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 		for (uint16_t f = 0; f < frames; ++f) {
 			const bool ok = wuimg_anim_frame_set_checked(img, f,
-				afr, 4, 60, true);
+				afr, true);
 			if (!ok) {
 				return WUERR_HERE(wu_invalid_params);
 			}

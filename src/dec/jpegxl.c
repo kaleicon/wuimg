@@ -220,11 +220,8 @@ static struct wu_st render_jxl_frame(struct wuimg *img, struct jpegxl_state *ds)
 				/* Time units are given as ticks per second.
 				 * Hence, a frame is displayed for
 				 * 'den * duration / num' seconds. */
-				const uint32_t num = ds->info.animation.tps_numerator;
 				const uint32_t den = ds->info.animation.tps_denominator;
-				const uint32_t duration = den*header.duration;
-				wuimg_anim_frame_set(img, (size_t)ds->idx,
-					duration, num, false);
+				img->anim->sec.num = den*header.duration;
 			}
 			break;
 		case JXL_DEC_FULL_IMAGE:
@@ -351,7 +348,8 @@ static struct wu_st init_jpegxl(struct image_file *infile) {
 	}
 
 	if (ds->info.have_animation) {
-		if (!wuimg_anim_init(img, (size_t)(ds->idx + 1))) {
+		if (!wuimg_anim_init(img, (size_t)(ds->idx + 1), 0,
+		ds->info.animation.tps_numerator)) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 	}

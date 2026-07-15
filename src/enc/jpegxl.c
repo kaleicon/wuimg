@@ -10,7 +10,6 @@
 
 #include "enc.h"
 
-static const uint16_t APPROX_TIME_RES = 10000;
 static const int NO_TRANSFER = -1;
 
 struct jxl_state {
@@ -18,7 +17,6 @@ struct jxl_state {
 	JxlEncoderFrameSettings *settings;
 	JxlPixelFormat fmt;
 	JxlBitDepth depth;
-	bool round_time;
 	const struct image_anim *anim;
 	uint8_t buf[BUFSIZ];
 };
@@ -48,17 +46,10 @@ const int frame) {
 	bool final = true;
 	if (js->anim) {
 		final = (size_t)(frame + 1) == js->anim->nr;
-		const struct frame_time *sec = &js->anim->f[frame].sec;
+		const struct frame_time *sec = &js->anim->sec;
 		JxlFrameHeader header;
 		JxlEncoderInitFrameHeader(&header);
-		if (js->round_time) {
-			header.duration = (uint32_t)lroundf(fclampf(
-				(float)sec->num * APPROX_TIME_RES / (float)sec->den,
-				0, (float)(UINT32_MAX)
-			));
-		} else {
-			header.duration = sec->num;
-		}
+		header.duration = sec->num;
 		JxlEncoderSetFrameHeader(js->settings, &header);
 	}
 	JxlEncoderSetFrameBitDepth(js->settings, &js->depth);
@@ -69,16 +60,6 @@ const int frame) {
 	return process_jxl_output(js, ofp);
 }
 
-static uint32_t same_time_res(const struct image_anim *anim) {
-	const struct frame_info *info = anim->f;
-	const uint32_t den = info[0].sec.den;
-	for (size_t i = 1; i < anim->nr; ++i) {
-		if (info[i].sec.den != den) {
-			return 0;
-		}
-	}
-	return den;
-}
 
 static int get_jxlenc_transfer(const struct wuimg *img, double *gamma) {
 	const double g = color_space_get_gamma(&img->cs);
@@ -174,7 +155,6 @@ const struct wuimg *src, FILE *ofp) {
 			: JXL_BIT_DEPTH_FROM_CODESTREAM,
 	};
 	js->anim = src->anim;
-	js->round_time = false;
 
 	JxlBasicInfo info;
 	JxlEncoderInitBasicInfo(&info);
@@ -195,11 +175,7 @@ const struct wuimg *src, FILE *ofp) {
 	if (js->anim) {
 		info.have_animation = JXL_TRUE;
 		info.animation.tps_denominator = 1;
-		info.animation.tps_numerator = same_time_res(js->anim);
-		if (!info.animation.tps_numerator) {
-			info.animation.tps_numerator = APPROX_TIME_RES;
-			js->round_time = true;
-		}
+		info.animation.tps_numerator = js->anim->sec.den;
 	}
 	if (JxlEncoderSetBasicInfo(js->enc, &info) != JXL_ENC_SUCCESS) {
 		return "couldn't set basic info";

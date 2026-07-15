@@ -178,11 +178,11 @@ FILE *ifp) {
 
 	fseek(ifp, 0, SEEK_END);
 	const size_t nr = ((size_t)ftell(ifp) - desc->off) / desc->frame_size;
-	if (!wuimg_anim_init(img, nr)) {
+	if (!wuimg_anim_init(img, nr, msec, 1000)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 	for (size_t i = 0; i < nr; ++i) {
-		wuimg_anim_frame_set(img, i, msec, 1000, true);
+		wuimg_anim_frame_set(img, i, true);
 	}
 	return WU_OK;
 }

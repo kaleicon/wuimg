@@ -19,6 +19,9 @@ static void end_flif(struct image_file *infile) {
 
 static struct wu_st decode_flif_frame(struct wuimg *img, FLIF_IMAGE *frame,
 struct flif_state *ds) {
+	if (img->anim) {
+		img->anim->sec.num = flif_image_get_frame_delay(frame);
+	}
 	const size_t stride = wuimg_stride(img);
 	for (uint32_t y = 0; y < img->h; ++y) {
 		ds->read_func(frame, y, img->data + y*stride, stride);
@@ -96,16 +99,14 @@ static struct wu_st init_flif(struct image_file *infile) {
 	}
 
 	const size_t nr = flif_decoder_num_images(ds->dec);
-	if (nr > 1) {
-		if (!wuimg_anim_init(img, nr)) {
+	if (nr >= 1) {
+		if (!wuimg_anim_init(img, nr, 0, 1000)) {
 			return WUERR_HERE(wu_alloc_error);
 		}
 		for (size_t i = 0; i < nr; ++i) {
-			wuimg_anim_frame_set(img, i,
-				flif_image_get_frame_delay(frame), 1000, true);
+			wuimg_anim_frame_set(img, i, true);
 		}
 	}
-
 	read_flif_metadata(&infile->metadata, frame);
 	return decode_flif_frame(img, frame, ds);
 }
