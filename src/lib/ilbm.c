@@ -480,8 +480,7 @@ const struct iff_chunk chunk) {
 }
 
 static struct wu_st add_crng(struct ilbm_desc *desc, bool active,
-const bool reverse, const float rate, const uint8_t lo, const uint8_t hi,
-const bool garbage) {
+const bool reverse, const float rate, const uint8_t lo, const uint8_t hi) {
 	struct palette_cycle *cycle = desc->cycle;
 	if (!cycle) {
 		cycle = palette_cycle_new(MAX_CYCLE_SLOTS);
@@ -497,7 +496,7 @@ const bool garbage) {
 				return WU_OK;
 			}
 		}
-		active = active && rate != 0 && lo < hi && !garbage;
+		active = active && rate != 0 && lo < hi;
 		cycle->crng[cycle->len] = (struct palette_crng) {
 			.lo = lo,
 			.hi = hi,
@@ -537,7 +536,6 @@ const struct iff_chunk chunk) {
 		const uint16_t ACTIVE = 0x1;
 		const uint16_t REVERSE = 0x2;
 		const float TO_SECS = 273.0f + 1.0f/15;
-		const bool garbage = data[0] | data[1];
 		const uint16_t rate = buf_endian16(data + 2,
 			iff->endian);
 		const uint16_t flags = buf_endian16(data + 4,
@@ -546,7 +544,7 @@ const struct iff_chunk chunk) {
 		const uint8_t hi = data[7];
 
 		struct wu_st st = add_crng(desc, flags & ACTIVE,
-			flags & REVERSE, TO_SECS/rate, lo, hi, garbage);
+			flags & REVERSE, TO_SECS/rate, lo, hi);
 		if (!wu_isok(st)) {
 			return st;
 		}
@@ -617,9 +615,8 @@ const struct iff_chunk chunk) {
 		const uint8_t hi = data[3];
 		const uint32_t sec = buf_endian16(data + 4, iff->endian);
 		const uint32_t usec = buf_endian16(data + 8, iff->endian);
-		const bool garbage = data[12] | data[13];
 		struct wu_st st = add_crng(desc, direction, direction == -1,
-			(float)sec + (float)usec/1000000.f, lo, hi, garbage);
+			(float)sec + (float)usec/1000000.f, lo, hi);
 		if (!wu_isok(st)) {
 			return st;
 		}
