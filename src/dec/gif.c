@@ -74,32 +74,39 @@ static struct compost get_gif_region(const struct GifImageDesc *desc) {
 
 static struct wu_st render_gif_frame(struct wuimg *img, struct gif_state *ds,
 const int idx) {
-	if (idx == 0 && !img->anim->f[idx].keyframe) {
-		memset(img->data, 0, wuimg_size(img));
-		ds->restore.dispose = DISPOSAL_UNSPECIFIED;
-	}
-
 	const GraphicsControlBlock *gcb = ds->gcb + idx;
 	const SavedImage *gif_image = ds->gif_file->SavedImages + idx;
 	const GifImageDesc *desc = &gif_image->ImageDesc;
+	img->anim->sec.num = (uint32_t)gcb->DelayTime;
+	if (!img->anim->keyframe[idx]) {
+		if (idx == 0) {
+			memset(img->data, 0, wuimg_size(img));
+			ds->restore.dispose = DISPOSAL_UNSPECIFIED;
+			img->anim->dt = (struct compost) {
+				.w = img->w, .h = img->h,
+			};
+		} else {
+			bool dispose = false;
+			switch (ds->restore.dispose) {
+			case DISPOSE_BACKGROUND:
+				dispose = true;
+				compost_clear(&ds->restore.frame, img);
+				break;
+			case DISPOSE_PREVIOUS:
+				dispose = true;
+				compost_overwrite(&ds->restore.frame, img,
+					ds->restore.buf);
+				break;
+			}
+			if (dispose) {
+				compost_affect(&img->anim->dt,
+					&ds->restore.frame);
+			}
+		}
+	}
+
 	const struct compost cur = get_gif_region(desc);
-	img->anim->dt = cur;
-
-	bool dispose = false;
-	switch (ds->restore.dispose) {
-	case DISPOSE_BACKGROUND:
-		dispose = true;
-		compost_clear(&ds->restore.frame, img);
-		break;
-	case DISPOSE_PREVIOUS:
-		dispose = true;
-		compost_overwrite(&ds->restore.frame, img, ds->restore.buf);
-		break;
-	}
-	if (dispose) {
-		compost_affect(&img->anim->dt, &ds->restore.frame);
-	}
-
+	compost_affect(&img->anim->dt, &cur);
 	ds->restore.dispose = gcb->DisposalMode;
 	ds->restore.frame = cur;
 	if (gcb->DisposalMode == DISPOSE_PREVIOUS) {
@@ -145,7 +152,7 @@ struct gif_state *ds, int *pal_num) {
 
 	const size_t count = (size_t)gif_file->ImageCount;
 	struct wuimg *img = infile->sub_img;
-	if (!wuimg_anim_init(img, count)) {
+	if (!wuimg_anim_init(img, count, 0, 100)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
@@ -157,8 +164,6 @@ struct gif_state *ds, int *pal_num) {
 	const int default_delay = 10;
 	int restore_w = 0;
 	int restore_h = 0;
-	struct compost dispose = (struct compost) {0};
-	bool dispose_last = false;
 	for (size_t i = 0; i < count; ++i) {
 		GraphicsControlBlock *gcb = ds->gcb + i;
 		SavedImage *image = gif_file->SavedImages + i;
@@ -174,32 +179,19 @@ struct gif_state *ds, int *pal_num) {
 		}
 
 		const GifImageDesc *desc = &image->ImageDesc;
-		struct compost cur = get_gif_region(desc);
-		struct compost diff = i
-			? cur
-			: (struct compost) {.w = img->w, .h = img->h};
-		if (dispose_last) {
-			compost_affect(&diff, &dispose);
-		}
-
+		const struct compost cur = get_gif_region(desc);
 		const bool valid_frame = wuimg_anim_frame_set_checked(img, i,
-			&diff, (uint32_t)gcb->DelayTime, 100,
-			!dispose_last && gcb->TransparentColor == NO_TRANSPARENT_COLOR);
+			&cur,
+			gcb->TransparentColor == NO_TRANSPARENT_COLOR
+				&& img->w == (size_t)desc->Width
+				&& img->h == (size_t)desc->Height);
 		if (!valid_frame) {
 			return WUERR_HERE(wu_invalid_header);
 		}
 
-		switch (gcb->DisposalMode) {
-		case DISPOSE_PREVIOUS:
+		if (gcb->DisposalMode == DISPOSE_PREVIOUS) {
 			restore_w = imax(restore_w, desc->Width);
 			restore_h = imax(restore_h, desc->Height);
-			// fallthrough
-		case DISPOSE_BACKGROUND:
-			dispose = cur;
-			dispose_last = true;
-			break;
-		default:
-			dispose_last = false;
 		}
 
 		if (desc->ColorMap) {
