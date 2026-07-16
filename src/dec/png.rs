@@ -181,8 +181,7 @@ fn get_png_colorspace(img: &mut wu::wuimg, info: &png::Info) -> wu::wu_st {
 			}
 		}		
 	}
-
-	return wu::wu_st::ok();
+	wu::wu_st::ok()
 }
 
 fn get_png_palette(img: &mut wu::wuimg, info: &png::Info) -> wu::wu_st {
@@ -201,8 +200,7 @@ fn get_png_palette(img: &mut wu::wuimg, info: &png::Info) -> wu::wu_st {
 			}
 		}
 	}
-
-	return wu::wu_st::ok();
+	wu::wu_st::ok()
 }
 
 fn get_dec_state(infile: &mut wu::image_file) -> *mut png::Reader<FakeSig> {
@@ -284,10 +282,7 @@ state: *mut wu::wu_state, ev: wu::image_event) -> wu::wu_st {
 		},
 		_ => {},
 	};
-	wu::wu_st {
-		st: wu::wu_no_change,
-		msg: std::ptr::null(),
-	}
+	wu::wu_st::no_change()
 }
 
 extern "C" fn init_png(infile_ptr: *mut wu::image_file) -> wu::wu_st {

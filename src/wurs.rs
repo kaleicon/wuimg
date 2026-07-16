@@ -6,6 +6,13 @@
 use crate::wu;
 
 impl wu::wu_st {
+	pub fn no_change() -> wu::wu_st {
+		wu::wu_st {
+			st: wu::wu_no_change,
+			msg: std::ptr::null(),
+		}
+	}
+
 	pub fn ok() -> wu::wu_st {
 		wu::wu_st {
 			st: wu::wu_ok,

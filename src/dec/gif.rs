@@ -263,10 +263,7 @@ state: *mut wu::wu_state, ev: wu::image_event) -> wu::wu_st {
 		},
 		_ => {},
 	};
-	wu::wu_st {
-		st: wu::wu_no_change,
-		msg: std::ptr::null(),
-	}
+	wu::wu_st::no_change()
 }
 
 extern "C" fn init_gif(infile_ptr: *mut wu::image_file) -> wu::wu_st {
