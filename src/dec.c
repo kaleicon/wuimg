@@ -147,13 +147,8 @@ enum image_event event) {
 				}
 			}
 		}
-		if (img->anim) {
-	case ev_frame:
-			img->anim->dt = (struct compost) {
-				.w = img->w, .h = img->h
-			};
-		}
 		// fallthrough
+	case ev_frame:
 	case ev_metadata:
 	case ev_time:
 	case ev_transform:
