@@ -117,7 +117,7 @@ For image decoding:
 * librsvg
 * libtiff
 * libwebp and libwebpdemux
-* zlib (for some rare formats)
+* zlib or rust (BMZ, HG3, XYZ)
 
 To actually run the program you'll need
 * Linux (it might work on other POSIX systems, I don't know)

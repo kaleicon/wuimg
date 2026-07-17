@@ -1093,7 +1093,7 @@ struct wu_st ico_parse(struct ico_desc *desc, FILE *ifp) {
 }
 
 #ifdef WU_ENABLE_BMZ
-#include <zlib.h>
+#include "misc/decomp.h"
 
 void bmz_cleanup(struct bmz_desc *desc) {
 	fclose(desc->bmp.ifp);
@@ -1108,10 +1108,10 @@ struct wu_st bmz_open(struct bmz_desc *desc, struct mparser mp) {
 	if (wu_isok(st)) {
 		const struct wuptr z = mp_remaining(&mp);
 		if (z.len > 4) {
-			uLong orig = buf_endian32l(z.ptr);
+			size_t orig = buf_endian32l(z.ptr);
 			uint8_t *buf = malloc(orig);
 			if (buf) {
-				uncompress(buf, &orig, z.ptr + 4, z.len - 4);
+				orig = decomp_deflate(buf, orig, z.ptr + 4, z.len - 4);
 				if (orig) {
 					FILE *ifp = fmemopen(buf, orig, "r");
 					if (ifp) {

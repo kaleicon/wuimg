@@ -5,6 +5,27 @@ comptime = files('comptime.py')
 fmt_names = run_command(python, comptime, 'names', check : true).stdout().split()
 incdir = include_directories('.')
 
+src_list = []
+rust_dec_list = []
+dec_enable = configuration_data()
+dec_rs_mod = [find_program('echo')]
+dep_list = [
+	cc.find_library('m', required : false),
+	dependency('exiv2'),
+	dependency('lcms2'),
+	dependency('icu-i18n'),
+	dependency('icu-uc'),
+	dependency('uchardet')
+]
+meson_version = meson.version().split('.')
+meson_major = meson_version[0].to_int()
+meson_minor = meson_version[1].to_int()
+enable_rust = add_languages('rust',
+	required : get_option('compile_rust').disable_auto_if(
+		meson_major == 1 and meson_minor < 11
+	)
+)
+
 external_map = {
 	# For empty arrays, use cc.find_library(key) instead of dependency()
 	'avif': [],
@@ -27,39 +48,20 @@ external_map = {
 	'webp': ['libwebpdecoder', 'libwebpdemux']
 }
 
-pkg_map = external_map + {
-	'bmz': ['zlib'],
-	'hg3': ['zlib'],
-	'xyz': ['zlib'],
-}
+pkg_map = external_map
+if not enable_rust
+	pkg_map += {
+		'bmz': ['zlib'],
+		'hg3': ['zlib'],
+		'xyz': ['zlib'],
+	}
+endif
 
 attr_map = {
 	'encoder': ['jpegxl'],
 	'freerider': ['bmz'],
 	'rust': ['gif', 'png']
 }
-
-# Core setup
-src_list = []
-rust_dec_list = []
-dec_enable = configuration_data()
-dec_rs_mod = [find_program('echo')]
-dep_list = [
-	cc.find_library('m', required : false),
-	dependency('exiv2'),
-	dependency('lcms2'),
-	dependency('icu-i18n'),
-	dependency('icu-uc'),
-	dependency('uchardet')
-]
-meson_version = meson.version().split('.')
-meson_major = meson_version[0].to_int()
-meson_minor = meson_version[1].to_int()
-enable_rust = add_languages('rust',
-	required : get_option('compile_rust').disable_auto_if(
-		meson_major == 1 and meson_minor < 11
-	)
-)
 
 foreach f : fmt_names
 	is_external = f in external_map
@@ -108,13 +110,7 @@ endforeach
 
 # Rust setup
 wu_rust_lib = []
-if rust_dec_list.length() > 0
-	binds = ['wudefs.h', 'misc/metadata.h']
-	amalgam = [find_program('echo')]
-	foreach b : binds
-		amalgam += '#include "@0@"\n'.format(b)
-	endforeach
-
+if enable_rust
 	rustmod = import('rust')
 	cargo_ws = rustmod.workspace()
 
@@ -123,8 +119,16 @@ if rust_dec_list.length() > 0
 		command : dec_rs_mod,
 		capture : true,
 	)
-	rust_struct = structured_sources(['lib.rs', 'wu.rs', dec_rs, 'wurs.rs'], {'dec': rust_dec_list})
+	rust_struct = structured_sources(
+		['lib.rs', 'wu.rs', dec_rs, 'wurs.rs'],
+		{
+			'dec': rust_dec_list,
+			'misc': ['misc/mod.rs', 'misc/decomp_deflate.rs'],
+		}
+	)
 	wu_rust_lib += cargo_ws.package().library('wu_rust', rust_struct, rust_abi : 'c')
+else
+	src_list += 'misc/decomp_deflate.c'
 endif
 
 dec_enable = configure_file(output : 'dec_enable.def', configuration : dec_enable)

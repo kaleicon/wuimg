@@ -3,8 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <zlib.h>
-
+#include "misc/decomp.h"
 #include "raster/fmt.h"
 #include "xyz.h"
 
@@ -26,8 +25,8 @@ struct wu_st xyz_decode(struct wuimg *img, struct wuptr src) {
 	uint8_t *dst = malloc(dst_len);
 	if (dst) {
 		uint8_t *uncmp = dst + write_offset;
-		uLong uncmpd = (uLong)uncmp_len;
-		uncompress(uncmp, &uncmpd, src.ptr, (uLong)src.len);
+		const size_t uncmpd = decomp_deflate(uncmp, uncmp_len,
+			src.ptr, src.len);
 		if (uncmpd > entries*3) {
 			pal = (struct palette *)dst;
 			pal->refs = 0;

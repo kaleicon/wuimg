@@ -3,9 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <zlib.h>
-
 #include "misc/bit.h"
+#include "misc/decomp.h"
 #include "misc/math.h"
 #include "raster/fmt.h"
 #include "hg3.h"
@@ -151,10 +150,10 @@ struct wu_st hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 		return wuerr(wu_unsupported_feature, "only img0000 tag supported");
 	}
 
-	uLong extent_comp = buf_endian32l(tag + 24);
-	uLong extent_orig = buf_endian32l(tag + 28);
-	uLong ctrl_comp = buf_endian32l(tag + 32);
-	uLong ctrl_orig = buf_endian32l(tag + 36);
+	size_t extent_comp = buf_endian32l(tag + 24);
+	size_t extent_orig = buf_endian32l(tag + 28);
+	size_t ctrl_comp = buf_endian32l(tag + 32);
+	size_t ctrl_orig = buf_endian32l(tag + 36);
 
 	const struct wuptr zext = mp_avail(&mp, extent_comp);
 	const struct wuptr zctrl = mp_avail(&mp, ctrl_comp);
@@ -169,9 +168,9 @@ struct wu_st hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	}
 
 	uint8_t *extent = buf;
-	uncompress(extent, &extent_orig, zext.ptr, zext.len);
+	extent_orig = decomp_deflate(extent, extent_orig, zext.ptr, zext.len);
 	uint8_t *ctrl = buf + extent_orig;
-	uncompress(ctrl, &ctrl_orig, zctrl.ptr, zctrl.len);
+	ctrl_orig = decomp_deflate(ctrl, ctrl_orig, zctrl.ptr, zctrl.len);
 
 	const size_t img_size = wuimg_size(img);
 	uint8_t *planes = decode_zrle(extent, extent_orig, ctrl, ctrl_orig,
