@@ -10,6 +10,15 @@ enum event_repeat {
 	repeat_smooth = 2,
 };
 
+static void frame_cycle(struct window_public *pub, const int dt) {
+	pub->event.image = wudec_frame_cycle(&pub->image, dt);
+	pub->win.playing = false;
+	const int frame = pub->image.state.frame;
+	char msg[sizeof(frame)*3 + 9];
+	snprintf(msg, sizeof(msg), "Frame: %i", frame);
+	term_line_temp(msg);
+}
+
 static enum event_repeat apply_event(struct window_context *window,
 const int code, const float dt, const bool shift) {
 	struct window_public *pub = &window->pub;
@@ -72,20 +81,16 @@ const int code, const float dt, const bool shift) {
 		break;
 	// Frame cycling
 	case ',': // Prev
-		event->image = wudec_frame_cycle(image, -1);
-		pub->win.playing = false;
+		frame_cycle(pub, -1);
 		break;
 	case '.': // Next
-		event->image = wudec_frame_cycle(image, 1);
-		pub->win.playing = false;
+		frame_cycle(pub, 1);
 		break;
 	case ';':
-		event->image = wudec_frame_cycle(image, -5);
-		pub->win.playing = false;
+		frame_cycle(pub, -5);
 		break;
 	case ':':
-		event->image = wudec_frame_cycle(image, 5);
-		pub->win.playing = false;
+		frame_cycle(pub, 5);
 		break;
 	case ' ':
 		pub->win.playing ^= wudec_cur_is_anim(image);
