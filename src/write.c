@@ -226,10 +226,25 @@ const bool overwrite, const struct image_anim *anim, const char ext[static 4]) {
 	return ofp;
 }
 
+static void print_write_file(const struct write_file *out, FILE *ofp) {
+	if (isatty(fileno(ofp))) {
+		term_print_convert((const char *)out->parent.str, ofp);
+		term_print_convert((const char *)out->file.str, ofp);
+	} else {
+		wustr_print(&out->parent, ofp);
+		wustr_print(&out->file, ofp);
+	}
+}
+
 static void write_close_file(struct write_file *out,
-const struct wudec_image *image, struct wuimg *src, const bool failed) {
+const struct wudec_image *image, struct wuimg *src, const bool failed,
+const bool null) {
 	if (failed || write_should_close_file(out, image, src)) {
 		fclose(out->ofp);
+		if (!failed) {
+			print_write_file(out, stdout);
+			fputc(null ? 0 : '\n', stdout);
+		}
 	}
 }
 static const char * write_prepare_file(struct write_file *out,
@@ -272,19 +287,9 @@ const struct wudec_image *image, struct wuimg *src) {
 			write_close_encoder(out, image, src, msg);
 		}
 		write_clear_dst_img(out, image, &out->dst, msg);
-		write_close_file(out, image, src, msg);
+		write_close_file(out, image, src, msg, args->null);
 	}
 	return msg;
-}
-
-static void print_write_file(const struct write_file *out, FILE *ofp) {
-	if (isatty(fileno(ofp))) {
-		term_print_convert((const char *)out->parent.str, ofp);
-		term_print_convert((const char *)out->file.str, ofp);
-	} else {
-		wustr_print(&out->parent, ofp);
-		wustr_print(&out->file, ofp);
-	}
 }
 
 static void print_write_error(const struct write_file *out, const char *msg,
@@ -354,9 +359,6 @@ struct write_writer *writer) {
 				break;
 			} else if (args->stdout) {
 				break;
-			} else {
-				print_write_file(&out, stdout);
-				fputc(args->null ? 0 : '\n', stdout);
 			}
 		} while (wu_ok == (err = wudec_iter(image, &cur)));
 		switch (err) {
