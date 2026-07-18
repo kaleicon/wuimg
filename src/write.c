@@ -226,26 +226,13 @@ const bool overwrite, const struct image_anim *anim, const char ext[static 4]) {
 	return ofp;
 }
 
-static void print_write_file(const struct write_file *out, FILE *ofp) {
-	if (isatty(fileno(ofp))) {
-		term_print_convert((const char *)out->parent.str, ofp);
-		term_print_convert((const char *)out->file.str, ofp);
-	} else {
-		wustr_print(&out->parent, ofp);
-		wustr_print(&out->file, ofp);
-	}
-}
-
-static void write_close_file(struct write_file *out,
-const struct wudec_image *image, struct wuimg *src, const bool failed,
-const bool null) {
+static bool write_close_file(struct write_file *out,
+const struct wudec_image *image, struct wuimg *src, const bool failed) {
 	if (failed || write_should_close_file(out, image, src)) {
 		fclose(out->ofp);
-		if (!failed) {
-			print_write_file(out, stdout);
-			fputc(null ? 0 : '\n', stdout);
-		}
+		return true;
 	}
+	return false;
 }
 static const char * write_prepare_file(struct write_file *out,
 const struct write_args *args, const struct wudec_image *image,
@@ -273,7 +260,7 @@ struct wuimg *src) {
 
 static const char * write_frame(struct write_file *out,
 const struct write_args *args, struct write_writer *writer,
-const struct wudec_image *image, struct wuimg *src) {
+const struct wudec_image *image, struct wuimg *src, bool *closed) {
 	const char *msg = write_prepare_file(out, args, image, src);
 	if (!msg) {
 		const struct wuimg *tgt;
@@ -287,9 +274,19 @@ const struct wudec_image *image, struct wuimg *src) {
 			write_close_encoder(out, image, src, msg);
 		}
 		write_clear_dst_img(out, image, &out->dst, msg);
-		write_close_file(out, image, src, msg, args->null);
+		*closed = write_close_file(out, image, src, msg);
 	}
 	return msg;
+}
+
+static void print_write_file(const struct write_file *out, FILE *ofp) {
+	if (isatty(fileno(ofp))) {
+		term_print_convert((const char *)out->parent.str, ofp);
+		term_print_convert((const char *)out->file.str, ofp);
+	} else {
+		wustr_print(&out->parent, ofp);
+		wustr_print(&out->file, ofp);
+	}
 }
 
 static void print_write_error(const struct write_file *out, const char *msg,
@@ -351,14 +348,19 @@ struct write_writer *writer) {
 	bool all_ok = init_write_file(&out, args, image);
 	if (all_ok) {
 		do {
+			bool closed = false;
 			const char *msg = write_frame(&out, args, writer,
-				image, cur);
+				image, cur, &closed);
 			if (msg) {
 				print_write_error(&out, msg, stderr);
 				all_ok = false;
 				break;
-			} else if (args->stdout) {
-				break;
+			} else if (closed) {
+				print_write_file(&out, stdout);
+				fputc(args->null ? 0 : '\n', stdout);
+				if (args->stdout) {
+					break;
+				}
 			}
 		} while (wu_ok == (err = wudec_iter(image, &cur)));
 		switch (err) {
@@ -440,7 +442,7 @@ static const struct opts write_opts[] = {
 	{'f', "force", "",
 		"\t\tForce overwriting output file(s)."},
 	{'s', "stdout", "",
-		"\t\tWrite only the initial sub-image to stdout."},
+		"\t\tWrite a single file to stdout."},
 	OPTS_TYPE,
 	{'z', "null", "",
 		"\t\tUse null as line terminator when printing filenames."},
