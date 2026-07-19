@@ -11,6 +11,7 @@
 #include "enc.h"
 
 static const int NO_TRANSFER = -1;
+static const uint32_t APPROX_TIME_SCALE = 1u << 16;
 
 struct jxl_state {
 	JxlEncoder *enc;
@@ -46,10 +47,16 @@ const int frame) {
 	bool final = true;
 	if (js->anim) {
 		final = (size_t)(frame + 1) == js->anim->nr;
-		const struct frame_time *sec = &js->anim->sec;
+		const struct frame_time sec = js->anim->sec;
 		JxlFrameHeader header;
 		JxlEncoderInitFrameHeader(&header);
-		header.duration = sec->num;
+		if (js->anim->varying_den) {
+			const double s = (double)sec.num / (double)sec.den
+				* (double)APPROX_TIME_SCALE;
+			header.duration = (uint32_t)round(fmin(s, UINT32_MAX));
+		} else {
+			header.duration = sec.num;
+		}
 		JxlEncoderSetFrameHeader(js->settings, &header);
 	}
 	JxlEncoderSetFrameBitDepth(js->settings, &js->depth);
@@ -175,7 +182,8 @@ const struct wuimg *src, FILE *ofp) {
 	if (js->anim) {
 		info.have_animation = JXL_TRUE;
 		info.animation.tps_denominator = 1;
-		info.animation.tps_numerator = js->anim->sec.den;
+		info.animation.tps_numerator = js->anim->varying_den
+			? APPROX_TIME_SCALE : js->anim->sec.den;
 	}
 	if (JxlEncoderSetBasicInfo(js->enc, &info) != JXL_ENC_SUCCESS) {
 		return "couldn't set basic info";

@@ -40,8 +40,7 @@ fn compost_gif_frame(img: &wu::wuimg, anim: &mut wu::image_anim,
 ds: &mut GifState) -> wu::wu_st {
 	let frame = match ds.decoder.next_frame_info() {
 		Ok(Some(f)) => f,
-		_ => return wurs::wuerr_here!(
-			wu::wu_decoding_error,
+		_ => return wurs::wuerr!(wu::wu_decoding_error,
 			"unexpected frame info read failure"),
 	};
 
@@ -57,8 +56,7 @@ ds: &mut GifState) -> wu::wu_st {
 			wu::palette_from_rgb8(&mut ds.pal,
 				src_pal.as_ptr() as *const _, src_pal.len()/3);
 		},
-		Err(_) => return wurs::wuerr_here!(
-			wu::wu_decoding_error,
+		Err(_) => return wurs::wuerr!(wu::wu_decoding_error,
 			"no palette for frame"),
 	}
 
@@ -72,7 +70,6 @@ ds: &mut GifState) -> wu::wu_st {
 	if !anim.is_keyframe() {
 		if anim.cur == 0 {
 			img.get_data().fill(0);
-
 		} else {
 			let p = ds.prev.frame;
 			match ds.prev.dispose {
@@ -101,7 +98,7 @@ ds: &mut GifState) -> wu::wu_st {
 	// Decode into our preallocated buffer
 	match ds.decoder.read_into_buffer(buf) {
 		Ok(_) => {},
-		Err(_) => return wurs::wuerr_here!(wu::wu_decoding_error,
+		Err(_) => return wurs::wuerr!(wu::wu_decoding_error,
 			"failed to decode frame"),
 	};
 	unsafe {
@@ -117,7 +114,7 @@ fn build_gif_decoder(data: &[u8], skip_decode: bool)
 	opt.skip_frame_decoding(skip_decode);
 	match opt.read_info(std::io::Cursor::new(data)) {
 		Ok(d) => Ok(d),
-		Err(_) => Err(wurs::wuerr_here!(wu::wu_invalid_header,
+		Err(_) => Err(wurs::wuerr!(wu::wu_invalid_header,
 			"failed to read gif header")),
 	}
 }
@@ -153,7 +150,7 @@ ds: &mut GifState) -> wu::wu_st {
 		nr_frames += 1;
 	}
 	if nr_frames < 1 {
-		return wurs::wuerr_here!(wu::wu_no_image_data, "no frames");
+		return wurs::wuerr!(wu::wu_no_image_data, "no frames");
 	}
 
 	img.w = w as usize;

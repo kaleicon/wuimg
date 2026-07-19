@@ -61,6 +61,18 @@ impl wu::compost {
 		}
 	}
 
+	pub fn alpha_blend(&self, img: &wu::wuimg, src: &[u8]) {
+		unsafe {
+			wu::compost_alpha_blend(self, img, src.as_ptr());
+		}
+	}
+
+	pub fn overwrite_add_alpha(&self, img: &wu::wuimg, src: &[u8]) {
+		unsafe {
+			wu::compost_overwrite_add_alpha(self, img, src.as_ptr());
+		}
+	}
+
 	pub fn overwrite(&self, img: &wu::wuimg, src: &[u8]) {
 		unsafe {
 			wu::compost_overwrite(self, img, src.as_ptr());
@@ -95,15 +107,18 @@ macro_rules! wuerr_here {
 			msg: concat!(file!(), ":", line!(), "\0").as_ptr() as *const std::ffi::c_char,
 		}
 	};
+}
 
+macro_rules! wuerr {
 	($st:expr, $msg:literal) => {
 		wu::wu_st {
 			st: $st,
-			msg: concat!(file!(), ":", line!(), ": ", $msg, "\0").as_ptr() as *const std::ffi::c_char,
+			msg: concat!($msg, "\0").as_ptr() as *const std::ffi::c_char,
 		}
 	};
 }
 
+pub(crate) use wuerr;
 pub(crate) use wuerr_here;
 
 impl wu::wutree {

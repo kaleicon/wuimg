@@ -33,7 +33,7 @@ Here is a representative but not exhaustive listing:
   * BMP and ICO
   * GIF
   * JPEG, MPO
-  * PNG
+  * PNG, APNG if enabling Rust
   * SVG
   * TGA
   * TIFF, BigTIFF

@@ -1593,12 +1593,12 @@ DEC_MAP: DecMap = {
 
 	"png": {
 		"png": FmtInfo("Portable Network Graphics, Malie engine MGF",
-			ext=("png", "mgf"),
+			ext=("apng", "png", "mgf"),
 			magic=(
 				b"\x89PNG\r\n\x1a\n",
 				b"MalieGF\0",
 			),
-			mime="png"
+			mime=("apng", "png")
 		),
 	},
 

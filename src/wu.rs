@@ -3383,6 +3383,9 @@ unsafe extern "C" {
 	);
 }
 unsafe extern "C" {
+	pub fn compost_overwrite_add_alpha(reg: *const compost, img: *const wuimg, src: *const u8);
+}
+unsafe extern "C" {
 	pub fn compost_overwrite(reg: *const compost, img: *const wuimg, src: *const u8);
 }
 unsafe extern "C" {
@@ -3673,6 +3676,7 @@ pub struct image_anim {
 	pub dt: compost,
 	pub sec: frame_time,
 	pub cur: ::std::os::raw::c_int,
+	pub varying_den: bool,
 	pub keyframe: __IncompleteArrayField<bool>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
@@ -3683,8 +3687,10 @@ const _: () = {
 	["Offset of field: image_anim::dt"][::std::mem::offset_of!(image_anim, dt) - 8usize];
 	["Offset of field: image_anim::sec"][::std::mem::offset_of!(image_anim, sec) - 40usize];
 	["Offset of field: image_anim::cur"][::std::mem::offset_of!(image_anim, cur) - 48usize];
+	["Offset of field: image_anim::varying_den"]
+		[::std::mem::offset_of!(image_anim, varying_den) - 52usize];
 	["Offset of field: image_anim::keyframe"]
-		[::std::mem::offset_of!(image_anim, keyframe) - 52usize];
+		[::std::mem::offset_of!(image_anim, keyframe) - 53usize];
 };
 #[repr(C)]
 #[derive(Copy, Clone)]

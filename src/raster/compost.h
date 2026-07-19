@@ -24,6 +24,10 @@ void compost_pal_expand_idx_ignore(const struct compost *reg,
 const struct wuimg *img, const uint8_t *restrict src, int alpha_idx,
 const struct palette *pal);
 
+// Overwrites `img` region with `src`, to which opaque alpha is added
+void compost_overwrite_add_alpha(const struct compost *reg,
+const struct wuimg *img, const uint8_t *restrict src);
+
 // Overwrites `img` region with `src`
 void compost_overwrite(const struct compost *reg, const struct wuimg *img,
 const uint8_t *restrict src);

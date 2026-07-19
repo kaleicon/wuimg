@@ -83,6 +83,7 @@ struct image_anim {
 	struct compost dt; // region affected since last display
 	struct frame_time sec; // frame duration
 	int cur; // frame currently rendered in .data
+	bool varying_den; // signals frames don't use the same time denominator
 	bool keyframe[];
 };
 
