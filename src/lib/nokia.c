@@ -229,7 +229,7 @@ static struct wu_st load_str(struct wustr *str, FILE *ifp, uint16_t len) {
 	if (!str->str) {
 		if (wustr_malloc(str, len)) {
 			return fread(str->str, len, 1, ifp)
-				? wuok() : WUERR_HERE(wu_unexpected_eof);
+				? WU_OK : WUERR_HERE(wu_unexpected_eof);
 		}
 		return WUERR_HERE(wu_alloc_error);
 	}

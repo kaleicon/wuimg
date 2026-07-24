@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2022 kaleido
 #include <string.h>
 
-#include "bit.h"
-#include "endian.h"
-#include "math.h"
+#include "misc/bit.h"
+#include "misc/endian.h"
+#include "misc/math.h"
 
 uint16_t bit_rev16(uint16_t b) {
 	b = (uint16_t)( (b & 0xaaaa) >> 1 | (b & 0x5555) << 1 );

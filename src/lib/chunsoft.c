@@ -50,7 +50,7 @@ struct compost *afr, uint16_t *frames) {
 			.h = hdr[5],
 		};
 		*frames = buf_endian16(hdr + 10, little_endian);
-		return wuok();
+		return WU_OK;
 	}
 	return WUERR_HERE(wu_unexpected_eof);
 }
@@ -77,7 +77,7 @@ uint16_t *off) {
 			};
 			*off = buf_endian16(hdr.ptr + 8, little_endian);
 			if (fr->w && fr->h) {
-				return wuok();
+				return WU_OK;
 			}
 		}
 		return wuerr(wu_no_change, NULL);
@@ -289,7 +289,7 @@ const uint32_t pal_off) {
 			.a = i ? 0x1f : 0x00,
 		};
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st sprite_parse(struct sir0_spr_desc *desc) {
@@ -368,7 +368,7 @@ static struct wu_st sir0_init(struct mparser *mp) {
 		if (!memcmp(hdr, id, sizeof(id))) {
 			uint32_t header = buf_endian32(hdr + 4, little_endian);
 			mp_seek_set(mp, header);
-			return wuok();
+			return WU_OK;
 		}
 		return WUERR_HERE(wu_unknown_file_type);
 	}
@@ -402,7 +402,7 @@ struct wu_st at6p_load(struct at6p_desc *desc, struct wuimg *img) {
 	} else {
 		return WUERR_HERE(wu_alloc_error);
 	}
-	return wuok();
+	return WU_OK;
 }
 
 struct wu_st at6p_info(struct at6p_desc *desc, struct wuimg *img) {

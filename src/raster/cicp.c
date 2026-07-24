@@ -25,7 +25,7 @@ const char * cicp_primaries_str(const enum cicp_primaries primaries) {
 	case cicp_primaries_smpte_st_428_1: return ST428;
 	case cicp_primaries_smpte_rp_431_2: return "SMPTE RP 431-2";
 	case cicp_primaries_smpte_eg_432_1: return "SMPTE EG 432-1";
-	case cicp_primaries_the_unidentified: return "Migraine inducing";
+	case cicp_primaries_the_unidentified: return "The \"Unidentified\"";
 	}
 	return DEFAULT;
 }

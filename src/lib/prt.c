@@ -128,5 +128,5 @@ struct wu_st prt_parse(struct prt_desc *desc, struct wuimg *img, FILE *ifp) {
 	img->layout = pix_bgra;
 	img->alpha = (img->channels == 1) ? alpha_ignore : alpha_unassociated;
 	img->mirror = true;
-	return wuok();
+	return WU_OK;
 }

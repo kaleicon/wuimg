@@ -76,7 +76,7 @@ enum lwi_field *type, struct wuptr *data) {
 		case lwi_copyright:
 		case lwi_timestamp:
 			*data = mp_avail(mp, len);
-			return wuok();
+			return WU_OK;
 		case lwi_image:
 			mp_seek_cur(mp, -1);
 			return lwi_setup(mp, img);

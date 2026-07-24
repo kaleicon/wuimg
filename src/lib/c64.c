@@ -238,7 +238,7 @@ struct wu_st c64_decode(const struct c64_desc *desc, struct wuimg *img) {
 		struct mparser mp = desc->mp;
 		struct c64_mem_offsets off = {0};
 		uint8_t *uncomp = NULL;
-		struct wu_st st = wuok();
+		struct wu_st st = WU_OK;
 		if (desc->compressed) {
 			const unsigned upack_len = ggjj_needed(desc->fmt);
 			uncomp = malloc(upack_len);

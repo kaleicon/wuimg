@@ -59,7 +59,7 @@ static struct wu_st comment(struct mparser *tp, struct c_tok *tok) {
 	while (mp_skip_until(tp, '/')) {
 		if (tp->mem[tp->pos-2] == '*') {
 			tok->str.len = tp->pos - 2 - start;
-			return wuok();
+			return WU_OK;
 		}
 	}
 	return WUERR_HERE(wu_unexpected_eof);
@@ -76,7 +76,7 @@ static struct wu_st word(struct mparser *tp, struct c_tok *tok) {
 		mp_next_char(tp);
 		++tok->str.len;
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st num_lit(struct mparser *tp, struct c_tok *tok) {
@@ -95,7 +95,7 @@ static struct wu_st num_lit(struct mparser *tp, struct c_tok *tok) {
 		mp_next_char(tp);
 		++tok->str.len;
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st next_tok(struct mparser *tp, struct c_tok *tok) {
@@ -128,7 +128,7 @@ static struct wu_st next_tok(struct mparser *tp, struct c_tok *tok) {
 		word(tp, tok);
 		tok->type = c_define;
 		if (wuptr_eq_str(tok->str, "define") && isblank(mp_cur_char(tp))) {
-			return wuok();
+			return WU_OK;
 		}
 		return wuerr(wu_invalid_header,
 			"expected #define directive");
@@ -137,7 +137,7 @@ static struct wu_st next_tok(struct mparser *tp, struct c_tok *tok) {
 	case '5': case '6': case '7': case '8': case '9':
 		tok->type = c_number;
 		num_lit(tp, tok);
-		return wuok();
+		return WU_OK;
 	default:
 		if (isalpha(c)) {
 			tok->type = c_identifier;
@@ -146,7 +146,7 @@ static struct wu_st next_tok(struct mparser *tp, struct c_tok *tok) {
 	}
 	tok->type = c_delimiter;
 	tok->str = mp_avail(tp, 1);
-	return wuok();
+	return WU_OK;
 }
 
 static bool tok_eq(const struct c_tok *tok, enum c_tok_type type,
@@ -249,10 +249,10 @@ static struct wu_st identify_from_comment(struct c_desc *desc,
 const struct c_tok *tok) {
 	if (wuptr_eq_str(tok->str, " DEGAS Elite Icon Definition ")) {
 		desc->fmt = c_degas_icon;
-		return wuok();
+		return WU_OK;
 	}
 	desc->fmt = c_xbm;
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st define_value(struct c_desc *desc, struct wuimg *img,
@@ -286,7 +286,7 @@ const struct wuptr name, const struct wuptr val) {
 		}
 		break;
 	}
-	return wuok();
+	return WU_OK;
 }
 
 static struct wu_st parse_define(struct c_desc *desc, struct wuimg *img) {
