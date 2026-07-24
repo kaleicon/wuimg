@@ -2,11 +2,10 @@
 // SPDX-FileCopyrightText: 2020 kaleido
 #include <string.h>
 
+#include "misc/fast_math.h"
 #include "misc/math.h"
 #include "raster/compost.h"
 #include "raster/wuimg.h"
-
-#include "fast_math.c"
 
 // Clear but slow alpha blend function to compare against
 static const bool REFERENCE_BLEND = false;

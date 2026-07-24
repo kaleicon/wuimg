@@ -126,8 +126,7 @@ static inline float fm_exp2f(const float x) {
 }
 
 static inline float fm_powf_unchecked(const float x, const float e) {
-	/* If `e` is in range [-127.0/128.0, 1.0], there's no need for clamping
-	 * for exp2f */
+	// Assumes `e` is in range [-127.0/128.0, 1.0]
 	return fm_exp2f_unchecked(fm_log2f_for_pow(x, e));
 }
 

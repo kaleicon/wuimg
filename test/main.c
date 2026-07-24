@@ -10,6 +10,7 @@
 #include "misc/bit.h"
 #include "misc/common.h"
 #include "misc/endian.h"
+#include "misc/fast_math.h"
 #include "misc/math.h"
 #include "misc/mparser.h"
 #include "misc/time.h"
@@ -20,8 +21,6 @@
 
 #include "opts.h"
 #include "wudefs.h"
-
-#include "fast_math.c"
 
 #define FULL_X32 "0x%08" PRIx32
 static const uint8_t NUM_SEQ[] = {

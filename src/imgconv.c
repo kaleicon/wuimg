@@ -5,10 +5,9 @@
 #include <lcms2.h>
 
 #include "misc/common.h"
+#include "misc/fast_math.h"
 #include "misc/math.h"
 #include "imgconv.h"
-
-#include "fast_math.c"
 
 /* Enable for somewhat faster exp2f(), log2f() and powf(), otherwise use
  * libc functions. */
