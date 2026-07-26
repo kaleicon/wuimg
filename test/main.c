@@ -434,7 +434,7 @@ static bool unpack_tests(void) {
 		uint8_t mem[16];
 		uint64_t aligner;
 	} data = {
-		{
+		.mem = {
 			0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc,
 			0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc,
 		},
@@ -505,6 +505,62 @@ static bool unpack_tests(void) {
 	return kay;
 }
 
+struct strip_args {
+	align_t align;
+	uint8_t bits;
+	size_t width;
+	size_t bytes;
+	size_t padded;
+};
+static bool test_strip_eq(const struct strip_args *arg) {
+	const size_t bytes = strip_base(arg->width, arg->bits);
+	const size_t pad = strip_padding(arg->width, arg->bits, arg->align);
+	const size_t full = strip_length(arg->width, arg->bits, arg->align);
+	const bool ok = bytes + pad == full && full == arg->padded;
+	printf("%s\t%zu\t%i\t%i\t%zu\t%zu\t%zu\n",
+		ok_str(ok), arg->width, arg->bits, arg->align,
+		arg->padded, bytes + pad, full);
+	return ok;
+}
+static bool test_strip_base(const struct strip_args *arg) {
+	const size_t res = strip_base(arg->width, arg->bits);
+	const bool ok = res == arg->bytes;
+	printf("%s\t%zu\t%i\t%zu\t%zu\n", ok_str(ok), arg->width, arg->bits,
+		arg->bytes, res);
+	return ok;
+}
+static bool strip_tests(void) {
+	test_name(__func__);
+	bool kay = true;
+
+	puts("Does strip_base() accurately calculate row sizes? Does it handle values close to SIZE_MAX and overflow?");
+	puts("\twidth\tbits\texpect\tresult");
+	const struct strip_args args[] = {
+		{0, 1, 1, 1, 1},
+		{1, 1, 7, 1, 2},
+		{2, 1, 8, 1, 4},
+		{3, 1, 9, 2, 8},
+		{4, 8, 17, 17, 32},
+		{5, 255, 256, 8160, 8160},
+		{0, 8, SIZE_MAX, SIZE_MAX, SIZE_MAX},
+		{0, 9, SIZE_MAX, 0, 0},
+		{1, 16, SIZE_MAX/2, SIZE_MAX >> 1 << 1, SIZE_MAX >> 1 << 1},
+		{1, 16, SIZE_MAX/2+1, 0, 0},
+	};
+	for (size_t i = 0; i < ARRAY_LEN(args); ++i) {
+		kay &= test_strip_base(args + i);
+	}
+	puts("");
+
+	puts("Does it always hold that strip_base() + strip_padding() == strip_length()?");
+	puts("\twidth\tbits\talign\texpect\tbase+pad\tfull");
+	for (size_t i = 0; i < ARRAY_LEN(args); ++i) {
+		kay &= test_strip_eq(args + i);
+	}
+	puts("");
+	return kay;
+}
+
 struct pix_layout_names {
 	enum pix_layout l:8;
 	const char name[5];
@@ -530,7 +586,7 @@ static bool layout_name_test(const struct pix_layout_names name) {
 }
 static bool pix_layout_tests(void) {
 	static const struct pix_layout_names names[] = {
-		{pix_gray, "rg  "}, // More precisely GrayAlpha
+		{pix_gray, "rg  "}, // GrayAlpha
 		{pix_rgba, "rgba"},
 		{pix_grba, "grba"},
 		{pix_argb, "argb"},
@@ -1526,6 +1582,7 @@ int main(void) {
 		& time_tests()
 		& palette_tests()
 		& pix_layout_tests()
+		& strip_tests()
 		& unpack_tests()
 		& opts_tests()
 		& fast_math_tests()

@@ -11,13 +11,21 @@ align_t align_from_int(const size_t alignment) {
 	return (align_t)zulog2(alignment);
 }
 
-size_t strip_base(const size_t width, const uint8_t bitdepth) {
-	return (width * bitdepth + 7) / 8;
+size_t strip_base(size_t width, const uint8_t bitdepth) {
+	/* Calculate (w * b + 7) / 8, but using long multiplication to handle
+	 * very high values and detect overflow. */
+	const size_t half_bits = sizeof(width)*4;
+	size_t hi = (width >> half_bits) * bitdepth;
+	size_t lo = (width << half_bits >> half_bits) * bitdepth;
+	lo = (lo + 7) >> 3;
+	size_t hshift = half_bits - 3;
+	size_t res = (hi << hshift) + lo;
+	return (res >> hshift) >= hi ? res : 0;
 }
 
 size_t strip_length(const size_t width, const uint8_t bitdepth,
 const align_t align_sh) {
-	const size_t a = ~0lu << align_sh;
+	const size_t a = ~(size_t)0 << align_sh;
 	return (strip_base(width, bitdepth) + ~a) & a;
 }
 
