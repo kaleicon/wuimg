@@ -17,7 +17,11 @@ struct wu_st xyz_decode(struct wuimg *img, struct wuptr src) {
 	src.ptr += 8;
 	src.len -= 8;
 	struct palette *pal;
-	const size_t dst_len = sizeof(*pal) + wuimg_size(img);
+	const size_t raster_size = wuimg_size(img);
+	if (SIZE_MAX - sizeof(*pal) < raster_size) {
+		return WUERR_HERE(wu_int_overflow);
+	}
+	const size_t dst_len = sizeof(*pal) + raster_size;
 	const size_t entries = 256;
 	const size_t write_offset = sizeof(*pal) - entries*3;
 	const size_t uncmp_len = dst_len - write_offset;
