@@ -117,19 +117,20 @@ const align_t align, const enum pix_attr attr, const enum image_mode mode) {
 	return "Undefined pixel attribute";
 }
 
-static bool test_overflow_common(size_t w, const size_t h, const uint8_t ch,
-const uint8_t bitdepth, const align_t align) {
+static bool test_overflow_common(const size_t w, const size_t h,
+const uint8_t ch, const uint8_t bitdepth, align_t align) {
 	if (w > 0 && h > 0) {
-		if (SIZE_MAX / w / ch > 1) {
-			w *= ch;
-			if (SIZE_MAX / w / bitdepth > 1) {
-				size_t bytes = strip_base(w, bitdepth);
-				const size_t a = ~0lu << imax(align, 0);
-				if (SIZE_MAX - ~a >= bytes) {
-					bytes = (bytes + ~a) & a;
-					return SIZE_MAX / h / bytes > 1;
+		if (SIZE_MAX / w >= ch) {
+			size_t elems = w * ch;
+			if (align == align_bitpack) {
+				if (SIZE_MAX / elems >= h) {
+					return strip_length(elems * h,
+						bitdepth, 0);
 				}
+				return false;
 			}
+			size_t bytes = strip_length(elems, bitdepth, align);
+			return bytes && SIZE_MAX / h >= bytes;
 		}
 	}
 	return false;
