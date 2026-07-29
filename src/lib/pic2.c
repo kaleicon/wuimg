@@ -152,7 +152,9 @@ const enum arith_code c) {
 		// renormalize bounds
 		const uint32_t bits = bitstrm_msb_peek_high25(&st->bs);
 		st->upper <<= i;
-		st->lower = (uint16_t)(st->lower << i | bits >> 1 >> (31 - i));
+		st->lower = (uint16_t)(
+			(unsigned)st->lower << i | bits >> 1 >> (31 - i)
+		);
 		bitstrm_seek(&st->bs, i);
 	}
 	return bit;
@@ -166,7 +168,7 @@ const enum arith_code c) {
 		if (exit) {
 			num >>= 8 - i;
 			for (uint8_t k = 0; k < i; ++k) {
-				num += arithmetic_decode_bit(st, c + 8 + k) << k;
+				num += (unsigned)arithmetic_decode_bit(st, c+8+k) << k;
 			}
 			break;
 		}
@@ -379,8 +381,8 @@ static uint32_t repack_opaque(uint32_t c, const uint8_t depth, const bool flag) 
 }
 
 static struct wu_st pic2_read_p2ss(struct pic2_desc *desc,
-struct pic2_image *block, const uint32_t size) {
-	/* Image block struct (after id):
+struct pic2_image *block, const struct wuptr data) {
+	/* Image block struct (after id and size):
 		Offset  Type    Name
 		0       u16     Flags
 		2       u16     ImageWidth
@@ -393,31 +395,31 @@ struct pic2_image *block, const uint32_t size) {
 
 	 * [*] Color value that must be rendered as black when Flags & 1 == 1
 	*/
-	const uint32_t hsize = 26;
-	if (size > hsize) {
-		const uint8_t *header = mp_slice(&desc->mp, hsize - 8);
-		if (header) {
-			const uint16_t flags = buf_endian16b(header);
-			const uint32_t reserved = buf_endian32b(header + 14);
-			if (!reserved && flags <= 1) {
-				*block = (struct pic2_image) {
-					.depth = desc->depth,
-					.w = buf_endian16b(header + 2),
-					.h = buf_endian16b(header + 4),
-					.x = buf_endian16b(header + 6),
-					.y = buf_endian16b(header + 8),
-					.opaque = repack_opaque(
-						buf_endian32b(header + 10),
-						desc->depth, flags),
-					.data = mp_avail(&desc->mp, size - hsize),
-				};
-				return WU_OK;
-			}
-			return wuerr(wu_invalid_header,
-				"reserved field or unknown flags set");
+	const size_t hsize = 18;
+	if (data.len > hsize) {
+		const uint16_t flags = buf_endian16b(data.ptr);
+		const uint32_t reserved = buf_endian32b(data.ptr + 14);
+		if (!reserved && flags <= 1) {
+			*block = (struct pic2_image) {
+				.depth = desc->depth,
+				.w = buf_endian16b(data.ptr + 2),
+				.h = buf_endian16b(data.ptr + 4),
+				.x = buf_endian16b(data.ptr + 6),
+				.y = buf_endian16b(data.ptr + 8),
+				.opaque = repack_opaque(
+					buf_endian32b(data.ptr + 10),
+					desc->depth, flags),
+				.data = (struct wuptr) {
+					.ptr = data.ptr + hsize,
+					.len = data.len - hsize,
+				},
+			};
+			return WU_OK;
 		}
+		return wuerr(wu_invalid_header,
+			"reserved field or unknown flags set");
 	}
-	return WUERR_HERE(wu_unexpected_eof);
+	return wuerr(wu_invalid_header, "image block is too small");
 }
 
 struct wu_st pic2_next_block(struct pic2_desc *desc, struct pic2_block *block) {
@@ -427,25 +429,28 @@ struct wu_st pic2_next_block(struct pic2_desc *desc, struct pic2_block *block) {
 		4       u32     BlockSize
 		8
 	*/
-	const uint8_t *header_header = mp_slice(&desc->mp, 8);
+	const uint32_t hhsize = 8;
+	const uint8_t *header_header = mp_slice(&desc->mp, hhsize);
 	if (header_header) {
 		block->id = buf_endian32b(header_header);
 		block->is_image = false;
-		const uint32_t size = buf_endian32b(header_header + 4);
-		switch (block->id) {
-		case pic2_end:
+		if (block->id == pic2_end) {
 			return WU_NO_CHANGE;
+		}
+		uint32_t size = buf_endian32b(header_header + 4);
+		if (size < hhsize) {
+			return wuerr(wu_unexpected_eof, "block size < 8");
+		}
+		size -= hhsize;
+		struct wuptr data = mp_avail(&desc->mp, size);
+		switch (block->id) {
 		case pic2_p2ss:
 			block->is_image = true;
-			return pic2_read_p2ss(desc, &block->u.image, size);
+			return pic2_read_p2ss(desc, &block->u.image, data);
 		case pic2_pdpi:
-			if (size == 10) {
-				const uint8_t *d = mp_slice(&desc->mp, 2);
-				if (d) {
-					block->u.dpi = buf_endian16b(d);
-					return WU_OK;
-				}
-				return WUERR_HERE(wu_unexpected_eof);
+			if (data.len == 2) {
+				block->u.dpi = buf_endian16b(data.ptr);
+				return WU_OK;
 			}
 			return wuerr(wu_invalid_header,
 				"PDPI block with size != 10");

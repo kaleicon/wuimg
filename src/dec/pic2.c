@@ -33,6 +33,10 @@ struct wutree *tree) {
 	}
 }
 
+static bool stop_pic2_parse(const struct wu_st st) {
+	return st.st == wu_no_change || st.st == wu_unexpected_eof;
+}
+
 static struct wu_st init_pic2(struct image_file *infile) {
 	struct pic2_desc desc;
 	struct wu_st st = pic2_parse(&desc, infile->map);
@@ -43,42 +47,46 @@ static struct wu_st init_pic2(struct image_file *infile) {
 	read_pic2_metadata(&desc, &infile->metadata);
 
 	size_t total = 0;
-	size_t i = 0;
+	size_t nr = 0;
 	struct pic2_block block;
-	while (i < SHRT_MAX) {
+	bool bad_data = false;
+	while (total < (1u << 8)) {
 		st = pic2_next_block(&desc, &block);
-		if (st.st == wu_no_change) {
-			if (!i) {
-				return wuerr(wu_no_image_data,
-					"no image blocks found");
-			}
+		if (stop_pic2_parse(st)) {
 			break;
-		} else if (st.st != wu_ok) {
-			return st;
+		} else if (st.st != wu_ok && !bad_data) {
+			/* log only first error, more would be annoying
+			 * and waste memory */
+			bad_data = true;
+			image_file_strerror_append(infile, st.msg);
 		}
 		++total;
-		i += block.is_image;
+		nr += block.is_image;
 		if (block.id == pic2_pdpi) {
 			tree_bud_leaf_u(&infile->metadata, "DPI", block.u.dpi);
 		}
 	}
+
+	if (!nr) {
+		return wuerr(wu_no_image_data, "no image blocks found");
+	} else if (bad_data) {
+		image_file_strerror_append(infile,
+			"bad or unknown blocks were found. will ignore");
+	}
+
 	tree_bud_leaf_u(&infile->metadata, "Blocks", total);
 
-	if (!alloc_sub_images(infile, i)) {
+	if (!alloc_sub_images(infile, nr)) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
 	pic2_rewind(&desc);
-	i = 0;
+	size_t i = 0;
 	while (i < infile->nr) {
 		st = pic2_next_block(&desc, &block);
-		if (st.st != wu_ok) {
-			if (st.st == wu_no_change) {
-				break;
-			}
-			continue;
-		}
-		if (block.is_image) {
+		if (stop_pic2_parse(st)) {
+			break;
+		} else if (wu_isok(st) && block.is_image) {
 			struct wuimg *img = infile->sub_img + i;
 			st = pic2_set_image(&desc, &block, img);
 			if (wu_isok(st)) {
@@ -91,7 +99,7 @@ static struct wu_st init_pic2(struct image_file *infile) {
 					}
 				}
 			}
-			wuimg_clear(img + i);
+			wuimg_clear(img);
 		}
 	}
 	return WUERR_CHECK(image_file_total_decoded(infile, i));
