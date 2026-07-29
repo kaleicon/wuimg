@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: 0BSD
+# SPDX-FileCopyrightText: 2026 kaleido
+
+abi <abi/4.0>,
+include <tunables/global>
+
+# Replace with the actual program path if needed
+profile wu @{HOME}/.local/bin/wu {
+	# Make the world read-write, omitting executable permissions. This
+	# makes some of the rules below redundant, but if you don't care
+	# about file deletion and image conversion, you can drop the 'w'
+	# and everything else will still work.
+	file /** rw,
+
+	include <abstractions/base>
+	include <abstractions/opengl>
+
+	# Permissions for window backends. If commenting them out, put
+	# something between the '#' and 'include', otherwise AppArmor will
+	# match it like a C '#include' for whatever unholy reason and load
+	# the files anyway.
+	# DRM/KMS
+	include <abstractions/dri-common>
+	# Wayland
+	include <abstractions/wayland>
+	# X
+	include <abstractions/X>
+
+	# `wu a` uses `tmpfile()` to create a temporary file to extract to.
+	# Where this file will be created depends on <stdio.h>, and on the
+	# $TMPDIR env variable at run-time. Hopefully, this abstraction
+	# will take care of that first one.
+	include <abstractions/user-tmp>
+	# Alternatively, hard-code the actual dir.
+	#file /tmp/ rw,
+	#owner file /tmp/* rw,
+}
+
+# Replace program path if needed
+profile wuconv @{HOME}/.local/bin/wuconv {
+	include <abstractions/base>
+	file /** rw,
+}

@@ -190,8 +190,8 @@ quality and roundoff errors notwithstanding. Main differences are
 
 Compiling the fuzzer
 --------------------
-Lastly, there's a fuzzer tool to test decoders with AFL++ in persistent mode.
-This is used for debugging.
+There's a fuzzer tool to test decoders with AFL++ in persistent mode. This is
+used for debugging.
 
 	# You need AFL++ installed and a dedicated build directory
 	CC=afl-cc CXX=afl-c++ meson setup FUZZBUILD
@@ -218,6 +218,16 @@ This is used for debugging.
 	# Some decoders need to look at a (lowercase) extension to know what
 	# they're dealing with:
 	afl-fuzz ... -- path/to/wufuzz msx sc5
+
+
+AppArmor
+--------
+If your system uses AppArmor, you can use the profile in `scripts/apparmor` for
+a bit more safety. It will block unneeded permissions like file execution and
+network access. Edit to taste, then install by running as root:
+
+	cp scripts/apparmor /etc/apparmor.d/wu
+	apparmor_parse -a /etc/apparmor.d/wu
 
 
 Usage
