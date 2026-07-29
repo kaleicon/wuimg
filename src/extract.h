@@ -22,6 +22,6 @@ void extract_free(struct extract_iter *iter);
 
 bool extract_file(struct extract_iter *iter, long idx, bool wraparound);
 
-bool extract_init(struct extract_iter *iter, const char *filename);
+const char * extract_init(struct extract_iter *iter, const char *filename);
 
 #endif /* WU_EXTRACT */

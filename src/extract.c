@@ -141,15 +141,27 @@ bool extract_file(struct extract_iter *iter, long idx, const bool wraparound) {
 	return true;
 }
 
-bool extract_init(struct extract_iter *iter, const char *filename) {
+const char * extract_init(struct extract_iter *iter, const char *filename) {
 	setlocale(LC_CTYPE, "");
 	*iter = (struct extract_iter) {
 		.cur = tmpfile(),
 		.fd = open(filename, O_RDONLY),
 	};
-	if (iter->fd >= 0 && iter->cur && open_archive(iter)) {
-		return true;
+	const char *msg = NULL;
+	if (iter->fd >= 0) {
+		if (iter->cur) {
+			if (open_archive(iter)) {
+				return NULL;
+			} else {
+				msg = "libarchive couldn't parse file.";
+			}
+		} else {
+			msg = "Failed to create temp file for extraction."
+				" Is $TMPDIR or /tmp writeable?";
+		}
+	} else {
+		msg = "Couldn't open archive for reading.";
 	}
 	extract_free(iter);
-	return false;
+	return msg;
 }

@@ -198,10 +198,12 @@ const char *archive_name) {
 
 static enum wu_error run_with_archive(const char *archive_name) {
 	struct extract_iter iter;
-	if (!extract_init(&iter, archive_name)) {
-		fputs("Failed to open ", stderr);
+	const char *err = extract_init(&iter, archive_name);
+	if (err) {
+		fputs("Extraction failed for ", stderr);
 		term_print_convert(archive_name, stderr);
 		fputc('\n', stderr);
+		term_line_key_val("Reason", err, stderr);
 		return wu_open_error;
 	}
 
