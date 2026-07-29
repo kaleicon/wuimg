@@ -295,8 +295,9 @@ const bool interpret_stdin, const struct sole_mode_args *args) {
 			if (result != wu_ok) {
 				free_entry = true;
 			} else if (event->rm == rm_yes) {
-				unlink(name);
-				puts("File deleted.");
+				puts(unlink(name) == 0
+					? "File deleted."
+					: "Couldn't delete file. Will hide.");
 				free_entry = true;
 			}
 		}
