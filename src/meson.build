@@ -63,6 +63,7 @@ attr_map = {
 	'rust': ['gif', 'png']
 }
 
+has_deflate = false
 foreach f : fmt_names
 	is_external = f in external_map
 	use_rust = enable_rust and f in attr_map['rust']
@@ -71,12 +72,14 @@ foreach f : fmt_names
 	)
 
 	deps = []
+	is_zlib = false
 	if f in pkg_map and not use_rust
 		if pkg_map[f].length() == 0
 			deps += cc.find_library(f, required : state)
 		else
 			foreach lib : pkg_map[f]
 				deps += dependency(lib, required : state)
+				is_zlib = lib == 'zlib'
 			endforeach
 		endif
 	endif
@@ -104,6 +107,7 @@ foreach f : fmt_names
 			if f in attr_map['encoder']
 				src_list += 'enc' / fmtfile
 			endif
+			has_deflate = has_deflate or is_zlib
 		endif
 	endif
 endforeach
@@ -127,7 +131,7 @@ if enable_rust
 		}
 	)
 	wu_rust_lib += cargo_ws.package().library('wu_rust', rust_struct, rust_abi : 'c')
-else
+elif has_deflate
 	src_list += 'misc/decomp_deflate.c'
 endif
 
