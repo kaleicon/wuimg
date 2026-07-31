@@ -144,9 +144,9 @@ static bool next_vdat(struct mparser *mp, struct wuptr *body) {
 	const uint8_t *data = mp_slice(mp, sizeof(chunk));
 	if (data) {
 		memcpy(&chunk, data, sizeof(chunk));
-		*body = mp_avail(mp, endian32(chunk.len, big_endian));
+		*body = mp_avail(mp, endian32b(chunk.len));
 		const uint32_t vdat = FOURCC('V', 'D', 'A', 'T');
-		return endian32(chunk.id, big_endian) == vdat && body->len > 2;
+		return endian32b(chunk.id) == vdat && body->len > 2;
 	}
 	return false;
 }
@@ -166,7 +166,10 @@ const uint8_t *restrict src, const size_t src_len) {
 	size_t d = 0;
 	struct wuptr body;
 	while (next_vdat(&mp, &body)) {
-		const uint16_t data_off = buf_endian16(body.ptr, big_endian);
+		const uint16_t data_off = buf_endian16b(body.ptr);
+		if (data_off >= body.len) {
+			break;
+		}
 		size_t data_pos = data_off;
 		for (size_t s = 2; s < data_off; ++s) {
 			const int8_t c = (int8_t)body.ptr[s];
@@ -179,24 +182,24 @@ const uint8_t *restrict src, const size_t src_len) {
 				run = (size_t)c;
 				repeat = true;
 			} else {
-				if (data_pos + 2 > body.len) {
+				if (body.len - data_pos < 2) {
 					break;
 				}
-				run = buf_endian16(body.ptr + data_pos, big_endian);
+				run = buf_endian16b(body.ptr + data_pos);
 				data_pos += 2;
 				repeat = (bool)c;
 			}
-			if (d + run > dst_len) {
+			if (dst_len - d < run) {
 				return d;
 			}
 			if (repeat) {
-				if (data_pos + 2 > body.len) {
+				if (body.len - data_pos < 2) {
 					break;
 				}
 				memset16(dst + d, body.ptr + data_pos, run);
 				data_pos += 2;
 			} else {
-				if (data_pos + run*2 > body.len) {
+				if (body.len - data_pos < run*2) {
 					break;
 				}
 				memcpy(dst + d, body.ptr + data_pos, run*2);
@@ -273,6 +276,7 @@ static struct wu_st raw_cpy(struct wuimg *img, const struct wuptr body) {
 	const size_t size = wuimg_size(img);
 	const size_t cpy = zumin(size, body.len);
 	memcpy(img->data, body.ptr, cpy);
+	memset(img->data + cpy, 0, size - cpy);
 	return wuerr_partial(cpy, size);
 }
 
@@ -613,8 +617,8 @@ const struct iff_chunk chunk) {
 			iff->endian);
 		const uint8_t lo = data[2];
 		const uint8_t hi = data[3];
-		const uint32_t sec = buf_endian16(data + 4, iff->endian);
-		const uint32_t usec = buf_endian16(data + 8, iff->endian);
+		const uint32_t sec = buf_endian32(data + 4, iff->endian);
+		const uint32_t usec = buf_endian32(data + 8, iff->endian);
 		struct wu_st st = add_crng(desc, direction, direction == -1,
 			(float)sec + (float)usec/1000000.f, lo, hi);
 		if (!wu_isok(st)) {
