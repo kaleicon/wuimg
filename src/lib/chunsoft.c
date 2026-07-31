@@ -36,7 +36,7 @@ void sir0_spr_cleanup(struct sir0_spr_desc *desc) {
 
 static struct wu_st seek_anim(struct sir0_spr_desc *desc, const uint8_t i,
 struct compost *afr, uint16_t *frames) {
-	const uint32_t ptr = buf_endian32(desc->anim_ptrs + i*4, little_endian);
+	const uint32_t ptr = buf_endian32l(desc->anim_ptrs + i*4);
 	if (!ptr) {
 		return wuerr(wu_no_change, NULL);
 	}
@@ -44,12 +44,12 @@ struct compost *afr, uint16_t *frames) {
 	const uint8_t *hdr = mp_slice(&desc->mp, 12);
 	if (hdr) {
 		*afr = (struct compost) {
-			.x = buf_endian16(hdr, little_endian),
-			.y = buf_endian16(hdr+2, little_endian),
+			.x = buf_endian16l(hdr),
+			.y = buf_endian16l(hdr+2),
 			.w = hdr[4],
 			.h = hdr[5],
 		};
-		*frames = buf_endian16(hdr + 10, little_endian);
+		*frames = buf_endian16l(hdr + 10);
 		return WU_OK;
 	}
 	return WUERR_HERE(wu_unexpected_eof);
@@ -70,12 +70,12 @@ uint16_t *off) {
 	if (hdr.len > 4) {
 		if (hdr.len >= 10) {
 			*fr = (struct compost) {
-				.w = buf_endian16(hdr.ptr, little_endian),
-				.h = buf_endian16(hdr.ptr + 2, little_endian),
-				.x = buf_endian16(hdr.ptr + 4, little_endian),
-				.y = buf_endian16(hdr.ptr + 6, little_endian),
+				.w = buf_endian16l(hdr.ptr),
+				.h = buf_endian16l(hdr.ptr + 2),
+				.x = buf_endian16l(hdr.ptr + 4),
+				.y = buf_endian16l(hdr.ptr + 6),
 			};
-			*off = buf_endian16(hdr.ptr + 8, little_endian);
+			*off = buf_endian16l(hdr.ptr + 8);
 			if (fr->w && fr->h) {
 				return WU_OK;
 			}
@@ -145,7 +145,7 @@ struct wuimg *img, const uint8_t i, const uint16_t frame) {
 	}
 
 	img->anim->dt = afr;
-	const uint16_t off = buf_endian16(hdr + 2, little_endian);
+	const uint16_t off = buf_endian16l(hdr + 2);
 	const size_t dims = afr.w * afr.h;
 	const struct wuptr tile = mp_avail_at(&desc->mp, desc->raster_off + off,
 		dims);
@@ -163,7 +163,10 @@ struct wu_st sir0_spr_assemble(struct sir0_spr_desc *desc, struct wuimg *img) {
 	for (uint32_t i = 0; i < desc->nb_tiles; ++i) {
 		struct compost fr;
 		uint16_t off;
-		get_tile_info(desc, &fr, &off);
+		struct wu_st st = get_tile_info(desc, &fr, &off);
+		if (!wu_isok(st)) {
+			return wuerr_partial(i, desc->nb_tiles);
+		}
 
 		const size_t dims = fr.w * fr.h;
 		const struct wuptr tile = mp_avail_at(&desc->mp,
@@ -208,10 +211,11 @@ const uint32_t i) {
 	uint16_t off;
 	mp_seek_set(&desc->mp, desc->sprite_off + i*10);
 	const struct wu_st st = get_tile_info(desc, &fr, &off);
-	mp_seek_set(&desc->mp, desc->raster_off + off);
-	return wu_isok(st)
-		? set_img(desc, img, &fr, NULL, 0)
-		: st;
+	if (wu_isok(st)) {
+		mp_seek_set(&desc->mp, desc->raster_off + off);
+		return set_img(desc, img, &fr, NULL, 0);
+	}
+	return st;
 }
 
 struct wu_st sir0_spr_assemble_info(struct sir0_spr_desc *desc,
@@ -281,7 +285,7 @@ const uint32_t pal_off) {
 		return wuerr(wu_unexpected_eof, "EOF on palette");
 	}
 	for (size_t i = 0; i < pal_len; ++i) {
-		const uint16_t c = buf_endian16(p + i*2, little_endian);
+		const uint16_t c = buf_endian16l(p + i*2);
 		pal->color[i] = (struct pix_rgba8) {
 			.r = c & 0x1f,
 			.g = (c >> 5) & 0x1f,
@@ -306,13 +310,13 @@ static struct wu_st sprite_parse(struct sir0_spr_desc *desc) {
 	}
 
 	uint8_t nb_anim = 0;
-	while (nb_anim < 16 && buf_endian32(hdr + nb_anim*4, little_endian)) {
+	while (nb_anim < 16 && buf_endian32l(hdr + nb_anim*4)) {
 		++nb_anim;
 	}
 	desc->nb_anim = nb_anim;
 	desc->nb_images = nb_anim ? nb_anim : 1;
 
-	const uint32_t realheader = buf_endian32(hdr + 64, little_endian);
+	const uint32_t realheader = buf_endian32l(hdr + 64);
 	mp_seek_set(&desc->mp, realheader);
 
 	/* Real sprite header:
@@ -336,9 +340,9 @@ static struct wu_st sprite_parse(struct sir0_spr_desc *desc) {
 		return wuerr(wu_unexpected_eof, "EOF on real sprite header");
 	}
 
-	const uint32_t pal_off = buf_endian32(hdr + 20, little_endian);
-	desc->raster_off = buf_endian32(hdr + 24, little_endian);
-	desc->sprite_off = buf_endian32(hdr + 28, little_endian);
+	const uint32_t pal_off = buf_endian32l(hdr + 20);
+	desc->raster_off = buf_endian32l(hdr + 24);
+	desc->sprite_off = buf_endian32l(hdr + 28);
 	desc->anim_ptrs = hdr + 32;
 	struct wu_st st = get_assemble_dims(desc);
 	if (!wu_isok(st)) {
@@ -366,7 +370,7 @@ static struct wu_st sir0_init(struct mparser *mp) {
 	if (hdr) {
 		const uint8_t id[4] = {'S', 'I', 'R', '0'};
 		if (!memcmp(hdr, id, sizeof(id))) {
-			uint32_t header = buf_endian32(hdr + 4, little_endian);
+			uint32_t header = buf_endian32l(hdr + 4);
 			mp_seek_set(mp, header);
 			return WU_OK;
 		}
@@ -385,7 +389,7 @@ struct wu_st sir0_spr_init(struct sir0_spr_desc *desc, const struct wuptr mem) {
 /* Chunsoft AT6P, used in 999 for the Nintendo DS.
  * Format explanation:
 https://github.com/PhoenixBound/at6p
- * Programming track: Ternary Game */
+ * Now playing track: Ternary Game */
 
 void at6p_cleanup(struct at6p_desc *desc) {
 	free(desc->decomp);
@@ -430,10 +434,12 @@ struct wu_st at6p_info(struct at6p_desc *desc, struct wuimg *img) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	const uint32_t x1 = buf_endian32(hdr, little_endian);
-	const uint32_t y1 = buf_endian32(hdr+4, little_endian);
-	const uint32_t x2 = buf_endian32(hdr+8, little_endian);
-	const uint32_t y2 = buf_endian32(hdr+12, little_endian);
+	const uint32_t x1 = buf_endian32l(hdr);
+	const uint32_t y1 = buf_endian32l(hdr+4);
+	const uint32_t x2 = buf_endian32l(hdr+8);
+	const uint32_t y2 = buf_endian32l(hdr+12);
+	/* We check in at6p_load that the image fits within the allocated data,
+	 * so overflow is not a concern. It either fits or it doesn't. */
 	img->w = (x2 - x1 + 1)*8;
 	img->h = (y2 - y1 + 1)*8;
 	img->channels = 1;
@@ -444,8 +450,8 @@ struct wu_st at6p_info(struct at6p_desc *desc, struct wuimg *img) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
-	const uint32_t raster_off = buf_endian32(hdr + 24, little_endian);
-	const uint32_t pal_off = buf_endian32(hdr + 28, little_endian);
+	const uint32_t raster_off = buf_endian32l(hdr + 24);
+	const uint32_t pal_off = buf_endian32l(hdr + 28);
 	st = get_pal(&desc->mp, pal, pal_off);
 	if (wu_isok(st)) {
 		mp_seek_set(&desc->mp, raster_off);

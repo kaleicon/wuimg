@@ -20,7 +20,6 @@ struct wu_state *state, const enum image_event ev) {
 		} else if (wuimg_exceeds_limit(img, infile->conf)) {
 			return WUERR_HERE(wu_exceeds_size_limit);
 		}
-
 		return sir0_spr_assemble(desc, img);
 	case ev_frame:
 		return sir0_spr_assemble_frame(desc, img, i,
