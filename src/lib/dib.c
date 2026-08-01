@@ -228,7 +228,7 @@ struct wu_st dib_decode(const struct dib_desc *desc, struct wuimg *img) {
 		break;
 	}
 	struct wu_st st = wuerr_partial(w, wuimg_size(img));
-	if (!dib_get_colorspace(desc, &img->cs)) {
+	if (wu_isok(st) && !dib_get_colorspace(desc, &img->cs)) {
 		st.msg = "failed to load icc data";
 	}
 	return st;
