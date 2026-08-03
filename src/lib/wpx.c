@@ -138,11 +138,12 @@ static void init_dict(uint8_t *dict) {
 
 static bool init_table(uint8_t *restrict table,
 const uint8_t *restrict bitstream, size_t *bitpos, size_t src_len) {
-	*bitpos = WPX_TABLE_DIM/2 * 8;
-	src_len *= 8;
-	if (*bitpos >= src_len) {
+	*bitpos = WPX_TABLE_DIM/2;
+	if (*bitpos >= src_len || SIZE_MAX/8 <= src_len) {
 		return false;
 	}
+	*bitpos *= 8;
+	src_len *= 8;
 	for (size_t n = 0; n < WPX_TABLE_DIM; ++n) {
 		const uint8_t size = (bitstream[n/2] >> ((n & 1) * 4))
 			& 0x0f;
@@ -581,17 +582,23 @@ static void struct_swap(void *ptr, const size_t bytes) {
 static struct wu_st wpx_read_array(struct wpx_ia2_desc *desc,
 const struct wpx_section *section, void *arr_ptr,
 const uint32_t nmemb, const size_t size) {
-	const size_t bytes = size * nmemb;
-	if (bytes == section->decomp_size) {
-		// All structs for which this is called are made of u32 fields
-		uint32_t **tgt = arr_ptr;
-		struct wu_st st = alloc_section_data(desc, section, tgt, bytes);
-		if (wu_isok(st)) {
-			struct_swap(*tgt, bytes);
+	// Prefer dividing by `size` as it's constant.
+	if (UINT32_MAX/size > nmemb) {
+		const size_t bytes = size * nmemb;
+		if (bytes == section->decomp_size) {
+			/* All structs for which this is called are made up of
+			 * u32 fields */
+			uint32_t **tgt = arr_ptr;
+			struct wu_st st = alloc_section_data(desc, section,
+				tgt, bytes);
+			if (wu_isok(st)) {
+				struct_swap(*tgt, bytes);
+			}
+			return st;
 		}
-		return st;
+		return wuerr(wu_invalid_header, "array decompressed size mismatch");
 	}
-	return wuerr(wu_invalid_header, "array decompressed size mismatch");
+	return wuerr(wu_int_overflow, "array size exceeds 32bit range");
 }
 
 static bool wpx_list_check(struct wpx_ia2_list *list, const uint32_t nr) {
