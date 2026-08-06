@@ -39,6 +39,7 @@ static struct wu_st init_xcursor(struct image_file *infile) {
 				continue;
 			}
 			break;
+		default: continue;
 		}
 
 		uint8_t *data = malloc(chunk.len);

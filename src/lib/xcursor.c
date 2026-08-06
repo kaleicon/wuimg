@@ -50,7 +50,11 @@ void xcursor_free(struct xcursor_desc *desc) {
 size_t xcursor_get_chunk_data(const struct xcursor_desc *desc,
 const struct xcursor_chunk *chunk, void *restrict dst) {
 	fseek(desc->ifp, chunk->pos, SEEK_SET);
-	return fread(dst, 1, chunk->len, desc->ifp);
+	const size_t read = fread(dst, 1, chunk->len, desc->ifp);
+	if (read < chunk->len && read && chunk->type == xcursor_chunk_image) {
+		memset((uint8_t *)dst + read, 0, chunk->len - read);
+	}
+	return read;
 }
 
 static struct wu_st common_xcur_chunk(const struct xcursor_desc *desc,
