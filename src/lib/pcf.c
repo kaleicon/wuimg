@@ -116,14 +116,17 @@ const uint32_t offset) {
 	return false;
 }
 
-static void set_glyph_metadata(const struct pcf_names *names, struct wuimg *img,
-const uint32_t i) {
+static void set_glyph_metadata(const struct pcf_names *names,
+struct wuimg *img, const uint32_t i) {
 	struct wuptr id;
-	const uint32_t offset = endian32(names->offsets[i], names->endian);
-	if (get_pcf_str(&names->str, &id, offset)) {
-		struct wutree *meta = wuimg_get_metadata(img);
-		if (meta) {
-			tree_add_leaf_len(meta, "Name", id, NULL);
+	if (i < names->glyphs) {
+		const uint32_t offset = endian32(names->offsets[i],
+			names->endian);
+		if (get_pcf_str(&names->str, &id, offset)) {
+			struct wutree *meta = wuimg_get_metadata(img);
+			if (meta) {
+				tree_add_leaf_len(meta, "Name", id, NULL);
+			}
 		}
 	}
 }
@@ -171,65 +174,6 @@ struct pcf_property *out, const uint32_t i) {
 	return WU_OK;
 }
 
-static struct wu_st load_tail_string(struct pcf_string *str,
-uint8_t *base, const size_t offset, const uint32_t total, FILE *ifp) {
-	// Previous contents plus StringLen field
-	const size_t min_size = offset + 4;
-	const size_t read = fread(base, 1, total, ifp);
-	if (read < min_size) {
-		return WUERR_HERE(wu_unexpected_eof);
-	}
-	*str = (struct pcf_string) {
-		/* StringLen field has the wrong endianness sometimes,
-		 * so deduct from struct size as it's more reliable. */
-		.len = (uint32_t)(read - min_size),
-		.str = base + min_size,
-	};
-	return WU_OK;
-}
-
-static struct wu_st load_head_count(struct pcf_toc *t,
-const enum endianness e, FILE *ifp, uint32_t *count, enum endianness *out,
-uint32_t *rem) {
-	const uint32_t head_size = sizeof(t->format) + sizeof(*count);
-	if (!format_default(t->format) || t->size < head_size) {
-		return wuerr(wu_invalid_header,
-			"bad struct format or too low size");
-	} else if (!fread(count, sizeof(*count), 1, ifp)) {
-		return WUERR_HERE(wu_unexpected_eof);
-	}
-	*count = endian32(*count, e);
-	*out = e;
-	*rem = t->size - head_size;
-	return WU_OK;
-}
-
-static struct wu_st parse_glyph_names(struct pcf_desc *desc, struct pcf_toc *t,
-const enum endianness e) {
-	/* Glyph names struct (after format):
-		Offset  Type    Name
-		0       i32     GlyphCount
-		4       i32     Offsets[GlyphCount]
-		+0      i32     StringLen
-		+4      char    String[StringLen]
-	*/
-	struct pcf_names *names = &desc->names;
-	uint32_t rem = 0;
-	const struct wu_st st = load_head_count(t, e, desc->ifp,
-		&names->glyphs, &names->endian, &rem);
-	if (!wu_isok(st)) {
-		return st;
-	}
-
-	uint8_t *buf = small_malloc(rem, 1);
-	if (!buf) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-	names->offsets = (uint32_t *)buf;
-	const size_t offset = names->glyphs * sizeof(*names->offsets);
-	return load_tail_string(&names->str, buf, offset, rem, desc->ifp);
-}
-
 static struct wu_st parse_bitmap(struct pcf_desc *desc, struct pcf_toc *t,
 const enum endianness e) {
 	uint32_t glyphs;
@@ -242,9 +186,12 @@ const enum endianness e) {
 	struct pcf_bitmap *bitmap = &desc->bitmap;
 	glyphs = endian32(glyphs, e);
 	bitmap->endian = e;
+	/* This can overflow on a 32-bit system. It's unlikely anyone expected
+	 * such giant files, but since it just results in reading the bitmap
+	 * from the wrong offset, we don't care. */
 	bitmap->file_pos = (long)(t->offset
 		+ (2 + glyphs + 4) * sizeof(*bitmap->offsets));
-	desc->glyphs = umin(desc->glyphs, glyphs);
+	desc->glyphs = u32min(desc->glyphs, glyphs);
 
 	bitmap->format = t->format;
 	bitmap->offsets = small_malloc(desc->glyphs, sizeof(*bitmap->offsets));
@@ -278,7 +225,7 @@ const enum endianness e) {
 	uint8_t head[4];
 	const size_t read = fread(head,
 		compressed ? sizeof(uint16_t) : sizeof(uint32_t), 1, desc->ifp);
-	desc->glyphs = umin(desc->glyphs,
+	desc->glyphs = u32min(desc->glyphs,
 		compressed ? buf_endian16(head, e) : buf_endian32(head, e));
 	if (!read) {
 		return WUERR_HERE(wu_unexpected_eof);
@@ -311,13 +258,65 @@ const enum endianness e) {
 	}
 	return WU_OK;
 }
+static struct wu_st load_string_struct(struct pcf_toc *t,
+const enum endianness e, FILE *ifp, uint32_t *count, enum endianness *out,
+uint8_t **buf, struct pcf_string *str, const size_t elem_size) {
+	const uint32_t head_size = sizeof(t->format) + sizeof(*count);
+	if (!format_default(t->format) || t->size < head_size) {
+		return wuerr(wu_invalid_header,
+			"bad struct format or too low size");
+	} else if (!fread(count, sizeof(*count), 1, ifp)) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	*count = endian32(*count, e);
+	if (UINT32_MAX / elem_size - sizeof(str->len) > *count) {
+		const size_t middle_size = *count * elem_size + sizeof(str->len);
+		const uint32_t rem = t->size - head_size;
+		*out = e;
+		*buf = small_malloc(rem, 1);
+		if (!*buf) {
+			return WUERR_HERE(wu_alloc_error);
+		}
+		const size_t read = fread(*buf, 1, rem, ifp);
+		if (read < middle_size) {
+			return WUERR_HERE(wu_unexpected_eof);
+		}
+		*str = (struct pcf_string) {
+			/* StringLen field has the wrong endianness sometimes,
+			 * so deduct from struct size as it's more reliable. */
+			.len = (uint32_t)(read - middle_size),
+			.str = *buf + middle_size,
+		};
+		return WU_OK;
+	}
+	return wuerr(wu_int_overflow, "u32 overflow on string struct size");
+}
+
+static struct wu_st parse_glyph_names(struct pcf_desc *desc, struct pcf_toc *t,
+const enum endianness e) {
+	/* Glyph names struct (after format):
+		Offset  Type    Name
+		4       i32     GlyphCount
+		8       i32     Offsets[GlyphCount]
+		+0      i32     StringLen
+		+4      char    String[StringLen]
+	*/
+	struct pcf_names *names = &desc->names;
+	uint8_t *buf = NULL;
+	const struct wu_st st = load_string_struct(t, e, desc->ifp,
+		&names->glyphs, &names->endian, &buf, &names->str,
+		sizeof(*names->offsets));
+	names->offsets = (uint32_t *)buf;
+	return st;
+}
+
 
 static struct wu_st parse_properties(struct pcf_desc *desc, struct pcf_toc *t,
 const enum endianness e) {
 	/* Properties struct (after format):
 		Offset  Type    Name
-		0       i32     NProps
-		4       struct  Props[NProps]
+		4       i32     NProps
+		8       struct  Props[NProps]
 		...
 		var     u8      Padding       // To next 32-bit word.
 		+0      i32     StringLen
@@ -333,19 +332,11 @@ const enum endianness e) {
 		9
 	*/
 	struct pcf_prop *prop = &desc->prop;
-	uint32_t rem = 0;
-	const struct wu_st st = load_head_count(t, e, desc->ifp, &prop->len,
-		&prop->endian, &rem);
-	if (!wu_isok(st)) {
-		return st;
-	}
-	uint8_t *buf = small_malloc(rem, 1);
-	if (!buf) {
-		return WUERR_HERE(wu_alloc_error);
-	}
+	uint8_t *buf = NULL;
+	const struct wu_st st = load_string_struct(t, e, desc->ifp,
+		&prop->len, &prop->endian, &buf, &prop->str, COMPACT_PROP);
 	prop->buf = buf;
-	const size_t prop_size = COMPACT_PROP * prop->len;
-	return load_tail_string(&prop->str, buf, prop_size, rem, desc->ifp);
+	return st;
 }
 
 struct wu_st pcf_parse(struct pcf_desc *desc, FILE *ifp) {
@@ -405,6 +396,9 @@ struct wu_st pcf_parse(struct pcf_desc *desc, FILE *ifp) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
+	/* Glyphs is repeated a lot of times throughout the file. Rather than
+	 * check every instance, just call u32min() on each read. It's on the
+	 * encoder to keep things consistent. */
 	desc->glyphs = ~(uint32_t)0;
 	for (uint32_t i = 0; i < desc->toc_len; ++i) {
 		struct pcf_toc *t = toc + i;
@@ -461,5 +455,5 @@ struct wu_st pcf_parse(struct pcf_desc *desc, FILE *ifp) {
 	if ((desc->seen & required) == required) {
 		return desc->glyphs ? WU_OK : WUERR_HERE(wu_no_image_data);
 	}
-	return wuerr(wu_invalid_header, "file lacks requires structures");
+	return wuerr(wu_invalid_header, "file lacks required structures");
 }
