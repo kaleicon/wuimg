@@ -108,9 +108,9 @@ uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
 	if (data) {
 		size_t e = 0;
 		size_t d = 0;
-		for (;;) {
+		while (data_len - d >= size) {
 			if (copy) {
-				if (d + size > data_len || e + size > ext_len) {
+				if (ext_len - e < size) {
 					break;
 				}
 				memcpy(data + d, ext + e, size);
@@ -123,6 +123,7 @@ uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
 			}
 			size = bitstrm_lsb_gamma_one(&bs);
 		}
+		memset(data + d, 0, data_len - d);
 	}
 	return data;
 }
@@ -155,14 +156,19 @@ struct wu_st hg3_decode(const struct hg3_desc *desc, struct wuimg *img) {
 	size_t ctrl_comp = buf_endian32l(tag + 32);
 	size_t ctrl_orig = buf_endian32l(tag + 36);
 
+	const size_t uncomp_size = extent_orig + ctrl_orig;
+	if (uncomp_size < extent_orig) { // for 32-bit systems
+		return wuerr(wu_int_overflow, "uncompressed extent and control "
+			"section sizes exceed size_t range");
+	}
+
 	const struct wuptr zext = mp_avail(&mp, extent_comp);
 	const struct wuptr zctrl = mp_avail(&mp, ctrl_comp);
 	if (!zctrl.len) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 
-	size_t uncomp_size = extent_orig + ctrl_orig;
-	uint8_t *buf = malloc((size_t)uncomp_size);
+	uint8_t *buf = malloc(uncomp_size);
 	if (!buf) {
 		return WUERR_HERE(wu_alloc_error);
 	}
