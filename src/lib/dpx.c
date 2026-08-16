@@ -166,7 +166,8 @@ struct elem_info *n) {
 }
 
 static void unpack10(uint16_t *dst, const uint32_t w, const size_t len,
-const uint8_t shr, const uint16_t mask) {
+const uint8_t shr) {
+	const uint16_t mask = (1 << 10) - 1;
 	for (uint8_t z = 0; z < len; ++z) {
 		dst[z] = (uint16_t)(mask & (w >> (20 - 10*z + shr)));
 	}
@@ -177,42 +178,41 @@ const struct dpx_element *elem) {
 	const size_t items = (img->w * img->channels);
 	const size_t whole = items / 3;
 	const size_t remain = items % 3;
+	const size_t dwords = whole + (bool)remain;
 
-	const size_t len = (whole + (bool)remain) * 4;
-	uint32_t *buf = malloc(len);
-	if (!buf) {
-		return WUERR_HERE(wu_alloc_error);
-	}
+	const size_t stride = wuimg_stride(img);
 
 	/* Three 10-bit components are grouped in 30-bits of a 32-bit word.
 	 * Earlier components appear in lower bits.
 	 * Method A: Group stored in the 30 most-significant bits
 	 * Method B: Group stored in the 30 least-significant bits
 	*/
-	const uint16_t mask = (1 << 10) - 1;
 	const uint8_t shr = (elem->pack == dpx_pack_a) ? 2 : 0;
-	uint16_t *dst = (uint16_t *)img->data;
-	size_t w = 0;
+	size_t r = 0;
 	for (size_t y = 0; y < img->h; ++y) {
-		const size_t read = fread(buf, 1, len, desc->ifp);
-		w += read;
-		for (size_t x = 0; x < whole; ++x) {
-			unpack10(dst, endian32(buf[x], desc->endian), 3, shr,
-				mask);
-			dst += 3;
-		}
+		/* Use current row as buffer for packed data.
+		 * Image rows are aligned to 32-bit, so this cast is always
+		 * safe and packed data will always fit. The only catch is
+		 * that unpacking must be done backwards to avoid overwriting
+		 * the input before it's read. */
+		uint16_t *dst = (uint16_t *)(img->data + stride*y);
+		uint32_t *buf = (uint32_t *)dst;
+		const size_t read = fread(buf, sizeof(*buf), dwords, desc->ifp);
+		r += read;
 		if (remain) {
-			unpack10(dst, endian32(buf[whole], desc->endian),
-				remain, shr, mask);
-			dst += remain;
+			unpack10(dst + whole*3, endian32(buf[whole], desc->endian),
+				remain, shr);
 		}
-		if (read < len) {
+		for (size_t x = whole; x; --x) {
+			unpack10(dst + (x-1)*3, endian32(buf[x-1], desc->endian),
+				3, shr);
+		}
+		if (read < dwords) {
 			break;
 		}
 		fseek(desc->ifp, elem->line_pad, SEEK_CUR);
 	}
-	free(buf);
-	return wuerr_partial(w, len*img->h);
+	return wuerr_partial(r, dwords*img->h);
 }
 
 static void process16(const struct dpx_desc *desc, uint16_t *data,
@@ -295,7 +295,7 @@ const uint8_t i) {
 	img->bitrange = image->bitdepth;
 	// Image rows are always padded to 32-bit boundaries
 	// (plus `elem->line_pad` on top)
-	wuimg_align(img, 4);
+	wuimg_align(img, sizeof(uint32_t));
 	switch (img->bitdepth) {
 	case 10:
 	case 12:
@@ -336,7 +336,7 @@ static time_t read_date(FILE *in) {
 		break;
 	case 6:
 		;const size_t tz_pos = 24 - 5;
-		const char utc[5] = "Z";
+		const char utc[5] = {'Z', 0, 0, 0, 0};
 		if (memcmp(buf + tz_pos, utc, sizeof(utc))) {
 			return 0;
 		}
