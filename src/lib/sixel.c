@@ -353,23 +353,28 @@ struct wuimg *img) {
 }
 
 static struct wu_st sixel_get_raster_attr(struct mparser *tp,
-unsigned int *raster, const size_t len) {
+unsigned int *raster, const size_t len, size_t *parsed) {
 	/* Format: '"' Pan ; Pad ; Ph ; Pv
 	 * Pan (aspect numerator) is the vertical aspect ratio. Required.
 	 * Pad (aspect denominator) is the horizontal aspect ratio. Required.
 	 * Ph is the horizontal image size in pixels. Optional.
 	 * Pv in the vertical size. Optional. */
-	for (size_t i = 0; i < len; ++i) {
+	*parsed = 0;
+	while (*parsed < len) {
 		uintmax_t val;
 		mp_scan_uint(tp, 5, &val);
-		raster[i] = (unsigned)val;
+		raster[*parsed] = (unsigned)val;
+		++*parsed;
 		const int c = mp_next_char(tp);
 		switch (c) {
 		case ';': break;
 		case EOF: return WUERR_HERE(wu_unexpected_eof);
 		default:
 			--tp->pos;
-			return WU_OK;
+			return *parsed >= 2
+				? WU_OK
+				: wuerr(wu_invalid_header, "not enough fields"
+					" in raster attribute string");
 		}
 	}
 	return wuerr(wu_invalid_header, "too many attributes");
@@ -448,8 +453,10 @@ struct wuimg *img) {
 
 	const int c = mp_next_nonspace(tp);
 	if (c == raster_attributes) {
+		size_t parsed;
 		unsigned raster[4];
-		status = sixel_get_raster_attr(tp, raster, ARRAY_LEN(raster));
+		status = sixel_get_raster_attr(tp, raster, ARRAY_LEN(raster),
+			&parsed);
 		if (!wu_isok(status)) {
 			return status;
 		} else if (!raster[0] || !raster[1]) {
@@ -458,8 +465,10 @@ struct wuimg *img) {
 		}
 		pan = raster[0];
 		pad = raster[1];
-		img->w = raster[2];
-		img->h = raster[3];
+		if (parsed == ARRAY_LEN(raster)) {
+			img->w = raster[2];
+			img->h = raster[3];
+		}
 	} else if (c == EOF) {
 		return WUERR_HERE(wu_unexpected_eof);
 	} else {
