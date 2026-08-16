@@ -9,25 +9,32 @@ static void get_c64_meta(const struct c64_desc *desc, struct wutree *tree) {
 	tree_bud_leaf_bool(tree, "FLI", desc->info.fli);
 }
 
-static struct wu_st dec_c64(struct image_file *infile) {
-	struct c64_desc desc;
-	struct wu_st st = c64_guess(&desc, infile->map, infile->ext);
-	if (wu_isok(st)) {
-		st = c64_set(&desc, infile->sub_img);
+static struct wu_st event_c64(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		;struct wu_st st = c64_set(infile->dec_state, infile->sub_img);
 		if (wu_isok(st)) {
-			if (wuimg_exceeds_limit(infile->sub_img, infile->conf)) {
-				st = WUERR_HERE(wu_exceeds_size_limit);
-			} else {
-				get_c64_meta(&desc, &infile->metadata);
-				st = c64_decode(&desc, infile->sub_img);
-			}
+			get_c64_meta(infile->dec_state, &infile->metadata);
 		}
+		return st;
+	case ev_subcycle:
+		return c64_decode(infile->dec_state, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_c64(struct image_file *infile) {
+	return c64_guess(infile->dec_state, infile->map, infile->ext);
 }
 
 const struct image_fn c64_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = dec_c64,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct c64_desc),
+	.init = init_c64,
+	.event = event_c64,
 };

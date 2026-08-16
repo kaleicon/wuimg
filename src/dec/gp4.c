@@ -3,25 +3,31 @@
 #include "wudefs.h"
 #include "lib/gp4.h"
 
-static struct wu_st init_gp4(struct image_file *infile) {
-	struct gp4_desc desc;
-	struct wuimg *img = infile->sub_img;
-	struct wu_st st = gp4_parse(&desc, infile->map, img);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(img, infile->conf);
-		if (e == wu_ok) {
-			tree_bud_leaf_u(&infile->metadata, "X", desc.x);
-			tree_bud_leaf_u(&infile->metadata, "Y", desc.y);
-			st = gp4_decode(&desc, img);
-		} else {
-			st = WUERR_HERE(e);
-		}
+static struct wu_st event_gp4(struct image_file *infile, struct wu_state *state,
+const enum image_event ev) {
+	(void)state;
+	struct gp4_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_bud_leaf_u(&infile->metadata, "X", desc->x);
+		tree_bud_leaf_u(&infile->metadata, "Y", desc->y);
+		return WU_OK;
+	case ev_subcycle:
+		return gp4_decode(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_gp4(struct image_file *infile) {
+	return gp4_parse(infile->dec_state, infile->map, infile->sub_img);
 }
 
 const struct image_fn gp4_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = init_gp4
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct gp4_desc),
+	.init = init_gp4,
+	.event = event_gp4,
 };

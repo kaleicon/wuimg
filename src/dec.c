@@ -143,6 +143,9 @@ enum image_event event) {
 			&& !img->borrowed) {
 				e = wuimg_alloc_limit(img, image->file.conf);
 				if (e != wu_ok) {
+					image_file_strerror_append(&image->file,
+						"refusing to allocate image in"
+						" wudec_callback()");
 					return e;
 				}
 			}

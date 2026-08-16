@@ -53,8 +53,7 @@ struct wu_st hel_identify(const struct wuptr map, struct wuimg *img, unsigned fp
 			img->h = 120;
 			img->channels = 1;
 			img->bitdepth = 1;
-			const uint32_t nr = buf_endian32(map.ptr + sizeof(sig),
-				little_endian);
+			const uint32_t nr = buf_endian32l(map.ptr + sizeof(sig));
 			const unsigned den = fps ? fps : 10;
 			if (!wuimg_anim_init(img, nr, 1, (uint32_t)den)) {
 				return WUERR_HERE(wu_alloc_error);
@@ -64,7 +63,7 @@ struct wu_st hel_identify(const struct wuptr map, struct wuimg *img, unsigned fp
 			}
 			return WU_OK;
 		}
-		return WUERR_HERE(wu_invalid_signature);;
+		return WUERR_HERE(wu_invalid_signature);
 	}
 	return WUERR_HERE(wu_unexpected_eof);
 }

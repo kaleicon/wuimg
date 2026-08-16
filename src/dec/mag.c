@@ -17,24 +17,35 @@ static void get_mag_metadata(const struct mag_desc *desc, struct wutree *tree) {
 	tree_add_leaf_len(tree, "Dummy", desc->dummy, NULL);
 }
 
-static struct wu_st init_mag(struct image_file *infile) {
-	struct mag_desc desc;
-	struct wu_st st = mag_parse(&desc, infile->sub_img, infile->map);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
-		if (e == wu_ok) {
-			get_mag_metadata(&desc, &infile->metadata);
-			mag_decode(&desc, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
-		}
-		mag_cleanup(&desc);
+static void end_mag(struct image_file *infile) {
+	mag_cleanup(infile->dec_state);
+}
+
+static struct wu_st event_mag(struct image_file *infile, struct wu_state *state,
+const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		get_mag_metadata(infile->dec_state, &infile->metadata);
+		return WU_OK;
+	case ev_subcycle:
+		mag_decode(infile->dec_state, infile->sub_img);
+		return WU_OK;
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_mag(struct image_file *infile) {
+	return mag_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn mag_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct mag_desc),
 	.init = init_mag,
+	.event = event_mag,
+	.end = end_mag,
 };

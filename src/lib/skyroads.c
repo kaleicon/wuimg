@@ -23,8 +23,6 @@ struct wu_st skyroads_decode(struct mparser mp, struct wuimg *img) {
 	// Limit to the amount of bits we can read in a single call
 	if (cbits + sbits > 23 || cbits + lbits > 23) {
 		return wuerr(wu_unsupported_feature, "too many compression bits");
-	} else if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
 	}
 
 	const uint32_t cntmask = bit_set32(cbits);
@@ -105,12 +103,11 @@ struct wuptr map) {
 	if (wu_isok(st)) {
 		hdr += elems*5;
 		const uint8_t pict[] = {'P', 'I', 'C', 'T'};
-		if (!memcmp(hdr, pict, sizeof(pict))) {
-			img->w = buf_endian16(hdr + 8, little_endian);
-			img->h = buf_endian16(hdr + 6, little_endian);
-			return wuimg_verify_st(img);
+		if (memcmp(hdr, pict, sizeof(pict))) {
+			return WUERR_HERE(wu_invalid_header);
 		}
-		return WUERR_HERE(wu_invalid_header);
+		img->w = buf_endian16l(hdr + 8);
+		img->h = buf_endian16l(hdr + 6);
 	}
 	return st;
 }

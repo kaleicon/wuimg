@@ -22,18 +22,18 @@ static struct wu_st init_g3(struct image_file *infile) {
 }
 
 /* ZyXEL fax */
-static struct wu_st init_zyxel(struct image_file *infile) {
-	struct wuptr data;
-	struct wu_st st = zyxel_parse(infile->sub_img, infile->map, &data);
-	if (wu_isok(st)) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
-		if (e == wu_ok) {
-			st = zyxel_decode(infile->sub_img, data);
-		} else {
-			st = WUERR_HERE(e);
-		}
+static struct wu_st event_zyxel(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	struct wuptr *data = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		return zyxel_parse(infile->sub_img, infile->map, data);
+	case ev_subcycle:
+		return zyxel_decode(infile->sub_img, *data);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
 }
 
 
@@ -53,9 +53,7 @@ struct wu_state *state, const enum image_event ev) {
 static struct wu_st init_qfx(struct image_file *infile) {
 	struct qfx_desc *desc = infile->dec_state;
 	struct wu_st st = qfx_parse(desc, infile->map);
-	if (wu_isok(st)) {
-		infile->nr = desc->nr_pages;
-	}
+	infile->nr = desc->nr_pages;
 	return st;
 }
 
@@ -81,20 +79,23 @@ struct wutree *tree) {
 	}
 }
 
-static struct wu_st init_faxx(struct image_file *infile) {
-	struct faxx_desc desc;
-	struct wu_st st = faxx_init(&desc, infile->map);
-	if (wu_isok(st)) {
-		faxx_set_image(&desc, infile->sub_img);
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img, infile->conf);
-		if (e == wu_ok) {
-			read_faxx_metadata(&desc, &infile->metadata);
-			st = faxx_decode(&desc, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
-		}
+static struct wu_st event_faxx(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		faxx_set_image(infile->dec_state, infile->sub_img);
+		read_faxx_metadata(infile->dec_state, &infile->metadata);
+		return WU_OK;
+	case ev_subcycle:
+		return faxx_decode(infile->dec_state, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_faxx(struct image_file *infile) {
+	return faxx_init(infile->dec_state, infile->map);
 }
 
 
@@ -152,7 +153,9 @@ const struct image_fn g3_fn = {
 const struct image_fn zyxel_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = init_zyxel,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct wuptr),
+	.event = event_zyxel,
 };
 const struct image_fn qfx_fn = {
 	.mmap = true,
@@ -164,7 +167,10 @@ const struct image_fn qfx_fn = {
 const struct image_fn faxx_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct faxx_desc),
 	.init = init_faxx,
+	.event = event_faxx,
 };
 const struct image_fn apf_fn = {
 	.mmap = true,

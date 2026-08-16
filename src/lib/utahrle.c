@@ -64,7 +64,7 @@ const struct wuptr src) {
 			if (src.len - s < 2) {
 				break;
 			}
-			arg = buf_endian16(src.ptr + s, little_endian);
+			arg = buf_endian16l(src.ptr + s);
 			s += 2;
 		}
 		switch (op & 0x3f) {
@@ -125,9 +125,6 @@ const struct wuptr src) {
 }
 
 struct wu_st utah_decode(struct utah_desc *desc, struct wuimg *img) {
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
 	const struct wuptr src = mp_avail(&desc->mp, wuimg_size(img)*2);
 	return wuerr_partial(decode_rle(desc, img, src), src.len);
 }
@@ -205,8 +202,8 @@ const struct wuptr map) {
 		return WUERR_HERE(wu_invalid_signature);
 	}
 
-	desc->x = (int16_t)buf_endian16(hdr + 2, little_endian);
-	desc->y = (int16_t)buf_endian16(hdr + 4, little_endian);
+	desc->x = (int16_t)buf_endian16l(hdr + 2);
+	desc->y = (int16_t)buf_endian16l(hdr + 4);
 	desc->clear = hdr[10] & 0x1;
 	desc->alpha = hdr[10] & 0x4;
 	const bool comments = hdr[10] & 0x8;
@@ -218,8 +215,8 @@ const struct wuptr map) {
 	img->bitdepth = hdr[12];
 	img->mirror = true;
 
-	const int16_t w = (int16_t)buf_endian16(hdr + 6, little_endian);
-	const int16_t h = (int16_t)buf_endian16(hdr + 8, little_endian);
+	const int16_t w = (int16_t)buf_endian16l(hdr + 6);
+	const int16_t h = (int16_t)buf_endian16l(hdr + 8);
 	const char *err = NULL;
 	if (w < 1 || h < 1) {
 		err = "negative dimensions";
@@ -300,7 +297,7 @@ const struct wuptr map) {
 		if (!hdr) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
-		comm_len = buf_endian16(hdr, little_endian);
+		comm_len = buf_endian16l(hdr);
 		hdr = mp_slice(&desc->mp, comm_len + (comm_len & 1));
 		desc->comm = (struct wuptr) {
 			.len = comm_len,
@@ -310,10 +307,5 @@ const struct wuptr map) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
 	}
-
-	struct wu_st st = wuimg_verify_st(img);
-	if (wu_isok(st)) {
-		st.msg = err;
-	}
-	return st;
+	return wuerr(wu_ok, err);
 }

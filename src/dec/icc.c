@@ -5,6 +5,32 @@
 #include "misc/file.h"
 #include "wudefs.h"
 
+static const uint8_t ICC_CARD_BITS = 8;
+static const uint8_t ICC_CARD_BLUE_BITS = 4;
+
+static struct wu_st event_icc(struct image_file *infile, struct wu_state *state,
+const enum image_event ev) {
+	(void)state;
+	if (ev == ev_subcycle) {
+		struct wuimg *img = infile->sub_img;
+		const uint32_t mask = bit_set32(ICC_CARD_BITS);
+		for (size_t y = 0; y < img->h; ++y) {
+			for (size_t x = 0; x < img->w; ++x) {
+				size_t i = y*img->w + x;
+				img->data[i*4] = (uint8_t)(x & mask);
+				img->data[i*4+1] = (uint8_t)(y & mask);
+				img->data[i*4+2] = (uint8_t)(0x11u * (
+					y >> ICC_CARD_BITS << ICC_CARD_BLUE_BITS/2
+						| x >> ICC_CARD_BITS
+				));
+				img->data[i*4+3] = (uint8_t)mask;
+			}
+		}
+		return WU_OK;
+	}
+	return WU_NO_CHANGE;
+}
+
 static struct wu_st init_icc(struct image_file *infile) {
 	size_t size = file_remaining(infile->ifp);
 	uint8_t *cpy = malloc(size);
@@ -16,37 +42,20 @@ static struct wu_st init_icc(struct image_file *infile) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
 	struct wuimg *img = infile->sub_img;
-	const uint8_t bits = 8;
-	const uint8_t blue_bits = 4;
-	img->w = 1 << bits << blue_bits/2;
+	img->w = 1 << ICC_CARD_BITS << ICC_CARD_BLUE_BITS/2;
 	img->h = img->w;
 	img->channels = 4;
 	img->bitdepth = 8;
-	img->bitrange = bits;
+	img->bitrange = ICC_CARD_BITS;
 	img->layout = pix_rgba;
-	if (!color_space_set_icc_owned(&img->cs, cpy, size)) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-	enum wu_error e = wuimg_alloc_limit(img, infile->conf);
-	if (e != wu_ok) {
-		return WUERR_HERE(e);
-	}
-	const uint32_t mask = bit_set32(bits);
-	for (size_t y = 0; y < img->h; ++y) {
-		for (size_t x = 0; x < img->w; ++x) {
-			size_t i = y*img->w + x;
-			img->data[i*4] = (uint8_t)(x & mask);
-			img->data[i*4+1] = (uint8_t)(y & mask);
-			img->data[i*4+2] = (uint8_t)(
-				(y >> bits << blue_bits/2 | x >> bits)*0x11
-			);
-			img->data[i*4+3] = (uint8_t)mask;
-		}
-	}
-	return WU_OK;
+	return color_space_set_icc_owned(&img->cs, cpy, size)
+		? WU_OK
+		: WUERR_HERE(wu_alloc_error);
 }
 
 const struct image_fn icc_fn = {
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.init = init_icc,
+	.event = event_icc,
 };

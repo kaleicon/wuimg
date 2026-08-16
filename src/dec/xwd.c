@@ -35,13 +35,7 @@ struct wu_state *_s, const enum image_event ev) {
 	(void)_s;
 	struct wu_st st = WU_NO_CHANGE;
 	if (ev == ev_subcycle) {
-		enum wu_error e = wuimg_alloc_limit(infile->sub_img,
-			infile->conf);
-		if (e == wu_ok) {
-			st = xwd_decode(infile->dec_state, infile->sub_img);
-		} else {
-			st = WUERR_HERE(e);
-		}
+		st = xwd_decode(infile->dec_state, infile->sub_img);
 	}
 	return st;
 }
@@ -60,6 +54,7 @@ static struct wu_st init_xwd(struct image_file *infile) {
 
 const struct image_fn xwd_fn = {
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.state_size = sizeof(struct xwd_desc),
 	.init = init_xwd,
 	.event = event_xwd,

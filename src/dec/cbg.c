@@ -3,24 +3,30 @@
 #include "wudefs.h"
 #include "lib/cbg.h"
 
-static struct wu_st init_cbg(struct image_file *infile) {
-	struct cbg_desc desc;
-	struct wu_st st = cbg_parse(&desc, infile->sub_img, infile->map);
-	if (wu_isok(st)) {
-		enum wu_error err = wuimg_alloc_limit(infile->sub_img, infile->conf);
-		if (err == wu_ok) {
-			tree_bud_leaf_u(&infile->metadata, "Version",
-				desc.version);
-			st = cbg_decode(&desc, infile->sub_img);
-		} else {
-			st = WUERR_HERE(err);
-		}
+static struct wu_st event_cbg(struct image_file *infile, struct wu_state *state,
+const enum image_event ev) {
+	(void)state;
+	struct cbg_desc *desc = infile->dec_state;
+	switch (ev) {
+	case ev_metadata:
+		tree_bud_leaf_u(&infile->metadata, "Version", desc->version);
+		return WU_OK;
+	case ev_subcycle:
+		return cbg_decode(desc, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_cbg(struct image_file *infile) {
+	return cbg_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn cbg_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct cbg_desc),
 	.init = init_cbg,
+	.event = event_cbg,
 };

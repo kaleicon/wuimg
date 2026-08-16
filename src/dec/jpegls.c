@@ -33,13 +33,19 @@ static int handle_jls_comment(const void *data, const size_t size, void *ptr) {
 
 static struct wu_st read_jls_data(struct image_file *infile,
 charls_jpegls_decoder *dec, charls_jpegls_errc *err) {
-	int32_t found;
-	charls_spiff_header spiff;
-	*err = charls_jpegls_decoder_read_spiff_header(dec, &spiff, &found);
+	*err = charls_jpegls_decoder_set_source_buffer(dec,
+		infile->map.ptr, infile->map.len);
 	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
 		return WUERR_HERE(wu_invalid_header);
 	}
-	if (found) {
+
+	int32_t has_spiff;
+	charls_spiff_header spiff;
+	*err = charls_jpegls_decoder_read_spiff_header(dec, &spiff, &has_spiff);
+	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
+		return WUERR_HERE(wu_invalid_header);
+	}
+	if (has_spiff) {
 		tree_bud_leaf_d(&infile->metadata, "Colorspace", spiff.color_space);
 		tree_add_leaf_utf8(&infile->metadata, "Compression",
 			compression_str(spiff.compression_type));
@@ -82,51 +88,65 @@ charls_jpegls_decoder *dec, charls_jpegls_errc *err) {
 	if (mode == CHARLS_INTERLEAVE_MODE_NONE) {
 		wuimg_plane_init(img);
 	}
-
-	const enum wu_error st = wuimg_alloc_limit(img, infile->conf);
-	if (st != wu_ok) {
-		return WUERR_HERE(st);
-	}
-
-	const size_t size = wuimg_size(img);
-	*err = charls_jpegls_decoder_decode_to_buffer(dec, img->data, size, 0);
-	if (*err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-		return WUERR_HERE(wu_decoding_error);
-	}
-
-	int32_t near;
-	if (charls_jpegls_decoder_get_near_lossless(dec, 0, &near)
-	== CHARLS_JPEGLS_ERRC_SUCCESS) {
-		tree_bud_leaf_d(&infile->metadata, "NEAR", near);
-	}
 	return WU_OK;
 }
 
-static struct wu_st init_jpegls(struct image_file *infile) {
-	struct wu_st st = WUERR_HERE(wu_alloc_error);
-	charls_jpegls_decoder *dec = charls_jpegls_decoder_create();
-	if (dec) {
-		// Result can't be ignored here
-		charls_jpegls_errc err = charls_jpegls_decoder_at_comment(dec,
-			handle_jls_comment, &infile->metadata);
+static void end_jpegls(struct image_file *infile) {
+	charls_jpegls_decoder_destroy(infile->dec_state);
+}
 
-		err = charls_jpegls_decoder_set_source_buffer(dec,
-			infile->map.ptr, infile->map.len);
+static struct wu_st event_jpegls(struct image_file *infile,
+struct wu_state *state, const enum image_event ev) {
+	(void)state;
+	charls_jpegls_errc err;
+	charls_jpegls_decoder *dec = infile->dec_state;
+	struct wu_st st = WU_NO_CHANGE;
+	switch (ev) {
+	case ev_metadata:
+		st = read_jls_data(infile, dec, &err);
+		break;
+	case ev_subcycle:
+		err = charls_jpegls_decoder_decode_to_buffer(dec,
+			infile->sub_img->data, wuimg_size(infile->sub_img), 0);
 		if (err == CHARLS_JPEGLS_ERRC_SUCCESS) {
-			st = read_jls_data(infile, dec, &err);
-		}
+			st = WU_OK;
 
-		if (err != CHARLS_JPEGLS_ERRC_SUCCESS) {
-			image_file_strerror_append(infile,
-				charls_get_error_message(err));
+			int32_t near;
+			if (charls_jpegls_decoder_get_near_lossless(dec, 0, &near)
+			== CHARLS_JPEGLS_ERRC_SUCCESS) {
+				tree_bud_leaf_d(&infile->metadata, "NEAR", near);
+			}
+		} else {
+			st = WUERR_HERE(wu_decoding_error);
 		}
-		charls_jpegls_decoder_destroy(dec);
+		break;
+	default: return st;
+	}
+	if (err != CHARLS_JPEGLS_ERRC_SUCCESS) {
+		image_file_strerror_append(infile,
+			charls_get_error_message(err));
 	}
 	return st;
+}
+
+static struct wu_st init_jpegls(struct image_file *infile) {
+	charls_jpegls_decoder *dec = charls_jpegls_decoder_create();
+	if (dec) {
+		infile->dec_state = dec;
+		charls_jpegls_errc err = charls_jpegls_decoder_at_comment(dec,
+			handle_jls_comment, &infile->metadata);
+		// Silence compiler complaints about unused result
+		(void)err;
+		return WU_OK;
+	}
+	return WUERR_HERE(wu_alloc_error);
 }
 
 const struct image_fn jpegls_fn = {
 	.mmap = true,
 	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.init = init_jpegls,
+	.event = event_jpegls,
+	.end = end_jpegls,
 };

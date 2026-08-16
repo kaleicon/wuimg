@@ -19,22 +19,29 @@ static void get_c_metadata(struct wutree *tree, const struct c_desc *desc) {
 	}
 }
 
-static struct wu_st dec_c(struct image_file *infile) {
-	struct c_desc desc;
-	struct wuimg *img = infile->sub_img;
-	struct wu_st st = c_parse(&desc, img, infile->map);
-	if (wu_isok(st)) {
-		st = WUERR_CHECK(wuimg_alloc_limit(img, infile->conf));
-		if (wu_isok(st)) {
-			get_c_metadata(&infile->metadata, &desc);
-			st = c_decode(&desc, img);
-		}
+static struct wu_st event_c(struct image_file *infile, struct wu_state *state,
+const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		get_c_metadata(&infile->metadata, infile->dec_state);
+		return WU_OK;
+	case ev_subcycle:
+		return c_decode(infile->dec_state, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_c(struct image_file *infile) {
+	return c_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn c_fn = {
 	.mmap = true,
 	.alloc_single = true,
-	.init = dec_c,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct c_desc),
+	.init = init_c,
+	.event = event_c,
 };

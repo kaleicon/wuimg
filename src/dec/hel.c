@@ -5,39 +5,33 @@
 
 static struct wu_st event_hel(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
-	if (ev == ev_frame) {
-		struct wuimg *img = infile->sub_img;
-		int i = img->anim->cur;
+	struct wuimg *img = infile->sub_img;
+	switch (ev) {
+	case ev_metadata:
+		return hel_identify(infile->map, infile->sub_img, 0);
+	case ev_subcycle:
+		return hel_render_frame(infile->map, img, 0);
+	case ev_frame:
+		;int i = img->anim->cur;
 		i = i <= state->frame ? i : -1;
+		struct wu_st st = WU_OK;
 		while (i < state->frame) {
 			++i;
-			struct wu_st st = hel_render_frame(infile->map, img,
-				(uint32_t)i);
+			st = hel_render_frame(infile->map, img, (uint32_t)i);
 			if (!wu_isok(st)) {
-				return st;
+				break;
 			}
 		}
 		img->anim->cur = i;
-		return WU_OK;
+		return st;
+	default: break;
 	}
 	return WU_NO_CHANGE;
 }
 
-static struct wu_st init_hel(struct image_file *infile) {
-	struct wuimg *img = infile->sub_img;
-	struct wu_st st = hel_identify(infile->map, img, 0);
-	if (wu_isok(st)) {
-		st = WUERR_CHECK(wuimg_alloc_limit(img, infile->conf));
-		if (wu_isok(st)) {
-			st = hel_render_frame(infile->map, img, 0);
-		}
-	}
-	return st;
-}
-
 const struct image_fn hel_fn = {
-	.alloc_single = true,
 	.mmap = true,
-	.init = init_hel,
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
 	.event = event_hel,
 };

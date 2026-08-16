@@ -36,23 +36,29 @@ struct image_file *infile) {
 	}
 }
 
-static struct wu_st init_utah(struct image_file *infile) {
-	struct utah_desc desc;
-	struct wuimg *img = infile->sub_img;
-	struct wu_st st = utah_parse(&desc, img, infile->map);
-	if (wu_isok(st)) {
-		if (wuimg_exceeds_limit(img, infile->conf)) {
-			st = WUERR_HERE(wu_exceeds_size_limit);
-		} else {
-			get_utah_metadata(&desc, infile);
-			st = utah_decode(&desc, img);
-		}
+static struct wu_st event_utah(struct image_file *infile, struct wu_state *state,
+const enum image_event ev) {
+	(void)state;
+	switch (ev) {
+	case ev_metadata:
+		get_utah_metadata(infile->dec_state, infile);
+		return WU_OK;
+	case ev_subcycle:
+		return utah_decode(infile->dec_state, infile->sub_img);
+	default: break;
 	}
-	return st;
+	return WU_NO_CHANGE;
+}
+
+static struct wu_st init_utah(struct image_file *infile) {
+	return utah_parse(infile->dec_state, infile->sub_img, infile->map);
 }
 
 const struct image_fn utahrle_fn = {
-	.alloc_single = true,
 	.mmap = true,
+	.alloc_single = true,
+	.alloc_on_subcycle = true,
+	.state_size = sizeof(struct utah_desc),
 	.init = init_utah,
+	.event = event_utah,
 };

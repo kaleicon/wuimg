@@ -129,7 +129,7 @@ const bool fli, const bool crippled) {
 					out |= n << (x*4);
 				}
 				const size_t d = (tile_y*8 + y)*C64_TW + tile_x;
-				dst[d] = endian16((uint16_t)out, big_endian);
+				dst[d] = endian16b((uint16_t)out);
 			}
 		}
 	}
@@ -151,7 +151,7 @@ const bool fli) {
 					out |= n << (x*4);
 				}
 				const size_t d = (tile_y*8 + y)*C64_TW + tile_x;
-				dst[d] = endian32(out, big_endian);
+				dst[d] = endian32b(out);
 			}
 		}
 	}
@@ -234,42 +234,39 @@ static unsigned ggjj_needed(const enum c64_fmt fmt) {
 }
 
 struct wu_st c64_decode(const struct c64_desc *desc, struct wuimg *img) {
-	if (wuimg_alloc_noverify(img)) {
-		struct mparser mp = desc->mp;
-		struct c64_mem_offsets off = {0};
-		uint8_t *uncomp = NULL;
-		struct wu_st st = WU_OK;
-		if (desc->compressed) {
-			const unsigned upack_len = ggjj_needed(desc->fmt);
-			uncomp = malloc(upack_len);
-			if (uncomp) {
-				if (!ggjj_decode(uncomp, upack_len, &mp)) {
-					st = wuerr(wu_decoding_error,
-						"truncated rle stream");
-				}
-			} else {
-				return WUERR_HERE(wu_alloc_error);
+	struct mparser mp = desc->mp;
+	struct c64_mem_offsets off = {0};
+	uint8_t *uncomp = NULL;
+	struct wu_st st = WU_OK;
+	if (desc->compressed) {
+		const unsigned upack_len = ggjj_needed(desc->fmt);
+		uncomp = malloc(upack_len);
+		if (uncomp) {
+			if (!ggjj_decode(uncomp, upack_len, &mp)) {
+				st = wuerr(wu_decoding_error,
+					"truncated rle stream");
 			}
+		} else {
+			return WUERR_HERE(wu_alloc_error);
 		}
-
-		if (wu_isok(st)) {
-			if (get_offsets(&mp, &off, &desc->info)) {
-				void *dst = img->data;
-				if (desc->info.mode == c64_hires) {
-					hires_expand(dst, &off, desc->info.fli);
-				} else {
-					multicolor_expand(dst, &off,
-						desc->info.fli,
-						desc->info.crippled);
-				}
-			} else {
-				st = WUERR_HERE(wu_unexpected_eof);
-			}
-		}
-		free(uncomp);
-		return st;
 	}
-	return WUERR_HERE(wu_alloc_error);
+
+	if (wu_isok(st)) {
+		if (get_offsets(&mp, &off, &desc->info)) {
+			void *dst = img->data;
+			if (desc->info.mode == c64_hires) {
+				hires_expand(dst, &off, desc->info.fli);
+			} else {
+				multicolor_expand(dst, &off,
+					desc->info.fli,
+					desc->info.crippled);
+			}
+		} else {
+			st = WUERR_HERE(wu_unexpected_eof);
+		}
+	}
+	free(uncomp);
+	return st;
 }
 
 inline static struct pix_rgb8 gen_e(const uint8_t level, const uint8_t angle) {
@@ -331,7 +328,7 @@ struct wu_st c64_set(const struct c64_desc *desc, struct wuimg *img) {
 			gen_e(20, 0),
 		};
 		palette_from_rgb8(pal, c64_pal, ARRAY_LEN(c64_pal));
-		return wuimg_verify_st(img);
+		return WU_OK;
 	}
 	return WUERR_HERE(wu_alloc_error);
 }
