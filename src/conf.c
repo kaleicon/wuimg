@@ -14,7 +14,7 @@
 #include "misc/mparser.h"
 #include "misc/term.h"
 
-static const unsigned DEFAULT_MAX = -(unsigned)1;
+static const unsigned DEFAULT_MAX = ~0u;
 
 struct enum_str {
 	const char str[11];

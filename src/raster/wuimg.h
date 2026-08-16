@@ -135,20 +135,33 @@ void wuimg_aspect_ratio(struct wuimg *img, unsigned h_size, unsigned v_size);
 
 void wuimg_exif_orientation(struct wuimg *img, int orientation);
 
+/* Checks that image parameters make sense, that width and height are > 0,
+ * and that sizes don't overflow.
+ * Some fields are set to sensible defaults depending on others, so parameters
+ * shouldn't be modified afterwards. */
 enum wu_error wuimg_verify(struct wuimg *img);
 
 struct wu_st wuimg_verify_st(struct wuimg *img);
 
+/* Returns true if the image exceeds the limits set in wuconf. */
 bool wuimg_exceeds_limit(const struct wuimg *img, const struct wu_conf *wuconf);
 
+/* Size in bytes of a single row, padding included. Results undefined if the
+ * image is planar, or if wuimg_verify() wasn't called before. */
 size_t wuimg_stride(const struct wuimg *img);
 
+/* Size needed to hold the entire raster. Undefined if wuimg_verify() wasn't
+ * called. */
 size_t wuimg_size(const struct wuimg *img);
 
+/* Allocate assuming that wuimg_verify() has been called. Returns false if
+ * allocation failed. */
 bool wuimg_alloc_noverify(struct wuimg *img);
 
+/* Verify then allocate image. */
 enum wu_error wuimg_alloc(struct wuimg *img);
 
+/* Calls wuimg_exceeds_limt() then wuimg_alloc() */
 enum wu_error wuimg_alloc_limit(struct wuimg *img, const struct wu_conf *conf);
 
 

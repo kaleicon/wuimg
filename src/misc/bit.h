@@ -39,6 +39,10 @@ uint32_t bit_advn(const void *stream, size_t *pos, size_t n);
 
 
 struct bitstrm {
+	/* When we're near the end of the input stream, we copy trailing data
+	 * to this buffer and fill the rest with zeros.
+	 * This lets all functions read bits without needing to care about
+	 * truncated data. */
 	uint8_t end[15];
 	bool eof;
 	const uint8_t *buf;

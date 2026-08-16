@@ -160,7 +160,6 @@ uint32_t bitstrm_msb_gamma_zero(struct bitstrm *bs) {
 	const uint32_t bits = bitstrm_msb_peek_32(bs);
 	const uint32_t z = bit_clo32(bits);
 	bs->pos += z;
-	// Top bit will be 0
 	const uint32_t val = (1u << 31) | bitstrm_msb_peek_32(bs);
 	bitstrm_seek(bs, z+1);
 	return val >> (31 - z);

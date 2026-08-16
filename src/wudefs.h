@@ -8,8 +8,8 @@
 #define WU_SCALING_POW 6
 
 struct wu_state {
-	int idx;
-	int frame;
+	int idx; // current sub-image
+	int frame; // current frame
 
 	unsigned char rotate;
 	bool mirror;
@@ -25,10 +25,20 @@ struct wu_state {
 
 enum image_event {
 	ev_none = 0,
+
+	// Request current image dimensions and metadata to be set
 	ev_metadata = 1 << 0,
+
+	// Decode current image. Only if wuimg.data = NULL
 	ev_subcycle = 1 << 1,
+
+	// Render current frame. Only if wuimg.anim != NULL
 	ev_frame = 1 << 2,
+
+	// Redraw according to time displayed. Only if wuimg.evolving = true
 	ev_time = 1 << 3,
+
+	// Redraw with current transform. Only if wuimg.scalable = true
 	ev_transform = 1 << 4,
 };
 
@@ -61,12 +71,38 @@ typedef struct wu_st (*fmt_event_t)(struct image_file *infile,
 typedef void (*fmt_end_t)(struct image_file *infile);
 
 struct image_fn {
+	// Decoder wants the file in memory (in image_file.map)
 	bool mmap;
-	bool alloc_single; // pre-alloc a single image
-	bool alloc_on_subcycle; // alloc on subcycle callback
+
+	// Pre-alloc a single image (image_file.nr = 1) before calling .init
+	bool alloc_single;
+
+	/* Validate image params and alloc buffer after ev_metadata and
+	 * before ev_subcycle callbacks */
+	bool alloc_on_subcycle;
+
+	/* Alloc image_file.dec_state with this size before calling .init, free
+	 * after calling .end */
 	uint16_t state_size;
+
+	/* Decoder initialization:
+	 * - If NULL, .alloc_single must be true.
+	 * - If image_file.nr is set and image_file.sub_img is NULL, it'll be
+	 *   allocated before events are called.
+	 * - Sub-images may be decoded in one go if it's more convenient (for
+	 *   instance, if it's unknown how many there are). No subcycle events
+	 *   will be called then. */
 	fmt_init_t init;
+
+	/* Decoder events:
+	 * - If NULL, .init must have decoded all sub-images, and they must all
+	 *   be static.
+	 * - If .alloc_on_subcycle is false, it's up to the decoder to perform
+	 *   validation and allocation.
+	 * - Should return WU_NO_CHANGE for any unused event. */
 	fmt_event_t event;
+
+	// Decoder cleanup. Can be NULL.
 	fmt_end_t end;
 };
 
