@@ -964,9 +964,9 @@ static struct wu_st str_file_cmp(const struct wuptr arg, FILE *ifp) {
 static struct wu_st load_auto_pal(struct auto_state *state, struct wuimg *img,
 FILE *ifp, const struct load l) {
 	const size_t elems = l.array
-		? l.array
+		? (size_t)l.array
 		: state->pal_entries
-			? state->pal_entries : (1 << img->bitdepth);
+			? state->pal_entries : (1u << img->bitdepth);
 	if (elems <= 256) {
 		switch (l.size) {
 		case 3: case 4:

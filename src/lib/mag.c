@@ -292,7 +292,7 @@ const struct wuptr mem) {
 
 	struct mparser mp = mp_wuptr(mem);
 	*desc = (struct mag_desc){0};
-	const uint8_t magic[8] = "MAKI02  ";
+	const uint8_t magic[8] = {'M','A','K','I','0','2',' ',' '};
 	const uint8_t *buf = mp_slice(&mp,
 		sizeof(magic) + sizeof(desc->model));
 	if (!buf) {

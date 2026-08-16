@@ -113,7 +113,7 @@ const size_t w, const size_t h) {
 	img->alpha = alpha_ignore;
 	const bool h_flip = desc->img_desc & 0x10;
 	const bool v_flip = desc->img_desc & 0x20;
-	img->rotate ^= h_flip << 1;
+	img->rotate ^= (uint8_t)(h_flip << 1);
 	img->mirror = (h_flip ^ v_flip ^ 1);
 	switch (desc->depth) {
 	case 8:

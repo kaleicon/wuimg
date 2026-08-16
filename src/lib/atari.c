@@ -111,9 +111,9 @@ const uint16_t *pal, const bool is_gfa) {
 			};
 			for (unsigned bit = 0; bit < 16; ++bit) {
 				unsigned idx = 0;
-				for (uint8_t plane = 0; plane < 4; ++plane) {
-					idx |= (1u & (planes[plane] >> (15-bit)))
-						<< plane;
+				for (uint8_t plane = 0; plane < ARRAY_LEN(planes); ++plane) {
+					const unsigned p = planes[plane];
+					idx |= (1u & (p >> (15-bit))) << plane;
 				}
 				const unsigned idx2 = group*16 + bit;
 				idx = is_gfa
@@ -864,7 +864,7 @@ struct wu_st spu_decode(const struct spu_desc *desc, struct wuimg *img) {
 			const uint16_t p = endian16b(pal[i]);
 			uint16_t col = 0;
 			for (uint8_t ch = 0; ch < 3; ++ch) {
-				col |= enhanced_spu(p, ch) << (ch*5);
+				col |= (uint16_t)(enhanced_spu(p, ch) << (ch*5));
 			}
 			pal[i] = col;
 		}

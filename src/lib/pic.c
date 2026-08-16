@@ -196,7 +196,7 @@ const uint8_t ch, int x, int y, const int w, const int limit, uint8_t *mask) {
 			return;
 		}
 		memcpy(ptr + dst*ch, ptr + src*ch, ch);
-		mask[dst/8] |= 1 << (dst%8);
+		mask[dst/8] |= (uint8_t)(1 << (dst%8));
 	}
 }
 
@@ -228,7 +228,7 @@ uint8_t *mask, struct pic_cache *cache) {
 			break;
 		}
 		pic_read_img_color(dst + i*ch, desc, bs, cache, ch);
-		mask[i/8] |= 1 << (i%8);
+		mask[i/8] |= (uint8_t)(1 << (i%8));
 		if (bitstrm_msb_next(bs)) {
 			const int x = i % w;
 			const int y = i / w;

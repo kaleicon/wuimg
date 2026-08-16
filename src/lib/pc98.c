@@ -328,12 +328,12 @@ const uint8_t *restrict prev, const size_t dst_len, const size_t excess) {
 				&src_len, rs->end, sizeof(rs->end));
 		}
 
-		uint8_t iflags = src[s];
+		unsigned iflags = src[s];
 		++s;
 		for (size_t i = 0; i < 8; ++i, iflags <<= 1) {
 			const size_t pos = d + i*8;
 			if (iflags & 0x80) {
-				uint8_t kflags = src[s];
+				unsigned kflags = src[s];
 				++s;
 				for (size_t k = 0; k < 8; ++k, kflags <<= 1) {
 					if (kflags & 0x80) {

@@ -82,9 +82,9 @@ const uint8_t depth, const bool is_yae) {
 
 static bool search_msx_pal(struct palette *pal, const uint8_t *grb,
 const uint8_t depth, const bool is_yae) {
-	unsigned short acc = 0;
+	unsigned acc = 0;
 	for (int i = 0; i < (1 << depth); ++i) {
-		acc |= grb[i*2 + 1] << 8 | grb[i*2];
+		acc |= (unsigned)(grb[i*2 + 1] << 8 | grb[i*2]);
 	}
 	if (acc && !(acc & 0xf888)) {
 		set_msx_pal(pal, grb, depth, is_yae);

@@ -48,7 +48,7 @@ struct wu_st fnhd_next_glyph(struct fnhd_desc *desc, struct wuimg *img) {
 		8       u16     Height
 		10      u8      Raster[Width*Height]
 	*/
-	const uint8_t end[4] = "END ";
+	const uint8_t end[4] = {'E','N','D',' '};
 	uint16_t buf[5];
 	const size_t r = fread(buf, 1, sizeof(buf), desc->ifp);
 	if (r >= sizeof(end) && !memcmp(buf, end, sizeof(end))) {
@@ -162,11 +162,11 @@ struct wu_st gxa_load_image(struct gxa_desc *desc, struct wuimg *img) {
 	case gxa_none:
 		return fmt_load_raster_st(img, desc->ifp);
 	case gxa_rle:
-		;uint8_t *rle = malloc(desc->data_len);
+		;uint8_t *rle = malloc(desc->rle_len);
 		if (rle) {
 			const size_t r = decomp_topbitrle(img->data,
 				size, rle,
-				fread(rle, 1, desc->data_len, desc->ifp), 1);
+				fread(rle, 1, desc->rle_len, desc->ifp), 1);
 			free(rle);
 			return wuerr_partial(r, size);
 		}
@@ -209,9 +209,10 @@ struct wu_st gxa_next_image(struct gxa_desc *desc, struct wuimg *img) {
 		if (!fread(&len, sizeof(len), 1, desc->ifp)) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
-		desc->data_len = endian32l(len);
-		if (desc->data_len/2 > img->w*img->h) {
-			desc->data_len = (uint32_t)(img->w*img->h*2);
+		desc->rle_len = endian32l(len);
+		// Cap rle_len to at most twice the size of the image.
+		if (desc->rle_len/2 > img->w*img->h) {
+			desc->rle_len = (uint32_t)(img->w*img->h*2);
 		}
 		break;
 	case gxa_mystery2:

@@ -71,7 +71,7 @@ struct mparser *mp, const uint16_t htiles, const size_t tile_height) {
 }
 
 static void xor_row(uint16_t *row, uint16_t xor, size_t len) {
-	xor |= xor << 8;
+	xor |= (uint16_t)(xor << 8);
 	for (size_t x = 0; x < len; ++x) {
 		row[x] ^= xor;
 	}

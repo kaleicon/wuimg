@@ -17,7 +17,9 @@ const uint8_t planes, const size_t plane_stride, const size_t pos, const size_t 
 		for (uint8_t z = 0; z < planes; ++z) {
 			const uint8_t byte = src[pos + z*plane_stride];
 			for (uint8_t bit = 0; bit < bits; ++bit) {
-				buf[bit] |= ((byte >> (7-bit)) & 1) << z;
+				buf[bit] |= (uint8_t)(
+					((byte >> (7-bit)) & 1) << z
+				);
 			}
 		}
 		memcpy(dst + pos*8, buf, bits);
@@ -120,8 +122,9 @@ const align_t align) {
 		for (size_t z = 0; z < planes; ++z) {
 			const size_t pos = x*planes + z;
 			const uint8_t byte = src[x/8 + stride*(planes - 1 - z)];
-			dst[pos/8] |= ((byte >> (7 - x%8)) & 0x01)
-				<< (7 - pos%8);
+			dst[pos/8] |= (uint8_t)(
+				((byte >> (7 - x%8)) & 0x01) << (7 - pos%8)
+			);
 		}
 	}
 }

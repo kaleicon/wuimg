@@ -88,7 +88,7 @@ static size_t lz5_decode(uint8_t *restrict dst, const size_t dst_len,
 struct wuptr src) {
 	size_t d = 0;
 	size_t s = 0;
-	uint8_t recycle = 0;
+	unsigned recycle = 0;
 	unsigned rec_cnt = 0;
 	uint8_t end[MAX_READ*2];
 	for (;;) {
@@ -110,7 +110,7 @@ struct wuptr src) {
 				len = first & 0x3f;
 				if (len) { // Short LZ
 					++len;
-					recycle |= (first & 0xc0) >> (rec_cnt % 4)*2;
+					recycle |= (first & 0xc0u) >> (rec_cnt % 4)*2;
 					++rec_cnt;
 					if (rec_cnt % 4 == 0) {
 						off = recycle;

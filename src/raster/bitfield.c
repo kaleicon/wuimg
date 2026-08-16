@@ -178,7 +178,7 @@ const uint8_t ch, const uint8_t word_depth) {
 			.and = and,
 			.mul = target / and + 1,
 		};
-		bf->id |= k[i].ones << (i*4);
+		bf->id |= (uint16_t)(k[i].ones << (i*4));
 	}
 	return layout;
 }

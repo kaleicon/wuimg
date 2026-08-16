@@ -151,7 +151,7 @@ const enum arith_code c) {
 	if (i) {
 		// renormalize bounds
 		const uint32_t bits = bitstrm_msb_peek_high25(&st->bs);
-		st->upper <<= i;
+		st->upper = (uint16_t)(st->upper << i);
 		st->lower = (uint16_t)(
 			(unsigned)st->lower << i | bits >> 1 >> (31 - i)
 		);

@@ -34,7 +34,7 @@ struct gxa_desc {
 	enum gxa_compression compression:16;
 	uint16_t nb_images;
 	uint16_t cur;
-	uint32_t data_len;
+	uint32_t rle_len;
 	uint8_t comment[32];
 	uint8_t comment_len;
 };

@@ -353,9 +353,9 @@ static struct wu_st imagefrm_v1(struct eri_desc *desc, struct bitstrm *bs) {
 
 			if (img->channels >= 3) {
 				size_t op_idx = ty*x_blocks + tx;
-				unsigned op = 0;
-				op = ops[op_idx/2] >> ((op_idx & 1) ? 0 : 4);
-				op = (op & 0xf);
+				unsigned op = 0xf & (
+					ops[op_idx/2] >> ((op_idx & 1) ? 0 : 4)
+				);
 				color_decorrelate(dec_buf, block_area, op);
 			}
 

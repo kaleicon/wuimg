@@ -155,7 +155,7 @@ FILE *ifp) {
 		fseek(ifp, (long)desc->off, SEEK_SET);
 	}
 
-	desc->frame_size = img->w / (8/img->bitdepth) * img->h;
+	desc->frame_size = img->w / (8u/img->bitdepth) * img->h;
 	struct palette *pal = wuimg_palette_init(img);
 	if (!pal) {
 		return WUERR_HERE(wu_alloc_error);

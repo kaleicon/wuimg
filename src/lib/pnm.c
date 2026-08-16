@@ -585,7 +585,7 @@ const unsigned char next_char) {
 		return wu_ok;
 	} else if (next_char == ' ') {
 		desc->type = pnm_xv_thumb;
-		const unsigned char more_magic[4] = "332\n";
+		const unsigned char more_magic[4] = {'3','3','2','\n'};
 		return fmt_sigcmp(more_magic, sizeof(more_magic), desc->ifp);
 	}
 	return wu_invalid_signature;
