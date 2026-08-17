@@ -121,10 +121,11 @@ static uint8_t huffman_next(struct cbg_tree *tree) {
 	const struct huffman_table t = tree->u.table[ww];
 	uint32_t bits = t.bits;
 	unsigned idx = t.idx;
+	w <<= bits;
 	while (idx >= V1_NODES) {
-		const bool bit = (w >> (31 - bits)) & 1;
-		idx = node_get_child(tree->nodes + idx, bit);
+		idx = node_get_child(tree->nodes + idx, w >> 31);
 		++bits;
+		w <<= 1;
 	}
 	bitstrm_seek(&tree->bs, bits);
 	return (uint8_t)idx;
@@ -134,7 +135,8 @@ static struct wu_st unpack_rle(struct wuimg *img, struct cbg_tree *tree) {
 	const size_t dst_len = wuimg_size(img);
 	uint8_t *dst = img->data;
 	size_t d = 0;
-	for (bool zeroset = false; !tree->bs.eof; zeroset = !zeroset) {
+//	for (bool zeroset = false; !tree->bs.eof; zeroset = !zeroset) {
+	for (bool zeroset = false;; zeroset = !zeroset) {
 		struct leb128_state leb = {0};
 		enum trit t;
 		do {
@@ -327,6 +329,7 @@ const struct wuptr mem) {
 			if (desc->weights_len < 0x400) {
 				return WU_OK;
 			}
+			break;
 		}
 		break;
 	case cbg_v2:
