@@ -38,11 +38,10 @@ struct mac_desc {
 
 time_t mac_time_to_unix(mac_time_t time);
 
-struct wu_st mac_decode(const struct mac_desc *desc, struct wuimg *main);
+struct wu_st mac_decode(const struct mac_desc *desc, struct wuimg *img,
+bool patterns);
 
-struct wu_st mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats);
-
-void mac_get_sizes(struct wuimg *main, struct wuimg *pats);
+void mac_get_dims(struct wuimg *img, bool patterns);
 
 struct wu_st mac_open_file(struct mac_desc *desc, struct wuptr mem);
 

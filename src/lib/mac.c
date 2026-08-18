@@ -17,31 +17,24 @@ time_t mac_time_to_unix(const mac_time_t time) {
 	return (time_t)time - 2082844800;
 }
 
-struct wu_st mac_decode(const struct mac_desc *desc, struct wuimg *main) {
-	const size_t dst_len = wuimg_size(main);
-	const size_t written = decomp_packbits(main->data, dst_len,
+struct wu_st mac_decode(const struct mac_desc *desc, struct wuimg *img,
+const bool patterns) {
+	if (patterns) {
+		memcpy(img->data, desc->pat.ptr, desc->pat.len);
+		return WU_OK;
+	}
+	const size_t dst_len = wuimg_size(img);
+	const size_t written = decomp_packbits(img->data, dst_len,
 		(int8_t *)desc->rle.ptr, desc->rle.len);
 	return wuerr_partial(written, dst_len);
 }
 
-struct wu_st mac_patterns_load(const struct mac_desc *desc, struct wuimg *pats) {
-	memcpy(pats->data, desc->pat.ptr, desc->pat.len);
-	return WU_OK;
-}
-
-void mac_get_sizes(struct wuimg *main, struct wuimg *pats) {
-	main->w = 576;
-	main->h = 720;
-	main->channels = 1;
-	main->bitdepth = 1;
-	main->cs.invert = true;
-	if (pats) {
-		pats->w = 8;
-		pats->h = MAC_PATTERNS_BYTES;
-		pats->channels = 1;
-		pats->bitdepth = 1;
-		pats->cs.invert = true;
-	}
+void mac_get_dims(struct wuimg *img, const bool patterns) {
+	img->w = patterns ? 8 : 576;
+	img->h = patterns ? MAC_PATTERNS_BYTES : 720;
+	img->channels = 1;
+	img->bitdepth = 1;
+	img->cs.invert = true;
 }
 
 static struct wu_st read_mac_header(struct mac_desc *desc, struct mparser *mp) {

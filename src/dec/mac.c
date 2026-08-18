@@ -36,11 +36,14 @@ struct wutree *tree) {
 
 static struct wu_st event_mac(struct image_file *infile,
 struct wu_state *state, const enum image_event ev) {
-	if (ev == ev_subcycle) {
-		struct wuimg *img = infile->sub_img + state->idx;
-		return state->idx == 0
-			? mac_decode(infile->dec_state, img)
-			: mac_patterns_load(infile->dec_state, img);
+	struct wuimg *img = infile->sub_img + state->idx;
+	switch (ev) {
+	case ev_metadata:
+		mac_get_dims(img, state->idx);
+		return WU_OK;
+	case ev_subcycle:
+		return mac_decode(infile->dec_state, img, state->idx);
+	default: break;
 	}
 	return WU_NO_CHANGE;
 }
@@ -57,13 +60,7 @@ static struct wu_st init_mac(struct image_file *infile) {
 			tree_add_branch(&infile->metadata, "MacBinary"));
 	}
 	tree_bud_leaf_u(&infile->metadata, "Version", desc->version);
-
-	struct wuimg *img = alloc_sub_images(infile,
-		desc->has_patterns ? 2 : 1);
-	if (!img) {
-		return WUERR_HERE(wu_alloc_error);
-	}
-	mac_get_sizes(img, desc->has_patterns ? img + 1 : NULL);
+	infile->nr = desc->has_patterns ? 2 : 1;
 	return WU_OK;
 }
 
