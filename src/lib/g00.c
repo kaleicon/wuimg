@@ -17,6 +17,7 @@ struct g00_part_loc {
 static const size_t G00_DIR_SIZE = 4*6;
 static const size_t G00_BLOCK_SIZE = 5*2 + 41*2;
 static const size_t G00_PART_SIZE = 2*2 + 8*4 + 20*4;
+static const size_t G00_PART_LOC_SIZE = 8;
 
 void g00_cleanup(struct g00_desc *desc, struct wuimg *img) {
 	if (desc->version == g00_v1) {
@@ -33,7 +34,7 @@ const size_t min_run) {
 	size_t d = 0;
 	size_t s = 0;
 	while (d < dst_len) {
-		if (s + ENDSECTION > src_len) {
+		if (src_len - s < ENDSECTION) {
 			if (src == alt) {
 				break;
 			}
@@ -142,43 +143,42 @@ const size_t written, const uint8_t *buf) {
 	 * [2] I have no idea what most of the fields are used for, actually.
 	*/
 
-	if (!wuimg_alloc_noverify(img)) {
-		return WUERR_HERE(wu_alloc_error);
+	const size_t part_loc_off = 4;
+	struct g00_desc_v2 *v2 = &desc->u.v2;
+	struct mparser mp = mp_mem(written, buf);
+	const uint8_t *loc = mp_slice(&mp,
+		part_loc_off + G00_PART_LOC_SIZE*v2->dir_count);
+	if (!loc) {
+		return wuerr(wu_unexpected_eof, "not enough data for dir table");
+	} else if (buf_endian32l(loc) != v2->dir_count) {
+		return wuerr(wu_invalid_header, "g00 v2: dir_count mismatch");
 	}
 
-	const void *data_end = buf + written;
-	struct g00_desc_v2 *v2 = &desc->u.v2;
-
-	struct g00_part_loc *loc = (struct g00_part_loc *)(buf + 4);
-	if ((void *)(loc + v2->dir_count) >= data_end
-	|| buf_endian32l(buf) != v2->dir_count) {
-		return wuerr(wu_invalid_header, "g00 v2: dir_count mismatch");
+	if (!wuimg_alloc_noverify(img)) {
+		return WUERR_HERE(wu_alloc_error);
 	}
 
 	size_t total = v2->dir_count;
 	size_t composted = 0;
 	for (uint32_t i = 0; i < v2->dir_count; ++i) {
-		const uint8_t *part = buf + endian32l(loc[i].offset);
-		if ((void *)(part + 4) >= data_end) {
+		mp_seek_set(&mp, buf_endian32l(loc + part_loc_off + G00_PART_LOC_SIZE*i));
+		const uint8_t *part = mp_slice(&mp, G00_PART_SIZE);
+		if (!part) {
 			continue;
 		}
-		++composted;
 
 		const uint16_t block_count = buf_endian16l(part + 2);
+		++composted;
 		total += block_count;
-		if (buf_endian16l(part) != 1) {
+		if (false && buf_endian16l(part) != 1) {
 			continue;
 		}
 
-		const uint8_t *block = part + G00_PART_SIZE;
-		if ((const void *)block >= data_end) {
-			continue;
-		}
 		const uint32_t xstart = buf_endian32l(v2->dir + i*G00_DIR_SIZE);
 		const uint32_t ystart = buf_endian32l(v2->dir + i*G00_DIR_SIZE + 4);
 		for (uint16_t b = 0; b < block_count; ++b) {
-			const uint8_t *rast = block + G00_BLOCK_SIZE;
-			if ((const void *)rast >= data_end) {
+			const uint8_t *block = mp_slice(&mp, G00_BLOCK_SIZE);
+			if (!block) {
 				break;
 			}
 			const struct compost reg = {
@@ -188,11 +188,10 @@ const size_t written, const uint8_t *buf) {
 				.h = buf_endian16l(block + 8),
 			};
 			if (!compost_bounds_check(&reg, img)) {
-				continue;
+				break;
 			}
-
-			block = rast + reg.w * reg.h * 4;
-			if ((const void *)block > data_end) { // Incomplete raster
+			const uint8_t *rast = mp_slice(&mp, reg.w * reg.h * 4);
+			if (!rast) {
 				break;
 			}
 
