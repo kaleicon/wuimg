@@ -15,7 +15,7 @@ void dvm_cleanup(struct dvm_desc *desc) {
 
 struct wu_st dvm_load_frame(struct dvm_desc *desc, struct wuimg *img,
 const size_t i) {
-	fseek(desc->ifp, (long)(desc->off + desc->frame_size*i), SEEK_SET);
+	fseek(desc->ifp, desc->off + (long)(desc->frame_size*i), SEEK_SET);
 	if (desc->pal == dvm_pal_per_frame) {
 		if (!palette_from_file(img->u.palette, 3, 1 << desc->depth,
 		desc->ifp, img->bitrange)) {
@@ -172,12 +172,16 @@ FILE *ifp) {
 		img->bitrange)) {
 			return WUERR_HERE(wu_unexpected_eof);
 		}
-		desc->off += 3u << desc->depth;
+		desc->off += 3 << desc->depth;
 		break;
 	}
 
 	fseek(ifp, 0, SEEK_END);
-	const size_t nr = ((size_t)ftell(ifp) - desc->off) / desc->frame_size;
+	const long pos = ftell(ifp);
+	if (pos < desc->off) {
+		return WUERR_HERE(wu_unexpected_eof);
+	}
+	const size_t nr = (size_t)(pos - desc->off) / desc->frame_size;
 	if (!wuimg_anim_init(img, nr, msec, 1000)) {
 		return WUERR_HERE(wu_alloc_error);
 	}

@@ -17,7 +17,7 @@ struct dvm_desc {
 	uint8_t depth;
 	enum dvm_pal pal:8;
 	struct wustr text;
-	size_t off;
+	long off;
 	size_t frame_size;
 };
 
