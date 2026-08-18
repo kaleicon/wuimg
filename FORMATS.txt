@@ -63,7 +63,7 @@ bethesda  bsi       Bethesda BSI texture (IFHD, BSIF)
 bethesda  fnhd      Bethesda font (FNHD)
 bethesda  gxa       Bethesda GXA image (BMHD)
 bmz       bmz       GSD engine compressed BMP. Requires DIB
-c         c         C code formats: DEGAS Elite Icon, XBM X10 and X11
+c         c         C code formats: DEGAS Elite Icon, Sun Icon, XBM X10 and X11
 c64       c64       Hires and Multicolor formats: AFLI editor, Art Studio (OCP), Artist64, Blazing Paddles, CDU-Paint, Cheese, Create With Garfield, Doodle (raw & compressed), Faces Painter, FLI Designer, Hi-Eddi, HiPic Creator, HiRes Editor, Hires FLI (HFC), Image System, Interpaint, KoalaPainter (raw & compressed), Paint Magic, Picasso 64, Runpaint, Saracen Paint, Vidcom 64, probably others by accident
 caiman    caiman    Caiman Co. GFX Data File
 cbg       cbg       BGI/Ethornell CompressedBG (v1)

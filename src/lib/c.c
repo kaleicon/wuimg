@@ -10,28 +10,38 @@
 #include "misc/common.h"
 #include "lib/c.h"
 
+const char * c_type_str(const struct c_desc *desc) {
+	switch (desc->fmt) {
+	case c_xbm:
+		switch (desc->xbm.version) {
+		case xbm_x11: return "XBM X11";
+		case xbm_x10: return "XBM_X10";
+		}
+		break;
+	case c_degas_icon: return "DEGAS Elite Icon";
+	case c_sun_icon: return "Sun Icon";
+	}
+	return "???";
+}
+
 struct wu_st c_decode(const struct c_desc *desc, struct wuimg *img) {
-	const uint8_t size = desc->fmt == c_xbm && desc->xbm.version == xbm_x11
-		? 1 : 2;
+	const size_t bytes = 1u << img->align_sh;
 	const size_t dims = wuimg_size(img);
 
 	size_t cnt = 0;
 	struct mparser tp = desc->tp;
 	while (cnt < dims) {
 		mp_skip_space(&tp);
-		if (tp.len - tp.pos < 2u + size*2) {
-			break;
-		}
 
 		uintmax_t val;
 		mp_scan_xint(&tp, 4, &val);
-		if (size == 1) {
+		if (bytes == 1) {
 			img->data[cnt] = (uint8_t)val;
 		} else {
 			img->data[cnt] = (uint8_t)(val >> 8);
 			img->data[cnt+1] = (uint8_t)val;
 		}
-		cnt += size;
+		cnt += bytes;
 
 		if (mp_next_char(&tp) != ',') {
 			break;
@@ -65,7 +75,7 @@ static struct wu_st comment(struct mparser *tp, struct c_tok *tok) {
 	return WUERR_HERE(wu_unexpected_eof);
 }
 
-static struct wu_st word(struct mparser *tp, struct c_tok *tok) {
+static struct wu_st identifier_word(struct mparser *tp, struct c_tok *tok) {
 	tok->str.ptr = tp->mem + tp->pos;
 	tok->str.len = 0;
 	for (;;) {
@@ -125,7 +135,7 @@ static struct wu_st next_tok(struct mparser *tp, struct c_tok *tok) {
 				"preprocessor directive not at beginning of line");
 		}
 		mp_next_char(tp);
-		word(tp, tok);
+		identifier_word(tp, tok);
 		tok->type = c_define;
 		if (wuptr_eq_str(tok->str, "define") && isblank(mp_cur_char(tp))) {
 			return WU_OK;
@@ -141,7 +151,7 @@ static struct wu_st next_tok(struct mparser *tp, struct c_tok *tok) {
 	default:
 		if (isalpha(c)) {
 			tok->type = c_identifier;
-			return word(tp, tok);
+			return identifier_word(tp, tok);
 		}
 	}
 	tok->type = c_delimiter;
@@ -156,20 +166,26 @@ const char *str) {
 		: tok->type == type;
 }
 
-static struct wu_st expect_tok(struct c_desc *desc, struct c_tok *tok,
+static struct wu_st expect_tok_mp(struct mparser *mp, struct c_tok *tok,
 const enum c_tok_type type, const char *str) {
-	struct wu_st st = next_tok(&desc->tp, tok);
+	struct wu_st st = next_tok(mp, tok);
 	if (wu_isok(st) && !tok_eq(tok, type, str)) {
 		return wuerr(wu_invalid_header, "unexpected token");
 	}
 	return st;
 }
 
-static struct wu_st expect_toks(struct c_desc *desc, struct c_tok *tok,
-const char **str, const size_t len) {
+static struct wu_st expect_tok(struct c_desc *desc, struct c_tok *tok,
+const enum c_tok_type type, const char *str) {
+	return expect_tok_mp(&desc->tp, tok, type, str);
+}
+
+static struct wu_st expect_toks_mp(struct mparser *mp, const char **str,
+const size_t len) {
 	struct wu_st st;
 	for (size_t i = 0; i < len; ++i) {
-		st = expect_tok(desc, tok, 0, str[i]);
+		struct c_tok _t;
+		st = expect_tok_mp(mp, &_t, 0, str[i]);
 		if (!wu_isok(st)) {
 			break;
 		}
@@ -178,26 +194,35 @@ const char **str, const size_t len) {
 }
 
 static struct wu_st array_contents(struct c_desc *desc, struct wuimg *img) {
-	struct c_tok tok;
-	const char *strs[] = {"]", "=", "{"};
-	struct wu_st st = expect_toks(desc, &tok, strs, ARRAY_LEN(strs));
+	struct wu_st st;
+	for (;;) {
+		struct c_tok tok;
+		st = next_tok(&desc->tp, &tok);
+		if (!wu_isok(st)) {
+			return st;
+		} else if (wuptr_eq_str(tok.str, "]")) {
+			break;
+		}
+	}
+	const char *strs[] = {"=", "{"};
+	st = expect_toks_mp(&desc->tp, strs, ARRAY_LEN(strs));
 	if (!wu_isok(st)) {
 		return st;
 	}
 
+	struct c_tok tok;
 	size_t pos = desc->tp.pos;
 	while (wu_isok((st = next_tok(&desc->tp, &tok)))
 	&& tok_eq(&tok, c_comment, NULL)) {
 		pos = desc->tp.pos;
 	}
-	if (!wu_isok(st)) {
-		return st;
+	if (wu_isok(st)) {
+		desc->tp.pos = pos;
+		img->channels = 1;
+		img->bitdepth = 1;
+		img->cs.invert = true;
 	}
-	desc->tp.pos = pos;
-	img->channels = 1;
-	img->bitdepth = 1;
-	img->cs.invert = true;
-	return wuerr(wuimg_verify(img), NULL);
+	return st;
 }
 
 static struct wu_st xbm_array_def(struct c_desc *desc, struct wuimg *img,
@@ -241,21 +266,11 @@ struct c_tok tok) {
 		return wuerr(wu_invalid_header, "bad array type (degas icon)");
 	}
 	const char *strs[] = {"image", "[", "ICONSIZE"};
-	struct wu_st st = expect_toks(desc, &tok, strs, ARRAY_LEN(strs));
+	struct wu_st st = expect_toks_mp(&desc->tp, strs, ARRAY_LEN(strs));
 	return wu_isok(st) ? array_contents(desc, img) : st;
 }
 
-static struct wu_st identify_from_comment(struct c_desc *desc,
-const struct c_tok *tok) {
-	if (wuptr_eq_str(tok->str, " DEGAS Elite Icon Definition ")) {
-		desc->fmt = c_degas_icon;
-		return WU_OK;
-	}
-	desc->fmt = c_xbm;
-	return WU_OK;
-}
-
-static struct wu_st define_value(struct c_desc *desc, struct wuimg *img,
+static struct wu_st defined_value(struct c_desc *desc, struct wuimg *img,
 const struct wuptr name, const struct wuptr val) {
 	struct mparser mp = mp_wuptr(val);
 	switch (desc->fmt) {
@@ -285,6 +300,7 @@ const struct wuptr name, const struct wuptr val) {
 			return wuerr(wu_invalid_header, "unknown macro variable");
 		}
 		break;
+	case c_sun_icon: break;
 	}
 	return WU_OK;
 }
@@ -299,7 +315,72 @@ static struct wu_st parse_define(struct c_desc *desc, struct wuimg *img) {
 	if (!wu_isok(st)) {
 		return st;
 	}
-	return define_value(desc, img, name.str, val.str);
+	return defined_value(desc, img, name.str, val.str);
+}
+
+static struct wu_st parse_sun_icon_header(struct wuimg *img,
+const struct wuptr header) {
+	struct mparser mp = mp_wuptr(header);
+	const char *keys[] = {
+		"Format_version",
+		"Width",
+		"Height",
+		"Depth",
+		"Valid_bits_per_item",
+	};
+	uintmax_t values[ARRAY_LEN(keys)];
+	for (size_t k = 0; k < ARRAY_LEN(keys); ++k) {
+		const char *match[] = {keys[k], "="};
+		struct wu_st st = expect_toks_mp(&mp, match, ARRAY_LEN(match));
+		if (!wu_isok(st)) {
+			return st;
+		}
+		struct c_tok val;
+		st = expect_tok_mp(&mp, &val, c_number, NULL);
+		if (!wu_isok(st)) {
+			return st;
+		}
+		struct mparser np = mp_wuptr(val.str);
+		mp_scan_uint(&np, SIZE_MAX, values + k);
+		if (k < ARRAY_LEN(keys) - 1) {
+			struct c_tok _c;
+			st = expect_tok_mp(&mp, &_c, c_delimiter, ",");
+			if (!wu_isok(st)) {
+				return st;
+			}
+		}
+	}
+	const char *msg = NULL;
+	if (values[0] != 1) {
+		msg = "Format_version != 1 (sun icon)";
+	} else if (values[3] != 1 && values[3] != 8) {
+		msg = "Depth is neither 1 nor 8 (sun icon)";
+	} else if (values[4] != 16) {
+		msg = "Valid_bits_per_item != 16 (sun icon)";
+	}
+	if (msg) {
+		return wuerr(wu_invalid_header, msg);
+	}
+	img->w = (size_t)values[1];
+	img->h = (size_t)values[2];
+	img->channels = 1;
+	img->bitdepth = (uint8_t)values[3];
+	img->align_sh = 1;
+	img->cs.invert = img->bitdepth == 1;
+	return WU_OK;
+}
+
+static struct wu_st identify_from_comment(struct c_desc *desc,
+const struct c_tok *tok, struct wuimg *img) {
+	if (wuptr_eq_str(tok->str, " DEGAS Elite Icon Definition ")) {
+		desc->fmt = c_degas_icon;
+		return WU_OK;
+	} else if (wuptr_prefix_str(tok->str, " Format_version=")) {
+		desc->fmt = c_sun_icon;
+		return parse_sun_icon_header(img, tok->str);
+	}
+	desc->fmt = c_xbm;
+	return WU_OK;
 }
 
 struct wu_st c_parse(struct c_desc *desc, struct wuimg *img,
@@ -316,8 +397,8 @@ const struct wuptr mem) {
 		switch (tok.type) {
 		case c_comment:
 			if (first) {
-				st = identify_from_comment(desc, &tok);
-				if (!wu_isok(st)) {
+				st = identify_from_comment(desc, &tok, img);
+				if (!wu_isok(st) || desc->fmt == c_sun_icon) {
 					return st;
 				}
 			}

@@ -17,6 +17,7 @@ enum xbm_type {
 enum c_fmt {
 	c_xbm,
 	c_degas_icon,
+	c_sun_icon,
 };
 
 struct xbm_info {
@@ -34,6 +35,8 @@ struct c_desc {
 	enum c_fmt fmt;
 	struct xbm_info xbm;
 };
+
+const char * c_type_str(const struct c_desc *desc);
 
 struct wu_st c_decode(const struct c_desc *desc, struct wuimg *img);
 

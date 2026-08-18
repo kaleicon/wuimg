@@ -476,8 +476,8 @@ DEC_MAP: DecMap = {
 	},
 
 	"c": {
-		"c": FmtInfo("C code formats: DEGAS Elite Icon, XBM X10 and X11",
-			ext=("icn", "icon"),
+		"c": FmtInfo("C code formats: DEGAS Elite Icon, Sun Icon, XBM X10 and X11",
+			ext=("icn", "ico", "icon"),
 			match="xbm",
 			magic=(
 				b"/*",

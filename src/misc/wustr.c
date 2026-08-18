@@ -66,9 +66,18 @@ bool wuptr_suffix(const struct wuptr w1, const struct wuptr w2) {
 	}
 	return false;
 }
-
 bool wuptr_suffix_str(const struct wuptr w1, const char *s2) {
 	return wuptr_suffix(w1, wuptr_str(s2));
+}
+
+bool wuptr_prefix(const struct wuptr w1, const struct wuptr w2) {
+	if (w1.len >= w2.len) {
+		return !memcmp(w1.ptr, w2.ptr, w2.len);
+	}
+	return false;
+}
+bool wuptr_prefix_str(const struct wuptr w1, const char *s2) {
+	return wuptr_prefix(w1, wuptr_str(s2));
 }
 
 bool wuptr_eq(const struct wuptr w1, const struct wuptr w2) {

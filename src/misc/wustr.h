@@ -43,6 +43,9 @@ struct wuptr wuptr_trim_end(struct wuptr w, unsigned char c);
 bool wuptr_suffix(struct wuptr w1, struct wuptr w2);
 bool wuptr_suffix_str(struct wuptr w1, const char *s2);
 
+bool wuptr_prefix(struct wuptr w1, struct wuptr w2);
+bool wuptr_prefix_str(struct wuptr w1, const char *s2);
+
 bool wuptr_eq(struct wuptr w1, struct wuptr w2);
 bool wuptr_eq_str(struct wuptr w1, const char *s2);
 

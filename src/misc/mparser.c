@@ -185,10 +185,12 @@ size_t mp_scan_uint(struct mparser *mp, size_t digits, uintmax_t *val) {
 size_t mp_scan_int(struct mparser *mp, size_t digits, intmax_t *val) {
 	const bool sign = curc(mp) == '-';
 	mp->pos += sign;
-	const size_t k = mp_scan_uint(mp, digits, (uintmax_t *)val);
+	uintmax_t uval;
+	const size_t k = mp_scan_uint(mp, digits, &uval);
 	if (sign) {
-		*val = -*val;
+		uval = -uval;
 	}
+	*val = (intmax_t)uval;
 	return k;
 }
 
