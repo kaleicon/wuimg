@@ -253,7 +253,7 @@ const struct iff_chunk chunk) {
 	struct cdi_desc *desc = user;
 	uint8_t hdr[22];
 	if (chunk.len != sizeof(hdr)) {
-		return wuerr(wu_invalid_header, "IPAR size != 16");
+		return wuerr(wu_invalid_header, "IPAR size != 0x16");
 	} else if (!fread(hdr, sizeof(hdr), 1, desc->ifp)) {
 		return WUERR_HERE(wu_unexpected_eof);
 	}
