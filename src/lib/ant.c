@@ -46,11 +46,11 @@ struct wu_st ant_init(struct ant_desc *desc, struct wuimg *img, FILE *ifp) {
 	/* ANT header:
 		Offset  Type    Name
 		0       u8      Magic[4]
-		4       u32     Depth
+		4       u32     ???       // always 0x10?
 		8       u32     FileSize
 		12      u32     Width
 		16      u32     Height
-		20      u32     ???
+		20      u32     ???       // always 0?
 		24      u8      Data[FileSize - 24]
 		FileSize
 	*/
@@ -61,7 +61,7 @@ struct wu_st ant_init(struct ant_desc *desc, struct wuimg *img, FILE *ifp) {
 	} else if (memcmp(hdr, magic, sizeof(magic))) {
 		return WUERR_HERE(wu_invalid_signature);
 	} else if (endian32l(hdr[1]) != 0x10) {
-		return wuerr(wu_invalid_header, "depth != 32");
+		return wuerr(wu_invalid_header, "mystery field 1 != 0x10");
 	}
 	*desc = (struct ant_desc) {
 		.ifp = ifp,
