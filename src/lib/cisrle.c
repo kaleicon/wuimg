@@ -2,9 +2,13 @@
 // SPDX-FileCopyrightText: 2025 kaleido
 #include <string.h>
 
+#include "misc/math.h"
 #include "lib/cisrle.h"
 
-/*
+/* CompuServe Information Service RLE
+ * Format is supposed to be ASCII based. Outside of ESC and BEL, all data
+ * should be in range 0x20-0x7e, but in practice various files use higher
+ * values to encode longer runs.
 https://web.archive.org/web/20140721001738/http://staticweb.rasip.fer.hr/research/compress/algorithms_run-length_coding.htm#examples
 */
 
@@ -24,19 +28,16 @@ struct wu_st cis_decode(const struct cis_desc *desc, struct wuimg *img) {
 	size_t d = 0;
 	bool on = desc->swap;
 	for (size_t s = 0; s < src.len; ++s) {
-		size_t c = src.ptr[s];
-		if (c >= 0x20) {
-			c -= 0x20;
-			if (dst_len - d < c) {
-				c = dst_len - d;
-			}
-			memset(img->data + d, on, c);
-			d += c;
+		size_t run = src.ptr[s];
+		if (run >= 0x20) {
+			run = zumin(run - 0x20, dst_len - d);
+			memset(img->data + d, on, run);
+			d += run;
 			on = !on;
 			if (d == dst_len) {
 				break;
 			}
-		} else if (c == ESC) {
+		} else if (run == ESC) {
 			d = dst_len;
 			break;
 		}
@@ -46,7 +47,7 @@ struct wu_st cis_decode(const struct cis_desc *desc, struct wuimg *img) {
 
 static void cis_skip_black(struct cis_desc *desc) {
 	/* Some files begin with 2 or 4 black rows, switch to white
-	 * inmediately, and are truncated at the bottom. If so, skip
+	 * inmediately, and are cut at the bottom. If so, skip
 	 * the black section so that they're displayed fully.
 	 * Often, the last row will be partially garbled. Still better than
 	 * four rows of nothing, maybe. */
