@@ -8,9 +8,9 @@
 
 #include <zlib.h>
 
-size_t decomp_deflate(uint8_t *restrict dst, const size_t dst_len,
+size_t decomp_deflate(uint8_t *restrict dst, size_t dst_len,
 const uint8_t *restrict src, const size_t src_len) {
-	uLong out = (uLong)dst_len;
-	uncompress(dst, &out, src, src_len);
-	return (size_t)out;
+	return (uncompress_z(dst, &dst_len, src, src_len) == Z_OK)
+		? dst_len
+		: 0;
 }
