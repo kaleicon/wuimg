@@ -101,6 +101,9 @@ uint8_t *restrict ctrl, size_t ctrl_len, const size_t data_len) {
 	bitstrm_lsb_gamma_one(&bs); // result should equal `data_len`
 	size_t size = bitstrm_lsb_gamma_one(&bs);
 	if (copy && size >= data_len) {
+		if (ext_len < data_len) {
+			return NULL;
+		}
 		return ext;
 	}
 
