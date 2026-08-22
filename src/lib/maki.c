@@ -57,7 +57,7 @@ struct wu_st maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	/* Allocate a single buffer, and put Mask at the start, overlapping the
 	 * FlagA section. Saves a measly 1000 bytes, but it's free. */
 	const size_t alloc = mask_len * 2 + raster_len;
-	uint8_t *buf = malloc(alloc);
+	uint8_t *buf = calloc(alloc, 1);
 	if (!buf) {
 		return WUERR_HERE(wu_alloc_error);
 	}
@@ -65,7 +65,9 @@ struct wu_st maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	uint8_t *flag_a = buf + mask_len - flag_a_len;
 	const size_t read_max = flag_a_len + mask_len + raster_len;
 	const size_t read = fread(flag_a, 1, read_max, desc->ifp);
-	if (read <= flag_a_len) {
+	/* FlagA is the minimum needed, as a zeroed FlagA section would mean no
+	 * FlagB and Pixel sections. */
+	if (read < flag_a_len) {
 		free(buf);
 		return WUERR_HERE(wu_unexpected_eof);
 	}
@@ -106,7 +108,7 @@ struct wu_st maki_decode(const struct maki_desc *desc, struct wuimg *img) {
 	for (size_t i = look_back; i < MAKI_H * row_len; ++i) {
 		img->data[i] ^= img->data[i - look_back];
 	}
-	return wuerr_partial(read, read_max);
+	return wuerr_partial(read, flag_a_len + b_pos*2 + p_pos);
 }
 
 struct wu_st maki_parse(struct maki_desc *desc, struct wuimg *img, FILE *ifp) {
