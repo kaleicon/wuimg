@@ -74,10 +74,10 @@ struct wu_st sun_decode(const struct sun_desc *desc, struct wuimg *img) {
 static struct wu_st sun_interleave_colormap(struct sun_desc *desc,
 struct wuimg *img) {
 	uint8_t buf[256*3];
-	if (fread(buf, sizeof(buf), 1, desc->ifp)) {
+	const size_t entries = 1u << img->bitdepth;
+	if (fread(buf, entries*3, 1, desc->ifp)) {
 		struct palette *map = wuimg_palette_init(img);
 		if (map) {
-			const size_t entries = 1 << img->bitdepth;
 			for (size_t i = 0; i < entries; ++i) {
 				map->color[i] = (struct pix_rgba8) {
 					.r = buf[i],
