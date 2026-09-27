@@ -683,7 +683,13 @@ const uint32_t time, const uint32_t axis, const wl_fixed_t value) {
 	struct wayland *wl = data;
 	const double a = wl_fixed_to_double(value);
 	const bool v = axis == WL_POINTER_AXIS_VERTICAL_SCROLL;
-	window_cursor_scroll(wl->pub, (v ? 0 : a), (v ? a : 0));
+	bool horz = false;
+	bool zoom = false;
+	if (wl->kb.state) {
+		horz = test_mod(wl->kb.state, XKB_MOD_NAME_SHIFT);
+		zoom = test_mod(wl->kb.state, XKB_MOD_NAME_CTRL);
+	}
+	window_cursor_scroll(wl->pub, (v ? 0 : a), (v ? a : 0), horz, zoom);
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer,

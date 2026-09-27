@@ -270,5 +270,14 @@ void event_print_keys(FILE *out) {
 		"\t\t1x zoom.\n"
 
 		"\t2 .. 9\n"
-		"\t\t[n]x zoom.\n", out);
+		"\t\t[n]x zoom.\n"
+
+		"\tPointer drag | Pointer scroll\n"
+		"\t\tMove viewport.\n"
+
+		"\tVertical scroll + Shift\n"
+		"\t\tMove viewport horizontally.\n"
+
+		"\tVertical scroll + Ctrl\n"
+		"\t\tZoom centered on pointer.\n", out);
 }

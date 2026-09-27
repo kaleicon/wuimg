@@ -43,7 +43,17 @@ const int action, const int mods) {
 
 static void callback_scroll(GLFWwindow *wnd, const double x, const double y) {
 	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_cursor_scroll(glfw->pub, x*-9, y*-9);
+	const bool horz = (glfwGetKey(wnd, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+		| (glfwGetKey(wnd, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
+	const bool zoom = (glfwGetKey(wnd, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+		| (glfwGetKey(wnd, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+
+	/* GLFW on Wayland transforms scroll events by `-n/10.0`, so undo for
+	 * consistency.
+	 * https://github.com/glfw/glfw/blob/92dcf4ce74f2e2554a98fea09be7c705c17daa5a/src/wl_window.c#L1727
+	*/
+	const double ratio = -10.0;
+	window_cursor_scroll(glfw->pub, x*ratio, y*ratio, horz, zoom);
 }
 
 static void callback_key(GLFWwindow *wnd, const int key, const int scan,

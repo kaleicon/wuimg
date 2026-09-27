@@ -62,10 +62,30 @@ static enum image_event move_state(struct wu_state *state, float x, float y) {
 	return ev_none;
 }
 
-void window_cursor_scroll(struct window_public *pub, double x, double y) {
-	pub->event.image = move_state(&pub->image.state,
-		(float)x * -EVENT_FAST_MOVE_FACTOR,
-		(float)y * -EVENT_FAST_MOVE_FACTOR);
+void window_cursor_scroll(struct window_public *pub, double x, double y,
+const bool horz, const bool zoom) {
+	struct wu_event *ev = &pub->event;
+	struct wu_state *state = &pub->image.state;
+	if (zoom) {
+		const float old_zoom = state->zoom;
+		ev->image = wudec_zoom(&pub->image,
+			state->zoom * exp2f((float)y * (-1.0f/32)));
+		struct window_common *win = &pub->win;
+		struct display_dims *fb = &pub->image.state.fb;
+		const float mul = 1/state->zoom - 1/old_zoom;
+		state->x_offset = fmaf(fmaf((float)fb->w, -.5f, win->cur.x.pos),
+			mul, state->x_offset);
+		state->y_offset = fmaf(fmaf((float)fb->h, -.5f, win->cur.y.pos),
+			mul, state->y_offset);
+	} else {
+		if (horz) {
+			x = y;
+			y = 0;
+		}
+		ev->image = move_state(state,
+			(float)x * -EVENT_FAST_MOVE_FACTOR,
+			(float)y * -EVENT_FAST_MOVE_FACTOR);
+	}
 }
 
 void window_cursor_move(struct window_public *pub, const double x,
