@@ -1523,8 +1523,7 @@ DEC_MAP: DecMap = {
 				"mpo",
 				"stj", # Stereoscopic JPEG
 				"thm",
-				# Not sure where I got this from. Conflicts with Tiny Stuff
-				"tn3",
+				"tn3", # Not sure where I got this one from
 				"pix", # ESM
 				"j6i", # Ricoh J6I
 			),
@@ -1994,11 +1993,20 @@ def ext_filter(ext_map: Sequence[FmtExt], n: int, cur: FmtExt) -> bool:
 		prev = ext_map[n-1]
 		if cur.ext == prev.ext:
 			if cur.id == prev.id:
-				eprint(f'found repeated "{cur.ext}" informative extensions. disregarding.')
+				# Multiple formats declared the same informative extension (or one
+				# format has repeated "match" extensions). Filter after the first one.
+				pass
+			elif cur.id == -1:
+				# There's one "match" type extension and multiple informative
+				# extensions afterwards. Filter all info ones.
+				pass
 			else:
-				if cur.id != -1:
-					raise BaseException('conflicting "match" extensions: ' + cur.ext)
-				eprint(f'found repeated "info" and "match" type extensions for "{cur.ext}". will disregard "info"')
+				# There are repeated "match" extensions pointing to different formats.
+				# Raise an exception and fail compilation.
+				# FIXME: Format detection now accepts multiple candidates, and takes
+				# file size and small header bit matches into account. Perhaps
+				# we can relax this?
+				raise BaseException('conflicting "match" extensions: ' + cur.ext)
 			return False
 	return True
 
