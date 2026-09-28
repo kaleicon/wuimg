@@ -243,6 +243,19 @@ const struct wuptr hpicon_desc = DESC(
 	"h:<u16>"
 );
 
+/* HRZ - Slow Scan Television
+ * Wikipedia lists various graphical modes, but we've only found 256x240.
+https://en.wikipedia.org/wiki/Slow-scan_television
+*/
+const struct wuptr hrz_desc = DESC(
+	"w:256\n"
+	"h:240\n"
+	"channels:3\n"
+	"bitdepth:8\n"
+	"bitrange:6\n" // sample.hrz reaches up to 0x40, not sure if that means something
+	"match:filesize(184320)"
+);
+
 /* InShape IIM
 https://temlib.org/AtariForumWiki/index.php/InShape_file_format
 

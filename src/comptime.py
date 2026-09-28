@@ -168,6 +168,10 @@ DEC_MAP: DecMap = {
 				# they're always the same so match against them too
 				b"\x01\x00\x01\x00\x2c\x00\x20\x00"
 		),
+		"hrz": FmtInfo("Slow Scan Television",
+			match="hrz",
+			size=256*240*3,
+		),
 		"iim": FmtInfo("InShape IIM",
 			ext="iim",
 			magic=b"IS_IMAGE\0"
