@@ -34,7 +34,7 @@ struct wu_st wgtspr_next_sprite(struct wgtspr_desc *desc, struct wuimg *img) {
 		}
 		return WUERR_HERE(wu_unexpected_eof);
 	}
-	fseek(desc->ifp, -4, SEEK_CUR);
+	fseek(desc->ifp, -(long)((read - 1) * sizeof(*buf)), SEEK_CUR);
 	return WU_NO_CHANGE;
 }
 
