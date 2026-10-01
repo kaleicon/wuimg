@@ -48,7 +48,7 @@ ds: &mut GifState) -> wu::wu_st {
 	let cur = gif_frame_to_compost(frame);
 	let trns = frame.transparent;
 	let dispose = frame.dispose;
-	anim.sec.num = frame.delay as u32;
+	anim.sec.num = if frame.delay == 0 { 10 } else { frame.delay as u32 };
 
 	// Expand palette to RGBA
 	match ds.decoder.palette() {
