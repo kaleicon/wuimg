@@ -60,7 +60,7 @@ endif
 attr_map = {
 	'encoder': ['jpegxl'],
 	'freerider': ['bmz'],
-	'rust': ['gif', 'png']
+	'rust': ['gif', 'png', 'svg']
 }
 
 has_deflate = false

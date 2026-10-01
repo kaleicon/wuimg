@@ -103,7 +103,7 @@ For window backends you need:
 For image decoding:
 * libavif
 * libflif (abandoned by upstream, enable at your own peril)
-* libgif or rust (via image-rs/gif)
+* libgif or rust (image-rs/gif)
 * libheif
 * libjbig
 * libjbig2dec
@@ -112,12 +112,12 @@ For image decoding:
 * libcharls (JPEG-LS)
 * libjxl (needed for encoding, too)
 * liblerc
-* libpng or rust (via image-rs/png)
+* libpng or rust (image-rs/png)
 * libraw
-* librsvg
+* librsvg or rust (resvg)
 * libtiff
 * libwebp and libwebpdemux
-* zlib or rust (BMZ, HG3, XYZ)
+* zlib or rust (for BMZ, HG3, XYZ)
 
 To actually run the program you'll need
 * Linux (it might work on other POSIX systems, I don't know)
@@ -216,8 +216,8 @@ used for debugging.
 	afl-fuzz -i uniq/ -o out/ -- path/to/wufuzz bmp
 
 	# Some decoders need to look at a (lowercase) extension to know what
-	# they're dealing with:
-	afl-fuzz ... -- path/to/wufuzz msx sc5
+	# they're dealing with. Pass it as second argument:
+	afl-fuzz [...] -- path/to/wufuzz msx sc5
 
 
 AppArmor

@@ -91,8 +91,8 @@ struct wu_state *state, const enum image_event event) {
 		return WUERR_HERE(wu_alloc_error);
 	}
 
-	const double fbw = (double)state->fb.w / 2.0;
-	const double fbh = (double)state->fb.h / 2.0;
+	const double fbw = (double)state->fb.w * .5;
+	const double fbh = (double)state->fb.h * .5;
 	double x_scale = 1;
 	double y_scale = 1;
 	double x = fbw;

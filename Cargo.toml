@@ -10,6 +10,7 @@ edition = "2021"
 fdeflate = "0.3.3"
 gif = "0.14.2"
 png = "0.18.1"
+resvg = "0.48.1"
 
 [lib]
 crate-type = ["staticlib"]
