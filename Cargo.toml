@@ -3,8 +3,9 @@
 
 [package]
 name = "wuimg"
-version = "18446744073709551615.18446744073709551615.18446744073709551615"
+version = "1.8.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 fdeflate = "0.3.3"
