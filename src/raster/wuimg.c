@@ -23,7 +23,7 @@ const unsigned v_size) {
 }
 
 void wuimg_exif_orientation(struct wuimg *img, const int orientation) {
-	// https://www.awaresystems.be/imaging/tiff/tifftags/orientation.html
+	// https://web.archive.org/web/20040820153339/http://www.awaresystems.be/imaging/tiff/tifftags/orientation.html
 	bool m;
 	uint8_t r;
 	switch (orientation) { //      1st row / 1st column
@@ -50,7 +50,7 @@ static size_t subsamp_dim(const size_t dim, struct plane_dim *s) {
 }
 
 static bool bad_cosit(const struct plane_dim s) {
-	return s.cosit && s.subsamp != 2;
+	return s.cosit & (s.subsamp != 2);
 }
 
 static size_t plane_calc_size(struct wuimg *img, const size_t i) {
@@ -59,7 +59,7 @@ static size_t plane_calc_size(struct wuimg *img, const size_t i) {
 	p->h = subsamp_dim(img->h, &p->y);
 	if (p->w < 1 || p->h < 1) {
 		return 0;
-	} else if (bad_cosit(p->x) || bad_cosit(p->y)) {
+	} else if ((bad_cosit(p->x) | bad_cosit(p->y))) {
 		fatal_bug(__func__, "Cositing is only used for subsampling == 2");
 	}
 	p->stride = strip_length(p->w, img->bitdepth, img->align_sh);

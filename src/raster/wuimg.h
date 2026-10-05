@@ -62,7 +62,7 @@ struct plane_info {
 };
 
 struct image_planes {
-	align_t v_pad;
+	align_t v_pad; // Vertical padding after each plane. Only used by JPEG.
 	struct plane_info p[];
 };
 
@@ -79,12 +79,12 @@ struct frame_time {
 };
 
 struct image_anim {
-	size_t nr;
+	size_t nr; // number of frames
 	struct compost dt; // region affected since last display
 	struct frame_time sec; // frame duration
-	int cur; // frame currently rendered in .data
-	bool varying_den; // signals frames don't use the same time denominator
-	bool keyframe[];
+	int cur; // frame currently rendered in wuimg.data
+	bool varying_den; // if false, sec.den never changes
+	bool keyframe[]; // whether the n-th frame is a keyframe
 };
 
 struct wuimg {
@@ -133,6 +133,7 @@ struct wutree * wuimg_get_metadata(struct wuimg *img);
 
 void wuimg_aspect_ratio(struct wuimg *img, unsigned h_size, unsigned v_size);
 
+// Set img.rotate and img.mirror from an exif orientation value
 void wuimg_exif_orientation(struct wuimg *img, int orientation);
 
 /* Checks that image parameters make sense, that width and height are > 0,
@@ -161,7 +162,7 @@ bool wuimg_alloc_noverify(struct wuimg *img);
 /* Verify then allocate image. */
 enum wu_error wuimg_alloc(struct wuimg *img);
 
-/* Calls wuimg_exceeds_limt() then wuimg_alloc() */
+/* Shorthand for wuimg_exceeds_limt() then wuimg_alloc() */
 enum wu_error wuimg_alloc_limit(struct wuimg *img, const struct wu_conf *conf);
 
 
@@ -173,22 +174,30 @@ enum wu_error wuimg_bitfield_from_mask(struct wuimg *img,
 const uint32_t *mask, uint8_t ch, uint8_t word_depth);
 
 
+/* Sets all dimension fields in each plane_info. subsamp must have been set
+ * previously. Note that wuimg_alloc*() will call this anyway. */
 size_t wuimg_plane_resolve(struct wuimg *img);
 
+// Shorthand to set cositing for second and third planes.
 void wuimg_plane_cosit(struct wuimg *img, bool horz, bool vert);
 
+// Shorthand to set subsamp factors for second and third planes.
 void wuimg_plane_subsamp(struct wuimg *img, uint8_t horz, uint8_t vert);
 
 struct image_planes * wuimg_plane_init(struct wuimg *img);
 
 
+// References `pal` as the image palette. Returns `pal`
 struct palette * wuimg_palette_set(struct wuimg *img, struct palette *pal);
 
+// Creates a zeroed palette and returns it. NULL if alloc failed.
 struct palette * wuimg_palette_init(struct wuimg *img);
 
+// Allocates a palette and reads data from `ifp`. `size` must be 3 or 4.
 struct wu_st wuimg_palette_from_file(struct wuimg *img, uint8_t size,
 size_t nmemb, FILE *ifp);
 
+// Allocates a palette and copies from `src`. `size` must be 3 or 4.
 struct wu_st wuimg_palette_from_buf(struct wuimg *img, uint8_t size,
 size_t nmemb, const uint8_t *src);
 
@@ -205,23 +214,34 @@ size_t nmemb, const uint8_t *src);
  */
 bool wuimg_anim_seek_nearest(struct wuimg *img, int i);
 
-void wuimg_anim_frame_set(struct wuimg *img, size_t i, bool independent);
+// Declare whether frame `i` is a keyframe (independent of previous frames)
+void wuimg_anim_frame_set(struct wuimg *img, size_t i, bool keyframe);
 
+/* Returns true if region `reg` is located within `img`. Additionally declares
+ * frame `i` as keyframe if `reg` covers the whole area and `keyframe` is true. */
 bool wuimg_anim_frame_set_checked(struct wuimg *img, size_t i,
-const struct compost *reg, bool independent);
+const struct compost *reg, bool keyframe);
 
+// Return number of frames, or 1 if not an animation.
 size_t wuimg_anim_nr(const struct wuimg *img);
 
 struct image_anim * wuimg_anim_init(struct wuimg *img, size_t nr,
 uint32_t time_num, uint32_t time_den);
 
 
+/* Sets wuimg.align_sh from an alignment in bytes. Result undefined if
+ * `alignment` is not a power of two. */
 void wuimg_align(struct wuimg *img, uint8_t alignment);
 
+/* Turns `dst` into an almost-complete almost-independent copy of `src`.
+ * dst.data, dst.metadata, and dst.anim are set to NULL, and dst.cs is a
+ * reference of src.cs */
 bool wuimg_clone(struct wuimg *dst, struct wuimg *src);
 
+// Free image data.
 void wuimg_free(struct wuimg *img);
 
+// Free data and clear struct for reuse.
 void wuimg_clear(struct wuimg *img);
 
 bool wuimg_has_data(const struct wuimg *img);

@@ -8,8 +8,8 @@
 #define WU_SCALING_POW 6
 
 struct wu_state {
-	int idx; // current sub-image
-	int frame; // current frame
+	int idx; // current sub-image, in range [0, image_file.nr)
+	int frame; // current frame, in range [0, wuimg.anim.nr)
 
 	unsigned char rotate;
 	bool mirror;
@@ -47,7 +47,7 @@ struct image_file {
 	long off;
 	struct wuptr map;
 
-	size_t nr;
+	size_t nr; // nb of sub-images
 	struct wuimg *sub_img;
 	struct wutree metadata;
 
@@ -74,10 +74,10 @@ struct image_fn {
 	// Decoder wants the file in memory (in image_file.map)
 	bool mmap;
 
-	// Pre-alloc a single image (image_file.nr = 1) before calling .init
+	// Pre-allocate a single image (image_file.nr = 1) before calling .init
 	bool alloc_single;
 
-	/* Validate image params and alloc buffer after ev_metadata and
+	/* Validate image params and allocate buffer after ev_metadata and
 	 * before ev_subcycle callbacks */
 	bool alloc_on_subcycle;
 
@@ -89,9 +89,9 @@ struct image_fn {
 	 * - If NULL, .alloc_single must be true.
 	 * - If image_file.nr is set and image_file.sub_img is NULL, it'll be
 	 *   allocated before events are called.
-	 * - Sub-images may be decoded in one go if it's more convenient (for
-	 *   instance, if it's unknown how many there are). No subcycle events
-	 *   will be called then. */
+	 * - Sub-images may be decoded here in one go if it's more convenient
+	 *  (for instance, if it's unknown how many there are). No subcycle
+	 *   events will be called then. */
 	fmt_init_t init;
 
 	/* Decoder events:
