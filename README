@@ -244,20 +244,8 @@ Commands:
 Configuration
 -------------
 All done through a 'key = value #comment' file that must be located at
-"$XDG_CONFIG_HOME/wu.conf" or "$HOME/.config/wu.conf". 'key' has to be a member
-of the wu_conf struct, which is defined at 'conf.h' with plenty of comments.
-You should take a look at it.
-
-Example:
--------------------------------------------------------------------------------
-# Comment                     # A comment.
-magnify_under = 128           # (unsigned) int. An (unsigned) integer.
-initial_size = 1280 720       # struct. Specified in order.
-bg = 0xcc 0x66 0x99 0x33      # array. Specified in order.
-bg_source = metadata          # enum. Specified as the value name sans prefix
-no_window_decorations = true  # bool. Specified as 'true' or 'false'. Don't you
-                              # try to cheat using 0 or 1.
--------------------------------------------------------------------------------
+"$XDG_CONFIG_HOME/wu.conf" or "$HOME/.config/wu.conf". See `examples/wu.conf`
+for a commented drop-in file.
 
 
 Wayland color management
