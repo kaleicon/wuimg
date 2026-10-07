@@ -137,8 +137,23 @@ const uint8_t ch, const uint8_t bitdepth, align_t align) {
 }
 
 static bool test_overflow(struct wuimg *img) {
-	const uint8_t ch = (img->mode == image_mode_planar) ? 1 : img->channels;
-	const bool ok = test_overflow_common(img->w, img->h, ch, img->bitdepth,
+	uint8_t ch = img->channels;
+	uint8_t bd = img->bitdepth;
+	// Ensure neither the raster nor its expansion can overflow
+	switch (img->mode) {
+	case image_mode_raw: break;
+	case image_mode_planar: ch = 1; break;
+	case image_mode_palette: ch = 4; break;
+	case image_mode_bitfield:
+		;const struct bitfield *bf = img->u.bitfield;
+		if (bf->ch * bf->outdepth > bd) {
+			ch = bf->ch;
+			bd = bf->outdepth;
+		}
+		break;
+	}
+
+	const bool ok = test_overflow_common(img->w, img->h, ch, bd,
 		img->align_sh);
 	if (ok && img->mode == image_mode_planar) {
 		size_t limit = SIZE_MAX;

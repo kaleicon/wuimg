@@ -852,7 +852,11 @@ const struct wuimg *src) {
 	 * data, it must be offset by a pixel for swizzling to work correctly.
 	 * Other than that, stages may overlap with no issues.
 	 * FIXME: Don't allocate when none of these steps are neccesary. */
-	state->row_len = (row_elems + dst->channels) * sizeof(float),
+	state->row_len = row_elems + dst->channels;
+	if (state->row_len >= SIZE_MAX/sizeof(float)) {
+		return "Overflow on row memory size";
+	}
+	state->row_len *= sizeof(float);
 	state->row = malloc(state->row_len);
 	if (!state->row) {
 		return "Failed to allocate row memory";
