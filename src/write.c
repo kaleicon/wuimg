@@ -356,11 +356,11 @@ struct write_writer *writer) {
 				all_ok = false;
 				break;
 			} else if (closed) {
-				print_write_file(&out, stdout);
-				fputc(args->null ? 0 : '\n', stdout);
 				if (args->stdout) {
 					break;
 				}
+				print_write_file(&out, stdout);
+				fputc(args->null ? 0 : '\n', stdout);
 			}
 		} while (wu_ok == (err = wudec_iter(image, &cur)));
 		switch (err) {
