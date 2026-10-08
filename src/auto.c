@@ -976,10 +976,16 @@ static struct wu_st str_file_cmp(const struct wuptr arg, FILE *ifp) {
 
 static struct wu_st load_auto_pal(struct auto_state *state, struct wuimg *img,
 FILE *ifp, const struct load l) {
-	const size_t elems = l.array
-		? (size_t)l.array
-		: state->pal_entries
-			? state->pal_entries : (1u << img->bitdepth);
+	if (img->bitdepth > 8) {
+		return pbug("Bitdepth for paletted images must be <= 8");
+	}
+	size_t elems = (size_t)l.array;
+	if (!elems) {
+		elems = state->pal_entries;
+		if (!elems) {
+			elems = 1u << img->bitdepth;
+		}
+	}
 	if (elems <= 256) {
 		switch (l.size) {
 		case 3: case 4:
@@ -1004,7 +1010,8 @@ struct image_file *infile, const struct token *tok) {
 	case 4: state->scalar = endian32(tmp, state->e); break;
 	default: return pbug("Bad word size");
 	}
-	if (tok->u.load.is_signed && (state->scalar & (1u << (size - 1)))) {
+	// TODO: properly support signed numbers, or delete the code
+	if (tok->u.load.is_signed && (state->scalar & (1u << (size*8 - 1)))) {
 		return wuerr(wu_invalid_header, "Got negative value from file");
 	}
 	state->scalar += (uintmax_t)(intmax_t)tok->u.load.bias;
