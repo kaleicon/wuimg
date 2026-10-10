@@ -119,18 +119,24 @@ struct wu_state *state, const enum image_event event) {
 	return render_svg(infile, canvas, &viewport);
 }
 
+static bool get_viewbox(RsvgHandle *handle, RsvgRectangle *viewport) {
+	gboolean has_viewbox;
+	rsvg_handle_get_intrinsic_dimensions(handle, NULL, NULL, NULL, NULL,
+		&has_viewbox, viewport);
+	return has_viewbox;
+}
+
 static struct wu_st attempt_native(struct image_file *infile) {
-	RsvgRectangle viewport;
-	if (rsvg_handle_get_intrinsic_size_in_pixels(infile->dec_state,
+	RsvgRectangle viewport = (RsvgRectangle) {
+		.x = 0, .y = 0,
+		.width = 640, .height = 480
+	};
+	if (!rsvg_handle_get_intrinsic_size_in_pixels(infile->dec_state,
 	&viewport.width, &viewport.height)) {
-		viewport.x = 0;
-		viewport.y = 0;
-	} else if (!rsvg_handle_get_geometry_for_element(infile->dec_state,
-	NULL, NULL, &viewport, NULL)) {
-		viewport = (RsvgRectangle) {
-			.x = 0, .y = 0,
-			.width = 1280, .height = 1280,
-		};
+		if (!get_viewbox(infile->dec_state, &viewport)) {
+			rsvg_handle_get_geometry_for_element(infile->dec_state,
+				NULL, &viewport, NULL, NULL);
+		}
 	}
 
 	const double mis = (double)infile->conf->max_img_size;
