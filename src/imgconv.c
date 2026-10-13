@@ -67,6 +67,27 @@ const float init) {
 	}
 }
 
+static float get_lum_scale(const struct imgconv *state) {
+	const struct color_convert *cc = &state->color;
+	return cc->in_lum * cc->out_lum_inv;
+}
+
+static bool image_has_alpha(const struct imgconv *state) {
+	return !(state->dst->channels & 1);
+}
+
+static const struct wuimg * image_src(const struct imgconv *state) {
+	return state->tmp ? state->tmp : state->src;
+}
+
+static uint8_t unpack_comp_size(const struct imgconv *state) {
+	return state->unpack_depth/8;
+}
+
+static bool quarter_turn(const struct imgconv *state) {
+	return state->src->rotate & 1;
+}
+
 static float get_ch(const void *data, const int32_t i, const uint8_t depth) {
 	switch (depth) {
 	case 1: return ((uint8_t *)data)[i];
@@ -82,23 +103,6 @@ const bool high_depth) {
 	} else {
 		((uint8_t *)dst)[i] = (uint8_t)val;
 	}
-}
-
-static void * pack_row(void *t, const float *row, const size_t w,
-const uint8_t channels, const bool high_depth) {
-	const float mul = high_depth ? 0xffff : 0xff;
-	for (size_t i = 0; i < w*channels; ++i) {
-		put_ch(t, i, fm_pre_roundf(row[i], mul), high_depth);
-	}
-	return t;
-}
-
-static void * pack_row_nomul(void *t, const float *row, const size_t w,
-const uint8_t channels, const bool high_depth) {
-	for (size_t i = 0; i < w*channels; ++i) {
-		put_ch(t, i, row[i] + .5f, high_depth);
-	}
-	return t;
 }
 
 /* Use the simple power-law transfer function for encoding into sRGB instead of
@@ -138,11 +142,74 @@ static float eotf(float v, const struct color_transfer *t) {
 		: v * v * arg[4];
 }
 
-static void convert_alpha(float *row, const size_t w, const uint8_t ch,
-const enum alpha_interpretation alpha, const float lum) {
+
+static void * pack_row_fn(void *t, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Map and pack a float in range [0.0, 1.0] into u8 or u16
+	(void)depth;
+	const bool high_depth = state->dst->bitdepth > 8;
+	const float mul = high_depth ? 0xffff : 0xff;
+	const float *src = row;
+	for (size_t i = 0; i < w*ch; ++i) {
+		put_ch(t, i, fm_pre_roundf(src[i], mul), high_depth);
+	}
+	return t;
+}
+
+static void * pack_row_nomul_fn(void *t, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Convert float as-is to u8 or u16
+	(void)depth;
+	const bool high_depth = state->dst->bitdepth > 8;
+	const float *src = row;
+	for (size_t i = 0; i < w*ch; ++i) {
+		put_ch(t, i, src[i] + .5f, high_depth);
+	}
+	return t;
+}
+
+static void * cms_row_fn(void *tgt, void *row, const size_t w,
+uint8_t ch, uint8_t depth, const struct imgconv *state) {
+	// ICC transform
+	(void)ch; (void)depth;
+	cmsDoTransform(state->xfr, row, tgt, (cmsUInt32Number)w);
+	return tgt;
+}
+
+static void * oetf_row_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, uint8_t depth, const struct imgconv *state) {
+	// Encode linear into sRGB
+	(void)tgt; (void)depth; (void)state;
+	const uint8_t colors = ch >= 3 ? 3 : 1;
+	for (size_t x = 0; x < w; ++x) {
+		float *pix = (float *)row + x*ch;
+		for (uint8_t z = 0; z < colors; ++z) {
+			pix[z] = oetf_srgb(pix[z]);
+		}
+	}
+	return row;
+}
+
+static void * luminance_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Scale image luminance. We in linear space with no alpha.
+	(void)tgt; (void)depth;
+	const float lum = get_lum_scale(state);
+	for (size_t i = 0; i < w*ch; ++i) {
+		((float *)row)[i] *= lum;
+	}
+	return row;
+}
+
+static void * alpha_dissociate_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Convert to unassociated alpha, scale luminance. We in linear space.
+	(void)tgt; (void)depth;
+	const enum alpha_interpretation alpha = state->src->alpha;
+	const float lum = get_lum_scale(state);
 	const uint8_t a = ch - 1;
 	for (size_t x = 0; x < w; ++x) {
-		float *pix = row + x*ch;
+		float *pix = (float *)row + x*ch;
 		float l = lum;
 		switch (alpha) {
 		case alpha_associated:
@@ -163,191 +230,178 @@ const enum alpha_interpretation alpha, const float lum) {
 			pix[z] *= l;
 		}
 	}
+	return row;
 }
 
-static void luminance_scale(float *row, const size_t w,
-const uint8_t channels, const float lum) {
-	if (lum != 1.0) {
-		for (size_t i = 0; i < w*channels; ++i) {
-			row[i] *= lum;
-		}
-	}
-}
-
-static bool convert_row_gray(float *row, size_t w, uint8_t channels,
-const enum alpha_interpretation alpha, const struct imgconv *state) {
+static void * eotf_row1_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Convert grayscale into linear space
+	(void)tgt; (void)depth;
 	const struct color_convert *cc = &state->color;
-	const bool has_alpha = channels == 2;
-	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
-		const bool inv_a = cc->eotf.invert_input;
-
-		const float mul = cc->nonlinear.m[0];
-		const float add = fmaf(cc->color_offset[0], mul, inv_a);
-		float a_map[2];
-		memcpy(a_map, cc->alpha_map, sizeof(a_map));
-		for (size_t x = 0; x < w; ++x) {
-			float *pix = row + x*channels;
-			pix[0] = fm_fmaf(pix[0], mul, add);
-			if (has_alpha) {
-				pix[1] = fm_fmaf(pix[1], a_map[0], a_map[1]);
-			}
-		}
+	for (size_t x = 0; x < w; ++x) {
+		float *pix = (float *)row + x*ch;
+		*pix = eotf(*pix, &cc->eotf);
 	}
-
-	if ((cc->steps & (color_step_icc))) {
-		return true;
-	}
-
-	if ((cc->steps & color_step_eotf)) {
-		for (size_t x = 0; x < w; ++x) {
-			float *pix = row + x*channels;
-			*pix = eotf(*pix, &cc->eotf);
-		}
-	}
-	const float lum_scale = cc->in_lum * cc->out_lum_inv;
-	if (has_alpha) {
-		convert_alpha(row, w, channels, alpha, lum_scale);
-	} else {
-		luminance_scale(row, w, channels, lum_scale);
-	}
-	if ((cc->steps & color_step_oetf)) {
-		for (size_t x = 0; x < w; ++x) {
-			float *pix = row + x*channels;
-			*pix = oetf_srgb(*pix);
-		}
-	}
-	return false;
+	return row;
 }
 
-static bool convert_row_color(float *row, size_t w, uint8_t channels,
-enum alpha_interpretation alpha, const struct imgconv *state) {
+static void * eotf_and_mat_row3_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Convert color data into linear space, then do matrix mul.
+	(void)tgt; (void)depth;
 	const struct color_convert *cc = &state->color;
-	const bool has_alpha = channels == 4;
-	if ((cc->steps & (color_step_normalize | color_step_nonlinear))) {
-		const float inv_a = cc->eotf.invert_input;
-
-		float off[3], a_map[2];
-		memcpy(off, cc->color_offset, sizeof(off));
-		memcpy(a_map, cc->alpha_map, sizeof(a_map));
-		for (size_t x = 0; x < w; ++x) {
-			float *pix = row + x*channels;
-			float tmp[3];
-
-			for (uint8_t z = 0; z < 3; ++z) {
-				tmp[z] = pix[z] + off[z];
-			}
-			matff_mul(pix, tmp, cc->nonlinear.m, 3, 1, 3, inv_a);
-			if (has_alpha) {
-				pix[3] = fm_fmaf(pix[3], a_map[0], a_map[1]);
-			}
+	for (size_t x = 0; x < w; ++x) {
+		float *pix = (float *)row + x*ch;
+		float tmp[3];
+		for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
+			tmp[z] = eotf(pix[z], &cc->eotf);
 		}
+		matff_mul(pix, tmp, cc->linear.m, 3, 1, 3, 0);
 	}
-
-	if ((cc->steps & (color_step_icc))) {
-		return true;
-	}
-
-	if ((cc->steps & (color_step_eotf | color_step_linear))) {
-		for (size_t x = 0; x < w; ++x) {
-			float *pix = row + x*channels;
-			float tmp[3];
-			for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
-				tmp[z] = eotf(pix[z], &cc->eotf);
-			}
-			matff_mul(pix, tmp, cc->linear.m, 3, 1, 3, 0);
-		}
-	}
-	const float lum_scale = cc->in_lum * cc->out_lum_inv;
-	if (has_alpha) {
-		convert_alpha(row, w, channels, alpha, lum_scale);
-	} else {
-		luminance_scale(row, w, channels, lum_scale);
-	}
-	if ((cc->steps & color_step_oetf)) {
-		for (size_t x = 0; x < w; ++x) {
-			float *pix = row + x*channels;
-			for (uint8_t z = 0; z < 3; ++z) {
-				pix[z] = oetf_srgb(pix[z]);
-			}
-		}
-	}
-	return false;
+	return row;
 }
 
-static void * convert_row(void *restrict tgt, float *restrict row,
-size_t w, uint8_t channels, uint8_t depth, const struct wuimg *src,
-const struct imgconv *state) {
-	/* Perform color correction on a row of floats.
-	 * There's an important assumption from here on: that channels < 3
-	 * are grayscale, >= 3 are color, and that 2 and 4 include an Alpha
-	 * channel. Just stating 'cause this might come to haunt us someday. */
-	const bool icc = (channels >= 3 ? convert_row_color : convert_row_gray)
-		(row, w, channels, src->alpha, state);
-	if (icc) {
-		cmsDoTransform(state->xfr, row, tgt, (cmsUInt32Number)w);
-		return tgt;
+static void * remap_gray_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Remap grayscale data in non-linear space.
+	(void)tgt; (void)depth;
+	const struct color_convert *cc = &state->color;
+	const bool has_alpha = ch == 2;
+
+	const bool inv_a = cc->eotf.invert_input;
+	const float mul = cc->nonlinear.m[0];
+	const float add = fmaf(cc->color_offset[0], mul, inv_a);
+	float a_map[2];
+	memcpy(a_map, cc->alpha_map, sizeof(a_map));
+	for (size_t x = 0; x < w; ++x) {
+		float *pix = (float *)row + x*ch;
+		pix[0] = fm_fmaf(pix[0], mul, add);
+		if (has_alpha) {
+			pix[1] = fm_fmaf(pix[1], a_map[0], a_map[1]);
+		}
 	}
-	return pack_row(tgt, row, w, channels, depth > 8);
+	return row;
 }
 
-static void * expand_row(void *restrict tgt, const void *restrict unpack,
-ptrdiff_t pix_stride, size_t w, uint8_t channels, uint8_t bitdepth,
-const struct wuimg *src, const struct imgconv *state) {
+static void * remap_color_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	// Remap color data in non-linear space.
+	(void)tgt; (void)depth;
+	const struct color_convert *cc = &state->color;
+	const bool has_alpha = ch == 4;
+	const float inv_a = cc->eotf.invert_input;
+
+	float off[3], a_map[2];
+	memcpy(off, cc->color_offset, sizeof(off));
+	memcpy(a_map, cc->alpha_map, sizeof(a_map));
+	for (size_t x = 0; x < w; ++x) {
+		float *pix = (float *)row + x*ch;
+		float tmp[3];
+
+		for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
+			tmp[z] = pix[z] + off[z];
+		}
+		matff_mul(pix, tmp, cc->nonlinear.m, 3, 1, 3, inv_a);
+		if (has_alpha) {
+			pix[3] = fm_fmaf(pix[3], a_map[0], a_map[1]);
+		}
+	}
+	return row;
+}
+
+static void * expand_to_float_fn(void *tgt, void *unpack, const size_t w,
+const uint8_t ch, const uint8_t bitdepth, const struct imgconv *state) {
 	/* We're given pixels at some distance from each other, and components
 	 * interleaved in some order. Expand to floats in RGBA or GrayAlpha
 	 * order. */
-	const uint8_t ud = state->unpack_depth/8;
-	const uint8_t *u = unpack;
-	float *row = (float *)state->row;
+	(void)tgt; (void)bitdepth;
+	const ptrdiff_t pix_stride = state->pix_stride;
+	const uint8_t ud = unpack_comp_size(state);
+	const uint8_t *src = unpack;
+	float *dst = (float *)state->row;
 	for (size_t x = 0; x < w; ++x) {
-		for (uint8_t z = 0; z < channels; ++z) {
-			row[x*channels + z] = get_ch(u, state->swz[z], ud);
+		for (uint8_t z = 0; z < ch; ++z) {
+			dst[x*ch + z] = get_ch(src, state->swz[z], ud);
 		}
-		u += pix_stride;
+		src += pix_stride;
 	}
-	return convert_row(tgt, row, w, channels, bitdepth, src, state);
+	return dst;
 }
 
-static void * raw_convert(void *restrict tgt, void *restrict pix,
-ptrdiff_t pix_stride, size_t w, uint8_t channels, uint8_t bitdepth,
-const struct wuimg *restrict src, const struct imgconv *state) {
-	uint8_t *p = pix;
-	if (!state->color.steps) {
-		// Input/unpacked data matches output colorspace
-		const uint8_t comp_size = state->unpack_depth/8;
-		const size_t pix_size = comp_size*channels;
-		uint8_t *t = src->attr == pix_float ? state->row : tgt;
-		if (src->layout != state->dst->layout) {
-			// Only swizzling is needed
-			for (size_t x = 0; x < w; ++x) {
-				for (uint8_t z = 0; z < channels; ++z) {
-					memcpy(t + x*pix_size + z*comp_size,
-						p + state->swz[z]*comp_size,
-						comp_size);
-				}
-				p += pix_stride;
-			}
-		} else if ((ptrdiff_t)pix_size != pix_stride) {
-			// Read across the image
-			for (size_t x = 0; x < w; ++x) {
-				memcpy(t + x*pix_size, p, pix_size);
-				p += pix_stride;
-			}
-		} else if (src->attr == pix_float) {
-			// Input is floating-point. Send to pack_row()
-			t = p;
-		} else {
-			/* Input is linear and a pointer to the source image.
-			 * Copy to output. */
-			memcpy(t, p, pix_size*w);
+static void * swizzle_row_fn(void *tgt, void *unpack, const size_t w,
+const uint8_t ch, const uint8_t bitdepth, const struct imgconv *state) {
+	// Read across the image and swizzle channel order
+	(void)bitdepth;
+	const ptrdiff_t pix_stride = state->pix_stride;
+	const uint8_t comp_size = unpack_comp_size(state);
+	const size_t pix_size = comp_size*ch;
+
+	const uint8_t *src = unpack;
+	uint8_t *dst = state->src->attr == pix_float ? state->row : tgt;
+	for (size_t x = 0; x < w; ++x) {
+		for (uint8_t z = 0; z < ch; ++z) {
+			memcpy(dst + x*pix_size + z*comp_size,
+				src + state->swz[z]*comp_size,
+				comp_size);
 		}
-		if (src->attr == pix_float) {
-			return pack_row(tgt, (float *)t, w, channels, bitdepth > 8);
-		}
-		return tgt;
+		src += pix_stride;
 	}
-	return expand_row(tgt, pix, pix_stride, w, channels, bitdepth,
-		src, state);
+	return dst;
+}
+
+static void * upright_fn(void *tgt, void *unpack, const size_t w,
+const uint8_t ch, const uint8_t bitdepth, const struct imgconv *state) {
+	// Read across the image
+	(void)bitdepth;
+	const ptrdiff_t pix_stride = state->pix_stride;
+	const size_t pix_size = unpack_comp_size(state)*ch;
+
+	const uint8_t *src = unpack;
+	uint8_t *dst = state->src->attr == pix_float ? state->row : tgt;
+	for (size_t x = 0; x < w; ++x) {
+		memcpy(dst + x*pix_size, src, pix_size);
+		src += pix_stride;
+	}
+	return dst;
+}
+
+static void * memcpy_fn(void *tgt, void *unpack, const size_t w,
+const uint8_t ch, const uint8_t bitdepth, const struct imgconv *state) {
+	(void)bitdepth;
+	memcpy(tgt, unpack, w*ch*unpack_comp_size(state));
+	return tgt;
+}
+
+static void * pal_convert_fn(void *tgt, void *unpack, const size_t w,
+const uint8_t ch, const uint8_t bitdepth, const struct imgconv *state) {
+	/* Palette is color-corrected during the initial setup, so copy values
+	 * directly. */
+	(void)ch; (void)bitdepth;
+	const ptrdiff_t stride = state->pix_stride;
+	const struct palette *pal = state->pal;
+	const uint8_t *src = unpack;
+	uint32_t *dst = tgt;
+	for (size_t i = 0; i < w; ++i) {
+		memcpy(dst + i, pal->color + *src, sizeof(*pal->color));
+		src += stride;
+	}
+	return dst;
+}
+
+static void * imgconv_fn_run(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	for (unsigned i = 0; i < state->fn_len; ++i) {
+		row = state->fn[i](tgt, row, w, ch, depth, state);
+	}
+	return tgt;
+}
+
+
+static uint8_t * interleaved_convert(void *restrict tgt, void *restrict unpack,
+const struct imgconv *state) {
+	const struct wuimg *dst = state->dst;
+	return imgconv_fn_run(tgt, unpack, dst->w, dst->channels, dst->bitdepth,
+		state);
 }
 
 static bool mirror_swap(const struct wuimg *src) {
@@ -378,6 +432,10 @@ static float spos(const float coord, const struct planar_subsamp *p) {
 	return fm_fmaf(coord, p->samp, p->off);
 }
 
+static float mix_factor(const float coord, const struct planar_subsamp *p) {
+	return fm_fractf(spos(coord, p));
+}
+
 static void upsamp_plane4(float *pix, const float *limit, const uint8_t ch,
 const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	// Fast upsampling function
@@ -386,33 +444,34 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 	const ptrdiff_t stride = (ptrdiff_t)p->stride;
 	const ptrdiff_t vstride = x ? usize : stride;
 	const ptrdiff_t cstride = x ? stride : usize;
-	const ptrdiff_t dv = (ptrdiff_t)((x ? p->w : p->h) - 1) * vstride;
-	const ptrdiff_t dc = (ptrdiff_t)((x ? p->h : p->w) - 1) * cstride;
+	const ptrdiff_t vlast = (ptrdiff_t)((x ? p->w : p->h) - 1) * vstride;
+	const ptrdiff_t clast = (ptrdiff_t)((x ? p->h : p->w) - 1) * cstride;
 
-	ptrdiff_t v = x ? ix : iy;
-	ptrdiff_t c = x ? iy : ix;
 	const int vadd = x ? xadd : yadd;
 	const int cadd = 0;
+	const ptrdiff_t limv = vadd >= 0 ? vlast : 0;
+	const ptrdiff_t vdiff = vadd * vstride;
+
 	const struct plane_dim *dpv = x ? &p->x : &p->y;
 	const struct plane_dim *dpc = x ? &p->y : &p->x;
 
 	struct planar_subsamp pv, pc;
 	set_params(&pv, dpv, vadd);
 	set_params(&pc, dpc, cadd);
+
+	ptrdiff_t v = x ? ix : iy;
+	ptrdiff_t c = x ? iy : ix;
 	float fv = (float)(v % dpv->subsamp);
-	float fc = (float)(c % dpc->subsamp);
-	const float mc = fm_fractf(spos(fc, &pc));
+	const float fc = (float)(c % dpc->subsamp);
+	const float mc = mix_factor(fc, &pc);
 
 	v = (ptrdiff_t)floorf(spos((float)v, &pv)) * vstride;
 	v += (vadd < 0) * vstride;
 	c = (ptrdiff_t)floorf(spos((float)c, &pc)) * cstride;
 	const ptrdiff_t loc = c + (c < 0) * cstride;
-	const ptrdiff_t hic = c + (c < dc) * cstride;
+	const ptrdiff_t hic = c + (c < clast) * cstride;
 	const uint8_t *ptr_lo = p->ptr + loc;
 	const uint8_t *ptr_hi = p->ptr + hic;
-
-	const ptrdiff_t limv = vadd >= 0 ? dv : 0;
-	const ptrdiff_t vdiff = vadd * vstride;
 
 	float g[2];
 	const bool up = vadd >= 0;
@@ -428,7 +487,7 @@ const struct plane_info *p, int ix, int xadd, int iy, int yadd, uint8_t usize) {
 			get_ch(ptr_hi + v, 0, usize),
 			mc);
 		do {
-			float mv = fm_fractf(spos(fv, &pv));
+			const float mv = mix_factor(fv, &pv);
 			*pix = fm_mix(g[0], g[1], mv);
 			fv = (fv == pv.wrap) ? pv.init : fv + (float)vadd;
 			pix += ch;
@@ -492,19 +551,19 @@ static uint8_t * planar_convert(const struct imgconv *state, size_t y,
 void *restrict tgt) {
 	/* Produce one row of interleaved output out of a planar and possibly
 	 * rotated image, doing linear interpolation on subsampled planes. */
-	const struct wuimg *src = state->tmp ? state->tmp : state->src;
+	const struct wuimg *src = image_src(state);
 	const struct wuimg *dst = state->dst;
 	const struct plane_info *p = src->u.planes->p;
 
 	const uint8_t channels = src->channels;
-	const uint8_t ud = state->unpack_depth/8;
-	const bool quarter = src->rotate & 1;
+	const uint8_t ud = unpack_comp_size(state);
+	const bool quarter = quarter_turn(state);
 
 	int w = (int)(src->w - 1);
 	int h = (int)(src->h - 1);
 	int ix, iy;
 	int xadd, yadd;
-	bool swap = mirror_swap(src);
+	const bool swap = mirror_swap(src);
 	if (quarter) {
 		ix = (src->rotate & 2) ? w - (int)y : (int)y;
 		xadd = 0;
@@ -531,37 +590,13 @@ void *restrict tgt) {
 				(pix, limit, channels, p+z, ix, xadd, iy, yadd, ud);
 		}
 	}
-	return (state->color.steps)
-		? convert_row(tgt, row, dst->w, channels, dst->bitdepth,
-			src, state)
-		: pack_row_nomul(tgt, row, dst->w, channels, dst->bitdepth > 8);
-}
-
-static void * pal_convert(uint32_t *tgt, const uint8_t *restrict unpack,
-const ptrdiff_t stride, const struct palette *pal, const size_t w) {
-	/* Palette is color-corrected during the initial setup, so copy values
-	 * directly. */
-	for (size_t i = 0; i < w; ++i) {
-		memcpy(tgt + i, pal->color + *unpack, sizeof(*pal->color));
-		unpack += stride;
-	}
-	return tgt;
-}
-
-static uint8_t * interleaved_convert(void *restrict tgt, void *restrict unpack,
-const ptrdiff_t stride, const struct wuimg *src, const struct imgconv *state) {
-	const struct wuimg *dst = state->dst;
-	if (state->pal) {
-		return pal_convert(tgt, unpack, stride, state->pal, dst->w);
-	}
-	return raw_convert(tgt, unpack, stride, dst->w, dst->channels,
-		dst->bitdepth, src, state);
+	return interleaved_convert(tgt, row, state);
 }
 
 static uint8_t * get_unpacked(const struct imgconv *state,
 const struct wuimg *src, const size_t y) {
 	uint8_t *s_row = src->data + wuimg_stride(src) * y;
-	if (state->op == op_noop || src == state->tmp) {
+	if (!state->unpack_len) {
 		// Nothing needs to be done, return pointer to original row
 		return s_row;
 	}
@@ -581,17 +616,14 @@ static uint8_t * get_row(const struct imgconv *state, size_t y,
 void *restrict tgt) {
 	/* Image may have half-rotations and may be mirrored. It's not
 	 * planar, but may require unpacking before accessing pixels. */
-	const struct wuimg *src = state->tmp ? state->tmp : state->src;
+	const struct wuimg *src = image_src(state);
 	y = mirror_swap(src) ? src->h - 1 - y : y;
 	uint8_t *u_row = get_unpacked(state, src, y);
 
-	// Set reading direction
-	ptrdiff_t pix_size = state->unpack_depth/8 * state->unpack_ch;
 	if (src->rotate & 2) {
-		u_row += (src->w - 1) * (size_t)pix_size;
-		pix_size = -pix_size;
+		u_row += (src->w - 1) * (size_t)-state->pix_stride;
 	}
-	return interleaved_convert(tgt, u_row, pix_size, src, state);
+	return interleaved_convert(tgt, u_row, state);
 }
 
 static uint8_t * get_rotated_row(const struct imgconv *state, size_t col,
@@ -599,33 +631,31 @@ void *restrict tgt) {
 	/* Image has a quarter rotation and may be mirrored. It's not planar,
 	 * and any required unpacking was done during initialization. */
 
-	const struct wuimg *src = state->tmp ? state->tmp : state->src;
-	size_t pix_size = state->unpack_depth/8 * src->channels;
-	ptrdiff_t stride = (ptrdiff_t)wuimg_stride(src);
+	const struct wuimg *src = image_src(state);
+	const ptrdiff_t stride = state->pix_stride;
+	const size_t pix_size = unpack_comp_size(state) * src->channels;
 	uint8_t *data = src->data;
 	if (src->rotate & 2) {
 		// 3/4 clockwise rotation.
 		data += pix_size * (src->w - 1 - col);
 		if (src->mirror) {
-			data += stride * (ptrdiff_t)(src->h - 1);
-			stride = -stride;
+			data += -stride * (ptrdiff_t)(src->h - 1);
 		}
 	} else {
 		// 1/4 clockwise rotation.
 		data += pix_size * col;
 		if (!src->mirror) {
-			data += stride * (ptrdiff_t)(src->h - 1);
-			stride = -stride;
+			data += -stride * (ptrdiff_t)(src->h - 1);
 		}
 	}
-	return interleaved_convert(tgt, data, stride, src, state);
+	return interleaved_convert(tgt, data, state);
 }
 
 uint8_t * imgconv_get_row(const struct imgconv *state, size_t y,
 void *restrict tgt) {
 	if (state->src->mode == image_mode_planar) {
 		return planar_convert(state, y, tgt);
-	} else if (state->src->rotate & 1) {
+	} else if (quarter_turn(state)) {
 		return get_rotated_row(state, y, tgt);
 	}
 	return get_row(state, y, tgt);
@@ -703,7 +733,7 @@ const struct wuimg *src) {
 	return wu_alloc_error;
 }
 
-static bool needs_linear_light(const struct wuimg *src) {
+static bool needs_alpha_diss(const struct wuimg *src) {
 	switch (src->alpha) {
 	case alpha_associated: case alpha_key:
 		return true;
@@ -744,6 +774,18 @@ const struct wuimg *src, const double range) {
 	return wu_ok;
 }
 
+static void put_fn(struct imgconv *state, const imgconv_fn fn) {
+	state->fn[state->fn_len] = fn;
+	++state->fn_len;
+}
+
+static void put_fn_if(struct imgconv *state, const imgconv_fn fn,
+const bool cond) {
+	if (cond) {
+		put_fn(state, fn);
+	}
+}
+
 const char * imgconv_init(struct imgconv *state, const struct wuimg *dst,
 const struct wuimg *src) {
 	if (src->attr == pix_float && src->bitdepth < 32) {
@@ -752,14 +794,12 @@ const struct wuimg *src) {
 		return "Conversion from channels > 4 not supported";
 	}
 
-	const bool rm_alpha = src->alpha != alpha_ignore
-		&& dst->alpha == alpha_ignore;
 	*state = (struct imgconv) {
 		.src = src,
 		.dst = dst,
 		.op = op_noop,
 		.unpack_depth = dst->bitdepth,
-		.unpack_ch = (uint8_t)(dst->channels + rm_alpha),
+		.unpack_ch = dst->channels,
 	};
 	pix_layout_min_map(state->swz, src->layout);
 
@@ -800,13 +840,13 @@ const struct wuimg *src) {
 		return wu_error_str(st);
 	}
 
-	bool skip_linear = !(state->color.steps & color_step_linear)
-		&& state->color.eotf.srgb && !needs_linear_light(src);
+	const bool skip_linear = !(state->color.steps & color_step_linear)
+		&& state->color.eotf.srgb && !needs_alpha_diss(src);
 	enum color_steps omit = (!state->xfr ? color_step_icc : 0u)
 		| (skip_linear ? (color_step_eotf | color_step_oetf) : 0u);
 	state->color.steps &= ~omit;
 
-	bool skip_normal = state->color.steps == color_step_normalize
+	const bool skip_normal = state->color.steps == color_step_normalize
 		&& inrange == outrange
 		&& src->bitrange == dst->bitrange
 		&& src->alpha == alpha_unassociated;
@@ -826,11 +866,11 @@ const struct wuimg *src) {
 			inrange, outrange);
 	}
 
-	/* If we can't read pixels directly, and we can't access rows
-	 * independently either, then we must unpack the whole image and
-	 * refer to the copy instead of the original. */
 	if (state->op != op_noop) {
-		if (src->rotate & 1 || src->mode == image_mode_planar
+		/* If we can't read pixels directly, and we can't access rows
+		 * independently either, then we must unpack the whole image
+		 * and refer to the copy instead of the original. */
+		if (quarter_turn(state) || src->mode == image_mode_planar
 		|| src->align_sh == align_bitpack) {
 			st = init_tmp_img(state, src);
 			if (st != wu_ok) {
@@ -842,6 +882,61 @@ const struct wuimg *src) {
 			state->unpack_len = unpack_stride(src->w*src->channels,
 				src->bitdepth, src->attr, state->op, arg);
 		}
+	}
+
+	// Set reading direction
+	if (src->mode == image_mode_planar) {
+		state->pix_stride = sizeof(float)*dst->channels;
+	} else if (quarter_turn(state)) {
+		ptrdiff_t d = !((bool)(src->rotate & 2) ^ src->mirror) ? -1 : 1;
+		state->pix_stride = (ptrdiff_t)wuimg_stride(image_src(state)) * d;
+	} else {
+		state->pix_stride = unpack_comp_size(state) * state->unpack_ch
+			* ((src->rotate & 2) ? -1 : 1);
+	}
+
+	// Setup row functions
+	if (state->color.steps) {
+		put_fn_if(state, expand_to_float_fn,
+			src->mode != image_mode_planar);
+
+		const bool color = dst->channels >= 3;
+		const bool remap = state->color.steps
+			& (color_step_normalize | color_step_nonlinear);
+		put_fn_if(state,
+			(color ? remap_color_fn : remap_gray_fn), remap);
+		if ((state->color.steps & color_step_icc)) {
+			put_fn(state, cms_row_fn);
+		} else {
+			if (color) {
+				const enum color_steps linear =
+					color_step_eotf | color_step_linear;
+				put_fn_if(state, eotf_and_mat_row3_fn,
+					state->color.steps & linear);
+			} else {
+				put_fn_if(state, eotf_row1_fn,
+					state->color.steps & color_step_eotf);
+			}
+			if (image_has_alpha(state)) {
+				put_fn(state, alpha_dissociate_fn);
+			} else if (get_lum_scale(state) != 1.0f) {
+				put_fn(state, luminance_fn);
+			}
+			put_fn_if(state, oetf_row_fn,
+				state->color.steps & color_step_oetf);
+			put_fn(state, pack_row_fn);
+		}
+	} else if (src->mode == image_mode_planar) {
+		put_fn(state, pack_row_nomul_fn);
+	} else {
+		if (src->layout != dst->layout) {
+			put_fn(state, swizzle_row_fn);
+		} else if (state->pix_stride != unpack_comp_size(state)*dst->channels) {
+			put_fn(state, upright_fn);
+		} else if (src->attr != pix_float) {
+			put_fn(state, memcpy_fn);
+		}
+		put_fn_if(state, pack_row_fn, src->attr == pix_float);
 	}
 
 	/* Allocate row buffer. Buffer is used for
@@ -871,8 +966,13 @@ const struct wuimg *src) {
 			if (!state->pal) {
 				return "Couldn't allocate temporary palette";
 			}
-			raw_convert(state->pal->color, src->u.palette->color,
-				4, 1 << src->bitdepth, 4, 8, src, state);
+			const ptrdiff_t ps = state->pix_stride;
+			state->pix_stride = sizeof(*state->pal->color);
+			imgconv_fn_run(state->pal->color, src->u.palette->color,
+				1 << src->bitdepth, 4, 8, state);
+			state->pix_stride = ps;
+			state->fn_len = 0;
+			put_fn(state, pal_convert_fn);
 		}
 	}
 	return NULL;

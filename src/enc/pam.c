@@ -153,7 +153,6 @@ const int frame) {
 	size_t w = 0;
 	switch (dst->mode) {
 	case image_mode_palette:
-		// Always hash the palette in case it's modified between frames
 		;const struct palette *pal = dst->u.palette;
 		w += fwrite(pal->color, 1, sizeof(pal->color), ofp);
 		// fallthrough

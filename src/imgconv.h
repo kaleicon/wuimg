@@ -6,6 +6,11 @@
 #include "raster/unpack.h"
 #include "raster/wuimg.h"
 
+struct imgconv;
+
+typedef void * (*imgconv_fn)(void *tgt, void *row, size_t w, uint8_t ch,
+	uint8_t depth, const struct imgconv *state);
+
 struct imgconv {
 	// swizzle map
 	uint8_t swz[4];
@@ -14,6 +19,8 @@ struct imgconv {
 	enum unpack_op op:8;
 	uint8_t unpack_depth;
 	uint8_t unpack_ch;
+
+	uint8_t fn_len;
 
 	struct color_convert color;
 	struct icc_transform *xfr;
@@ -24,6 +31,10 @@ struct imgconv {
 	const struct wuimg *src;
 	const struct wuimg *dst;
 	struct wuimg *tmp;
+
+	ptrdiff_t pix_stride;
+
+	imgconv_fn fn[6];
 };
 
 void imgconv_close(struct imgconv *state);
