@@ -118,28 +118,42 @@ static float oetf_srgb(float v) {
 		: v * 12.92f;
 }
 
-static float eotf(float v, const struct color_transfer *t) {
-	const float *arg = t->args;
-	switch (t->fn) {
-	case color_transfer_linear_gamma:
-		// Input to the linear-gamma EOTF may be negative
-		;float h = fabsf(v);
-		bool gamma = h > arg[0];
-		float e = gamma ? arg[1] : arg[4];
-		float l = gamma ? arg[2] : 0.0f;
-		float p = gamma ? arg[3] : 1.0f;
-		return copysignf(mypowf(fm_fmaf(h, e, l), p), v);
-	case color_transfer_pq:
-		v = mypowf_unchecked(fm_fmaxf(v, 0), arg[0]);
-		float num = v - fm_fminf(arg[1], v);
-		float den = fm_fmaf(v, arg[3], arg[2]);
-		return mypowf(num/den, arg[4]);
-	case color_transfer_hlg:
-		break;
-	}
-	return v > arg[0]
-		? myexp2f(fm_fmaf(v, arg[1], arg[2])) + arg[3]
-		: v * v * arg[4];
+typedef float (*eotf_fn)(float v, const float arg[static 5]);
+static inline float eotf_linear_gamma(float v, const float arg[static 5]) {
+	// Input may be negative, and if so the output should be too
+	float h = fabsf(v);
+
+	// Moving args to the stack first enables vectorization.
+	const float meet = arg[0];
+	const float g_mul = arg[1];
+	const float g_add = arg[2];
+	const float g_exp = arg[3];
+	const float l_mul = arg[4];
+	h = (h > meet)
+		? mypowf(fm_fmaf(h, g_mul, g_add), g_exp)
+		: h * l_mul;
+	return copysignf(h, v);
+}
+static inline float eotf_pq(float v, const float arg[static 5]) {
+	const float exp1 = arg[0];
+	const float limit = arg[1];
+	const float d_add = arg[2]; // yes, add comes before mul
+	const float d_mul = arg[3];
+	const float exp2 = arg[4];
+	v = mypowf_unchecked(fm_fmaxf(v, 0), exp1);
+	float num = v - fm_fminf(limit, v);
+	float den = fm_fmaf(v, d_mul, d_add);
+	return mypowf(num/den, exp2);
+}
+static inline float eotf_hlg(float v, const float arg[static 5]) {
+	const float meet = arg[0];
+	const float l_mul = arg[1];
+	const float l_inner = arg[2];
+	const float l_outer = arg[3];
+	const float g_mul = arg[4];
+	return v > meet
+		? myexp2f(fm_fmaf(v, l_mul, l_inner)) + l_outer
+		: v * v * g_mul;
 }
 
 
@@ -176,18 +190,28 @@ uint8_t ch, uint8_t depth, const struct imgconv *state) {
 	return tgt;
 }
 
-static void * oetf_row_fn(void *tgt, void *row, const size_t w,
-const uint8_t ch, uint8_t depth, const struct imgconv *state) {
+static inline void * oetf_row_base_fn(float *row, const size_t w,
+const uint8_t ch, const uint8_t colors) {
 	// Encode linear into sRGB
-	(void)tgt; (void)depth; (void)state;
-	const uint8_t colors = ch >= 3 ? 3 : 1;
 	for (size_t x = 0; x < w; ++x) {
-		float *pix = (float *)row + x*ch;
-		for (uint8_t z = 0; z < colors; ++z) {
-			pix[z] = oetf_srgb(pix[z]);
+		float *pix = row + x*ch;
+		if (colors == 3) {
+			pix[2] = oetf_srgb(pix[2]);
+			pix[1] = oetf_srgb(pix[1]);
 		}
+		pix[0] = oetf_srgb(pix[0]);
 	}
 	return row;
+}
+static void * oetf_row1_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth; (void)state;
+	return oetf_row_base_fn(row, w, ch, 1);
+}
+static void * oetf_row3_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth; (void)state;
+	return oetf_row_base_fn(row, w, ch, 3);
 }
 
 static void * luminance_fn(void *tgt, void *row, const size_t w,
@@ -233,32 +257,75 @@ const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
 	return row;
 }
 
-static void * eotf_row1_fn(void *tgt, void *row, const size_t w,
+static void * mat_row3_fn(void *tgt, void *row, const size_t w,
 const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
-	// Convert grayscale into linear space
-	(void)tgt; (void)depth;
-	const struct color_convert *cc = &state->color;
-	for (size_t x = 0; x < w; ++x) {
-		float *pix = (float *)row + x*ch;
-		*pix = eotf(*pix, &cc->eotf);
-	}
-	return row;
-}
-
-static void * eotf_and_mat_row3_fn(void *tgt, void *row, const size_t w,
-const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
-	// Convert color data into linear space, then do matrix mul.
+	// Matrix mul in linear space
 	(void)tgt; (void)depth;
 	const struct color_convert *cc = &state->color;
 	for (size_t x = 0; x < w; ++x) {
 		float *pix = (float *)row + x*ch;
 		float tmp[3];
-		for (uint8_t z = 0; z < ARRAY_LEN(tmp); ++z) {
-			tmp[z] = eotf(pix[z], &cc->eotf);
-		}
-		matff_mul(pix, tmp, cc->linear.m, 3, 1, 3, 0);
+		matff_mul(tmp, pix, cc->linear.m, 3, 1, 3, 0);
+		memcpy(pix, tmp, sizeof(tmp));
 	}
 	return row;
+}
+
+static inline void * eotf_row_base_fn(float *row, const size_t w,
+const uint8_t ch, const uint8_t colors, const eotf_fn fn,
+const struct imgconv *state) {
+	// Convert to linear space
+	const float *arg = state->color.eotf.args;
+	for (size_t x = 0; x < w; ++x) {
+		float *pix = row + x*ch;
+		if (colors == 3) {
+			pix[2] = fn(pix[2], arg);
+			pix[1] = fn(pix[1], arg);
+		}
+		pix[0] = fn(pix[0], arg);
+	}
+	return row;
+}
+static void * eotf_lg_row1_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth;
+	return eotf_row_base_fn(row, w, ch, 1, eotf_linear_gamma, state);
+}
+static void * eotf_pq_row1_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth;
+	return eotf_row_base_fn(row, w, ch, 1, eotf_pq, state);
+}
+static void * eotf_hlg_row1_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth;
+	return eotf_row_base_fn(row, w, ch, 1, eotf_hlg, state);
+}
+static void * eotf_lg_row3_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth;
+	return eotf_row_base_fn(row, w, ch, 3, eotf_linear_gamma, state);
+}
+static void * eotf_pq_row3_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth;
+	return eotf_row_base_fn(row, w, ch, 3, eotf_pq, state);
+}
+static void * eotf_hlg_row3_fn(void *tgt, void *row, const size_t w,
+const uint8_t ch, const uint8_t depth, const struct imgconv *state) {
+	(void)tgt; (void)depth;
+	return eotf_row_base_fn(row, w, ch, 3, eotf_hlg, state);
+}
+static imgconv_fn get_eotf_row_fn(const struct imgconv *state, const bool c) {
+	switch (state->color.eotf.fn) {
+	case color_transfer_linear_gamma:
+		return c ? eotf_lg_row3_fn : eotf_lg_row1_fn;
+	case color_transfer_pq:
+		return c ? eotf_pq_row3_fn : eotf_pq_row1_fn;
+	case color_transfer_hlg:
+		break;
+	}
+	return c ? eotf_hlg_row3_fn : eotf_hlg_row1_fn;
 }
 
 static void * remap_gray_fn(void *tgt, void *row, const size_t w,
@@ -557,14 +624,13 @@ void *restrict tgt) {
 
 	const uint8_t channels = src->channels;
 	const uint8_t ud = unpack_comp_size(state);
-	const bool quarter = quarter_turn(state);
 
 	int w = (int)(src->w - 1);
 	int h = (int)(src->h - 1);
 	int ix, iy;
 	int xadd, yadd;
 	const bool swap = mirror_swap(src);
-	if (quarter) {
+	if (quarter_turn(state)) {
 		ix = (src->rotate & 2) ? w - (int)y : (int)y;
 		xadd = 0;
 		iy = swap ? 0 : h;
@@ -905,24 +971,23 @@ const struct wuimg *src) {
 			& (color_step_normalize | color_step_nonlinear);
 		put_fn_if(state,
 			(color ? remap_color_fn : remap_gray_fn), remap);
+
 		if ((state->color.steps & color_step_icc)) {
 			put_fn(state, cms_row_fn);
 		} else {
-			if (color) {
-				const enum color_steps linear =
-					color_step_eotf | color_step_linear;
-				put_fn_if(state, eotf_and_mat_row3_fn,
-					state->color.steps & linear);
-			} else {
-				put_fn_if(state, eotf_row1_fn,
-					state->color.steps & color_step_eotf);
-			}
+			put_fn_if(state, get_eotf_row_fn(state, color),
+				state->color.steps & color_step_eotf);
+			put_fn_if(state, mat_row3_fn,
+				color && (state->color.steps & color_step_linear));
+
 			if (image_has_alpha(state)) {
 				put_fn(state, alpha_dissociate_fn);
 			} else if (get_lum_scale(state) != 1.0f) {
 				put_fn(state, luminance_fn);
 			}
-			put_fn_if(state, oetf_row_fn,
+
+			put_fn_if(state,
+				(dst->channels >= 3 ? oetf_row3_fn : oetf_row1_fn),
 				state->color.steps & color_step_oetf);
 			put_fn(state, pack_row_fn);
 		}

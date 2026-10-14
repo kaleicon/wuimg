@@ -34,7 +34,7 @@ struct imgconv {
 
 	ptrdiff_t pix_stride;
 
-	imgconv_fn fn[6];
+	imgconv_fn fn[7];
 };
 
 void imgconv_close(struct imgconv *state);

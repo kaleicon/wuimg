@@ -93,8 +93,9 @@ static inline float fm_exp2f_unchecked(float x) {
 }
 
 static inline float fm_log2f_for_pow(float x, float mul) {
-	/* log2() that accepts the exponent of its powf() parent to save a
-	 * single instruction. */
+	/* log2() that accepts the exponent of its powf() parent to do
+	 * something that saves quite a bit of time.
+	 * Meant to replace `log2(x) * mul` */
 
 	// Extract the exponent of x
 	uint32_t u;
@@ -117,6 +118,7 @@ static inline float fm_log2f_for_pow(float x, float mul) {
 		a4 = 0x1.45cce8p-2,
 		a5 = -0x1.1a0ba8p-5;
 	x = fm_fmaf(fm_fmaf(fm_fmaf(fm_fmaf(fm_fmaf(a5, m, a4), m, a3), m, a2), m, a1), m, a0);
+	// replaces `fm_fmaf(x, m - 1.0f, e) * mul`
 	return fm_fmaf(x, fm_fmaf(mul, m, -mul), e * mul);
 }
 
