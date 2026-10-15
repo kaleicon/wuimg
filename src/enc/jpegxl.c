@@ -281,8 +281,10 @@ static bool jxl_passthrough(const struct wuimg *src) {
 }
 
 static bool best_jxl_fit(struct wuimg *dst, const struct wuimg *src) {
-	dst->w = (src->rotate & 1) ? src->h : src->w;
-	dst->h = (src->rotate & 1) ? src->w : src->h;
+	dst->w = src->w;
+	dst->h = src->h;
+	dst->rotate = src->rotate;
+	dst->mirror = src->mirror;
 	switch (src->mode) {
 	case image_mode_raw:
 	case image_mode_planar:

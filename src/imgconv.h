@@ -20,6 +20,9 @@ struct imgconv {
 	uint8_t unpack_depth;
 	uint8_t unpack_ch;
 
+	uint8_t rotate;
+	bool mirror;
+
 	uint8_t fn_len;
 
 	struct color_convert color;

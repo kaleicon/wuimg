@@ -83,9 +83,15 @@ static const struct wuimg * image_src(const struct imgconv *state) {
 static uint8_t unpack_comp_size(const struct imgconv *state) {
 	return state->unpack_depth/8;
 }
+static size_t unpack_pix_size(const struct imgconv *state) {
+	return state->unpack_depth/8u * state->unpack_ch;
+}
 
 static bool quarter_turn(const struct imgconv *state) {
-	return state->src->rotate & 1;
+	return state->rotate & 1;
+}
+static bool mirror_swap(const struct imgconv *state) {
+	return state->mirror ^ (bool)(state->rotate & 2);
 }
 
 static float get_ch(const void *data, const int32_t i, const uint8_t depth) {
@@ -471,10 +477,6 @@ const struct imgconv *state) {
 		state);
 }
 
-static bool mirror_swap(const struct wuimg *src) {
-	return src->mirror ^ (bool)(src->rotate & 2);
-}
-
 struct planar_subsamp {
 	float samp, off;
 	float init;
@@ -629,15 +631,15 @@ void *restrict tgt) {
 	int h = (int)(src->h - 1);
 	int ix, iy;
 	int xadd, yadd;
-	const bool swap = mirror_swap(src);
+	const bool swap = mirror_swap(state);
 	if (quarter_turn(state)) {
-		ix = (src->rotate & 2) ? w - (int)y : (int)y;
+		ix = (state->rotate & 2) ? w - (int)y : (int)y;
 		xadd = 0;
 		iy = swap ? 0 : h;
 		yadd = swap ? 1 : -1;
 	} else {
-		ix = (src->rotate & 2) ? w : 0;
-		xadd = (src->rotate & 2) ? -1 : 1;
+		ix = (state->rotate & 2) ? w : 0;
+		xadd = (state->rotate & 2) ? -1 : 1;
 		iy = swap ? h - (int)y : (int)y;
 		yadd = 0;
 	}
@@ -683,10 +685,10 @@ void *restrict tgt) {
 	/* Image may have half-rotations and may be mirrored. It's not
 	 * planar, but may require unpacking before accessing pixels. */
 	const struct wuimg *src = image_src(state);
-	y = mirror_swap(src) ? src->h - 1 - y : y;
+	y = mirror_swap(state) ? src->h - 1 - y : y;
 	uint8_t *u_row = get_unpacked(state, src, y);
 
-	if (src->rotate & 2) {
+	if (state->rotate & 2) {
 		u_row += (src->w - 1) * (size_t)-state->pix_stride;
 	}
 	return interleaved_convert(tgt, u_row, state);
@@ -696,21 +698,20 @@ static uint8_t * get_rotated_row(const struct imgconv *state, size_t col,
 void *restrict tgt) {
 	/* Image has a quarter rotation and may be mirrored. It's not planar,
 	 * and any required unpacking was done during initialization. */
-
 	const struct wuimg *src = image_src(state);
 	const ptrdiff_t stride = state->pix_stride;
-	const size_t pix_size = unpack_comp_size(state) * src->channels;
+	const size_t pix_size = unpack_pix_size(state);
 	uint8_t *data = src->data;
-	if (src->rotate & 2) {
+	if (state->rotate & 2) {
 		// 3/4 clockwise rotation.
 		data += pix_size * (src->w - 1 - col);
-		if (src->mirror) {
+		if (state->mirror) {
 			data += -stride * (ptrdiff_t)(src->h - 1);
 		}
 	} else {
 		// 1/4 clockwise rotation.
 		data += pix_size * col;
-		if (!src->mirror) {
+		if (!state->mirror) {
 			data += -stride * (ptrdiff_t)(src->h - 1);
 		}
 	}
@@ -866,6 +867,8 @@ const struct wuimg *src) {
 		.op = op_noop,
 		.unpack_depth = dst->bitdepth,
 		.unpack_ch = dst->channels,
+		.rotate = (uint8_t)(src->rotate - dst->rotate),
+		.mirror = src->mirror ^ dst->mirror,
 	};
 	pix_layout_min_map(state->swz, src->layout);
 
@@ -906,17 +909,17 @@ const struct wuimg *src) {
 		return wu_error_str(st);
 	}
 
-	const bool skip_linear = !(state->color.steps & color_step_linear)
+	const bool skip_linear_trip = !(state->color.steps & color_step_linear)
 		&& state->color.eotf.srgb && !needs_alpha_diss(src);
 	enum color_steps omit = (!state->xfr ? color_step_icc : 0u)
-		| (skip_linear ? (color_step_eotf | color_step_oetf) : 0u);
+		| (skip_linear_trip ? (color_step_eotf | color_step_oetf) : 0u);
 	state->color.steps &= ~omit;
 
-	const bool skip_normal = state->color.steps == color_step_normalize
+	const bool skip_normalize = state->color.steps == color_step_normalize
 		&& inrange == outrange
 		&& src->bitrange == dst->bitrange
 		&& src->alpha == alpha_unassociated;
-	state->color.steps &= ~(skip_normal ? color_step_normalize : 0u);
+	state->color.steps &= ~(skip_normalize ? color_step_normalize : 0u);
 
 	if (getenv("WU_DEBUG")) {
 		const enum color_steps steps = state->color.steps;
@@ -932,36 +935,19 @@ const struct wuimg *src) {
 			inrange, outrange);
 	}
 
-	if (state->op != op_noop) {
-		/* If we can't read pixels directly, and we can't access rows
-		 * independently either, then we must unpack the whole image
-		 * and refer to the copy instead of the original. */
-		if (quarter_turn(state) || src->mode == image_mode_planar
-		|| src->align_sh == align_bitpack) {
-			st = init_tmp_img(state, src);
-			if (st != wu_ok) {
-				return wu_error_str(st);
-			}
-		} else {
-			const void *arg = (state->op == op_bitfield)
-				? (void *)src->u.bitfield : &src->bitrange;
-			state->unpack_len = unpack_stride(src->w*src->channels,
-				src->bitdepth, src->attr, state->op, arg);
-		}
-	}
-
 	// Set reading direction
 	if (src->mode == image_mode_planar) {
 		state->pix_stride = sizeof(float)*dst->channels;
 	} else if (quarter_turn(state)) {
-		ptrdiff_t d = !((bool)(src->rotate & 2) ^ src->mirror) ? -1 : 1;
-		state->pix_stride = (ptrdiff_t)wuimg_stride(image_src(state)) * d;
+		state->pix_stride = (ptrdiff_t)wuimg_stride(image_src(state))
+			* (!mirror_swap(state) ? -1 : 1);
 	} else {
-		state->pix_stride = unpack_comp_size(state) * state->unpack_ch
-			* ((src->rotate & 2) ? -1 : 1);
+		state->pix_stride = (ptrdiff_t)unpack_pix_size(state)
+			* ((state->rotate & 2) ? -1 : 1);
 	}
 
 	// Setup row functions
+	bool need_float_row = true;
 	if (state->color.steps) {
 		put_fn_if(state, expand_to_float_fn,
 			src->mode != image_mode_planar);
@@ -994,29 +980,56 @@ const struct wuimg *src) {
 	} else if (src->mode == image_mode_planar) {
 		put_fn(state, pack_row_nomul_fn);
 	} else {
+		need_float_row = src->attr == pix_float;
 		if (src->layout != dst->layout) {
 			put_fn(state, swizzle_row_fn);
-		} else if (state->pix_stride != unpack_comp_size(state)*dst->channels) {
+		} else if (state->pix_stride != (ptrdiff_t)unpack_pix_size(state)) {
 			put_fn(state, upright_fn);
-		} else if (src->attr != pix_float) {
+		} else if (!need_float_row) {
 			put_fn(state, memcpy_fn);
 		}
-		put_fn_if(state, pack_row_fn, src->attr == pix_float);
+		put_fn_if(state, pack_row_fn, need_float_row);
+	}
+
+	if (state->op != op_noop) {
+		/* If we can't read pixels directly, and we can't access rows
+		 * independently either, then we must unpack the whole image
+		 * and refer to the copy instead of the original. */
+		if (quarter_turn(state) || src->mode == image_mode_planar
+		|| src->align_sh == align_bitpack) {
+			st = init_tmp_img(state, src);
+			if (st != wu_ok) {
+				return wu_error_str(st);
+			}
+		} else {
+			const void *arg = (state->op == op_bitfield)
+				? (void *)src->u.bitfield : &src->bitrange;
+			state->unpack_len = unpack_stride(src->w*src->channels,
+				src->bitdepth, src->attr, state->op, arg);
+		}
 	}
 
 	/* Allocate row buffer. Buffer is used for
 	 * - row unpacking (u8, u16, or float), placed at the end
 	 * - colorspace conversion (float), placed at the beginning
-	 * - packed output (u8 or u16), placed at the beginning
 	 * In case the unpacked data takes as much memory as color corrected
-	 * data, it must be offset by a pixel for swizzling to work correctly.
-	 * Other than that, stages may overlap with no issues.
-	 * FIXME: Don't allocate when none of these steps are neccesary. */
-	state->row_len = row_elems + dst->channels;
-	if (state->row_len >= SIZE_MAX/sizeof(float)) {
-		return "Overflow on row memory size";
+	 * data, it must be offset by a pixel for swizzling to work reliably. */
+	if (need_float_row) {
+		if (row_elems >= SIZE_MAX/sizeof(float)) {
+			return "Overflow on float row size";
+		}
+		state->row_len = row_elems * sizeof(float);
 	}
-	state->row_len *= sizeof(float);
+	if (state->unpack_len >= state->row_len) {
+		size_t extra = 0;
+		if (state->row_len) {
+			extra = dst->channels * sizeof(float);
+			if (SIZE_MAX - extra < state->unpack_len) {
+				return "Overflow on unpack row size";
+			}
+		}
+		state->row_len = state->unpack_len + extra;
+	}
 	state->row = malloc(state->row_len);
 	if (!state->row) {
 		return "Failed to allocate row memory";
