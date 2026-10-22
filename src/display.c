@@ -46,12 +46,12 @@ const struct wudec_image *image) {
 		} else {
 			memcpy(bg, conf->bg, sizeof(bg));
 		}
-		gl_clear_color(&window->pub.gl, bg);
+		gl_clear_color(&window->gl, bg);
 	}
 }
 
 void display_end(struct window_context *window, const struct term_restore *tr) {
-	gl_terminate(&window->pub.gl);
+	gl_terminate(&window->gl);
 	window_terminate(window);
 	if (tr) {
 		term_noncanon_end(tr);
@@ -98,13 +98,13 @@ static double draw_rest_poll(struct window_context *window,
 const bool print_draw_time) {
 	uint64_t draw_time = 0;
 	if (window_draw(window)) {
-		draw_time = gl_clock_query(&window->pub.gl);
+		draw_time = gl_clock_query(&window->gl);
 		if (print_draw_time) {
 			nanosec_report("Drawn", draw_time, report_all);
 		}
 	}
 
-	uint32_t refresh = window->pub.win.refresh_nsec;
+	uint32_t refresh = window->win.refresh_nsec;
 	if (!refresh) {
 		refresh = 1000000000 / 60;
 	}
@@ -114,22 +114,22 @@ const bool print_draw_time) {
 	nanosleep(&tm, NULL);
 
 	window_poll(window, 0);
-	const unsigned char ev = term_queue_next(&window->pub.term);
-	window_key_add(&window->pub.held_keys, key_external, ev, isupper(ev));
+	const unsigned char ev = term_queue_next(&window->term);
+	window_key_add(&window->held_keys, key_external, ev, isupper(ev));
 	return event_exec(window);
 }
 
 static bool idle_display(struct wudec_image *image,
 struct window_context *window, const double next_frame,
 const enum image_event evs, const bool allow_cycle) {
-	struct wu_event *event = &window->pub.event;
-	struct wu_state *state = &window->pub.image.state;
+	struct wu_event *event = &window->event;
+	struct wu_state *state = &window->image.state;
 
 	bool print_time = true;
 	do {
 		event->image = ev_time;
 		const double elapsed = draw_rest_poll(window, print_time);
-		if (window->pub.win.playing) {
+		if (window->win.playing) {
 			state->time += (float)elapsed;
 			if (state->time >= next_frame && wudec_frame_cycle(image, 1)) {
 				event->image = ev_frame;
@@ -140,8 +140,8 @@ const enum image_event evs, const bool allow_cycle) {
 		if (event->cycle || event->rm == rm_yes || event->exit) {
 			return true;
 		}
-		window->pub.gl.update |= (bool)(event->image & ~ev_time);
-		print_time = !window->pub.win.playing;
+		window->gl.update |= (bool)(event->image & ~ev_time);
+		print_time = !window->win.playing;
 	} while (!(event->image & evs));
 	return false;
 }
@@ -158,15 +158,15 @@ static double min_time(const struct wuimg *img) {
 
 enum wu_error display_loop(struct window_context *window,
 const bool allow_cycle, const bool allow_delete) {
-	struct wudec_image *image = &window->pub.image;
+	struct wudec_image *image = &window->image;
 	enum wu_error err = decode_with_stats(image);
 	if (err != wu_ok) {
 		return err;
 	}
 
 	struct image_file *infile = &image->file;
-	struct wu_state *state = &window->pub.image.state;
-	struct wu_event *event = &window->pub.event;
+	struct wu_state *state = &window->image.state;
+	struct wu_event *event = &window->event;
 
 	*event = (struct wu_event){
 		.rm = allow_delete ? rm_no : rm_never,
@@ -186,7 +186,7 @@ const bool allow_cycle, const bool allow_delete) {
 				subcycle = true;
 				state->time = 0;
 				evs = wudec_cur_events(image);
-				window->pub.win.playing =
+				window->win.playing =
 					wudec_cur_is_anim(image);
 
 				if (!first_iter) {
@@ -200,7 +200,7 @@ const bool allow_cycle, const bool allow_delete) {
 				subupload = !(event->image & ev_transform);
 			}
 
-			struct gl_context *gl = &window->pub.gl;
+			struct gl_context *gl = &window->gl;
 			err = update_texture(image, gl, first_iter, subcycle,
 				subupload);
 			if (err != wu_ok) {
@@ -210,7 +210,7 @@ const bool allow_cycle, const bool allow_delete) {
 			image_file_free_if_single(infile);
 
 			if (first_iter) {
-				window_timer_update(&window->pub);
+				window_timer_update(window);
 				first_iter = false;
 			}
 
@@ -255,10 +255,9 @@ bool display_setup(struct window_context *window, struct term_restore *tr) {
 		return false;
 	}
 
-	term_line_key_val("Window backend", window->backend, stderr);
+	term_line_key_val("Window backend", window->win.backend_name, stderr);
 
-	const char *msg = gl_context_setup(&window->pub.gl,
-		&window->pub.image.conf);
+	const char *msg = gl_context_setup(&window->gl, &window->image.conf);
 	if (msg) {
 		window_terminate(window);
 		term_line_key_val("Failed to configure OpenGL context", msg,

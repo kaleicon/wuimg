@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#include <epoxy/egl.h>
+#include <stdlib.h>
 
 #include "misc/common.h"
 #include "egl.h"
-#include "opengl.h"
 
 static const char CREATE_CONTEXT_FAIL[] = "Failed to create context";
 
@@ -46,14 +45,11 @@ EGLContext context) {
 	if (eglMakeCurrent(display, surface, surface, context) != EGL_TRUE) {
 		return "Couldn't make context current";
 	}
-//	if (context != EGL_NO_CONTEXT) {
-		eglSwapInterval(display, 1);
-//	}
+	eglSwapInterval(display, 1);
 	return NULL;
 }
 
-void egl_offscreen_terminate(void *ctx) {//EGLDisplay display) {
-	EGLDisplay display = ctx;
+void egl_offscreen_terminate(EGLDisplay display) {
 	egl_make_current(display, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 	eglTerminate(display);
 }
@@ -108,7 +104,7 @@ EGLConfig *cfg, EGLint *restrict cfg_cnt, struct ctx_attr *attr) {
 	return NULL;
 }
 
-const char * egl_offscreen_init(EGLDisplay *display, window_fn_ctx_t *terminate,
+const char * egl_offscreen_init_direct(EGLDisplay *display,
 EGLNativeDisplayType native_display) {
 	const EGLint cfg_attr[] = {
 		EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
@@ -124,15 +120,29 @@ EGLNativeDisplayType native_display) {
 		return err;
 	}
 
-	EGLContext context = eglCreateContext(*display, *cfg, EGL_NO_CONTEXT,
+	EGLContext context = eglCreateContext(display, *cfg, EGL_NO_CONTEXT,
 		attr.v);
 	if (context == EGL_NO_CONTEXT) {
 		return CREATE_CONTEXT_FAIL;
 	}
-	if (terminate) {
-		*terminate = egl_offscreen_terminate;
+	return egl_make_current(display, EGL_NO_SURFACE, context);
+}
+
+void egl_offscreen_terminate_ctx(struct window_offscreen *ctx) {
+	EGLDisplay *display = ctx->ctx;
+	egl_offscreen_terminate(*display);
+}
+
+const char * egl_offscreen_init(struct window_offscreen *ctx,
+EGLNativeDisplayType native_display) {
+	EGLDisplay *display = calloc(1, sizeof(*display));
+	if (!display) {
+		return "Failed to allocate context memory";
 	}
-	return egl_make_current(*display, EGL_NO_SURFACE, context);
+	ctx->ctx = display;
+	ctx->backend_name = "EGL";
+	ctx->terminate = egl_offscreen_terminate_ctx;
+	return egl_offscreen_init_direct(display, native_display);
 }
 
 const char * egl_init(struct egl *egl, EGLNativeDisplayType native_display,

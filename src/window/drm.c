@@ -1,24 +1,54 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <fcntl.h>
 #include <sys/select.h>
+#include <unistd.h>
 
-#include <xf86drm.h>
+#include <epoxy/egl.h>
 #include <gbm.h>
+#include <xf86drmMode.h>
+#include <xf86drm.h>
 
 #include "misc/math.h"
 #include "misc/term.h"
-#include "window/drm.h"
+#include "window/base.h"
+#include "window/egl.h"
 #include "opengl.h"
+
+struct drm_context {
+	struct drm_drm {
+		drmModeCrtc *crtc_restore;
+		uint32_t connector_id;
+		uint32_t crtc_id;
+		uint32_t fb_id[2];
+		int fd;
+	} drm;
+
+	struct drm_gbm {
+		struct gbm_device *device;
+		struct gbm_surface *surface;
+		struct gbm_bo *bo;
+	} gbm;
+
+	struct egl egl;
+};
+
+struct drm_offscreen {
+	int fd;
+	struct gbm_device *device;
+	EGLDisplay egl_display;
+};
 
 static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 
-static void drm_terminate(void *ctxv) {
-	struct drm_context *ctx = ctxv;
+
+static void drm_terminate(struct window_context *wctx) {
+	struct drm_context *ctx = wctx->win.ctx;
 	eglTerminate(ctx->egl.display);
 
 	if (ctx->drm.fd != -1) {
@@ -46,6 +76,7 @@ static void drm_terminate(void *ctxv) {
 	if (ctx->drm.fd != -1) {
 		close(ctx->drm.fd);
 	}
+	free(ctx);
 }
 
 static void fb_destroy_fn(struct gbm_bo *bo, void *data) {
@@ -55,7 +86,7 @@ static void fb_destroy_fn(struct gbm_bo *bo, void *data) {
 }
 
 static uint32_t get_framebuffer(struct drm_drm *drm,
-struct gbm_surface *surface, struct window_public *pub, struct gbm_bo **bo) {
+struct gbm_surface *surface, struct window_context *wctx, struct gbm_bo **bo) {
 	*bo = gbm_surface_lock_front_buffer(surface);
 	uint32_t *fb_ptr = gbm_bo_get_user_data(*bo);
 	if (fb_ptr) {
@@ -89,7 +120,7 @@ struct gbm_surface *surface, struct window_public *pub, struct gbm_bo **bo) {
 		*fb_ptr = 0;
 	} else {
 		gbm_bo_set_user_data(*bo, fb_ptr, fb_destroy_fn);
-		window_size_update(pub, (int)width, (int)height);
+		window_size_update(wctx, (int)width, (int)height);
 	}
 	return *fb_ptr;
 }
@@ -105,13 +136,13 @@ unsigned int _usec, void *data) {
 	*flipped = true;
 }
 
-static void drm_swap_buffers(void *ctxv) {
-	struct drm_context *ctx = ctxv;
+static void drm_swap_buffers(struct window_context *wctx) {
+	struct drm_context *ctx = wctx->win.ctx;
 	egl_swap(&ctx->egl);
 
 	struct drm_drm *drm = &ctx->drm;
 	struct gbm_bo *next_bo;
-	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.surface, ctx->pub,
+	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.surface, wctx,
 		&next_bo);
 	if (!fb_id) {
 		return;
@@ -153,9 +184,10 @@ static void drm_swap_buffers(void *ctxv) {
 	ctx->gbm.bo = next_bo;
 }
 
-static bool mode_set(struct drm_context *ctx, drmModeModeInfo *mode_info) {
+static bool mode_set(struct window_context *wctx, struct drm_context *ctx,
+drmModeModeInfo *mode_info) {
 	struct drm_drm *drm = &ctx->drm;
-	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.surface, ctx->pub,
+	const uint32_t fb_id = get_framebuffer(drm, ctx->gbm.surface, wctx,
 		&ctx->gbm.bo);
 	if (!fb_id) {
 		return false;
@@ -317,12 +349,15 @@ drmModeModeInfo **mode_info) {
 	return drm->crtc_id != 0;
 }
 
-const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
-	*ctx = (struct drm_context){
-		.pub = pub,
-		.drm.fd = -1,
-	};
-	pub->win.fn = (struct window_fn) {
+const char * drm_init(struct window_context *wctx) {
+	struct drm_context *ctx = calloc(1, sizeof(*ctx));
+	if (!ctx) {
+		return "Failed to allocate context memory";
+	}
+	ctx->drm.fd = -1;
+	wctx->win.ctx = ctx;
+	wctx->win.backend_name = "DRM";
+	wctx->win.fn = (struct window_fn) {
 		.title = null_function,
 		.fullscreen = null_function,
 		.resize = null_function,
@@ -336,13 +371,13 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 
 	const char *err = "This string shouldn't be seen";
 	if (drm_setup(&ctx->drm, &connector, &mode_info)) {
-		pub->win.refresh_nsec = 1000000000 / mode_info->vrefresh;
+		wctx->win.refresh_nsec = 1000000000 / mode_info->vrefresh;
 		if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
 			err = egl_init(&ctx->egl,
 				(EGLNativeDisplayType)ctx->gbm.device,
 				ctx->gbm.surface, WU_GBM_FORMAT, false);
 			if (!err) {
-				if (mode_set(ctx, mode_info)) {
+				if (mode_set(wctx, ctx, mode_info)) {
 					// Phew
 					err = NULL;
 				} else {
@@ -361,8 +396,8 @@ const char * drm_init(struct drm_context *ctx, struct window_public *pub) {
 	return err;
 }
 
-static void drm_offscreen_terminate(void *ctxv) {
-	struct drm_offscreen *ctx = ctxv;
+static void drm_offscreen_terminate(struct window_offscreen *wctx) {
+	struct drm_offscreen *ctx = wctx->ctx;
 	egl_offscreen_terminate(ctx->egl_display);
 	if (ctx->device) {
 		gbm_device_destroy(ctx->device);
@@ -372,10 +407,15 @@ static void drm_offscreen_terminate(void *ctxv) {
 	}
 }
 
-const char * drm_offscreen_init(struct drm_offscreen *ctx,
-window_fn_ctx_t *terminate) {
-	*ctx = (struct drm_offscreen){0};
+const char * drm_offscreen_init(struct window_offscreen *wctx) {
+	struct drm_offscreen *ctx = calloc(1, sizeof(*ctx));
+	if (!ctx) {
+		return "Failed to allocate context memory";
+	}
 
+	wctx->backend_name = "DRM offscreen";
+	wctx->ctx = ctx;
+	wctx->terminate = drm_offscreen_terminate;
 	ctx->fd = get_device_fd();
 	if (ctx->fd < 0) {
 		return "No device found";
@@ -384,14 +424,9 @@ window_fn_ctx_t *terminate) {
 	const char *err = NULL;
 	ctx->device = gbm_create_device(ctx->fd);
 	if (ctx->device) {
-		err = egl_offscreen_init(&ctx->egl_display, NULL, ctx->device);
+		err = egl_offscreen_init_direct(&ctx->egl_display, ctx->device);
 	} else {
 		err = "Failed to create GBM device.";
-	}
-	if (err) {
-		drm_offscreen_terminate(ctx);
-	} else {
-		*terminate = drm_offscreen_terminate;
 	}
 	return err;
 }

@@ -6,15 +6,85 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <unistd.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 #include <linux/input-event-codes.h>
+#include <wayland-client.h>
+#include <wayland-egl.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "misc/math.h"
-#include "window/wayland.h"
+#include "window/base.h"
+#include "window/egl.h"
+
+#include "xdg-shell-client-header.h"
+#include "color-management-client-header.h"
+#include "content-type-client-header.h"
+#include "cursor-shape-client-header.h"
+#include "xdg-decoration-client-header.h"
+
+struct wayland_cursor {
+	struct wl_pointer *pointer;
+	struct wl_surface *surf;
+	struct wl_buffer *buf;
+};
+
+struct wayland_keyboard {
+	struct xkb_context *ctx;
+	struct xkb_keymap *keymap;
+	struct xkb_state *state;
+	struct wl_keyboard *keyboard;
+};
+
+struct wayland_color {
+	struct wp_color_manager_v1 *bind;
+	struct wp_color_management_surface_v1 *surf;
+	struct wp_color_management_surface_feedback_v1 *feedback;
+};
+
+union wayland_content {
+	struct wp_content_type_manager_v1 *bind;
+	struct wp_content_type_v1 *type;
+};
+
+union wayland_decoration {
+	struct zxdg_decoration_manager_v1 *bind;
+	struct zxdg_toplevel_decoration_v1 *toplevel;
+};
+
+struct wayland {
+	struct wl_display *display;
+	struct wl_registry *reg;
+
+	struct wl_compositor *comp;
+	struct wl_seat *seat;
+	struct wl_shm *shm;
+	struct xdg_wm_base *xwb;
+	struct wp_cursor_shape_manager_v1 *shape;
+
+	struct wayland_cursor cursor;
+	struct wayland_keyboard kb;
+
+	struct wl_surface *surf;
+	struct wl_egl_window *egl_window;
+	struct xdg_surface *xdg_surf;
+	struct xdg_toplevel *toplevel;
+
+	struct wayland_color color;
+	union wayland_content content;
+	union wayland_decoration deco;
+
+	struct egl egl;
+};
+
+struct wayland_offscreen {
+	struct wl_display *display;
+	EGLDisplay egl_display;
+};
+
 
 static void reset_xkb(struct wayland_keyboard *k) {
 	if (k->state) {
@@ -49,8 +119,8 @@ static void destroy_cursor(struct wayland_cursor *c) {
 	}
 }
 
-static void wayland_terminate(void *ctx) {
-	struct wayland *wl = ctx;
+static void wayland_terminate(struct window_context *ctx) {
+	struct wayland *wl = ctx->win.ctx;
 	egl_terminate(&wl->egl);
 
 	if (wl->color.feedback) {
@@ -112,15 +182,16 @@ static void wayland_terminate(void *ctx) {
 	if (wl->display) {
 		wl_display_disconnect(wl->display);
 	}
+	free(wl);
 }
 
-static void wayland_set_title(void *ctx, const char *title) {
-	const struct wayland *wl = ctx;
+static void wayland_set_title(struct window_context *ctx, const char *title) {
+	struct wayland *wl = ctx->win.ctx;
 	xdg_toplevel_set_title(wl->toplevel, title);
 }
 
-static void wayland_swap_buffers(void *ctx) {
-	const struct wayland *wl = ctx;
+static void wayland_swap_buffers(struct window_context *ctx) {
+	struct wayland *wl = ctx->win.ctx;
 	egl_swap(&wl->egl);
 }
 
@@ -142,8 +213,8 @@ static bool has_events(struct wl_display *display, const int msecs) {
 	return poll(&has_data, 1, msecs) > 0 && has_data.revents & POLLIN;
 }
 
-static void wayland_poll(void *ctx, const long nsecs) {
-	struct wayland *wl = ctx;
+static void wayland_poll(struct window_context *ctx, const long nsecs) {
+	struct wayland *wl = ctx->win.ctx;
 	const int msecs = (int)(nsecs / 1000000);
 	while (wl_display_prepare_read(wl->display)) {
 		wl_display_dispatch_pending(wl->display);
@@ -156,8 +227,8 @@ static void wayland_poll(void *ctx, const long nsecs) {
 	}
 }
 
-static void wayland_fullscreen(void *ctx, const int is_fullscreen) {
-	struct wayland *wl = ctx;
+static void wayland_fullscreen(struct window_context *ctx, const int is_fullscreen) {
+	struct wayland *wl = ctx->win.ctx;
 	if (is_fullscreen) {
 		xdg_toplevel_unset_fullscreen(wl->toplevel);
 	} else {
@@ -165,17 +236,18 @@ static void wayland_fullscreen(void *ctx, const int is_fullscreen) {
 	}
 }
 
-static void wayland_resize(void *ctx, const int w, const int h) {
-	struct wayland *wl = ctx;
-	if (window_size_update(wl->pub, w, h) == trit_true) {
+static void wayland_resize(struct window_context *ctx, const int w, const int h) {
+	struct wayland *wl = ctx->win.ctx;
+	if (window_size_update(ctx, w, h) == trit_true) {
 		wl_egl_window_resize(wl->egl_window, w, h, 0, 0);
 	}
 }
 
 static void image_info_done(void *data, struct wp_image_description_info_v1 *info) {
 	(void)info;
-	struct wayland *wl = data;
-	wl->pub->gl.update = true;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
+	ctx->gl.update = true;
 	wl_surface_commit(wl->surf);
 }
 
@@ -252,8 +324,8 @@ struct wp_image_description_info_v1 *info, int32_t rx, int32_t ry,
 int32_t gx, int32_t gy, int32_t bx, int32_t by, int32_t wx, int32_t wy) {
 	(void)info;
 	const double s = 1000000;
-	struct wayland *wl = data;
-	struct color_space *tgt = &wl->pub->gl.tgt;
+	struct window_context *ctx = data;
+	struct color_space *tgt = &ctx->gl.tgt;
 	color_space_set_primaries(tgt,
 		(double)wx/s, (double)wy/s,
 		(double)rx/s, (double)ry/s,
@@ -264,24 +336,24 @@ int32_t gx, int32_t gy, int32_t bx, int32_t by, int32_t wx, int32_t wy) {
 static void image_info_primaries_named(void *data,
 struct wp_image_description_info_v1 *info, uint32_t pri) {
 	(void)info;
-	struct wayland *wl = data;
-	struct color_space *tgt = &wl->pub->gl.tgt;
+	struct window_context *ctx = data;
+	struct color_space *tgt = &ctx->gl.tgt;
 	tgt->primaries = wp_pri_to_cicp(pri, tgt);
 }
 
 static void image_info_tf_power(void *data,
 struct wp_image_description_info_v1 *info, uint32_t eexp) {
 	(void)info;
-	struct wayland *wl = data;
-	struct color_space *tgt = &wl->pub->gl.tgt;
+	struct window_context *ctx = data;
+	struct color_space *tgt = &ctx->gl.tgt;
 	color_space_set_gamma(tgt, (double)eexp / 10000);
 }
 
 static void image_info_tf_named(void *data,
 struct wp_image_description_info_v1 *info, uint32_t tf) {
 	(void)info;
-	struct wayland *wl = data;
-	struct color_space *tgt = &wl->pub->gl.tgt;
+	struct window_context *ctx = data;
+	struct color_space *tgt = &ctx->gl.tgt;
 	tgt->transfer = wp_tf_to_cicp(tf);
 }
 
@@ -289,8 +361,8 @@ static void image_info_luminances(void *data,
 struct wp_image_description_info_v1 *info, uint32_t min, uint32_t max,
 uint32_t ref) {
 	(void)info; (void)min;
-	struct wayland *wl = data;
-	struct color_space *tgt = &wl->pub->gl.tgt;
+	struct window_context *ctx = data;
+	struct color_space *tgt = &ctx->gl.tgt;
 	tgt->lum.max = (uint16_t)u32min(max, UINT16_MAX);
 	tgt->lum.ref = (uint16_t)u32min(ref, UINT16_MAX);
 }
@@ -319,7 +391,8 @@ uint32_t cause, const char *msg) {
 static void image_desc_ready(void *data, struct wp_image_description_v1 *desc,
 uint32_t id) {
 	(void)id;
-	struct wayland *wl = data;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 
 	// Assume that, whatever may come, we'll be ok
 	wp_color_management_surface_v1_set_image_description(wl->color.surf,
@@ -328,7 +401,7 @@ uint32_t id) {
 	// Request information about what we've just committed to
 	struct wp_image_description_info_v1 *info =
 		wp_image_description_v1_get_information(desc);
-	wp_image_description_info_v1_add_listener(info, &listen_image_info, wl);
+	wp_image_description_info_v1_add_listener(info, &listen_image_info, ctx);
 
 	// No need to keep it any longer
 	wp_image_description_v1_destroy(desc);
@@ -353,7 +426,6 @@ static const struct wp_image_description_v1_listener listen_image_desc = {
 static void color_preferred(void *data,
 struct wp_color_management_surface_feedback_v1 *feedback, uint32_t id) {
 	(void)id;
-	struct wayland *wl = data;
 	/* On KWin, if fiddling with display settings, one may cause this event
 	 * to fire more than once in quick succession, meaning we must be
 	 * careful about creating and storing multiple image_description
@@ -367,7 +439,7 @@ struct wp_color_management_surface_feedback_v1 *feedback, uint32_t id) {
 	struct wp_image_description_v1 *desc =
 		wp_color_management_surface_feedback_v1_get_preferred_parametric(
 			feedback);
-	wp_image_description_v1_add_listener(desc, &listen_image_desc, wl);
+	wp_image_description_v1_add_listener(desc, &listen_image_desc, data);
 }
 
 #ifdef WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_PREFERRED_CHANGED2_SINCE_VERSION
@@ -416,8 +488,6 @@ static uint8_t convert_by_position(struct xkb_state *state, const uint32_t key) 
 
 	case KEY_F: case KEY_F11: return 'F';
 	case KEY_A: return 'A';
-	case KEY_V: return 'V';
-	case KEY_S: return 'S';
 	case KEY_M: return 'M';
 
 	case KEY_N: return 'N';
@@ -569,12 +639,12 @@ static void set_cursor(struct wayland *wl) {
 	}
 }
 
-static void set_cursor_shape(struct wayland *wl, struct wl_pointer *pointer,
-const uint32_t serial) {
+static void set_cursor_shape(struct window_context *ctx, struct wayland *wl,
+struct wl_pointer *pointer, const uint32_t serial) {
 	struct wp_cursor_shape_device_v1 *dev =
 		wp_cursor_shape_manager_v1_get_pointer(wl->shape,
 		pointer);
-	wp_cursor_shape_device_v1_set_shape(dev, serial, wl->pub->win.pressed
+	wp_cursor_shape_device_v1_set_shape(dev, serial, ctx->win.pressed
 		? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING
 		: WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
 	wp_cursor_shape_device_v1_destroy(dev);
@@ -583,28 +653,28 @@ const uint32_t serial) {
 static void toplevel_configure(void *data, struct xdg_toplevel *toplevel,
 const int32_t w, const int32_t h, struct wl_array *states) {
 	(void)toplevel;
-	struct wayland *wl = data;
-	wl->pub->win.focused = false;
-	wl->pub->win.fullscreen = false;
+	struct window_context *ctx = data;
+	ctx->win.focused = false;
+	ctx->win.fullscreen = false;
 
 	uint32_t *st;
 	wl_array_for_each(st, states) {
 		switch (*st) {
 		case XDG_TOPLEVEL_STATE_ACTIVATED:
-			wl->pub->win.focused = true;
+			ctx->win.focused = true;
 			break;
 		case XDG_TOPLEVEL_STATE_FULLSCREEN:
-			wl->pub->win.fullscreen = true;
+			ctx->win.fullscreen = true;
 			break;
 		}
 	}
-	wayland_resize(wl, w, h);
+	wayland_resize(ctx, w, h);
 }
 
 static void toplevel_close(void *data, struct xdg_toplevel *toplevel) {
 	(void)toplevel;
-	struct wayland *wl = data;
-	wl->pub->event.exit = true;
+	struct window_context *ctx = data;
+	ctx->event.exit = true;
 }
 
 static void surface_configure(void *data, struct xdg_surface *surface,
@@ -617,7 +687,8 @@ static void keyboard_modifiers(void *data, struct wl_keyboard *keyboard,
 const uint32_t serial, const uint32_t depressed, const uint32_t latched,
 const uint32_t locked, const uint32_t group) {
 	(void)keyboard; (void)serial;
-	struct wayland *wl = data;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 	if (wl->kb.state) {
 		xkb_state_update_mask(wl->kb.state, depressed, latched,
 			locked, 0, 0, group);
@@ -628,7 +699,8 @@ static void keyboard_key(void *data, struct wl_keyboard *keyboard,
 const uint32_t serial, const uint32_t time, const uint32_t key,
 const uint32_t state) {
 	(void)keyboard; (void)serial; (void)time; (void)state;
-	struct wayland *wl = data;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 	if (wl->kb.state) {
 		const enum key_action keyact =
 			(state == WL_KEYBOARD_KEY_STATE_PRESSED)
@@ -639,21 +711,22 @@ const uint32_t state) {
 		if (!c) {
 			c = convert_by_codepoint(wl->kb.state, key);
 		}
-		window_key_add(&wl->pub->held_keys, keyact, c, shift);
+		window_key_add(&ctx->held_keys, keyact, c, shift);
 	}
 }
 
 static void keyboard_leave(void *data, struct wl_keyboard *keyboard,
 const uint32_t serial, struct wl_surface *surface) {
 	(void)keyboard; (void)serial; (void)surface;
-	struct wayland *wl = data;
-	window_key_lift(&wl->pub->held_keys);
+	struct window_context *ctx = data;
+	window_key_lift(&ctx->held_keys);
 }
 
 static void keyboard_keymap(void *data, struct wl_keyboard *keyboard,
 const uint32_t format, const int32_t fd, const uint32_t size) {
 	(void)keyboard; (void)format; (void)size;
-	struct wayland *wl = data;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 	reset_xkb(&wl->kb);
 
 	if (format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
@@ -680,7 +753,8 @@ const uint32_t format, const int32_t fd, const uint32_t size) {
 static void pointer_axis(void *data, struct wl_pointer *pointer,
 const uint32_t time, const uint32_t axis, const wl_fixed_t value) {
 	(void)pointer; (void)time;
-	struct wayland *wl = data;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 	const double a = wl_fixed_to_double(value);
 	const bool v = axis == WL_POINTER_AXIS_VERTICAL_SCROLL;
 	bool horz = false;
@@ -689,14 +763,14 @@ const uint32_t time, const uint32_t axis, const wl_fixed_t value) {
 		horz = test_mod(wl->kb.state, XKB_MOD_NAME_SHIFT);
 		zoom = test_mod(wl->kb.state, XKB_MOD_NAME_CTRL);
 	}
-	window_cursor_scroll(wl->pub, (v ? 0 : a), (v ? a : 0), horz, zoom);
+	window_cursor_scroll(ctx, (v ? 0 : a), (v ? a : 0), horz, zoom);
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer,
 const uint32_t time, const wl_fixed_t x, const wl_fixed_t y) {
 	(void)pointer; (void)time;
-	struct wayland *wl = data;
-	window_cursor_move(wl->pub, wl_fixed_to_double(x),
+	struct window_context *ctx = data;
+	window_cursor_move(ctx, wl_fixed_to_double(x),
 		wl_fixed_to_double(y));
 }
 
@@ -704,18 +778,19 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
 const uint32_t serial, const uint32_t time, const uint32_t button,
 const uint32_t state) {
 	(void)time;
-	struct wayland *wl = data;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 	switch (button) {
 	case BTN_LEFT:
-		wl->pub->win.pressed =
+		ctx->win.pressed =
 			(state == WL_POINTER_BUTTON_STATE_PRESSED);
 		if (wl->shape) {
-			set_cursor_shape(wl, pointer, serial);
+			set_cursor_shape(ctx, wl, pointer, serial);
 		}
 		break;
 	case BTN_RIGHT:
 		if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
-			struct window_cursor *c = &wl->pub->win.cur;
+			struct window_cursor *c = &ctx->win.cur;
 			xdg_toplevel_show_window_menu(wl->toplevel, wl->seat,
 				serial, (int32_t)c->x.pos, (int32_t)c->y.pos);
 		}
@@ -726,14 +801,15 @@ static void pointer_enter(void *data, struct wl_pointer *pointer,
 const uint32_t serial, struct wl_surface *surface, const wl_fixed_t x,
 const wl_fixed_t y) {
 	(void)surface; (void)x; (void)y;
-	struct wayland *wl = data;
-	struct window_cursor *c = &wl->pub->win.cur;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
+	struct window_cursor *c = &ctx->win.cur;
 	c->x.pos = (float)wl_fixed_to_double(x);
 	c->y.pos = (float)wl_fixed_to_double(y);
 
 	struct wayland_cursor *wc = &wl->cursor;
 	if (wl->shape) {
-		set_cursor_shape(wl, pointer, serial);
+		set_cursor_shape(ctx, wl, pointer, serial);
 	} else if (wc->buf) {
 		wl_pointer_set_cursor(pointer, serial, wc->surf, 0, 0);
 	}
@@ -761,13 +837,13 @@ static const struct wl_keyboard_listener listen_keyboard = {
 
 static void seat_capabilities(void *data, struct wl_seat *seat,
 const uint32_t caps) {
-	struct wayland *wl = data;
-	struct window_common *win = &wl->pub->win;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 	struct wayland_keyboard *k = &wl->kb;
 	if (caps & WL_SEAT_CAPABILITY_KEYBOARD) {
 		if (!k->keyboard) {
 			k->keyboard = wl_seat_get_keyboard(seat);
-			wl_keyboard_add_listener(k->keyboard, &listen_keyboard, wl);
+			wl_keyboard_add_listener(k->keyboard, &listen_keyboard, ctx);
 		}
 	} else {
 		if (k->keyboard) {
@@ -779,9 +855,9 @@ const uint32_t caps) {
 	struct wayland_cursor *c = &wl->cursor;
 	if (caps & WL_SEAT_CAPABILITY_POINTER) {
 		if (!c->pointer) {
-			win->pressed = false;
+			ctx->win.pressed = false;
 			c->pointer = wl_seat_get_pointer(seat);
-			wl_pointer_add_listener(c->pointer, &listen_pointer, wl);
+			wl_pointer_add_listener(c->pointer, &listen_pointer, ctx);
 		}
 	} else {
 		if (c->pointer) {
@@ -799,7 +875,8 @@ const uint32_t serial) {
 
 static void reg_global(void *data, struct wl_registry *reg, const uint32_t name,
 const char *interface, const uint32_t version) {
-	struct wayland *wl = data;
+	struct window_context *ctx = data;
+	struct wayland *wl = ctx->win.ctx;
 	if (!strcmp(interface, wl_compositor_interface.name)) {
 		wl->comp = wl_registry_bind(reg, name, &wl_compositor_interface, 1);
 	} else if (!strcmp(interface, wl_shm_interface.name)) {
@@ -817,11 +894,11 @@ const char *interface, const uint32_t version) {
 	} else if (!strcmp(interface, zxdg_decoration_manager_v1_interface.name)) {
 		wl->deco.bind = wl_registry_bind(reg, name,
 			&zxdg_decoration_manager_v1_interface, 1);
-	} else if (!wl->pub->image.conf.naive_window_colorspace
+	} else if (!ctx->image.conf.naive_window_colorspace
 	&& !strcmp(interface, wp_color_manager_v1_interface.name)) {
 		wl->color.bind = wl_registry_bind(reg, name,
 			&wp_color_manager_v1_interface, 1);
-	} else if (!wl->pub->image.conf.custom_cursor
+	} else if (!ctx->image.conf.custom_cursor
 	&& !strcmp(interface, wp_cursor_shape_manager_v1_interface.name)) {
 		wl->shape = wl_registry_bind(reg, name,
 			&wp_cursor_shape_manager_v1_interface, 1);
@@ -856,11 +933,14 @@ static const struct zxdg_toplevel_decoration_v1_listener listen_toplevel_decorat
 	.configure = null_function,
 };
 
-const char * wayland_init(struct wayland *wl, struct window_public *pub) {
-	*wl = (struct wayland){
-		.pub = pub,
-	};
-	pub->win.fn = (struct window_fn) {
+const char * wayland_init(struct window_context *ctx) {
+	struct wayland *wl = calloc(1, sizeof(*wl));
+	if (!wl) {
+		return "Failed to allocate context memory";
+	}
+	ctx->win.ctx = wl;
+	ctx->win.backend_name = "Wayland";
+	ctx->win.fn = (struct window_fn) {
 		.title = wayland_set_title,
 		.resize = wayland_resize,
 		.fullscreen = wayland_fullscreen,
@@ -869,7 +949,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		.terminate = wayland_terminate,
 	};
 
-	struct wu_conf *conf = &pub->image.conf;
+	struct wu_conf *conf = &ctx->image.conf;
 
 	wl->display = wl_display_connect(NULL);
 	if (!wl->display) {
@@ -881,7 +961,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return "Couldn't obtain registry";
 	}
 
-	wl_registry_add_listener(wl->reg, &listen_reg, wl);
+	wl_registry_add_listener(wl->reg, &listen_reg, ctx);
 	wl_display_roundtrip(wl->display);
 	if (!wl->comp) {
 		return "Failed to bind to compositor";
@@ -890,7 +970,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	} else if (!wl->xwb) {
 		return "Failed to bind to wm_base";
 	}
-	wl_seat_add_listener(wl->seat, &listen_seat, wl);
+	wl_seat_add_listener(wl->seat, &listen_seat, ctx);
 	xdg_wm_base_add_listener(wl->xwb, &listen_wm_base, NULL);
 
 	wl->surf = wl_compositor_create_surface(wl->comp);
@@ -915,7 +995,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 		return "Failed to get toplevel";
 	}
 	xdg_toplevel_set_app_id(wl->toplevel, WU_CANON_NAME);
-	xdg_toplevel_add_listener(wl->toplevel, &listen_toplevel, wl);
+	xdg_toplevel_add_listener(wl->toplevel, &listen_toplevel, ctx);
 
 	if (wl->content.bind) {
 		struct wp_content_type_v1 *type
@@ -932,7 +1012,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 				wl->deco.bind, wl->toplevel);
 		zxdg_decoration_manager_v1_destroy(wl->deco.bind);
 		zxdg_toplevel_decoration_v1_add_listener(
-			toplevel, &listen_toplevel_decoration, wl);
+			toplevel, &listen_toplevel_decoration, ctx);
 		zxdg_toplevel_decoration_v1_set_mode(toplevel,
 			conf->no_window_decorations
 				? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
@@ -952,7 +1032,7 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 			return "Failed to get color manager surface feedback object";
 		}
 		wp_color_management_surface_feedback_v1_add_listener(
-			wl->color.feedback, &listen_color_feedback, wl);
+			wl->color.feedback, &listen_color_feedback, ctx);
 	}
 	if (!wl->shape && wl->shm) {
 		set_cursor(wl);
@@ -975,27 +1055,28 @@ const char * wayland_init(struct wayland *wl, struct window_public *pub) {
 	return NULL;
 }
 
-static void wayland_offscreen_terminate(void *ctx) {
-	struct wayland_offscreen *wl = ctx;
+static void wayland_offscreen_terminate(struct window_offscreen *ctx) {
+	struct wayland_offscreen *wl = ctx->ctx;
 	if (wl->egl_display) {
 		egl_offscreen_terminate(wl->egl_display);
 	}
 	if (wl->display) {
 		wl_display_disconnect(wl->display);
 	}
+	free(wl);
 }
 
-const char * wayland_offscreen_init(struct wayland_offscreen *wl,
-window_fn_ctx_t *terminate) {
+const char * wayland_offscreen_init(struct window_offscreen *ctx) {
+	struct wayland_offscreen *wl = calloc(1, sizeof(*wl));
+	if (!wl) {
+		return "Failed to allocate context memory";
+	}
+	ctx->ctx = wl;
+	ctx->backend_name = "Wayland";
+	ctx->terminate = wayland_offscreen_terminate;
 	wl->display = wl_display_connect(NULL);
 	if (!wl->display) {
 		return "Couldn't connect to display";
 	}
-	const char *err = egl_offscreen_init(&wl->egl_display, NULL, wl->display);
-	if (err) {
-		wayland_offscreen_terminate(wl);
-	} else {
-		*terminate = wayland_offscreen_terminate;
-	}
-	return err;
+	return egl_offscreen_init_direct(&wl->egl_display, wl->display);
 }

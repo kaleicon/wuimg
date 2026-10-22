@@ -3,32 +3,41 @@
 #include <limits.h>
 #include <stdlib.h>
 
-#include "wudefs.h"
-#include "window/glfw.h"
+#include "window/base.h"
+
+#include <GLFW/glfw3.h>
+
+struct glfw_context {
+	GLFWwindow *window;
+	struct window_geom {
+		int x, y, w, h;
+	} geom;
+};
+
 
 static void callback_close(GLFWwindow *wnd) {
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	glfw->pub->event.exit = true;
+	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
+	ctx->event.exit = true;
 }
 
 static void callback_focus(GLFWwindow *wnd, const int focused) {
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	glfw->pub->win.focused = focused;
+	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
+	ctx->win.focused = focused;
 }
 
 static void callback_damage(GLFWwindow *wnd) {
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	glfw->pub->gl.update = true;
+	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
+	ctx->gl.update = true;
 }
 
 static void callback_framebuffer(GLFWwindow *wnd, const int w, const int h) {
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_size_update(glfw->pub, w, h);
+	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
+	window_size_update(ctx, w, h);
 }
 
 static void callback_cursor_pos(GLFWwindow *wnd, const double x, const double y) {
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_cursor_move(glfw->pub, x, y);
+	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
+	window_cursor_move(ctx, x, y);
 }
 
 static void callback_cursor_button(GLFWwindow *wnd, const int button,
@@ -36,13 +45,13 @@ const int action, const int mods) {
 	(void)mods;
 
 	if (button == GLFW_MOUSE_BUTTON_LEFT) {
-		struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-		glfw->pub->win.pressed = (action == GLFW_PRESS);
+		struct window_context *ctx = glfwGetWindowUserPointer(wnd);
+		ctx->win.pressed = (action == GLFW_PRESS);
 	}
 }
 
 static void callback_scroll(GLFWwindow *wnd, const double x, const double y) {
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
+	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
 	const bool horz = (glfwGetKey(wnd, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
 		| (glfwGetKey(wnd, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 	const bool zoom = (glfwGetKey(wnd, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
@@ -53,7 +62,7 @@ static void callback_scroll(GLFWwindow *wnd, const double x, const double y) {
 	 * https://github.com/glfw/glfw/blob/92dcf4ce74f2e2554a98fea09be7c705c17daa5a/src/wl_window.c#L1727
 	*/
 	const double ratio = -10.0;
-	window_cursor_scroll(glfw->pub, x*ratio, y*ratio, horz, zoom);
+	window_cursor_scroll(ctx, x*ratio, y*ratio, horz, zoom);
 }
 
 static void callback_key(GLFWwindow *wnd, const int key, const int scan,
@@ -156,12 +165,32 @@ const int action, const int mode) {
 	default: return;
 	}
 
-	struct glfw_context *glfw = glfwGetWindowUserPointer(wnd);
-	window_key_add(&glfw->pub->held_keys, keyact, event, shift);
+	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
+	window_key_add(&ctx->held_keys, keyact, event, shift);
 }
 
-static void glfw_fullscreen(void *ctx, const int is_fullscreen) {
-	struct glfw_context *glfw = ctx;
+static void glfw_terminate(struct window_context *ctx) {
+	free(ctx->win.ctx);
+	glfwTerminate();
+}
+
+static void glfw_swap_buffers(struct window_context *ctx) {
+	struct glfw_context *glfw = ctx->win.ctx;
+	glfwSwapBuffers(glfw->window);
+}
+
+static void glfw_poll(struct window_context *ctx, const long nsecs) {
+	(void)ctx;
+	glfwWaitEventsTimeout((double)nsecs / 1000000000);
+}
+
+static void glfw_resize(struct window_context *ctx, const int w, const int h) {
+	struct glfw_context *glfw = ctx->win.ctx;
+	glfwSetWindowSize(glfw->window, w, h);
+}
+
+static void glfw_fullscreen(struct window_context *ctx, const int is_fullscreen) {
+	struct glfw_context *glfw = ctx->win.ctx;
 	struct window_geom *geom = &glfw->geom;
 	if (is_fullscreen) {
 		glfwSetWindowMonitor(glfw->window, NULL,
@@ -179,37 +208,19 @@ static void glfw_fullscreen(void *ctx, const int is_fullscreen) {
 	}
 }
 
-static void glfw_set_title(void *ctx, const char *title) {
-	struct glfw_context *glfw = ctx;
+static void glfw_set_title(struct window_context *ctx, const char *title) {
+	struct glfw_context *glfw = ctx->win.ctx;
 	glfwSetWindowTitle(glfw->window, title);
 }
 
-static void glfw_resize(void *ctx, const int w, const int h) {
-	struct glfw_context *glfw = ctx;
-	glfwSetWindowSize(glfw->window, w, h);
-}
-
-static void glfw_poll(void *ctx, const long nsecs) {
-	(void)ctx;
-//	glfwPollEvents();
-	glfwWaitEventsTimeout((double)nsecs / 1000000000);
-}
-
-static void glfw_swap_buffers(void *ctx) {
-	struct glfw_context *glfw = ctx;
-	glfwSwapBuffers(glfw->window);
-}
-
-static void glfw_terminate(void *ctx) {
-	(void)ctx;
-	glfwTerminate();
-}
-
-const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
-	*glfw = (struct glfw_context){
-		.pub = pub,
-	};
-	pub->win.fn = (struct window_fn) {
+const char * glfw_setup(struct window_context *ctx) {
+	struct glfw_context *glfw = calloc(1, sizeof(*glfw));
+	if (!glfw) {
+		return "Failed to allocate context memory";
+	}
+	ctx->win.ctx = glfw;
+	ctx->win.backend_name = "GLFW";
+	ctx->win.fn = (struct window_fn) {
 		.title = glfw_set_title,
 		.fullscreen = glfw_fullscreen,
 		.resize = glfw_resize,
@@ -224,9 +235,9 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 
 	GLFWmonitor *monitor = glfwGetPrimaryMonitor();
 	const GLFWvidmode *video = glfwGetVideoMode(monitor);
-	pub->win.refresh_nsec = (unsigned)(1000000000/video->refreshRate);
+	ctx->win.refresh_nsec = (unsigned)(1000000000/video->refreshRate);
 
-	struct wu_conf *conf = &pub->image.conf;
+	struct wu_conf *conf = &ctx->image.conf;
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, WU_GL_MAJOR);
@@ -255,7 +266,7 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 	glfw->window = window;
 
 	glfwMakeContextCurrent(window);
-	glfwSetWindowUserPointer(window, glfw);
+	glfwSetWindowUserPointer(window, ctx);
 
 	glfwSetWindowCloseCallback(window, callback_close);
 	glfwSetWindowFocusCallback(window, callback_focus);
@@ -269,6 +280,6 @@ const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub) {
 
 	int w, h;
 	glfwGetFramebufferSize(window, &w, &h);
-	window_size_update(pub, w, h);
+	window_size_update(ctx, w, h);
 	return NULL;
 }

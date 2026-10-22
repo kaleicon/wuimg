@@ -8,6 +8,18 @@
 #include "misc/utf8.h"
 #include "window.h"
 
+#include "window_enable.def"
+#include "window/egl.h"
+#ifdef WU_ENABLE_WINDOW_DRM
+#include "window/drm.h"
+#endif
+#ifdef WU_ENABLE_WINDOW_WAYLAND
+#include "window/wayland.h"
+#endif
+#ifdef WU_ENABLE_WINDOW_GLFW
+#include "window/glfw.h"
+#endif
+
 const char WINDOW_ENV_VARIABLES[] =
 	"Window env variables:\n"
 	"\tWU_GLFW\n"
@@ -21,12 +33,12 @@ static void signal_handler(int _signum) {
 }
 
 void window_terminate(struct window_context *window) {
-	window->pub.win.fn.terminate(&window->ctx);
+	window->win.fn.terminate(window);
 }
 
 bool window_draw(struct window_context *window) {
-	if (gl_draw(&window->pub.gl, &window->pub.image.state)) {
-		window->pub.win.fn.swap_buffers(&window->ctx);
+	if (gl_draw(&window->gl, &window->image.state)) {
+		window->win.fn.swap_buffers(window);
 		glFinish();
 		return true;
 	}
@@ -34,27 +46,27 @@ bool window_draw(struct window_context *window) {
 }
 
 void window_fullscreen(struct window_context *window) {
-	const bool fs = window->pub.win.fullscreen;
-	window->pub.win.fn.fullscreen(&window->ctx, fs);
-	window->pub.win.fullscreen = !fs;
+	const bool fs = window->win.fullscreen;
+	window->win.fn.fullscreen(window, fs);
+	window->win.fullscreen = !fs;
 }
 
 void window_poll(struct window_context *window, const long nsecs) {
-	window->pub.win.fn.poll(&window->ctx, nsecs);
-	window->pub.event.exit |= sig_should_close;
+	window->win.fn.poll(window, nsecs);
+	window->event.exit |= sig_should_close;
 }
 
 void window_adapt(struct window_context *window) {
-	const struct gl_context *context = &window->pub.gl;
-	const int w = (int)context->tex.w;
-	const int h = (int)context->tex.h;
-	window->pub.win.fn.resize(&window->ctx, w, h);
+	const struct gl_context *gl = &window->gl;
+	const int w = (int)gl->tex.w;
+	const int h = (int)gl->tex.h;
+	window->win.fn.resize(window, w, h);
 }
 
 void window_set_title(struct window_context *window, const char *title) {
 	const char *put = "";
 	if (!title) {
-		window->pub.win.fn.title(&window->ctx, put);
+		window->win.fn.title(window, put);
 		return;
 	}
 	struct wustr conv;
@@ -63,7 +75,7 @@ void window_set_title(struct window_context *window, const char *title) {
 	case trit_true: put = (const char *)conv.str; break;
 	case trit_what: break;
 	}
-	window->pub.win.fn.title(&window->ctx, put);
+	window->win.fn.title(window, put);
 	wustr_free(&conv);
 }
 
@@ -82,16 +94,19 @@ void window_postgl_setup(struct window_context *window) {
 	sigaction(SIGPIPE, &ign, NULL);
 
 	window_poll(window, 0);
-	window->pub.win.focused = true;
+	window->win.focused = true;
+}
+
+static void error_log(const char *where, const char *fallback, const char *err) {
+	term_line_key_val(where ? where : fallback, err, stderr);
 }
 
 static void error_cleanup(struct window_context *window, const char *err) {
-	if (window->backend) {
+	if (window->win.ctx) {
 		window_terminate(window);
-		term_line_key_val(window->backend, err, stderr);
-	} else {
-		term_line_key_val("Window", err, stderr);
 	}
+	error_log(window->win.backend_name, "Window", err);
+	memset(&window->win, 0, sizeof(window->win));
 }
 
 bool window_setup(struct window_context *window) {
@@ -99,8 +114,7 @@ bool window_setup(struct window_context *window) {
 	const bool wayland = getenv("WAYLAND_DISPLAY");
 	if (wayland && !getenv("WU_GLFW")) {
 #ifdef WU_ENABLE_WINDOW_WAYLAND
-		window->backend = "Wayland";
-		err = wayland_init(&window->ctx.wl, &window->pub);
+		err = wayland_init(window);
 		if (!err) {
 			return true;
 		}
@@ -110,13 +124,11 @@ bool window_setup(struct window_context *window) {
 
 	if (wayland || getenv("DISPLAY") /* X11 */) {
 #ifdef WU_ENABLE_WINDOW_GLFW
-		window->backend = "GLFW";
-		err = glfw_setup(&window->ctx.glfw, &window->pub);
+		err = glfw_setup(window);
 #endif
 	} else {
 #ifdef WU_ENABLE_WINDOW_DRM
-		window->backend = "DRM";
-		err = drm_init(&window->ctx.drm, &window->pub);
+		err = drm_init(window);
 #endif
 	}
 
@@ -128,32 +140,37 @@ bool window_setup(struct window_context *window) {
 }
 
 void window_offscreen_terminate(struct window_offscreen *window) {
-	window->terminate(&window->ctx);
+	window->terminate(window);
+}
+
+static void offscreen_error_cleanup(struct window_offscreen *window,
+const char *err) {
+	if (window->terminate) {
+		window_offscreen_terminate(window);
+	}
+	error_log(window->backend_name, "Offscreen context", err);
+	memset(window, 0, sizeof(*window));
 }
 
 bool window_offscreen_setup(struct window_offscreen *window) {
-	window_fn_ctx_t *terminate = &window->terminate;
-	if (egl_offscreen_init(&window->ctx.egl, terminate, EGL_DEFAULT_DISPLAY)
-	== NULL) {
-		window->backend = "EGL offscreen";
+	const char *err = egl_offscreen_init(window, EGL_DEFAULT_DISPLAY);
+	if (!err) {
 		return true;
 	}
+	offscreen_error_cleanup(window, err);
 
-	const char *err = "No offscreen display available";
 	if (getenv("WAYLAND_DISPLAY")) {
 #ifdef WU_ENABLE_WINDOW_WAYLAND
-		window->backend = "Wayland offscreen";
-		err = wayland_offscreen_init(&window->ctx.wl, terminate);
+		err = wayland_offscreen_init(window);
 #endif
 	} else if (!getenv("DISPLAY")) {
 #ifdef WU_ENABLE_WINDOW_DRM
-		window->backend = "DRM offscreen";
-		err = drm_offscreen_init(&window->ctx.drm, terminate);
+		err = drm_offscreen_init(window);
 #endif
 	}
 
 	if (err) {
-		term_line_put(err, stderr);
+		offscreen_error_cleanup(window, err);
 		return false;
 	}
 	return true;

@@ -5,16 +5,6 @@
 
 #include "base.h"
 
-#include <GLFW/glfw3.h>
-
-struct glfw_context {
-	struct window_public *pub;
-	GLFWwindow *window;
-	struct window_geom {
-		int x, y, w, h;
-	} geom;
-};
-
-const char * glfw_setup(struct glfw_context *glfw, struct window_public *pub);
+const char * glfw_setup(struct window_context *ctx);
 
 #endif /* WU_WINDOW_GLFW */

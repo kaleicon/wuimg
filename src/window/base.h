@@ -42,11 +42,13 @@ struct window_cursor {
 	struct window_cursor_axis x, y;
 };
 
-typedef void (*window_fn_title_t)(void *ctx, const char *title);
-typedef void (*window_fn_resize_t)(void *ctx, int w, int h);
-typedef void (*window_fn_fullscreen_t)(void *ctx, int enable);
-typedef void (*window_fn_poll_t)(void *ctx, long nsecs);
-typedef void (*window_fn_ctx_t)(void *ctx);
+struct window_context;
+
+typedef void (*window_fn_title_t)(struct window_context *ctx, const char *title);
+typedef void (*window_fn_resize_t)(struct window_context *ctx, int w, int h);
+typedef void (*window_fn_fullscreen_t)(struct window_context *ctx, int enable);
+typedef void (*window_fn_poll_t)(struct window_context *ctx, long nsecs);
+typedef void (*window_fn_ctx_t)(struct window_context *ctx);
 
 struct window_fn {
 	window_fn_title_t title;
@@ -58,6 +60,7 @@ struct window_fn {
 };
 
 struct window_common {
+	void *ctx;
 	struct window_fn fn;
 	struct window_cursor cur;
 	uint32_t refresh_nsec;
@@ -65,9 +68,10 @@ struct window_common {
 	bool pressed;
 	bool focused;
 	bool fullscreen;
+        const char *backend_name;
 };
 
-struct window_public {
+struct window_context {
 	struct gl_context gl;
 	struct window_common win;
 	struct timespec timer;
@@ -77,7 +81,17 @@ struct window_public {
 	struct window_keymap held_keys;
 };
 
-double window_timer_update(struct window_public *pub);
+struct window_offscreen;
+
+typedef void (*window_fn_offctx_t)(struct window_offscreen *ctx);
+
+struct window_offscreen {
+        void *ctx;
+        window_fn_offctx_t terminate;
+        const char *backend_name;
+};
+
+double window_timer_update(struct window_context *ctx);
 
 unsigned char * window_keymap_map(struct window_keymap *held_keys);
 
@@ -86,15 +100,11 @@ void window_key_lift(struct window_keymap *held_keys);
 void window_key_add(struct window_keymap *held_keys, enum key_action action,
 int code, bool shift);
 
-enum trit window_size_update(struct window_public *pub, int w, int h);
+enum trit window_size_update(struct window_context *ctx, int w, int h);
 
-void window_scroll_axis(struct window_cursor_axis *axis, double offset);
-
-void window_scroll(struct window_cursor *cursor, double x, double y);
-
-void window_cursor_scroll(struct window_public *pub, double x, double y,
+void window_cursor_scroll(struct window_context *ctx, double x, double y,
 bool horz, bool zoom);
 
-void window_cursor_move(struct window_public *pub, double x, double y);
+void window_cursor_move(struct window_context *ctx, double x, double y);
 
 #endif /* WU_WINDOW_BASE */

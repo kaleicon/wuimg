@@ -13,7 +13,6 @@
 #include "cursor-shape-client-header.h"
 #include "xdg-decoration-client-header.h"
 
-#include "conf.h"
 #include "window/base.h"
 #include "window/egl.h"
 
@@ -47,8 +46,6 @@ union wayland_decoration {
 };
 
 struct wayland {
-	struct window_public *pub;
-
 	struct wl_display *display;
 	struct wl_registry *reg;
 
@@ -78,9 +75,8 @@ struct wayland_offscreen {
 	EGLDisplay egl_display;
 };
 
-const char * wayland_init(struct wayland *wl, struct window_public *pub);
+const char * wayland_init(struct window_context *ctx);
 
-const char * wayland_offscreen_init(struct wayland_offscreen *wl,
-window_fn_ctx_t *terminate);
+const char * wayland_offscreen_init(struct window_offscreen *ctx);
 
 #endif /* WU_WAYLAND */

@@ -14,9 +14,12 @@ struct egl {
 
 void egl_print_error(void);
 
-void egl_offscreen_terminate(void *ctx);
+void egl_offscreen_terminate(EGLDisplay display);
 
-const char * egl_offscreen_init(EGLDisplay *display, window_fn_ctx_t *terminate,
+const char * egl_offscreen_init_direct(EGLDisplay *display,
+EGLNativeDisplayType native_display);
+
+const char * egl_offscreen_init(struct window_offscreen *ctx,
 EGLNativeDisplayType native_display);
 
 void egl_terminate(struct egl *egl);

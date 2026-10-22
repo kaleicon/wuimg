@@ -7,13 +7,13 @@
 #include "events.h"
 #include "window/base.h"
 
-double window_timer_update(struct window_public *pub) {
-	const struct timespec start = pub->timer;
-	clock_gettime(CLOCK_MONOTONIC, &pub->timer);
+double window_timer_update(struct window_context *ctx) {
+	const struct timespec start = ctx->timer;
+	clock_gettime(CLOCK_MONOTONIC, &ctx->timer);
 
 	const double nanos_per_sec = 1000000000;
-	return (double)(pub->timer.tv_sec - start.tv_sec)
-		+ (double)(pub->timer.tv_nsec - start.tv_nsec) / nanos_per_sec;
+	return (double)(ctx->timer.tv_sec - start.tv_sec)
+		+ (double)(ctx->timer.tv_nsec - start.tv_nsec) / nanos_per_sec;
 }
 
 unsigned char * window_keymap_map(struct window_keymap *held_keys) {
@@ -36,14 +36,14 @@ const enum key_action action, int code, const bool shift) {
 	}
 }
 
-enum trit window_size_update(struct window_public *pub, const int w,
+enum trit window_size_update(struct window_context *ctx, const int w,
 const int h) {
 	if (w > 0 && h > 0) {
-		struct display_dims *fb = &pub->image.state.fb;
+		struct display_dims *fb = &ctx->image.state.fb;
 		if (fb->w != w || fb->h != h) {
 			fb->w = w;
 			fb->h = h;
-			gl_viewport(&pub->gl, fb);
+			gl_viewport(&ctx->gl, fb);
 			return trit_true;
 		}
 		return trit_false;
@@ -62,16 +62,16 @@ static enum image_event move_state(struct wu_state *state, float x, float y) {
 	return ev_none;
 }
 
-void window_cursor_scroll(struct window_public *pub, double x, double y,
+void window_cursor_scroll(struct window_context *ctx, double x, double y,
 const bool horz, const bool zoom) {
-	struct wu_event *ev = &pub->event;
-	struct wu_state *state = &pub->image.state;
+	struct wu_event *ev = &ctx->event;
+	struct wu_state *state = &ctx->image.state;
 	if (zoom) {
 		const float old_zoom = state->zoom;
-		ev->image = wudec_zoom(&pub->image,
+		ev->image = wudec_zoom(&ctx->image,
 			state->zoom * exp2f((float)y * (-1.0f/32)));
-		struct window_common *win = &pub->win;
-		struct display_dims *fb = &pub->image.state.fb;
+		struct window_common *win = &ctx->win;
+		struct display_dims *fb = &ctx->image.state.fb;
 		const float mul = 1/state->zoom - 1/old_zoom;
 		state->x_offset = fmaf(fmaf((float)fb->w, -.5f, win->cur.x.pos),
 			mul, state->x_offset);
@@ -88,11 +88,11 @@ const bool horz, const bool zoom) {
 	}
 }
 
-void window_cursor_move(struct window_public *pub, const double x,
+void window_cursor_move(struct window_context *ctx, const double x,
 const double y) {
-	struct window_common *win = &pub->win;
+	struct window_common *win = &ctx->win;
 	if (win->pressed) {
-		pub->event.image = move_state(&pub->image.state,
+		ctx->event.image = move_state(&ctx->image.state,
 			(float)x - win->cur.x.pos, (float)y - win->cur.y.pos);
 	}
 	win->cur.x.pos = (float)x;

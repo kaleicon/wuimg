@@ -10,10 +10,10 @@ enum event_repeat {
 	repeat_smooth = 2,
 };
 
-static void frame_cycle(struct window_public *pub, const int dt) {
-	pub->event.image = wudec_frame_cycle(&pub->image, dt);
-	pub->win.playing = false;
-	const int frame = pub->image.state.frame;
+static void frame_cycle(struct window_context *window, const int dt) {
+	window->event.image = wudec_frame_cycle(&window->image, dt);
+	window->win.playing = false;
+	const int frame = window->image.state.frame;
 	char msg[sizeof(frame)*3 + 9];
 	snprintf(msg, sizeof(msg), "Frame: %i", frame);
 	term_line_temp(msg);
@@ -21,12 +21,11 @@ static void frame_cycle(struct window_public *pub, const int dt) {
 
 static enum event_repeat apply_event(struct window_context *window,
 const int code, const float dt, const bool shift) {
-	struct window_public *pub = &window->pub;
-	struct wudec_image *image = &pub->image;
+	struct wudec_image *image = &window->image;
 	const struct image_file *file = &image->file;
 	struct wu_state *state = &image->state;
-	struct wu_event *event = &pub->event;
-	struct gl_context *gl = &pub->gl;
+	struct wu_event *event = &window->event;
+	struct gl_context *gl = &window->gl;
 
 	switch (code) {
 	// Exit
@@ -81,19 +80,19 @@ const int code, const float dt, const bool shift) {
 		break;
 	// Frame cycling
 	case ',': // Prev
-		frame_cycle(pub, -1);
+		frame_cycle(window, -1);
 		break;
 	case '.': // Next
-		frame_cycle(pub, 1);
+		frame_cycle(window, 1);
 		break;
 	case ';':
-		frame_cycle(pub, -5);
+		frame_cycle(window, -5);
 		break;
 	case ':':
-		frame_cycle(pub, 5);
+		frame_cycle(window, 5);
 		break;
 	case ' ':
-		pub->win.playing ^= wudec_cur_is_anim(image);
+		window->win.playing ^= wudec_cur_is_anim(image);
 		return repeat_none;
 
 	// Image movement
@@ -167,10 +166,10 @@ const int code, const float dt, const bool shift) {
 }
 
 double event_exec(struct window_context *window) {
-	struct window_keymap *held_keys = &window->pub.held_keys;
+	struct window_keymap *held_keys = &window->held_keys;
 	const bool shift = held_keys->shift;
 
-	const double elapsed = window_timer_update(&window->pub);
+	const double elapsed = window_timer_update(window);
 	float msecs = fmaxf((float)elapsed * 1000, 1.0);
 	const int inc = (int)msecs;
 	const float mul = shift ? EVENT_FAST_MOVE_FACTOR : 1.0f;

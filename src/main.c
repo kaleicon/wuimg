@@ -208,7 +208,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 	}
 
 	struct window_context window = {
-		.pub.image.conf = conf_load(),
+		.image.conf = conf_load(),
 	};
 
 	struct term_restore tr;
@@ -216,8 +216,8 @@ static enum wu_error run_with_archive(const char *archive_name) {
 		return wu_display_error;
 	}
 
-	struct wudec_image *image = &window.pub.image;
-	struct wu_event *event = &window.pub.event;
+	struct wudec_image *image = &window.image;
+	struct wu_event *event = &window.event;
 	enum wu_error result = wu_ok;
 	long idx = 0;
 	bool decoded_once = false;
@@ -247,7 +247,7 @@ static enum wu_error run_with_archive(const char *archive_name) {
 static enum wu_error run_with_list(struct file_list *entries, long idx,
 const bool interpret_stdin, const struct sole_mode_args *args) {
 	struct window_context window = {
-		.pub.image.conf = conf_load(),
+		.image.conf = conf_load(),
 	};
 
 	struct term_restore tr;
@@ -256,8 +256,8 @@ const bool interpret_stdin, const struct sole_mode_args *args) {
 	}
 
 	FILE *stdin_tmp = NULL;
-	struct wudec_image *image = &window.pub.image;
-	struct wu_event *event = &window.pub.event;
+	struct wudec_image *image = &window.image;
+	struct wu_event *event = &window.event;
 	enum wu_error result = wu_ok;
 	size_t remaining = entries->nr;
 	while (!event->exit && remaining) {
