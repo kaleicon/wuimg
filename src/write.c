@@ -240,7 +240,7 @@ struct wuimg *src) {
 	const char *msg = NULL;
 	if (write_should_open_file(out, image)) {
 		errno = 0;
-		if (args->stdout) {
+		if (args->to_stdout) {
 			out->ofp = stdout;
 		} else {
 			const bool supports_anim = out->enc->support >= enc_anim;
@@ -356,7 +356,7 @@ struct write_writer *writer) {
 				all_ok = false;
 				break;
 			} else if (closed) {
-				if (args->stdout) {
+				if (args->to_stdout) {
 					break;
 				}
 				print_write_file(&out, stdout);
@@ -399,7 +399,7 @@ const int len, char **names, const struct wu_conf *conf) {
 		wudec_src_format(&image, args->fmt);
 		ok += write_image(&image, args, writer);
 		wudec_recycle_conf(&image);
-		if (args->stdout) {
+		if (args->to_stdout) {
 			break;
 		}
 	}
@@ -474,7 +474,7 @@ struct write_args *args) {
 			}
 			break;
 		case wo_f: args->overwrite = true; break;
-		case wo_s: args->stdout = true; break;
+		case wo_s: args->to_stdout = true; break;
 		case wo_t:
 			args->fmt = fmtmap_by_name(argv[*idx]);
 			if (!args->fmt) {

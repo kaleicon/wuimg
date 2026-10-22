@@ -11,7 +11,7 @@ struct write_args {
 	const char *outdir;
 	const struct fmt_desc *fmt;
 	bool overwrite;
-	bool stdout;
+	bool to_stdout;
 	bool null;
 	int codec;
 };

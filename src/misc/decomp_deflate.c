@@ -10,7 +10,7 @@
 
 size_t decomp_deflate(uint8_t *restrict dst, size_t dst_len,
 const uint8_t *restrict src, const size_t src_len) {
-	return (uncompress_z(dst, &dst_len, src, src_len) == Z_OK)
+	return (uncompress(dst, &dst_len, src, src_len) == Z_OK)
 		? dst_len
 		: 0;
 }
