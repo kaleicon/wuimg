@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/select.h>
 #include <unistd.h>
 
@@ -14,15 +16,37 @@
 #include <xf86drmMode.h>
 #include <xf86drm.h>
 
+#include <libinput.h>
+#include <libseat.h>
+#include <linux/input-event-codes.h>
+
 #include "misc/math.h"
 #include "misc/term.h"
 #include "window/base.h"
 #include "window/egl.h"
 #include "opengl.h"
 
+struct seat_device {
+	int id;
+	int fd;
+};
+
+enum input_modifier {
+	input_left_shift = 1 << 0,
+	input_right_shift = 1 << 1,
+	input_shift = input_left_shift | input_right_shift,
+
+	input_left_ctrl = 1 << 2,
+	input_right_ctrl = 1 << 3,
+	input_ctrl = input_left_ctrl | input_right_ctrl,
+
+	input_left_alt = 1 << 4,
+	input_right_alt = 1 << 5,
+	input_alt = input_left_alt | input_right_alt,
+};
+
 struct drm_context {
 	struct drm_drm {
-		drmModeCrtc *crtc_restore;
 		uint32_t connector_id;
 		uint32_t crtc_id;
 		uint32_t fb_id[2];
@@ -36,6 +60,14 @@ struct drm_context {
 	} gbm;
 
 	struct egl egl;
+
+	struct libseat *seat;
+	struct libinput *li;
+
+	enum input_modifier mod;
+
+	unsigned nr_devices;
+	struct seat_device device[32];
 };
 
 struct drm_offscreen {
@@ -49,13 +81,16 @@ static const uint32_t WU_GBM_FORMAT = GBM_FORMAT_XRGB8888;
 
 static void drm_terminate(struct window_context *wctx) {
 	struct drm_context *ctx = wctx->win.ctx;
+
+	libinput_unref(ctx->li);
+	libseat_close_seat(ctx->seat);
+
 	eglTerminate(ctx->egl.display);
 
-	if (ctx->drm.fd != -1) {
+	if (ctx->drm.fd >= 0) {
 		drmModeRmFB(ctx->drm.fd, ctx->drm.fb_id[0]);
 		drmModeRmFB(ctx->drm.fd, ctx->drm.fb_id[1]);
 	}
-
 	if (ctx->gbm.bo) {
 		gbm_bo_destroy(ctx->gbm.bo);
 	}
@@ -65,15 +100,7 @@ static void drm_terminate(struct window_context *wctx) {
 	if (ctx->gbm.device) {
 		gbm_device_destroy(ctx->gbm.device);
 	}
-
-	drmModeCrtc *crtc = ctx->drm.crtc_restore;
-	if (crtc) {
-		drmModeSetCrtc(ctx->drm.fd, crtc->crtc_id, crtc->buffer_id,
-			0, 0, &ctx->drm.connector_id, 1, &crtc->mode);
-		drmModeFreeCrtc(crtc);
-	}
-
-	if (ctx->drm.fd != -1) {
+	if (ctx->drm.fd >= 0) {
 		close(ctx->drm.fd);
 	}
 	free(ctx);
@@ -184,6 +211,241 @@ static void drm_swap_buffers(struct window_context *wctx) {
 	ctx->gbm.bo = next_bo;
 }
 
+static uint8_t set_mod(struct drm_context *ctx, const enum key_action act,
+const enum input_modifier mod) {
+	if (act == key_press) {
+		ctx->mod |= mod;
+	} else {
+		ctx->mod &= ~mod;
+	}
+	return 0;
+}
+
+static uint8_t vt(struct drm_context *ctx, const enum key_action act,
+const int vt) {
+	if (act == key_press && (ctx->mod & input_alt)) {
+		libseat_switch_session(ctx->seat, vt);
+	}
+	return 0;
+}
+
+static uint8_t consume_key(struct drm_context *ctx, const uint32_t key,
+const enum key_action act) {
+        switch (key) {
+	case KEY_LEFTSHIFT: return set_mod(ctx, act, input_left_shift);
+	case KEY_RIGHTSHIFT: return set_mod(ctx, act, input_right_shift);
+	case KEY_LEFTCTRL: return set_mod(ctx, act, input_left_ctrl);
+	case KEY_RIGHTCTRL: return set_mod(ctx, act, input_right_ctrl);
+	case KEY_LEFTALT: case KEY_LEFTMETA: return set_mod(ctx, act, input_left_alt);
+	case KEY_RIGHTALT: case KEY_RIGHTMETA: return set_mod(ctx, act, input_right_alt);
+
+	case KEY_F1: return vt(ctx, act, 1);
+	case KEY_F2: return vt(ctx, act, 2);
+	case KEY_F3: return vt(ctx, act, 3);
+	case KEY_F4: return vt(ctx, act, 4);
+	case KEY_F5: return vt(ctx, act, 5);
+	case KEY_F6: return vt(ctx, act, 6);
+	case KEY_F7: return vt(ctx, act, 7);
+	case KEY_F8: return vt(ctx, act, 8);
+	case KEY_F9: return vt(ctx, act, 9);
+	case KEY_F10: return vt(ctx, act, 10);
+	case KEY_F11: return vt(ctx, act, 11);
+	case KEY_F12: return vt(ctx, act, 12);
+
+	case KEY_W: case KEY_C:
+		if ((ctx->mod & input_ctrl)) {
+        case KEY_Q: case KEY_ESC:
+			return 'Q';
+		}
+		break;
+        case KEY_A: return 'A';
+        case KEY_M: return 'M';
+
+        case KEY_N: return 'N';
+        case KEY_P: return 'P';
+
+        case KEY_D: return 'D';
+        case KEY_U: return 'U';
+
+        case KEY_H: case KEY_LEFT: return 'H';
+        case KEY_J: case KEY_DOWN: return 'J';
+        case KEY_K: case KEY_UP: return 'K';
+        case KEY_L: case KEY_RIGHT: return 'L';
+
+        case KEY_Z: return 'Z';
+        case KEY_X: return 'X';
+        case KEY_I: return 'I';
+        case KEY_O: return 'O';
+
+	case KEY_1: case KEY_KP1: return '1';
+	case KEY_2: case KEY_KP2: return '2';
+	case KEY_3: case KEY_KP3: return '3';
+	case KEY_4: case KEY_KP4: return '4';
+	case KEY_5: case KEY_KP5: return '5';
+	case KEY_6: case KEY_KP6: return '6';
+	case KEY_7: case KEY_KP7: return '7';
+	case KEY_8: case KEY_KP8: return '8';
+	case KEY_9: case KEY_KP9: return '9';
+
+        case KEY_END: return '=';
+        case KEY_HOME: case KEY_0: case KEY_KP0: return '0';
+        case KEY_PAGEUP: return '+';
+        case KEY_PAGEDOWN: return '-';
+
+        case KEY_KPPLUS: return '+';
+        case KEY_KPMINUS: return '-';
+        case KEY_KPASTERISK: return '*';
+        case KEY_KPSLASH: return '/';
+        }
+        return 0;
+}
+
+static void handle_keyboard_ev(struct window_context *wctx,
+struct drm_context *ctx, struct libinput_event *ev) {
+	struct libinput_event_keyboard *kb = libinput_event_get_keyboard_event(ev);
+	if (kb) {
+		const enum libinput_key_state state = libinput_event_keyboard_get_key_state(kb);
+		const enum key_action act = state == LIBINPUT_KEY_STATE_PRESSED
+			? key_press : key_release;
+		const uint8_t c = consume_key(ctx,
+			libinput_event_keyboard_get_key(kb), act);
+
+		window_key_add(&wctx->held_keys, act, c,
+			ctx->mod & input_shift);
+	}
+}
+
+static void input_poll(struct window_context *wctx, long nsecs) {
+	struct drm_context *ctx = wctx->win.ctx;
+
+	struct pollfd has_data[] = {
+		{.fd = libseat_get_fd(ctx->seat), .events = POLLIN},
+		{.fd = libinput_get_fd(ctx->li), .events = POLLIN},
+	};
+	const int msecs = (int)lmin(INT_MAX, nsecs / 1000000);
+	if (poll(has_data, ARRAY_LEN(has_data), msecs) > 0
+	&& ((has_data[0].revents | has_data[1].revents) & POLLIN)) {
+		libseat_dispatch(ctx->seat, 0);
+		libinput_dispatch(ctx->li);
+
+		struct libinput_event *ev;
+		while ((ev = libinput_get_event(ctx->li)) != NULL) {
+			switch (libinput_event_get_type(ev)) {
+			case LIBINPUT_EVENT_KEYBOARD_KEY:
+				handle_keyboard_ev(wctx, ctx, ev);
+				break;
+			default: break;
+			}
+			libinput_event_destroy(ev);
+			libinput_dispatch(ctx->li);
+		}
+	}
+}
+
+static void input_log(struct libinput *li,
+const enum libinput_log_priority priority, const char *format, va_list args) {
+	(void)li; (void)priority;
+	fputs("libinput: ", stderr);
+	vfprintf(stderr, format, args);
+}
+
+static void seat_log(const enum libseat_log_level level, const char *format,
+va_list args) {
+	(void)level;
+	fputs("libseat: ", stderr);
+	vfprintf(stderr, format, args);
+	fputc('\n', stderr);
+}
+
+static int li_open(const char *path, const int flags, void *data) {
+	(void)flags;
+	struct drm_context *ctx = data;
+	int res = -ENOMEM;
+	if (ctx->nr_devices < ARRAY_LEN(ctx->device)) {
+		struct seat_device *dev = ctx->device + ctx->nr_devices;
+		dev->id = libseat_open_device(ctx->seat, path, &dev->fd);
+		if (dev->id == -1) {
+			res = -errno;
+		} else {
+			res = dev->fd;
+			++ctx->nr_devices;
+		}
+	}
+	return res;
+}
+
+static void li_close(const int fd, void *data) {
+	struct drm_context *ctx = data;
+	for (size_t i = 0; i < ctx->nr_devices; ++i) {
+		if (ctx->device[i].fd == fd) {
+			libseat_close_device(ctx->seat, ctx->device[i].id);
+			--ctx->nr_devices;
+			memmove(ctx->device + i, ctx->device + i + 1,
+				(ctx->nr_devices - i)*sizeof(*ctx->device));
+			break;
+		}
+	}
+}
+
+static const struct libinput_interface li_interface = {
+	.open_restricted = li_open,
+	.close_restricted = li_close,
+};
+
+static void seat_enable(struct libseat *seat, void *data) {
+	(void)seat;
+	struct window_context *wctx = data;
+	wctx->win.focused = true;
+	wctx->gl.update = true;
+	struct drm_context *ctx = wctx->win.ctx;
+	if (ctx->li) {
+		libinput_resume(ctx->li);
+	}
+}
+
+static void seat_disable(struct libseat *seat, void *data) {
+	struct window_context *wctx = data;
+	wctx->win.focused = false;
+	libseat_disable_seat(seat);
+	struct drm_context *ctx = wctx->win.ctx;
+	if (ctx->li) {
+		libinput_suspend(ctx->li);
+	}
+}
+
+static const struct libseat_seat_listener seat_listener = {
+	.enable_seat = seat_enable,
+	.disable_seat = seat_disable,
+};
+
+static const char * input_setup(struct window_context *wctx,
+struct drm_context *ctx) {
+	const bool debug = getenv("WU_DEBUG");
+	libseat_set_log_handler(seat_log);
+	libseat_set_log_level(debug
+		? LIBSEAT_LOG_LEVEL_DEBUG : LIBSEAT_LOG_LEVEL_ERROR);
+	ctx->seat = libseat_open_seat(&seat_listener, wctx);
+	if (!ctx->seat) {
+		return "Failed to open seat";
+	}
+	libseat_dispatch(ctx->seat, 0);
+
+	struct udev *udev = udev_new();
+	if (!udev) {
+		return "Failed to create udev context";
+	}
+	ctx->li = libinput_udev_create_context(&li_interface, ctx, udev);
+	udev_unref(udev);
+	if (!ctx->li) {
+		return "Failed to create libinput context";
+	}
+	libinput_log_set_handler(ctx->li, input_log);
+	libinput_log_set_priority(ctx->li, debug
+		? LIBINPUT_LOG_PRIORITY_DEBUG : LIBINPUT_LOG_PRIORITY_ERROR);
+	return libinput_udev_assign_seat(ctx->li, libseat_seat_name(ctx->seat)) == 0
+		? NULL : "Failed to assign seat to libinput";
+}
+
 static bool mode_set(struct window_context *wctx, struct drm_context *ctx,
 drmModeModeInfo *mode_info) {
 	struct drm_drm *drm = &ctx->drm;
@@ -193,18 +455,11 @@ drmModeModeInfo *mode_info) {
 		return false;
 	}
 
-	drmModeCrtc *crtc_restore = drmModeGetCrtc(drm->fd, drm->crtc_id);
-	if (!crtc_restore) {
-		return false;
-	}
-
 	const int fail = drmModeSetCrtc(drm->fd, drm->crtc_id, fb_id, 0, 0,
 		&drm->connector_id, 1, mode_info);
 	if (fail) {
-		drmModeFreeCrtc(crtc_restore);
 		return false;
 	}
-	drm->crtc_restore = crtc_restore;
 	return true;
 }
 
@@ -302,51 +557,47 @@ static int open_device(drmDevice *device) {
 	return -1;
 }
 
-static int get_device_fd(void) {
-	drmDevice *devices[64];
-	const int dev_len = drmGetDevices2(0, devices, ARRAY_LEN(devices));
-	int fd = -1;
-	for (int i = 0; fd < 0 && i < dev_len; ++i) {
-		fd = open_device(devices[i]);
-	}
-	drmFreeDevices(devices, dev_len);
-	return fd;
-}
-
-static drmModeRes * find_primary_device(struct drm_drm *drm) {
-	drmDevice *devices[64];
-	const int dev_len = drmGetDevices2(0, devices, ARRAY_LEN(devices));
-	drmModeRes *res = NULL;
-	for (int i = 0; i < dev_len; ++i) {
-		const int fd = open_device(devices[i]);
-		if (fd >= 0) {
-			res = drmModeGetResources(fd);
-			if (res) {
+static bool drm_setup_device(struct drm_drm *drm, const int fd, drmModeRes *res,
+drmModeConnector **connector, drmModeModeInfo **mode_info) {
+	*connector = find_connector(res, fd);
+	if (*connector) {
+		*mode_info = find_preferred_mode(*connector);
+		if (*mode_info) {
+			drm->crtc_id = find_crtc(fd, res, *connector);
+			if (drm->crtc_id != 0) {
 				drm->fd = fd;
-				break;
+				drm->connector_id = (*connector)->connector_id;
+				return true;
 			}
-			close(fd);
 		}
 	}
-	drmFreeDevices(devices, dev_len);
-	return res;
+	return false;
 }
 
 static bool drm_setup(struct drm_drm *drm, drmModeConnector **connector,
 drmModeModeInfo **mode_info) {
-	drmModeRes *res = find_primary_device(drm);
-	if (res) {
-		*connector = find_connector(res, drm->fd);
-		if (*connector) {
-			*mode_info = find_preferred_mode(*connector);
-			if (*mode_info) {
-				drm->connector_id = (*connector)->connector_id;
-				drm->crtc_id = find_crtc(drm->fd, res, *connector);
+	drmDevice *devices[64];
+	const int dev_len = drmGetDevices2(0, devices, ARRAY_LEN(devices));
+	bool ok = false;
+	for (int i = 0; i < dev_len; ++i) {
+		const int fd = open_device(devices[i]);
+		if (fd < 0) {
+			continue;
+		}
+
+		drmModeRes *res = drmModeGetResources(fd);
+		if (res) {
+			ok = drm_setup_device(drm, fd, res, connector,
+				mode_info);
+			drmModeFreeResources(res);
+			if (ok) {
+				break;
 			}
 		}
-		drmModeFreeResources(res);
+		close(fd);
 	}
-	return drm->crtc_id != 0;
+	drmFreeDevices(devices, dev_len);
+	return ok;
 }
 
 const char * drm_init(struct window_context *wctx) {
@@ -361,7 +612,7 @@ const char * drm_init(struct window_context *wctx) {
 		.title = null_function,
 		.fullscreen = null_function,
 		.resize = null_function,
-		.poll = null_function,
+		.poll = input_poll,
 		.swap_buffers = drm_swap_buffers,
 		.terminate = drm_terminate,
 	};
@@ -369,28 +620,30 @@ const char * drm_init(struct window_context *wctx) {
 	drmModeConnector *connector = NULL;
 	drmModeModeInfo *mode_info = NULL; // ptr to a *connector member
 
-	const char *err = "This string shouldn't be seen";
-	if (drm_setup(&ctx->drm, &connector, &mode_info)) {
-		wctx->win.refresh_nsec = 1000000000 / mode_info->vrefresh;
-		if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
-			err = egl_init(&ctx->egl,
-				(EGLNativeDisplayType)ctx->gbm.device,
-				ctx->gbm.surface, WU_GBM_FORMAT, false);
-			if (!err) {
-				if (mode_set(wctx, ctx, mode_info)) {
-					// Phew
-					err = NULL;
+	const char *err = input_setup(wctx, ctx);
+	if (!err) {
+		if (drm_setup(&ctx->drm, &connector, &mode_info)) {
+			wctx->win.refresh_nsec = 1000000000 / mode_info->vrefresh;
+			if (gbm_setup(&ctx->gbm, ctx->drm.fd, mode_info)) {
+				err = egl_init(&ctx->egl,
+					(EGLNativeDisplayType)ctx->gbm.device,
+					ctx->gbm.surface, WU_GBM_FORMAT, false);
+				if (!err) {
+					if (mode_set(wctx, ctx, mode_info)) {
+						// Phew
+						err = NULL;
+					} else {
+						err = "Mode set failed";
+					}
 				} else {
-					err = "Mode set failed";
+					egl_print_error();
 				}
 			} else {
-				egl_print_error();
+				err = "GBM setup failed";
 			}
 		} else {
-			err = "GBM setup failed";
+			err = "DRM setup failed";
 		}
-	} else {
-		err = "DRM setup failed";
 	}
 	drmModeFreeConnector(connector);
 	return err;
@@ -405,6 +658,17 @@ static void drm_offscreen_terminate(struct window_offscreen *wctx) {
 	if (ctx->fd >= 0) {
 		close(ctx->fd);
 	}
+}
+
+static int get_device_fd(void) {
+	drmDevice *devices[64];
+	const int dev_len = drmGetDevices2(0, devices, ARRAY_LEN(devices));
+	int fd = -1;
+	for (int i = 0; fd < 0 && i < dev_len; ++i) {
+		fd = open_device(devices[i]);
+	}
+	drmFreeDevices(devices, dev_len);
+	return fd;
 }
 
 const char * drm_offscreen_init(struct window_offscreen *wctx) {

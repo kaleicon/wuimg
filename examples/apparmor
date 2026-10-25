@@ -4,8 +4,8 @@
 abi <abi/4.0>,
 include <tunables/global>
 
-# Replace with the actual program path if needed
-profile wu @{HOME}/.local/bin/wu {
+# `attach_disconnected` is needed for libinput under DRM. Remove if not using.
+profile wu @{HOME}/.local/bin/wu flags=(attach_disconnected.path=/wu_apparmor_disconnected/) {
 	# Make the world read-write, omitting executable permissions. This
 	# makes some of the rules below redundant, but if you don't care
 	# about file deletion and image conversion, you can drop the 'w'
@@ -19,11 +19,15 @@ profile wu @{HOME}/.local/bin/wu {
 	# something between the '#' and 'include', otherwise AppArmor will
 	# match it like a C '#include' for whatever unholy reason and load
 	# the files anyway.
-	# DRM/KMS
+	## DRM/KMS
 	include <abstractions/dri-common>
-	# Wayland
+	### needed for libinput udev monitoring
+	network netlink raw,
+
+	## Wayland
 	include <abstractions/wayland>
-	# X
+
+	## X
 	include <abstractions/X>
 
 	# `wu a` uses `tmpfile()` to create a temporary file to extract to.

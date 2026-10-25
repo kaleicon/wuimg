@@ -207,7 +207,7 @@ libuwu = static_library('uwu', src_list, dependencies : dep_list, link_with : wu
 # Viewer setup
 window_map = {
 	'window_wayland': ['wayland-client', 'wayland-egl', 'xkbcommon'],
-	'window_drm': ['gbm', 'libdrm'],
+	'window_drm': ['gbm', 'libdrm', 'libinput', 'libseat', 'libudev'],
 	'window_glfw': ['glfw3'],
 }
 window_dep_list = [
