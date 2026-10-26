@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2020 kaleido
 #include <ctype.h>
+#include <limits.h>
 #include <string.h>
 
 #include "dec.h"
@@ -94,66 +95,64 @@ const bool subupload) {
 	return wu_ok;
 }
 
-static double draw_rest_poll(struct window_context *window,
-const bool print_draw_time) {
-	uint64_t draw_time = 0;
-	if (window_draw(window)) {
-		draw_time = gl_clock_query(&window->gl);
-		if (print_draw_time) {
-			nanosec_report("Drawn", draw_time, report_all);
-		}
-	}
-
-	uint32_t refresh = window->win.refresh_nsec;
-	if (!refresh) {
-		refresh = 1000000000 / 60;
-	}
-	const struct timespec tm = {
-		.tv_nsec = (long)refresh - (long)draw_time*2,
-	};
-	nanosleep(&tm, NULL);
-
-	window_poll(window, 0);
-	const unsigned char ev = term_queue_next(&window->term);
-	window_key_add(&window->held_keys, key_external, ev, isupper(ev));
-	return event_exec(window);
-}
-
 static bool idle_display(struct wudec_image *image,
 struct window_context *window, const double next_frame,
 const enum image_event evs, const bool allow_cycle) {
 	struct wu_event *event = &window->event;
 	struct wu_state *state = &window->image.state;
 
-	bool print_time = true;
+	bool exit_display_loop = false;
+	bool print_draw_time = true;
 	do {
-		event->image = ev_time;
-		const double elapsed = draw_rest_poll(window, print_time);
+		print_draw_time &= window_draw(window);
+		event->image = ev_none;
+		int poll_msec;
+		if (window->win.held_keys.active) {
+			poll_msec = 1;
+		} else if (isfinite(next_frame)) {
+			poll_msec = (int)fmin(fmax(
+				(next_frame - state->time)*1000.0, 0), INT_MAX);
+		} else {
+			poll_msec = -1;
+		}
+		window_poll(window, poll_msec);
+		const unsigned char c = term_queue_next(&window->term);
+		window_key_add(window, key_once, c, isupper(c));
+		event_exec(window);
 		if (window->win.playing) {
+			const double elapsed = timespec_update(
+				&window->win.timer.play);
 			state->time += (float)elapsed;
-			if (state->time >= next_frame && wudec_frame_cycle(image, 1)) {
+			if (next_frame - state->time <= 0.001f
+			&& wudec_frame_cycle(image, 1)) {
 				event->image = ev_frame;
+			} else if (evs & ev_time) {
+				event->image = ev_time;
 			}
 		}
+		window->gl.update |= (bool)event->image;
+
+		if (print_draw_time) {
+			nanosec_report("Drawn", gl_clock_query(&window->gl),
+				report_all);
+		}
+		print_draw_time = !window->win.playing;
 
 		event->cycle *= allow_cycle;
-		if (event->cycle || event->rm == rm_yes || event->exit) {
-			return true;
-		}
-		window->gl.update |= (bool)(event->image & ~ev_time);
-		print_time = !window->win.playing;
-	} while (!(event->image & evs));
-	return false;
+		exit_display_loop = event->exit | event->cycle
+			| (event->rm == rm_yes);
+	} while (!exit_display_loop & !(event->image & evs));
+	return exit_display_loop;
 }
 
-static double min_time(const struct wuimg *img) {
+static double next_frame_when(const struct wuimg *img) {
 	struct image_anim *anim = img->anim;
 	if (anim) {
 		const struct frame_time time = anim->sec;
 		const double secs = (double)time.num / (double)time.den;
 		return fmax(secs, 1.0 / 30);
 	}
-	return INFINITY;
+	return 0.0;
 }
 
 enum wu_error display_loop(struct window_context *window,
@@ -207,41 +206,42 @@ const bool allow_cycle, const bool allow_delete) {
 				break;
 			}
 
+			first_iter = false;
 			image_file_free_if_single(infile);
-
-			if (first_iter) {
-				window_timer_update(window);
-				first_iter = false;
-			}
-
-			if (evs & ev_frame) {
-				next_frame = state->time + min_time(
+			if (evs & (ev_frame | ev_time)) {
+				next_frame = state->time + next_frame_when(
 					infile->sub_img + state->idx);
 			} else {
 				nanosec_report("Frame uploaded in",
 					gl_clock_query(gl), report_all);
+				next_frame = INFINITY;
 			}
+			if (subcycle) {
+				timespec_present_time(&window->win.timer.play);
+			} else if (window->win.playing) {
+				state->time += timespec_update(&window->win.timer.play);
+			}
+
 			upload = false;
-			event->image = 0;
 		}
 
 		if (idle_display(image, window, next_frame, evs, allow_cycle)) {
 			break;
-		} else if (event->image & evs) {
-			err = wudec_callback(image, event->image);
-			switch (err) {
-			case wu_no_change:
-				upload = event->image & (ev_subcycle | ev_frame);
-				err = wu_ok;
-				break;
-			case wu_ok:
-				upload = true;
-				break;
-			default:
-				print_error(infile, "Callback error", err,
-					stdout);
-				break;
-			}
+		}
+
+		err = wudec_callback(image, event->image);
+		switch (err) {
+		case wu_no_change:
+			upload = event->image & (ev_subcycle | ev_frame);
+			err = wu_ok;
+			break;
+		case wu_ok:
+			upload = true;
+			break;
+		default:
+			print_error(infile, "Callback error", err,
+				stdout);
+			break;
 		}
 	}
 	term_line_clear();

@@ -1,37 +1,42 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
 #include "events.h"
+#include "misc/math.h"
+#include "misc/time.h"
 #include "window/base.h"
 
-double window_timer_update(struct window_context *ctx) {
-	const struct timespec start = ctx->timer;
-	clock_gettime(CLOCK_MONOTONIC, &ctx->timer);
-
-	const double nanos_per_sec = 1000000000;
-	return (double)(ctx->timer.tv_sec - start.tv_sec)
-		+ (double)(ctx->timer.tv_nsec - start.tv_nsec) / nanos_per_sec;
+uint32_t window_refresh_nsec(const struct window_context *ctx) {
+	const uint32_t n = ctx->win.refresh_nsec;
+	return n ? n : 1000000000/60;
 }
 
 unsigned char * window_keymap_map(struct window_keymap *held_keys) {
 	return held_keys->map - WINDOW_KEYSTART;
 }
 
-void window_key_lift(struct window_keymap *held_keys) {
-	memset(held_keys, 0, sizeof(*held_keys));
+void window_key_lift(struct window_context *ctx) {
+	memset(&ctx->win.held_keys, 0, sizeof(ctx->win.held_keys));
 }
 
-void window_key_add(struct window_keymap *held_keys,
-const enum key_action action, int code, const bool shift) {
+void window_key_add(struct window_context *ctx, const enum key_action action,
+int code, const bool shift) {
+	struct window_keymap *held_keys = &ctx->win.held_keys;
 	code = toupper(code);
 	if (code >= WINDOW_KEYSTART && code < WINDOW_KEYEND) {
 		held_keys->shift = shift;
 		code -= WINDOW_KEYSTART;
-		if (!held_keys->map[code] || action == key_release) {
+		if (!held_keys->map[code] || action == key_released) {
+			const bool prev = held_keys->active;
 			held_keys->map[code] = (uint8_t)action;
+			held_keys->active |= (bool)action;
+			if (!prev & held_keys->active) {
+				timespec_present_time(&ctx->win.timer.key);
+			}
 		}
 	}
 }
@@ -83,15 +88,15 @@ const bool horz, const bool zoom) {
 			y = 0;
 		}
 		ev->image = move_state(state,
-			(float)x * -EVENT_FAST_MOVE_FACTOR,
-			(float)y * -EVENT_FAST_MOVE_FACTOR);
+			(float)x * -WINDOW_FAST_MOVE_FACTOR,
+			(float)y * -WINDOW_FAST_MOVE_FACTOR);
 	}
 }
 
 void window_cursor_move(struct window_context *ctx, const double x,
 const double y) {
 	struct window_common *win = &ctx->win;
-	if (win->pressed) {
+	if (win->pointer_pressed) {
 		ctx->event.image = move_state(&ctx->image.state,
 			(float)x - win->cur.x.pos, (float)y - win->cur.y.pos);
 	}

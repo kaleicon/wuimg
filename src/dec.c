@@ -20,7 +20,7 @@ struct wuimg * wudec_cur_sub_img(const struct wudec_image *image) {
 
 bool wudec_cur_is_anim(const struct wudec_image *image) {
 	const struct wuimg *img = wudec_cur_sub_img(image);
-	return img->evolving || img->anim;
+	return img->evolving || wuimg_anim_nr(img) > 1;
 }
 
 enum image_event wudec_cur_events(const struct wudec_image *image) {
@@ -28,7 +28,7 @@ enum image_event wudec_cur_events(const struct wudec_image *image) {
 	return ev_subcycle
 		| (img->evolving ? ev_time : 0)
 		| (img->scalable ? ev_transform : 0)
-		| (img->anim ? ev_frame : 0);
+		| (wuimg_anim_nr(img) > 1 ? ev_frame : 0);
 }
 
 enum image_event wudec_zoom(struct wudec_image *image, float new_zoom) {

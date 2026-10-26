@@ -51,8 +51,8 @@ void window_fullscreen(struct window_context *window) {
 	window->win.fullscreen = !fs;
 }
 
-void window_poll(struct window_context *window, const long nsecs) {
-	window->win.fn.poll(window, nsecs);
+void window_poll(struct window_context *window, const int msecs) {
+	window->win.fn.poll(window, msecs);
 	window->event.exit |= sig_should_close;
 }
 

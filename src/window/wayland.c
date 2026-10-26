@@ -200,22 +200,25 @@ static bool has_events(struct wl_display *display, const int msecs) {
 		if (errno != EAGAIN) {
 			return false;
 		}
-		struct pollfd can_write = {.fd = wl_display_get_fd(display),
-			.events = POLLOUT};
+		struct pollfd can_write = {
+			.fd = wl_display_get_fd(display), .events = POLLOUT
+		};
 		while (poll(&can_write, 1, -1) == -1) {
 			if (errno != EAGAIN) {
 				return false;
 			}
 		}
 	}
-	struct pollfd has_data = {.fd = wl_display_get_fd(display),
-		.events = POLLIN};
-	return poll(&has_data, 1, msecs) > 0 && has_data.revents & POLLIN;
+	struct pollfd has_data[] = {
+		{.fd = wl_display_get_fd(display), .events = POLLIN},
+		{.fd = STDIN_FILENO, .events = POLLIN},
+	};
+	return poll(has_data, ARRAY_LEN(has_data), msecs) > 0
+		&& has_data[0].revents & POLLIN;
 }
 
-static void wayland_poll(struct window_context *ctx, const long nsecs) {
+static void wayland_poll(struct window_context *ctx, const int msecs) {
 	struct wayland *wl = ctx->win.ctx;
-	const int msecs = (int)(nsecs / 1000000);
 	while (wl_display_prepare_read(wl->display)) {
 		wl_display_dispatch_pending(wl->display);
 	}
@@ -644,7 +647,7 @@ struct wl_pointer *pointer, const uint32_t serial) {
 	struct wp_cursor_shape_device_v1 *dev =
 		wp_cursor_shape_manager_v1_get_pointer(wl->shape,
 		pointer);
-	wp_cursor_shape_device_v1_set_shape(dev, serial, ctx->win.pressed
+	wp_cursor_shape_device_v1_set_shape(dev, serial, ctx->win.pointer_pressed
 		? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING
 		: WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
 	wp_cursor_shape_device_v1_destroy(dev);
@@ -704,14 +707,14 @@ const uint32_t state) {
 	if (wl->kb.state) {
 		const enum key_action keyact =
 			(state == WL_KEYBOARD_KEY_STATE_PRESSED)
-				? key_press : key_release;
+				? key_pressed : key_released;
 
 		const bool shift = test_mod(wl->kb.state, XKB_MOD_NAME_SHIFT);
 		uint8_t c = convert_by_position(wl->kb.state, key);
 		if (!c) {
 			c = convert_by_codepoint(wl->kb.state, key);
 		}
-		window_key_add(&ctx->held_keys, keyact, c, shift);
+		window_key_add(ctx, keyact, c, shift);
 	}
 }
 
@@ -719,7 +722,7 @@ static void keyboard_leave(void *data, struct wl_keyboard *keyboard,
 const uint32_t serial, struct wl_surface *surface) {
 	(void)keyboard; (void)serial; (void)surface;
 	struct window_context *ctx = data;
-	window_key_lift(&ctx->held_keys);
+	window_key_lift(ctx);
 }
 
 static void keyboard_keymap(void *data, struct wl_keyboard *keyboard,
@@ -782,7 +785,7 @@ const uint32_t state) {
 	struct wayland *wl = ctx->win.ctx;
 	switch (button) {
 	case BTN_LEFT:
-		ctx->win.pressed =
+		ctx->win.pointer_pressed =
 			(state == WL_POINTER_BUTTON_STATE_PRESSED);
 		if (wl->shape) {
 			set_cursor_shape(ctx, wl, pointer, serial);
@@ -855,7 +858,7 @@ const uint32_t caps) {
 	struct wayland_cursor *c = &wl->cursor;
 	if (caps & WL_SEAT_CAPABILITY_POINTER) {
 		if (!c->pointer) {
-			ctx->win.pressed = false;
+			ctx->win.pointer_pressed = false;
 			c->pointer = wl_seat_get_pointer(seat);
 			wl_pointer_add_listener(c->pointer, &listen_pointer, ctx);
 		}

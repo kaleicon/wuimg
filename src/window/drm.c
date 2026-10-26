@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include <errno.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -213,7 +212,7 @@ static void drm_swap_buffers(struct window_context *wctx) {
 
 static uint8_t set_mod(struct drm_context *ctx, const enum key_action act,
 const enum input_modifier mod) {
-	if (act == key_press) {
+	if (act == key_pressed) {
 		ctx->mod |= mod;
 	} else {
 		ctx->mod &= ~mod;
@@ -223,7 +222,7 @@ const enum input_modifier mod) {
 
 static uint8_t vt(struct drm_context *ctx, const enum key_action act,
 const int vt) {
-	if (act == key_press && (ctx->mod & input_alt)) {
+	if (act == key_pressed && (ctx->mod & input_alt)) {
 		libseat_switch_session(ctx->seat, vt);
 	}
 	return 0;
@@ -306,23 +305,22 @@ struct drm_context *ctx, struct libinput_event *ev) {
 	if (kb) {
 		const enum libinput_key_state state = libinput_event_keyboard_get_key_state(kb);
 		const enum key_action act = state == LIBINPUT_KEY_STATE_PRESSED
-			? key_press : key_release;
+			? key_pressed : key_released;
 		const uint8_t c = consume_key(ctx,
 			libinput_event_keyboard_get_key(kb), act);
 
-		window_key_add(&wctx->held_keys, act, c,
-			ctx->mod & input_shift);
+		window_key_add(wctx, act, c, ctx->mod & input_shift);
 	}
 }
 
-static void input_poll(struct window_context *wctx, long nsecs) {
+static void input_poll(struct window_context *wctx, const int msecs) {
 	struct drm_context *ctx = wctx->win.ctx;
 
 	struct pollfd has_data[] = {
 		{.fd = libseat_get_fd(ctx->seat), .events = POLLIN},
 		{.fd = libinput_get_fd(ctx->li), .events = POLLIN},
+		{.fd = STDIN_FILENO, .events = POLLIN},
 	};
-	const int msecs = (int)lmin(INT_MAX, nsecs / 1000000);
 	if (poll(has_data, ARRAY_LEN(has_data), msecs) > 0
 	&& ((has_data[0].revents | has_data[1].revents) & POLLIN)) {
 		libseat_dispatch(ctx->seat, 0);
@@ -406,6 +404,7 @@ static void seat_enable(struct libseat *seat, void *data) {
 static void seat_disable(struct libseat *seat, void *data) {
 	struct window_context *wctx = data;
 	wctx->win.focused = false;
+	window_key_lift(wctx);
 	libseat_disable_seat(seat);
 	struct drm_context *ctx = wctx->win.ctx;
 	if (ctx->li) {

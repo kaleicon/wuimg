@@ -4,14 +4,13 @@
 #include "misc/math.h"
 #include "misc/term.h"
 
-enum event_repeat {
-	repeat_none = 0,
-	repeat_fixed = 1,
-	repeat_smooth = 2,
-};
+static void sub_cycle(struct window_context *window, const int n) {
+	window->event.image = wudec_sub_cycle(&window->image, n);
+	window->win.playing &= !window->event.image;
+}
 
-static void frame_cycle(struct window_context *window, const int dt) {
-	window->event.image = wudec_frame_cycle(&window->image, dt);
+static void frame_cycle(struct window_context *window, const int n) {
+	window->event.image = wudec_frame_cycle(&window->image, n);
 	window->win.playing = false;
 	const int frame = window->image.state.frame;
 	char msg[sizeof(frame)*3 + 9];
@@ -19,8 +18,8 @@ static void frame_cycle(struct window_context *window, const int dt) {
 	term_line_temp(msg);
 }
 
-static enum event_repeat apply_event(struct window_context *window,
-const int code, const float dt, const bool shift) {
+static bool apply_event(struct window_context *window, const int code,
+const float dt, const bool shift) {
 	struct wudec_image *image = &window->image;
 	const struct image_file *file = &image->file;
 	struct wu_state *state = &image->state;
@@ -36,7 +35,7 @@ const int code, const float dt, const bool shift) {
 	// Fullscreen
 	case 'F':
 		window_fullscreen(window);
-		return repeat_none;
+		return false;
 	// Alpha display
 	case 'A':
 		gl_alpha_toggle(gl, shift ? -1 : 1);
@@ -44,7 +43,7 @@ const int code, const float dt, const bool shift) {
 	// Metadata
 	case 'M':
 		image_file_print(file, stdout, 2 + shift, file->nr == 1);
-		return repeat_none;
+		return false;
 
 	// Delete
 	case 'D':
@@ -55,14 +54,14 @@ const int code, const float dt, const bool shift) {
 		} else if (shift && event->rm == rm_ask) {
 			event->rm = rm_yes;
 		}
-		return repeat_none;
+		return false;
 	// Abort delete
 	case 'U':
 		if (event->rm == rm_ask) {
 			event->rm = rm_no;
 		}
 		term_line_clear();
-		return repeat_none;
+		return false;
 
 	// Cycling
 	case 'N': // Next
@@ -73,10 +72,10 @@ const int code, const float dt, const bool shift) {
 		break;
 	// Sub-cycling
 	case '<': // Prev
-		event->image = wudec_sub_cycle(image, -1);
+		sub_cycle(window, -1);
 		break;
 	case '>': // Next
-		event->image = wudec_sub_cycle(image, 1);
+		sub_cycle(window, 1);
 		break;
 	// Frame cycling
 	case ',': // Prev
@@ -93,25 +92,26 @@ const int code, const float dt, const bool shift) {
 		break;
 	case ' ':
 		window->win.playing ^= wudec_cur_is_anim(image);
-		return repeat_none;
+		timespec_present_time(&window->win.timer.play);
+		return false;
 
 	// Image movement
 	case 'H': // Left
 		event->image = ev_transform;
 		state->x_offset += dt / state->zoom;
-		return repeat_smooth;
+		break;
 	case 'J': // Down
 		event->image = ev_transform;
 		state->y_offset -= dt / state->zoom;
-		return repeat_smooth;
+		break;
 	case 'K': // Up
 		event->image = ev_transform;
 		state->y_offset += dt / state->zoom;
-		return repeat_smooth;
+		break;
 	case 'L': // Right
 		event->image = ev_transform;
 		state->x_offset -= dt / state->zoom;
-		return repeat_smooth;
+		break;
 
 	// Rotation
 	case 'Z': // Counterclockwise
@@ -156,60 +156,65 @@ const int code, const float dt, const bool shift) {
 			? ev_transform : ev_none;
 		state->x_offset = 0;
 		state->y_offset = 0;
-		return repeat_none;
+		return false;
 	case '1': case '2': case '3': case '4':
 	case '5': case '6': case '7': case '8': case '9':
 		event->image = wudec_zoom(image, (float)(code - '0'));
-		return repeat_none;
+		return false;
 	}
-	return repeat_fixed;
+	return true;
 }
 
 double event_exec(struct window_context *window) {
-	struct window_keymap *held_keys = &window->held_keys;
+	struct window_keymap *held_keys = &window->win.held_keys;
 	const bool shift = held_keys->shift;
 
-	const double elapsed = window_timer_update(window);
-	float msecs = fmaxf((float)elapsed * 1000, 1.0);
-	const int inc = (int)msecs;
-	const float mul = shift ? EVENT_FAST_MOVE_FACTOR : 1.0f;
+	struct timespec now;
+	const double elapsed = timespec_elapsed(&now, &window->win.timer.key);
+	float msecs = (float)elapsed * 1000.0f;
+	if (msecs >= 1.0f) {
+		window->win.timer.key = now;
+	} else {
+		msecs = 0.0f;
+	}
+	const int inc = (int)lroundf(msecs);
+	const float mul = shift ? WINDOW_FAST_MOVE_FACTOR : 1.0f;
 	msecs *= mul;
 
 	unsigned char *map = window_keymap_map(held_keys);
+	held_keys->active = false;
 	for (int key = WINDOW_KEYSTART; key < WINDOW_KEYEND; ++key) {
 		const unsigned char time = map[key];
 		float dt = 16.0f * mul;
 		switch (time) {
 		case 0:
 			continue;
-		case key_external:
+		case key_once:
 			map[key] = 0;
 			break;
 		case 0xff:
 			dt = msecs;
 			break;
 		default:
-			map[key] = (unsigned char)imin(0xff, time + inc);
-			if (time != key_press) {
+			map[key] = (unsigned char)iclamp(time + inc,
+				key_pressed + 1, 0xff);
+			if (time != key_pressed) {
+				held_keys->active = true;
 				continue;
 			}
 		}
 
-		switch (apply_event(window, key, dt, shift)) {
-		case repeat_none:
+		if (!apply_event(window, key, dt, shift)) {
 			map[key] = 0;
-			break;
-		case repeat_fixed:
-			break;
-		case repeat_smooth: break;
 		}
+		held_keys->active |= (bool)map[key];
 	}
 	return elapsed;
 }
 
 void event_print_keys(FILE *out) {
 	fputs("Keybinds:\n"
-		"\tq | Alt+F4 | Ctrl+w\n"
+		"\tq | Alt+F4 | Ctrl+w | Ctrl+c\n"
 		"\t\tQuit.\n"
 
 		"\tf | F11\n"

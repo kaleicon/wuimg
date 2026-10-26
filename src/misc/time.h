@@ -32,4 +32,11 @@ watch_t watch_elapsed(watch_t start);
 watch_t watch_report(const char *ocurrence, watch_t start,
 enum report_level level);
 
+int timespec_present_time(struct timespec *ts);
+
+double timespec_elapsed(struct timespec *restrict now,
+const struct timespec *restrict prev);
+
+double timespec_update(struct timespec *ts);
+
 #endif /* MISC_TIME */

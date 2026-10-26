@@ -167,3 +167,29 @@ const enum report_level level) {
 	nanosec_report(ocurrence, end - start, level);
 	return end;
 }
+
+int timespec_present_time(struct timespec *ts) {
+	const clockid_t cl =
+#if _POSIX_MONOTONIC_CLOCK > 0
+	CLOCK_MONOTONIC
+#else
+	CLOCK_REALTIME
+#endif
+	;
+	return clock_gettime(cl, ts);
+}
+
+double timespec_elapsed(struct timespec *restrict now,
+const struct timespec *restrict prev) {
+	if (timespec_present_time(now) == 0) {
+		const double to_ns = 1000000000;
+		return (double)(now->tv_sec - prev->tv_sec)
+			+ (double)(now->tv_nsec - prev->tv_nsec) / to_ns;
+	}
+	return 0.0;
+}
+
+double timespec_update(struct timespec *ts) {
+	const struct timespec prev = *ts;
+	return timespec_elapsed(ts, &prev);
+}

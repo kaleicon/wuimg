@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: 0BSD
 // SPDX-FileCopyrightText: 2021 kaleido
 #include <limits.h>
+#include <math.h>
 #include <stdlib.h>
 
 #include "window/base.h"
@@ -46,7 +47,7 @@ const int action, const int mods) {
 
 	if (button == GLFW_MOUSE_BUTTON_LEFT) {
 		struct window_context *ctx = glfwGetWindowUserPointer(wnd);
-		ctx->win.pressed = (action == GLFW_PRESS);
+		ctx->win.pointer_pressed = (action == GLFW_PRESS);
 	}
 }
 
@@ -71,8 +72,8 @@ const int action, const int mode) {
 
 	enum key_action keyact;
 	switch (action) {
-	case GLFW_PRESS: keyact = key_press; break;
-	case GLFW_RELEASE: keyact = key_release; break;
+	case GLFW_PRESS: keyact = key_pressed; break;
+	case GLFW_RELEASE: keyact = key_released; break;
 	default: return;
 	}
 
@@ -166,7 +167,7 @@ const int action, const int mode) {
 	}
 
 	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
-	window_key_add(&ctx->held_keys, keyact, event, shift);
+	window_key_add(ctx, keyact, event, shift);
 }
 
 static void glfw_terminate(struct window_context *ctx) {
@@ -179,9 +180,11 @@ static void glfw_swap_buffers(struct window_context *ctx) {
 	glfwSwapBuffers(glfw->window);
 }
 
-static void glfw_poll(struct window_context *ctx, const long nsecs) {
-	(void)ctx;
-	glfwWaitEventsTimeout((double)nsecs / 1000000000);
+static void glfw_poll(struct window_context *ctx, const int msecs) {
+	(void)ctx; (void)msecs;
+	const uint32_t refresh = window_refresh_nsec(ctx);
+	const double f = (sqrt(5.0) - 1.0) / 2000000000.0;
+	glfwWaitEventsTimeout((double)refresh * f);
 }
 
 static void glfw_resize(struct window_context *ctx, const int w, const int h) {

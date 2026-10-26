@@ -13,7 +13,7 @@ bool window_draw(struct window_context *window);
 
 void window_fullscreen(struct window_context *window);
 
-void window_poll(struct window_context *window, long nsecs);
+void window_poll(struct window_context *window, int msecs);
 
 void window_adapt(struct window_context *window);
 
