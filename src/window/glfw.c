@@ -66,6 +66,20 @@ static void callback_scroll(GLFWwindow *wnd, const double x, const double y) {
 	window_cursor_scroll(ctx, x*ratio, y*ratio, horz, zoom);
 }
 
+static void callback_char(GLFWwindow *wnd, const unsigned code) {
+	switch (code) {
+	case '=':
+	case '+': case '-':
+	case '*': case '/':
+	case '<': case '>':
+	case '0': case '1': case '2': case '3': case '4':
+	case '5': case '6': case '7': case '8': case '9':
+		window_key_add(glfwGetWindowUserPointer(wnd),
+			key_once, (uint8_t)code, false);
+		break;
+	}
+}
+
 static void callback_key(GLFWwindow *wnd, const int key, const int scan,
 const int action, const int mode) {
 	(void)scan;
@@ -99,9 +113,6 @@ const int action, const int mode) {
 		break;
 	case GLFW_KEY_A:
 		event = 'A';
-		break;
-	case GLFW_KEY_S:
-		event = 'S';
 		break;
 	case GLFW_KEY_M:
 		event = 'M';
@@ -147,27 +158,12 @@ const int action, const int mode) {
 	case GLFW_KEY_O: event = 'O'; break;
 
 	case GLFW_KEY_END: event = '='; break;
-	case GLFW_KEY_HOME: event = (shift) ? '1' : '0'; break;
-	case GLFW_KEY_PAGE_UP:
-	case GLFW_KEY_KP_ADD: event = '+'; break;
-	case GLFW_KEY_PAGE_DOWN:
-	case GLFW_KEY_KP_SUBTRACT: event = '-'; break;
-
-	case GLFW_KEY_0: case GLFW_KEY_KP_0: event = '0'; break;
-	case GLFW_KEY_1: case GLFW_KEY_KP_1: event = '1'; break;
-	case GLFW_KEY_2: case GLFW_KEY_KP_2: event = '2'; break;
-	case GLFW_KEY_3: case GLFW_KEY_KP_3: event = '3'; break;
-	case GLFW_KEY_4: case GLFW_KEY_KP_4: event = '4'; break;
-	case GLFW_KEY_5: case GLFW_KEY_KP_5: event = '5'; break;
-	case GLFW_KEY_6: case GLFW_KEY_KP_6: event = '6'; break;
-	case GLFW_KEY_7: case GLFW_KEY_KP_7: event = '7'; break;
-	case GLFW_KEY_8: case GLFW_KEY_KP_8: event = '8'; break;
-	case GLFW_KEY_9: case GLFW_KEY_KP_9: event = '9'; break;
+	case GLFW_KEY_HOME: event = shift ? '1' : '0'; break;
+	case GLFW_KEY_PAGE_UP: event = shift ? '*' : '+'; break;
+	case GLFW_KEY_PAGE_DOWN: event = shift ? '/' : '-'; break;
 	default: return;
 	}
-
-	struct window_context *ctx = glfwGetWindowUserPointer(wnd);
-	window_key_add(ctx, keyact, event, shift);
+	window_key_add(glfwGetWindowUserPointer(wnd), keyact, event, shift);
 }
 
 static void glfw_terminate(struct window_context *ctx) {
@@ -232,6 +228,9 @@ const char * glfw_setup(struct window_context *ctx) {
 		.terminate = glfw_terminate,
 	};
 
+	if (glfwPlatformSupported(GLFW_PLATFORM_X11)) {
+		glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+	}
 	if (!glfwInit()) {
 		return "glfwInit() failed";
 	}
@@ -279,6 +278,7 @@ const char * glfw_setup(struct window_context *ctx) {
 	glfwSetMouseButtonCallback(window, callback_cursor_button);
 	glfwSetScrollCallback(window, callback_scroll);
 	glfwSetKeyCallback(window, callback_key);
+	glfwSetCharCallback(window, callback_char);
 	glfwSwapInterval(1);
 
 	int w, h;
