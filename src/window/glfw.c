@@ -47,7 +47,7 @@ const int action, const int mods) {
 
 	if (button == GLFW_MOUSE_BUTTON_LEFT) {
 		struct window_context *ctx = glfwGetWindowUserPointer(wnd);
-		ctx->win.pointer_pressed = (action == GLFW_PRESS);
+		ctx->win.cursor_pressed = (action == GLFW_PRESS);
 	}
 }
 

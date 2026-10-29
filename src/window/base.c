@@ -96,7 +96,7 @@ const bool horz, const bool zoom) {
 void window_cursor_move(struct window_context *ctx, const double x,
 const double y) {
 	struct window_common *win = &ctx->win;
-	if (win->pointer_pressed) {
+	if (win->cursor_pressed) {
 		ctx->event.image = move_state(&ctx->image.state,
 			(float)x - win->cur.x.pos, (float)y - win->cur.y.pos);
 	}

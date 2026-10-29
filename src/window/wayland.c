@@ -647,7 +647,7 @@ struct wl_pointer *pointer, const uint32_t serial) {
 	struct wp_cursor_shape_device_v1 *dev =
 		wp_cursor_shape_manager_v1_get_pointer(wl->shape,
 		pointer);
-	wp_cursor_shape_device_v1_set_shape(dev, serial, ctx->win.pointer_pressed
+	wp_cursor_shape_device_v1_set_shape(dev, serial, ctx->win.cursor_pressed
 		? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING
 		: WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
 	wp_cursor_shape_device_v1_destroy(dev);
@@ -785,7 +785,7 @@ const uint32_t state) {
 	struct wayland *wl = ctx->win.ctx;
 	switch (button) {
 	case BTN_LEFT:
-		ctx->win.pointer_pressed =
+		ctx->win.cursor_pressed =
 			(state == WL_POINTER_BUTTON_STATE_PRESSED);
 		if (wl->shape) {
 			set_cursor_shape(ctx, wl, pointer, serial);
@@ -858,7 +858,7 @@ const uint32_t caps) {
 	struct wayland_cursor *c = &wl->cursor;
 	if (caps & WL_SEAT_CAPABILITY_POINTER) {
 		if (!c->pointer) {
-			ctx->win.pointer_pressed = false;
+			ctx->win.cursor_pressed = false;
 			c->pointer = wl_seat_get_pointer(seat);
 			wl_pointer_add_listener(c->pointer, &listen_pointer, ctx);
 		}

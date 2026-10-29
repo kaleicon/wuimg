@@ -73,7 +73,7 @@ struct window_common {
 	struct window_timers timer;
 	uint32_t refresh_nsec;
 	bool playing;
-	bool pointer_pressed;
+	bool cursor_pressed;
 	bool focused;
 	bool fullscreen;
 	struct window_keymap held_keys;
